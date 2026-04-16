@@ -117,6 +117,7 @@ function tintin_cmd(ses, cmd)
     end
     -- The file contains "#ses cmd" so TT++ dispatches to the right session when read.
     f:write(string.format("#%s %s\n", ses, cmd))
+    dbg("tintin_cmd: " .. string.format("#%s %s", ses, cmd))
     f:write(string.format("#system {rm -f %s}\n", path))
     f:close()
     print("tintin_read " .. path)

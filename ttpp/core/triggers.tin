@@ -10,8 +10,8 @@
             #zap %0
         } {
             #lua {set_game_session("%0")};
-            #class {%0} {open};
-            #if {-f ttpp/%0.tin} {#class {%0} {read} {ttpp/%0.tin}}
+            #class {%0} {read} {ttpp/%0.tin};
+            #class {%0} {open}
         }
     }
 }
