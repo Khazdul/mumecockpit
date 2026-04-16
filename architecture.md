@@ -82,7 +82,13 @@ registration in `main.tin` is needed when adding a new module.
 `brain.lua` automatically loads all `.lua` files from `lua/scripts/` via
 `io.popen("ls ...")` + `dofile()` at startup. Each script runs in the global
 environment and has access to all infrastructure functions from `brain.lua`
-(`tintin`, `tintin_cmd`, `tintin_show`, `send`, `dbg`, `ui`, `script_ui`).
+(`tintin`, `tintin_cmd`, `tintin_show`, `send`, `game_cmd`, `session_cmd`,
+`set_game_session`, `clear_game_session`, `dbg`, `ui`, `script_ui`).
+
+`set_game_session(ses)` — called by tt++ SESSION CONNECTED event; sets
+`GAME_SESSION` and syncs `$game_session` in tt++.
+`clear_game_session(ses)` — called by tt++ SESSION DISCONNECTED event; clears
+`GAME_SESSION` and removes `$game_session` from tt++ via `#unvar`.
 
 ### Startup order in `main.tin`
 Relay actions that catch Lua stdout **must be registered before `#run {lua}`**.
@@ -179,12 +185,14 @@ tintin_cmd("mume", "#delay {name} {cmd} {seconds}")
 #action {tintin_read %1} {#read %1}
 ```
 
-**Which session to use:**
-- `"gts"` — persistent aliases and named delays. gts always exists; aliases
-  registered here are inherited by mume when it is created.
-- `"mume"` — triggers (`#action`), delays that belong to an active MUD session.
-  `#action` only fires on output in the session it is registered in — MUD output
-  arrives in mume, so triggers must be in mume.
+| Function | Registers in | Use for |
+|----------|-------------|---------|
+| `tintin(ses, cmd)` | specific session | simple commands without braces |
+| `tintin_cmd(ses, cmd)` | specific session | commands containing braces |
+| `tintin_show(ses, msg)` | specific session | `#showme` in a session |
+| `game_cmd(cmd)` | gts + GAME_SESSION | `#alias`, `#substitute`, `#highlight` |
+| `session_cmd(cmd)` | GAME_SESSION only | `#action`, `#unaction`, `#delay`, `#undelay` |
+| `send(cmd)` | GAME_SESSION | sending commands to the MUD server |
 
 **`tintin_show(ses, msg)`** — for `#showme` display (messages rarely contain braces):
 ```lua
@@ -206,23 +214,70 @@ Timestamped debug output to `logs/debug.log`:
 debug_fh:write(os.date("[%H:%M:%S] ") .. msg .. "\n")
 ```
 
-## TT++ Session Scoping
+## Session Management
+
+The client uses three tt++ sessions:
+
+| Session | Role |
+|---------|------|
+| `gts`   | Global — always exists, entry point, alias pool |
+| `lua`   | Lua subprocess — created by `#run`, never interacted with directly |
+| game    | Active game connection — name is dynamic, typically `mume` |
+
+### Dynamic game session tracking
+
+The game session name is never hardcoded. It is tracked in two
+places that are always kept in sync:
+
+- `GAME_SESSION` — Lua global (nil when no game session is active)
+- `$game_session` — tt++ variable in gts (unset when no game session is active)
+
+Both are set when SESSION CONNECTED fires for any non-internal session,
+and cleared on SESSION DISCONNECTED.
+
+**SESSION CONNECTED** filters out `gts` and `lua`, then:
+- If `$game_session` is already set: zaps the new session immediately
+  (only one game session allowed) and shows a warning
+- Otherwise: calls `set_game_session()` in Lua which sets both
+  `GAME_SESSION` and `$game_session`
+
+**SESSION DISCONNECTED** filters out `gts` and `lua`, then:
+- If `$_zapping_intruder` flag is set: it was an intruder zap —
+  clear the flag, show message, return to game session
+- Otherwise: it was a real disconnect — return to gts, call
+  `clear_game_session()` which clears both `GAME_SESSION` and
+  `$game_session` via `#unvar`
+
+**Important:** `clear_game_session()` uses `tintin()` not `tintin_cmd()`
+to clear `$game_session`. Using `tintin_cmd()` inside a SESSION DISCONNECTED
+handler interferes with socket cleanup and prevents MMapper from releasing
+the connection.
+
+### Alias and trigger session rules
 
 TT++ aliases and actions are **session-specific**, not global. New sessions
 inherit the alias/action pool of the session that created them — but only at
-creation time. Changes to the parent session afterwards do not propagate to
-existing child sessions.
+creation time.
 
-**Consequence for `cp -r` (reload):** the reload must run in the `gts` session
-so that `#kill alias` clears the gts pool. When brain re-registers aliases in
-gts after reload, the existing mume session picks them up through the shared
-pool. If the reload runs in mume instead, aliases re-registered in gts are not
-visible in mume. This is why `cp -r` begins with `#gts`.
+- Register persistent aliases via `game_cmd()` — registers in both gts (for
+  session inheritance) and GAME_SESSION (for immediate availability after
+  `cp -r` without reconnect)
+- Register `#action` triggers via `session_cmd()` — GAME_SESSION only, since
+  MUD output only arrives there
+- Never hardcode a session name in scripts — use `game_cmd()` and
+  `session_cmd()` exclusively
 
-**Alias session rules:**
-- Register persistent aliases in `gts` — always exists, mume inherits on connect
-- Register `#action` triggers in `mume` — triggers only fire on output in their
-  own session; MUD output arrives in mume
+### cp -r behaviour
+
+- Always runs in gts context
+- Kills all tt++ state (alias, action, substitute, highlight, macro, delay,
+  event) and restarts Lua
+- Re-syncs `GAME_SESSION` in Lua via `set_game_session()` after reload since
+  SESSION CONNECTED does not fire for already-connected sessions
+- After reload: returns to game session via a 1-second delay if one exists,
+  otherwise stays in gts
+- By design: if `cp -r` is run from gts with an active game session, it still
+  returns to the game session after reload
 
 ## Cockpit System
 Unified window and system management via `cp` commands:
@@ -332,7 +387,7 @@ sent via `tintin_cmd()` (file-based), not the `tintin()` relay.
 - One feature per file — all aliases, triggers, state, and logic in one place
 - Register aliases and triggers at the bottom of the file (runs at load time)
 - Public functions callable from tt++ via `#lua` must be global (no `local`)
-- Use `tintin_cmd("gts", ...)` for load-time aliases, `tintin_cmd("mume", ...)` for triggers
+- Use `game_cmd(...)` for load-time aliases, `session_cmd(...)` for triggers and delays
 - New files placed in `lua/scripts/` are picked up automatically — no
   changes to `brain.lua` needed
 
@@ -461,6 +516,7 @@ No third-party binaries are bundled. Safe to distribute on GitHub or directly to
 - [x] Hot-reload via cp -r
 - [x] Auto-loading of tt++ modules and Lua scripts
 - [x] Self-contained Lua script pattern (autostab as reference implementation)
+- [x] autobow script (bow/crossbow shoot-escape loop with weapon auto-detection)
 - [ ] Live server connection
 - [ ] Real server trigger mapping
 - [ ] Spell timer system

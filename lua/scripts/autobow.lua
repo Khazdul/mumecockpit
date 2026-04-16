@@ -3,7 +3,7 @@
 --
 -- Alias:  ash<dir>  (e.g. ashe = autobow east)
 --
--- Crossbow path: 
+-- Crossbow path:
 --   draw -> load -> (wait for on_loaded) -> go dir -> shoot $target -> escape retDir
 --   on escape success: draw -> reload -> repeat cycle
 --
@@ -50,23 +50,23 @@ end
 -- -----------------------------
 
 local function register_triggers()
-    tintin_cmd("mume", "#action {You load %1 into your crossbow.} {#lua {autobow_on_loaded()}}")
-    tintin_cmd("mume", "#action {But your crossbow is already loaded!} {#lua {autobow_on_already_loaded()}}")
-    tintin_cmd("mume", "#action {You can only load crossbows.} {#lua {autobow_on_not_crossbow()}}")
-    tintin_cmd("mume", "#action {You successfully escaped the fight!} {#lua {autobow_on_success()}}")
-    tintin_cmd("mume", "#action {You failed to escape the fight!} {#lua {autobow_on_fail()}}")
-    tintin_cmd("mume", "#action {%1 is dead! R.I.P.} {#lua {autobow_on_dead()}}")
-    tintin_cmd("mume", "#action {%1 disappears into nothing.} {#lua {autobow_on_gone()}}")
+    session_cmd("#action {You load %1 into your crossbow.} {#lua {autobow_on_loaded()}}")
+    session_cmd("#action {But your crossbow is already loaded!} {#lua {autobow_on_already_loaded()}}")
+    session_cmd("#action {You can only load crossbows.} {#lua {autobow_on_not_crossbow()}}")
+    session_cmd("#action {You successfully escaped the fight!} {#lua {autobow_on_success()}}")
+    session_cmd("#action {You failed to escape the fight!} {#lua {autobow_on_fail()}}")
+    session_cmd("#action {%1 is dead! R.I.P.} {#lua {autobow_on_dead()}}")
+    session_cmd("#action {%1 disappears into nothing.} {#lua {autobow_on_gone()}}")
 end
 
 local function unregister_triggers()
-    tintin_cmd("mume", "#unaction {You load %1 into your crossbow.}")
-    tintin_cmd("mume", "#unaction {But your crossbow is already loaded!}")
-    tintin_cmd("mume", "#unaction {You can only load crossbows.}")
-    tintin_cmd("mume", "#unaction {You successfully escaped the fight!}")
-    tintin_cmd("mume", "#unaction {You failed to escape the fight!}")
-    tintin_cmd("mume", "#unaction {%1 is dead! R.I.P.}")
-    tintin_cmd("mume", "#unaction {%1 disappears into nothing.}")
+    session_cmd("#unaction {You load %1 into your crossbow.}")
+    session_cmd("#unaction {But your crossbow is already loaded!}")
+    session_cmd("#unaction {You can only load crossbows.}")
+    session_cmd("#unaction {You successfully escaped the fight!}")
+    session_cmd("#unaction {You failed to escape the fight!}")
+    session_cmd("#unaction {%1 is dead! R.I.P.}")
+    session_cmd("#unaction {%1 disappears into nothing.}")
 end
 
 -- -----------------------------
@@ -75,7 +75,7 @@ end
 -- -----------------------------
 
 local function reset_watchdog()
-    tintin_cmd("mume", string.format("#delay {ab_watch} {#lua {autobow_watchdog()}} {%d}", WATCH_TIMEOUT))
+    session_cmd(string.format("#delay {ab_watch} {#lua {autobow_watchdog()}} {%d}", WATCH_TIMEOUT))
 end
 
 -- -----------------------------
@@ -100,7 +100,7 @@ end
 local function abort(reason)
     ab.active = false
     unregister_triggers()
-    tintin_cmd("mume", "#undelay {ab_watch}")
+    session_cmd("#undelay {ab_watch}")
     ab_dbg("stopped: " .. reason)
     script_ui("AUTOBOW", "Stopped — " .. reason)
 end
@@ -122,7 +122,7 @@ function autobow_start(dir, target)
     -- Clean up any still-running session before starting fresh
     if ab.active then
         unregister_triggers()
-        tintin_cmd("mume", "#undelay {ab_watch}")
+        session_cmd("#undelay {ab_watch}")
     end
 
     ab.active      = true
@@ -211,7 +211,7 @@ end
 -- -----------------------------
 -- SETUP — register alias on load, declare metadata
 -- -----------------------------
-tintin_cmd("gts", '#alias {ash%1} {#lua {autobow_start("%1", "$target")}} {4}')
+game_cmd('#alias {ash%1} {#lua {autobow_start("%1", "$target")}} {4}')
 register_script({
     alias   = "autobow",
     summary = "bow/crossbow shoot/escape loop",

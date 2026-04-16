@@ -61,8 +61,6 @@
 }
 
 #alias {cp -r} {
-    #nop Switch to gts so all #kill and #read commands run in the gts context.;
-    #nop This ensures re-registered aliases are in the gts pool inherited by all sessions.;
     #gts;
     #system {echo "[$(date '+%H:%M:%S')] COCKPIT RELOAD — wiping state" >> $HOME/MUME/logs/debug.log};
     #zap lua;
@@ -70,14 +68,15 @@
     #kill action;
     #kill substitute;
     #kill highlight;
-    #kill variable;
     #kill macro;
     #kill delay;
-    #mume #kill delay;
+    #nop Kill delays in game session if one exists.;
+    #if {&game_session} {#if {&$game_session} {#$game_session #kill delay}};
     #kill event;
     #read ttpp/main.tin;
+    #if {&game_session} {#lua {set_game_session("$game_session")}};
     #showme {[COCKPIT] Full reload complete};
-    #ses {mume}
+    #if {&game_session} {#delay {1} {#ses {$game_session}}}
 }
 
 #alias {cp -e} {

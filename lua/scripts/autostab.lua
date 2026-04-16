@@ -36,17 +36,17 @@ end
 -- -----------------------------
 
 local function register_triggers()
-    tintin_cmd("mume", "#action {You successfully escaped the fight!} {#lua {autostab_on_success()}}")
-    tintin_cmd("mume", "#action {You failed to escape the fight!} {#lua {autostab_on_fail()}}")
-    tintin_cmd("mume", "#action {%1 is dead! R.I.P.} {#lua {autostab_on_dead()}}")
-    tintin_cmd("mume", "#action {%1 disappears into nothing.} {#lua {autostab_on_gone()}}")
+    session_cmd("#action {You successfully escaped the fight!} {#lua {autostab_on_success()}}")
+    session_cmd("#action {You failed to escape the fight!} {#lua {autostab_on_fail()}}")
+    session_cmd("#action {%1 is dead! R.I.P.} {#lua {autostab_on_dead()}}")
+    session_cmd("#action {%1 disappears into nothing.} {#lua {autostab_on_gone()}}")
 end
 
 local function unregister_triggers()
-    tintin_cmd("mume", "#unaction {You successfully escaped the fight!}")
-    tintin_cmd("mume", "#unaction {You failed to escape the fight!}")
-    tintin_cmd("mume", "#unaction {%1 is dead! R.I.P.}")
-    tintin_cmd("mume", "#unaction {%1 disappears into nothing.}")
+    session_cmd("#unaction {You successfully escaped the fight!}")
+    session_cmd("#unaction {You failed to escape the fight!}")
+    session_cmd("#unaction {%1 is dead! R.I.P.}")
+    session_cmd("#unaction {%1 disappears into nothing.}")
 end
 
 -- -----------------------------
@@ -55,7 +55,7 @@ end
 -- -----------------------------
 
 local function reset_watchdog()
-    tintin_cmd("mume", string.format("#delay {as_watch} {#lua {autostab_watchdog()}} {%d}", WATCH_TIMEOUT))
+    session_cmd(string.format("#delay {as_watch} {#lua {autostab_watchdog()}} {%d}", WATCH_TIMEOUT))
 end
 
 -- -----------------------------
@@ -71,7 +71,7 @@ end
 local function abort(reason)
     as.active = false
     unregister_triggers()
-    tintin_cmd("mume", "#undelay {as_watch}")
+    session_cmd("#undelay {as_watch}")
     as_dbg("stopped: " .. reason)
     script_ui("AUTOSTAB", "Stopped — " .. reason)
 end
@@ -93,7 +93,7 @@ function autostab_start(dir, target)
     -- Clean up any still-running session before starting fresh
     if as.active then
         unregister_triggers()
-        tintin_cmd("mume", "#undelay {as_watch}")
+        session_cmd("#undelay {as_watch}")
     end
 
     as.active      = true
@@ -155,7 +155,7 @@ end
 -- -----------------------------
 -- SETUP — register alias on load, declare metadata
 -- -----------------------------
-tintin_cmd("gts", '#alias {as%1} {#lua {autostab_start("%1", "$target")}}')
+game_cmd('#alias {as%1} {#lua {autostab_start("%1", "$target")}}')
 register_script({
     alias   = "autostab",
     summary = "backstab/escape loop",

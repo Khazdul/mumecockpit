@@ -40,6 +40,51 @@ function script_ui(name, msg)
     ui(string.format("%s▪ %s%s - %s%s%s", _C_SCRIPT, name, _C_RESET, _C_TEXT, msg, _C_RESET))
 end
 
+GAME_SESSION = nil  -- set dynamically when a game session connects
+
+function set_game_session(ses)
+    GAME_SESSION = ses
+    dbg("GAME_SESSION set to: " .. ses)
+    ui("Game session: " .. ses)
+    tintin_cmd("gts", "#var {game_session} {" .. ses .. "}")
+end
+
+-- Called when a game session disconnects. Clears GAME_SESSION
+-- only if it matches the disconnecting session — guards against
+-- stale clears if somehow called with wrong session name.
+function clear_game_session(ses)
+    if GAME_SESSION == ses then
+        GAME_SESSION = nil
+        dbg("GAME_SESSION cleared (was: " .. ses .. ")")
+        ui("Game session: none")
+        tintin("gts", "#unvar game_session")
+    else
+        dbg("clear_game_session: ignored " .. ses ..
+            " (current: " .. tostring(GAME_SESSION) .. ")")
+    end
+end
+
+-- Register a command in both gts and GAME_SESSION.
+-- Use for: #alias, #substitute, #highlight
+-- Safe to call before a game session exists (GAME_SESSION nil = skip game session).
+function game_cmd(cmd)
+    tintin_cmd("gts", cmd)
+    if GAME_SESSION then
+        tintin_cmd(GAME_SESSION, cmd)
+    end
+end
+
+-- Register a command in GAME_SESSION only.
+-- Use for: #action, #unaction — triggers only fire in the session
+-- where MUD output arrives. Safe to call when GAME_SESSION is nil.
+function session_cmd(cmd)
+    if GAME_SESSION then
+        tintin_cmd(GAME_SESSION, cmd)
+    else
+        dbg("session_cmd ignored (no game session): " .. cmd)
+    end
+end
+
 -- -----------------------------
 -- TT++ COMMUNICATION
 -- tintin(ses, cmd)   — relay-based: run a simple TT++ command with no braces
@@ -84,8 +129,12 @@ function tintin_show(ses, msg)
 end
 
 function send(cmd)
+    if not GAME_SESSION then
+        dbg("SEND ignored (no game session): " .. cmd)
+        return
+    end
     dbg("SEND: " .. cmd)
-    tintin("mume", cmd)
+    tintin(GAME_SESSION, cmd)
 end
 
 -- -----------------------------
