@@ -162,11 +162,10 @@ fully self-contained and have no involvement with `handle_event`:
 
 ```lua
 -- lua/scripts/autostab.lua (at load time)
--- Alias in gts — available immediately at startup, inherited by mume on connect
-tintin_cmd("gts", '#alias {as%1} {#lua {autostab_start("%1", "$target")}}')
--- Actions registered dynamically in mume when autostab activates
--- #unaction uses the exact pattern string — no labels
-tintin_cmd("mume", "#action {You successfully escaped the fight!} {#lua {autostab_on_success()}}")
+-- Alias in gts + GAME_SESSION — available immediately, works after connect
+game_cmd('#alias {as%1} {#lua {autostab_start("%1", "$target")}}')
+-- Actions registered dynamically when autostab activates
+session_cmd("#action {You successfully escaped the fight!} {#lua {autostab_on_success()}}")
 ```
 
 Triggers may be permanent or managed dynamically (registered on activation,
@@ -183,13 +182,26 @@ Braces in the file are never passed through wildcard substitution — they survi
 Unique filenames prevent race conditions when multiple calls happen in rapid succession.
 
 ```lua
-tintin_cmd("mume", "#action {pat} {body}")  -- registers trigger in mume
 tintin_cmd("gts",  "#alias {name} {body}")  -- registers alias in gts
-tintin_cmd("mume", "#delay {name} {cmd} {seconds}")
+session_cmd("#action {pat} {body}")          -- registers trigger in GAME_SESSION
+session_cmd("#delay {name} {cmd} {seconds}") -- delay in GAME_SESSION
 ```
 ```tintin
 #action {tintin_read %1} {#read %1}
 ```
+
+**Wrapper functions (preferred):**
+Scripts should never call `tintin_cmd` with a session name directly.
+Use the wrapper functions instead:
+- `game_cmd(cmd)` — registers in gts + GAME_SESSION (`#alias`,
+  `#substitute`, `#highlight`)
+- `session_cmd(cmd)` — registers in GAME_SESSION only (`#action`,
+  `#unaction`, `#delay`, `#undelay`)
+- `send(cmd)` — sends MUD commands to GAME_SESSION
+
+Direct `tintin_cmd(ses, cmd)` and `tintin(ses, cmd)` calls are for
+infrastructure internals only (e.g. `set_game_session`,
+`clear_game_session`).
 
 | Function | Registers in | Use for |
 |----------|-------------|---------|
@@ -202,7 +214,7 @@ tintin_cmd("mume", "#delay {name} {cmd} {seconds}")
 
 **`tintin_show(ses, msg)`** — for `#showme` display (messages rarely contain braces):
 ```lua
-tintin_show("mume", "some message")
+tintin_show(GAME_SESSION, "some message")
 ```
 ```tintin
 #action {tintin_show (%1) %2} {#%1 #showme %2}
@@ -577,8 +589,11 @@ disappears, or no trigger fires within 15 seconds. Uses `game_cmd` and
 5. Tells and comms UI section
 6. PvP keybinds and combat aliases
 7. Port existing scripts from previous client
-8. **Player settings persistence** — player-created `#alias`, `#action`, `#variable`
-   etc. are in-memory only and lost on restart/reload. `#write` dumps everything
-   including core, so it can't be used directly. The challenge is saving only
-   player additions separately from core. Needs a solution before the client is
+8. **Player settings persistence** — player-created `#alias`, `#action`,
+   `#variable` etc. are in-memory only and lost on restart/reload.
+   `#write` dumps everything including core, so it can't be used directly.
+   A `#class`-based approach was tried and abandoned — the open class
+   captures script-registered triggers alongside user settings, making
+   the save file unreliable. The challenge is saving only user additions
+   separately from core. Needs a different solution before the client is
    used seriously.

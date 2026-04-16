@@ -1,3 +1,5 @@
+#var {_zapping_intruder} {0}
+
 #nop ===== EVENTS / TRIGGERS =====
 
 #nop ===== SESSION EVENTS =====
@@ -9,9 +11,7 @@
             #var {_zapping_intruder} {1};
             #zap %0
         } {
-            #lua {set_game_session("%0")};
-            #class {%0} {read} {ttpp/%0.tin};
-            #class {%0} {open}
+            #lua {set_game_session("%0")}
         }
     }
 }
@@ -23,8 +23,6 @@
             #showme {[SYSTEM] Session %0 closed -- resuming $game_session};
             #ses {$game_session}
         } {
-            #class {%0} {write} {ttpp/%0.tin};
-            #class {%0} {kill};
             #showme {[SYSTEM] Session %0 disconnected -- returning to gts};
             #session {gts};
             #lua {clear_game_session("%0")}

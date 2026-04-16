@@ -1,9 +1,0 @@
-#CLASS {mume} OPEN
-
-#ALIAS {kyk}
-{
-    soppe
-}
-
-
-#CLASS {mume} CLOSE
