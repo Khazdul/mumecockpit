@@ -1,4 +1,75 @@
 #nop ===== CONSUMABLES =====
-#nop Aliases for usable items (potions, powders, etc.)
+#nop Aliases for consumable items: draughts, rocks, scrolls, potions, powders.
+
+#nop ===== DRAUGHTS =====
+
+#alias {qdd} {
+    _send get zaugurz-draught pack;
+    _send quaff zaugurz-draught
+}
+
+#alias {qd} {
+    _send get draught pack;
+    _send quaff draught
+}
+
+#alias {miruvor} {
+    _send get miruvor pack;
+    _send quaff miruvor
+}
+
+#nop ===== ROCKS =====
+
+#alias {rook} {
+    #if {"%1" != ""} {
+        _send get rock pack;
+        _send use rock $sd1 %1
+    } {
+        _send get rock pack;
+        _send use rock $sd1
+    }
+}
+
+#nop ===== SCROLLS =====
+
+#alias {rs} {
+    #if {"%1" != ""} {
+        _send recite scroll %0
+    } {
+        _send recite scroll
+    }
+}
+
+#alias {vellum} {
+    _send get vellumscroll all;
+    _send recite vellumscroll
+}
+
+#alias {ebony} {
+    _send get ebonyscroll all;
+    #if {"%1" != ""} {_send recite ebonyscroll %0} {_send recite ebonyscroll}
+}
+
+#alias {purple} {
+    _send get purplescroll all;
+    #if {"%1" != ""} {_send recite purplescroll %0} {_send recite purplescroll}
+}
+
+#alias {blue} {
+    _send get bluescroll all;
+    #if {"%1" != ""} {_send recite bluescroll %0} {_send recite bluescroll}
+}
+
+#alias {black} {
+    _send get blackscroll all;
+    #if {"%1" != ""} {_send recite blackscroll %0} {_send recite blackscroll}
+}
+
+#alias {azure} {
+    _send get azurescroll all;
+    #if {"%1" != ""} {_send recite azurescroll %0} {_send recite azurescroll}
+}
+
+#nop ===== MISC =====
 
 #alias {powd} {_send use powder}

@@ -57,6 +57,8 @@ local function register_triggers()
     session_cmd("#action {You failed to escape the fight!} {#lua {autobow_on_fail()}}")
     session_cmd("#action {%1 is dead! R.I.P.} {#lua {autobow_on_dead()}}")
     session_cmd("#action {%1 disappears into nothing.} {#lua {autobow_on_gone()}}")
+    session_cmd("#action {You don't have any bolts.} {#lua {autobow_on_no_bolts()}}")
+    session_cmd("#action {You don't have any arrows.} {#lua {autobow_on_no_arrows()}}")
 end
 
 local function unregister_triggers()
@@ -67,6 +69,8 @@ local function unregister_triggers()
     session_cmd("#unaction {You failed to escape the fight!}")
     session_cmd("#unaction {%1 is dead! R.I.P.}")
     session_cmd("#unaction {%1 disappears into nothing.}")
+    session_cmd("#unaction {You don't have any bolts.}")
+    session_cmd("#unaction {You don't have any arrows.}")
 end
 
 -- -----------------------------
@@ -92,8 +96,10 @@ local function do_load_or_shoot()
     if ab.weapon == "bow" then
         do_shoot()
     else
+        if ab.weapon == "crossbow" then
+            tintin_show("mume", "<F719FC7>reloading...<099>")
+        end
         send("load")
-        -- wait for on_loaded, on_already_loaded, or on_not_crossbow
     end
 end
 
@@ -171,7 +177,6 @@ function autobow_on_success()
     ab.retry_count = 0
     reset_watchdog()
     ab_dbg("escaped — next cycle")
-    send("draw bow")
     do_load_or_shoot()
 end
 
@@ -197,6 +202,17 @@ end
 function autobow_on_gone()
     if not ab.active then return end
     abort("gone")
+end
+
+function autobow_on_no_bolts()
+    if not ab.active then return end
+    abort("out of bolts")
+end
+
+function autobow_on_no_arrows()
+    if not ab.active then return end
+    send("escape " .. ab.ret)
+    abort("out of arrows")
 end
 
 function autobow_watchdog()

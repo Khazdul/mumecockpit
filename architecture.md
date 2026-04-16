@@ -282,6 +282,16 @@ Scripts must never hardcode a session name. Use these functions:
 - By design: always returns to game session regardless of where
   cp -r was invoked from
 
+**Known limitation — .tin aliases not visible in existing game session
+after reload:** `cp -r` re-registers aliases from `core/*.tin` in `gts`
+only. An already-connected game session does not pick these up since
+inheritance only happens at session creation. This is intentional —
+`.tin` aliases are stable infrastructure that does not change during a
+play session. If a new `.tin` file is added, restart the game session
+once to inherit it. Lua-based aliases do not have this limitation
+because `game_cmd()` registers in both `gts` and `GAME_SESSION`
+simultaneously.
+
 ## Cockpit System
 Unified window and system management via `cp` commands:
 
