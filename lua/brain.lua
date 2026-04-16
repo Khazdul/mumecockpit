@@ -97,8 +97,8 @@ end
 --                        Each call gets a unique file — no race conditions.
 --                        TT++ deletes the file after reading.
 -- tintin_show(ses, msg) — #showme msg in session 'ses'
---                         use "mume" to display in the MUD window
--- send(cmd)          — send a MUD command to the mume session
+--                         use GAME_SESSION to display in the MUD window
+-- send(cmd)          — send a MUD command to GAME_SESSION
 -- -----------------------------
 local _tintin_cmd_seq = 0
 

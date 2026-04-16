@@ -312,7 +312,8 @@ registers itself via `register_script(meta)` — no changes to core needed.
 5. **Single source of truth** — Lua owns all game state.
 6. **Self-contained Lua scripts** — each script in `lua/scripts/` is a
    single `.lua` file with no paired `.tin` file. The script registers its
-   own aliases, triggers, and timers at load time via `tintin_cmd()`.
+   own aliases via `game_cmd()`, triggers and delays via `session_cmd()`,
+   and MUD commands via `send()` at load time. Never hardcode session names.
    This is the approved pattern for all automation features.
 
 ## Startup
