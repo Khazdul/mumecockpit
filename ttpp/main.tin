@@ -1,0 +1,29 @@
+#nop ===== MAIN ENTRY POINT =====
+
+#nop ===== TT++ DEFAULT SETTINGS =====
+#nop Repeat last command with enter on empty line
+#CONFIG {REPEAT ENTER} {ON}
+
+#nop ===== CORE — auto-loaded from ttpp/core/ =====
+#script {ls ttpp/core/*.tin 2>/dev/null | sed 's/^/#read /'}
+
+#nop Catch commands from Lua — must be registered before #run {lua} so they exist
+#nop when Lua starts and immediately emits output during script load.
+#nop tintin(ses, cmd)  — relay for simple brace-free commands (MUD sends, etc.)
+#action {tintin (%1) %2}      {#%1 %2}
+#nop tintin_cmd — file-based relay for commands with braces (actions, delays, etc.)
+#nop brain.lua writes the command to a unique file then signals via tintin_read.
+#nop #read executes file content directly — braces are preserved, no session required.
+#action {tintin_read %1}      {#read %1}
+#action {tintin_show (%1) %2} {#%1 #showme %2}
+
+#nop Start Lua as a sub-session
+#run {lua} {lua lua/brain.lua}
+
+#nop Return to startup session
+#gts
+
+#showme {[SYSTEM] Framework loaded.}
+
+#nop Show cockpit info on startup — delay allows Lua to register _cockpit_help
+#delay {0.5} {cp}

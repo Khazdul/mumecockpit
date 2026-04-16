@@ -1,0 +1,4 @@
+#nop ===== CONSUMABLES =====
+#nop Aliases for usable items (potions, powders, etc.)
+
+#alias {powd} {_send use powder}

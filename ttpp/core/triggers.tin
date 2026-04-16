@@ -1,0 +1,27 @@
+#nop ===== EVENTS / TRIGGERS =====
+
+#nop ===== SESSION EVENTS =====
+
+#nop Return to gts when a game session disconnects (prevents falling through to lua session)
+#event {SESSION DISCONNECTED} {
+    #showme {[SYSTEM] Session %0 disconnected -- returning to gts};
+    #session {gts}
+}
+
+
+
+#action {%1 hits you for %2 damage} {
+    #lua handle_event("gts", "DMG:%2")
+}
+
+#action {%1 tells you '%2'} {
+    #lua handle_event("gts", "TELL:%1:%2")
+}
+
+#action {You are stunned} {
+    #lua handle_event("gts", "EVENT:stunned")
+}
+
+#alias {testevent} {
+    #lua handle_event("gts", "DMG:15")
+}

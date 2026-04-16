@@ -1,0 +1,90 @@
+#nop ===== SEND HELPER =====
+#nop _send <command>  — echo expanded command locally, then send to MUD.
+#nop All MUD-sending aliases should route through this.
+#nop Set _echo_sends to 0 to suppress echo (e.g. during scripted sequences).
+
+#var {_echo_sends} {1}
+
+#alias {_send %0} {
+    #if {$_echo_sends == 1} {#showme {%0}};
+    %0
+}
+
+#nop ===== CONNECTION ALIASES =====
+
+#alias {mume} {
+    #ses {mume} {localhost} {4242}
+}
+
+#nop ===== COCKPIT SYSTEM =====
+#nop Direct cp aliases. {cp} has priority 6 so specific {cp -X} aliases (priority 5) win.
+#nop Script aliases like {cp -autostab} are registered by Lua at startup.
+
+#alias {cp -u} {
+    #system {
+        EXISTS=$(tmux list-panes -t mume:cockpit -F '#{pane_title}' | grep '^ui$');
+        if [ -n "$EXISTS" ]; then
+            tmux kill-pane -t $(tmux list-panes -t mume:cockpit -F '#{pane_index} #{pane_title}' | awk '/ui/{print "mume:cockpit." $1}');
+        else
+            bash $HOME/MUME/bridge/open_pane.sh ui;
+        fi
+    }
+}
+
+#alias {cp -d} {
+    #system {
+        EXISTS=$(tmux list-panes -t mume:cockpit -F '#{pane_title}' | grep '^dev$');
+        if [ -n "$EXISTS" ]; then
+            tmux kill-pane -t $(tmux list-panes -t mume:cockpit -F '#{pane_index} #{pane_title}' | awk '/dev/{print "mume:cockpit." $1}');
+        else
+            bash $HOME/MUME/bridge/open_pane.sh dev;
+        fi
+    }
+}
+
+#alias {cp -h} {
+    #system {
+        STATUS=$(tmux show-option -t mume pane-border-status | awk '{print $2}');
+        if [ "$STATUS" = "off" ]; then
+            tmux set-option -t mume pane-border-status top;
+        else
+            tmux set-option -t mume pane-border-status off;
+        fi
+    }
+}
+
+#alias {cp -s} {
+    #showme {[COCKPIT] Active panes:};
+    #system {
+        tmux list-panes -t mume:cockpit -F '  #{pane_index}: #{pane_title} (#{pane_width}x#{pane_height})'
+    }
+}
+
+#alias {cp -r} {
+    #nop Switch to gts so all #kill and #read commands run in the gts context.;
+    #nop This ensures re-registered aliases are in the gts pool inherited by all sessions.;
+    #gts;
+    #system {echo "[$(date '+%H:%M:%S')] COCKPIT RELOAD — wiping state" >> $HOME/MUME/logs/debug.log};
+    #zap lua;
+    #kill alias;
+    #kill action;
+    #kill substitute;
+    #kill highlight;
+    #kill variable;
+    #kill macro;
+    #kill delay;
+    #mume #kill delay;
+    #kill event;
+    #read ttpp/main.tin;
+    #showme {[COCKPIT] Full reload complete};
+    #ses {mume}
+}
+
+#alias {cp -e} {
+    #showme {[COCKPIT] Goodbye. Shutting down client...};
+    #zap lua;
+    #system {tmux kill-session -t mume}
+}
+
+#nop Priority 6 — fires only when no specific {cp -X} alias (priority 5) matches
+#alias {cp} {_cockpit_help} {6}

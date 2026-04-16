@@ -1,0 +1,91 @@
+# =============================================================================
+# GENERAL SETUP — MUME PROJECT
+# =============================================================================
+#
+# OS / ENVIRONMENT
+#   - Windows with WSL2 + Ubuntu
+#   - Project files live at ~/MUME/ inside Ubuntu
+#
+# WSL NETWORK SETTING (required for mmapper)
+#   mmapper runs on Windows and listens on localhost:4242.
+#   TinTin++ in Ubuntu connects to localhost:4242.
+#   For this to work, WSL2 must run in mirrored networking mode.
+#
+#   File: C:\Users\<you>\.wslconfig
+#   Content:
+#     [wsl2]
+#     networkingMode=mirrored
+#
+# TERMINAL
+#   Alacritty. Config file must be placed manually at:
+#     %APPDATA%\alacritty\alacritty.toml
+#
+# =============================================================================
+# ALACRITTY CONFIG
+# =============================================================================
+
+[colors.primary]
+foreground = "#C0C0C0"
+background = "#000000"
+
+[colors.normal]
+black   = "#000000"
+red     = "#800000"
+green   = "#008000"
+yellow  = "#808000"
+blue    = "#000080"
+magenta = "#800080"
+cyan    = "#008080"
+white   = "#C0C0C0"
+
+[colors.bright]
+black   = "#808080"
+red     = "#FF0000"
+green   = "#00FF00"
+yellow  = "#FFFF00"
+blue    = "#0000FF"
+magenta = "#FF00FF"
+cyan    = "#00FFFF"
+white   = "#FFFFFF"
+
+[cursor]
+style = {
+    shape = "Beam",
+    blinking = "On"}
+blink_interval = 500
+thickness = 0.15
+
+[window]
+startup_mode = "Windowed"
+padding = { x = 6, y = 6 }
+dynamic_padding = true
+decorations = "Full"
+
+[font]
+size = 15
+
+[font.normal]
+family = "Lucida Console"
+style = "Regular"
+
+[font.bold]
+family = "Lucida Console"
+style = "Bold"
+
+[font.italic]
+family = "Lucida Console"
+style = "Italic"
+
+[font.bold_italic]
+family = "Lucida Console"
+style = "Bold Italic"
+
+[terminal.shell]
+program = "wsl.exe"
+args = []
+
+[scrolling]
+history = 10000
+
+[selection]
+save_to_clipboard = true

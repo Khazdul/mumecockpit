@@ -1,0 +1,88 @@
+#nop ===== EQ MANAGEMENT =====
+#nop Quick-swap aliases for tracked equipment slots.
+#nop
+#nop   abody  — currently worn body item (cloaks etc.), items stored in pack
+#nop   ring   — currently worn ring, items stored in sable bag
+#nop
+#nop Each swap alias is a no-op if the target item is already worn.
+#nop On first use (variables empty) the rem/put of the old item is skipped.
+#nop
+#nop Body aliases: silvery fgc forest ragged bhc fur grey tainted soot woven sacred mantle
+#nop Ring aliases:  ccr ob db rempr strr iron opal wooden mana sp
+#nop Misc:          boots gloves
+
+#nop ===== TRACKED VARIABLES =====
+#nop Initialize to empty so first-run guards work correctly
+
+#var {abody} {}
+#var {ring}  {}
+
+#nop ===== SWAP HELPERS =====
+
+#nop _eq_body <item> — swap body slot to <item> if not already worn.
+#nop Removes old item and returns it to pack. No-op if already wearing <item>.
+
+#alias {_eq_body} {
+    #if {"%1" != "$abody"} {
+        #if {"$abody" != ""} {_send rem $abody};
+        _send get %1 pack;
+        _send wear %1;
+        #if {"$abody" != ""} {_send put $abody pack};
+        #var {abody} {%1}
+    }
+}
+
+#nop _eq_ring <item> — swap ring slot to <item> if not already worn.
+#nop Removes old ring and returns it to sable. No-op if already wearing <item>.
+
+#alias {_eq_ring} {
+    #if {"%1" != "$ring"} {
+        #if {"$ring" != ""} {_send rem $ring};
+        _send get %1 sable;
+        _send wear %1;
+        #if {"$ring" != ""} {_send put $ring sable};
+        #var {ring} {%1}
+    }
+}
+
+#nop ===== BODY ALIASES =====
+
+#alias {silvery} {_eq_body fur-cloak}
+#alias {fgc}     {_eq_body forest}
+#alias {forest}  {_eq_body forest}
+#alias {ragged}  {_eq_body ragged}
+#alias {bhc}     {_eq_body hooded}
+#alias {fur}     {_eq_body fur}
+#alias {grey}    {_eq_body fine-grey-cloak}
+#alias {tainted} {_eq_body tainted-grey-cloak}
+#alias {soot}    {_eq_body soot}
+#alias {woven}   {_eq_body woven}
+#alias {sacred}  {_eq_body sacred}
+#alias {mantle}  {_eq_body mantle}
+
+#nop ===== RING ALIASES =====
+
+#alias {ccr}   {_eq_ring garnet-ring}
+#alias {ob}    {_eq_ring rubyring}
+#alias {db}    {_eq_ring sapphire}
+#alias {rempr} {_eq_ring emerald-ring}
+#alias {strr}  {_eq_ring topaz-ring}
+#alias {iron}  {_eq_ring ironring}
+#alias {opal}  {_eq_ring opal-ring}
+#alias {wooden}{_eq_ring wooden}
+#alias {mana}  {_eq_ring golden-ruby-ring}
+#alias {sp}    {_eq_ring copperring}
+
+#nop ===== MISC ALIASES =====
+
+#nop boots — remove current boots and wear the second pair
+#alias {boots} {
+    _send rem boots;
+    _send wear 2.boots
+}
+
+#nop gloves — remove current gloves and wear the second pair
+#alias {gloves} {
+    _send rem gloves;
+    _send wear 2.gloves
+}

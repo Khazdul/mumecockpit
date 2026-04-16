@@ -1,0 +1,66 @@
+#nop ===== THIEF =====
+#nop Escape, arrow/bolt management, hide.
+#nop
+#nop   Arrow container:
+#nop     acontainer <quiver|case>  — set container and ammo type, display
+#nop     quiver                    — shortcut: set acontainer to quiver (ammo: arrow)
+#nop     case                      — shortcut: set acontainer to case   (ammo: bolt)
+#nop     ga                        — get all.$arrow and put all.$arrow $acontainer
+#nop
+#nop   Escape:
+#nop     en ee es ew eu ed
+#nop
+#nop   Hide:
+#nop     hn hq hf ht
+
+#var {acontainer} {quiver}
+#var {arrow}      {arrow}
+
+#nop ===== DISPLAY =====
+
+#alias {_show_acontainer} {
+    #showme {<F9AA8B7>## ARROW CONTAINER: <FFFFFFF>$acontainer  <F9AA8B7>(ammo: <FFFFFFF>$arrow<F9AA8B7>)<099>}
+}
+
+#nop ===== ARROW CONTAINER =====
+
+#alias {acontainer} {
+    #if {"%1" == "quiver" || "%1" == "case"} {
+        #var {acontainer} {%1};
+        #if {"$acontainer" == "quiver"} {
+            #var {arrow} {arrow}
+        } {
+            #var {arrow} {bolt}
+        };
+        _show_acontainer
+    } {
+        #if {"%1" != ""} {
+            #showme {<F9AA8B7>## ERROR: acontainer must be 'quiver' or 'case'<099>}
+        } {
+            _show_acontainer
+        }
+    }
+}
+
+#alias {quiver} {acontainer quiver}
+#alias {case}   {acontainer case}
+
+#nop ===== ARROWS =====
+
+#alias {ga} {_send get all.$arrow;_send put all.$arrow $acontainer}
+
+#nop ===== ESCAPE =====
+
+#alias {en} {_send escape north}
+#alias {ee} {_send escape east}
+#alias {es} {_send escape south}
+#alias {ew} {_send escape west}
+#alias {eu} {_send escape up}
+#alias {ed} {_send escape down}
+
+#nop ===== HIDE =====
+
+#alias {hn} {_send hide normal}
+#alias {hq} {_send hide quick}
+#alias {hf} {_send hide fast}
+#alias {ht} {_send hide thorough}
