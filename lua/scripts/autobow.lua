@@ -3,7 +3,7 @@
 --
 -- Alias:  ash<dir>  (e.g. ashe = autobow east)
 --
--- Crossbow path:
+-- Crossbow path: 
 --   draw -> load -> (wait for on_loaded) -> go dir -> shoot $target -> escape retDir
 --   on escape success: draw -> reload -> repeat cycle
 --
