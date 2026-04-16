@@ -75,12 +75,16 @@
     #kill event;
     #read ttpp/main.tin;
     #if {&game_session} {#lua {set_game_session("$game_session")}};
+    #if {&game_session} {#class {$game_session} {open}};
+    #if {&game_session} {#if {-f ttpp/$game_session.tin} {#class {$game_session} {read} {ttpp/$game_session.tin}}};
     #showme {[COCKPIT] Full reload complete};
     #if {&game_session} {#delay {1} {#ses {$game_session}}}
 }
 
 #alias {cp -e} {
     #showme {[COCKPIT] Goodbye. Shutting down client...};
+    #if {&game_session} {#class {$game_session} {write} {ttpp/$game_session.tin}};
+    #if {&game_session} {#class {$game_session} {kill}};
     #zap lua;
     #system {tmux kill-session -t mume}
 }
