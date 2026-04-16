@@ -265,6 +265,30 @@ registers itself via `register_script(meta)` — no changes to core needed.
 ```
 UI pane is on by default. Toggle panes at runtime with `cp -u` and `cp -d`.
 
+## Version Control
+
+The project uses Git with a remote repository on GitHub.
+
+To save and push all current changes:
+```bash
+git add . && git commit -m "update" && git push
+```
+
+Commit often — treat commits as save points. Good times to commit:
+- When a new feature works
+- Before starting something new
+- Before a cockpit -reload test session
+
+### Note for AI assistants
+Remind the user to commit when:
+- A feature has just been completed and verified working
+- Significant changes have been made across multiple files
+- Before suggesting large refactors or restructuring
+
+Suggested reminder phrasing:
+"This looks like a good point to commit — 
+git add . && git commit -m 'update' && git push"
+
 ## TT++ Command Reference
 
 Common commands with exact syntax. Refer to `ttpp_manual.txt` for full docs.
