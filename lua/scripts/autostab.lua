@@ -28,7 +28,7 @@ local function as_dbg(msg)
 end
 
 local function as_show(msg)
-    tintin_show("mume", "<F9AA8B7>## AUTOSTAB: <FFFFFFF>" .. msg .. "<099>")
+    tintin_show(GAME_SESSION or "gts", "<F9AA8B7>## AUTOSTAB: <FFFFFFF>" .. msg .. "<099>")
 end
 
 -- -----------------------------

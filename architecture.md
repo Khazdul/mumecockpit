@@ -80,15 +80,21 @@ registration in `main.tin` is needed when adding a new module.
 
 ### Lua scripts (`lua/scripts/`)
 `brain.lua` automatically loads all `.lua` files from `lua/scripts/` via
-`io.popen("ls ...")` + `dofile()` at startup. Each script runs in the global
-environment and has access to all infrastructure functions from `brain.lua`
-(`tintin`, `tintin_cmd`, `tintin_show`, `send`, `game_cmd`, `session_cmd`,
-`set_game_session`, `clear_game_session`, `dbg`, `ui`, `script_ui`).
+`io.popen("ls ...")` + `dofile()` at startup. Each script runs in the global environment and has access to all infrastructure
+functions from `brain.lua`:
 
-`set_game_session(ses)` — called by tt++ SESSION CONNECTED event; sets
-`GAME_SESSION` and syncs `$game_session` in tt++.
-`clear_game_session(ses)` — called by tt++ SESSION DISCONNECTED event; clears
-`GAME_SESSION` and removes `$game_session` from tt++ via `#unvar`.
+    dbg(msg)                  — write to debug.log
+    ui(msg)                   — write to ui.log (mirrors to debug.log)
+    script_ui(name, msg)      — structured status line in UI pane
+    tintin(ses, cmd)          — send simple command to tt++ session
+    tintin_cmd(ses, cmd)      — send brace-containing command via temp file
+    tintin_show(ses, msg)     — #showme in a specific session
+    send(cmd)                 — send MUD command to game session
+    game_cmd(cmd)             — register in gts + GAME_SESSION
+    session_cmd(cmd)          — register in GAME_SESSION only
+    set_game_session(ses)     — called by SESSION CONNECTED event
+    clear_game_session(ses)   — called by SESSION DISCONNECTED event
+    register_script(meta)     — register script in cockpit help system
 
 ### Startup order in `main.tin`
 Relay actions that catch Lua stdout **must be registered before `#run {lua}`**.
@@ -222,62 +228,59 @@ The client uses three tt++ sessions:
 |---------|------|
 | `gts`   | Global — always exists, entry point, alias pool |
 | `lua`   | Lua subprocess — created by `#run`, never interacted with directly |
-| game    | Active game connection — name is dynamic, typically `mume` |
+| game    | Active game connection — name is dynamic, default `mume` |
 
 ### Dynamic game session tracking
 
 The game session name is never hardcoded. It is tracked in two
-places that are always kept in sync:
+places kept in sync:
 
-- `GAME_SESSION` — Lua global (nil when no game session is active)
-- `$game_session` — tt++ variable in gts (unset when no game session is active)
+- `GAME_SESSION` — Lua global, nil when no game session is active
+- `$game_session` — tt++ variable in gts, unset when no session active
 
-Both are set when SESSION CONNECTED fires for any non-internal session,
+Both are set when SESSION CONNECTED fires for a non-internal session,
 and cleared on SESSION DISCONNECTED.
 
 **SESSION CONNECTED** filters out `gts` and `lua`, then:
-- If `$game_session` is already set: zaps the new session immediately
+- If `&game_session` is set: zaps the new session immediately
   (only one game session allowed) and shows a warning
-- Otherwise: calls `set_game_session()` in Lua which sets both
+- Otherwise: calls `set_game_session()` which sets both
   `GAME_SESSION` and `$game_session`
 
 **SESSION DISCONNECTED** filters out `gts` and `lua`, then:
-- If `$_zapping_intruder` flag is set: it was an intruder zap —
-  clear the flag, show message, return to game session
-- Otherwise: it was a real disconnect — return to gts, call
-  `clear_game_session()` which clears both `GAME_SESSION` and
-  `$game_session` via `#unvar`
+- If `$_zapping_intruder` flag is set: intruder zap —
+  clear flag, show message, return to game session
+- Otherwise: real disconnect — return to gts, call
+  `clear_game_session()` which clears both via `#unvar`
 
-**Important:** `clear_game_session()` uses `tintin()` not `tintin_cmd()`
-to clear `$game_session`. Using `tintin_cmd()` inside a SESSION DISCONNECTED
-handler interferes with socket cleanup and prevents MMapper from releasing
+**Critical:** `clear_game_session()` uses `tintin()` not
+`tintin_cmd()` — using `tintin_cmd()` inside SESSION DISCONNECTED
+interferes with socket cleanup and prevents MMapper from releasing
 the connection.
 
-### Alias and trigger session rules
+### Registration functions
 
-TT++ aliases and actions are **session-specific**, not global. New sessions
-inherit the alias/action pool of the session that created them — but only at
-creation time.
+Scripts must never hardcode a session name. Use these functions:
 
-- Register persistent aliases via `game_cmd()` — registers in both gts (for
-  session inheritance) and GAME_SESSION (for immediate availability after
-  `cp -r` without reconnect)
-- Register `#action` triggers via `session_cmd()` — GAME_SESSION only, since
-  MUD output only arrives there
-- Never hardcode a session name in scripts — use `game_cmd()` and
-  `session_cmd()` exclusively
+| Function | Registers in | Use for |
+|----------|-------------|---------|
+| `game_cmd(cmd)` | gts + GAME_SESSION | `#alias`, `#substitute`, `#highlight` |
+| `session_cmd(cmd)` | GAME_SESSION only | `#action`, `#unaction`, `#delay`, `#undelay` |
+| `send(cmd)` | GAME_SESSION | MUD commands |
+| `tintin_cmd(ses, cmd)` | specific session | internal use only |
+| `tintin(ses, cmd)` | specific session | internal use only, no braces |
 
 ### cp -r behaviour
 
 - Always runs in gts context
-- Kills all tt++ state (alias, action, substitute, highlight, macro, delay,
-  event) and restarts Lua
-- Re-syncs `GAME_SESSION` in Lua via `set_game_session()` after reload since
-  SESSION CONNECTED does not fire for already-connected sessions
-- After reload: returns to game session via a 1-second delay if one exists,
-  otherwise stays in gts
-- By design: if `cp -r` is run from gts with an active game session, it still
-  returns to the game session after reload
+- Kills all tt++ state (alias, action, substitute, highlight,
+  macro, delay, event) and restarts Lua
+- Re-syncs GAME_SESSION after reload via `set_game_session()`
+  since SESSION CONNECTED does not fire for already-connected sessions
+- After reload: always returns to game session via 1-second delay
+  if one exists, otherwise stays in gts
+- By design: always returns to game session regardless of where
+  cp -r was invoked from
 
 ## Cockpit System
 Unified window and system management via `cp` commands:
@@ -489,6 +492,11 @@ No third-party binaries are bundled. Safe to distribute on GitHub or directly to
 - No paired .tin files for Lua-based features — one file per script
 - All code and comments should be in English
 - Follow the conventions defined in the Coding Conventions section
+- Never hardcode session names (`"mume"`) in scripts or tt++ files
+- Use `game_cmd()` for `#alias` registration
+- Use `session_cmd()` for `#action`, `#unaction`, `#delay`, `#undelay`
+- Use `send()` for MUD commands
+- `GAME_SESSION` may be nil if no game session is connected — all functions guard against this safely
 
 ### Logging Guidelines
 
@@ -508,6 +516,27 @@ No third-party binaries are bundled. Safe to distribute on GitHub or directly to
 - Log to UI only when something meaningful changes, not on every trigger fire, you need to ask what is appropriate to log when new content is added
 - Unknown events go to dev only, not UI
 
+## Installed Scripts
+
+### autostab (`lua/scripts/autostab.lua`)
+Alias: `as<dir>` (e.g. `ase`, `asw`)
+
+Backstab/escape loop. Moves in a direction, backstabs `$target`, then escapes
+back. On success repeats the cycle; on escape failure retries up to 2 times then
+flees and stops. Stops automatically if the target dies, disappears, or no
+trigger fires within 10 seconds. Uses `game_cmd` for alias registration and
+`session_cmd` for trigger and delay lifecycle.
+
+### autobow (`lua/scripts/autobow.lua`)
+Alias: `ash<dir>` (e.g. `ashe`, `ashw`)
+
+Shoot/escape loop for bow and crossbow. Moves in a direction, shoots `$target`,
+then escapes back. Auto-detects weapon type from server response on first shot —
+crossbow reloads between shots, bow skips reload. On escape failure retries up
+to 2 times then flees and stops. Stops automatically if the target dies,
+disappears, or no trigger fires within 15 seconds. Uses `game_cmd` and
+`session_cmd`.
+
 ## Current Status
 - [x] tt++ + Lua integration via #run
 - [x] Event protocol (DMG, TELL, EVENT, TARGET, HP)
@@ -517,6 +546,10 @@ No third-party binaries are bundled. Safe to distribute on GitHub or directly to
 - [x] Auto-loading of tt++ modules and Lua scripts
 - [x] Self-contained Lua script pattern (autostab as reference implementation)
 - [x] autobow script (bow/crossbow shoot-escape loop with weapon auto-detection)
+- [x] Dynamic game session tracking (GAME_SESSION / $game_session)
+- [x] Single game session enforcement (intruder zap)
+- [x] game_cmd() / session_cmd() — no hardcoded session names in scripts
+- [x] cp -r fully dynamic — no hardcoded session names
 - [ ] Live server connection
 - [ ] Real server trigger mapping
 - [ ] Spell timer system
