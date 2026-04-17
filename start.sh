@@ -97,7 +97,20 @@ tmux select-pane -t mume:cockpit.0 -T "MUME"
 sleep 0.2 && tmux select-pane -t mume:cockpit.0 -T "MUME" &
 
 # -----------------------------
-# 7. FOCUS TT++
+# 7. OPEN INPUT PANE
 # -----------------------------
-tmux select-pane -t mume:cockpit.0
+bash "$HOME/MUME/bridge/open_pane.sh" input
+
+# -----------------------------
+# 8. FOCUS INPUT PANE
+# -----------------------------
+INPUT_INDEX=$(tmux list-panes -t mume:cockpit \
+    -F '#{pane_index} #{pane_title}' \
+    | awk '/^[0-9]+ input$/{print $1}')
+if [ -n "$INPUT_INDEX" ]; then
+    tmux select-pane -t mume:cockpit.$INPUT_INDEX
+else
+    tmux select-pane -t mume:cockpit.0
+fi
+
 tmux attach -t mume

@@ -87,7 +87,14 @@
     #read ttpp/main.tin;
     #if {&game_session} {#lua {set_game_session("$game_session")}};
     #showme {[COCKPIT] Full reload complete};
-    #if {&game_session} {#delay {1} {#ses {$game_session}}}
+    #if {&game_session} {#delay {1} {#ses {$game_session}}};
+    #system {
+        EXISTS=$(tmux list-panes -t mume:cockpit -F '#{pane_title}' | grep '^input$');
+        if [ -n "$EXISTS" ]; then
+            tmux kill-pane -t $(tmux list-panes -t mume:cockpit -F '#{pane_index} #{pane_title}' | awk '/input/{print "mume:cockpit." $1}');
+            bash $HOME/MUME/bridge/open_pane.sh input;
+        fi
+    }
 }
 
 #alias {cp -e} {

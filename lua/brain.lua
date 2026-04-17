@@ -206,6 +206,7 @@ local function _register_cockpit_help()
         "   mume              connect via MMapper",
         "",
         "  Window management:",
+        "   cp -i       toggle input pane",
         "   cp -u       toggle UI pane",
         "   cp -d       toggle dev pane",
         "   cp -h       toggle headers",

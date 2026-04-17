@@ -23,25 +23,22 @@ if [ -n "$HAS_RIGHT" ]; then
     case $TYPE in
         ui)
             # ui always on top — split then swap
-            tmux split-window -v -t mume:cockpit.$RIGHT_INDEX \
-                "tail -f $MUME/logs/ui.log"
-            NEW_INDEX=$(tmux list-panes -t mume:cockpit -F '#{pane_index}' | tail -1)
+            NEW_INDEX=$(tmux split-window -v -t mume:cockpit.$RIGHT_INDEX -P -F '#{pane_index}' \
+                "tail -f $MUME/logs/ui.log")
             tmux select-pane -t mume:cockpit.$NEW_INDEX -T "ui"
             tmux swap-pane -s mume:cockpit.$NEW_INDEX -t mume:cockpit.$RIGHT_INDEX
             tmux select-pane -t mume:cockpit.0
             ;;
         dev)
             # dev always on bottom — split normally
-            tmux split-window -v -t mume:cockpit.$RIGHT_INDEX \
-                "tail -f $MUME/logs/debug.log"
-            NEW_INDEX=$(tmux list-panes -t mume:cockpit -F '#{pane_index}' | tail -1)
+            NEW_INDEX=$(tmux split-window -v -t mume:cockpit.$RIGHT_INDEX -P -F '#{pane_index}' \
+                "tail -f $MUME/logs/debug.log")
             tmux select-pane -t mume:cockpit.$NEW_INDEX -T "dev"
             tmux select-pane -t mume:cockpit.0
             ;;
         input)
-            tmux split-window -v -l 1 -t mume:cockpit.0 \
-                "python3 $MUME/bridge/input_pane.py"
-            NEW_INDEX=$(tmux list-panes -t mume:cockpit -F '#{pane_index}' | tail -1)
+            NEW_INDEX=$(tmux split-window -v -l 1 -t mume:cockpit.0 -P -F '#{pane_index}' \
+                "python3 $MUME/bridge/input_pane.py")
             tmux select-pane -t mume:cockpit.$NEW_INDEX -T "input"
             ;;
     esac
@@ -49,23 +46,20 @@ else
     # No right column yet — create horizontal split from pane 0
     case $TYPE in
         ui)
-            tmux split-window -h -t mume:cockpit.0 \
-                "tail -f $MUME/logs/ui.log"
-            NEW_INDEX=$(tmux list-panes -t mume:cockpit -F '#{pane_index}' | tail -1)
+            NEW_INDEX=$(tmux split-window -h -t mume:cockpit.0 -P -F '#{pane_index}' \
+                "tail -f $MUME/logs/ui.log")
             tmux select-pane -t mume:cockpit.$NEW_INDEX -T "ui"
             tmux select-pane -t mume:cockpit.0
             ;;
         dev)
-            tmux split-window -h -t mume:cockpit.0 \
-                "tail -f $MUME/logs/debug.log"
-            NEW_INDEX=$(tmux list-panes -t mume:cockpit -F '#{pane_index}' | tail -1)
+            NEW_INDEX=$(tmux split-window -h -t mume:cockpit.0 -P -F '#{pane_index}' \
+                "tail -f $MUME/logs/debug.log")
             tmux select-pane -t mume:cockpit.$NEW_INDEX -T "dev"
             tmux select-pane -t mume:cockpit.0
             ;;
         input)
-            tmux split-window -v -l 1 -t mume:cockpit.0 \
-                "python3 $MUME/bridge/input_pane.py"
-            NEW_INDEX=$(tmux list-panes -t mume:cockpit -F '#{pane_index}' | tail -1)
+            NEW_INDEX=$(tmux split-window -v -l 1 -t mume:cockpit.0 -P -F '#{pane_index}' \
+                "python3 $MUME/bridge/input_pane.py")
             tmux select-pane -t mume:cockpit.$NEW_INDEX -T "input"
             ;;
     esac

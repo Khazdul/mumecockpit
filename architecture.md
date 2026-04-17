@@ -28,7 +28,8 @@ advanced automation, state tracking, and UI feedback.
 │   └── scripts/          # Self-contained Lua automation scripts (.lua files)
 │
 ├── bridge/
-│   └── open_pane.sh      # Opens/manages tmux panes dynamically
+│   ├── open_pane.sh      # Opens/manages tmux panes dynamically
+│   └── input_pane.py     # Input pane — prompt_toolkit CLI, forwards to TT++
 │
 └── logs/
     ├── ui.log            # Persistent UI output (shown in ui pane)
@@ -61,9 +62,10 @@ advanced automation, state tracking, and UI feedback.
                    ▼
 ┌──────────────────────────────────────────┐
 │            tmux Cockpit                  │
-│  pane 0 (75%):  TinTin++ — game I/O     │
-│  pane 1 (top):  ui    — tail ui.log     │
-│  pane 2 (bot):  dev   — tail debug.log  │
+│  pane 0 (left):   TinTin++ — game I/O   │
+│  pane 0b (bot):   input — prompt_toolkit │
+│  pane 1 (top):    ui  — tail ui.log      │
+│  pane 2 (bot):    dev — tail debug.log   │
 └──────────────────────────────────────────┘
 
 ## Auto-Loading
@@ -304,12 +306,38 @@ once to inherit it. Lua-based aliases do not have this limitation
 because `game_cmd()` registers in both `gts` and `GAME_SESSION`
 simultaneously.
 
+## Input Pane
+
+A dedicated input pane (`bridge/input_pane.py`) replaces typing directly
+in the TT++ pane. It runs as a separate tmux pane at the bottom of the
+left column, 1 row tall.
+
+**Behaviour:**
+- Commands are typed here and forwarded to TT++ via `tmux send-keys`
+- After sending, the command remains visible highlighted (black on white)
+  to indicate it can be repeated
+- Pressing Enter again repeats the last command
+- Pressing any printable key or backspace clears the buffer and starts
+  a new command
+- Page Up / Page Down scroll the TT++ pane without leaving the input pane
+- On startup, a tmux `MouseUp1Pane` binding is registered so that clicking
+  any other pane returns focus to the input pane automatically
+
+**Dependencies:**
+- Python 3 (system)
+- `prompt_toolkit` — install with:
+  `pip install prompt_toolkit --break-system-packages`
+
+**Known limitation:** drag-select in the TT++ pane does not auto-return
+focus to the input pane. Click once in the input pane to return.
+
 ## Cockpit System
 Unified window and system management via `cp` commands:
 
 | Command       | Action                          |
 |---------------|---------------------------------|
 | `cp`          | Show help                       |
+| `cp -i`       | Toggle input pane               |
 | `cp -u`       | Toggle UI pane                  |
 | `cp -d`       | Toggle dev pane                 |
 | `cp -h`       | Toggle pane title headers       |
@@ -340,11 +368,12 @@ registers itself via `register_script(meta)` — no changes to core needed.
 
 ## Startup
 ```bash
-./start.sh          # tt++ + UI pane (default)
-./start.sh -d       # tt++ + UI pane + dev pane
+./start.sh          # tt++ + UI pane + input pane (default)
+./start.sh -d       # tt++ + UI pane + dev pane + input pane
 ./start.sh -u -d    # explicit — same as -d
 ```
-UI pane is on by default. Toggle panes at runtime with `cp -u` and `cp -d`.
+UI and input panes are on by default.
+Toggle panes at runtime with `cp -u`, `cp -d`, `cp -i`.
 
 ## Version Control
 
@@ -573,6 +602,7 @@ disappears, or no trigger fires within 15 seconds. Uses `game_cmd` and
 - [x] Single game session enforcement (intruder zap)
 - [x] game_cmd() / session_cmd() — no hardcoded session names in scripts
 - [x] cp -r fully dynamic — no hardcoded session names
+- [x] Input pane (prompt_toolkit, highlight, repeat, scroll, focus return)
 - [ ] Live server connection
 - [ ] Real server trigger mapping
 - [ ] Spell timer system
