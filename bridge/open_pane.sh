@@ -28,6 +28,7 @@ if [ -n "$HAS_RIGHT" ]; then
             NEW_INDEX=$(tmux list-panes -t mume:cockpit -F '#{pane_index}' | tail -1)
             tmux select-pane -t mume:cockpit.$NEW_INDEX -T "ui"
             tmux swap-pane -s mume:cockpit.$NEW_INDEX -t mume:cockpit.$RIGHT_INDEX
+            tmux select-pane -t mume:cockpit.0
             ;;
         dev)
             # dev always on bottom — split normally
@@ -35,6 +36,13 @@ if [ -n "$HAS_RIGHT" ]; then
                 "tail -f $MUME/logs/debug.log"
             NEW_INDEX=$(tmux list-panes -t mume:cockpit -F '#{pane_index}' | tail -1)
             tmux select-pane -t mume:cockpit.$NEW_INDEX -T "dev"
+            tmux select-pane -t mume:cockpit.0
+            ;;
+        input)
+            tmux split-window -v -l 1 -t mume:cockpit.0 \
+                "python3 $MUME/bridge/input_pane.py"
+            NEW_INDEX=$(tmux list-panes -t mume:cockpit -F '#{pane_index}' | tail -1)
+            tmux select-pane -t mume:cockpit.$NEW_INDEX -T "input"
             ;;
     esac
 else
@@ -45,15 +53,21 @@ else
                 "tail -f $MUME/logs/ui.log"
             NEW_INDEX=$(tmux list-panes -t mume:cockpit -F '#{pane_index}' | tail -1)
             tmux select-pane -t mume:cockpit.$NEW_INDEX -T "ui"
+            tmux select-pane -t mume:cockpit.0
             ;;
         dev)
             tmux split-window -h -t mume:cockpit.0 \
                 "tail -f $MUME/logs/debug.log"
             NEW_INDEX=$(tmux list-panes -t mume:cockpit -F '#{pane_index}' | tail -1)
             tmux select-pane -t mume:cockpit.$NEW_INDEX -T "dev"
+            tmux select-pane -t mume:cockpit.0
+            ;;
+        input)
+            tmux split-window -v -l 1 -t mume:cockpit.0 \
+                "python3 $MUME/bridge/input_pane.py"
+            NEW_INDEX=$(tmux list-panes -t mume:cockpit -F '#{pane_index}' | tail -1)
+            tmux select-pane -t mume:cockpit.$NEW_INDEX -T "input"
             ;;
     esac
     tmux resize-pane -t mume:cockpit.0 -x "$LEFT"
 fi
-
-tmux select-pane -t mume:cockpit.0
