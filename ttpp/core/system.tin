@@ -1,3 +1,7 @@
+#nop ===== SYSTEM =====
+#nop Framework infrastructure: send helper, connection aliases, cockpit commands,
+#nop session lifecycle events. Nothing game- or player-specific belongs here.
+
 #nop ===== SEND HELPER =====
 #nop _send <command>  — echo expanded command locally, then send to MUD.
 #nop All MUD-sending aliases should route through this.
@@ -75,6 +79,7 @@
 
 #alias {cp -r} {
     #gts;
+    #if {&game_session} {#$game_session #class {$game_session} {write} {ttpp/sessions/$game_session.tin}};
     #system {echo "[$(date '+%H:%M:%S')] COCKPIT RELOAD — wiping state" >> $HOME/MUME/logs/debug.log};
     #zap lua;
     #kill alias;
@@ -87,7 +92,10 @@
     #if {&game_session} {#if {&$game_session} {#$game_session #kill delay}};
     #kill event;
     #read ttpp/main.tin;
-    #if {&game_session} {#lua {set_game_session("$game_session")}};
+    #if {&game_session} {
+        #lua {set_game_session("$game_session")};
+        #$game_session #read ttpp/sessions/$game_session.tin
+    };
     #showme {[COCKPIT] Full reload complete};
     #if {&game_session} {#delay {1} {#ses {$game_session}}};
     #system {
@@ -100,6 +108,7 @@
 }
 
 #alias {cp -e} {
+    #if {&game_session} {#$game_session #zap};
     #showme {[COCKPIT] Goodbye. Shutting down client...};
     #zap lua;
     #system {tmux kill-session -t mume}
@@ -107,3 +116,56 @@
 
 #nop Priority 6 — fires only when no specific {cp -X} alias (priority 5) matches
 #alias {cp} {_cockpit_help} {6}
+
+#nop variables.tin — placeholder
+
+#var {_zapping_intruder} {0}
+
+#nop ===== EVENTS / TRIGGERS =====
+
+#nop ===== SESSION EVENTS =====
+
+#event {SESSION CONNECTED} {
+    #if {"%0" != "gts" && "%0" != "lua"} {
+        #if {&game_session} {
+            #showme {[SYSTEM] WARNING: only one game session allowed -- closing %0};
+            #var {_zapping_intruder} {1};
+            #zap %0
+        } {
+            #lua {set_game_session("%0")};
+            #%0 #class {%0} {open};
+            #%0 #read ttpp/sessions/%0.tin
+        }
+    }
+}
+
+#event {SESSION DISCONNECTED} {
+    #if {"%0" != "gts" && "%0" != "lua"} {
+        #if {$_zapping_intruder} {
+            #var {_zapping_intruder} {0};
+            #showme {[SYSTEM] Session %0 closed -- resuming $game_session};
+            #ses {$game_session}
+        } {
+            #showme {[SYSTEM] Session %0 disconnected -- returning to gts};
+            #session {gts};
+            #lua {clear_game_session("%0")}
+        }
+    } {
+        #nop Internal session (gts/lua) disconnected -- do nothing.;
+        #session {gts}
+    }
+}
+
+#event {SESSION TIMED OUT} {
+    #if {"%0" != "gts" && "%0" != "lua"} {
+        #showme {[SYSTEM] Session %0 timed out -- returning to gts};
+        #session {gts};
+        #lua {clear_game_session("%0")}
+    }
+}
+
+#event {PROGRAM TERMINATION} {
+    #if {&game_session} {
+        #$game_session #class {$game_session} {write} {ttpp/sessions/$game_session.tin}
+    }
+}

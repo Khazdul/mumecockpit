@@ -1,5 +1,0 @@
-#nop ===== KEYBINDS =====
-
-#macro {\eOP} {kill $target}
-#macro {\eOQ} {defend}
-#macro {\eOR} {flee}
