@@ -1035,6 +1035,11 @@
     }
 }
 
+#EVENT {SESSION DEACTIVATED}
+{
+    #class {mume} {write} {ttpp/sessions/mume.tin}
+}
+
 #MACRO {\eOP}
 {
     kill $target

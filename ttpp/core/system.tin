@@ -79,7 +79,6 @@
 
 #alias {cp -r} {
     #gts;
-    #if {&game_session} {#$game_session #class {$game_session} {write} {ttpp/sessions/$game_session.tin}};
     #system {echo "[$(date '+%H:%M:%S')] COCKPIT RELOAD — wiping state" >> $HOME/MUME/logs/debug.log};
     #zap lua;
     #kill alias;
@@ -94,7 +93,8 @@
     #read ttpp/main.tin;
     #if {&game_session} {
         #lua {set_game_session("$game_session")};
-        #$game_session #read ttpp/sessions/$game_session.tin
+        #$game_session #read ttpp/sessions/$game_session.tin;
+        #$game_session #class {$game_session} {open}
     };
     #showme {[COCKPIT] Full reload complete};
     #if {&game_session} {#delay {1} {#ses {$game_session}}};
@@ -108,10 +108,11 @@
 }
 
 #alias {cp -e} {
-    #if {&game_session} {#$game_session #zap};
+    #gts;
     #showme {[COCKPIT] Goodbye. Shutting down client...};
+    #if {&game_session} {#$game_session #zap};
     #zap lua;
-    #system {tmux kill-session -t mume}
+    #delay {0.3} {#system {tmux kill-session -t mume}}
 }
 
 #nop Priority 6 — fires only when no specific {cp -X} alias (priority 5) matches
@@ -133,8 +134,8 @@
             #zap %0
         } {
             #lua {set_game_session("%0")};
-            #%0 #class {%0} {open};
-            #%0 #read ttpp/sessions/%0.tin
+            #%0 #read ttpp/sessions/%0.tin;
+            #%0 #class {%0} {open}
         }
     }
 }

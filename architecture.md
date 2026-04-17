@@ -21,7 +21,8 @@ advanced automation, state tracking, and UI feedback.
 │
 ├── ttpp/
 │   ├── main.tin          # tt++ entry point — auto-loads all of core/
-│   └── core/             # All tt++ modules (.tin files), auto-loaded
+│   ├── core/             # System modules (.tin files), auto-loaded
+│   └── sessions/         # Per-session personal settings (.tin files)
 │
 ├── lua/
 │   ├── brain.lua         # Lua brain — infrastructure, event loop, auto-loads scripts/
@@ -305,6 +306,37 @@ play session. If a new `.tin` file is added, restart the game session
 once to inherit it. Lua-based aliases do not have this limitation
 because `game_cmd()` registers in both `gts` and `GAME_SESSION`
 simultaneously.
+
+### Session Settings Persistence
+
+Personal game settings live in `ttpp/sessions/<name>.tin`, named after
+the session (default: `mume.tin`). The file is loaded into a tt++ class
+of the same name on SESSION CONNECTED, and the class is kept open for
+the duration of the session so that any aliases, variables, or other
+settings added at runtime are captured automatically.
+
+**Save mechanism:** SESSION DEACTIVATED fires inside the game session
+while it is still alive — whenever the session loses focus. This covers:
+- `#zap` — user disconnects directly
+- `cp -r` — `#gts` at the start of reload deactivates the game session
+- `cp -e` — `#gts` at the start of shutdown deactivates the game session
+
+PROGRAM TERMINATION also attempts a save as a best-effort fallback for
+abrupt tt++ exits, but is not guaranteed to complete.
+
+**Load sequence on SESSION CONNECTED:**
+1. `#read ttpp/sessions/%0.tin` — loads settings, file opens and closes class
+2. `#class {%0} {open}` — reopens class to capture runtime additions
+
+**Load sequence on cp -r (already-connected session):**
+1. `#read ttpp/sessions/$game_session.tin` — reloads settings
+2. `#class {$game_session} {open}` — reopens class
+
+**Conventions:**
+- Never hardcode `mume` as the class name in system code — always use
+  the session name variable (`%0` or `$game_session`)
+- Scripts must not register permanent aliases via `session_cmd()` —
+  use `game_cmd()` instead, or they will be written into the session file
 
 ## Input Pane
 
@@ -609,7 +641,7 @@ disappears, or no trigger fires within 15 seconds. Uses `game_cmd` and
 - [ ] Affect tracker
 - [ ] Tells history UI
 - [ ] PvP keybinds finalized
-- [ ] Session settings persistence (see Roadmap)
+- [x] Session settings persistence (#class-based, auto-save on deactivate)
 
 ## Roadmap
 1. Connect to live server and map real output to event protocol
@@ -619,11 +651,3 @@ disappears, or no trigger fires within 15 seconds. Uses `game_cmd` and
 5. Tells and comms UI section
 6. PvP keybinds and combat aliases
 7. Port existing scripts from previous client
-8. **Player settings persistence** — player-created `#alias`, `#action`,
-   `#variable` etc. are in-memory only and lost on restart/reload.
-   `#write` dumps everything including core, so it can't be used directly.
-   A `#class`-based approach was tried and abandoned — the open class
-   captures script-registered triggers alongside user settings, making
-   the save file unreliable. The challenge is saving only user additions
-   separately from core. Needs a different solution before the client is
-   used seriously.
