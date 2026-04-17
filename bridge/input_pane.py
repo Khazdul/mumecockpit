@@ -1,7 +1,12 @@
 try:
-    from prompt_toolkit import PromptSession
+    from prompt_toolkit import Application
+    from prompt_toolkit.buffer import Buffer
+    from prompt_toolkit.document import Document
     from prompt_toolkit.key_binding import KeyBindings
-    from prompt_toolkit.layout.processors import Processor, Transformation
+    from prompt_toolkit.layout.containers import HSplit, Window
+    from prompt_toolkit.layout.controls import BufferControl
+    from prompt_toolkit.layout.layout import Layout
+    from prompt_toolkit.layout.processors import BeforeInput, Processor, Transformation
 except ImportError:
     print("Error: prompt_toolkit is not installed.")
     print("Run: pip install prompt_toolkit --break-system-packages")
@@ -19,8 +24,10 @@ class HighlightLastCmd(Processor):
     def apply_transformation(self, ti):
         last = self.get_last_cmd()
         if ti.document.text == last and last:
-            text = "".join(f[1] for f in ti.fragments)
-            return Transformation([("bg:white fg:black", text)])
+            return Transformation([
+                ("bg:white fg:black", text)
+                for _, text in ti.fragments
+            ])
         return Transformation(ti.fragments)
 
 last_cmd = ""
@@ -61,6 +68,20 @@ def _handle_pageup(event):
 def _handle_pagedown(event):
     subprocess.run(["tmux", "send-keys", "-t", TMUX_TARGET, "PageDown"])
 
+@kb.add("enter")
+def _handle_enter(event):
+    global last_cmd
+    buf = event.app.current_buffer
+    text = buf.text
+    if text:
+        send(text)
+        last_cmd = text
+    elif last_cmd:
+        send(last_cmd)
+    buf.reset()
+    if last_cmd:
+        buf.set_document(Document(last_cmd), bypass_readonly=True)
+
 def send(line):
     subprocess.run(["tmux", "send-keys", "-t", TMUX_TARGET, line, "Enter"])
 
@@ -90,23 +111,31 @@ def setup_mouse_binding():
 def main():
     global last_cmd
     setup_mouse_binding()
-    session = PromptSession(
-        input_processors=[HighlightLastCmd(lambda: last_cmd)],
-        key_bindings=kb,
-    )
-    while True:
-        try:
-            text = session.prompt(
-                "> ",
-                default=last_cmd,
+
+    buf = Buffer(name="input")
+
+    layout = Layout(
+        HSplit([
+            Window(
+                BufferControl(
+                    buffer=buf,
+                    input_processors=[
+                        HighlightLastCmd(lambda: last_cmd),
+                        BeforeInput("> "),
+                    ],
+                    key_bindings=kb,
+                ),
+                height=1,
             )
-        except (KeyboardInterrupt, EOFError):
-            break
-        if text:
-            send(text)
-            last_cmd = text
-        elif last_cmd:
-            send(last_cmd)
+        ])
+    )
+
+    app = Application(layout=layout, full_screen=False)
+
+    try:
+        app.run()
+    except (KeyboardInterrupt, EOFError):
+        pass
 
 if __name__ == "__main__":
     main()
