@@ -37,6 +37,14 @@ if [ -n "$HAS_RIGHT" ]; then
                 "tail -f $MUME/logs/debug.log")
             tmux select-pane -t mume:cockpit.$NEW_INDEX -T "dev"
             tmux select-pane -t mume:cockpit.0
+            # Restore saved ui_height if it fits
+            source "$LAYOUT_CONF"
+            if [ "${ui_height:-0}" -gt 0 ]; then
+              UI_INDEX=$(tmux list-panes -t mume:cockpit \
+                -F '#{pane_index} #{pane_title}' \
+                | awk '$2=="ui" {print $1; exit}')
+              [ -n "$UI_INDEX" ] && tmux resize-pane -t "mume:cockpit.$UI_INDEX" -y "$ui_height"
+            fi
             ;;
         input)
             NEW_INDEX=$(tmux split-window -v -l 1 -t mume:cockpit.0 -P -F '#{pane_index}' \
@@ -58,6 +66,14 @@ else
                 "tail -f $MUME/logs/debug.log")
             tmux select-pane -t mume:cockpit.$NEW_INDEX -T "dev"
             tmux select-pane -t mume:cockpit.0
+            # Restore saved ui_height if it fits
+            source "$LAYOUT_CONF"
+            if [ "${ui_height:-0}" -gt 0 ]; then
+              UI_INDEX=$(tmux list-panes -t mume:cockpit \
+                -F '#{pane_index} #{pane_title}' \
+                | awk '$2=="ui" {print $1; exit}')
+              [ -n "$UI_INDEX" ] && tmux resize-pane -t "mume:cockpit.$UI_INDEX" -y "$ui_height"
+            fi
             ;;
         input)
             NEW_INDEX=$(tmux split-window -v -l 1 -t mume:cockpit.0 -P -F '#{pane_index}' \
