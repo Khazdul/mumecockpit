@@ -69,9 +69,9 @@ tmux set-option -t mume pane-active-border-style "fg=colour238"
 # 5. BUILD LAYOUT BASED ON ARGUMENTS
 # -----------------------------
 LAYOUT_CONF="$HOME/MUME/bridge/layout.conf"
-[ -f "$LAYOUT_CONF" ] || printf "ui_width=33\nwindow_cols=0\nui_height=0\n" > "$LAYOUT_CONF"
-grep -q "^window_cols=" "$LAYOUT_CONF" || echo "window_cols=0" >> "$LAYOUT_CONF"
-grep -q "^ui_height=" "$LAYOUT_CONF" || echo "ui_height=0" >> "$LAYOUT_CONF"
+[ -f "$LAYOUT_CONF" ] || printf "ui_width=33\nwindow_cols=0\nui_height_ratio=60\n" > "$LAYOUT_CONF"
+grep -q "^window_cols=" "$LAYOUT_CONF"     || echo "window_cols=0"      >> "$LAYOUT_CONF"
+grep -q "^ui_height_ratio=" "$LAYOUT_CONF" || echo "ui_height_ratio=60" >> "$LAYOUT_CONF"
 source "$LAYOUT_CONF"
 LEFT_WIDTH=$(( TERM_COLS - ui_width - 1 ))
 sed -i "s/^window_cols=.*/window_cols=$TERM_COLS/" "$LAYOUT_CONF"
@@ -93,24 +93,17 @@ elif [ $SHOW_DEV -eq 1 ]; then
     tmux resize-pane -t mume:cockpit.0 -x "$LEFT_WIDTH"
 fi
 
-# Apply ui_height when both ui and dev are open
+# Apply ui/dev height ratio when both panes are open
 if [ $SHOW_UI -eq 1 ] && [ $SHOW_DEV -eq 1 ]; then
-  source "$LAYOUT_CONF"
-  UI_H=$(tmux list-panes -t mume:cockpit \
-    -F '#{pane_title} #{pane_height}' \
+  UI_H=$(tmux list-panes -t mume:cockpit -F '#{pane_title} #{pane_height}' \
     | awk '$1=="ui" {print $2; exit}')
-  DEV_H=$(tmux list-panes -t mume:cockpit \
-    -F '#{pane_title} #{pane_height}' \
+  DEV_H=$(tmux list-panes -t mume:cockpit -F '#{pane_title} #{pane_height}' \
     | awk '$1=="dev" {print $2; exit}')
-  TOTAL_RIGHT=$(( UI_H + DEV_H + 1 ))
-  if [ "${ui_height:-0}" -eq 0 ] || [ -z "$ui_height" ]; then
-    ui_height=$(( TOTAL_RIGHT * 60 / 100 ))
-    sed -i "s/^ui_height=.*/ui_height=$ui_height/" "$LAYOUT_CONF"
-  fi
-  UI_INDEX=$(tmux list-panes -t mume:cockpit \
-    -F '#{pane_index} #{pane_title}' \
+  TOTAL=$(( UI_H + DEV_H + 1 ))
+  APPLY_UI_H=$(( TOTAL * ui_height_ratio / 100 ))
+  UI_INDEX=$(tmux list-panes -t mume:cockpit -F '#{pane_index} #{pane_title}' \
     | awk '$2=="ui" {print $1; exit}')
-  [ -n "$UI_INDEX" ] && tmux resize-pane -t "mume:cockpit.$UI_INDEX" -y "$ui_height"
+  [ -n "$UI_INDEX" ] && tmux resize-pane -t "mume:cockpit.$UI_INDEX" -y "$APPLY_UI_H"
 fi
 
 # -----------------------------

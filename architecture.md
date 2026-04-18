@@ -29,8 +29,11 @@ advanced automation, state tracking, and UI feedback.
 │   └── scripts/          # Self-contained Lua automation scripts (.lua files)
 │
 ├── bridge/
-│   ├── open_pane.sh      # Opens/manages tmux panes dynamically
-│   └── input_pane.py     # Input pane — prompt_toolkit CLI, forwards to TT++
+│   ├── open_pane.sh          # Opens/manages tmux panes dynamically
+│   ├── input_pane.py         # Input pane — prompt_toolkit CLI, forwards to TT++
+│   ├── on_window_resize.sh   # Fired on terminal resize — re-applies stored layout
+│   ├── on_pane_resize.sh     # Fired on border drag — saves new layout values
+│   └── layout.conf           # Persisted layout state (gitignored)
 │
 └── logs/
     ├── ui.log            # Persistent UI output (shown in ui pane)
@@ -362,6 +365,32 @@ left column, 1 row tall.
 
 **Known limitation:** drag-select in the TT++ pane does not auto-return
 focus to the input pane. Click once in the input pane to return.
+
+## Layout System
+
+Pane dimensions are persisted across restarts and adapt to terminal resizes.
+State is stored in `bridge/layout.conf` (gitignored, recreated on first startup).
+
+### layout.conf keys
+| Key               | Default | Description                                      |
+|-------------------|---------|--------------------------------------------------|
+| `ui_width`        | 33      | Absolute column width of the right pane column   |
+| `window_cols`     | 0       | Last known terminal width — used to distinguish terminal resize from pane drag |
+| `ui_height_ratio` | 60      | ui pane height as % of total right column height |
+
+### Behaviour
+- **Terminal resize** — `window-resized` hook fires `on_window_resize.sh`, which re-applies `ui_width` and `ui_height_ratio` and re-pins input to 1 row.
+- **Border drag** — `MouseDragEnd1Border` binding fires `on_pane_resize.sh`, which saves the new `ui_width` and recalculates `ui_height_ratio` from current pane heights.
+- **Input pane** — always pinned to 1 row on every terminal resize. Never participates in layout calculations.
+- **Dev toggle** — when dev is toggled back on, `open_pane.sh` applies `ui_height_ratio` to restore the saved split.
+- **Loop prevention** — `bridge/.layout_lock` is used as a lockfile to prevent `on_window_resize.sh` triggering `on_pane_resize.sh` in a feedback loop.
+
+### Gitignored files
+```
+bridge/layout.conf
+bridge/.layout_lock
+bridge/.pane_resize_pid
+```
 
 ## Cockpit System
 Unified window and system management via `cp` commands:

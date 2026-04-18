@@ -27,14 +27,19 @@ INPUT_INDEX=$(tmux list-panes -t mume:cockpit \
   | awk '$2=="input" {print $1}')
 [ -n "$INPUT_INDEX" ] && tmux resize-pane -t "mume:cockpit.$INPUT_INDEX" -y 1
 
-# Enforce ui_height if both ui and dev are open
+# Enforce ui/dev height ratio if both panes are open
 HAS_UI=$(tmux list-panes -t mume:cockpit -F '#{pane_title}' | grep '^ui$')
 HAS_DEV=$(tmux list-panes -t mume:cockpit -F '#{pane_title}' | grep '^dev$')
-if [ -n "$HAS_UI" ] && [ -n "$HAS_DEV" ] && [ "$ui_height" -gt 0 ]; then
-  UI_INDEX=$(tmux list-panes -t mume:cockpit \
-    -F '#{pane_index} #{pane_title}' \
+if [ -n "$HAS_UI" ] && [ -n "$HAS_DEV" ]; then
+  UI_H=$(tmux list-panes -t mume:cockpit -F '#{pane_title} #{pane_height}' \
+    | awk '$1=="ui" {print $2; exit}')
+  DEV_H=$(tmux list-panes -t mume:cockpit -F '#{pane_title} #{pane_height}' \
+    | awk '$1=="dev" {print $2; exit}')
+  TOTAL=$(( UI_H + DEV_H + 1 ))
+  NEW_UI_H=$(( TOTAL * ui_height_ratio / 100 ))
+  UI_INDEX=$(tmux list-panes -t mume:cockpit -F '#{pane_index} #{pane_title}' \
     | awk '$2=="ui" {print $1; exit}')
-  [ -n "$UI_INDEX" ] && tmux resize-pane -t "mume:cockpit.$UI_INDEX" -y "$ui_height"
+  [ -n "$UI_INDEX" ] && tmux resize-pane -t "mume:cockpit.$UI_INDEX" -y "$NEW_UI_H"
 fi
 
 sed -i "s/^window_cols=.*/window_cols=$COLS/" "$LAYOUT_CONF"
