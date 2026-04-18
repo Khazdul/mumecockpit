@@ -461,6 +461,13 @@ Any of the following exits recall state and clears the highlight:
 - Backspace or Delete (resets buffer)
 - Left, Right, Home, End (buffer preserved, cursor moves)
 
+Recall state can also be entered manually on the current buffer:
+Shift+Home highlights the full buffer and moves the cursor to the
+start; Shift+End highlights the full buffer and moves the cursor
+to the end. Either provides a quick wipe — press Backspace, Delete,
+or any printable character to clear the buffer. No-op on empty
+buffer.
+
 #### History navigation
 
 History is a list of previously-sent commands with **consecutive-dedup**

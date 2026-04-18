@@ -39,11 +39,12 @@ is_recalled = False          # True if buffer text was set programmatically
 _programmatic = False        # internal: suppress on_text_changed side effect
 _draft_restored = False      # True after Down steps out of history to pending_input
 
-def _set_buffer_text(buf, text, recalled):
+def _set_buffer_text(buf, text, recalled, cursor_pos=None):
     global _programmatic, is_recalled
     _programmatic = True
     try:
-        buf.document = Document(text, len(text))
+        pos = len(text) if cursor_pos is None else cursor_pos
+        buf.document = Document(text, pos)
         is_recalled = recalled
     finally:
         _programmatic = False
@@ -135,21 +136,38 @@ def _handle_left(event):
     buf = event.app.current_buffer
     if buf.cursor_position > 0:
         buf.cursor_position -= 1
+    _exit_recall_state(buf)
 
 @kb.add("right")
 def _handle_right(event):
     buf = event.app.current_buffer
     if buf.cursor_position < len(buf.text):
         buf.cursor_position += 1
+    _exit_recall_state(buf)
 
 @kb.add("home")
 def _handle_home(event):
-    event.app.current_buffer.cursor_position = 0
+    buf = event.app.current_buffer
+    buf.cursor_position = 0
+    _exit_recall_state(buf)
 
 @kb.add("end")
 def _handle_end(event):
     buf = event.app.current_buffer
     buf.cursor_position = len(buf.text)
+    _exit_recall_state(buf)
+
+@kb.add("s-home")
+def _handle_shift_home(event):
+    buf = event.app.current_buffer
+    if buf.text:
+        _set_buffer_text(buf, buf.text, recalled=True, cursor_pos=0)
+
+@kb.add("s-end")
+def _handle_shift_end(event):
+    buf = event.app.current_buffer
+    if buf.text:
+        _set_buffer_text(buf, buf.text, recalled=True, cursor_pos=len(buf.text))
 
 @kb.add("pageup")
 def _handle_pageup(event):
