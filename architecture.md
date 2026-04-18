@@ -328,8 +328,27 @@ while it is still alive — whenever the session loses focus. This covers:
 - `cp -r` — `#gts` at the start of reload deactivates the game session
 - `cp -e` — `#gts` at the start of shutdown deactivates the game session
 
-PROGRAM TERMINATION also attempts a save as a best-effort fallback for
-abrupt tt++ exits, but is not guaranteed to complete.
+PROGRAM TERMINATION does not save — by the time the event fires, the
+game session has already been torn down by tt++ and `#class write` against
+it is a no-op. The event is only used for tmux teardown (see Shutdown
+Teardown below).
+
+**Known limitation — settings modified from gts are not saved.** The save
+hook is SESSION DEACTIVATED, which fires when the game session loses focus.
+Commands that modify the session from outside (e.g. `#mume #alias {...}`
+issued from gts) are applied to the session but do not re-trigger
+DEACTIVATED. If the user exits without activating the session again, such
+changes are lost. To persist them, either activate the session (`#mume`
+then `#gts`) before exiting, or run
+`#mume #class {mume} {write} {ttpp/sessions/mume.tin}` manually.
+
+**Shutdown Teardown:** PROGRAM TERMINATION runs
+`tmux kill-session -t mume 2>/dev/null`. Any graceful tt++ exit — `cp -e`,
+`#zap` from gts, or `#end` — closes the entire cockpit tmux session
+including the ui, dev, and input panes. `cp -e` no longer kills tmux
+directly; it goes through PROGRAM TERMINATION like any other exit path.
+Standalone tt++ runs outside the cockpit are unaffected by the missing
+tmux session (error is suppressed).
 
 **Load sequence on SESSION CONNECTED:**
 1. `#read ttpp/sessions/%0.tin` — loads settings, file opens and closes class
