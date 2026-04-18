@@ -1,5 +1,25 @@
 #CLASS {mume} OPEN
 
+#ACTION {%1 disappears into nothing.}
+{
+    #lua {autostab_on_gone()}
+}
+
+#ACTION {%1 is dead! R.I.P.}
+{
+    #lua {autostab_on_dead()}
+}
+
+#ACTION {You failed to escape the fight!}
+{
+    #lua {autostab_on_fail()}
+}
+
+#ACTION {You successfully escaped the fight!}
+{
+    #lua {autostab_on_success()}
+}
+
 #ALIAS {2}
 {
     _send close $sd2
@@ -1042,7 +1062,7 @@
 
 #MACRO {\eOP}
 {
-    kill $target
+    bajs
 }
 
 #MACRO {\eOQ}
@@ -1053,6 +1073,16 @@
 #MACRO {\eOR}
 {
     flee
+}
+
+#MACRO {\eg}
+{
+    #echo ALT-G OK
+}
+
+#MACRO {fbajs}
+{
+    kill $target
 }
 
 #SUBSTITUTE {- stored spell%1} {<F8c1ebb>%0<900>} {5}
@@ -1087,6 +1117,7 @@
 #SUBSTITUTE {^-%1miruvor%2} {<F00aa00>%0<900>} {5}
 #SUBSTITUTE {^-%1wound%2} {<Fff0000>%0<900>} {5}
 #SUBSTITUTE {^A pair of tiny eyes gleam at you from the shadows.} {<F00ffff>%0<900>} {5}
+#TICKER {as_watch} {#lua {autostab_watchdog()}} {10}
 #VARIABLE {abody} {}
 #VARIABLE {acontainer} {quiver}
 #VARIABLE {arrow} {arrow}

@@ -396,6 +396,77 @@ bridge/.layout_lock
 bridge/.pane_resize_pid
 ```
 
+## Input Pane
+
+The input pane (`bridge/input_pane.py`, prompt_toolkit) owns the command
+line. All user keystrokes arrive here first. Complete command lines are
+forwarded to the tt++ pane via `tmux send-keys`. Individual keypresses
+that should trigger tt++ `#macro` bindings are forwarded as raw keys.
+
+### Keypad application mode
+
+On startup, the input pane writes DECKPAM (`\e=`) to stdout to enable
+keypad application mode. An atexit handler writes DECKPNM (`\e>`) to
+restore numeric mode on shutdown. This is unconditional — the terminal
+protocol has no way to query current keypad state, and re-enabling is
+idempotent.
+
+Application mode causes numpad keys to emit SS3 escape sequences
+(`\eOp`..`\eOy` for digits, `\eOj`..`\eOo` for operators, `\eOM` for
+enter) which the input pane can bind individually.
+
+### Key forwarding policy
+
+Keys are split into three disjoint categories:
+
+| Category  | Handled by         | Examples                                              |
+|-----------|--------------------|-------------------------------------------------------|
+| Editing   | prompt_toolkit     | printable chars, Backspace, Ctrl+A/E/W, Alt+Backspace |
+| History   | prompt_toolkit     | Up, Down, Ctrl+P, Ctrl+N, Ctrl+R                      |
+| Scrollback| prompt_toolkit     | PageUp, PageDown (forwarded to tt++ pane's buffer)    |
+| Terminal  | OS / terminal      | Ctrl+C, Ctrl+D, Ctrl+Z, Ctrl+S, Ctrl+Q                |
+| Forwarded | tt++ via send-keys | F1–F12, numpad (SS3), Alt+letter (subset), Ctrl+letter (subset) |
+
+Forwarded keys invoke `tmux send-keys -t mume:cockpit.0 <name>` with no
+`Enter` appended — a single keypress is delivered to tt++, which then
+consults its `#macro` table as if the key had been pressed directly.
+
+### Forwarded key classes
+
+- **F-keys:** F1–F12. Shift+F-keys are not forwarded (terminal-dependent,
+  no uniform tmux send-keys representation).
+- **Numpad:** 0–9, `.`, `+`, `-`, `*`, `/`, Enter. Bound as raw SS3
+  escape tuples (`("escape", "O", "p")` etc.) since prompt_toolkit has
+  no named keys for numpad. Requires DECKPAM and Num Lock on.
+- **Alt+letter:** all letters except `b`, `d`, `f` (reserved for
+  readline-style word editing) and `o` (see Known Limitations).
+- **Ctrl+letter:** `g`, `l`, `o`, `v`, `x`. Other Ctrl+letters are
+  either reserved by the terminal or used by prompt_toolkit editing.
+
+`bridge/input_pane.py` is the source of truth for the exact lists.
+
+### Design consequences
+
+- tt++ sees forwarded keys as if pressed directly. `#macro` bindings
+  work unchanged from standard tt++ usage — define them in `.tin` files
+  or live in the session.
+- tt++ `#macro` features that assume tt++ owns the input line have no
+  equivalent here. Specifically, the `^` prefix ("trigger only at start
+  of input line") is non-functional because the input line lives in
+  prompt_toolkit.
+- Shift+letter cannot be a macro target — terminals do not distinguish
+  it from the uppercase form.
+
+### Known limitations
+
+- **Alt+o is not forwarded.** prompt_toolkit's key parser cannot
+  reliably distinguish `("escape", "o")` from `("escape", "O", "o")`
+  (numpad division). Other Alt+letters whose final character also
+  appears as the third character of a numpad sequence have been
+  verified not to collide — this bug is specific to lowercase `o`.
+- **Numpad requires Num Lock on.** With Num Lock off, the numpad emits
+  cursor/navigation sequences instead, which are not bound as macros.
+
 ## Cockpit System
 Unified window and system management via `cp` commands:
 

@@ -2,7 +2,7 @@
 
 #nop ===== TT++ DEFAULT SETTINGS =====
 #nop Repeat last command with enter on empty line
-#CONFIG {REPEAT ENTER} {ON}
+#CONFIG {REPEAT ENTER} {OFF}
 
 #nop ===== CORE — auto-loaded from ttpp/core/ =====
 #script {ls ttpp/core/*.tin 2>/dev/null | sed 's/^/#read /'}
