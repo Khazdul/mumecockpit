@@ -91,7 +91,11 @@ functions from `brain.lua`:
 
     dbg(msg)                  — write to debug.log
     ui(msg)                   — write to ui.log (mirrors to debug.log)
-    script_ui(name, msg)      — structured status line in UI pane
+    ui_var(v)                 — wrap a dynamic value in highlight style for ui messages
+    script_ui(name, msg)      — script lifecycle status line (▶ NAME: msg.)
+    system_ui(msg)            — infrastructure event status line (● SYSTEM: msg.)
+    ui_warn(msg)              — warning surfaced to the UI pane (⚠ WARN: msg.)
+    ui_err(msg)               — error surfaced to the UI pane (✖ ERROR: msg.)
     tintin(ses, cmd)          — send simple command to tt++ session
     tintin_cmd(ses, cmd)      — send brace-containing command via temp file
     tintin_show(ses, msg)     — #showme in a specific session
@@ -526,31 +530,129 @@ These are the TinTin++ 24-bit truecolor equivalents of Mudlet's
 `<154,168,183>` (label) and `<255,255,255>` (value).
 
 ### Script Status Messages
-Lua scripts report key lifecycle events to the UI pane via `script_ui()` in `brain.lua`:
+Lua scripts report key lifecycle events to the UI pane via `script_ui()` in
+`brain.lua`:
 
 ```lua
-script_ui("AUTOSTAB", "Running")
+script_ui("AUTOSTAB", "Running.")
 script_ui("AUTOSTAB", "Stopped — target dead.")
 script_ui("AUTOSTAB", "Stopped — timed out.")
 ```
 
 Renders in the UI pane as:
-```
-▪ AUTOSTAB - Running
-▪ AUTOSTAB - Stopped — target dead.
-```
+▶ AUTOSTAB: Running.
+▶ AUTOSTAB: Stopped — target dead.
 
-`▪ SCRIPTNAME` is teal (`#26C6DA`), the message is bright white. Colors use ANSI
-escape codes (not TT++ format) since the UI pane is a plain terminal (`tail -f`).
+`▶ SCRIPTNAME` is teal (`#26C6DA`), the message is bold bright white, and
+dynamic values are bold yellow via `ui_var()`. Colors use ANSI escape
+codes (not TT++ format) since the UI pane is a plain terminal (`tail -f`).
 
 **Rules:**
-- Use `script_ui` for key state changes only: started, stopped, errors
-- **Max 33 characters total** — `▪ AUTOSTAB - Stopped — timed out` is the limit
-- Use "Stopped" when a script ends for any reason (not "aborted", "cancelled", etc.)
-- No trailing periods — messages end with the last word, no punctuation
-- One `script_ui` call per event — never call both `script_ui` and `ui()` for the same event
+- Use `script_ui` for key state changes only: started, stopped, errors.
+- **Max 33 characters total** — `▶ AUTOSTAB: Stopped — timed out.` is the
+  limit.
+- Use "Stopped" when a script ends for any reason (not "aborted",
+  "cancelled", etc.).
+- One `script_ui` call per event — never call both `script_ui` and `ui()`
+  for the same event.
 - The mume main window (`as_show` / `tintin_show`) is separate — use it for
-  in-game context (e.g. `## AUTOSTAB: target: orc dir: west`), not for status
+  in-game context (e.g. `## AUTOSTAB: target: orc dir: west`), not for status.
+
+See "UI Message Style Rules" below for cross-cutting conventions (trailing
+period, event phrasing, dynamic value highlighting, no timestamps).
+
+### UI System Events
+Infrastructure lifecycle events (brain start, game session connect/disconnect,
+cockpit reload, future framework-level events) use `system_ui()` in
+`brain.lua`:
+
+```lua
+system_ui("Lua brain started (" .. ui_var(_VERSION) .. ").")
+system_ui("Game session " .. ui_var(ses) .. " connected.")
+system_ui("Game session " .. ui_var(ses) .. " closed.")
+```
+
+Renders in the UI pane as:
+● SYSTEM: Lua brain started (Lua 5.4).
+● SYSTEM: Game session mume connected.
+● SYSTEM: Game session mume closed.
+
+`● SYSTEM` is blue (`#42A5F5`), the message is bold bright white, and
+dynamic values are bold yellow via `ui_var()`.
+
+Use for infrastructure lifecycle events only — not for game events, script
+lifecycle (use `script_ui`), warnings (`ui_warn`), or errors (`ui_err`).
+
+### UI Warnings and Errors
+When the player needs to see a warning or error, use the severity helpers in
+`brain.lua`:
+
+```lua
+ui_warn("Config file missing, using defaults.")
+ui_err("Failed to load script " .. ui_var("foo.lua") .. ".")
+```
+
+Renders as:
+⚠ WARN: Config file missing, using defaults.
+✖ ERROR: Failed to load script foo.lua.
+
+`⚠ WARN` is amber (`#FFB300`), `✖ ERROR` is red (`#E53935`). Messages are
+bold bright white, and dynamic values are bold yellow via `ui_var()`.
+
+**UI vs debug log:**
+- Routine / recoverable issues with no player impact → `dbg()` only.
+- Issues the player should know about (misconfig, missing feature, script
+  failure) → `ui_warn()` or `ui_err()`. These mirror to `debug.log`
+  automatically via `ui()` — don't follow them with a redundant `dbg()`.
+
+### UI Dynamic Values
+Any message written to `ui.log` that contains dynamic content (session names,
+player names, counts, etc.) must highlight the dynamic parts via `ui_var()`
+in `brain.lua`:
+
+```lua
+local _C_VAR = "\027[1;38;2;255;238;88m"   -- bold yellow #FFEE58 — dynamic values
+
+function ui_var(v)
+    return _C_VAR .. tostring(v) .. _C_RESET .. _C_TEXT
+end
+```
+
+Dynamic values render in bold yellow, the rest of the message in bold
+bright white (the `_C_TEXT` base). The trailing `_C_TEXT` inside
+`ui_var` restores the base colour after the variable so subsequent text
+continues in bold white rather than falling back to the terminal
+default.
+
+Usage:
+
+```lua
+system_ui("Game session " .. ui_var(ses) .. " connected.")
+script_ui("AUTOSTAB", "Stopped — " .. ui_var(reason) .. ".")
+ui_err("Failed to load script " .. ui_var("foo.lua") .. ".")
+```
+
+The convention is semantic — `ui_var` marks "this is a dynamic value", not
+a specific style. If the style changes later, only one place needs updating.
+
+See "UI Message Style Rules" below for when to apply `ui_var()` and other
+cross-cutting rules.
+
+### UI Message Style Rules
+These rules apply to every message written to `ui.log` through any helper
+(`ui`, `script_ui`, `system_ui`, `ui_warn`, `ui_err`):
+
+- **Trailing period.** All UI messages end with a period (or `?` / `!` if
+  genuinely a question or exclamation). `dbg()` messages are exempt —
+  `debug.log` carries structured diagnostic lines where trailing punctuation
+  adds noise.
+- **Event-style phrasing.** Describe what happened, not what the state is
+  now. `Game session mume connected.`, not `Game session: mume`.
+- **Dynamic values highlighted.** Any variable part of a message (session
+  name, target, reason, count, filename) is wrapped in `ui_var()` and
+  renders in bold yellow against the bold white base text.
+- **No timestamps.** `ui.log` is meant to be scannable at a glance.
+  `debug.log` already carries timestamps for diagnostic purposes.
 
 ## Windows Installer (Planned)
 

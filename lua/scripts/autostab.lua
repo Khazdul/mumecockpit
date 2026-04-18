@@ -73,7 +73,7 @@ local function abort(reason)
     unregister_triggers()
     session_cmd("#undelay {as_watch}")
     as_dbg("stopped: " .. reason)
-    script_ui("AUTOSTAB", "Stopped — " .. reason)
+    script_ui("AUTOSTAB", "Stopped — " .. ui_var(reason) .. ".")
 end
 
 -- -----------------------------
@@ -107,7 +107,7 @@ function autostab_start(dir, target)
 
     as_dbg(string.format("start %s←%s target=%s", dir, as.ret, target))
     as_show(string.format("target: %s dir: %s", as.target, as.dir))
-    script_ui("AUTOSTAB", "Running")
+    script_ui("AUTOSTAB", "Running.")
     do_cycle()
 end
 
@@ -148,7 +148,7 @@ function autostab_watchdog()
     as.active = false
     unregister_triggers()
     as_dbg(string.format("watchdog: no activity for %ds — stopped", WATCH_TIMEOUT))
-    script_ui("AUTOSTAB", "Stopped — timed out")
+    script_ui("AUTOSTAB", "Stopped — timed out.")
 end
 
 -- -----------------------------

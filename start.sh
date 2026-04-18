@@ -61,7 +61,7 @@ tmux set-option -t mume mouse on
 
 # Pane borders — discrete dark grey
 tmux set-option -t mume pane-border-status top
-tmux set-option -t mume pane-border-format "#{?pane_title,#{pane_title},}"
+tmux set-option -t mume pane-border-format "#{?#{==:#{pane_title},MUME},,#{?#{==:#{pane_title},input},,#{?pane_title,#{pane_title},}}}"
 tmux set-option -t mume pane-border-style "fg=colour238"
 tmux set-option -t mume pane-active-border-style "fg=colour238"
 

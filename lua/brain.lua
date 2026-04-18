@@ -33,18 +33,55 @@ end
 -- Use for key state changes only: started, stopped, errors.
 -- Not for per-cycle noise or debug detail.
 local _C_SCRIPT = "\027[38;2;38;198;218m"  -- teal  #26C6DA
-local _C_TEXT   = "\027[97m"               -- bright white
+local _C_TEXT   = "\027[1;97m"             -- bold bright white — base message text
+local _C_VAR    = "\027[1;38;2;255;238;88m" -- bold yellow #FFEE58 — dynamic values in ui messages
+local _C_SYSTEM = "\027[38;2;66;165;245m"  -- blue #42A5F5 — system events
+local _C_WARN   = "\027[38;2;255;179;0m"   -- amber      #FFB300 — warnings
+local _C_ERR    = "\027[38;2;229;57;53m"   -- red        #E53935 — errors
 local _C_RESET  = "\027[0m"
 
 function script_ui(name, msg)
-    ui(string.format("%s▪ %s%s - %s%s%s", _C_SCRIPT, name, _C_RESET, _C_TEXT, msg, _C_RESET))
+    ui(string.format("%s▶ %s:%s %s%s%s", _C_SCRIPT, name, _C_RESET, _C_TEXT, msg, _C_RESET))
+end
+
+-- ui_var(v) — wraps a dynamic value (session name, target, reason,
+-- filename, etc.) in the variable-highlight style (bold yellow).
+--
+-- Appends _C_TEXT after the trailing reset so text following the
+-- variable continues in the base message colour (bold bright white)
+-- rather than falling back to the terminal default. This makes
+-- ui_var safe to use mid-message without colour bleed.
+function ui_var(v)
+    return _C_VAR .. tostring(v) .. _C_RESET .. _C_TEXT
+end
+
+-- system_ui(msg) — infrastructure lifecycle events (brain start,
+-- game session connect/disconnect, cockpit reload, etc.).
+-- Format: ● SYSTEM: message.
+function system_ui(msg)
+    ui(string.format("%s● SYSTEM:%s %s%s%s", _C_SYSTEM, _C_RESET, _C_TEXT, msg, _C_RESET))
+end
+
+-- ui_warn(msg) — surface a warning to the UI pane (amber).
+-- Use only when the player should see the warning — routine/recoverable
+-- issues with no player impact go to dbg() instead.
+-- Format: ⚠ WARN: message.
+function ui_warn(msg)
+    ui(string.format("%s⚠ WARN:%s %s%s%s", _C_WARN, _C_RESET, _C_TEXT, msg, _C_RESET))
+end
+
+-- ui_err(msg) — surface an error to the UI pane (red).
+-- Use only when the player should see the error.
+-- Format: ✖ ERROR: message.
+function ui_err(msg)
+    ui(string.format("%s✖ ERROR:%s %s%s%s", _C_ERR, _C_RESET, _C_TEXT, msg, _C_RESET))
 end
 
 GAME_SESSION = nil  -- set dynamically when a game session connects
 
 function set_game_session(ses)
     GAME_SESSION = ses
-    ui("Game session: " .. ses)
+    system_ui("Game session " .. ui_var(ses) .. " connected.")
     tintin_cmd("gts", "#var {game_session} {" .. ses .. "}")
 end
 
@@ -54,7 +91,7 @@ end
 function clear_game_session(ses)
     if GAME_SESSION == ses then
         GAME_SESSION = nil
-        ui("Game session: none")
+        system_ui("Game session " .. ui_var(ses) .. " closed.")
         tintin("gts", "#unvar game_session")
     else
         dbg("clear_game_session: mismatch")
@@ -283,7 +320,7 @@ load_scripts()
 -- -----------------------------
 -- STARTUP
 -- -----------------------------
-ui("=== LUA BRAIN STARTED ===")
+system_ui("Lua brain started (" .. ui_var(_VERSION) .. ").")
 dbg(string.format("session=%s, lua=%s", TT_SESSION, _VERSION))
 tintin_show("gts", "Lua brain ready.")
 

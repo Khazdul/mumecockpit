@@ -108,7 +108,7 @@ local function abort(reason)
     unregister_triggers()
     session_cmd("#undelay {ab_watch}")
     ab_dbg("stopped: " .. reason)
-    script_ui("AUTOBOW", "Stopped — " .. reason)
+    script_ui("AUTOBOW", "Stopped — " .. ui_var(reason) .. ".")
 end
 
 -- -----------------------------
@@ -143,7 +143,7 @@ function autobow_start(dir, target)
 
     ab_dbg(string.format("start %s←%s target=%s [%s]", dir, ab.ret, target, tostring(ab.weapon)))
     ab_show(string.format("target: %s dir: %s", ab.target, ab.dir))
-    script_ui("AUTOBOW", "Running")
+    script_ui("AUTOBOW", "Running.")
     send("draw bow")
     do_load_or_shoot()
 end
@@ -218,7 +218,7 @@ function autobow_watchdog()
     ab.active = false
     unregister_triggers()
     ab_dbg("watchdog timeout")
-    script_ui("AUTOBOW", "Stopped — timed out")
+    script_ui("AUTOBOW", "Stopped — timed out.")
 end
 
 -- -----------------------------
