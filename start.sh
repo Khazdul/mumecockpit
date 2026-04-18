@@ -97,7 +97,7 @@ fi
 # -----------------------------
 tmux set-hook -t mume window-resized \
   "run-shell 'bash $HOME/MUME/bridge/on_window_resize.sh'"
-tmux set-hook -t mume after-resize-pane \
+tmux bind-key -n MouseDragEnd1Border \
   "run-shell 'bash $HOME/MUME/bridge/on_pane_resize.sh'"
 
 # -----------------------------
