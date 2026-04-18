@@ -15,6 +15,9 @@ logs/cmd_*.tin
 
 *.tmp
 
+bridge/layout.conf
+bridge/.layout_lock
+
 
 
 # VS Code settings (optional — remove if you want to sync these)

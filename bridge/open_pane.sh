@@ -8,9 +8,11 @@ if [ -n "$EXISTING" ]; then
     exit 0
 fi
 
-COLS=$(tmux display-message -p '#{window_width}')
-RIGHT_WIDTH=33
-LEFT=$(( COLS - RIGHT_WIDTH - 1 ))
+LAYOUT_CONF="$HOME/MUME/bridge/layout.conf"
+[ -f "$LAYOUT_CONF" ] || echo "ui_width=33" > "$LAYOUT_CONF"
+source "$LAYOUT_CONF"
+COLS=$(tmux display-message -p -t mume:cockpit '#{window_width}')
+LEFT=$(( COLS - ui_width - 1 ))
 
 # Check if any right pane already exists
 HAS_RIGHT=$(tmux list-panes -t mume:cockpit -F '#{pane_title}' | grep -E '^(ui|dev)$')
