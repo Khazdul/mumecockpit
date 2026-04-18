@@ -13,6 +13,7 @@ except ImportError:
     exit(1)
 
 import atexit
+import os
 import string
 import subprocess
 import sys
@@ -275,14 +276,14 @@ def get_input_pane_index():
     return None
 
 def setup_mouse_binding():
-    index = get_input_pane_index()
-    if index is None:
+    if get_input_pane_index() is None:
         return
+    script = os.path.expanduser("~/MUME/bridge/focus_input.sh")
     subprocess.run([
         "tmux", "bind-key", "-n", "MouseUp1Pane",
         "if-shell",
         "[ \"#{pane_title}\" != \"input\" ]",
-        "select-pane -t mume:cockpit." + index
+        "run-shell " + script
     ])
 
 def _restore_keypad():

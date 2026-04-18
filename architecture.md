@@ -31,6 +31,7 @@ advanced automation, state tracking, and UI feedback.
 ├── bridge/
 │   ├── open_pane.sh          # Opens/manages tmux panes dynamically
 │   ├── input_pane.py         # Input pane — prompt_toolkit CLI, forwards to TT++
+│   ├── focus_input.sh        # Resolves input pane index at click time (MouseUp1Pane target)
 │   ├── on_window_resize.sh   # Fired on terminal resize — re-applies stored layout
 │   ├── on_pane_resize.sh     # Fired on border drag — saves new layout values
 │   └── layout.conf           # Persisted layout state (gitignored)
@@ -379,7 +380,10 @@ left column, 1 row tall.
   a new command
 - Page Up / Page Down scroll the TT++ pane without leaving the input pane
 - On startup, a tmux `MouseUp1Pane` binding is registered so that clicking
-  any other pane returns focus to the input pane automatically
+  any other pane returns focus to the input pane automatically. The binding
+  calls `bridge/focus_input.sh`, which resolves the input pane's current
+  index at click time — so pane index shifts caused by cp -u / cp -d
+  close+open cycles never cause focus to land on the wrong pane
 
 **Dependencies:**
 - Python 3 (system)

@@ -2,6 +2,15 @@
 TYPE=$1
 MUME="$HOME/MUME"
 
+# Where focus should return after opening a pane.
+# Prefer input pane (user's command line); fall back to pane 0 (MUME).
+resolve_focus_target() {
+    local idx
+    idx=$(tmux list-panes -t mume:cockpit -F '#{pane_index} #{pane_title}' \
+        | awk '$2=="input"{print $1; exit}')
+    echo "mume:cockpit.${idx:-0}"
+}
+
 # Exit if pane already exists
 EXISTING=$(tmux list-panes -t mume:cockpit -F '#{pane_title}' | grep "^$TYPE$")
 if [ -n "$EXISTING" ]; then
@@ -29,14 +38,14 @@ if [ -n "$HAS_RIGHT" ]; then
                 "tail -f $MUME/logs/ui.log")
             tmux select-pane -t mume:cockpit.$NEW_INDEX -T "ui"
             tmux swap-pane -s mume:cockpit.$NEW_INDEX -t mume:cockpit.$RIGHT_INDEX
-            tmux select-pane -t mume:cockpit.0
+            tmux select-pane -t "$(resolve_focus_target)"
             ;;
         dev)
             # dev always on bottom — split normally
             NEW_INDEX=$(tmux split-window -v -t mume:cockpit.$RIGHT_INDEX -P -F '#{pane_index}' \
                 "tail -f $MUME/logs/debug.log")
             tmux select-pane -t mume:cockpit.$NEW_INDEX -T "dev"
-            tmux select-pane -t mume:cockpit.0
+            tmux select-pane -t "$(resolve_focus_target)"
             # Apply saved ui/dev height ratio
             source "$LAYOUT_CONF"
             UI_H=$(tmux list-panes -t mume:cockpit -F '#{pane_title} #{pane_height}' \
@@ -62,13 +71,13 @@ else
             NEW_INDEX=$(tmux split-window -h -t mume:cockpit.0 -P -F '#{pane_index}' \
                 "tail -f $MUME/logs/ui.log")
             tmux select-pane -t mume:cockpit.$NEW_INDEX -T "ui"
-            tmux select-pane -t mume:cockpit.0
+            tmux select-pane -t "$(resolve_focus_target)"
             ;;
         dev)
             NEW_INDEX=$(tmux split-window -h -t mume:cockpit.0 -P -F '#{pane_index}' \
                 "tail -f $MUME/logs/debug.log")
             tmux select-pane -t mume:cockpit.$NEW_INDEX -T "dev"
-            tmux select-pane -t mume:cockpit.0
+            tmux select-pane -t "$(resolve_focus_target)"
             # Apply saved ui/dev height ratio
             source "$LAYOUT_CONF"
             UI_H=$(tmux list-panes -t mume:cockpit -F '#{pane_title} #{pane_height}' \

@@ -38,6 +38,7 @@ fi
 mkdir -p bridge logs
 
 chmod +x bridge/open_pane.sh
+chmod +x bridge/focus_input.sh
 
 # Reset log files on each startup
 touch logs/debug.log logs/ui.log
