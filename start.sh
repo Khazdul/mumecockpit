@@ -69,9 +69,11 @@ tmux set-option -t mume pane-active-border-style "fg=colour238"
 # 5. BUILD LAYOUT BASED ON ARGUMENTS
 # -----------------------------
 LAYOUT_CONF="$HOME/MUME/bridge/layout.conf"
-[ -f "$LAYOUT_CONF" ] || echo "ui_width=33" > "$LAYOUT_CONF"
+[ -f "$LAYOUT_CONF" ] || printf "ui_width=33\nwindow_cols=0\n" > "$LAYOUT_CONF"
+grep -q "^window_cols=" "$LAYOUT_CONF" || echo "window_cols=0" >> "$LAYOUT_CONF"
 source "$LAYOUT_CONF"
 LEFT_WIDTH=$(( TERM_COLS - ui_width - 1 ))
+sed -i "s/^window_cols=.*/window_cols=$TERM_COLS/" "$LAYOUT_CONF"
 
 # Create panes using direct command form — avoids shell prompt appearing in pane
 if [ $SHOW_UI -eq 1 ] && [ $SHOW_DEV -eq 1 ]; then

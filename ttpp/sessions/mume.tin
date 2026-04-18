@@ -1098,5 +1098,6 @@
 #VARIABLE {sd3} {}
 #VARIABLE {spell} {}
 #VARIABLE {ss} {normal}
+#VARIABLE {target} {horse}
 
 #CLASS {mume} CLOSE
