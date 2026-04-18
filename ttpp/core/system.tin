@@ -74,13 +74,6 @@
     }
 }
 
-#alias {cp -s} {
-    #showme {[COCKPIT] Active panes:};
-    #system {
-        tmux list-panes -t mume:cockpit -F '  #{pane_index}: #{pane_title} (#{pane_width}x#{pane_height})'
-    }
-}
-
 #alias {cp -r} {
     #gts;
     #system {echo "[$(date '+%H:%M:%S')] COCKPIT RELOAD — wiping state" >> $HOME/MUME/logs/debug.log};

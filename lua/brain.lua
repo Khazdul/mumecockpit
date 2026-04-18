@@ -241,9 +241,8 @@ local function _register_cockpit_help()
         "   cp -u       toggle UI pane",
         "   cp -d       toggle dev pane",
         "   cp -h       toggle headers",
-        "   cp -s       show system status",
         "   cp -r       full system reload",
-        "   cp -e       kill session",
+        "   cp -e       full system shutdown",
         "",
     }
     if next(_scripts) then
