@@ -321,7 +321,6 @@ load_scripts()
 -- STARTUP
 -- -----------------------------
 system_ui("Lua brain started (" .. ui_var(_VERSION) .. ").")
-dbg(string.format("session=%s, lua=%s", TT_SESSION, _VERSION))
 tintin_show("gts", "Lua brain ready.")
 
 -- Main loop

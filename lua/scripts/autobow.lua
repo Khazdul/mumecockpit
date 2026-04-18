@@ -97,7 +97,7 @@ local function do_load_or_shoot()
         do_shoot()
     else
         if ab.weapon == "crossbow" then
-            tintin_show("mume", "<F719FC7>reloading...<099>")
+            tintin_show(GAME_SESSION or "gts", "<F719FC7>reloading...<099>")
         end
         send("load")
     end

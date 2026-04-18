@@ -540,8 +540,11 @@ script_ui("AUTOSTAB", "Stopped — timed out.")
 ```
 
 Renders in the UI pane as:
+
+```
 ▶ AUTOSTAB: Running.
 ▶ AUTOSTAB: Stopped — target dead.
+```
 
 `▶ SCRIPTNAME` is teal (`#26C6DA`), the message is bold bright white, and
 dynamic values are bold yellow via `ui_var()`. Colors use ANSI escape
@@ -573,9 +576,12 @@ system_ui("Game session " .. ui_var(ses) .. " closed.")
 ```
 
 Renders in the UI pane as:
+
+```
 ● SYSTEM: Lua brain started (Lua 5.4).
 ● SYSTEM: Game session mume connected.
 ● SYSTEM: Game session mume closed.
+```
 
 `● SYSTEM` is blue (`#42A5F5`), the message is bold bright white, and
 dynamic values are bold yellow via `ui_var()`.
@@ -593,8 +599,11 @@ ui_err("Failed to load script " .. ui_var("foo.lua") .. ".")
 ```
 
 Renders as:
+
+```
 ⚠ WARN: Config file missing, using defaults.
 ✖ ERROR: Failed to load script foo.lua.
+```
 
 `⚠ WARN` is amber (`#FFB300`), `✖ ERROR` is red (`#E53935`). Messages are
 bold bright white, and dynamic values are bold yellow via `ui_var()`.
