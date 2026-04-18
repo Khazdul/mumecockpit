@@ -599,15 +599,6 @@ No third-party binaries are bundled. Safe to distribute on GitHub or directly to
 - Never log the same event to both panes redundantly — `ui()` already mirrors to dev with a `UI:` prefix, so never follow a `ui()` call with a `dbg()` for the same message
 - Log to UI only when something meaningful changes, not on every trigger fire, you need to ask what is appropriate to log when new content is added
 - Unknown events go to dev only, not UI
-- Keep messages concise — the dev pane is 33 columns wide. The timestamp
-  `[HH:MM:SS] ` takes 12 columns. Prefer short phrasing over verbose ones;
-  omit words that add no information. Script name in the tag (e.g.
-  [AUTOSTAB]) is more important than brevity — never abbreviate it.
-  Compact notation examples:
-    "start e←w target=troll"   (not "start dir=e ret=w target=troll")
-    "escape fail 1/2 — retry"  (not "escape failed (attempt 1/2) — retrying")
-    "3 fails — flee+abort"     (not "escape failed 3 times — fleeing and aborting")
-    "watchdog timeout"          (not "watchdog: no activity for 15s — stopped")
 
 ## Installed Scripts
 

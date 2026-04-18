@@ -105,7 +105,7 @@ function autostab_start(dir, target)
     register_triggers()
     reset_watchdog()
 
-    as_dbg(string.format("start %s←%s target=%s", dir, as.ret, target))
+    as_dbg(string.format("start dir=%s ret=%s target=%s", dir, as.ret, target))
     as_show(string.format("target: %s dir: %s", as.target, as.dir))
     script_ui("AUTOSTAB", "Running")
     do_cycle()
@@ -115,6 +115,7 @@ function autostab_on_success()
     if not as.active then return end
     as.retry_count = 0
     reset_watchdog()
+    as_dbg("escaped — repeating")
     do_cycle()
 end
 
@@ -123,10 +124,10 @@ function autostab_on_fail()
     as.retry_count = as.retry_count + 1
     reset_watchdog()
     if as.retry_count <= 2 then
-        as_dbg(string.format("escape fail %d/2 — retry", as.retry_count))
+        as_dbg(string.format("escape failed (attempt %d/2) — retrying", as.retry_count))
         send("escape " .. as.ret)
     else
-        as_dbg("3 fails — flee+abort")
+        as_dbg("escape failed 3 times — fleeing and aborting")
         send("flee")
         abort("fled")
     end

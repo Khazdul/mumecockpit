@@ -64,12 +64,8 @@
         STATUS=$(tmux show-option -t mume pane-border-status | awk '{print $2}');
         if [ "$STATUS" = "off" ]; then
             tmux set-option -t mume pane-border-status top;
-            tmux set-option -t mume pane-border-style fg=colour238;
-            tmux set-option -t mume pane-active-border-style fg=colour238;
         else
             tmux set-option -t mume pane-border-status off;
-            tmux set-option -t mume pane-border-style fg=black;
-            tmux set-option -t mume pane-active-border-style fg=black;
         fi
     }
 }
