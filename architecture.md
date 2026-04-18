@@ -431,6 +431,63 @@ Forwarded keys invoke `tmux send-keys -t mume:cockpit.0 <name>` with no
 `Enter` appended — a single keypress is delivered to tt++, which then
 consults its `#macro` table as if the key had been pressed directly.
 
+### Command input behaviour
+
+The input pane implements line editing, command history, and recall
+highlighting on top of prompt_toolkit. The behaviour is designed to
+match the rhythms of MUD play — fast repeat-sends, quick history
+recall, and cancellation of delayed commands.
+
+#### Enter semantics
+
+| Buffer state | Action |
+|--------------|--------|
+| Non-empty    | Send text, append to history (consecutive-dedup), refill buffer with sent text in recalled state |
+| Empty        | Send a bare newline to tt++. Do NOT re-send the previous command. |
+
+Empty Enter sending a bare newline is load-bearing: MUME uses it to
+cancel delayed commands (e.g. spell casts). Re-sending last_cmd on
+empty Enter would silently break that.
+
+#### Recall highlighting
+
+A buffer is in "recalled" state when its text was set programmatically
+rather than typed — either by the post-Enter refill or by Up/Down
+history navigation. Recalled text is rendered with inverted colours
+(black-on-white) to signal that the next keystroke will overwrite it.
+
+Any of the following exits recall state and clears the highlight:
+- Typing a printable character (resets buffer, inserts the char)
+- Backspace or Delete (resets buffer)
+- Left, Right, Home, End (buffer preserved, cursor moves)
+
+#### History navigation
+
+History is a list of previously-sent commands with **consecutive-dedup**
+— identical commands sent back-to-back collapse to a single entry, but
+non-consecutive duplicates are preserved. `look, north, look` keeps
+both `look` entries; `look, look, look` collapses to one.
+
+`Up` walks toward older entries, `Down` toward newer:
+
+- **Up from refilled state** (just after Enter, buffer holds the
+  last-sent command highlighted): steps directly to the entry before
+  the newest, skipping the already-displayed entry.
+- **Up from a typed draft**: saves the draft as `pending_input` and
+  shows the newest entry.
+- **Up during active browsing**: steps one entry older, clamped at
+  the oldest.
+- **Down during active browsing**: steps one entry newer. At the
+  newest, one more Down restores `pending_input` (the saved draft or
+  empty). One more Down after that clears the buffer entirely.
+- **Down outside of browsing**: no-op.
+
+Any text change or cursor movement during browsing exits recall state
+and resets navigation — the next Up starts fresh from the newest entry.
+
+History is in-memory only; it does not persist across restarts and
+has no size cap.
+
 ### Forwarded key classes
 
 - **F-keys:** F1–F12. Shift+F-keys are not forwarded (terminal-dependent,

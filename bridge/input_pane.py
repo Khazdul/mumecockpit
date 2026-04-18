@@ -19,13 +19,12 @@ import sys
 
 TMUX_TARGET = "mume:cockpit.0"
 
-class HighlightLastCmd(Processor):
-    def __init__(self, get_last_cmd):
-        self.get_last_cmd = get_last_cmd
+class HighlightRecalled(Processor):
+    def __init__(self, is_recalled_fn):
+        self.is_recalled_fn = is_recalled_fn
 
     def apply_transformation(self, ti):
-        last = self.get_last_cmd()
-        if ti.document.text == last and last:
+        if self.is_recalled_fn():
             return Transformation([
                 ("bg:white fg:black", text)
                 for _, text in ti.fragments
@@ -33,8 +32,35 @@ class HighlightLastCmd(Processor):
         return Transformation(ti.fragments)
 
 last_cmd = ""
+history: list = []           # sent commands, oldest -> newest
+history_index = None         # None = at pending_input; else index into history
+pending_input = ""           # draft saved when Up first pressed from None-state
+is_recalled = False          # True if buffer text was set programmatically
+_programmatic = False        # internal: suppress on_text_changed side effect
+_draft_restored = False      # True after Down steps out of history to pending_input
+
+def _set_buffer_text(buf, text, recalled):
+    global _programmatic, is_recalled
+    _programmatic = True
+    try:
+        buf.document = Document(text, len(text))
+        is_recalled = recalled
+    finally:
+        _programmatic = False
+
+def _exit_recall_state(buf):
+    global is_recalled, history_index, pending_input, _draft_restored
+    if _programmatic:
+        return
+    is_recalled = False
+    history_index = None
+    pending_input = buf.text
+    _draft_restored = False
 
 kb = KeyBindings()
+
+# Tab is intentionally unbound — reserved for future autocomplete
+# feature that will plug in via prompt_toolkit Completer / CompletionsMenu.
 
 _PRINTABLE = [c for c in string.printable if c not in string.whitespace]
 
@@ -42,25 +68,88 @@ for _c in _PRINTABLE:
     @kb.add(_c)
     def _handle(event, c=_c):
         buf = event.app.current_buffer
-        if buf.text == last_cmd and last_cmd:
+        if is_recalled:
             buf.reset()
         buf.insert_text(c)
 
 @kb.add("backspace")
 def _handle_backspace(event):
     buf = event.app.current_buffer
-    if buf.text == last_cmd and last_cmd:
+    if is_recalled:
         buf.reset()
+        _exit_recall_state(buf)
     else:
         buf.delete_before_cursor()
 
 @kb.add("delete")
 def _handle_delete(event):
     buf = event.app.current_buffer
-    if buf.text == last_cmd and last_cmd:
+    if is_recalled:
         buf.reset()
+        _exit_recall_state(buf)
     else:
         buf.delete()
+
+@kb.add("up")
+def _handle_up(event):
+    global history_index, pending_input, _draft_restored
+    buf = event.app.current_buffer
+    if not history:
+        return
+    _draft_restored = False
+    if is_recalled and history_index is None:
+        # Just refilled after Enter. Step back one entry.
+        history_index = max(0, len(history) - 2)
+    elif history_index is None:
+        # Not recalled, not browsing. Save current as draft.
+        pending_input = buf.text
+        history_index = len(history) - 1
+    else:
+        # Already browsing.
+        history_index = max(0, history_index - 1)
+    _set_buffer_text(buf, history[history_index], recalled=True)
+
+@kb.add("down")
+def _handle_down(event):
+    global history_index, pending_input, _draft_restored
+    buf = event.app.current_buffer
+    if _draft_restored:
+        # Second Down after returning to draft — clear buffer.
+        _draft_restored = False
+        pending_input = ""
+        _set_buffer_text(buf, "", recalled=False)
+        return
+    if history_index is None:
+        return
+    if history_index < len(history) - 1:
+        history_index += 1
+        _set_buffer_text(buf, history[history_index], recalled=True)
+    else:
+        # At newest — step out to pending_input.
+        history_index = None
+        _draft_restored = True
+        _set_buffer_text(buf, pending_input, recalled=False)
+
+@kb.add("left")
+def _handle_left(event):
+    buf = event.app.current_buffer
+    if buf.cursor_position > 0:
+        buf.cursor_position -= 1
+
+@kb.add("right")
+def _handle_right(event):
+    buf = event.app.current_buffer
+    if buf.cursor_position < len(buf.text):
+        buf.cursor_position += 1
+
+@kb.add("home")
+def _handle_home(event):
+    event.app.current_buffer.cursor_position = 0
+
+@kb.add("end")
+def _handle_end(event):
+    buf = event.app.current_buffer
+    buf.cursor_position = len(buf.text)
 
 @kb.add("pageup")
 def _handle_pageup(event):
@@ -72,17 +161,23 @@ def _handle_pagedown(event):
 
 @kb.add("enter")
 def _handle_enter(event):
-    global last_cmd
+    global last_cmd, history_index, pending_input, _draft_restored
     buf = event.app.current_buffer
     text = buf.text
     if text:
         send(text)
         last_cmd = text
-    elif last_cmd:
-        send(last_cmd)
-    buf.reset()
-    if last_cmd:
-        buf.set_document(Document(last_cmd), bypass_readonly=True)
+        if not history or history[-1] != text:
+            history.append(text)
+        buf.reset()
+        history_index = None
+        pending_input = ""
+        _draft_restored = False
+        _set_buffer_text(buf, last_cmd, recalled=True)
+    else:
+        # Empty Enter — bare newline to tt++ (MUME uses this to
+        # cancel delayed commands). No refill, no last_cmd repeat.
+        send("")
 
 def send(line):
     subprocess.run(["tmux", "send-keys", "-t", TMUX_TARGET, line, "Enter"])
@@ -188,13 +283,16 @@ def main():
 
     buf = Buffer(name="input")
 
+    buf.on_text_changed += lambda _: _exit_recall_state(buf)
+    buf.on_cursor_position_changed += lambda _: _exit_recall_state(buf)
+
     layout = Layout(
         HSplit([
             Window(
                 BufferControl(
                     buffer=buf,
                     input_processors=[
-                        HighlightLastCmd(lambda: last_cmd),
+                        HighlightRecalled(lambda: is_recalled),
                         BeforeInput("> "),
                     ],
                     key_bindings=kb,

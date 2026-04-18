@@ -1075,11 +1075,6 @@
     flee
 }
 
-#MACRO {\eg}
-{
-    #echo ALT-G OK
-}
-
 #MACRO {fbajs}
 {
     kill $target
@@ -1127,7 +1122,7 @@
 #VARIABLE {sd1} {exit}
 #VARIABLE {sd2} {}
 #VARIABLE {sd3} {}
-#VARIABLE {spell} {}
+#VARIABLE {spell} {'lightning bolt'}
 #VARIABLE {ss} {normal}
 #VARIABLE {target} {horse}
 
