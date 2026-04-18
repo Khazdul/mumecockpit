@@ -8,8 +8,12 @@ if [ -n "$EXISTING" ]; then
     exit 0
 fi
 
+LAYOUT_CONF="$HOME/MUME/bridge/layout.conf"
+[ -f "$LAYOUT_CONF" ] || echo "ui_ratio=28" > "$LAYOUT_CONF"
+source "$LAYOUT_CONF"
 COLS=$(tmux display-message -p '#{window_width}')
-RIGHT_WIDTH=33
+RIGHT_WIDTH=$(( COLS * ui_ratio / 100 ))
+[ $RIGHT_WIDTH -lt 33 ] && RIGHT_WIDTH=33
 LEFT=$(( COLS - RIGHT_WIDTH - 1 ))
 
 # Check if any right pane already exists

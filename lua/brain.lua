@@ -44,7 +44,6 @@ GAME_SESSION = nil  -- set dynamically when a game session connects
 
 function set_game_session(ses)
     GAME_SESSION = ses
-    dbg("GAME_SESSION set to: " .. ses)
     ui("Game session: " .. ses)
     tintin_cmd("gts", "#var {game_session} {" .. ses .. "}")
 end
@@ -55,12 +54,10 @@ end
 function clear_game_session(ses)
     if GAME_SESSION == ses then
         GAME_SESSION = nil
-        dbg("GAME_SESSION cleared (was: " .. ses .. ")")
         ui("Game session: none")
         tintin("gts", "#unvar game_session")
     else
-        dbg("clear_game_session: ignored " .. ses ..
-            " (current: " .. tostring(GAME_SESSION) .. ")")
+        dbg("clear_game_session: mismatch")
     end
 end
 
@@ -81,7 +78,7 @@ function session_cmd(cmd)
     if GAME_SESSION then
         tintin_cmd(GAME_SESSION, cmd)
     else
-        dbg("session_cmd ignored (no game session): " .. cmd)
+        dbg("session_cmd: no session")
     end
 end
 
@@ -117,7 +114,6 @@ function tintin_cmd(ses, cmd)
     end
     -- The file contains "#ses cmd" so TT++ dispatches to the right session when read.
     f:write(string.format("#%s %s\n", ses, cmd))
-    dbg("tintin_cmd: " .. string.format("#%s %s", ses, cmd))
     f:write(string.format("#system {rm -f %s}\n", path))
     f:close()
     print("tintin_read " .. path)
@@ -134,7 +130,6 @@ function send(cmd)
         dbg("SEND ignored (no game session): " .. cmd)
         return
     end
-    dbg("SEND: " .. cmd)
     tintin(GAME_SESSION, cmd)
 end
 
@@ -195,7 +190,6 @@ function register_script(meta)
     end
     local parts = _build_box("  " .. meta.alias:upper(), body)
     tintin_cmd("gts", "#alias {cp -" .. meta.alias .. "} {" .. table.concat(parts, ";") .. "}")
-    dbg("register_script: " .. meta.alias)
 end
 
 -- Called after all scripts load. Builds cockpit / cockpit -help dynamically
@@ -230,7 +224,6 @@ local function _register_cockpit_help()
     local body_str = table.concat(parts, ";")
     -- _cockpit_help is a private name; aliases.tin's {cp} calls it at priority 6
     tintin_cmd("gts", "#alias {_cockpit_help} {" .. body_str .. "}")
-    dbg("_register_cockpit_help: done")
 end
 
 -- -----------------------------
@@ -245,8 +238,6 @@ local handlers = {}
 -- EXPOSED FUNCTIONS (called via #lua from tt++)
 -- -----------------------------
 function handle_event(ses, line)
-    dbg("EVENT IN: " .. line)
-
     -- Direct Lua call: functionname(args)
     if line:match("^[%w_]+%(") then
         local fn, err = load(line)

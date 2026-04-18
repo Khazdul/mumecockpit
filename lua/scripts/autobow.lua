@@ -141,7 +141,7 @@ function autobow_start(dir, target)
     register_triggers()
     reset_watchdog()
 
-    ab_dbg(string.format("start dir=%s ret=%s target=%s weapon=%s", dir, ab.ret, target, tostring(ab.weapon)))
+    ab_dbg(string.format("start %s←%s target=%s [%s]", dir, ab.ret, target, tostring(ab.weapon)))
     ab_show(string.format("target: %s dir: %s", ab.target, ab.dir))
     script_ui("AUTOBOW", "Running")
     send("draw bow")
@@ -152,7 +152,6 @@ function autobow_on_loaded()
     if not ab.active then return end
     ab.weapon = "crossbow"
     reset_watchdog()
-    ab_dbg("loaded (crossbow confirmed) — shooting")
     do_shoot()
 end
 
@@ -160,7 +159,6 @@ function autobow_on_already_loaded()
     if not ab.active then return end
     ab.weapon = "crossbow"
     reset_watchdog()
-    ab_dbg("already loaded (crossbow confirmed) — shooting")
     do_shoot()
 end
 
@@ -168,7 +166,7 @@ function autobow_on_not_crossbow()
     if not ab.active then return end
     ab.weapon = "bow"
     reset_watchdog()
-    ab_dbg("bow detected — shooting without load")
+    ab_dbg("bow detected")
     do_shoot()
 end
 
@@ -176,7 +174,6 @@ function autobow_on_success()
     if not ab.active then return end
     ab.retry_count = 0
     reset_watchdog()
-    ab_dbg("escaped — next cycle")
     do_load_or_shoot()
 end
 
@@ -185,10 +182,10 @@ function autobow_on_fail()
     ab.retry_count = ab.retry_count + 1
     reset_watchdog()
     if ab.retry_count <= 2 then
-        ab_dbg(string.format("escape failed (attempt %d/2) — retrying", ab.retry_count))
+        ab_dbg(string.format("escape fail %d/2 — retry", ab.retry_count))
         send("escape " .. ab.ret)
     else
-        ab_dbg("escape failed 3 times — fleeing and aborting")
+        ab_dbg("3 fails — flee+abort")
         send("flee")
         abort("fled")
     end
@@ -220,7 +217,7 @@ function autobow_watchdog()
     -- Watchdog already fired — no need to #undelay, just clean up triggers
     ab.active = false
     unregister_triggers()
-    ab_dbg(string.format("watchdog: no activity for %ds — stopped", WATCH_TIMEOUT))
+    ab_dbg("watchdog timeout")
     script_ui("AUTOBOW", "Stopped — timed out")
 end
 

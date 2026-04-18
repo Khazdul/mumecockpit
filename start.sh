@@ -68,7 +68,11 @@ tmux set-option -t mume pane-active-border-style "fg=colour238"
 # -----------------------------
 # 5. BUILD LAYOUT BASED ON ARGUMENTS
 # -----------------------------
-RIGHT_WIDTH=33
+LAYOUT_CONF="$HOME/MUME/bridge/layout.conf"
+[ -f "$LAYOUT_CONF" ] || echo "ui_ratio=28" > "$LAYOUT_CONF"
+source "$LAYOUT_CONF"
+RIGHT_WIDTH=$(( TERM_COLS * ui_ratio / 100 ))
+[ $RIGHT_WIDTH -lt 33 ] && RIGHT_WIDTH=33
 LEFT_WIDTH=$(( TERM_COLS - RIGHT_WIDTH - 1 ))
 
 # Create panes using direct command form — avoids shell prompt appearing in pane
@@ -87,6 +91,12 @@ elif [ $SHOW_DEV -eq 1 ]; then
     tmux select-pane -t mume:cockpit.1 -T "dev"
     tmux resize-pane -t mume:cockpit.0 -x "$LEFT_WIDTH"
 fi
+
+tmux set-hook -t mume window-resized \
+  "run-shell 'bash $HOME/MUME/bridge/on_window_resize.sh'"
+
+tmux set-hook -t mume after-resize-pane \
+  "run-shell 'bash $HOME/MUME/bridge/on_pane_resize.sh'"
 
 # -----------------------------
 # 6. START TT++
