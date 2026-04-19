@@ -16,6 +16,7 @@ advanced automation, state tracking, and UI feedback.
 ## Project Structure
 ~/MUME/
 ├── start.sh              # Entry point — starts entire system
+├── VERSION               # Semantic version string (read by launcher)
 ├── architecture.md       # This file
 ├── ttpp_manual.txt       # TinTin++ reference manual
 │
@@ -258,7 +259,7 @@ The client uses three tt++ sessions:
 |---------|------|
 | `gts`   | Global — always exists, entry point, alias pool |
 | `lua`   | Lua subprocess — created by `#run`, never interacted with directly |
-| game    | Active game connection — name is dynamic, default `mume` |
+| game    | Active game connection — name is dynamic, default `default` |
 
 ### Dynamic game session tracking
 
@@ -325,10 +326,14 @@ simultaneously.
 ### Session Settings Persistence
 
 Personal game settings live in `ttpp/sessions/<name>.tin`, named after
-the session (default: `mume.tin`). The file is loaded into a tt++ class
+the session (default: `default.tin`). The file is loaded into a tt++ class
 of the same name on SESSION CONNECTED, and the class is kept open for
 the duration of the session so that any aliases, variables, or other
 settings added at runtime are captured automatically.
+
+The `mume` alias is retained as a legacy shortcut that connects as `default`
+— the game session name is always `default` unless a profile is explicitly
+selected (Phase 2).
 
 **Save mechanism:** SESSION DEACTIVATED fires inside the game session
 while it is still alive — whenever the session loses focus. This covers:
@@ -348,7 +353,7 @@ issued from gts) are applied to the session but do not re-trigger
 DEACTIVATED. If the user exits without activating the session again, such
 changes are lost. To persist them, either activate the session (`#mume`
 then `#gts`) before exiting, or run
-`#mume #class {mume} {write} {ttpp/sessions/mume.tin}` manually.
+`#default #class {default} {write} {ttpp/sessions/default.tin}` manually.
 
 **Shutdown Teardown:** PROGRAM TERMINATION runs
 `tmux kill-session -t mume 2>/dev/null`. Any graceful tt++ exit — `cp -e`,
@@ -623,11 +628,34 @@ Pure bash + ANSI escapes; no external dependencies beyond coreutils.
 
 | Feature | Detail |
 |---------|--------|
-| Session detect | If a `mume` tmux session already exists, top item becomes "Continue session" |
-| Blink | Active item's `<< >>` brackets toggle every 500 ms via `read_key` timeout |
-| Min size | `check_min_size` blocks until terminal reaches 80×24; auto-dismisses on SIGWINCH |
-| Options sub-menu | Toggle show_ui / show_dev / show_input; set connection_mode; live layout mockup |
+| Session detect | `tmux has-session -t mume` + `list-clients` → top item is "Start new session", "Continue session", or "Mirror session (attached elsewhere)" |
+| Profile page | Lists `ttpp/sessions/*.tin`; select, create (blank / copy from existing), delete. `default` cannot be deleted. Profile selection is cosmetic in Phase 1 (written to `startup.conf`; not yet read by tt++) |
+| Options page | Toggle UI / Dev / Input panes; connection mode; live layout mockup. Content hides progressively at small heights: descriptions → mockup → section headings; menu items always render |
+| Scripts page | Reads `bridge/scripts.cache`; scrollable |
+| About page | Reads `bridge/about.txt`; word-wrapped, cached per resize, scrollable |
+| Quit | Confirmation prompt; ESC cancels |
 | Persistence | Options saved to `bridge/startup.conf` on Back / ESC |
+
+### Rendering conventions
+
+Launcher pages render through `render_frame` in `bridge/menu_render.sh`.
+Rules are strict — deviations reintroduce flicker or scroll artifacts:
+
+- **Alt screen buffer.** Enter on launch (`\e[?1049h`), leave on exit. Cleared
+  automatically when tmux attaches.
+- **Cursor hidden** (`\e[?25l`) except during profile name entry.
+- **Mouse + alt-scroll disabled** (`\e[?1000l \e[?1002l \e[?1003l \e[?1006l
+  \e[?1007l`) while launcher is active. Restored on exit.
+- **No full clear between frames.** `render_frame` overwrites cell-by-cell:
+  `\e[H` home, each line followed by `\e[K`, `\e[J` at end. Never `\e[2J`.
+- **No trailing newline** after the last line of any frame — it scrolls the
+  terminal and jitters the title/footer row.
+- **Dirty-flag redraw.** Main loop uses `_DIRTY=1` set by a `WINCH` trap or
+  state-changing key handler; `read -rsn1 -t 0.2` yields fast enough resize
+  response without a busy loop.
+- **Handoff via `exec`.** Launcher → tmux_start.sh uses `exec bash …`, and
+  tmux_start ends with `exec tmux attach …` — no intermediate bash flash
+  between menu and cockpit.
 
 ### scripts.cache (`bridge/scripts.cache`, gitignored)
 Written by `brain.lua` at every client startup (inside `load_scripts()` after
@@ -650,8 +678,11 @@ SCRIPT:autobow
 | `show_ui`         | `1`        | Whether to open the UI pane              |
 | `show_dev`        | `0`        | Whether to open the dev pane             |
 | `show_input`      | `1`        | Whether to open the input pane           |
+| `profile`         | `default`  | Which file in `ttpp/sessions/` to use. Phase 1: cosmetic only |
 
 Toggle panes at runtime with `cp -u`, `cp -d`, `cp -i`.
+
+Phase 2 will wire `profile` and `connection_mode` into tt++.
 
 ## Version Control
 
@@ -998,10 +1029,19 @@ disappears, or no trigger fires within 15 seconds. Uses `game_cmd` and
 - [x] Pre-tmux startup menu (retro DOS-style, bash+ANSI, launcher.sh / menu_render.sh)
 
 ## Roadmap
-1. Connect to live server and map real output to event protocol
-2. Build prompt parser (HP, mana, moves from prompt line)
-3. Spell timer system in Lua
-4. Affect tracker (buffs/debuffs with countdowns)
-5. Tells and comms UI section
-6. PvP keybinds and combat aliases
-7. Port existing scripts from previous client
+
+### Phase 2 — Profile and connection wiring (next)
+- tt++ reads `bridge/startup.conf` at startup to determine session name
+  and host/port
+- `#alias {connect}` (or similar) that reads the config and dispatches to
+  the right session, replacing the hardcoded `default` / `mume` aliases
+- SESSION CONNECTED / cp -r load `ttpp/sessions/<profile>.tin`
+  correspondingly
+- `mume` alias kept as legacy shortcut throughout
+
+### Phase 3 — In-game menu (later)
+- ESC in the game session opens a tmux `display-popup` menu
+- Reuses launcher's render helpers
+- Continue / Options / Quit
+- Removes `kill-session` from the `PROGRAM TERMINATION` event; launcher
+  owns the cockpit lifecycle instead
