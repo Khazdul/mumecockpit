@@ -234,8 +234,7 @@ end
 local function _register_cockpit_help()
     local body = {
         "  Connection:",
-        "   default           connect via MMapper (default profile)",
-        "   mume              alias for default (legacy)",
+        "   connect    connect to MUME",
         "",
         "  Window management:",
         "   cp -i       toggle input pane",

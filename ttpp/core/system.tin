@@ -16,15 +16,15 @@
 
 #nop ===== CONNECTION ALIASES =====
 
-#nop `default` connects via MMapper using the default profile session.
-#alias {default} {
-    #ses {default} {localhost} {4242}
+#nop `connect` opens a session named after the current profile using host/port
+#nop resolved from bridge/startup.conf by config.tin at startup.
+#alias {connect} {
+    #ses {$_profile} {$_host} {$_port}
 }
 
-#nop `mume` retained as a legacy alias — same as typing `default`.
-#alias {mume} {
-    #ses {default} {localhost} {4242}
-}
+#nop Legacy aliases — same as connect, kept for muscle memory.
+#alias {default} {connect}
+#alias {mume}    {connect}
 
 #nop ===== COCKPIT SYSTEM =====
 #nop Direct cp aliases. {cp} has priority 6 so specific {cp -X} aliases (priority 5) win.

@@ -1,0 +1,10 @@
+#nop ===== CONFIG =====
+#nop Reads bridge/startup.conf at startup and materialises three variables:
+#nop   _profile — session name to connect as (e.g. default, testchar)
+#nop   _host    — connection host (localhost for mmapper, mume.org for direct)
+#nop   _port    — connection port (always 4242)
+#nop Falls back to profile=default / host=localhost if startup.conf is missing.
+#nop Loads before system.tin (alphabetical order) so variables exist when
+#nop connection aliases are registered.
+
+#script {bash bridge/read_config.sh}

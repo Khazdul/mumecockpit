@@ -678,7 +678,7 @@ SCRIPT:autobow
 | `show_ui`         | `1`        | Whether to open the UI pane              |
 | `show_dev`        | `0`        | Whether to open the dev pane             |
 | `show_input`      | `1`        | Whether to open the input pane           |
-| `profile`         | `default`  | Which file in `ttpp/sessions/` to use. Phase 1: cosmetic only |
+| `profile`         | `default`  | Which file in `ttpp/sessions/` to use. Phase 2: wired into tt++ session name |
 
 Toggle panes at runtime with `cp -u`, `cp -d`, `cp -i`.
 
@@ -1027,17 +1027,18 @@ disappears, or no trigger fires within 15 seconds. Uses `game_cmd` and
 - [ ] PvP keybinds finalized
 - [x] Session settings persistence (#class-based, auto-save on deactivate)
 - [x] Pre-tmux startup menu (retro DOS-style, bash+ANSI, launcher.sh / menu_render.sh)
+- [x] Profile and connection wiring (startup.conf → _profile/_host/_port → connect alias)
 
 ## Roadmap
 
-### Phase 2 — Profile and connection wiring (next)
-- tt++ reads `bridge/startup.conf` at startup to determine session name
-  and host/port
-- `#alias {connect}` (or similar) that reads the config and dispatches to
-  the right session, replacing the hardcoded `default` / `mume` aliases
-- SESSION CONNECTED / cp -r load `ttpp/sessions/<profile>.tin`
-  correspondingly
-- `mume` alias kept as legacy shortcut throughout
+### Phase 2 — Profile and connection wiring ✓
+- `ttpp/core/config.tin` reads `bridge/startup.conf` via `bridge/read_config.sh`
+  at startup and materialises `_profile`, `_host`, `_port` tt++ variables
+- `#alias {connect}` opens `#ses {$_profile} {$_host} {$_port}` — session is
+  named after the profile, so SESSION CONNECTED naturally loads the right
+  `ttpp/sessions/<profile>.tin`
+- `default` and `mume` are legacy aliases that call `connect`
+- cockpit help shows current profile and connection mode from startup.conf
 
 ### Phase 3 — In-game menu (later)
 - ESC in the game session opens a tmux `display-popup` menu
