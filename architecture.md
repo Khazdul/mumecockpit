@@ -29,12 +29,19 @@ advanced automation, state tracking, and UI feedback.
 │   └── scripts/          # Self-contained Lua automation scripts (.lua files)
 │
 ├── bridge/
+│   ├── launcher.sh           # Pre-tmux startup menu (DOS-style, pure bash)
+│   ├── menu_render.sh        # Render/input helpers sourced by launcher.sh
+│   ├── tmux_start.sh         # tmux session creation (extracted from start.sh)
+│   ├── quotes.txt            # Tolkien quotes shown on main menu (pipe-sep format)
+│   ├── about.txt             # About page body text
+│   └── scripts.cache         # Script registry written by brain.lua (gitignored)
 │   ├── open_pane.sh          # Opens/manages tmux panes dynamically
 │   ├── input_pane.py         # Input pane — prompt_toolkit CLI, forwards to TT++
 │   ├── focus_input.sh        # Resolves input pane index at click time (MouseUp1Pane target)
 │   ├── on_window_resize.sh   # Fired on terminal resize — re-applies stored layout
 │   ├── on_pane_resize.sh     # Fired on border drag — saves new layout values
-│   └── layout.conf           # Persisted layout state (gitignored)
+│   ├── layout.conf           # Persisted layout state (gitignored)
+│   └── startup.conf          # Persisted startup-menu state (gitignored)
 │
 └── logs/
     ├── ui.log            # Persistent UI output (shown in ui pane)
@@ -598,12 +605,52 @@ registers itself via `register_script(meta)` — no changes to core needed.
    This is the approved pattern for all automation features.
 
 ## Startup
+
 ```bash
-./start.sh          # tt++ + UI pane + input pane (default)
-./start.sh -d       # tt++ + UI pane + dev pane + input pane
-./start.sh -u -d    # explicit — same as -d
+./start.sh            # show retro startup menu (default)
+./start.sh --no-menu  # skip menu, use current bridge/startup.conf
+./start.sh -d         # skip menu, force dev pane on for this run (not persisted)
+./start.sh -u         # skip menu, force UI pane on for this run (not persisted)
 ```
-UI and input panes are on by default.
+
+`start.sh` is a thin wrapper that installs dependencies and then:
+- Without bypass flags → `exec bash bridge/launcher.sh` (startup menu)
+- With `--no-menu` / `-d` / `-u` → `exec bash bridge/tmux_start.sh` (direct start)
+
+### Startup menu (`bridge/launcher.sh`)
+A DOS-style retro menu rendered in the terminal before tmux launches.
+Pure bash + ANSI escapes; no external dependencies beyond coreutils.
+
+| Feature | Detail |
+|---------|--------|
+| Session detect | If a `mume` tmux session already exists, top item becomes "Continue session" |
+| Blink | Active item's `<< >>` brackets toggle every 500 ms via `read_key` timeout |
+| Min size | `check_min_size` blocks until terminal reaches 80×24; auto-dismisses on SIGWINCH |
+| Options sub-menu | Toggle show_ui / show_dev / show_input; set connection_mode; live layout mockup |
+| Persistence | Options saved to `bridge/startup.conf` on Back / ESC |
+
+### scripts.cache (`bridge/scripts.cache`, gitignored)
+Written by `brain.lua` at every client startup (inside `load_scripts()` after
+`_register_cockpit_help()`). Parsed by the Scripts page in `launcher.sh`.
+
+Format (line-prefixed, one block per script, alphabetical by alias):
+```
+SCRIPT:autostab
+SUMMARY:backstab/escape loop
+HELP:Usage: as<dir>
+HELP:...
+SCRIPT:autobow
+...
+```
+
+### startup.conf keys (`bridge/startup.conf`, gitignored)
+| Key               | Default    | Description                              |
+|-------------------|------------|------------------------------------------|
+| `connection_mode` | `mmapper`  | `mmapper` (localhost:4242) or `direct` (mume.org:4242) |
+| `show_ui`         | `1`        | Whether to open the UI pane              |
+| `show_dev`        | `0`        | Whether to open the dev pane             |
+| `show_input`      | `1`        | Whether to open the input pane           |
+
 Toggle panes at runtime with `cp -u`, `cp -d`, `cp -i`.
 
 ## Version Control
@@ -948,6 +995,7 @@ disappears, or no trigger fires within 15 seconds. Uses `game_cmd` and
 - [ ] Tells history UI
 - [ ] PvP keybinds finalized
 - [x] Session settings persistence (#class-based, auto-save on deactivate)
+- [x] Pre-tmux startup menu (retro DOS-style, bash+ANSI, launcher.sh / menu_render.sh)
 
 ## Roadmap
 1. Connect to live server and map real output to event protocol

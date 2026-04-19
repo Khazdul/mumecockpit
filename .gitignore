@@ -16,6 +16,8 @@ logs/cmd_*.tin
 *.tmp
 
 bridge/layout.conf
+bridge/startup.conf
+bridge/scripts.cache
 bridge/.layout_lock
 bridge/.pane_resize_pid
 

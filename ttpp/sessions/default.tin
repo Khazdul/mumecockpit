@@ -1,24 +1,4 @@
-#CLASS {mume} OPEN
-
-#ACTION {%1 disappears into nothing.}
-{
-    #lua {autostab_on_gone()}
-}
-
-#ACTION {%1 is dead! R.I.P.}
-{
-    #lua {autostab_on_dead()}
-}
-
-#ACTION {You failed to escape the fight!}
-{
-    #lua {autostab_on_fail()}
-}
-
-#ACTION {You successfully escaped the fight!}
-{
-    #lua {autostab_on_success()}
-}
+#CLASS {default} OPEN
 
 #ALIAS {2}
 {
@@ -1057,7 +1037,7 @@
 
 #EVENT {SESSION DEACTIVATED}
 {
-    #class {mume} {write} {ttpp/sessions/mume.tin}
+    #class {default} {write} {ttpp/sessions/default.tin}
 }
 
 #MACRO {\eOP}
@@ -1112,7 +1092,7 @@
 #SUBSTITUTE {^-%1miruvor%2} {<F00aa00>%0<900>} {5}
 #SUBSTITUTE {^-%1wound%2} {<Fff0000>%0<900>} {5}
 #SUBSTITUTE {^A pair of tiny eyes gleam at you from the shadows.} {<F00ffff>%0<900>} {5}
-#TICKER {as_watch} {#lua {autostab_watchdog()}} {10}
+#VARIABLE {_sd_line} {<F9AA8B7> SD1: <FFFFFFF>exit}
 #VARIABLE {abody} {}
 #VARIABLE {acontainer} {quiver}
 #VARIABLE {arrow} {arrow}
@@ -1124,6 +1104,6 @@
 #VARIABLE {sd3} {}
 #VARIABLE {spell} {'lightning bolt'}
 #VARIABLE {ss} {normal}
-#VARIABLE {target} {horse}
+#VARIABLE {target} {*orc*}
 
-#CLASS {mume} CLOSE
+#CLASS {default} CLOSE

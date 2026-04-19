@@ -1,0 +1,79 @@
+WHY TERMINAL?
+
+Most MUD clients live in a GUI window. This one doesn't. The terminal is not a
+constraint — it's the point. A terminal can be remoted, tiled, scripted, and
+composed with other tools without friction. It starts fast, has no update
+cycle, and behaves the same on every machine you own.
+
+The cockpit uses tmux to split the screen into panes: game output, a dedicated
+input prompt, a script status log, and optionally a debug feed from the Lua
+brain. Each pane is independently toggleable at runtime. The layout survives
+disconnects. Nothing resets when you scroll.
+
+
+FOUNDATION: TINTIN++
+
+TinTin++ (tt++) is the I/O engine. It speaks directly to the MUD socket,
+processes triggers line-by-line, and dispatches keybinds with sub-frame
+latency. Anything that must react before the next game tick lives here — combat
+actions, highlight rules, session aliases.
+
+TinTin++ has been developed continuously since 1993. It is fast, stable, and
+does not try to be clever about things it shouldn't own.
+
+
+LUA BRAIN
+
+Above TinTin++ sits a Lua process called the brain. It runs as a persistent
+subprocess, communicating over stdin and stdout. The brain owns the slow things:
+state tracking, timers, cross-session coordination, and any logic that benefits
+from a real programming language.
+
+Scripts are self-contained Lua files in lua/scripts/. Each one loads at startup,
+registers its own aliases and triggers, and adds a documentation entry to the
+Scripts page. Nothing is hardcoded — removing a script file removes its
+features cleanly.
+
+The brain writes to two log files: ui.log (structured status messages for the
+UI pane) and debug.log (raw developer output for the DEV pane). Both persist
+across pane toggles and reconnects.
+
+
+STARTUP MENU
+
+This menu runs before tmux starts, in a pure-bash alt-screen TUI with no
+external dependencies. It keeps pane layout, connection mode, and the active
+profile in bridge/startup.conf — a plain text file you can also edit directly.
+
+Profiles correspond to TinTin++ session files in ttpp/sessions/. The default
+profile is a working starting point. Create new profiles from the Profile page
+— blank stubs or copies of an existing one.
+
+
+COCKPIT COMMANDS
+
+Once inside, the cp prefix gives you runtime control:
+
+  cp -r     full reload (TinTin++ + Lua brain, no tmux restart)
+  cp -e     clean shutdown
+  cp -u     toggle UI pane
+  cp -d     toggle dev pane
+  cp -i     toggle input pane
+  cp -h     toggle pane border headers
+  cp        show the full command reference
+
+
+CONNECTION
+
+  MMapper   Routes through MMapper (localhost:4242). Recommended —
+            MMapper provides an in-game map, room search, and
+            pathfinding. Start MMapper before connecting.
+
+  Direct    Connects to mume.org:4242 directly, bypassing MMapper.
+
+
+PROJECT
+
+  Source    github.com/Khazdul/MUME
+  License   see LICENSE in the repository root
+  Version   read from the VERSION file at the repo root

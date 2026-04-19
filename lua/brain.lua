@@ -234,7 +234,8 @@ end
 local function _register_cockpit_help()
     local body = {
         "  Connection:",
-        "   mume              connect via MMapper",
+        "   default           connect via MMapper (default profile)",
+        "   mume              alias for default (legacy)",
         "",
         "  Window management:",
         "   cp -i       toggle input pane",
@@ -300,6 +301,29 @@ function handle_event(ses, line)
     end
 end
 
+-- Writes _scripts registry to bridge/scripts.cache for the startup menu.
+-- Called after all scripts have called register_script() and
+-- _register_cockpit_help() has run. Overwrites on every startup.
+local function _write_scripts_cache()
+    local fh, err = io.open("bridge/scripts.cache", "w")
+    if not fh then
+        dbg("scripts.cache: failed to open — " .. tostring(err))
+        return
+    end
+    local aliases = {}
+    for a in pairs(_scripts) do aliases[#aliases + 1] = a end
+    table.sort(aliases)
+    for _, a in ipairs(aliases) do
+        local m = _scripts[a]
+        fh:write("SCRIPT:" .. a .. "\n")
+        if m.summary then fh:write("SUMMARY:" .. m.summary .. "\n") end
+        for _, h in ipairs(m.help or {}) do
+            fh:write("HELP:" .. h .. "\n")
+        end
+    end
+    fh:close()
+end
+
 -- -----------------------------
 -- MODULES — auto-loaded from lua/scripts/
 -- Each script is self-contained: registers its own aliases/triggers at load time.
@@ -313,6 +337,7 @@ local function load_scripts()
         p:close()
     end
     _register_cockpit_help()
+    _write_scripts_cache()
 end
 load_scripts()
 

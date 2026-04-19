@@ -16,8 +16,14 @@
 
 #nop ===== CONNECTION ALIASES =====
 
+#nop `default` connects via MMapper using the default profile session.
+#alias {default} {
+    #ses {default} {localhost} {4242}
+}
+
+#nop `mume` retained as a legacy alias — same as typing `default`.
 #alias {mume} {
-    #ses {mume} {localhost} {4242}
+    #ses {default} {localhost} {4242}
 }
 
 #nop ===== COCKPIT SYSTEM =====

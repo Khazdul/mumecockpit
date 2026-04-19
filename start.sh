@@ -1,27 +1,18 @@
 #!/bin/bash
+# start.sh — MUME cockpit entry point.
+# Installs dependencies, then launches the startup menu or goes straight to tmux.
+#
+# Usage:
+#   ./start.sh            — show startup menu (default)
+#   ./start.sh --no-menu  — skip menu, use current startup.conf
+#   ./start.sh -d         — skip menu, force dev pane on (not persisted)
+#   ./start.sh -u         — skip menu, force UI pane on (not persisted)
+
 cd "$(dirname "$0")"
 
-# -----------------------------
-# ARGUMENT PARSING
-# -----------------------------
-SHOW_DEV=0
-SHOW_UI=1
-
-for arg in "$@"; do
-    case $arg in
-        -d) SHOW_DEV=1 ;;
-        -u) SHOW_UI=1 ;;
-        -du|-ud) SHOW_DEV=1; SHOW_UI=1 ;;
-    esac
-done
-
-echo "Starting MUME cockpit..."
-[ $SHOW_UI  -eq 1 ] && echo "   UI pane:  ON"
-[ $SHOW_DEV -eq 1 ] && echo "   Dev pane: ON"
-
-# -----------------------------
-# 1. INSTALL DEPENDENCIES
-# -----------------------------
+# ---------------------------------------------------------------------------
+# 1. Install dependencies
+# ---------------------------------------------------------------------------
 if ! command -v tmux >/dev/null 2>&1; then
     echo "📦 Installing tmux..."
     sudo apt update && sudo apt install -y tmux
@@ -32,112 +23,35 @@ if ! command -v lua >/dev/null 2>&1; then
     sudo apt update && sudo apt install -y lua5.4
 fi
 
-# -----------------------------
-# 2. CREATE DIRS AND LOGS
-# -----------------------------
 mkdir -p bridge logs
 
 chmod +x bridge/open_pane.sh
 chmod +x bridge/focus_input.sh
+chmod +x bridge/launcher.sh
+chmod +x bridge/tmux_start.sh
 
-# Reset log files on each startup
-touch logs/debug.log logs/ui.log
-> logs/debug.log
-> logs/ui.log
+# ---------------------------------------------------------------------------
+# 2. Parse flags
+# ---------------------------------------------------------------------------
+_NO_MENU=0
+_OVERRIDE_SHOW_UI=""
+_OVERRIDE_SHOW_DEV=""
 
-# -----------------------------
-# 3. KILL OLD SESSION
-# -----------------------------
-tmux kill-session -t mume 2>/dev/null || true
+for arg in "$@"; do
+    case "$arg" in
+        --no-menu)  _NO_MENU=1 ;;
+        -d)         _NO_MENU=1; _OVERRIDE_SHOW_DEV=1 ;;
+        -u)         _NO_MENU=1; _OVERRIDE_SHOW_UI=1  ;;
+        -du|-ud)    _NO_MENU=1; _OVERRIDE_SHOW_DEV=1; _OVERRIDE_SHOW_UI=1 ;;
+    esac
+done
 
-# -----------------------------
-# 4. CREATE SESSION
-# -----------------------------
-TERM_COLS=$(tput cols)
-TERM_LINES=$(tput lines)
-
-tmux new-session -d -s mume -x "$TERM_COLS" -y "$TERM_LINES" -n cockpit
-tmux set-option -t mume status off
-tmux set-option -t mume mouse on
-
-# Pane borders — discrete dark grey
-tmux set-option -t mume pane-border-status top
-tmux set-option -t mume pane-border-format "#{?#{==:#{pane_title},MUME},,#{?#{==:#{pane_title},input},,#{?pane_title,#{pane_title},}}}"
-tmux set-option -t mume pane-border-style "fg=colour238"
-tmux set-option -t mume pane-active-border-style "fg=colour238"
-
-# -----------------------------
-# 5. BUILD LAYOUT BASED ON ARGUMENTS
-# -----------------------------
-LAYOUT_CONF="$HOME/MUME/bridge/layout.conf"
-[ -f "$LAYOUT_CONF" ] || printf "ui_width=33\nwindow_cols=0\nui_height_ratio=60\n" > "$LAYOUT_CONF"
-grep -q "^window_cols=" "$LAYOUT_CONF"     || echo "window_cols=0"      >> "$LAYOUT_CONF"
-grep -q "^ui_height_ratio=" "$LAYOUT_CONF" || echo "ui_height_ratio=60" >> "$LAYOUT_CONF"
-source "$LAYOUT_CONF"
-LEFT_WIDTH=$(( TERM_COLS - ui_width - 1 ))
-sed -i "s/^window_cols=.*/window_cols=$TERM_COLS/" "$LAYOUT_CONF"
-
-# Create panes using direct command form — avoids shell prompt appearing in pane
-if [ $SHOW_UI -eq 1 ] && [ $SHOW_DEV -eq 1 ]; then
-    tmux split-window -h -t mume:cockpit.0 "tail -f $HOME/MUME/logs/ui.log"
-    tmux select-pane -t mume:cockpit.1 -T "ui"
-    tmux split-window -v -t mume:cockpit.1 "tail -f $HOME/MUME/logs/debug.log"
-    tmux select-pane -t mume:cockpit.2 -T "dev"
-    tmux resize-pane -t mume:cockpit.0 -x "$LEFT_WIDTH"
-elif [ $SHOW_UI -eq 1 ]; then
-    tmux split-window -h -t mume:cockpit.0 "tail -f $HOME/MUME/logs/ui.log"
-    tmux select-pane -t mume:cockpit.1 -T "ui"
-    tmux resize-pane -t mume:cockpit.0 -x "$LEFT_WIDTH"
-elif [ $SHOW_DEV -eq 1 ]; then
-    tmux split-window -h -t mume:cockpit.0 "tail -f $HOME/MUME/logs/debug.log"
-    tmux select-pane -t mume:cockpit.1 -T "dev"
-    tmux resize-pane -t mume:cockpit.0 -x "$LEFT_WIDTH"
-fi
-
-# Apply ui/dev height ratio when both panes are open
-if [ $SHOW_UI -eq 1 ] && [ $SHOW_DEV -eq 1 ]; then
-  UI_H=$(tmux list-panes -t mume:cockpit -F '#{pane_title} #{pane_height}' \
-    | awk '$1=="ui" {print $2; exit}')
-  DEV_H=$(tmux list-panes -t mume:cockpit -F '#{pane_title} #{pane_height}' \
-    | awk '$1=="dev" {print $2; exit}')
-  TOTAL=$(( UI_H + DEV_H + 1 ))
-  APPLY_UI_H=$(( TOTAL * ui_height_ratio / 100 ))
-  UI_INDEX=$(tmux list-panes -t mume:cockpit -F '#{pane_index} #{pane_title}' \
-    | awk '$2=="ui" {print $1; exit}')
-  [ -n "$UI_INDEX" ] && tmux resize-pane -t "mume:cockpit.$UI_INDEX" -y "$APPLY_UI_H"
-fi
-
-# -----------------------------
-# 5b. REGISTER LAYOUT HOOKS
-# -----------------------------
-tmux set-hook -t mume window-resized \
-  "run-shell 'bash $HOME/MUME/bridge/on_window_resize.sh'"
-tmux bind-key -n MouseDragEnd1Border \
-  "run-shell 'bash $HOME/MUME/bridge/on_pane_resize.sh'"
-
-# -----------------------------
-# 6. START TT++
-# -----------------------------
-tmux send-keys -t mume:cockpit.0 \
-    "cd $HOME/MUME && tt++ ttpp/main.tin" C-m
-tmux select-pane -t mume:cockpit.0 -T "MUME"
-sleep 0.2 && tmux select-pane -t mume:cockpit.0 -T "MUME" &
-
-# -----------------------------
-# 7. OPEN INPUT PANE
-# -----------------------------
-bash "$HOME/MUME/bridge/open_pane.sh" input
-
-# -----------------------------
-# 8. FOCUS INPUT PANE
-# -----------------------------
-INPUT_INDEX=$(tmux list-panes -t mume:cockpit \
-    -F '#{pane_index} #{pane_title}' \
-    | awk '/^[0-9]+ input$/{print $1}')
-if [ -n "$INPUT_INDEX" ]; then
-    tmux select-pane -t mume:cockpit.$INPUT_INDEX
+# ---------------------------------------------------------------------------
+# 3. Dispatch
+# ---------------------------------------------------------------------------
+if [ "$_NO_MENU" -eq 1 ]; then
+    export _OVERRIDE_SHOW_UI _OVERRIDE_SHOW_DEV
+    exec bash bridge/tmux_start.sh
 else
-    tmux select-pane -t mume:cockpit.0
+    exec bash bridge/launcher.sh
 fi
-
-tmux attach -t mume
