@@ -390,6 +390,15 @@ left column, 1 row tall.
 - `prompt_toolkit` — install with:
   `pip install prompt_toolkit --break-system-packages`
 
+**Recommended terminal config:** prompt_toolkit emits a steady-cursor
+request that persists while the input pane is running and is inherited
+by other panes when focus shifts. Terminals with app-override blinking
+(e.g. Alacritty `blinking = "On"`) will therefore show a steady cursor
+in the input pane, tt++ after `cp -i` off, and bash after `cp -e`. Set
+the terminal to force blinking (Alacritty: `blinking = "Always"`) if
+a blinking cursor is preferred. The client works fully without this
+setting — it is purely cosmetic.
+
 **Known limitation:** drag-select in the TT++ pane does not auto-return
 focus to the input pane. Click once in the input pane to return.
 
