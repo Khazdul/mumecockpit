@@ -43,9 +43,8 @@ render_frame() {
 
 # ---------------------------------------------------------------------------
 # draw_ascii_title
-# Prints the MUME block-letter banner plus a small "Cockpit (version x.y.z)"
-# subtitle centered below it. Version is read from _COCKPIT_VERSION global
-# (set by launcher.sh from the VERSION file).
+# Prints the MUME block-letter banner (6 rows) immediately followed by the
+# COCKPIT block-letter banner (3 rows), both centered and in the same cyan.
 # ---------------------------------------------------------------------------
 draw_ascii_title() {
     local cols; cols=$(tput cols 2>/dev/null || echo 80)
@@ -69,10 +68,17 @@ draw_ascii_title() {
         printf "%${pad}s${_MR_CYAN}%s${_MR_RESET}\n" "" "$line"
     done
 
-    local subtitle="Cockpit (version ${_COCKPIT_VERSION:-0.1.0})"
-    pad=$(( (cols - ${#subtitle}) / 2 ))
-    [ "$pad" -lt 0 ] && pad=0
-    printf "%${pad}s${_MR_GREY}%s${_MR_RESET}\n" "" "$subtitle"
+    local cockpit_lines=(
+        '██ ███ ██ █ █ ██ █ ███'
+        '█  █ █ █  ██  ██ █  █ '
+        '██ ███ ██ █ █ █  █  █ '
+    )
+    for line in "${cockpit_lines[@]}"; do
+        vw=$(printf '%s' "$line" | wc -m)
+        pad=$(( (cols - vw) / 2 ))
+        [ "$pad" -lt 0 ] && pad=0
+        printf "%${pad}s${_MR_CYAN}%s${_MR_RESET}\n" "" "$line"
+    done
     printf '\n'
 }
 

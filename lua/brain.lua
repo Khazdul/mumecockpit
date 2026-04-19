@@ -344,7 +344,6 @@ load_scripts()
 -- STARTUP
 -- -----------------------------
 system_ui("Lua brain started (" .. ui_var(_VERSION) .. ").")
-tintin_show("gts", "Lua brain ready.")
 
 -- Main loop
 for line in io.lines() do

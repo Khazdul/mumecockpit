@@ -42,7 +42,8 @@ tmux kill-session -t mume 2>/dev/null || true
 TERM_COLS=$(tput cols)
 TERM_LINES=$(tput lines)
 
-tmux new-session -d -s mume -x "$TERM_COLS" -y "$TERM_LINES" -n cockpit
+tmux new-session -d -s mume -x "$TERM_COLS" -y "$TERM_LINES" -n cockpit \
+    "cd $HOME/MUME && exec tt++ -G ttpp/main.tin"
 tmux set-option -t mume status off
 tmux set-option -t mume mouse on
 
@@ -99,10 +100,8 @@ tmux bind-key -n MouseDragEnd1Border \
     "run-shell 'bash $HOME/MUME/bridge/on_pane_resize.sh'"
 
 # ---------------------------------------------------------------------------
-# 5. Start TT++
+# 5. TT++ started directly in pane 0 (via new-session above) — no send-keys.
 # ---------------------------------------------------------------------------
-tmux send-keys -t mume:cockpit.0 \
-    "cd $HOME/MUME && tt++ ttpp/main.tin" C-m
 tmux select-pane -t mume:cockpit.0 -T "MUME"
 sleep 0.2 && tmux select-pane -t mume:cockpit.0 -T "MUME" &
 

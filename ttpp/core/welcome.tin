@@ -1,0 +1,37 @@
+#nop ===== WELCOME =====
+#nop Clear tt++ MOTD noise, show the MUME Cockpit banner, and auto-connect.
+#nop Skipped when a game session is already active (cp -r mid-session
+#nop should not wipe the game screen or attempt a reconnect).
+
+#alias {_do_startup} {
+    #if {&game_session} {
+        #nop Session active — don't wipe screen or reconnect
+    } {
+        #buffer clear;
+        #screen clear all;
+        #system {tmux clear-history -t mume:cockpit.0 2>/dev/null; printf '\033[3J'};
+        #showme {};
+        #showme {            ███╗   ███╗██╗   ██╗███╗   ███╗███████╗};
+        #showme {            ████╗ ████║██║   ██║████╗ ████║██╔════╝};
+        #showme {            ██╔████╔██║██║   ██║██╔████╔██║█████╗  };
+        #showme {            ██║╚██╔╝██║██║   ██║██║╚██╔╝██║██╔══╝  };
+        #showme {            ██║ ╚═╝ ██║╚██████╔╝██║ ╚═╝ ██║███████╗};
+        #showme {            ╚═╝     ╚═╝ ╚═════╝ ╚═╝     ╚═╝╚══════╝};
+        #showme {                    ██ ███ ██ █ █ ██ █ ███};
+        #showme {                    █  █ █ █  ██  ██ █  █ };
+        #showme {                    ██ ███ ██ █ █ █  █  █ };
+        #showme {};
+        #showme {            Welcome to MUME Cockpit.};
+        #showme {            Type 'cp' for available commands.};
+        #showme {};
+        #showme {            Connecting to MUME...};
+        #showme {};
+        connect
+    }
+}
+
+#nop _startup schedules the 0.5s delay so tt++ and Lua finish their boot
+#nop output before we wipe. Called explicitly from main.tin.
+#alias {_startup} {
+    #delay {0.5} {_do_startup}
+}

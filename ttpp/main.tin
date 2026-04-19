@@ -1,5 +1,27 @@
 #nop ===== MAIN ENTRY POINT =====
 
+#nop Silence registration noise globally.
+#nop Without these, every alias/action/variable/etc. registration emits
+#nop an "#OK." line. With Lua auto-loading scripts that register dozens
+#nop of aliases at boot, that's pure noise.
+#message {aliases}     {off}
+#message {actions}     {off}
+#message {variables}   {off}
+#message {delays}      {off}
+#message {macros}      {off}
+#message {substitutes} {off}
+#message {highlights}  {off}
+#message {classes}     {off}
+#message {events}      {off}
+
+#nop Wipe tt++'s MOTD banner on initial boot. Skipped on cp -r when
+#nop a game session is active — the game's scrollback must survive
+#nop reloads.
+#if {!&game_session} {
+    #buffer clear;
+    #screen clear all
+}
+
 #nop ===== TT++ DEFAULT SETTINGS =====
 #nop Repeat last command with enter on empty line
 #CONFIG {REPEAT ENTER} {OFF}
@@ -17,13 +39,12 @@
 #action {tintin_read %1}      {#read %1}
 #action {tintin_show (%1) %2} {#%1 #showme %2}
 
-#nop Start Lua as a sub-session
-#run {lua} {lua lua/brain.lua}
+#nop Start Lua as a sub-session — quiet to suppress "#TRYING TO LAUNCH" notice
+#line quiet {#run {lua} {lua lua/brain.lua}}
 
 #nop Return to startup session
 #gts
 
-#showme {[SYSTEM] Framework loaded.}
-
-#nop Show cockpit info on startup — delay allows Lua to register _cockpit_help
-#delay {0.5} {cp}
+#nop Clean the screen, show welcome, and auto-connect. Guarded against
+#nop cp -r mid-session via the game_session check inside _startup.
+_startup
