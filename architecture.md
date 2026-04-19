@@ -23,7 +23,9 @@ advanced automation, state tracking, and UI feedback.
 ├── ttpp/
 │   ├── main.tin          # tt++ entry point — auto-loads all of core/
 │   ├── core/             # System modules (.tin files), auto-loaded
-│   │                     #   config.tin loads startup.conf → _profile/_host/_port
+│   │                     #   config.tin  — reads startup.conf → _profile/_host/_port
+│   │                     #   welcome.tin — clean boot banner + auto-connect
+│   │                     #   system.tin  — connection aliases, cp commands, session events
 │   └── sessions/         # Per-profile personal settings (.tin files)
 │
 ├── lua/
@@ -638,6 +640,43 @@ Pure bash + ANSI escapes; no external dependencies beyond coreutils.
 | Quit | Confirmation prompt; ESC cancels |
 | Persistence | Options saved to `bridge/startup.conf` on Back / ESC |
 
+### Clean client startup (`ttpp/main.tin` + `ttpp/core/welcome.tin`)
+
+tt++ is launched with a CLI flag that suppresses its built-in greeting
+banner (set in `bridge/tmux_start.sh`). The small residual flash is
+eliminated by also having tmux start tt++ directly as the pane command
+(`tmux new-session ... "cd ~/MUME && exec tt++ ..."`), bypassing an
+intermediate bash prompt.
+
+Inside tt++, `main.tin` does three things to keep the game window clean:
+
+1. **Global message suppression.** `#message {aliases} {off}` and the
+   equivalents for actions/variables/delays/macros/substitutes/
+   highlights/classes/events. Turns off tt++'s `#OK.` confirmations
+   for routine registrations. Errors still print. Applies permanently,
+   not just at boot — the cockpit has its own logging via
+   `ui()` / `dbg()` / `system_ui()`.
+
+2. **Boot-only scrollback wipe.** `#buffer clear` + `#screen clear all`
+   guarded by `#if {!&game_session}`. Wipes any residual tt++ chatter
+   on initial boot. On `cp -r` mid-session the guard skips it, so the
+   game's scrollback survives reloads.
+
+3. **Silent Lua launch.** `#line quiet {#run {lua} {lua lua/brain.lua}}`
+   suppresses the `#TRYING TO LAUNCH 'lua'` notice.
+
+`welcome.tin` then owns the welcome screen and auto-connect:
+
+- `_do_startup` runs 0.5 s after boot (time for tt++ and Lua to finish
+  their own boot output). Same game_session guard — skips entirely on
+  cp -r mid-session.
+- Clears scrollback (tt++'s `#buffer clear`, terminal's `\e[3J`, and
+  `tmux clear-history`).
+- Prints the MUME + COCKPIT ASCII banner, a welcome line, a
+  `Type 'cp' for available commands.` hint, and `Connecting to MUME...`.
+- Calls `connect`, which resolves to `#ses {$_profile} {$_host} {$_port}`
+  via `config.tin` — user lands directly in the MUD.
+
 ### Rendering conventions
 
 Launcher pages render through `render_frame` in `bridge/menu_render.sh`.
@@ -1032,6 +1071,8 @@ disappears, or no trigger fires within 15 seconds. Uses `game_cmd` and
 - [x] Session settings persistence (#class-based, auto-save on deactivate)
 - [x] Pre-tmux startup menu (retro DOS-style, bash+ANSI, launcher.sh / menu_render.sh)
 - [x] Profile and connection wiring (startup.conf → _profile/_host/_port → connect alias)
+- [x] Clean client startup (MOTD suppression, welcome banner,
+  auto-connect, game_session-guarded cp -r)
 
 ## Roadmap
 
@@ -1045,9 +1086,14 @@ disappears, or no trigger fires within 15 seconds. Uses `game_cmd` and
   (not advertised in the cockpit help box)
 - cockpit help shows a single `connect` entry under Connection
 
-### Phase 3 — In-game menu (later)
-- ESC in the game session opens a tmux `display-popup` menu
-- Reuses launcher's render helpers
-- Continue / Options / Quit
-- Removes `kill-session` from the `PROGRAM TERMINATION` event; launcher
-  owns the cockpit lifecycle instead
+### Phase 3 — In-game popup menu (planned)
+- ESC in the input pane opens a `tmux display-popup` overlay
+- Popup renders via a new `bridge/ingame_menu.sh` that sources
+  `bridge/menu_render.sh` — same colours, layout, and input handling
+  as the launcher
+- Menu items: Continue (dismiss), Options (shared sub-menu with the
+  launcher), Scripts, About, Quit (confirmed)
+- Quit triggers the existing `cp -e` path via `tmux send-keys` — no
+  architectural changes to PROGRAM TERMINATION
+- ESC inside the popup closes it; ESC in-game re-opens it
+- Background game continues running while the popup is open
