@@ -23,7 +23,8 @@ advanced automation, state tracking, and UI feedback.
 ├── ttpp/
 │   ├── main.tin          # tt++ entry point — auto-loads all of core/
 │   ├── core/             # System modules (.tin files), auto-loaded
-│   └── sessions/         # Per-session personal settings (.tin files)
+│   │                     #   config.tin loads startup.conf → _profile/_host/_port
+│   └── sessions/         # Per-profile personal settings (.tin files)
 │
 ├── lua/
 │   ├── brain.lua         # Lua brain — infrastructure, event loop, auto-loads scripts/
@@ -33,6 +34,7 @@ advanced automation, state tracking, and UI feedback.
 │   ├── launcher.sh           # Pre-tmux startup menu (DOS-style, pure bash)
 │   ├── menu_render.sh        # Render/input helpers sourced by launcher.sh
 │   ├── tmux_start.sh         # tmux session creation (extracted from start.sh)
+│   ├── read_config.sh        # Emits tt++ #var assignments from startup.conf
 │   ├── quotes.txt            # Tolkien quotes shown on main menu (pipe-sep format)
 │   ├── about.txt             # About page body text
 │   └── scripts.cache         # Script registry written by brain.lua (gitignored)
@@ -678,11 +680,13 @@ SCRIPT:autobow
 | `show_ui`         | `1`        | Whether to open the UI pane              |
 | `show_dev`        | `0`        | Whether to open the dev pane             |
 | `show_input`      | `1`        | Whether to open the input pane           |
-| `profile`         | `default`  | Which file in `ttpp/sessions/` to use. Phase 2: wired into tt++ session name |
+| `profile`         | `default`  | Which file in `ttpp/sessions/` to load; also the tt++ session name |
 
 Toggle panes at runtime with `cp -u`, `cp -d`, `cp -i`.
 
-Phase 2 will wire `profile` and `connection_mode` into tt++.
+`profile` and `connection_mode` are read by `ttpp/core/config.tin` at tt++
+startup via `bridge/read_config.sh`, which materialises the `_profile`,
+`_host`, and `_port` tt++ variables used by the `connect` alias.
 
 ## Version Control
 
@@ -1037,8 +1041,9 @@ disappears, or no trigger fires within 15 seconds. Uses `game_cmd` and
 - `#alias {connect}` opens `#ses {$_profile} {$_host} {$_port}` — session is
   named after the profile, so SESSION CONNECTED naturally loads the right
   `ttpp/sessions/<profile>.tin`
-- `default` and `mume` are legacy aliases that call `connect`
-- cockpit help shows current profile and connection mode from startup.conf
+- `default` and `mume` are retained as legacy aliases that call `connect`
+  (not advertised in the cockpit help box)
+- cockpit help shows a single `connect` entry under Connection
 
 ### Phase 3 — In-game menu (later)
 - ESC in the game session opens a tmux `display-popup` menu
