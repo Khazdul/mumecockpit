@@ -572,6 +572,12 @@ has no size cap.
   prompt_toolkit.
 - Shift+letter cannot be a macro target — terminals do not distinguish
   it from the uppercase form.
+- Bare ESC is not available as a tt++ macro target. ESC is captured at
+  the tmux root-keybinding level (`tmux bind-key -T root Escape`) to open
+  the in-game popup menu uniformly from any pane (game, input, ui, dev).
+  This bypasses prompt_toolkit's escape-disambiguation timer entirely.
+  `escape-time` is set to 10 ms in `tmux_start.sh` for fast disambiguation
+  of multi-character escape sequences (Alt+letter, numpad SS3) within tmux.
 
 ### Known limitations
 
@@ -582,6 +588,12 @@ has no size cap.
   verified not to collide — this bug is specific to lowercase `o`.
 - **Numpad requires Num Lock on.** With Num Lock off, the numpad emits
   cursor/navigation sequences instead, which are not bound as macros.
+- **Cursor flicker at popup open/close.** A single-frame cursor flash is
+  visible when the popup opens and closes. Cause is the terminal emulator
+  defaulting cursor-visible state on new pty creation; tmux display-popup
+  spawns a fresh pty each open. Cursor-hide escapes fire as early as possible
+  inside the popup but cannot preempt the emulator's initial state. Accepted
+  as a cosmetic limitation.
 
 ## Cockpit System
 Unified window and system management via `cp` commands:
@@ -629,6 +641,14 @@ registers itself via `register_script(meta)` — no changes to core needed.
 `start.sh` is a thin wrapper that installs dependencies and then:
 - Without bypass flags → `exec bash bridge/launcher.sh` (startup menu)
 - With `--no-menu` / `-d` / `-u` → `exec bash bridge/tmux_start.sh` (direct start)
+
+The return-to-menu path (in-game popup "Exit to main menu") is handled by an
+exec-chain inside `tmux_start.sh`: after `tmux attach` returns, the script
+checks for `bridge/.return_to_menu` (written by `ingame_menu.sh` just before
+firing `cp -e`) and, if present, `exec`s back into `bridge/launcher.sh`.
+No intermediate bash frame — no flash. `tmux_start.sh` also clears any stale
+sentinel at the top of each run so a crash cannot mis-route a subsequent cold
+start.
 
 ### Startup menu (`bridge/launcher.sh`)
 A DOS-style retro menu rendered in the terminal before tmux launches.
@@ -733,9 +753,11 @@ column alignment.
 - **Dirty-flag redraw.** Main loop uses `_DIRTY=1` set by a `WINCH` trap or
   state-changing key handler; `read -rsn1 -t 0.2` yields fast enough resize
   response without a busy loop.
-- **Handoff via `exec`.** Launcher → tmux_start.sh uses `exec bash …`, and
-  tmux_start ends with `exec tmux attach …` — no intermediate bash flash
-  between menu and cockpit.
+- **Handoff via `exec`.** Launcher → tmux_start.sh uses `exec bash …`; the
+  tmux session is created and then attached with a plain `tmux attach` (not
+  exec, so the return-to-menu sentinel check can run after attach exits).
+  The launcher → tmux_start handoff itself is exec'd, so there is no
+  intermediate bash flash between menu and cockpit.
 
 **Pane-setup barrier.** `bridge/tmux_start.sh` prefixes the tt++ launch command with `sleep 0.3 &&` so that `tmux split-window` and `tmux resize-pane` complete before tt++/Lua begin writing to `ui.log` / `debug.log`. Without the barrier, `tail -f` in the UI/DEV panes reflows mid-output and the first emitted lines are swallowed into scrollback.
 
@@ -1141,7 +1163,9 @@ disappears, or no trigger fires within 15 seconds. Uses `game_cmd` and
 - cockpit help shows a single `connect` entry under Connection
 
 ### Phase 3 — In-game popup menu (planned)
-- ESC in the input pane opens a `tmux display-popup` overlay
+- ESC from any pane opens a `tmux display-popup` overlay (tmux root
+  keybinding in `tmux_start.sh`, not prompt_toolkit — works regardless of
+  which pane has focus or whether the input pane exists)
 - Popup renders via a new `bridge/ingame_menu.sh` that sources
   `bridge/menu_render.sh` — same colours, layout, and input handling
   as the launcher

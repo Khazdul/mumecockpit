@@ -5,6 +5,11 @@
 
 cd "$(dirname "$0")/.."
 
+# Clear any stale sentinel left by a crash before doing anything else.
+# The sentinel is set by ingame_menu.sh just before firing cp -e; if tmux
+# died uncleanly the file may linger and mis-route the next cold start.
+rm -f bridge/.return_to_menu
+
 CONF="bridge/startup.conf"
 
 # Create startup.conf with defaults if missing
@@ -21,6 +26,7 @@ source "$CONF"
 SHOW_UI="${show_ui:-1}"
 SHOW_DEV="${show_dev:-0}"
 SHOW_INPUT="${show_input:-1}"
+SHOW_DIVIDERS="${show_pane_dividers:-1}"
 
 # ---------------------------------------------------------------------------
 # 1. Dirs, permissions, log reset
@@ -50,10 +56,16 @@ tmux new-session -d -s mume -x "$TERM_COLS" -y "$TERM_LINES" -n cockpit \
 tmux set-option -t mume status off
 tmux set-option -t mume mouse on
 
-tmux set-option -t mume pane-border-status top
 tmux set-option -t mume pane-border-format "#{?#{==:#{pane_title},MUME},,#{?#{==:#{pane_title},input},,#{?pane_title,#{pane_title},}}}"
-tmux set-option -t mume pane-border-style "fg=colour238"
-tmux set-option -t mume pane-active-border-style "fg=colour238"
+if [ "$SHOW_DIVIDERS" -eq 1 ]; then
+    tmux set-option -t mume pane-border-status top
+    tmux set-option -t mume pane-border-style "fg=colour238"
+    tmux set-option -t mume pane-active-border-style "fg=colour238"
+else
+    tmux set-option -t mume pane-border-status off
+    tmux set-option -t mume pane-border-style "fg=black"
+    tmux set-option -t mume pane-active-border-style "fg=black"
+fi
 
 # ---------------------------------------------------------------------------
 # 3. Build layout
@@ -102,6 +114,14 @@ tmux set-hook -t mume window-resized \
 tmux bind-key -n MouseDragEnd1Border \
     "run-shell 'bash $HOME/MUME/bridge/on_pane_resize.sh'"
 
+# Fast escape disambiguation so ESC feels instant.
+tmux set-option -s escape-time 10
+
+# ESC opens the in-game popup menu from any pane.
+tmux bind-key -T root Escape display-popup -E \
+    -w 80% -h 80% -x C -y C \
+    "bash $HOME/MUME/bridge/ingame_menu.sh"
+
 # ---------------------------------------------------------------------------
 # 5. TT++ started directly in pane 0 (via new-session above) — no send-keys.
 # ---------------------------------------------------------------------------
@@ -127,4 +147,13 @@ else
     tmux select-pane -t mume:cockpit.0
 fi
 
-exec tmux attach -t mume
+tmux attach -t mume
+
+# Resumes here when the session dies or the user detaches.
+# Check for the return-to-menu sentinel written by ingame_menu.sh before
+# firing cp -e; if set, exec back into the launcher (no extra bash frame).
+if [ -f bridge/.return_to_menu ]; then
+    rm -f bridge/.return_to_menu
+    exec bash bridge/launcher.sh
+fi
+# No sentinel → fall through to shell cleanly.
