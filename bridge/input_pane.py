@@ -170,6 +170,12 @@ def _handle_shift_end(event):
     if buf.text:
         _set_buffer_text(buf, buf.text, recalled=True, cursor_pos=len(buf.text))
 
+@kb.add("c-a")
+def _handle_ctrl_a(event):
+    buf = event.app.current_buffer
+    if buf.text:
+        _set_buffer_text(buf, buf.text, recalled=True, cursor_pos=len(buf.text))
+
 @kb.add("pageup")
 def _handle_pageup(event):
     subprocess.run(["tmux", "send-keys", "-t", TMUX_TARGET, "PageUp"])

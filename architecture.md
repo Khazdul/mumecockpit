@@ -472,7 +472,7 @@ Keys are split into three disjoint categories:
 
 | Category  | Handled by         | Examples                                              |
 |-----------|--------------------|-------------------------------------------------------|
-| Editing   | prompt_toolkit     | printable chars, Backspace, Ctrl+A/E/W, Alt+Backspace |
+| Editing   | prompt_toolkit     | printable chars, Backspace, Ctrl+E/W, Alt+Backspace   |
 | History   | prompt_toolkit     | Up, Down, Ctrl+P, Ctrl+N, Ctrl+R                      |
 | Scrollback| prompt_toolkit     | PageUp, PageDown (forwarded to tt++ pane's buffer)    |
 | Terminal  | OS / terminal      | Ctrl+C, Ctrl+D, Ctrl+Z, Ctrl+S, Ctrl+Q                |
@@ -515,9 +515,10 @@ Any of the following exits recall state and clears the highlight:
 Recall state can also be entered manually on the current buffer:
 Shift+Home highlights the full buffer and moves the cursor to the
 start; Shift+End highlights the full buffer and moves the cursor
-to the end. Either provides a quick wipe — press Backspace, Delete,
-or any printable character to clear the buffer. No-op on empty
-buffer.
+to the end. Ctrl+A is an alias for Shift+End (full-buffer highlight,
+cursor at end) — the standard GUI select-all convention. Any of these
+provides a quick wipe — press Backspace, Delete, or any printable
+character to clear the buffer. No-op on empty buffer.
 
 #### History navigation
 
