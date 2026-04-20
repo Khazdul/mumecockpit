@@ -23,7 +23,7 @@ advanced automation, state tracking, and UI feedback.
 ├── ttpp/
 │   ├── main.tin          # tt++ entry point — auto-loads all of core/
 │   ├── core/             # System modules (.tin files), auto-loaded
-│   │                     #   config.tin  — reads startup.conf → _profile/_host/_port
+│   │                     #   config.tin  — reads startup.conf → _profile/_host/_port/_ses_cmd
 │   │                     #   welcome.tin — clean boot banner + auto-connect
 │   │                     #   system.tin  — connection aliases, cp commands, session events
 │   └── sessions/         # Per-profile personal settings (.tin files)
@@ -56,7 +56,7 @@ advanced automation, state tracking, and UI feedback.
 ┌──────────────────────────────────────────┐
 │               MUD SERVER                 │
 └─────────────────┬────────────────────────┘
-                  │ telnet
+                  │ telnet (mmapper) / TLS (direct)
                   ▼
 ┌──────────────────────────────────────────┐
 │              TinTin++                    │
@@ -678,8 +678,9 @@ Inside tt++, `main.tin` does three things to keep the game window clean:
   `tmux clear-history`).
 - Prints the MUME + COCKPIT ASCII banner, a welcome line, a
   `Type 'cp' for available commands.` hint, and `Connecting to MUME...`.
-- Calls `connect`, which resolves to `#ses {$_profile} {$_host} {$_port}`
-  via `config.tin` — user lands directly in the MUD.
+- Calls `connect`, which resolves to `#$_ses_cmd {$_profile} {$_host} {$_port}`
+  via `config.tin` — `$_ses_cmd` is `ses` (mmapper/plain) or `ssl` (direct/TLS).
+  User lands directly in the MUD.
 
 ### Rendering conventions
 
@@ -774,7 +775,8 @@ Toggle panes at runtime with `cp -u`, `cp -d`, `cp -i`.
 
 `profile` and `connection_mode` are read by `ttpp/core/config.tin` at tt++
 startup via `bridge/read_config.sh`, which materialises the `_profile`,
-`_host`, and `_port` tt++ variables used by the `connect` alias.
+`_host`, `_port`, and `_ses_cmd` tt++ variables used by the `connect` alias.
+`_ses_cmd` is `ses` for mmapper mode and `ssl` for direct mode (TLS).
 
 ## Version Control
 
@@ -1121,7 +1123,8 @@ disappears, or no trigger fires within 15 seconds. Uses `game_cmd` and
 - [ ] PvP keybinds finalized
 - [x] Session settings persistence (#class-based, auto-save on deactivate)
 - [x] Pre-tmux startup menu (retro DOS-style, bash+ANSI, launcher.sh / menu_render.sh)
-- [x] Profile and connection wiring (startup.conf → _profile/_host/_port → connect alias)
+- [x] Profile and connection wiring (startup.conf → _profile/_host/_port/_ses_cmd → connect alias)
+- [x] TLS for direct connections (_ses_cmd=ssl uses #ssl instead of #ses)
 - [x] Clean client startup (MOTD suppression, welcome banner,
   auto-connect, game_session-guarded cp -r)
 
@@ -1129,10 +1132,10 @@ disappears, or no trigger fires within 15 seconds. Uses `game_cmd` and
 
 ### Phase 2 — Profile and connection wiring ✓
 - `ttpp/core/config.tin` reads `bridge/startup.conf` via `bridge/read_config.sh`
-  at startup and materialises `_profile`, `_host`, `_port` tt++ variables
-- `#alias {connect}` opens `#ses {$_profile} {$_host} {$_port}` — session is
-  named after the profile, so SESSION CONNECTED naturally loads the right
-  `ttpp/sessions/<profile>.tin`
+  at startup and materialises `_profile`, `_host`, `_port`, `_ses_cmd` tt++ variables
+- `#alias {connect}` opens `#$_ses_cmd {$_profile} {$_host} {$_port}` — `_ses_cmd`
+  is `ses` (mmapper, plain telnet) or `ssl` (direct, TLS); session is named after
+  the profile, so SESSION CONNECTED naturally loads the right `ttpp/sessions/<profile>.tin`
 - `default` and `mume` are retained as legacy aliases that call `connect`
   (not advertised in the cockpit help box)
 - cockpit help shows a single `connect` entry under Connection

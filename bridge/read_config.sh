@@ -10,9 +10,10 @@ fi
 : "${profile:=default}"
 : "${connection_mode:=mmapper}"
 case "$connection_mode" in
-    direct) host=mume.org  ;;
-    *)      host=localhost ;;
+    direct) host=mume.org ; ses_cmd=ssl ;;
+    *)      host=localhost; ses_cmd=ses ;;
 esac
-echo "#var {_profile} {$profile}"
-echo "#var {_host}    {$host}"
-echo "#var {_port}    {4242}"
+echo "#var {_profile}  {$profile}"
+echo "#var {_host}     {$host}"
+echo "#var {_port}     {4242}"
+echo "#var {_ses_cmd}  {$ses_cmd}"

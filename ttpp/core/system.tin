@@ -19,7 +19,7 @@
 #nop `connect` opens a session named after the current profile using host/port
 #nop resolved from bridge/startup.conf by config.tin at startup.
 #alias {connect} {
-    #ses {$_profile} {$_host} {$_port}
+    #$_ses_cmd {$_profile} {$_host} {$_port}
 }
 
 #nop Legacy aliases — same as connect, kept for muscle memory.
