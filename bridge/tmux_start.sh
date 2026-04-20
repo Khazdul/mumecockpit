@@ -35,6 +35,7 @@ mkdir -p bridge logs
 
 chmod +x bridge/open_pane.sh
 chmod +x bridge/focus_input.sh
+chmod +x bridge/toggle_pane.sh
 
 touch logs/debug.log logs/ui.log
 > logs/debug.log

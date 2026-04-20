@@ -30,55 +30,10 @@
 #nop Direct cp aliases. {cp} has priority 6 so specific {cp -X} aliases (priority 5) win.
 #nop Script aliases like {cp -autostab} are registered by Lua at startup.
 
-#alias {cp -u} {
-    #system {
-        EXISTS=$(tmux list-panes -t mume:cockpit -F '#{pane_title}' | grep '^ui$');
-        if [ -n "$EXISTS" ]; then
-            tmux kill-pane -t $(tmux list-panes -t mume:cockpit -F '#{pane_index} #{pane_title}' | awk '/ui/{print "mume:cockpit." $1}');
-        else
-            bash $HOME/MUME/bridge/open_pane.sh ui;
-        fi
-    }
-}
-
-#alias {cp -d} {
-    #system {
-        EXISTS=$(tmux list-panes -t mume:cockpit -F '#{pane_title}' | grep '^dev$');
-        if [ -n "$EXISTS" ]; then
-            tmux kill-pane -t $(tmux list-panes -t mume:cockpit -F '#{pane_index} #{pane_title}' | awk '/dev/{print "mume:cockpit." $1}');
-        else
-            bash $HOME/MUME/bridge/open_pane.sh dev;
-        fi
-    }
-}
-
-#alias {cp -i} {
-    #system {
-        EXISTS=$(tmux list-panes -t mume:cockpit -F '#{pane_title}' | grep '^input$');
-        if [ -n "$EXISTS" ]; then
-            tmux kill-pane -t $(tmux list-panes -t mume:cockpit -F '#{pane_index} #{pane_title}' | awk '/input/{print "mume:cockpit." $1}');
-            tmux unbind-key -n MouseUp1Pane;
-            tmux select-pane -t mume:cockpit.0;
-        else
-            bash $HOME/MUME/bridge/open_pane.sh input;
-        fi
-    }
-}
-
-#alias {cp -h} {
-    #system {
-        STATUS=$(tmux show-option -t mume pane-border-status | awk '{print $2}');
-        if [ "$STATUS" = "off" ]; then
-            tmux set-option -t mume pane-border-status top;
-            tmux set-option -t mume pane-border-style fg=colour238;
-            tmux set-option -t mume pane-active-border-style fg=colour238;
-        else
-            tmux set-option -t mume pane-border-status off;
-            tmux set-option -t mume pane-border-style fg=black;
-            tmux set-option -t mume pane-active-border-style fg=black;
-        fi
-    }
-}
+#alias {cp -u} {#system {bash $HOME/MUME/bridge/toggle_pane.sh ui}}
+#alias {cp -d} {#system {bash $HOME/MUME/bridge/toggle_pane.sh dev}}
+#alias {cp -i} {#system {bash $HOME/MUME/bridge/toggle_pane.sh input}}
+#alias {cp -h} {#system {bash $HOME/MUME/bridge/toggle_pane.sh headers}}
 
 #alias {cp -r} {
     #gts;
