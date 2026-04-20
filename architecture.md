@@ -1029,6 +1029,8 @@ No third-party binaries are bundled. Safe to distribute on GitHub or directly to
 - Function entry points for debugging (`get_state called`, `get_tells called`)
 - Unknown or unhandled events
 
+**Script load messages.** On load, a script emits a single `dbg()` line of the form `[SCRIPTNAME] loaded` — nothing more. Alias/trigger registration details belong in the script's `cp -<name>` help box (via `register_script`), not in the startup log. The load line is a liveness signal, not a manifest.
+
 **Rules:**
 - Never log the same event to both panes redundantly — `ui()` already mirrors to dev with a `UI:` prefix, so never follow a `ui()` call with a `dbg()` for the same message
 - Log to UI only when something meaningful changes, not on every trigger fire, you need to ask what is appropriate to log when new content is added

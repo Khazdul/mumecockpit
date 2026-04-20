@@ -245,4 +245,4 @@ register_script({
         "After 15s with no activity: stop",
     }
 })
-ab_dbg("loaded — alias ash<dir> registered")
+ab_dbg("loaded")

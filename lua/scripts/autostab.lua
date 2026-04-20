@@ -172,4 +172,4 @@ register_script({
         "After 10s with no activity: stop",
     }
 })
-as_dbg("loaded — alias as<dir> registered")
+as_dbg("loaded")
