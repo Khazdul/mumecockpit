@@ -42,8 +42,11 @@ tmux kill-session -t mume 2>/dev/null || true
 TERM_COLS=$(tput cols)
 TERM_LINES=$(tput lines)
 
+# Delay tt++ launch until the pane setup below (split-window, resize-pane)
+# has completed. Otherwise tt++/Lua emit startup output while tail -f
+# is still reflowing, and the first lines are lost into tmux scrollback.
 tmux new-session -d -s mume -x "$TERM_COLS" -y "$TERM_LINES" -n cockpit \
-    "cd $HOME/MUME && exec tt++ -G ttpp/main.tin"
+    "sleep 0.3 && cd $HOME/MUME && exec tt++ -G ttpp/main.tin"
 tmux set-option -t mume status off
 tmux set-option -t mume mouse on
 

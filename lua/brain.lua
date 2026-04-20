@@ -328,22 +328,26 @@ end
 -- Each script is self-contained: registers its own aliases/triggers at load time.
 -- -----------------------------
 local function load_scripts()
+    local n = 0
     local p = io.popen("ls lua/scripts/*.lua 2>/dev/null")
     if p then
         for f in p:lines() do
             dofile(f)
+            n = n + 1
         end
         p:close()
     end
     _register_cockpit_help()
     _write_scripts_cache()
+    return n
 end
-load_scripts()
 
 -- -----------------------------
 -- STARTUP
 -- -----------------------------
-system_ui("Lua brain started (" .. ui_var(_VERSION) .. ").")
+dbg("Lua brain started (" .. _VERSION .. ").")
+local _n_scripts = load_scripts()
+dbg(_n_scripts .. " scripts loaded.")
 
 -- Main loop
 for line in io.lines() do

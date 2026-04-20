@@ -130,6 +130,8 @@ Lua begins executing scripts immediately on startup and emits output before
 #run {lua} {lua lua/brain.lua}              -- Lua starts after
 ```
 
+**Startup order in `brain.lua`.** The brain logs its own start via `dbg()` before calling `load_scripts()`, and emits an `N scripts loaded.` summary via `dbg()` after. Both are dev-pane-only — the UI pane stays clean of plumbing events and shows only user-relevant state transitions (game session connect/disconnect, etc.).
+
 ## Communication Protocol
 
 ### tt++ → Lua: two patterns
@@ -698,6 +700,8 @@ Rules are strict — deviations reintroduce flicker or scroll artifacts:
   tmux_start ends with `exec tmux attach …` — no intermediate bash flash
   between menu and cockpit.
 
+**Pane-setup barrier.** `bridge/tmux_start.sh` prefixes the tt++ launch command with `sleep 0.3 &&` so that `tmux split-window` and `tmux resize-pane` complete before tt++/Lua begin writing to `ui.log` / `debug.log`. Without the barrier, `tail -f` in the UI/DEV panes reflows mid-output and the first emitted lines are swallowed into scrollback.
+
 ### scripts.cache (`bridge/scripts.cache`, gitignored)
 Written by `brain.lua` at every client startup (inside `load_scripts()` after
 `_register_cockpit_help()`). Parsed by the Scripts page in `launcher.sh`.
@@ -857,7 +861,6 @@ cockpit reload, future framework-level events) use `system_ui()` in
 `brain.lua`:
 
 ```lua
-system_ui("Lua brain started (" .. ui_var(_VERSION) .. ").")
 system_ui("Game session " .. ui_var(ses) .. " connected.")
 system_ui("Game session " .. ui_var(ses) .. " closed.")
 ```
@@ -865,7 +868,6 @@ system_ui("Game session " .. ui_var(ses) .. " closed.")
 Renders in the UI pane as:
 
 ```
-● SYSTEM: Lua brain started (Lua 5.4).
 ● SYSTEM: Game session mume connected.
 ● SYSTEM: Game session mume closed.
 ```
@@ -873,8 +875,13 @@ Renders in the UI pane as:
 `● SYSTEM` is blue (`#42A5F5`), the message is bold bright white, and
 dynamic values are bold yellow via `ui_var()`.
 
-Use for infrastructure lifecycle events only — not for game events, script
-lifecycle (use `script_ui`), warnings (`ui_warn`), or errors (`ui_err`).
+Infrastructure lifecycle events that the user needs to see (game session
+connect/disconnect, cockpit reload, future framework-level events) use
+`system_ui()`. Events that are internal brain plumbing (brain process start,
+script-load diagnostics) go to `dbg()` and appear in the dev pane only.
+
+Use `system_ui` for user-relevant state transitions only — not for game events,
+script lifecycle (use `script_ui`), warnings (`ui_warn`), or errors (`ui_err`).
 
 ### UI Warnings and Errors
 When the player needs to see a warning or error, use the severity helpers in
