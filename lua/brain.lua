@@ -345,9 +345,9 @@ end
 -- -----------------------------
 -- STARTUP
 -- -----------------------------
-dbg("Lua brain started (" .. _VERSION .. ").")
+dbg("Lua brain started (" .. _VERSION .. ")")
 local _n_scripts = load_scripts()
-dbg(_n_scripts .. " scripts loaded.")
+dbg(_n_scripts .. " scripts loaded")
 
 -- Main loop
 for line in io.lines() do

@@ -945,10 +945,7 @@ cross-cutting rules.
 These rules apply to every message written to `ui.log` through any helper
 (`ui`, `script_ui`, `system_ui`, `ui_warn`, `ui_err`):
 
-- **Trailing period.** All UI messages end with a period (or `?` / `!` if
-  genuinely a question or exclamation). `dbg()` messages are exempt —
-  `debug.log` carries structured diagnostic lines where trailing punctuation
-  adds noise.
+- **Trailing period — UI vs dev.** User-facing helpers (`ui`, `system_ui`, `script_ui`, `ui_warn`, `ui_err`) write full sentences and always end with a period. `dbg()` is developer-facing log output — terse, `key: value` or status-style — and never ends with a period. Quick test: if the line reads like console output from a tool (`server connected`, `cache miss for foo`, `3 scripts loaded`), it's `dbg()` and takes no period. If it reads like a status report to the player (`Game session mume connected.`), it's one of the UI helpers and does.
 - **Event-style phrasing.** Describe what happened, not what the state is
   now. `Game session mume connected.`, not `Game session: mume`.
 - **Dynamic values highlighted.** Any variable part of a message (session
