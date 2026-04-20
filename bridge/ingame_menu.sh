@@ -40,10 +40,52 @@ _draw_cockpit_banner() {
     printf '\n'
 }
 
+_render_status_header() {
+    local cols; cols=$(tput cols 2>/dev/null || echo 80)
+
+    local profile="default" connection_mode="mmapper"
+    [ -f bridge/startup.conf ] && source bridge/startup.conf
+
+    local mode_label="MMapper"
+    case "$connection_mode" in
+        direct)  mode_label="Direct" ;;
+        *)       mode_label="MMapper" ;;
+    esac
+
+    local connected_at=""
+    if [ -f bridge/session.state ]; then
+        while IFS='=' read -r k v; do
+            case "$k" in
+                connected_at) connected_at="$v" ;;
+            esac
+        done < bridge/session.state
+    fi
+
+    local line
+    if [ -n "$connected_at" ] && [ "$connected_at" -gt 0 ] 2>/dev/null; then
+        local now; now=$(date +%s)
+        local elapsed=$(( now - connected_at ))
+        local h=$(( elapsed / 3600 ))
+        local m=$(( (elapsed % 3600) / 60 ))
+        local s=$(( elapsed % 60 ))
+        local uptime; printf -v uptime "%d:%02d:%02d" "$h" "$m" "$s"
+        line="Profile: ${profile}  ·  ${mode_label}  ·  up ${uptime}"
+    else
+        line="Profile: ${profile}  ·  Disconnected"
+    fi
+
+    local vw=${#line}
+    local pad=$(( (cols - vw) / 2 ))
+    [ "$pad" -lt 0 ] && pad=0
+    printf "%${pad}s${_MR_BODY}%s${_MR_RESET}\n" "" "$line"
+    printf '\n'
+}
+
 _render_main() {
     local cols; cols=$(tput cols 2>/dev/null || echo 80)
     {
         _draw_cockpit_banner
+        _render_status_header
 
         local i
         for i in "${!_ITEMS[@]}"; do
@@ -106,7 +148,7 @@ while true; do
         _render_main
     fi
 
-    read_key 0.2 || continue
+    read_key 0.2 || { _DIRTY=1; continue; }
 
     _DIRTY=1
     case "$LAST_KEY" in

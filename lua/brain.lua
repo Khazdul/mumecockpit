@@ -77,12 +77,42 @@ function ui_err(msg)
     ui(string.format("%s✖ ERROR:%s %s%s%s", _C_ERR, _C_RESET, _C_TEXT, msg, _C_RESET))
 end
 
+local SESSION_STATE_PATH = "bridge/session.state"
+
+-- Plain line-by-line parse — never sources/executes the file.
+local function _read_startup_conf_value(key)
+    local f = io.open("bridge/startup.conf", "r")
+    if not f then return nil end
+    for line in f:lines() do
+        local k, v = line:match("^([^=]+)=(.*)$")
+        if k == key then f:close(); return v end
+    end
+    f:close()
+    return nil
+end
+
+local function _write_session_state()
+    local mode = _read_startup_conf_value("connection_mode") or "mmapper"
+    local tmp  = SESSION_STATE_PATH .. ".tmp"
+    local f    = io.open(tmp, "w")
+    if not f then return end
+    f:write(string.format("connected_at=%d\nconnection_mode=%s\n",
+                          os.time(), mode))
+    f:close()
+    os.rename(tmp, SESSION_STATE_PATH)
+end
+
+local function _clear_session_state()
+    os.remove(SESSION_STATE_PATH)
+end
+
 GAME_SESSION = nil  -- set dynamically when a game session connects
 
 function set_game_session(ses)
     GAME_SESSION = ses
     system_ui("Game session " .. ui_var(ses) .. " connected.")
     tintin_cmd("gts", "#var {game_session} {" .. ses .. "}")
+    _write_session_state()
 end
 
 -- Called when a game session disconnects. Clears GAME_SESSION
@@ -91,6 +121,7 @@ end
 function clear_game_session(ses)
     if GAME_SESSION == ses then
         GAME_SESSION = nil
+        _clear_session_state()
         system_ui("Game session " .. ui_var(ses) .. " closed.")
         tintin("gts", "#unvar game_session")
     else
@@ -346,6 +377,7 @@ end
 -- STARTUP
 -- -----------------------------
 dbg("Lua brain started (" .. _VERSION .. ")")
+_clear_session_state()
 local _n_scripts = load_scripts()
 dbg(_n_scripts .. " scripts loaded")
 

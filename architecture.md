@@ -48,6 +48,9 @@ advanced automation, state tracking, and UI feedback.
 │   ├── on_window_resize.sh   # Fired on terminal resize — re-applies stored layout
 │   ├── on_pane_resize.sh     # Fired on border drag — saves new layout values
 │   ├── layout.conf           # Persisted layout state (gitignored)
+│   ├── session.state         # Runtime state written by Lua on SESSION
+│   │                         #   CONNECTED; cleared on DISCONNECTED and
+│   │                         #   at brain startup (gitignored)
 │   └── startup.conf          # Persisted startup-menu state (gitignored)
 │
 └── logs/
@@ -297,6 +300,27 @@ and cleared on SESSION DISCONNECTED.
 interferes with socket cleanup and prevents MMapper from releasing
 the connection.
 
+### Runtime session state (`bridge/session.state`)
+
+Lua writes this plain key=value file at the end of `set_game_session()`,
+clears it inside `clear_game_session()` (matched session only), and
+clears it unconditionally at brain startup as belt-and-braces recovery
+from crashes or `cp -r`.
+
+Format:
+    connected_at=<epoch seconds>
+    connection_mode=<mmapper|direct>
+
+Written atomically via temp-file + rename; readers must treat missing
+or malformed values as "Disconnected" and never block.
+
+Consumer: `bridge/ingame_menu.sh` reads this file on every popup render
+to drive the status header and the live uptime counter. Future phases
+(ping monitor, script dashboard) may add sibling files next to it.
+
+**Known limitation:** `cp -r` clears and re-writes the file, so uptime
+resets to 0 after a reload. Accepted.
+
 ### Registration functions
 
 Scripts must never hardcode a session name. Use these functions:
@@ -445,6 +469,7 @@ State is stored in `bridge/layout.conf` (gitignored, recreated on first startup)
 ### Gitignored files
 ```
 bridge/layout.conf
+bridge/session.state
 bridge/.layout_lock
 bridge/.pane_resize_pid
 ```
