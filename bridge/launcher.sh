@@ -44,6 +44,7 @@ if [ ! -f "$CONF" ]; then
     printf 'show_ui=1\n'                                           >> "$CONF"
     printf 'show_dev=0\n'                                          >> "$CONF"
     printf 'show_input=1\n'                                        >> "$CONF"
+    printf 'show_pane_dividers=1\n'                                >> "$CONF"
     printf 'profile=default\n'                                     >> "$CONF"
 fi
 source "$CONF"
@@ -53,6 +54,7 @@ connection_mode="${connection_mode:-mmapper}"
 show_ui="${show_ui:-1}"
 show_dev="${show_dev:-0}"
 show_input="${show_input:-1}"
+show_pane_dividers="${show_pane_dividers:-1}"
 profile="${profile:-default}"
 
 # ---------------------------------------------------------------------------
@@ -61,10 +63,11 @@ profile="${profile:-default}"
 _save_conf() {
     printf '# Phase 1 cosmetic options — launcher display only\n'  > "$CONF"
     printf 'connection_mode=%s\n' "$connection_mode"               >> "$CONF"
-    printf 'show_ui=%s\n'        "$show_ui"                        >> "$CONF"
-    printf 'show_dev=%s\n'       "$show_dev"                       >> "$CONF"
-    printf 'show_input=%s\n'     "$show_input"                     >> "$CONF"
-    printf 'profile=%s\n'        "$profile"                        >> "$CONF"
+    printf 'show_ui=%s\n'            "$show_ui"                    >> "$CONF"
+    printf 'show_dev=%s\n'           "$show_dev"                   >> "$CONF"
+    printf 'show_input=%s\n'         "$show_input"                 >> "$CONF"
+    printf 'show_pane_dividers=%s\n' "$show_pane_dividers"         >> "$CONF"
+    printf 'profile=%s\n'            "$profile"                    >> "$CONF"
 }
 
 # One-shot migration: profile=mume → profile=default (file renamed in Phase 1 r3)
@@ -146,17 +149,17 @@ _render_main() {
             local qlen=$(( ${#_QUOTE_TEXT} + 2 ))
             local qpad=$(( (cols - qlen) / 2 ))
             [ "$qpad" -lt 0 ] && qpad=0
-            printf "%${qpad}s${_MR_ITALIC_GREY}\"%s\"${_MR_RESET}\n" "" "$_QUOTE_TEXT"
+            printf "%${qpad}s${_MR_QUOTE}\"%s\"${_MR_RESET}\n" "" "$_QUOTE_TEXT"
             local attr="— ${_QUOTE_ATTR}"
             local apad=$(( (cols - ${#attr}) / 2 ))
             [ "$apad" -lt 0 ] && apad=0
-            printf "%${apad}s${_MR_GREY}%s${_MR_RESET}\n" "" "$attr"
+            printf "%${apad}s${_MR_QUOTE_ATTR}%s${_MR_RESET}\n" "" "$attr"
         fi
 
         printf '\n'
         local footer="↑↓ Navigate · Enter/Space Select"
         local fpad=$(( (cols - ${#footer}) / 2 ))
-        printf "%${fpad}s${_MR_GREY}%s${_MR_RESET}\n" "" "$footer"
+        printf "%${fpad}s${_MR_HINT}%s${_MR_RESET}\n" "" "$footer"
     } | render_frame
 }
 
@@ -171,7 +174,7 @@ _quit_confirm() {
             local cols; cols=$(tput cols 2>/dev/null || echo 80)
             local msg="Quit? Press Y to confirm, any other key to cancel."
             local pad=$(( (cols - ${#msg}) / 2 ))
-            { printf '\n\n'; printf "%${pad}s${_MR_WHITE}%s${_MR_RESET}\n" "" "$msg"; } | render_frame
+            { printf '\n\n'; printf "%${pad}s${_MR_ACTIVE}%s${_MR_RESET}\n" "" "$msg"; } | render_frame
         fi
         read_key 0.2 || continue
         break
@@ -187,34 +190,36 @@ _options_menu() {
     local _ui="$show_ui"
     local _dev="$show_dev"
     local _inp="$show_input"
+    local _pdv="$show_pane_dividers"
     local _conn="$connection_mode"
 
-    # Selectable items: 0=UI 1=Dev 2=Input 3=MMapper 4=Direct 5=Back
+    # Selectable items: 0=UI 1=Dev 2=Input 3=PaneDividers 4=MMapper 5=Direct 6=Back
     local _osel=0
-    local _OCOUNT=6
+    local _OCOUNT=7
 
     _oitem() {
         local idx="$1" label="$2"
         local active=0
         [ "$idx" -eq "$_osel" ] && active=1
-        draw_menu_item "$label" "$active"
+        draw_menu_item "$label" "$active" "$pad"
     }
 
     _section_hdr() {
         local title="$1"
         local cols; cols=$(tput cols 2>/dev/null || echo 80)
-        local pad=$(( (cols - ${#title}) / 2 ))
-        [ "$pad" -lt 0 ] && pad=0
-        printf "%${pad}s${_MR_GREY}%s${_MR_RESET}\n" "" "$title"
+        local hpad=$(( (cols - ${#title}) / 2 ))
+        [ "$hpad" -lt 0 ] && hpad=0
+        printf "%${hpad}s${_MR_SECTION}%s${_MR_RESET}\n" "" "$title"
     }
 
     _render_opts() {
         local cols; cols=$(tput cols 2>/dev/null || echo 80)
         local rows; rows=$(tput lines 2>/dev/null || echo 24)
-        local chk_ui="[ ]" chk_dev="[ ]" chk_inp="[ ]"
+        local chk_ui="[ ]" chk_dev="[ ]" chk_inp="[ ]" chk_pdv="[ ]"
         [ "$_ui"  -eq 1 ] && chk_ui="[x]"
         [ "$_dev" -eq 1 ] && chk_dev="[x]"
         [ "$_inp" -eq 1 ] && chk_inp="[x]"
+        [ "$_pdv" -eq 1 ] && chk_pdv="[x]"
         local r_mm="( )" r_di="( )"
         [ "$_conn" = "mmapper" ] && r_mm="(•)"
         [ "$_conn" = "direct"  ] && r_di="(•)"
@@ -223,6 +228,23 @@ _options_menu() {
         local tpad=$(( (cols - ${#title}) / 2 ))
         local footer="↑↓ Navigate · Enter/Space Toggle · ESC Back"
         local fpad=$(( (cols - ${#footer}) / 2 ))
+
+        # Compute alignment pad from widest row label
+        local maxw=0 w
+        local _opt_labels=(
+            "$chk_ui UI pane"
+            "$chk_dev Dev pane"
+            "$chk_inp Input pane"
+            "$chk_pdv Pane dividers"
+            "$r_mm MMapper  (localhost:4242)"
+            "$r_di Direct   (mume.org:4242)"
+            "    Back"
+        )
+        for _lbl in "${_opt_labels[@]}"; do
+            w=${#_lbl}; (( w > maxw )) && maxw=$w
+        done
+        local pad=$(( (cols - maxw) / 2 ))
+        (( pad < 0 )) && pad=0
 
         # Responsive: drop optional sections as terminal shrinks.
         # Thresholds: rows < 18 → headings, < 21 → mockup, < 31 → desc block.
@@ -233,23 +255,24 @@ _options_menu() {
 
         {
             printf '\n\n'
-            printf "%${tpad}s${_MR_WHITE}%s${_MR_RESET}\n\n" "" "$title"
+            printf "%${tpad}s${_MR_TITLE}%s${_MR_RESET}\n\n" "" "$title"
             [ "$show_headings" -eq 1 ] && _section_hdr "Panes"
-            _oitem 0 "$chk_ui  UI pane"
+            _oitem 0 "$chk_ui UI pane"
             _oitem 1 "$chk_dev Dev pane"
             _oitem 2 "$chk_inp Input pane"
+            _oitem 3 "$chk_pdv Pane dividers"
             printf '\n'
             [ "$show_headings" -eq 1 ] && _section_hdr "Connection"
-            _oitem 3 "$r_mm MMapper  (localhost:4242)"
-            _oitem 4 "$r_di Direct   (mume.org:4242)"
+            _oitem 4 "$r_mm MMapper  (localhost:4242)"
+            _oitem 5 "$r_di Direct   (mume.org:4242)"
             printf '\n'
-            _oitem 5 "Back"
+            _oitem 6 "    Back"
             if [ "$show_mockup" -eq 1 ]; then
                 printf '\n'
-                draw_layout_mockup "$_ui" "$_dev" "$_inp" "$show_desc"
+                draw_layout_mockup "$_ui" "$_dev" "$_inp" "$show_desc" "$_pdv"
             fi
             printf '\n'
-            printf "%${fpad}s${_MR_GREY}%s${_MR_RESET}\n" "" "$footer"
+            printf "%${fpad}s${_MR_HINT}%s${_MR_RESET}\n" "" "$footer"
         } | render_frame
     }
 
@@ -271,13 +294,16 @@ _options_menu() {
                     0) _ui=$(( 1 - _ui )) ;;
                     1) _dev=$(( 1 - _dev )) ;;
                     2) _inp=$(( 1 - _inp )) ;;
-                    3) _conn="mmapper" ;;
-                    4) _conn="direct" ;;
-                    5) show_ui="$_ui"; show_dev="$_dev"; show_input="$_inp"
+                    3) _pdv=$(( 1 - _pdv )) ;;
+                    4) _conn="mmapper" ;;
+                    5) _conn="direct" ;;
+                    6) show_ui="$_ui"; show_dev="$_dev"; show_input="$_inp"
+                       show_pane_dividers="$_pdv"
                        connection_mode="$_conn"; _save_conf; return ;;
                 esac
                 ;;
             ESC) show_ui="$_ui"; show_dev="$_dev"; show_input="$_inp"
+                 show_pane_dividers="$_pdv"
                  connection_mode="$_conn"; _save_conf; return ;;
         esac
     done
@@ -305,16 +331,16 @@ _create_profile_flow() {
             [ "$dpad" -lt 0 ] && dpad=0
             {
                 printf '\n\n'
-                printf "%${ctpad}s${_MR_WHITE}%s${_MR_RESET}\n\n\n" "" "$ctitle"
-                printf "%${dpad}s${_MR_GREY}> ${_MR_WHITE}%s${_MR_DIM}_${_MR_RESET}\n" "" "$buf"
+                printf "%${ctpad}s${_MR_TITLE}%s${_MR_RESET}\n\n\n" "" "$ctitle"
+                printf "%${dpad}s${_MR_HINT}> ${_MR_ACTIVE}%s${_MR_DIM}_${_MR_RESET}\n" "" "$buf"
                 printf '\n'
-                printf "%${hpad}s${_MR_DIM}%s${_MR_RESET}\n" "" "$hint"
+                printf "%${hpad}s${_MR_HINT}%s${_MR_RESET}\n" "" "$hint"
                 if [ -n "$errmsg" ]; then
                     local epad=$(( (cols - ${#errmsg}) / 2 ))
                     printf "\n%${epad}s${_MR_YELLOW}%s${_MR_RESET}\n" "" "$errmsg"
                 fi
                 printf '\n'
-                printf "%${pfpad}s${_MR_GREY}%s${_MR_RESET}\n" "" "$pfooter"
+                printf "%${pfpad}s${_MR_HINT}%s${_MR_RESET}\n" "" "$pfooter"
             } | render_frame
         fi
         local c
@@ -363,9 +389,9 @@ _create_profile_flow() {
             local npad=$(( (cols - ${#nlabel}) / 2 ))
             {
                 printf '\n\n'
-                printf "%${p2tpad}s${_MR_WHITE}%s${_MR_RESET}\n\n" "" "$p2title"
-                printf "%${npad}s${_MR_GREY}Name:  ${_MR_WHITE}%s${_MR_RESET}\n\n\n" "" "$new_name"
-                printf "%${bfpad}s${_MR_GREY}%s${_MR_RESET}\n" "" "$bfooter"
+                printf "%${p2tpad}s${_MR_TITLE}%s${_MR_RESET}\n\n" "" "$p2title"
+                printf "%${npad}s${_MR_HINT}Name:  ${_MR_ACTIVE}%s${_MR_RESET}\n\n\n" "" "$new_name"
+                printf "%${bfpad}s${_MR_HINT}%s${_MR_RESET}\n" "" "$bfooter"
             } | render_frame
         fi
         read_key 0.2 || continue
@@ -404,9 +430,9 @@ _create_profile_flow() {
                             local ekpad=$(( (cols - ${#ekftr}) / 2 ))
                             {
                                 printf '\n\n'
-                                printf "%${etpad}s${_MR_WHITE}%s${_MR_RESET}\n\n\n" "" "$etitle"
+                                printf "%${etpad}s${_MR_TITLE}%s${_MR_RESET}\n\n\n" "" "$etitle"
                                 printf "%${epad}s${_MR_YELLOW}%s${_MR_RESET}\n\n\n" "" "$emsg"
-                                printf "%${ekpad}s${_MR_GREY}%s${_MR_RESET}\n" "" "$ekftr"
+                                printf "%${ekpad}s${_MR_HINT}%s${_MR_RESET}\n" "" "$ekftr"
                             } | render_frame
                         fi
                         read_key 0.2 || continue
@@ -428,15 +454,22 @@ _create_profile_flow() {
                         local cplabel="Copy from:"
                         local cplpad=$(( (cols - ${#cplabel}) / 2 ))
                         {
+                            # Compute alignment pad from longest profile name
+                            local _cpw=0 _cpn
+                            for _cpn in "${src_profiles[@]}"; do
+                                (( ${#_cpn} > _cpw )) && _cpw=${#_cpn}
+                            done
+                            local _cppad=$(( (cols - _cpw) / 2 ))
+                            (( _cppad < 0 )) && _cppad=0
                             printf '\n\n'
-                            printf "%${cptpad}s${_MR_WHITE}%s${_MR_RESET}\n\n" "" "$cptitle"
-                            printf "%${cplpad}s${_MR_GREY}%s${_MR_RESET}\n\n" "" "$cplabel"
+                            printf "%${cptpad}s${_MR_TITLE}%s${_MR_RESET}\n\n" "" "$cptitle"
+                            printf "%${cplpad}s${_MR_HINT}%s${_MR_RESET}\n\n" "" "$cplabel"
                             local ci
                             for ci in "${!src_profiles[@]}"; do
-                                draw_menu_item "${src_profiles[$ci]}" $(( ci == csel ? 1 : 0 ))
+                                draw_menu_item "${src_profiles[$ci]}" $(( ci == csel ? 1 : 0 )) "$_cppad"
                             done
                             printf '\n'
-                            printf "%${cfpad}s${_MR_GREY}%s${_MR_RESET}\n" "" "$cfooter"
+                            printf "%${cfpad}s${_MR_HINT}%s${_MR_RESET}\n" "" "$cfooter"
                         } | render_frame
                     fi
                     read_key 0.2 || continue
@@ -490,22 +523,35 @@ _profile_page() {
         local tpad=$(( (cols - ${#title}) / 2 ))
         local footer="↑↓ Navigate · Enter Select · D Delete · ESC Back"
         local fpad=$(( (cols - ${#footer}) / 2 ))
+
+        # Compute max label width for alignment
+        local maxw=0 w name
+        for name in "${_profiles[@]}"; do
+            w=$(( 4 + ${#name} ))  # "(•) name" or "( ) name"
+            (( w > maxw )) && maxw=$w
+        done
+        local _create_label="[+] Create new profile"
+        w=${#_create_label}; (( w > maxw )) && maxw=$w
+        (( 8 > maxw )) && maxw=8  # "    Back"
+        local pad=$(( (cols - maxw) / 2 ))
+        (( pad < 0 )) && pad=0
+
         {
             printf '\n\n'
-            printf "%${tpad}s${_MR_WHITE}%s${_MR_RESET}\n\n" "" "$title"
+            printf "%${tpad}s${_MR_TITLE}%s${_MR_RESET}\n\n" "" "$title"
             local idx
             for idx in "${!_profiles[@]}"; do
                 local name="${_profiles[$idx]}"
                 local marker="( )"
                 [ "$name" = "$profile" ] && marker="(•)"
-                draw_menu_item "$marker $name" $(( _psel == idx ? 1 : 0 ))
+                draw_menu_item "$marker $name" $(( _psel == idx ? 1 : 0 )) "$pad"
             done
             printf '\n'
-            draw_menu_item "Create new profile…" $(( _psel == create_idx ? 1 : 0 ))
+            draw_menu_item "$_create_label" $(( _psel == create_idx ? 1 : 0 )) "$pad" "$_MR_ACCENT"
             printf '\n'
-            draw_menu_item "Back" $(( _psel == back_idx ? 1 : 0 ))
+            draw_menu_item "    Back" $(( _psel == back_idx ? 1 : 0 )) "$pad"
             printf '\n'
-            printf "%${fpad}s${_MR_GREY}%s${_MR_RESET}\n" "" "$footer"
+            printf "%${fpad}s${_MR_HINT}%s${_MR_RESET}\n" "" "$footer"
         } | render_frame
     }
 
@@ -527,7 +573,7 @@ _profile_page() {
             DOWN) _psel=$(( (_psel + 1) % ptotal )) ;;
             ENTER|SPACE)
                 if [ "$_psel" -lt "${#_profiles[@]}" ]; then
-                    profile="${_profiles[$_psel]}"; _save_conf; return
+                    profile="${_profiles[$_psel]}"; _save_conf
                 elif [ "$_psel" -eq "$create_idx" ]; then
                     _create_profile_flow
                     _DIRTY=1
@@ -559,9 +605,9 @@ _profile_page() {
                                 _eddirty=0
                                 {
                                     printf '\n\n'
-                                    printf "%${dtpad}s${_MR_WHITE}%s${_MR_RESET}\n\n\n" "" "$dtitle"
-                                    printf "%${epad}s${_MR_ERR}%s${_MR_RESET}\n\n\n" "" "$emsg"
-                                    printf "%${kfpad}s${_MR_GREY}%s${_MR_RESET}\n" "" "$kfooter"
+                                    printf "%${dtpad}s${_MR_TITLE}%s${_MR_RESET}\n\n\n" "" "$dtitle"
+                                    printf "%${epad}s${_MR_YELLOW}%s${_MR_RESET}\n\n\n" "" "$emsg"
+                                    printf "%${kfpad}s${_MR_HINT}%s${_MR_RESET}\n" "" "$kfooter"
                                 } | render_frame
                             fi
                             read_key 0.2 || { _eddirty=1; continue; }
@@ -579,9 +625,9 @@ _profile_page() {
                                 _cddirty=0
                                 {
                                     printf '\n\n'
-                                    printf "%${dtpad}s${_MR_WHITE}%s${_MR_RESET}\n\n\n" "" "$dtitle"
-                                    printf "%${cpad}s${_MR_WHITE}%s${_MR_RESET}\n\n\n" "" "$cmsg"
-                                    printf "%${cfpad}s${_MR_GREY}%s${_MR_RESET}\n" "" "$cfooter"
+                                    printf "%${dtpad}s${_MR_TITLE}%s${_MR_RESET}\n\n\n" "" "$dtitle"
+                                    printf "%${cpad}s${_MR_ACTIVE}%s${_MR_RESET}\n\n\n" "" "$cmsg"
+                                    printf "%${cfpad}s${_MR_HINT}%s${_MR_RESET}\n" "" "$cfooter"
                                 } | render_frame
                             fi
                             read_key 0.2 || { _cddirty=1; continue; }
@@ -655,19 +701,23 @@ _about_page() {
 
         {
             printf '\n'
-            printf "%${tpad}s${_MR_WHITE}%s${_MR_RESET}\n\n" "" "$title"
+            printf "%${tpad}s${_MR_TITLE}%s${_MR_RESET}\n\n" "" "$title"
             local shown=0 i
             for (( i = _aoffset; i < atotal && shown < visible; i++ )); do
-                local aline="${_alines[$i]}"
-                if [ -z "$aline" ]; then
+                local l="${_alines[$i]}"
+                if [ -z "$l" ]; then
                     printf '\n'
+                elif [[ "$l" =~ ^[[:space:]] ]]; then
+                    printf "%s${_MR_ACCENT}%s${_MR_RESET}\n" "$p" "$l"
+                elif [[ "$l" =~ ^[A-Z] ]] && [[ "$l" == "${l^^}" ]]; then
+                    printf "%s${_MR_TITLE}%s${_MR_RESET}\n" "$p" "$l"
                 else
-                    printf "%s${_MR_GREY}%s${_MR_RESET}\n" "$p" "$aline"
+                    printf "%s${_MR_BODY}%s${_MR_RESET}\n" "$p" "$l"
                 fi
                 (( shown++ ))
             done
             printf '\n'
-            printf "%${fpad}s${_MR_GREY}%s${_MR_RESET}\n" "" "$footer"
+            printf "%${fpad}s${_MR_HINT}%s${_MR_RESET}\n" "" "$footer"
         } | render_frame
     }
 
@@ -765,23 +815,23 @@ _scripts_page() {
 
         {
             printf '\n'
-            printf "%${tpad}s${_MR_WHITE}%s${_MR_RESET}\n\n" "" "$title"
+            printf "%${tpad}s${_MR_TITLE}%s${_MR_RESET}\n\n" "" "$title"
             local shown=0 i
             for (( i = _soffset; i < _stotal && shown < visible; i++ )); do
                 local entry="${_slines[$i]}"
                 local tag="${entry:0:2}" text="${entry:2}"
                 case "$tag" in
-                    A:) printf "%s${_MR_TEAL}▶ ${_MR_WHITE}%s${_MR_RESET}\n" \
+                    A:) printf "%s${_MR_ACCENT}▶ ${_MR_ACTIVE}%s${_MR_RESET}\n" \
                             "$p" "$(printf '%s' "$text" | tr '[:lower:]' '[:upper:]')" ;;
-                    S:) printf "%s  ${_MR_GREY}%s${_MR_RESET}\n" "$p" "$text" ;;
+                    S:) printf "%s  ${_MR_BODY}%s${_MR_RESET}\n" "$p" "$text" ;;
                     H:) printf "%s  %s\n" "$p" "$text" ;;
                     B:) printf '\n' ;;
-                    M:) printf "%s${_MR_GREY}%s${_MR_RESET}\n" "$p" "$text" ;;
+                    M:) printf "%s${_MR_BODY}%s${_MR_RESET}\n" "$p" "$text" ;;
                 esac
                 (( shown++ ))
             done
             printf '\n'
-            printf "%${fpad}s${_MR_GREY}%s${_MR_RESET}\n" "" "$footer"
+            printf "%${fpad}s${_MR_HINT}%s${_MR_RESET}\n" "" "$footer"
         } | render_frame
     }
 
@@ -839,6 +889,7 @@ while true; do
         DOWN)
             _SEL=$(( (_SEL + 1) % _NITEMS ))
             ;;
+        ESC) _quit_confirm ;;
         ENTER|SPACE)
             case "$_SEL" in
                 0)  # Start new session / Continue session / Mirror session

@@ -4,19 +4,43 @@
 # Do NOT execute directly.
 
 # ---------------------------------------------------------------------------
-# Colour constants
+# Colour constants — semantic roles, not raw colours
 # ---------------------------------------------------------------------------
 _MR_RESET='\e[0m'
 _MR_BOLD='\e[1m'
 _MR_DIM='\e[2m'
-_MR_CYAN='\e[1;36m'
-_MR_WHITE='\e[1;97m'
+
+# Titles / page banners / ASCII logo
+_MR_TITLE='\e[1;36m'
+
+# Active / focused row, emphasis text in prompts
+_MR_ACTIVE='\e[1;97m'
+
+# Inactive selectable menu rows
+_MR_ITEM='\e[38;5;250m'
+
+# Section headings inside pages (quieter than items)
+_MR_SECTION='\e[38;5;244m'
+
+# Body text (About prose, pane descriptions)
+_MR_BODY='\e[38;5;245m'
+
+# Footer / navigation hints
+_MR_HINT='\e[2;38;5;240m'
+
+# Quote text (italic) and attribution (sage green)
+_MR_QUOTE='\e[3;38;5;245m'
+_MR_QUOTE_ATTR='\e[38;5;108m'
+
+# Accent — call-to-action markers, key/command highlights
+_MR_ACCENT='\e[1;38;5;214m'
+
+# Pane-description text inside layout mockup
+_MR_DESC='\e[2;37m'
+
+# Warnings / errors
 _MR_YELLOW='\e[1;33m'
-_MR_GREY='\e[2;37m'
-_MR_ITALIC_GREY='\e[3;2;37m'
-_MR_TEAL='\e[1;38;5;80m'   # teal #26C6DA (256-colour) for script alias headings
-_MR_DESC='\e[2;37m'         # dim grey for description / hint text
-_MR_ERR='\e[1;31m'          # bright red for errors
+_MR_ERR='\e[1;31m'
 
 # ---------------------------------------------------------------------------
 # render_frame
@@ -65,7 +89,7 @@ draw_ascii_title() {
         vw=$(printf '%s' "$line" | wc -m)
         pad=$(( (cols - vw) / 2 ))
         [ "$pad" -lt 0 ] && pad=0
-        printf "%${pad}s${_MR_CYAN}%s${_MR_RESET}\n" "" "$line"
+        printf "%${pad}s${_MR_TITLE}%s${_MR_RESET}\n" "" "$line"
     done
 
     local cockpit_lines=(
@@ -77,20 +101,23 @@ draw_ascii_title() {
         vw=$(printf '%s' "$line" | wc -m)
         pad=$(( (cols - vw) / 2 ))
         [ "$pad" -lt 0 ] && pad=0
-        printf "%${pad}s${_MR_CYAN}%s${_MR_RESET}\n" "" "$line"
+        printf "%${pad}s${_MR_TITLE}%s${_MR_RESET}\n" "" "$line"
     done
     printf '\n'
 }
 
 # ---------------------------------------------------------------------------
-# draw_menu_item <label> <is_active>
-# Prints one centered menu row.
-# Active  → bright bold white  "<< label >>"
-# Inactive→ dim               "   label   "  (same visual width)
+# draw_menu_item <label> <is_active> [pad_override] [inactive_color]
+# Prints one menu row.
+# Active  → _MR_ACTIVE  "<< label >>"
+# Inactive→ inactive_color (default _MR_ITEM)  "   label   "
+# pad_override: if set, used as left-pad directly (left-aligns a group);
+#               if unset, row is centred independently.
 # ---------------------------------------------------------------------------
 draw_menu_item() {
-    local label="$1" is_active="${2:-0}"
+    local label="$1" is_active="${2:-0}" pad_override="${3:-}" inactive_color="${4:-}"
     local cols; cols=$(tput cols 2>/dev/null || echo 80)
+    [ -z "$inactive_color" ] && inactive_color="$_MR_ITEM"
 
     local prefix suffix
     if [ "$is_active" -eq 1 ]; then
@@ -103,24 +130,31 @@ draw_menu_item() {
 
     local full="${prefix}${label}${suffix}"
     local vw=${#full}
-    local pad=$(( (cols - vw) / 2 ))
-    [ "$pad" -lt 0 ] && pad=0
+    local pad
+    if [ -n "$pad_override" ]; then
+        pad="$pad_override"
+    else
+        pad=$(( (cols - vw) / 2 ))
+        [ "$pad" -lt 0 ] && pad=0
+    fi
 
     if [ "$is_active" -eq 1 ]; then
-        printf "%${pad}s${_MR_WHITE}%s%s%s${_MR_RESET}\n" "" "$prefix" "$label" "$suffix"
+        printf "%${pad}s${_MR_ACTIVE}%s%s%s${_MR_RESET}\n" "" "$prefix" "$label" "$suffix"
     else
-        printf "%${pad}s${_MR_GREY}%s%s%s${_MR_RESET}\n" "" "$prefix" "$label" "$suffix"
+        printf "%${pad}s${inactive_color}%s%s%s${_MR_RESET}\n" "" "$prefix" "$label" "$suffix"
     fi
 }
 
 # ---------------------------------------------------------------------------
-# draw_layout_mockup <show_ui> <show_dev> <show_input>
+# draw_layout_mockup <show_ui> <show_dev> <show_input> [show_desc=1] [show_dividers=1]
 # Prints a small ASCII wireframe of the tmux cockpit layout, centered.
 # Right column inner width = 6, left column inner width = 15. Total = 24 wide.
+# When show_dividers=0, box-drawing characters are replaced with spaces;
+# labels and dimensions stay identical so the mockup doesn't jump on toggle.
 # Followed by a 4-line pane description block.
 # ---------------------------------------------------------------------------
 draw_layout_mockup() {
-    local show_ui="${1:-1}" show_dev="${2:-0}" show_input="${3:-1}" show_desc="${4:-1}"
+    local show_ui="${1:-1}" show_dev="${2:-0}" show_input="${3:-1}" show_desc="${4:-1}" show_dividers="${5:-1}"
     local has_right=0
     ( [ "$show_ui" -eq 1 ] || [ "$show_dev" -eq 1 ] ) && has_right=1
 
@@ -129,70 +163,78 @@ draw_layout_mockup() {
     [ "$indent" -lt 0 ] && indent=0
     local p; printf -v p "%${indent}s" ""
 
-    printf "${_MR_CYAN}"
+    _draw_box_lines() {
+        printf "${_MR_TITLE}"
 
-    if [ "$show_ui" -eq 1 ] && [ "$show_dev" -eq 1 ] && [ "$show_input" -eq 1 ]; then
-        # All on — staggered separators matching actual tmux geometry
-        printf '%s┌───────────────┬──────┐\n' "$p"
-        printf '%s│               │  UI  │\n' "$p"
-        printf '%s│     GAME      │      │\n' "$p"
-        printf '%s│               ├──────┤\n' "$p"
-        printf '%s├───────────────┤      │\n' "$p"
-        printf '%s│    INPUT      │ DEV  │\n' "$p"
-        printf '%s└───────────────┴──────┘\n' "$p"
+        if [ "$show_ui" -eq 1 ] && [ "$show_dev" -eq 1 ] && [ "$show_input" -eq 1 ]; then
+            # All on — staggered separators matching actual tmux geometry
+            printf '%s┌───────────────┬──────┐\n' "$p"
+            printf '%s│               │  UI  │\n' "$p"
+            printf '%s│     GAME      │      │\n' "$p"
+            printf '%s│               ├──────┤\n' "$p"
+            printf '%s├───────────────┤      │\n' "$p"
+            printf '%s│    INPUT      │ DEV  │\n' "$p"
+            printf '%s└───────────────┴──────┘\n' "$p"
 
-    elif [ "$show_ui" -eq 1 ] && [ "$show_dev" -eq 1 ]; then
-        # UI + DEV, no INPUT
-        printf '%s┌───────────────┬──────┐\n' "$p"
-        printf '%s│               │  UI  │\n' "$p"
-        printf '%s│     GAME      ├──────┤\n' "$p"
-        printf '%s│               │ DEV  │\n' "$p"
-        printf '%s└───────────────┴──────┘\n' "$p"
+        elif [ "$show_ui" -eq 1 ] && [ "$show_dev" -eq 1 ]; then
+            # UI + DEV, no INPUT
+            printf '%s┌───────────────┬──────┐\n' "$p"
+            printf '%s│               │  UI  │\n' "$p"
+            printf '%s│     GAME      ├──────┤\n' "$p"
+            printf '%s│               │ DEV  │\n' "$p"
+            printf '%s└───────────────┴──────┘\n' "$p"
 
-    elif [ "$has_right" -eq 1 ] && [ "$show_input" -eq 1 ]; then
-        # Single right pane + INPUT
-        local rl="      "
-        [ "$show_ui"  -eq 1 ] && rl="  UI  "
-        [ "$show_dev" -eq 1 ] && rl=" DEV  "
-        printf '%s┌───────────────┬──────┐\n' "$p"
-        printf '%s│               │      │\n' "$p"
-        printf '%s│     GAME      │%s│\n' "$p" "$rl"
-        printf '%s│               │      │\n' "$p"
-        printf '%s├───────────────┤      │\n' "$p"
-        printf '%s│    INPUT      │      │\n' "$p"
-        printf '%s└───────────────┴──────┘\n' "$p"
+        elif [ "$has_right" -eq 1 ] && [ "$show_input" -eq 1 ]; then
+            # Single right pane + INPUT
+            local rl="      "
+            [ "$show_ui"  -eq 1 ] && rl="  UI  "
+            [ "$show_dev" -eq 1 ] && rl=" DEV  "
+            printf '%s┌───────────────┬──────┐\n' "$p"
+            printf '%s│               │      │\n' "$p"
+            printf '%s│     GAME      │%s│\n' "$p" "$rl"
+            printf '%s│               │      │\n' "$p"
+            printf '%s├───────────────┤      │\n' "$p"
+            printf '%s│    INPUT      │      │\n' "$p"
+            printf '%s└───────────────┴──────┘\n' "$p"
 
-    elif [ "$has_right" -eq 1 ]; then
-        # Single right pane, no INPUT
-        local rl="      "
-        [ "$show_ui"  -eq 1 ] && rl="  UI  "
-        [ "$show_dev" -eq 1 ] && rl=" DEV  "
-        printf '%s┌───────────────┬──────┐\n' "$p"
-        printf '%s│               │      │\n' "$p"
-        printf '%s│     GAME      │%s│\n' "$p" "$rl"
-        printf '%s│               │      │\n' "$p"
-        printf '%s└───────────────┴──────┘\n' "$p"
+        elif [ "$has_right" -eq 1 ]; then
+            # Single right pane, no INPUT
+            local rl="      "
+            [ "$show_ui"  -eq 1 ] && rl="  UI  "
+            [ "$show_dev" -eq 1 ] && rl=" DEV  "
+            printf '%s┌───────────────┬──────┐\n' "$p"
+            printf '%s│               │      │\n' "$p"
+            printf '%s│     GAME      │%s│\n' "$p" "$rl"
+            printf '%s│               │      │\n' "$p"
+            printf '%s└───────────────┴──────┘\n' "$p"
 
-    elif [ "$show_input" -eq 1 ]; then
-        # No right column, with INPUT
-        printf '%s┌──────────────────────┐\n' "$p"
-        printf '%s│                      │\n' "$p"
-        printf '%s│        GAME          │\n' "$p"
-        printf '%s│                      │\n' "$p"
-        printf '%s├──────────────────────┤\n' "$p"
-        printf '%s│       INPUT          │\n' "$p"
-        printf '%s└──────────────────────┘\n' "$p"
+        elif [ "$show_input" -eq 1 ]; then
+            # No right column, with INPUT
+            printf '%s┌──────────────────────┐\n' "$p"
+            printf '%s│                      │\n' "$p"
+            printf '%s│        GAME          │\n' "$p"
+            printf '%s│                      │\n' "$p"
+            printf '%s├──────────────────────┤\n' "$p"
+            printf '%s│       INPUT          │\n' "$p"
+            printf '%s└──────────────────────┘\n' "$p"
 
+        else
+            # GAME only
+            printf '%s┌──────────────────────┐\n' "$p"
+            printf '%s│                      │\n' "$p"
+            printf '%s│        GAME          │\n' "$p"
+            printf '%s│                      │\n' "$p"
+            printf '%s└──────────────────────┘\n' "$p"
+        fi
+
+        printf "${_MR_RESET}"
+    }
+
+    if [ "$show_dividers" -eq 1 ]; then
+        _draw_box_lines
     else
-        # GAME only
-        printf '%s┌──────────────────────┐\n' "$p"
-        printf '%s│                      │\n' "$p"
-        printf '%s│        GAME          │\n' "$p"
-        printf '%s│                      │\n' "$p"
-        printf '%s└──────────────────────┘\n' "$p"
+        _draw_box_lines | sed 's/[┌┐└┘├┤┬┴─│]/ /g'
     fi
-
-    printf "${_MR_RESET}"
 
     if [ "$show_desc" -eq 1 ]; then
         printf "%s  ${_MR_DESC}%-7s${_MR_RESET}  — MUD window\n"             "$p" "GAME"
@@ -212,12 +254,9 @@ wrap_text() {
     local width="$1"
     LC_ALL="${_WRAP_LOCALE:-C}" awk -v w="$width" '
         BEGIN { line = "" }
-        /^[[:space:]]*$/ {
-            if (line != "") print line
-            print ""
-            line = ""
-            next
-        }
+        function flush() { if (line != "") { print line; line = "" } }
+        /^[[:space:]]*$/  { flush(); print ""; next }
+        /^[[:space:]]/    { flush(); print;    next }
         {
             n = split($0, words, /[[:space:]]+/)
             for (i = 1; i <= n; i++) {
@@ -233,7 +272,7 @@ wrap_text() {
                 }
             }
         }
-        END { if (line != "") print line }
+        END { flush() }
     '
 }
 
@@ -322,7 +361,7 @@ check_min_size() {
         l=$(tput lines 2>/dev/null || echo 0)
         {
             printf "\n${_MR_YELLOW}  Terminal too small: %dx%d${_MR_RESET}\n" "$c" "$l"
-            printf "${_MR_WHITE}  Please resize to at least 80x24.${_MR_RESET}\n"
+            printf "${_MR_ACTIVE}  Please resize to at least 80x24.${_MR_RESET}\n"
         } | render_frame
         IFS= read -rsn1 -t 2 2>/dev/null || true
     done

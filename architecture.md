@@ -638,7 +638,7 @@ Pure bash + ANSI escapes; no external dependencies beyond coreutils.
 |---------|--------|
 | Session detect | `tmux has-session -t mume` + `list-clients` → top item is "Start new session", "Continue session", or "Mirror session (attached elsewhere)" |
 | Profile page | Lists `ttpp/sessions/*.tin`; select, create (blank / copy from existing), delete. `default` cannot be deleted. Profile selection is cosmetic in Phase 1 (written to `startup.conf`; not yet read by tt++) |
-| Options page | Toggle UI / Dev / Input panes; connection mode; live layout mockup. Content hides progressively at small heights: descriptions → mockup → section headings; menu items always render |
+| Options page | Toggle UI / Dev / Input panes; pane dividers; connection mode; live layout mockup (updates on divider toggle). Content hides progressively at small heights: descriptions → mockup → section headings; menu items always render |
 | Scripts page | Reads `bridge/scripts.cache`; scrollable |
 | About page | Reads `bridge/about.txt`; word-wrapped, cached per resize, scrollable |
 | Quit | Confirmation prompt; ESC cancels |
@@ -685,6 +685,40 @@ Inside tt++, `main.tin` does three things to keep the game window clean:
 
 Launcher pages render through `render_frame` in `bridge/menu_render.sh`.
 Rules are strict — deviations reintroduce flicker or scroll artifacts:
+
+**Semantic colour palette (`bridge/menu_render.sh`).** All escape codes are
+referenced by role, not raw colour, so visual adjustments stay localised:
+
+| Name            | Role                                               |
+|-----------------|----------------------------------------------------|
+| `_MR_TITLE`     | Page banners, ASCII logo, section titles           |
+| `_MR_ACTIVE`    | Focused/selected row, emphasis in prompts          |
+| `_MR_ITEM`      | Inactive selectable menu rows                      |
+| `_MR_SECTION`   | Section headings inside pages (quieter than items) |
+| `_MR_BODY`      | Body text — About prose, script summaries          |
+| `_MR_HINT`      | Footer nav hints, secondary prompt labels          |
+| `_MR_QUOTE`     | Italic quote text on the main menu                 |
+| `_MR_QUOTE_ATTR`| Quote attribution line (sage green)                |
+| `_MR_ACCENT`    | Call-to-action rows, script alias headings         |
+| `_MR_DESC`      | Pane-description text in layout mockup             |
+| `_MR_YELLOW`    | Warnings (non-fatal errors, can't-delete notices)  |
+| `_MR_ERR`       | Hard errors                                        |
+
+**Alignment convention (Profile / Options pages).** Menu rows are
+left-aligned on a shared column inside a centred block. The widest label
+is found on every render so the block re-centres correctly after terminal
+resize. `draw_menu_item` accepts an optional `pad_override` (third arg) to
+override its default per-row centering, and an optional `inactive_color`
+(fourth arg) to colour a row differently in its inactive state (used for
+the amber "[+] Create new profile" row).
+
+**About page three-colour scheme.** `_render_about` classifies each wrapped
+line before printing: all-uppercase lines → `_MR_TITLE` (headings); lines
+starting with whitespace → `_MR_ACCENT` (key/command lines such as
+`  cp -r`); all other non-empty lines → `_MR_BODY` (prose). Indented lines
+pass through `wrap_text` unchanged — a leading-whitespace guard flushes the
+current word-wrap buffer and emits the line verbatim, preserving command
+column alignment.
 
 - **Alt screen buffer.** Enter on launch (`\e[?1049h`), leave on exit. Cleared
   automatically when tmux attaches.
@@ -733,6 +767,7 @@ SCRIPT:autobow
 | `show_ui`         | `1`        | Whether to open the UI pane              |
 | `show_dev`        | `0`        | Whether to open the dev pane             |
 | `show_input`      | `1`        | Whether to open the input pane           |
+| `show_pane_dividers` | `1`     | Whether tmux pane borders and the pane-border-status bar are visible at startup. `cp -h` toggles this at runtime without writing back to conf. |
 | `profile`         | `default`  | Which file in `ttpp/sessions/` to load; also the tt++ session name |
 
 Toggle panes at runtime with `cp -u`, `cp -d`, `cp -i`.
