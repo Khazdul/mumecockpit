@@ -692,7 +692,7 @@ Pure bash + ANSI escapes; no external dependencies beyond coreutils.
 | Feature | Detail |
 |---------|--------|
 | Session detect | `tmux has-session -t mume` + `list-clients` → top item is "Start new session", "Continue session", or "Mirror session (attached elsewhere)" |
-| Profile page | Lists `ttpp/sessions/*.tin`; select, create (blank / copy from existing), delete. `default` cannot be deleted. Profile selection is cosmetic in Phase 1 (written to `startup.conf`; not yet read by tt++) |
+| Profile page | Lists `ttpp/sessions/*.tin`; select, create (blank / copy from existing), delete. `default` cannot be deleted. Selected profile is written to `startup.conf` and consumed by `ttpp/core/config.tin` at tt++ startup (Phase 2). |
 | Options page | Toggle UI / Dev / Input panes; pane dividers; connection mode; live layout mockup (updates on divider toggle). Content hides progressively at small heights: descriptions → mockup → section headings; menu items always render |
 | Scripts page | Reads `bridge/scripts.cache`; scrollable |
 | About page | Reads `bridge/about.txt`; word-wrapped, cached per resize, scrollable |
@@ -828,7 +828,7 @@ SCRIPT:autobow
 | `show_pane_dividers` | `1`     | Whether tmux pane borders and the pane-border-status bar are visible at startup. `cp -h` toggles this at runtime without writing back to conf. `bridge/toggle_pane.sh headers --persist` is the mechanism for persistent toggles from the in-game popup. |
 | `profile`         | `default`  | Which file in `ttpp/sessions/` to load; also the tt++ session name |
 
-Toggle panes at runtime with `cp -u`, `cp -d`, `cp -i`.
+Toggle panes at runtime with `cp -u`, `cp -d`, `cp -i`, `cp -h`.
 
 `profile` and `connection_mode` are read by `ttpp/core/config.tin` at tt++
 startup via `bridge/read_config.sh`, which materialises the `_profile`,
