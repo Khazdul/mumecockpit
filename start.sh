@@ -29,6 +29,7 @@ chmod +x bridge/open_pane.sh
 chmod +x bridge/focus_input.sh
 chmod +x bridge/launcher.sh
 chmod +x bridge/tmux_start.sh
+[ -f bridge/ingame_menu.sh ] && chmod +x bridge/ingame_menu.sh
 
 # ---------------------------------------------------------------------------
 # 2. Parse flags
@@ -52,6 +53,6 @@ done
 if [ "$_NO_MENU" -eq 1 ]; then
     export _OVERRIDE_SHOW_UI _OVERRIDE_SHOW_DEV
     exec bash bridge/tmux_start.sh
-else
-    exec bash bridge/launcher.sh
 fi
+
+exec bash bridge/launcher.sh

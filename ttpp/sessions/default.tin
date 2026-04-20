@@ -1,5 +1,10 @@
 #CLASS {default} OPEN
 
+#ACTION {WARNING}
+{
+    sc
+}
+
 #ALIAS {2}
 {
     _send close $sd2
@@ -49,6 +54,11 @@
 #ALIAS {_show_acontainer}
 {
     #showme {<F9AA8B7>## ARROW CONTAINER: <FFFFFFF>$acontainer  <F9AA8B7>(ammo: <FFFFFFF>$arrow<F9AA8B7>)<099>}
+}
+
+#ALIAS {_show_class}
+{
+    #showme {<F9AA8B7>## CLASS: <FFFFFFF>$class<099>}
 }
 
 #ALIAS {_show_spell}
@@ -244,6 +254,12 @@
 #ALIAS {case}
 {
     acontainer case
+}
+
+#ALIAS {caster}
+{
+    #variable {class} {caster};
+    _show_class
 }
 
 #ALIAS {cc}
@@ -923,6 +939,12 @@
     _send track donkey
 }
 
+#ALIAS {thief}
+{
+    #variable {class} {thief};
+    _show_class
+}
+
 #ALIAS {thor}
 {
     #variable {ss} {thoroughly};
@@ -1009,6 +1031,18 @@
     _send recite vellumscroll
 }
 
+#ALIAS {warcaster}
+{
+    #variable {class} {warcaster};
+    _show_class
+}
+
+#ALIAS {warrior}
+{
+    #variable {class} {warrior};
+    _show_class
+}
+
 #ALIAS {wooden}
 {
     _eq_ring wooden
@@ -1042,22 +1076,56 @@
 
 #MACRO {\eOP}
 {
-    bajs
+    _send hit $target
 }
 
 #MACRO {\eOQ}
 {
-    defend
+    #if {"$class" == "warrior"}
+    {
+        _send bash $target
+    };
+    #elseif {"$class" == "caster" || "$class" == "warcaster"}
+    {
+        _send cast $ss $spell $target
+    };
+    #elseif {"$class" == "thief"}
+    {
+        _send backstab $target
+    }
 }
 
 #MACRO {\eOR}
 {
-    flee
+    #if {"$class" == "warrior"}
+    {
+        _send bash
+    };
+    #elseif {"$class" == "caster" || "$class" == "warcaster"}
+    {
+        _send cast $ss $spell
+    };
+    #elseif {"$class" == "thief"}
+    {
+        _send shoot $mees
+    }
 }
 
-#MACRO {fbajs}
+#MACRO {\eOS}
 {
-    kill $target
+    #if {"$class" == "warrior" || "$class" == "warcaster"}
+    {
+        _send kick
+    };
+    #elseif {"$class" == "caster" || "$class" == "thief"}
+    {
+        _send shoot $mees
+    }
+}
+
+#MACRO {\e[20~}
+{
+    _send sc
 }
 
 #SUBSTITUTE {- stored spell%1} {<F8c1ebb>%0<900>} {5}
@@ -1097,6 +1165,7 @@
 #VARIABLE {acontainer} {quiver}
 #VARIABLE {arrow} {arrow}
 #VARIABLE {character} {}
+#VARIABLE {class} {caster}
 #VARIABLE {mees} {}
 #VARIABLE {ring} {}
 #VARIABLE {sd1} {exit}

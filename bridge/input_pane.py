@@ -61,9 +61,6 @@ def _exit_recall_state(buf):
 
 kb = KeyBindings()
 
-# Tab is intentionally unbound — reserved for future autocomplete
-# feature that will plug in via prompt_toolkit Completer / CompletionsMenu.
-
 _PRINTABLE = [c for c in string.printable if c not in string.whitespace]
 
 for _c in _PRINTABLE:
@@ -214,6 +211,7 @@ FORWARDED_KEYS = [
     ("f1", "F1"), ("f2", "F2"), ("f3", "F3"), ("f4", "F4"),
     ("f5", "F5"), ("f6", "F6"), ("f7", "F7"), ("f8", "F8"),
     ("f9", "F9"), ("f10", "F10"), ("f11", "F11"), ("f12", "F12"),
+    ("tab", "Tab"),
 
     # Ctrl+letter (safe subset — excludes editing/history/terminal-reserved)
     ("c-g", "C-g"), ("c-l", "C-l"), ("c-o", "C-o"),
