@@ -438,6 +438,7 @@ State is stored in `bridge/layout.conf` (gitignored, recreated on first startup)
 - **Input pane** — always pinned to 1 row on every terminal resize. Never participates in layout calculations.
 - **Dev toggle** — when dev is toggled back on, `open_pane.sh` applies `ui_height_ratio` to restore the saved split.
 - **Loop prevention** — `bridge/.layout_lock` is used as a lockfile to prevent `on_window_resize.sh` triggering `on_pane_resize.sh` in a feedback loop.
+- **`-f` on right-column splits.** When `open_pane.sh` creates the right column from scratch (no ui/dev exists), `split-window -h` must use `-f` (full-window). Otherwise, if the input pane already exists, the new right pane is inserted as main's sibling inside the left-column subtree, causing input to span the full window width.
 
 ### Gitignored files
 ```

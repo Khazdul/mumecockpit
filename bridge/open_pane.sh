@@ -65,16 +65,19 @@ if [ -n "$HAS_RIGHT" ]; then
             ;;
     esac
 else
-    # No right column yet — create horizontal split from pane 0
+    # No right column yet — create horizontal split at window level.
+    # -f is required: without it, if the input pane already exists, tmux inserts
+    # the new right pane as main's sibling inside the left-column subtree, causing
+    # input to span the full window width instead of staying below main only.
     case $TYPE in
         ui)
-            NEW_INDEX=$(tmux split-window -h -t mume:cockpit.0 -P -F '#{pane_index}' \
+            NEW_INDEX=$(tmux split-window -h -f -t mume:cockpit.0 -P -F '#{pane_index}' \
                 "bash -c 'stty -isig 2>/dev/null; trap "" INT; while true; do tail -f $MUME/logs/ui.log; printf \"\\n[pane kept alive — use cp -u to close]\\n\"; sleep 0.2; done'")
             tmux select-pane -t mume:cockpit.$NEW_INDEX -T "ui"
             tmux select-pane -t "$(resolve_focus_target)"
             ;;
         dev)
-            NEW_INDEX=$(tmux split-window -h -t mume:cockpit.0 -P -F '#{pane_index}' \
+            NEW_INDEX=$(tmux split-window -h -f -t mume:cockpit.0 -P -F '#{pane_index}' \
                 "bash -c 'stty -isig 2>/dev/null; trap "" INT; while true; do tail -f $MUME/logs/debug.log; printf \"\\n[pane kept alive — use cp -d to close]\\n\"; sleep 0.2; done'")
             tmux select-pane -t mume:cockpit.$NEW_INDEX -T "dev"
             tmux select-pane -t "$(resolve_focus_target)"
