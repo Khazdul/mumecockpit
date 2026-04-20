@@ -35,7 +35,7 @@ if [ -n "$HAS_RIGHT" ]; then
         ui)
             # ui always on top — split then swap
             NEW_INDEX=$(tmux split-window -v -t mume:cockpit.$RIGHT_INDEX -P -F '#{pane_index}' \
-                "tail -f $MUME/logs/ui.log")
+                "bash -c 'stty -isig 2>/dev/null; trap "" INT; while true; do tail -f $MUME/logs/ui.log; printf \"\\n[pane kept alive — use cp -u to close]\\n\"; sleep 0.2; done'")
             tmux select-pane -t mume:cockpit.$NEW_INDEX -T "ui"
             tmux swap-pane -s mume:cockpit.$NEW_INDEX -t mume:cockpit.$RIGHT_INDEX
             tmux select-pane -t "$(resolve_focus_target)"
@@ -43,7 +43,7 @@ if [ -n "$HAS_RIGHT" ]; then
         dev)
             # dev always on bottom — split normally
             NEW_INDEX=$(tmux split-window -v -t mume:cockpit.$RIGHT_INDEX -P -F '#{pane_index}' \
-                "tail -f $MUME/logs/debug.log")
+                "bash -c 'stty -isig 2>/dev/null; trap "" INT; while true; do tail -f $MUME/logs/debug.log; printf \"\\n[pane kept alive — use cp -d to close]\\n\"; sleep 0.2; done'")
             tmux select-pane -t mume:cockpit.$NEW_INDEX -T "dev"
             tmux select-pane -t "$(resolve_focus_target)"
             # Apply saved ui/dev height ratio
@@ -69,13 +69,13 @@ else
     case $TYPE in
         ui)
             NEW_INDEX=$(tmux split-window -h -t mume:cockpit.0 -P -F '#{pane_index}' \
-                "tail -f $MUME/logs/ui.log")
+                "bash -c 'stty -isig 2>/dev/null; trap "" INT; while true; do tail -f $MUME/logs/ui.log; printf \"\\n[pane kept alive — use cp -u to close]\\n\"; sleep 0.2; done'")
             tmux select-pane -t mume:cockpit.$NEW_INDEX -T "ui"
             tmux select-pane -t "$(resolve_focus_target)"
             ;;
         dev)
             NEW_INDEX=$(tmux split-window -h -t mume:cockpit.0 -P -F '#{pane_index}' \
-                "tail -f $MUME/logs/debug.log")
+                "bash -c 'stty -isig 2>/dev/null; trap "" INT; while true; do tail -f $MUME/logs/debug.log; printf \"\\n[pane kept alive — use cp -d to close]\\n\"; sleep 0.2; done'")
             tmux select-pane -t mume:cockpit.$NEW_INDEX -T "dev"
             tmux select-pane -t "$(resolve_focus_target)"
             # Apply saved ui/dev height ratio

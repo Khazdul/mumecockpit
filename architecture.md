@@ -702,6 +702,14 @@ Rules are strict — deviations reintroduce flicker or scroll artifacts:
 
 **Pane-setup barrier.** `bridge/tmux_start.sh` prefixes the tt++ launch command with `sleep 0.3 &&` so that `tmux split-window` and `tmux resize-pane` complete before tt++/Lua begin writing to `ui.log` / `debug.log`. Without the barrier, `tail -f` in the UI/DEV panes reflows mid-output and the first emitted lines are swallowed into scrollback.
 
+**Ctrl+C hardening (ui/dev panes).** Focusing a UI or DEV pane and pressing Ctrl+C would send SIGINT to the `tail -f` foreground process, kill it, and close the pane — breaking the layout for inexperienced users. Both panes are now launched with a hardened wrapper:
+
+```
+bash -c 'stty -isig 2>/dev/null; trap "" INT; while true; do tail -f <PATH>; printf "\n[pane kept alive — use cp-u/cp-d to close]\n"; sleep 0.2; done'
+```
+
+`stty -isig` disables signal generation (INTR/QUIT/SUSP) for the pane's tty, so Ctrl+C never produces SIGINT in the first place. `trap "" INT` is a belt-and-braces fallback in case stty is unavailable. The `while true` loop restarts `tail -f` if it exits for any other reason (log rotation, truncation). The input pane (`python3 bridge/input_pane.py`) is deliberately unwrapped — it needs signals to function correctly.
+
 ### scripts.cache (`bridge/scripts.cache`, gitignored)
 Written by `brain.lua` at every client startup (inside `load_scripts()` after
 `_register_cockpit_help()`). Parsed by the Scripts page in `launcher.sh`.

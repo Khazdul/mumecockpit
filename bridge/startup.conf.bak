@@ -1,0 +1,6 @@
+# Phase 1 cosmetic options — launcher display only
+connection_mode=mmapper
+show_ui=1
+show_dev=0
+show_input=1
+profile=test33
