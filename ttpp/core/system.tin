@@ -35,6 +35,25 @@
 #alias {cp -i} {#system {bash $HOME/MUME/bridge/toggle_pane.sh input}}
 #alias {cp -h} {#system {bash $HOME/MUME/bridge/toggle_pane.sh headers}}
 
+#alias {cp -s}
+{
+    #gts
+    {
+        #if {"$_profile" != ""}
+        {
+            #$_profile
+            {
+                #class {$_profile} {write} {ttpp/sessions/$_profile.tin}
+            };
+            #lua {system_ui("Profile saved to ttpp/sessions/" .. ui_var("$_profile") .. ".tin.")}
+        };
+        #else
+        {
+            #lua {ui_err("cp -s: no profile loaded.")}
+        }
+    }
+}
+
 #alias {cp -r} {
     #gts;
     #system {echo "[$(date '+%H:%M:%S')] COCKPIT RELOAD — wiping state" >> $HOME/MUME/logs/debug.log};

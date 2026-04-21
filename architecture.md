@@ -632,9 +632,18 @@ Unified window and system management via `cp` commands:
 | `cp -u`       | Toggle UI pane                  |
 | `cp -d`       | Toggle dev pane                 |
 | `cp -h`       | Toggle pane title headers       |
+| `cp -s`       | Save profile to disk            |
 | `cp -r`       | Full reload                     |
 | `cp -e`       | Full shutdown                   |
 | `cp -<alias>` | Show help for installed script  |
+
+`cp -s` runs `#class {$_profile} {write} {ttpp/sessions/$_profile.tin}`
+inside the profile's tt++ session via a `#gts { #$_profile { ... } }`
+wrapper. Uses `$_profile` (stable, set once at tt++ startup from
+`startup.conf`) rather than `$game_session` (cleared on disconnect) so
+save works after link loss as well as during a live connection. Success
+and error messages are routed to the UI pane via `#lua {system_ui(...)}`
+and `#lua {ui_err(...)}` respectively, not `#showme` to the game pane.
 
 `cp -u`, `cp -d`, `cp -i`, and `cp -h` are thin wrappers around
 `bridge/toggle_pane.sh`. Each alias passes its target (`ui`, `dev`,
@@ -1212,16 +1221,46 @@ disappears, or no trigger fires within 15 seconds. Uses `game_cmd` and
   (not advertised in the cockpit help box)
 - cockpit help shows a single `connect` entry under Connection
 
-### Phase 3 — In-game popup menu (planned)
-- ESC from any pane opens a `tmux display-popup` overlay (tmux root
-  keybinding in `tmux_start.sh`, not prompt_toolkit — works regardless of
-  which pane has focus or whether the input pane exists)
-- Popup renders via a new `bridge/ingame_menu.sh` that sources
-  `bridge/menu_render.sh` — same colours, layout, and input handling
-  as the launcher
-- Menu items: Continue (dismiss), Options (shared sub-menu with the
-  launcher), Scripts, About, Quit (confirmed)
-- Quit triggers the existing `cp -e` path via `tmux send-keys` — no
-  architectural changes to PROGRAM TERMINATION
-- ESC inside the popup closes it; ESC in-game re-opens it
-- Background game continues running while the popup is open
+### Phase 3 — In-game popup menu ✓
+- ESC from any pane opens a tmux display-popup overlay (tmux root
+  keybinding in `tmux_start.sh`, works regardless of pane focus). [3a]
+- Popup renders via `bridge/ingame_menu.sh`, sharing `bridge/menu_render.sh`
+  helpers with the launcher. [3a]
+- `bridge/toggle_pane.sh` extracted from the `cp -u/-d/-i/-h` aliases;
+  accepts an optional `--persist` flag used by the popup to write
+  `startup.conf`. [3b.1]
+- Status header at the top of the popup shows Profile · Mode · uptime,
+  live-ticking at 5 Hz. Backed by `bridge/session.state` written by
+  `brain.lua`. [3b.2]
+- Options submenu: UI / Dev / Input / Pane headers toggles. State
+  re-probed from tmux on every render — never cached. Toggles call
+  `toggle_pane.sh --persist` directly, so no `cp -X` echo appears in the
+  game pane. [3b.3]
+- Scripts submenu: ports launcher's Scripts page. Reads `scripts.cache`
+  on each render. Scrollable. Rendering duplicated (not shared via
+  `menu_render.sh`) to keep the shared helper stable. [3b.4]
+- Save profile row (always visible — save works even after link loss, since
+  tt++ keeps the disconnected session alive) triggers `cp -s` via
+  `tmux send-keys`; inline "Saved ✓" flashes in `_MR_ACCENT` for ~1 s. [3b.5]
+- Context-aware top menu item: "Continue" when connected (dismisses
+  popup) or "Reconnect" when disconnected (fires `connect` alias then
+  dismisses). Rebuilt from `bridge/session.state` on every render. [3b.5]
+
+Explicitly NOT in the popup (deliberate scope trims):
+- About page — not enough value to justify the code.
+- Reload — `cp -r` from the input pane is the intended path.
+- Profile switch / connection mode — launcher-only; requires restart.
+- Layout mockup — saves vertical space in the popup.
+
+Parked for later (post-3c):
+- Version check footer
+- Reset layout to defaults
+- Ping monitor
+- Live script dashboard (IDLE/RUNNING/FIRING tags)
+- Stop-all-scripts emergency button
+- Pane dimming
+- In-game uptime vs socket uptime. Current status header shows time since
+  `session.state` was written, which is socket uptime. In MMapper mode the
+  socket outlives the in-game session (quit to MMapper prompt keeps the
+  socket alive), so uptime drifts from "time in character." Fixing requires
+  trigger-based parsing of MUME login/logout output. Parked.

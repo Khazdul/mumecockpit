@@ -272,6 +272,7 @@ local function _register_cockpit_help()
         "   cp -u       toggle UI pane",
         "   cp -d       toggle dev pane",
         "   cp -h       toggle headers",
+        "   cp -s       save profile to disk",
         "   cp -r       full system reload",
         "   cp -e       full system shutdown",
         "",

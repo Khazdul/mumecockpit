@@ -18,9 +18,39 @@ trap '_restore_terminal' EXIT INT TERM HUP
 _DIRTY=1
 trap '_DIRTY=1' WINCH
 
-_ITEMS=("Continue" "Options" "Scripts" "Exit to main menu")
-_NITEMS=4
+_ITEMS=()
+_ACTIONS=()
+_NITEMS=0
 _SEL=0
+_save_ts=0
+
+_rebuild_menu() {
+    local connected=0
+    if [ -f bridge/session.state ]; then
+        local ca
+        ca=$(awk -F= '/^connected_at=/{print $2}' bridge/session.state 2>/dev/null)
+        [ -n "$ca" ] && [ "$ca" -gt 0 ] 2>/dev/null && connected=1
+    fi
+
+    _ITEMS=()
+    _ACTIONS=()
+
+    if [ "$connected" -eq 1 ]; then
+        _ITEMS+=("Continue");  _ACTIONS+=("continue")
+    else
+        _ITEMS+=("Reconnect"); _ACTIONS+=("reconnect")
+    fi
+
+    # Save profile is always visible — save works even after link loss.
+    _ITEMS+=("Save profile");     _ACTIONS+=("save")
+    _ITEMS+=("Options");           _ACTIONS+=("options")
+    _ITEMS+=("Scripts");           _ACTIONS+=("scripts")
+    _ITEMS+=("Exit to main menu"); _ACTIONS+=("exit")
+
+    _NITEMS=${#_ITEMS[@]}
+
+    [ "$_SEL" -ge "$_NITEMS" ] && _SEL=$(( _NITEMS - 1 ))
+}
 
 _draw_cockpit_banner() {
     local cols; cols=$(tput cols 2>/dev/null || echo 80)
@@ -81,8 +111,15 @@ _render_status_header() {
     printf '\n'
 }
 
+_save_profile() {
+    tmux send-keys -t mume:cockpit.0 "cp -s" C-m
+    _save_ts=$(date +%s)
+    _DIRTY=1
+}
+
 _render_main() {
     local cols; cols=$(tput cols 2>/dev/null || echo 80)
+    local now; now=$(date +%s)
     {
         _draw_cockpit_banner
         _render_status_header
@@ -90,16 +127,19 @@ _render_main() {
         local i
         for i in "${!_ITEMS[@]}"; do
             local active=0; [ "$i" -eq "$_SEL" ] && active=1
-            if [ "$i" -eq 3 ]; then
+            local action="${_ACTIONS[$i]}"
+            if [ "$action" = "exit" ]; then
                 draw_menu_item "${_ITEMS[$i]}" "$active" "" "$_MR_ERR"
                 local sub="Terminates current session"
                 local subpad=$(( (cols - ${#sub} - 3) / 2 ))
                 [ "$subpad" -lt 0 ] && subpad=0
                 printf "%${subpad}s   ${_MR_ERR}%s${_MR_RESET}\n" "" "$sub"
+            elif [ "$action" = "save" ] && (( now - _save_ts < 1 )); then
+                draw_menu_item "Saved ✓" "$active" "" "$_MR_ACCENT"
             else
                 draw_menu_item "${_ITEMS[$i]}" "$active"
             fi
-            if [ "$i" -eq 2 ]; then
+            if [ "$action" = "scripts" ]; then
                 local sep="────────────────────"
                 local spad=$(( (cols - ${#sep}) / 2 ))
                 [ "$spad" -lt 0 ] && spad=0
@@ -315,6 +355,8 @@ _exit_confirm() {
 }
 
 while true; do
+    _rebuild_menu
+
     if [ "$_DIRTY" -eq 1 ]; then
         _DIRTY=0
         _render_main
@@ -328,11 +370,16 @@ while true; do
         DOWN)       _SEL=$(( (_SEL + 1) % _NITEMS )) ;;
         ESC)        exit 0 ;;
         ENTER|SPACE)
-            case "$_SEL" in
-                0) exit 0 ;;
-                1) _options_submenu; _DIRTY=1 ;;
-                2) _scripts_submenu; _DIRTY=1 ;;
-                3) _exit_confirm ;;
+            case "${_ACTIONS[$_SEL]}" in
+                continue)  exit 0 ;;
+                reconnect)
+                    tmux send-keys -t mume:cockpit.0 "connect" C-m
+                    exit 0
+                    ;;
+                save)      _save_profile ;;
+                options)   _options_submenu; _DIRTY=1 ;;
+                scripts)   _scripts_submenu; _DIRTY=1 ;;
+                exit)      _exit_confirm ;;
             esac
             ;;
     esac
