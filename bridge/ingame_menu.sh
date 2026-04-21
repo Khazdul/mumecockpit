@@ -164,31 +164,12 @@ _render_main() {
         _draw_cockpit_banner
         _render_status_header
 
-        # Find the most common item width (mode) among non-exit items,
-        # so Exit uses the same pad as the typical item rather than centering by its own short width.
         local i
-        local -A _wcount=()
-        for i in "${!_ITEMS[@]}"; do
-            [ "${_ACTIONS[$i]}" = "exit" ] && continue
-            local w=$(( ${#_ITEMS[$i]} + 6 ))
-            _wcount[$w]=$(( ${_wcount[$w]:-0} + 1 ))
-        done
-        local _mode_w=0 _mode_cnt=0
-        for w in "${!_wcount[@]}"; do
-            if [ "${_wcount[$w]}" -gt "$_mode_cnt" ]; then
-                _mode_cnt="${_wcount[$w]}"; _mode_w="$w"
-            fi
-        done
-        local exit_pad=$(( (cols - _mode_w) / 2 ))
-        [ "$exit_pad" -lt 0 ] && exit_pad=0
-
         for i in "${!_ITEMS[@]}"; do
             local active=0; [ "$i" -eq "$_SEL" ] && active=1
             local action="${_ACTIONS[$i]}"
             if [ "$action" = "save" ] && (( now - _save_ts < 1 )); then
                 draw_menu_item "Saved ✓" "$active" "" "$_MR_ACCENT"
-            elif [ "$action" = "exit" ]; then
-                draw_menu_item "${_ITEMS[$i]}" "$active" "$exit_pad"
             else
                 draw_menu_item "${_ITEMS[$i]}" "$active"
             fi
@@ -379,12 +360,11 @@ _exit_confirm() {
             [ "$pad" -lt 0 ] && pad=0
             {
                 printf '\n\n'
+                printf "%${pad}s${_MR_ACTIVE}%s${_MR_RESET}\n" "" "$msg"
                 local warn="Exit terminates session!"
                 local wpad=$(( (cols - ${#warn}) / 2 ))
                 [ "$wpad" -lt 0 ] && wpad=0
                 printf "%${wpad}s${_MR_ERR}%s${_MR_RESET}\n" "" "$warn"
-                printf '\n'
-                printf "%${pad}s${_MR_ACTIVE}%s${_MR_RESET}\n" "" "$msg"
                 printf '\n'
                 local hint="↑↓ · ESC  Back to menu"
                 local hpad=$(( (cols - ${#hint}) / 2 ))
