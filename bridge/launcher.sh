@@ -87,6 +87,27 @@ bash "$HOME/MUME/bridge/version_check.sh" >/dev/null 2>&1 &
 disown
 
 # ---------------------------------------------------------------------------
+# Version helpers
+# ---------------------------------------------------------------------------
+_strip_v() {
+    local s="$1"
+    echo "${s#v}"
+}
+
+_update_available() {
+    [ -f bridge/version.cache ] || return 1
+    local latest=""
+    while IFS='=' read -r k v; do
+        [ "$k" = "latest" ] && latest="$v"
+    done < bridge/version.cache
+    [ -z "$latest" ] && return 1
+    local a b
+    a=$(_strip_v "$latest")
+    b=$(_strip_v "$_COCKPIT_VERSION")
+    [ "$a" != "$b" ]
+}
+
+# ---------------------------------------------------------------------------
 # Pick one random Tolkien quote for this launcher run (stable across redraws)
 # ---------------------------------------------------------------------------
 _QUOTE_TEXT=""
@@ -117,14 +138,18 @@ if tmux has-session -t mume 2>/dev/null; then
     ATTACHED=$(( ATTACHED + 0 ))
 fi
 
-# Menu order: Start/Continue/Mirror, Profile, Options, Scripts, About, Quit
+# Menu order: Start/Continue/Mirror, [Update], Profile, Options, Scripts, About, Quit
 if [ "$HAS_SESSION" -eq 0 ]; then
-    _ITEMS=("Start new session" "Profile" "Options" "Scripts" "About" "Quit")
+    _ITEMS=("Start new session")
 elif [ "$ATTACHED" -eq 0 ]; then
-    _ITEMS=("Continue session" "Profile" "Options" "Scripts" "About" "Quit")
+    _ITEMS=("Continue session")
 else
-    _ITEMS=("Mirror session (attached elsewhere)" "Profile" "Options" "Scripts" "About" "Quit")
+    _ITEMS=("Mirror session (attached elsewhere)")
 fi
+if _update_available; then
+    _ITEMS+=("Update")
+fi
+_ITEMS+=("Profile" "Options" "Scripts" "About" "Quit")
 _NITEMS=${#_ITEMS[@]}
 
 _SEL=0
@@ -698,7 +723,7 @@ _about_page() {
             while IFS='=' read -r k v; do
                 [ "$k" = "latest" ] && _vlatest="$v"
             done < "bridge/version.cache"
-            if [ -n "$_vlatest" ] && [ "$_vlatest" != "$_vcur" ]; then
+            if [ -n "$_vlatest" ] && [ "$(_strip_v "$_vlatest")" != "$(_strip_v "$_vcur")" ]; then
                 _vraw="${_vcur}  ·  Update available: ${_vlatest}"
                 _vupd="$_vlatest"
             fi
@@ -897,6 +922,65 @@ _scripts_page() {
 }
 
 # ---------------------------------------------------------------------------
+# Update runner
+# ---------------------------------------------------------------------------
+_run_update() {
+    local out rc
+    out=$(bash bridge/update.sh 2>&1)
+    rc=$?
+
+    local title body_colour footer
+    case "$rc" in
+        0)   title="Update complete"
+             body_colour="$_MR_BODY"
+             footer="Press any key to restart the launcher." ;;
+        10)  title="No update available"
+             body_colour="$_MR_BODY"
+             footer="Any key to return." ;;
+        20|21|22)
+             title="Update aborted"
+             body_colour="$_MR_YELLOW"
+             footer="Any key to return." ;;
+        *)   title="Update failed"
+             body_colour="$_MR_ERR"
+             footer="Any key to return." ;;
+    esac
+
+    _DIRTY=1
+    while true; do
+        if [ "$_DIRTY" -eq 1 ]; then
+            _DIRTY=0
+            local cols; cols=$(tput cols 2>/dev/null || echo 80)
+            local tpad=$(( (cols - ${#title}) / 2 ))
+            [ "$tpad" -lt 0 ] && tpad=0
+            local fpad=$(( (cols - ${#footer}) / 2 ))
+            [ "$fpad" -lt 0 ] && fpad=0
+            {
+                printf '\n\n'
+                printf "%${tpad}s${_MR_TITLE}%s${_MR_RESET}\n\n\n" "" "$title"
+                local bline
+                while IFS= read -r bline; do
+                    local bpad=$(( (cols - ${#bline}) / 2 ))
+                    [ "$bpad" -lt 0 ] && bpad=0
+                    printf "%${bpad}s${body_colour}%s${_MR_RESET}\n" "" "$bline"
+                done <<< "$out"
+                printf '\n\n'
+                printf "%${fpad}s${_MR_HINT}%s${_MR_RESET}\n" "" "$footer"
+            } | render_frame
+        fi
+        read_key 0.2 || { _DIRTY=1; continue; }
+        break
+    done
+
+    if [ "$rc" -eq 0 ]; then
+        trap - EXIT INT TERM HUP
+        printf '\e[?1007h'
+        exec bash bridge/launcher.sh
+    fi
+    _DIRTY=1
+}
+
+# ---------------------------------------------------------------------------
 # check_min_size — runs in alt screen (already entered above)
 # ---------------------------------------------------------------------------
 check_min_size
@@ -922,8 +1006,8 @@ while true; do
             ;;
         ESC) _quit_confirm ;;
         ENTER|SPACE)
-            case "$_SEL" in
-                0)  # Start new session / Continue session / Mirror session
+            case "${_ITEMS[$_SEL]}" in
+                "Start new session"|"Continue session"|"Mirror session (attached elsewhere)")
                     trap - EXIT INT TERM HUP
                     printf '\e[?1007h'  # re-enable alt-scroll before tmux takes over
                     if [ "$HAS_SESSION" -eq 1 ]; then
@@ -932,11 +1016,12 @@ while true; do
                         exec bash bridge/tmux_start.sh
                     fi
                     ;;
-                1) _profile_page ;;
-                2) _options_menu ;;
-                3) _scripts_page ;;
-                4) _about_page   ;;
-                5) _quit_confirm ;;
+                "Update")        _run_update ;;
+                "Profile")       _profile_page ;;
+                "Options")       _options_menu ;;
+                "Scripts")       _scripts_page ;;
+                "About")         _about_page ;;
+                "Quit")          _quit_confirm ;;
             esac
             ;;
     esac

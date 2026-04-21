@@ -757,6 +757,41 @@ The consumer does not block on the network. If the cache is missing or stale
 the UI still shows the current version; background refresh catches up within
 seconds.
 
+### Self-update (`bridge/update.sh`)
+
+When `bridge/version.cache` indicates a newer tag than the VERSION file, the
+launcher inserts an "Update" row into the main menu directly below the
+Start/Continue/Mirror row. Selecting it runs `bridge/update.sh`, which:
+
+1. Verifies `version.cache` actually indicates a newer version (comparison
+   strips a single leading "v" from both operands, so "0.1.0" matches
+   "v0.1.0").
+2. Runs three safety guards — all must pass:
+   - Developer fingerprint: `git config user.email` must NOT match any
+     commit author in the repo history.
+   - Working tree clean: no uncommitted changes, no untracked files
+     outside `.gitignore`.
+   - Local commits: zero commits ahead of `origin/main`.
+3. `git fetch origin main --tags`
+4. `git reset --hard origin/main`
+5. Prompts user to restart the launcher. Any-key press re-execs
+   `launcher.sh`, loading the fresh code.
+
+Guard failure aborts with a specific exit code (20/21/22) and message.
+Git failures exit 30.
+
+The in-game popup does NOT expose an Update affordance. Update runs
+pre-tmux, from the launcher only, so the cockpit never has to deal with
+mid-session binary changes.
+
+**Developer note:** the email fingerprint check is the primary protection
+for active developers. If you clone on a fresh machine without setting
+`git config user.email`, guards (b) and (c) still protect against
+accidental damage. If all three guards somehow pass on a dev machine
+(unlikely) and Update runs: `git reset --hard` discards nothing that
+wasn't already pushed, but force-resets the branch pointer to
+`origin/main`. Recovery: `git reflog` still contains your old HEAD.
+
 ### Clean client startup (`ttpp/main.tin` + `ttpp/core/welcome.tin`)
 
 tt++ is launched with a CLI flag that suppresses its built-in greeting
@@ -1245,6 +1280,7 @@ disappears, or no trigger fires within 15 seconds. Uses `game_cmd` and
 - [x] In-game popup menu (status header, Options, Scripts,
       Save profile, context-aware Continue/Reconnect)
 - [x] GitHub version check with cached update indicator
+- [x] Self-update ("Update" in launcher menu, guarded for developer checkouts)
 
 ## Roadmap
 
@@ -1293,6 +1329,10 @@ Explicitly NOT in the popup (deliberate scope trims):
 - Version check footer on the launcher About page (top-right, always
   visible). Background refresh on launcher start, 6h cache, graceful
   offline handling. [3c]
+- Conditional "Update" row in launcher main menu (appears only when
+  version.cache indicates a newer tag). Safe self-update with
+  triple-guard protection for developer checkouts. Version comparison
+  normalised for "v" prefix. [3c]
 
 Parked for later (post-3c):
 - Version check footer
