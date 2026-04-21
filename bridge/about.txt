@@ -74,6 +74,6 @@ CONNECTION
 
 PROJECT
 
-  Source    github.com/Khazdul/MUME
+  Source    github.com/Khazdul/mumecockpit
   License   see LICENSE in the repository root
   Version   read from the VERSION file at the repo root

@@ -38,6 +38,8 @@ advanced automation, state tracking, and UI feedback.
 │   ├── tmux_start.sh         # tmux session creation (extracted from start.sh)
 │   ├── toggle_pane.sh        # Toggle ui/dev/input panes and pane headers
 │   │                         #   (called by cp aliases and in-game popup)
+│   ├── version_check.sh      # Queries GitHub for latest tag; updates
+│   │                         #   bridge/version.cache with 6h TTL
 │   ├── read_config.sh        # Emits tt++ #var assignments from startup.conf
 │   ├── quotes.txt            # Tolkien quotes shown on main menu (pipe-sep format)
 │   ├── about.txt             # About page body text
@@ -51,6 +53,7 @@ advanced automation, state tracking, and UI feedback.
 │   ├── session.state         # Runtime state written by Lua on SESSION
 │   │                         #   CONNECTED; cleared on DISCONNECTED and
 │   │                         #   at brain startup (gitignored)
+│   ├── version.cache         # Cached latest-release tag (gitignored)
 │   └── startup.conf          # Persisted startup-menu state (gitignored)
 │
 └── logs/
@@ -470,6 +473,7 @@ State is stored in `bridge/layout.conf` (gitignored, recreated on first startup)
 ```
 bridge/layout.conf
 bridge/session.state
+bridge/version.cache
 bridge/.layout_lock
 bridge/.pane_resize_pid
 ```
@@ -722,6 +726,36 @@ Pure bash + ANSI escapes; no external dependencies beyond coreutils.
 | About page | Reads `bridge/about.txt`; word-wrapped, cached per resize, scrollable |
 | Quit | Confirmation prompt; ESC cancels |
 | Persistence | Options saved to `bridge/startup.conf` on Back / ESC |
+
+### Version check (`bridge/version_check.sh` + `bridge/version.cache`)
+
+On every launcher startup, `bridge/launcher.sh` fires `version_check.sh` in
+the background (`&`, `disown`). The script queries the GitHub releases API for
+`Khazdul/mumecockpit` with a 3-second timeout. On success it writes
+`bridge/version.cache` atomically (temp-file + rename):
+
+    latest=vX.Y.Z
+    checked_at=<epoch seconds>
+
+TTL is 6 hours — later invocations within the window exit silently without
+hitting the network. `--force` bypasses the cache.
+
+Only `/releases/latest` is used. If the repo has no formal GitHub releases,
+the endpoint returns 404 and the script exits silently without writing the
+cache — the About page then shows the current version only. Any other failure
+(offline, rate-limit, parse) leaves the cache unchanged and exits silently.
+
+If `bridge/version.cache` holds a stale or wrong value, delete the file and
+restart the launcher to trigger a fresh check.
+
+Consumers:
+- Launcher About page: version is displayed top-right on the title row,
+  always visible without scrolling. Shows current version always, appends
+  "Update available: vX.Y.Z" in `_MR_ACCENT` when cache indicates a newer tag.
+
+The consumer does not block on the network. If the cache is missing or stale
+the UI still shows the current version; background refresh catches up within
+seconds.
 
 ### Clean client startup (`ttpp/main.tin` + `ttpp/core/welcome.tin`)
 
@@ -1208,6 +1242,9 @@ disappears, or no trigger fires within 15 seconds. Uses `game_cmd` and
 - [x] TLS for direct connections (_ses_cmd=ssl uses #ssl instead of #ses)
 - [x] Clean client startup (MOTD suppression, welcome banner,
   auto-connect, game_session-guarded cp -r)
+- [x] In-game popup menu (status header, Options, Scripts,
+      Save profile, context-aware Continue/Reconnect)
+- [x] GitHub version check with cached update indicator
 
 ## Roadmap
 
@@ -1251,6 +1288,11 @@ Explicitly NOT in the popup (deliberate scope trims):
 - Reload — `cp -r` from the input pane is the intended path.
 - Profile switch / connection mode — launcher-only; requires restart.
 - Layout mockup — saves vertical space in the popup.
+
+### Phase 3c — Polish ✓
+- Version check footer on the launcher About page (top-right, always
+  visible). Background refresh on launcher start, 6h cache, graceful
+  offline handling. [3c]
 
 Parked for later (post-3c):
 - Version check footer

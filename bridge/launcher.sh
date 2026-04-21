@@ -82,6 +82,10 @@ fi
 _COCKPIT_VERSION="0.1.0"
 [ -f "VERSION" ] && _COCKPIT_VERSION=$(tr -d '[:space:]' < VERSION 2>/dev/null || echo "0.1.0")
 
+# Kick off background version check — populates bridge/version.cache for About page.
+bash "$HOME/MUME/bridge/version_check.sh" >/dev/null 2>&1 &
+disown
+
 # ---------------------------------------------------------------------------
 # Pick one random Tolkien quote for this launcher run (stable across redraws)
 # ---------------------------------------------------------------------------
@@ -668,10 +672,11 @@ _about_page() {
         [ "$cols" -eq "$_acols" ] && [ "${#_alines[@]}" -gt 0 ] && return
         _acols="$cols"
         _alines=()
-        [ -f "bridge/about.txt" ] || return
-        while IFS= read -r aline; do
-            _alines+=("$aline")
-        done < <(wrap_text "$width" < "bridge/about.txt")
+        if [ -f "bridge/about.txt" ]; then
+            while IFS= read -r aline; do
+                _alines+=("$aline")
+            done < <(wrap_text "$width" < "bridge/about.txt")
+        fi
     }
 
     _render_about() {
@@ -684,7 +689,27 @@ _about_page() {
         [ "$pad" -lt 0 ] && pad=0
         local p; printf -v p "%${pad}s" ""
         local title="─── About ───"
-        local tpad=$(( (cols - ${#title}) / 2 ))
+
+        # Build version string for title row (raw widths, no ANSI)
+        local _vcur="$_COCKPIT_VERSION"
+        local _vraw="$_vcur" _vupd=""
+        if [ -f "bridge/version.cache" ]; then
+            local _vlatest=""
+            while IFS='=' read -r k v; do
+                [ "$k" = "latest" ] && _vlatest="$v"
+            done < "bridge/version.cache"
+            if [ -n "$_vlatest" ] && [ "$_vlatest" != "$_vcur" ]; then
+                _vraw="${_vcur}  ·  Update available: ${_vlatest}"
+                _vupd="$_vlatest"
+            fi
+        fi
+        local _tvw=${#title} _vvw=${#_vraw}
+        local _tpad=$(( (cols - _tvw) / 2 ))
+        [ "$_tpad" -lt 0 ] && _tpad=0
+        local _vstart=$(( cols - 2 - _vvw ))
+        [ "$_vstart" -lt 0 ] && _vstart=0
+        local _gap=$(( _vstart - _tpad - _tvw ))
+        [ "$_gap" -lt 1 ] && _gap=1
 
         # Header: 3 rows (blank + title + blank). Footer: 2 rows. Reserve 5.
         local visible=$(( rows - 5 ))
@@ -701,7 +726,13 @@ _about_page() {
 
         {
             printf '\n'
-            printf "%${tpad}s${_MR_TITLE}%s${_MR_RESET}\n\n" "" "$title"
+            if [ -n "$_vupd" ]; then
+                printf "%${_tpad}s${_MR_TITLE}%s${_MR_RESET}%${_gap}s${_MR_BODY}%s${_MR_RESET}  ·  ${_MR_ACCENT}Update available: %s${_MR_RESET}\n\n" \
+                    "" "$title" "" "$_vcur" "$_vupd"
+            else
+                printf "%${_tpad}s${_MR_TITLE}%s${_MR_RESET}%${_gap}s${_MR_BODY}%s${_MR_RESET}\n\n" \
+                    "" "$title" "" "$_vcur"
+            fi
             local shown=0 i
             for (( i = _aoffset; i < atotal && shown < visible; i++ )); do
                 local l="${_alines[$i]}"
