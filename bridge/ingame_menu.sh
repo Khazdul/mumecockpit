@@ -18,8 +18,8 @@ trap '_restore_terminal' EXIT INT TERM HUP
 _DIRTY=1
 trap '_DIRTY=1' WINCH
 
-_ITEMS=("Continue" "Exit to main menu")
-_NITEMS=2
+_ITEMS=("Continue" "Options" "Exit to main menu")
+_NITEMS=3
 _SEL=0
 
 _draw_cockpit_banner() {
@@ -90,7 +90,7 @@ _render_main() {
         local i
         for i in "${!_ITEMS[@]}"; do
             local active=0; [ "$i" -eq "$_SEL" ] && active=1
-            if [ "$i" -eq 1 ]; then
+            if [ "$i" -eq 2 ]; then
                 draw_menu_item "${_ITEMS[$i]}" "$active" "" "$_MR_ERR"
                 local sub="Terminates current session"
                 local subpad=$(( (cols - ${#sub} - 3) / 2 ))
@@ -98,6 +98,12 @@ _render_main() {
                 printf "%${subpad}s   ${_MR_ERR}%s${_MR_RESET}\n" "" "$sub"
             else
                 draw_menu_item "${_ITEMS[$i]}" "$active"
+            fi
+            if [ "$i" -eq 1 ]; then
+                local sep="────────────────────"
+                local spad=$(( (cols - ${#sep}) / 2 ))
+                [ "$spad" -lt 0 ] && spad=0
+                printf "%${spad}s${_MR_HINT}%s${_MR_RESET}\n" "" "$sep"
             fi
         done
 
@@ -107,6 +113,77 @@ _render_main() {
         [ "$fpad" -lt 0 ] && fpad=0
         printf "%${fpad}s${_MR_HINT}%s${_MR_RESET}\n" "" "$footer"
     } | render_frame
+}
+
+_options_submenu() {
+    local _osel=0
+    local _OCOUNT=5
+    local _ODIRTY=1
+    local _targets=(ui dev input headers)
+
+    while true; do
+        if [ "$_ODIRTY" -eq 1 ]; then
+            _ODIRTY=0
+            local cols; cols=$(tput cols 2>/dev/null || echo 80)
+
+            local _chk_ui="[ ]" _chk_dev="[ ]" _chk_inp="[ ]" _chk_hdr="[ ]"
+            tmux list-panes -t mume:cockpit -F '#{pane_title}' 2>/dev/null | grep -q '^ui$'    && _chk_ui="[x]"
+            tmux list-panes -t mume:cockpit -F '#{pane_title}' 2>/dev/null | grep -q '^dev$'   && _chk_dev="[x]"
+            tmux list-panes -t mume:cockpit -F '#{pane_title}' 2>/dev/null | grep -q '^input$' && _chk_inp="[x]"
+            [ "$(tmux show-option -t mume pane-border-status 2>/dev/null | awk '{print $2}')" != "off" ] && _chk_hdr="[x]"
+
+            local _olabels=(
+                "$_chk_ui UI pane"
+                "$_chk_dev Dev pane"
+                "$_chk_inp Input pane"
+                "$_chk_hdr Pane headers"
+                "    Back"
+            )
+
+            local maxw=0 w _lbl
+            for _lbl in "${_olabels[@]}"; do
+                w=${#_lbl}; (( w > maxw )) && maxw=$w
+            done
+            local pad=$(( (cols - maxw) / 2 ))
+            (( pad < 0 )) && pad=0
+
+            local title="─── Options ───"
+            local tpad=$(( (cols - ${#title}) / 2 ))
+            [ "$tpad" -lt 0 ] && tpad=0
+            local footer="↑↓ Navigate · Enter/Space Toggle · ESC Back"
+            local fpad=$(( (cols - ${#footer}) / 2 ))
+            [ "$fpad" -lt 0 ] && fpad=0
+
+            {
+                printf '\n\n'
+                printf "%${tpad}s${_MR_TITLE}%s${_MR_RESET}\n\n" "" "$title"
+                local i
+                for i in "${!_olabels[@]}"; do
+                    local active=0; [ "$i" -eq "$_osel" ] && active=1
+                    draw_menu_item "${_olabels[$i]}" "$active" "$pad"
+                done
+                printf '\n'
+                printf "%${fpad}s${_MR_HINT}%s${_MR_RESET}\n" "" "$footer"
+            } | render_frame
+        fi
+
+        read_key 0.2 || { _ODIRTY=1; continue; }
+
+        _ODIRTY=1
+        case "$LAST_KEY" in
+            UP)         _osel=$(( (_osel - 1 + _OCOUNT) % _OCOUNT )) ;;
+            DOWN)       _osel=$(( (_osel + 1) % _OCOUNT )) ;;
+            ESC)        return ;;
+            ENTER|SPACE)
+                case "$_osel" in
+                    0|1|2|3)
+                        bash "$HOME/MUME/bridge/toggle_pane.sh" "${_targets[$_osel]}" --persist
+                        ;;
+                    4) return ;;
+                esac
+                ;;
+        esac
+    done
 }
 
 _exit_confirm() {
@@ -158,7 +235,8 @@ while true; do
         ENTER|SPACE)
             case "$_SEL" in
                 0) exit 0 ;;
-                1) _exit_confirm ;;
+                1) _options_submenu; _DIRTY=1 ;;
+                2) _exit_confirm ;;
             esac
             ;;
     esac
