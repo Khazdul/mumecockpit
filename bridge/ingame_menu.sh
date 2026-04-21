@@ -361,6 +361,7 @@ _exit_confirm() {
             {
                 printf '\n\n'
                 printf "%${pad}s${_MR_ACTIVE}%s${_MR_RESET}\n" "" "$msg"
+                printf '\n'
                 local warn="Exit terminates session!"
                 local wpad=$(( (cols - ${#warn}) / 2 ))
                 [ "$wpad" -lt 0 ] && wpad=0
