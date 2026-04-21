@@ -22,7 +22,7 @@
         #showme {                    ██ ███ ██ █ █ █  █  █ };
         #showme {};
         #showme {            Welcome to MUME Cockpit.};
-        #showme {            Type 'cp' for available commands.};
+        #showme {            Press <Esc> for menu.};
         #showme {};
         #showme {            Connecting to MUME...};
         #showme {};

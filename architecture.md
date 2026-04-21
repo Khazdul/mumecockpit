@@ -883,7 +883,7 @@ Inside tt++, `main.tin` does three things to keep the game window clean:
 - Clears scrollback (tt++'s `#buffer clear`, terminal's `\e[3J`, and
   `tmux clear-history`).
 - Prints the MUME + COCKPIT ASCII banner, a welcome line, a
-  `Type 'cp' for available commands.` hint, and `Connecting to MUME...`.
+  `Press <Esc> for menu.` hint, and `Connecting to MUME...`.
 - Calls `connect`, which resolves to `#$_ses_cmd {$_profile} {$_host} {$_port}`
   via `config.tin` — `$_ses_cmd` is `ses` (mmapper/plain) or `ssl` (direct/TLS).
   User lands directly in the MUD.
