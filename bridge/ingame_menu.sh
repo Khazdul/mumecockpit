@@ -18,8 +18,8 @@ trap '_restore_terminal' EXIT INT TERM HUP
 _DIRTY=1
 trap '_DIRTY=1' WINCH
 
-_ITEMS=("Continue" "Options" "Exit to main menu")
-_NITEMS=3
+_ITEMS=("Continue" "Options" "Scripts" "Exit to main menu")
+_NITEMS=4
 _SEL=0
 
 _draw_cockpit_banner() {
@@ -90,7 +90,7 @@ _render_main() {
         local i
         for i in "${!_ITEMS[@]}"; do
             local active=0; [ "$i" -eq "$_SEL" ] && active=1
-            if [ "$i" -eq 2 ]; then
+            if [ "$i" -eq 3 ]; then
                 draw_menu_item "${_ITEMS[$i]}" "$active" "" "$_MR_ERR"
                 local sub="Terminates current session"
                 local subpad=$(( (cols - ${#sub} - 3) / 2 ))
@@ -99,7 +99,7 @@ _render_main() {
             else
                 draw_menu_item "${_ITEMS[$i]}" "$active"
             fi
-            if [ "$i" -eq 1 ]; then
+            if [ "$i" -eq 2 ]; then
                 local sep="────────────────────"
                 local spad=$(( (cols - ${#sep}) / 2 ))
                 [ "$spad" -lt 0 ] && spad=0
@@ -186,6 +186,101 @@ _options_submenu() {
     done
 }
 
+_scripts_submenu() {
+    local _soffset=0
+    local _SDIRTY=1
+    local -a _slines=()
+    local _stotal=0
+
+    while true; do
+        if [ "$_SDIRTY" -eq 1 ]; then
+            _SDIRTY=0
+            local cols; cols=$(tput cols 2>/dev/null || echo 80)
+            local rows; rows=$(tput lines 2>/dev/null || echo 24)
+
+            _slines=()
+            local _sin_script=0
+            if [ ! -f "bridge/scripts.cache" ] || [ ! -s "bridge/scripts.cache" ]; then
+                _slines=("M:No scripts cached yet — start the client once to populate.")
+            else
+                while IFS= read -r line; do
+                    case "$line" in
+                        SCRIPT:*)
+                            [ "$_sin_script" -eq 1 ] && _slines+=("B:")
+                            _sin_script=1
+                            _slines+=("A:${line#SCRIPT:}")
+                            ;;
+                        SUMMARY:*) _slines+=("S:${line#SUMMARY:}") ;;
+                        HELP:*)    _slines+=("H:${line#HELP:}")    ;;
+                    esac
+                done < "bridge/scripts.cache"
+            fi
+            _stotal=${#_slines[@]}
+
+            local pad=$(( (cols - 60) / 2 ))
+            [ "$pad" -lt 0 ] && pad=0
+            local p; printf -v p "%${pad}s" ""
+            local title="─── Scripts ───"
+            local tpad=$(( (cols - ${#title}) / 2 ))
+            [ "$tpad" -lt 0 ] && tpad=0
+
+            local visible=$(( rows - 6 ))
+            [ "$visible" -lt 1 ] && visible=1
+            local max_off=$(( _stotal - visible ))
+            [ "$max_off" -lt 0 ] && max_off=0
+            [ "$_soffset" -gt "$max_off" ] && _soffset="$max_off"
+
+            local footer="ESC  Back"
+            [ "$_stotal" -gt "$visible" ] && footer="↑↓ Scroll · ESC Back"
+            local fpad=$(( (cols - ${#footer}) / 2 ))
+            [ "$fpad" -lt 0 ] && fpad=0
+
+            {
+                printf '\n'
+                printf "%${tpad}s${_MR_TITLE}%s${_MR_RESET}\n\n" "" "$title"
+                local shown=0 i
+                for (( i = _soffset; i < _stotal && shown < visible; i++ )); do
+                    local entry="${_slines[$i]}"
+                    local tag="${entry:0:2}" text="${entry:2}"
+                    case "$tag" in
+                        A:) printf "%s${_MR_ACCENT}▶ ${_MR_ACTIVE}%s${_MR_RESET}\n" \
+                                "$p" "$(printf '%s' "$text" | tr '[:lower:]' '[:upper:]')" ;;
+                        S:) printf "%s  ${_MR_BODY}%s${_MR_RESET}\n" "$p" "$text" ;;
+                        H:) printf "%s  %s\n" "$p" "$text" ;;
+                        B:) printf '\n' ;;
+                        M:) printf "%s${_MR_BODY}%s${_MR_RESET}\n" "$p" "$text" ;;
+                    esac
+                    (( shown++ ))
+                done
+                printf '\n'
+                printf "%${fpad}s${_MR_HINT}%s${_MR_RESET}\n" "" "$footer"
+            } | render_frame
+        fi
+
+        read_key 0.2 || { _SDIRTY=1; continue; }
+
+        _SDIRTY=1
+        case "$LAST_KEY" in
+            ESC) return ;;
+            UP)
+                [ "$_soffset" -gt 0 ] && _soffset=$(( _soffset - 1 )) || _SDIRTY=0
+                ;;
+            DOWN)
+                local rows; rows=$(tput lines 2>/dev/null || echo 24)
+                local vis=$(( rows - 6 ))
+                [ "$vis" -lt 1 ] && vis=1
+                local mx=$(( _stotal - vis ))
+                [ "$mx" -lt 0 ] && mx=0
+                if [ "$_soffset" -lt "$mx" ]; then
+                    _soffset=$(( _soffset + 1 ))
+                else
+                    _SDIRTY=0
+                fi
+                ;;
+        esac
+    done
+}
+
 _exit_confirm() {
     _DIRTY=1
     while true; do
@@ -236,7 +331,8 @@ while true; do
             case "$_SEL" in
                 0) exit 0 ;;
                 1) _options_submenu; _DIRTY=1 ;;
-                2) _exit_confirm ;;
+                2) _scripts_submenu; _DIRTY=1 ;;
+                3) _exit_confirm ;;
             esac
             ;;
     esac
