@@ -13,6 +13,7 @@ printf '\e[?1000l\e[?1002l\e[?1003l\e[?1006l\e[?1007l'
 _restore_terminal() {
     printf '\e[?1007h\e[?25h\e[?1049l'
 }
+
 trap '_restore_terminal' EXIT INT TERM HUP
 
 _DIRTY=1
@@ -91,23 +92,61 @@ _render_status_header() {
         done < bridge/session.state
     fi
 
-    local line
+    local base_label
     if [ -n "$connected_at" ] && [ "$connected_at" -gt 0 ] 2>/dev/null; then
-        local now; now=$(date +%s)
-        local elapsed=$(( now - connected_at ))
-        local h=$(( elapsed / 3600 ))
-        local m=$(( (elapsed % 3600) / 60 ))
-        local s=$(( elapsed % 60 ))
-        local uptime; printf -v uptime "%d:%02d:%02d" "$h" "$m" "$s"
-        line="Profile: ${profile}  ·  ${mode_label}  ·  up ${uptime}"
+        base_label="Profile: ${profile}  ·  ${mode_label}"
     else
-        line="Profile: ${profile}  ·  Disconnected"
+        base_label="Profile: ${profile}  ·  Disconnected"
     fi
 
-    local vw=${#line}
+    local latest="" quality=""
+    if [ -f bridge/ping.cache ]; then
+        while IFS='=' read -r k v; do
+            case "$k" in
+                latest)  latest="$v"  ;;
+                quality) quality="$v" ;;
+            esac
+        done < bridge/ping.cache
+    fi
+
+    # Build plain string for width measurement
+    local ms_str=""
+    if [ -n "$latest" ]; then
+        if [ "$latest" = "TIMEOUT" ]; then
+            ms_str="timeout"
+        else
+            ms_str="${latest}ms"
+        fi
+    fi
+
+    local plain="$base_label"
+    [ -n "$latest" ] && plain+="  ·  Link: ${ms_str}"
+    [ -n "$quality" ] && plain+=" (${quality})"
+    local vw=${#plain}
     local pad=$(( (cols - vw) / 2 ))
     [ "$pad" -lt 0 ] && pad=0
-    printf "%${pad}s${_MR_BODY}%s${_MR_RESET}\n" "" "$line"
+
+    # Build coloured version
+    local out="${_MR_BODY}${base_label}"
+    if [ -n "$latest" ]; then
+        out+="${_MR_BODY}  ·  Link: "
+        if [ "$latest" = "TIMEOUT" ]; then
+            out+="${_MR_ERR}timeout${_MR_BODY}"
+        else
+            out+="${latest}ms"
+        fi
+        if [ -n "$quality" ]; then
+            local q_col
+            case "$quality" in
+                stable|ok)       q_col="${_MR_BODY}" ;;
+                jittery|spiking) q_col="${_MR_YELLOW}" ;;
+                *)               q_col="${_MR_ERR}" ;;
+            esac
+            out+="${_MR_BODY} (${q_col}${quality}${_MR_BODY})"
+        fi
+    fi
+
+    printf "%${pad}s${out}${_MR_RESET}\n" ""
     printf '\n'
 }
 
@@ -116,6 +155,7 @@ _save_profile() {
     _save_ts=$(date +%s)
     _DIRTY=1
 }
+
 
 _render_main() {
     local cols; cols=$(tput cols 2>/dev/null || echo 80)
@@ -129,11 +169,13 @@ _render_main() {
             local active=0; [ "$i" -eq "$_SEL" ] && active=1
             local action="${_ACTIONS[$i]}"
             if [ "$action" = "exit" ]; then
-                draw_menu_item "${_ITEMS[$i]}" "$active" "" "$_MR_ERR"
-                local sub="Terminates current session"
-                local subpad=$(( (cols - ${#sub} - 3) / 2 ))
-                [ "$subpad" -lt 0 ] && subpad=0
-                printf "%${subpad}s   ${_MR_ERR}%s${_MR_RESET}\n" "" "$sub"
+                local vis="Exit to main menu (terminates session)"
+                local vw=${#vis}
+                local pad=$(( (cols - vw) / 2 ))
+                [ "$pad" -lt 0 ] && pad=0
+                local base="$_MR_ITEM"
+                [ "$active" -eq 1 ] && base="$_MR_ACTIVE"
+                printf "%${pad}s${base}Exit to main menu (${_MR_ERR}terminates session${base})${_MR_RESET}\n" ""
             elif [ "$action" = "save" ] && (( now - _save_ts < 1 )); then
                 draw_menu_item "Saved ✓" "$active" "" "$_MR_ACCENT"
             else

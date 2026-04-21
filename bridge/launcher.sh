@@ -1011,6 +1011,9 @@ while true; do
                     trap - EXIT INT TERM HUP
                     printf '\e[?1007h'  # re-enable alt-scroll before tmux takes over
                     if [ "$HAS_SESSION" -eq 1 ]; then
+                        bash "$HOME/MUME/bridge/ping_monitor.sh" \
+                            </dev/null >/dev/null 2>&1 &
+                        disown
                         exec tmux attach -t mume
                     else
                         exec bash bridge/tmux_start.sh

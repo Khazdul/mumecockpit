@@ -22,6 +22,8 @@ bridge/session.state
 bridge/version.cache
 bridge/.layout_lock
 bridge/.pane_resize_pid
+bridge/ping.cache
+bridge/.ping_pid
 
 
 

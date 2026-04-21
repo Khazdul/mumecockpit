@@ -49,6 +49,9 @@ advanced automation, state tracking, and UI feedback.
 │   ├── focus_input.sh        # Resolves input pane index at click time (MouseUp1Pane target)
 │   ├── on_window_resize.sh   # Fired on terminal resize — re-applies stored layout
 │   ├── on_pane_resize.sh     # Fired on border drag — saves new layout values
+│   ├── ping_monitor.sh       # Session-scoped background ping monitor
+│   │                         #   (spawned by tmux_start.sh + launcher.sh; self-terminates)
+│   ├── ping.cache            # Ping ring buffer: latest, quality, 60-sample history (gitignored)
 │   ├── layout.conf           # Persisted layout state (gitignored)
 │   ├── session.state         # Runtime state written by Lua on SESSION
 │   │                         #   CONNECTED; cleared on DISCONNECTED and
@@ -318,8 +321,8 @@ Written atomically via temp-file + rename; readers must treat missing
 or malformed values as "Disconnected" and never block.
 
 Consumer: `bridge/ingame_menu.sh` reads this file on every popup render
-to drive the status header and the live uptime counter. Future phases
-(ping monitor, script dashboard) may add sibling files next to it.
+to drive the status header (connected vs disconnected). The Link fragment
+is served from `bridge/ping.cache`, independent of session state.
 
 **Known limitation:** `cp -r` clears and re-writes the file, so uptime
 resets to 0 after a reload. Accepted.
@@ -476,6 +479,8 @@ bridge/session.state
 bridge/version.cache
 bridge/.layout_lock
 bridge/.pane_resize_pid
+bridge/ping.cache
+bridge/.ping_pid
 ```
 
 ## Input Pane
@@ -756,6 +761,59 @@ Consumers:
 The consumer does not block on the network. If the cache is missing or stale
 the UI still shows the current version; background refresh catches up within
 seconds.
+
+### Ping monitor (`bridge/ping_monitor.sh` + `bridge/ping.cache`)
+
+A background process pings `mume.org` once per second and writes cache values
+to `bridge/ping.cache`. The cockpit's in-game popup reads the cache each render
+and shows the latency + a one-word quality label as part of the status header:
+
+    Profile: default  ·  MMapper  ·  Link: 38ms (stable)
+
+**Lifecycle.** The monitor is spawned by `bridge/tmux_start.sh` after the tmux
+cockpit session is set up, and by `bridge/launcher.sh` on the Continue/Mirror
+attach paths. A single-instance guard (`bridge/.ping_pid` lockfile) ensures
+duplicate spawns are no-ops. The process self-terminates within ~1 s of the
+`tmux:mume` session disappearing, so `cp -e`, SIGKILL, or any other shutdown
+path stops it cleanly without explicit cleanup code.
+
+**Cache format** (atomically written via temp-file + rename):
+
+    latest=<integer ms or TIMEOUT>
+    quality=<label or empty>
+    samples=<comma-separated ring buffer, up to 60 entries>
+
+**Quality algorithm.** Over the last 60 samples (1 minute):
+- `loss%` = fraction of TIMEOUT samples
+- `spread` = p95 − p50 of non-TIMEOUT samples (captures jitter and spikes
+  without over-reacting to single outliers)
+
+| Label   | Spread (ms) | Loss (%) | Colour in popup |
+|---------|-------------|----------|-----------------|
+| stable  | < 8         | = 0      | _MR_BODY        |
+| ok      | < 20        | < 5      | _MR_BODY        |
+| jittery | < 50        | < 15     | _MR_YELLOW      |
+| spiking | < 120       | < 30     | _MR_YELLOW      |
+| poor    | otherwise   | otherwise| _MR_ERR         |
+| dead    | any         | >= 80    | _MR_ERR         |
+
+Fewer than 10 samples → no label (buffer warming up).
+"timeout" (current sample is TIMEOUT but history exists) shown in _MR_ERR
+regardless of quality label.
+
+Rationale for p95−p50: adapts to the user's own baseline (30 ms vs 300 ms
+doesn't matter — the label describes *consistency*, not speed). Thresholds are
+informed by the project owner's subjective calibration: ~20 ms deviation from
+baseline is "noticeable unstable"; ~50 ms is "directly felt"; >100 ms is
+"very bad."
+
+**Failure modes.**
+- `ping` binary missing / offline / DNS fails → samples are TIMEOUT, status
+  header shows "Link: timeout (dead)" after buffer fills.
+- SIGKILL'd monitor → stale PID file. Next launch detects dead PID (via
+  `kill -0`) and takes over cleanly.
+- Two cockpit sessions started simultaneously (rare) → only one monitor; the
+  other's start call exits at the PID guard.
 
 ### Self-update (`bridge/update.sh`)
 
@@ -1281,6 +1339,7 @@ disappears, or no trigger fires within 15 seconds. Uses `game_cmd` and
       Save profile, context-aware Continue/Reconnect)
 - [x] GitHub version check with cached update indicator
 - [x] Self-update ("Update" in launcher menu, guarded for developer checkouts)
+- [x] Constant ping monitor with link quality indicator
 
 ## Roadmap
 
@@ -1302,9 +1361,9 @@ disappears, or no trigger fires within 15 seconds. Uses `game_cmd` and
 - `bridge/toggle_pane.sh` extracted from the `cp -u/-d/-i/-h` aliases;
   accepts an optional `--persist` flag used by the popup to write
   `startup.conf`. [3b.1]
-- Status header at the top of the popup shows Profile · Mode · uptime,
-  live-ticking at 5 Hz. Backed by `bridge/session.state` written by
-  `brain.lua`. [3b.2]
+- Status header at the top of the popup shows Profile · Mode · Link.
+  Backed by `bridge/session.state` (connection status) and
+  `bridge/ping.cache` (link quality). [3b.2]
 - Options submenu: UI / Dev / Input / Pane headers toggles. State
   re-probed from tmux on every render — never cached. Toggles call
   `toggle_pane.sh --persist` directly, so no `cp -X` echo appears in the
@@ -1325,6 +1384,16 @@ Explicitly NOT in the popup (deliberate scope trims):
 - Profile switch / connection mode — launcher-only; requires restart.
 - Layout mockup — saves vertical space in the popup.
 
+### Phase 4a — Popup ping monitor  ✗ SUPERSEDED
+Sparkline in popup, popup-local lifecycle. Replaced by 4b.
+
+### Phase 4b — Constant ping monitor with link quality  ✓
+Always-running monitor tied to tmux session lifecycle.
+Quality summarised as a single word (stable / ok / jittery /
+spiking / poor / dead) via p95−p50 spread analysis over
+60-sample ring buffer. Shown inline in popup status header.
+Uptime removed from header. [4b]
+
 ### Phase 3c — Polish ✓
 - Version check footer on the launcher About page (top-right, always
   visible). Background refresh on launcher start, 6h cache, graceful
@@ -1337,12 +1406,6 @@ Explicitly NOT in the popup (deliberate scope trims):
 Parked for later (post-3c):
 - Version check footer
 - Reset layout to defaults
-- Ping monitor
 - Live script dashboard (IDLE/RUNNING/FIRING tags)
 - Stop-all-scripts emergency button
 - Pane dimming
-- In-game uptime vs socket uptime. Current status header shows time since
-  `session.state` was written, which is socket uptime. In MMapper mode the
-  socket outlives the in-game session (quit to MMapper prompt keeps the
-  socket alive), so uptime drifts from "time in character." Fixing requires
-  trigger-based parsing of MUME login/logout output. Parked.

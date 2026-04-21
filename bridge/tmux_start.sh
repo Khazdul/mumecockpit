@@ -123,6 +123,12 @@ tmux bind-key -T root Escape display-popup -E \
     -w 80% -h 80% -x C -y C \
     "bash $HOME/MUME/bridge/ingame_menu.sh"
 
+# Start ping monitor. Guarded against double-starts; self-terminates when
+# tmux:mume dies.
+bash "$HOME/MUME/bridge/ping_monitor.sh" \
+    </dev/null >/dev/null 2>&1 &
+disown
+
 # ---------------------------------------------------------------------------
 # 5. TT++ started directly in pane 0 (via new-session above) — no send-keys.
 # ---------------------------------------------------------------------------
