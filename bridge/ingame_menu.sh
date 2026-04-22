@@ -46,7 +46,7 @@ _rebuild_menu() {
     _ITEMS+=("Save profile");     _ACTIONS+=("save")
     _ITEMS+=("Options");           _ACTIONS+=("options")
     _ITEMS+=("Scripts");           _ACTIONS+=("scripts")
-    _ITEMS+=("Exit");              _ACTIONS+=("exit")
+    _ITEMS+=("Exit session");      _ACTIONS+=("exit")
 
     _NITEMS=${#_ITEMS[@]}
 
