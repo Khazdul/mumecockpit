@@ -1,3 +1,203 @@
 # UI Messaging
 
-Content pending — to be extracted from architecture.md.
+Rules and helpers for writing to the UI pane (`logs/ui.log`) and dev log
+(`logs/debug.log`). Touch this file when writing any script that produces
+player-visible output, or when adjusting colour constants or style rules.
+
+## State Change Echoes
+
+All aliases that change player state (target, spamdoors, spell selection, etc.)
+must echo the new state using this format:
+
+```
+#showme {<F9AA8B7>## Label: <FFFFFFF>$value<099>}
+```
+
+| Code        | Role                                        |
+|-------------|---------------------------------------------|
+| `<F9AA8B7>` | Steel-blue — labels and the `##` prefix     |
+| `<FFFFFFF>` | White — values                              |
+| `<099>`     | Reset — always close the colored block      |
+
+The `##` prefix makes state-change lines visually distinct from game output.
+These are the TinTin++ 24-bit truecolor equivalents of Mudlet's
+`<154,168,183>` (label) and `<255,255,255>` (value).
+
+## Script Status Messages
+
+Lua scripts report key lifecycle events to the UI pane via `script_ui()` in
+`brain.lua`:
+
+```lua
+script_ui("AUTOSTAB", "Running.")
+script_ui("AUTOSTAB", "Stopped — target dead.")
+script_ui("AUTOSTAB", "Stopped — timed out.")
+```
+
+Renders in the UI pane as:
+
+```
+▶ AUTOSTAB: Running.
+▶ AUTOSTAB: Stopped — target dead.
+```
+
+`▶ SCRIPTNAME` is teal (`#26C6DA`), the message is bold bright white, and
+dynamic values are bold yellow via `ui_var()`. Colors use ANSI escape
+codes (not TT++ format) since the UI pane is a plain terminal (`tail -f`).
+
+**Rules:**
+- Use `script_ui` for key state changes only: started, stopped, errors.
+- **Max 33 characters total** — `▶ AUTOSTAB: Stopped — timed out.` is the
+  limit.
+- Use "Stopped" when a script ends for any reason (not "aborted",
+  "cancelled", etc.).
+- One `script_ui` call per event — never call both `script_ui` and `ui()`
+  for the same event.
+- The mume main window (`as_show` / `tintin_show`) is separate — use it for
+  in-game context (e.g. `## AUTOSTAB: target: orc dir: west`), not for status.
+
+See "UI Message Style Rules" below for cross-cutting conventions (trailing
+period, event phrasing, dynamic value highlighting, no timestamps).
+
+## UI System Events
+
+Infrastructure lifecycle events (brain start, game session connect/disconnect,
+cockpit reload, future framework-level events) use `system_ui()` in
+`brain.lua`:
+
+```lua
+system_ui("Game session " .. ui_var(ses) .. " connected.")
+system_ui("Game session " .. ui_var(ses) .. " closed.")
+```
+
+Renders in the UI pane as:
+
+```
+● SYSTEM: Game session mume connected.
+● SYSTEM: Game session mume closed.
+```
+
+`● SYSTEM` is blue (`#42A5F5`), the message is bold bright white, and
+dynamic values are bold yellow via `ui_var()`.
+
+Infrastructure lifecycle events that the user needs to see (game session
+connect/disconnect, cockpit reload, future framework-level events) use
+`system_ui()`. Events that are internal brain plumbing (brain process start,
+script-load diagnostics) go to `dbg()` and appear in the dev pane only.
+
+Use `system_ui` for user-relevant state transitions only — not for game events,
+script lifecycle (use `script_ui`), warnings (`ui_warn`), or errors (`ui_err`).
+
+## UI Warnings and Errors
+
+When the player needs to see a warning or error, use the severity helpers in
+`brain.lua`:
+
+```lua
+ui_warn("Config file missing, using defaults.")
+ui_err("Failed to load script " .. ui_var("foo.lua") .. ".")
+```
+
+Renders as:
+
+```
+⚠ WARN: Config file missing, using defaults.
+✖ ERROR: Failed to load script foo.lua.
+```
+
+`⚠ WARN` is amber (`#FFB300`), `✖ ERROR` is red (`#E53935`). Messages are
+bold bright white, and dynamic values are bold yellow via `ui_var()`.
+
+**UI vs debug log:**
+- Routine / recoverable issues with no player impact → `dbg()` only.
+- Issues the player should know about (misconfig, missing feature, script
+  failure) → `ui_warn()` or `ui_err()`. These mirror to `debug.log`
+  automatically via `ui()` — don't follow them with a redundant `dbg()`.
+
+## UI Dynamic Values
+
+Any message written to `ui.log` that contains dynamic content (session names,
+player names, counts, etc.) must highlight the dynamic parts via `ui_var()`
+in `brain.lua`:
+
+```lua
+local _C_VAR = "\027[1;38;2;255;238;88m"   -- bold yellow #FFEE58 — dynamic values
+
+function ui_var(v)
+    return _C_VAR .. tostring(v) .. _C_RESET .. _C_TEXT
+end
+```
+
+Dynamic values render in bold yellow, the rest of the message in bold
+bright white (the `_C_TEXT` base). The trailing `_C_TEXT` inside
+`ui_var` restores the base colour after the variable so subsequent text
+continues in bold white rather than falling back to the terminal
+default.
+
+Usage:
+
+```lua
+system_ui("Game session " .. ui_var(ses) .. " connected.")
+script_ui("AUTOSTAB", "Stopped — " .. ui_var(reason) .. ".")
+ui_err("Failed to load script " .. ui_var("foo.lua") .. ".")
+```
+
+The convention is semantic — `ui_var` marks "this is a dynamic value", not
+a specific style. If the style changes later, only one place needs updating.
+
+See "UI Message Style Rules" below for when to apply `ui_var()` and other
+cross-cutting rules.
+
+## UI Message Style Rules
+
+These rules apply to every message written to `ui.log` through any helper
+(`ui`, `script_ui`, `system_ui`, `ui_warn`, `ui_err`):
+
+- **Trailing period — UI vs dev.** User-facing helpers (`ui`, `system_ui`, `script_ui`, `ui_warn`, `ui_err`) write full sentences and always end with a period. `dbg()` is developer-facing log output — terse, `key: value` or status-style — and never ends with a period. Quick test: if the line reads like console output from a tool (`server connected`, `cache miss for foo`, `3 scripts loaded`), it's `dbg()` and takes no period. If it reads like a status report to the player (`Game session mume connected.`), it's one of the UI helpers and does.
+- **Event-style phrasing.** Describe what happened, not what the state is
+  now. `Game session mume connected.`, not `Game session: mume`.
+- **Dynamic values highlighted.** Any variable part of a message (session
+  name, target, reason, count, filename) is wrapped in `ui_var()` and
+  renders in bold yellow against the bold white base text.
+- **No timestamps.** `ui.log` is meant to be scannable at a glance.
+  `debug.log` already carries timestamps for diagnostic purposes.
+
+## Logging Guidelines
+
+**UI LOG (`logs/ui.log`)** — game-relevant information the player cares about:
+- Game-relevant state changes (target acquired/changed, spell changes, buffs added or about to drop, etc.)
+- Communication (tells, says, narrates etc.)
+- Not combat events — not damage hits, not HP threshold crossings, not reflexes like stunned
+
+**DEV LOG (`logs/debug.log`)** — technical/diagnostic information:
+- Errors and unexpected input
+- Technical state transitions
+- Function entry points for debugging (`get_state called`, `get_tells called`)
+- Unknown or unhandled events
+
+**Script load messages.** On load, a script emits a single `dbg()` line of the form `[SCRIPTNAME] loaded` — nothing more. Alias/trigger registration details belong in the script's `cp -<name>` help box (via `register_script`), not in the startup log. The load line is a liveness signal, not a manifest.
+
+**Rules:**
+- Never log the same event to both panes redundantly — `ui()` already mirrors to dev with a `UI:` prefix, so never follow a `ui()` call with a `dbg()` for the same message
+- Log to UI only when something meaningful changes, not on every trigger fire, you need to ask what is appropriate to log when new content is added
+- Unknown events go to dev only, not UI
+
+## Colour Constants
+
+All ANSI constants are defined at the top of `lua/brain.lua`. Scripts must
+never hard-code escape sequences — use the helper functions (`ui_var()`,
+`script_ui()`, etc.) instead. Values are documented here so the exact colours
+are known without guessing.
+
+| Constant    | Escape value                        | Colour / role                         |
+|-------------|-------------------------------------|---------------------------------------|
+| `_C_SCRIPT` | `"\027[38;2;38;198;218m"`           | Teal `#26C6DA` — `▶ SCRIPTNAME` prefix |
+| `_C_SYSTEM` | `"\027[38;2;66;165;245m"`           | Blue `#42A5F5` — `● SYSTEM` prefix   |
+| `_C_WARN`   | `"\027[38;2;255;179;0m"`            | Amber `#FFB300` — `⚠ WARN` prefix    |
+| `_C_ERR`    | `"\027[38;2;229;57;53m"`            | Red `#E53935` — `✖ ERROR` prefix     |
+| `_C_VAR`    | `"\027[1;38;2;255;238;88m"`         | Bold yellow `#FFEE58` — dynamic values |
+| `_C_TEXT`   | `"\027[1;97m"`                      | Bold bright white — base message text |
+| `_C_RESET`  | `"\027[0m"`                         | Reset all attributes                  |
+
+---
+Back to [architecture.md](../architecture.md).

@@ -1,3 +1,191 @@
 # Bridge Services
 
-Content pending — to be extracted from architecture.md.
+Background services and persisted configuration files in `bridge/`. Touch
+this file when changing the version check, self-update flow, ping monitor,
+`scripts.cache` format, `startup.conf` keys, or layout persistence.
+
+## Version check (`bridge/version_check.sh` + `bridge/version.cache`)
+
+On every launcher startup, `bridge/launcher.sh` fires `version_check.sh` in
+the background (`&`, `disown`). The script queries the GitHub releases API for
+`Khazdul/mumecockpit` with a 3-second timeout. On success it writes
+`bridge/version.cache` atomically (temp-file + rename):
+
+    latest=vX.Y.Z
+    checked_at=<epoch seconds>
+
+TTL is 6 hours — later invocations within the window exit silently without
+hitting the network. `--force` bypasses the cache.
+
+Only `/releases/latest` is used. If the repo has no formal GitHub releases,
+the endpoint returns 404 and the script exits silently without writing the
+cache — the About page then shows the current version only. Any other failure
+(offline, rate-limit, parse) leaves the cache unchanged and exits silently.
+
+If `bridge/version.cache` holds a stale or wrong value, delete the file and
+restart the launcher to trigger a fresh check.
+
+Consumers:
+- Launcher About page: version is displayed top-right on the title row,
+  always visible without scrolling. Shows current version always, appends
+  "Update available: vX.Y.Z" in `_MR_ACCENT` when cache indicates a newer tag.
+
+The consumer does not block on the network. If the cache is missing or stale
+the UI still shows the current version; background refresh catches up within
+seconds.
+
+## Self-update (`bridge/update.sh`)
+
+When `bridge/version.cache` indicates a newer tag than the VERSION file, the
+launcher inserts an "Update" row into the main menu directly below the
+Start/Continue/Mirror row. Selecting it runs `bridge/update.sh`, which:
+
+1. Verifies `version.cache` actually indicates a newer version (comparison
+   strips a single leading "v" from both operands, so "0.1.0" matches
+   "v0.1.0").
+2. Runs three safety guards — all must pass:
+   - Developer fingerprint: `git config user.email` must NOT match any
+     commit author in the repo history.
+   - Working tree clean: no uncommitted changes, no untracked files
+     outside `.gitignore`.
+   - Local commits: zero commits ahead of `origin/main`.
+3. `git fetch origin main --tags`
+4. `git reset --hard origin/main`
+5. Prompts user to restart the launcher. Any-key press re-execs
+   `launcher.sh`, loading the fresh code.
+
+Guard failure aborts with a specific exit code (20/21/22) and message.
+Git failures exit 30.
+
+The in-game popup does NOT expose an Update affordance. Update runs
+pre-tmux, from the launcher only, so the cockpit never has to deal with
+mid-session binary changes.
+
+**Developer note:** the email fingerprint check is the primary protection
+for active developers. If you clone on a fresh machine without setting
+`git config user.email`, guards (b) and (c) still protect against
+accidental damage. If all three guards somehow pass on a dev machine
+(unlikely) and Update runs: `git reset --hard` discards nothing that
+wasn't already pushed, but force-resets the branch pointer to
+`origin/main`. Recovery: `git reflog` still contains your old HEAD.
+
+## Ping monitor (`bridge/ping_monitor.sh` + `bridge/ping.cache`)
+
+A background process pings `mume.org` once per second and writes cache values
+to `bridge/ping.cache`. The cockpit's in-game popup reads the cache each render
+and shows the latency + a one-word quality label as part of the status header:
+
+    Profile: default  ·  MMapper  ·  Link: 38ms (stable)
+
+**Lifecycle.** The monitor is spawned by `bridge/tmux_start.sh` after the tmux
+cockpit session is set up, and by `bridge/launcher.sh` on the Continue/Mirror
+attach paths. A single-instance guard (`bridge/.ping_pid` lockfile) ensures
+duplicate spawns are no-ops. The process self-terminates within ~1 s of the
+`tmux:mume` session disappearing, so `cp -e`, SIGKILL, or any other shutdown
+path stops it cleanly without explicit cleanup code.
+
+**Cache format** (atomically written via temp-file + rename):
+
+    latest=<integer ms or TIMEOUT>
+    quality=<label or empty>
+    samples=<comma-separated ring buffer, up to 60 entries>
+
+**Quality algorithm.** Over the last 60 samples (1 minute):
+- `loss%` = fraction of TIMEOUT samples
+- `spread` = p95 − p50 of non-TIMEOUT samples (captures jitter and spikes
+  without over-reacting to single outliers)
+
+| Label   | Spread (ms) | Loss (%) | Colour in popup |
+|---------|-------------|----------|-----------------|
+| stable  | < 8         | = 0      | _MR_BODY        |
+| ok      | < 20        | < 5      | _MR_BODY        |
+| jittery | < 50        | < 15     | _MR_YELLOW      |
+| spiking | < 120       | < 30     | _MR_YELLOW      |
+| poor    | otherwise   | otherwise| _MR_ERR         |
+| dead    | any         | >= 80    | _MR_ERR         |
+
+Fewer than 10 samples → no label (buffer warming up).
+"timeout" (current sample is TIMEOUT but history exists) shown in _MR_ERR
+regardless of quality label.
+
+Rationale for p95−p50: adapts to the user's own baseline (30 ms vs 300 ms
+doesn't matter — the label describes *consistency*, not speed). Thresholds are
+informed by the project owner's subjective calibration: ~20 ms deviation from
+baseline is "noticeable unstable"; ~50 ms is "directly felt"; >100 ms is
+"very bad."
+
+**Failure modes.**
+- `ping` binary missing / offline / DNS fails → samples are TIMEOUT, status
+  header shows "Link: timeout (dead)" after buffer fills.
+- SIGKILL'd monitor → stale PID file. Next launch detects dead PID (via
+  `kill -0`) and takes over cleanly.
+- Two cockpit sessions started simultaneously (rare) → only one monitor; the
+  other's start call exits at the PID guard.
+
+## scripts.cache (`bridge/scripts.cache`, gitignored)
+
+Written by `brain.lua` at every client startup (inside `load_scripts()` after
+`_register_cockpit_help()`). Parsed by the Scripts page in `launcher.sh`.
+
+Format (line-prefixed, one block per script, alphabetical by alias):
+```
+SCRIPT:autostab
+SUMMARY:backstab/escape loop
+HELP:Usage: as<dir>
+HELP:...
+SCRIPT:autobow
+...
+```
+
+## startup.conf keys (`bridge/startup.conf`, gitignored)
+
+| Key               | Default    | Description                              |
+|-------------------|------------|------------------------------------------|
+| `connection_mode` | `mmapper`  | `mmapper` (localhost:4242) or `direct` (mume.org:4242) |
+| `show_ui`         | `1`        | Whether to open the UI pane              |
+| `show_dev`        | `0`        | Whether to open the dev pane             |
+| `show_input`      | `1`        | Whether to open the input pane           |
+| `show_pane_dividers` | `1`     | Whether tmux pane borders and the pane-border-status bar are visible at startup. `cp -h` toggles this at runtime without writing back to conf. `bridge/toggle_pane.sh headers --persist` is the mechanism for persistent toggles from the in-game popup. |
+| `profile`         | `default`  | Which file in `ttpp/sessions/` to load; also the tt++ session name |
+
+Toggle panes at runtime with `cp -u`, `cp -d`, `cp -i`, `cp -h`.
+
+`profile` and `connection_mode` are read by `ttpp/core/config.tin` at tt++
+startup via `bridge/read_config.sh`, which materialises the `_profile`,
+`_host`, `_port`, and `_ses_cmd` tt++ variables used by the `connect` alias.
+`_ses_cmd` is `ses` for mmapper mode and `ssl` for direct mode (TLS).
+
+## Layout system (`bridge/layout.conf`, gitignored)
+
+Pane dimensions are persisted across restarts and adapt to terminal resizes.
+State is stored in `bridge/layout.conf` (gitignored, recreated on first startup).
+
+### layout.conf keys
+| Key               | Default | Description                                      |
+|-------------------|---------|--------------------------------------------------|
+| `ui_width`        | 33      | Absolute column width of the right pane column   |
+| `window_cols`     | 0       | Last known terminal width — used to distinguish terminal resize from pane drag |
+| `ui_height_ratio` | 60      | ui pane height as % of total right column height |
+
+### Behaviour
+- **Terminal resize** — `window-resized` hook fires `on_window_resize.sh`, which re-applies `ui_width` and `ui_height_ratio` and re-pins input to 1 row.
+- **Border drag** — `MouseDragEnd1Border` binding fires `on_pane_resize.sh`, which saves the new `ui_width` and recalculates `ui_height_ratio` from current pane heights.
+- **Input pane** — always pinned to 1 row on every terminal resize. Never participates in layout calculations.
+- **Dev toggle** — when dev is toggled back on, `open_pane.sh` applies `ui_height_ratio` to restore the saved split.
+- **Loop prevention** — `bridge/.layout_lock` is used as a lockfile to prevent `on_window_resize.sh` triggering `on_pane_resize.sh` in a feedback loop.
+- **`-f` on right-column splits.** When `open_pane.sh` creates the right column from scratch (no ui/dev exists), `split-window -h` must use `-f` (full-window). Otherwise, if the input pane already exists, the new right pane is inserted as main's sibling inside the left-column subtree, causing input to span the full window width.
+
+## Gitignored runtime files
+
+```
+bridge/layout.conf
+bridge/session.state
+bridge/version.cache
+bridge/.layout_lock
+bridge/.pane_resize_pid
+bridge/ping.cache
+bridge/.ping_pid
+```
+
+---
+Back to [architecture.md](../architecture.md).
