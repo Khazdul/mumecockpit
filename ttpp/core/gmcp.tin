@@ -1,13 +1,8 @@
 #nop ===== GMCP =====
-#nop Telnet negotiation for the GMCP option, and event dispatch to Lua.
+#nop Negotiation and dispatch for MUME's GMCP protocol.
+#nop See architecture.md "GMCP" section for design notes.
 #nop
-#nop Registered via SESSION CREATED (not CONNECTED) — CONNECTED fires
-#nop after the first telnet data swap, by which point tt++'s default
-#nop IAC DONT GMCP has already been sent. CREATED fires when the
-#nop session object is instantiated, before TCP handshake completes,
-#nop so our handler is in place when server data arrives.
-#nop
-#nop Module list in Core.Supports.Set below. Keep in sync with
+#nop Module list in Core.Supports.Set must stay in sync with
 #nop gmcp.modules in lua/brain.lua.
 
 #script {bash bridge/read_version.sh}
@@ -24,7 +19,6 @@
     {
         #%0 #event {IAC WILL GMCP}
         {
-            #lua {dbg("[GMCP] negotiation: sending hello + supports")};
             #send {$IAC$DO$GMCP\};
             #send {$IAC$SB${GMCP}Core.Hello \x7B"client":"Cockpit","version":"$_client_version"\x7D$IAC$SE\};
             #send {$IAC$SB${GMCP}Core.Supports.Set ["Char 1","Comm.Channel 1","Event 1"]$IAC$SE\}

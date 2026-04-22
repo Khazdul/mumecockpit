@@ -456,72 +456,64 @@ tmux session (error is suppressed).
 
 ## GMCP
 
-GMCP (Generic MUD Communication Protocol) delivers structured data from the server out-of-band via telnet option negotiation, replacing fragile text-parsing for comms, vitals, room data, and world events.
+### Overview
 
-### Subscribed modules
+GMCP (Generic MUD Communication Protocol) delivers structured data from MUME out-of-band over telnet subnegotiation. The client negotiates via `Core.Hello` + `Core.Supports.Set` at connect; the server then pushes the modules we subscribed to as `IAC SB GMCP` events. Payloads are JSON.
 
-| Module           | Purpose                                              |
-|------------------|------------------------------------------------------|
-| `Char 1`         | Character state — vitals, stats, equipment           |
-| `Comm.Channel 1` | Communication channels — tells, narrates, chat       |
-| `Event 1`        | World events — Darkness/Sun submessages and others   |
+### Subscribed modules (iteration 1)
 
-The canonical module list lives in **two places** and must be kept in sync:
+`"Char 1"`, `"Comm.Channel 1"`, `"Event 1"`. The canonical list lives in **two places** — keep them in sync:
 - `gmcp.modules` in `lua/brain.lua` — Lua source of truth
 - `Core.Supports.Set` payload in `ttpp/core/gmcp.tin` — sent to the server at handshake
 
-### Negotiation flow
+### Negotiation registration
 
-1. **IAC WILL GMCP** — server announces GMCP support. Client replies `IAC DO GMCP`, then sends:
-   - `Core.Hello {"client":"Cockpit","version":"<VERSION>"}` — client identity
-   - `Core.Supports.Set ["Char 1","Comm.Channel 1","Event 1"]` — requested modules
-2. **IAC SB GMCP \<module\> \<json\>** — per-module messages arrive and are forwarded to `gmcp.dispatch()` in Lua.
+IAC events are session-scoped — they fire in the session that received the bytes, and only if registered inside that session. We register via a `SESSION CREATED` handler that uses `#%0 #event` to install `IAC WILL GMCP` and `IAC SB GMCP` inside the connecting session.
+
+`SESSION CONNECTED` is too late: it fires after the first telnet data swap, by which point tt++'s default `IAC DONT GMCP` has already shipped. `SESSION CREATED` fires when `#session` is executed, before TCP handshake, so our handler is in place when the server's first bytes arrive.
+
+### Sending sub-negotiations
+
+Syntax: `#send {$IAC$SB${GMCP}Package.Name JSON $IAC$SE\}`
+
+- `${GMCP}` uses brace delimiters so no space leaks between the GMCP option byte and the package name. `$GMCP Package` (no braces) would include a literal space that servers parse as part of the package name and reject.
+- Package name and JSON body separated by exactly one space.
+- No whitespace before `$IAC$SE`.
+- Trailing `\` before the closing `}` suppresses tt++'s automatic `\r\n` — required, otherwise every send injects a blank command into the MUD input stream.
+- IAC byte values live in tt++ variables (`#var {IAC} {\xFF}` etc.) declared at file load time. `\x` escapes are evaluated on assignment; using them inline inside an `#event` body produces literal `\xFF` text, not byte 0xFF.
+
+### Reception
+
+`#event {IAC SB GMCP}` fires with `%0` = module name, `%1` = list-flattened body, `%2` = raw JSON string. Use `%2` — `%1` is tt++'s nested-brace representation and loses type information.
+
+`%2`'s payload includes the leading package name (e.g. `Char.Vitals {...}`), so `gmcp.dispatch` strips the first whitespace-delimited token before JSON decode.
+
+### Lua dispatch
+
+`gmcp.dispatch(module, payload)` in `brain.lua` strips the leading package-name token, parses the remainder as JSON via dkjson, and calls `gmcp.handlers[module]` with the decoded Lua value (or `nil` for empty bodies such as `Core.Goodbye`). Handlers run under `pcall` — a crashing handler logs to dev via `dbg()` but doesn't take down the brain.
 
 ### Script integration pattern
 
-Scripts register handlers at load time:
+Scripts subscribe at load time:
 
 ```lua
 gmcp.handlers["Char.Vitals"] = function(body)
-    state.char.hp  = body.hp
-    state.char.mhp = body.maxhp
+    state.char.hp = body.hp
     -- ...
 end
 ```
 
-- `body` is a decoded Lua table (via dkjson)
-- Register only for modules in `gmcp.modules` — handlers for unsubscribed modules never fire
-- Handlers run inside `pcall`; errors are logged to dev via `dbg()` and never propagated
+Unknown modules log `GMCP no handler: <Module>` to dev and drop. Modules not listed in `gmcp.modules` will never fire regardless of handlers registered — the subscription list is the gate.
 
-### Unknown module behaviour
+### JSON library
 
-Modules that arrive with no registered handler are logged via `dbg()`:
+`lua/lib/dkjson.lua` — pure-Lua MIT-licensed JSON library (David Kolf, v2.8), bundled verbatim. `package.path` is extended in `brain.lua` at startup to include `lua/lib/` so no path juggling is needed. GMCP message bodies may be empty, a JSON string, a JSON number, an array, or an object depending on the module. Handlers receive whatever dkjson decodes — or `nil` for empty bodies.
 
-```
-GMCP no handler: Char.Name
-```
+### Debugging
 
-No error is raised. During initial play, several Char / Event submessages will appear here until handlers are registered for them.
+Turn on telnet trace with `#config {debug telnet} {on}` in gts (NOT `#config {telnet} {info} {on}` — that is invalid syntax that puts TELNET in DEBUG mode and disables the telnet stack). Turn off with `#config {debug telnet} {off}`.
 
-### JSON parsing
-
-`lua/lib/dkjson.lua` — pure-Lua MIT-licensed JSON library (David Kolf, v2.8), bundled verbatim. Available to any script via `require("dkjson")`. `package.path` is extended in `brain.lua` at startup to include `lua/lib/` so no path juggling is needed in scripts. GMCP message bodies may be empty, a JSON string, a JSON number, an array, or an object depending on the module. Handlers receive whatever dkjson decodes — or nil for empty bodies.
-
-### Event registration
-
-GMCP events are registered on SESSION CREATED, not SESSION CONNECTED. CONNECTED fires after the first telnet data swap — by which time tt++'s built-in telnet stack has already auto-replied IAC DONT GMCP to the server's IAC WILL GMCP. CREATED fires when `#session` creates the session object, before TCP handshake starts, giving us a window to register the IAC events inside the session before any bytes flow.
-
-### Variable delimiter in SB sends
-
-GMCP sub-negotiation uses `${GMCP}Package.Name ...` with explicit brace delimiters on the GMCP variable — `$GMCP Package` would include a literal space after the option byte, which servers parse as part of the package name and reject.
-
-### IAC SB GMCP event variables: %1 vs %2
-
-IAC SB GMCP events expose the body in two forms — `%1` is tt++'s list-flattened representation (key/value pairs collapsed into a brace sequence), `%2` is the raw sub-negotiation payload. We use `%2`. IAC SB GMCP's `%2` payload includes the leading package name (e.g. `Char.Vitals {...}`). `gmcp.dispatch` strips the first whitespace-delimited token before JSON parsing. Bodies may be empty (handler gets nil), a JSON object, array, string, or number — dkjson returns whatever the payload decodes to.
-
-### Client identity
-
-`Core.Hello` sends `client="Cockpit"` and `version` read from the `VERSION` file at tt++ startup via `#script {_client_version} {cat VERSION 2>/dev/null | tr -d '\n' || echo -n dev}`.
+`GMCP no handler: <Module>` entries in `debug.log` are the health signal — if they appear, negotiation completed and the server is streaming the modules we subscribed to.
 
 ## Input Pane
 
