@@ -24,12 +24,15 @@ advanced automation, state tracking, and UI feedback.
 │   ├── main.tin          # tt++ entry point — auto-loads all of core/
 │   ├── core/             # System modules (.tin files), auto-loaded
 │   │                     #   config.tin  — reads startup.conf → _profile/_host/_port/_ses_cmd
-│   │                     #   welcome.tin — clean boot banner + auto-connect
+│   │                     #   gmcp.tin    — GMCP telnet negotiation and Lua dispatch
 │   │                     #   system.tin  — connection aliases, cp commands, session events
+│   │                     #   welcome.tin — clean boot banner + auto-connect
 │   └── sessions/         # Per-profile personal settings (.tin files)
 │
 ├── lua/
 │   ├── brain.lua         # Lua brain — infrastructure, event loop, auto-loads scripts/
+│   ├── lib/              # Bundled Lua libraries (on package.path)
+│   │                     #   dkjson.lua  — pure-Lua JSON parser (MIT, David Kolf)
 │   └── scripts/          # Self-contained Lua automation scripts (.lua files)
 │
 ├── bridge/
@@ -131,6 +134,7 @@ functions from `brain.lua`:
     register_script(meta)     — register script in cockpit help system
     scripts                   — namespace for script public APIs
     state.char/.room/.comm    — namespace for shared game state
+    gmcp                      — GMCP subsystem (handlers, dispatch, modules)
 
 ### Startup order in `main.tin`
 Relay actions that catch Lua stdout **must be registered before `#run {lua}`**.
@@ -449,6 +453,64 @@ tmux session (error is suppressed).
   the session name variable (`%0` or `$game_session`)
 - Scripts must not register permanent aliases via `session_cmd()` —
   use `game_cmd()` instead, or they will be written into the session file
+
+## GMCP
+
+GMCP (Generic MUD Communication Protocol) delivers structured data from the server out-of-band via telnet option negotiation, replacing fragile text-parsing for comms, vitals, room data, and world events.
+
+### Subscribed modules
+
+| Module           | Purpose                                              |
+|------------------|------------------------------------------------------|
+| `Char 1`         | Character state — vitals, stats, equipment           |
+| `Comm.Channel 1` | Communication channels — tells, narrates, chat       |
+| `Event 1`        | World events — Darkness/Sun submessages and others   |
+
+The canonical module list lives in **two places** and must be kept in sync:
+- `gmcp.modules` in `lua/brain.lua` — Lua source of truth
+- `Core.Supports.Set` payload in `ttpp/core/gmcp.tin` — sent to the server at handshake
+
+### Negotiation flow
+
+1. **SESSION CONNECTED** — telnet constant variables (`$IAC`, `$SB`, `$SE`, `$DO`, `$GMCP`) are set once per game session (priority 6 handler, alongside system.tin's handler at priority 5).
+2. **IAC WILL GMCP** — server announces GMCP support. Client replies `IAC DO GMCP`, then sends:
+   - `Core.Hello {"client":"Cockpit","version":"<VERSION>"}` — client identity
+   - `Core.Supports.Set ["Char 1","Comm.Channel 1","Event 1"]` — requested modules
+3. **IAC SB GMCP \<module\> \<json\>** — per-module messages arrive and are forwarded to `gmcp.dispatch()` in Lua.
+
+### Script integration pattern
+
+Scripts register handlers at load time:
+
+```lua
+gmcp.handlers["Char.Vitals"] = function(body)
+    state.char.hp  = body.hp
+    state.char.mhp = body.maxhp
+    -- ...
+end
+```
+
+- `body` is a decoded Lua table (via dkjson)
+- Register only for modules in `gmcp.modules` — handlers for unsubscribed modules never fire
+- Handlers run inside `pcall`; errors are logged to dev via `dbg()` and never propagated
+
+### Unknown module behaviour
+
+Modules that arrive with no registered handler are logged via `dbg()`:
+
+```
+GMCP no handler: Char.Name
+```
+
+No error is raised. During initial play, several Char / Event submessages will appear here until handlers are registered for them.
+
+### JSON parsing
+
+`lua/lib/dkjson.lua` — pure-Lua MIT-licensed JSON library (David Kolf, v2.8), bundled verbatim. Available to any script via `require("dkjson")`. `package.path` is extended in `brain.lua` at startup to include `lua/lib/` so no path juggling is needed in scripts.
+
+### Client identity
+
+`Core.Hello` sends `client="Cockpit"` and `version` read from the `VERSION` file at tt++ startup via `#script {_client_version} {cat VERSION 2>/dev/null || echo dev}`.
 
 ## Input Pane
 
@@ -1346,6 +1408,7 @@ disappears, or no trigger fires within 15 seconds. Uses `game_cmd` and
 `session_cmd`. Public API exposed under `scripts.autobow`.
 
 ## Current Status
+- [x] GMCP infrastructure (telnet negotiation, dkjson, gmcp.dispatch)
 - [x] tt++ + Lua integration via #run
 - [x] Event protocol (DMG, TELL, EVENT, TARGET, HP)
 - [x] cp command system with dynamic help box
@@ -1378,6 +1441,12 @@ disappears, or no trigger fires within 15 seconds. Uses `game_cmd` and
 - [x] Constant ping monitor with link quality indicator
 
 ## Roadmap
+
+### Phase 5 — GMCP infrastructure ✓
+- `lua/lib/dkjson.lua` bundled; `package.path` extended in `brain.lua`
+- `gmcp` namespace in Lua: `handlers`, `modules`, `dispatch`
+- `ttpp/core/gmcp.tin`: telnet negotiation, Core.Hello, Core.Supports.Set, SB dispatch
+- Subscribed modules: Char 1, Comm.Channel 1, Event 1
 
 ### Phase 2 — Profile and connection wiring ✓
 - `ttpp/core/config.tin` reads `bridge/startup.conf` via `bridge/read_config.sh`

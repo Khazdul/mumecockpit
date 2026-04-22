@@ -1,0 +1,36 @@
+#nop ===== GMCP =====
+#nop Telnet negotiation for the GMCP option, and event dispatch to Lua.
+#nop
+#nop Negotiation flow:
+#nop   SESSION CONNECTED   -- set telnet constant vars (IAC SB SE DO GMCP)
+#nop   IAC WILL GMCP       -- reply DO GMCP; send Core.Hello + Core.Supports.Set
+#nop   IAC SB GMCP <mod>   -- forward json body to gmcp.dispatch() in Lua
+#nop
+#nop Module list hardcoded in Core.Supports.Set below.
+#nop Keep in sync with gmcp.modules in lua/brain.lua.
+
+#nop Read VERSION file at startup; fall back to "dev" if missing.
+#script {_client_version} {cat VERSION 2>/dev/null || echo dev}
+
+#nop Telnet constant bytes -- set when a game session connects so IAC payloads are readable.
+#nop Priority 6 so this fires alongside system.tin's SESSION CONNECTED at default priority 5.
+#event {SESSION CONNECTED} {
+    #if {"%0" != "gts" && "%0" != "lua"} {
+        #var {IAC}  {\xFF};
+        #var {SB}   {\xFA};
+        #var {SE}   {\xF0};
+        #var {DO}   {\xFD};
+        #var {GMCP} {\xC9}
+    }
+} {6}
+
+#nop IAC WILL GMCP -- server announces GMCP support.
+#nop Respond DO GMCP, then send Core.Hello and Core.Supports.Set.
+#event {IAC WILL GMCP} {
+    #send {$IAC$DO$GMCP};
+    #send {$IAC$SB$GMCP Core.Hello {"client":"Cockpit","version":"$_client_version"} $IAC$SE};
+    #send {$IAC$SB$GMCP Core.Supports.Set ["Char 1","Comm.Channel 1","Event 1"] $IAC$SE}
+}
+
+#nop IAC SB GMCP <module> <json> -- GMCP message received; route to Lua dispatch.
+#event {IAC SB GMCP} {#lua {gmcp.dispatch("%0", [===[%1]===])}}

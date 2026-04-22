@@ -355,9 +355,35 @@ local function _write_scripts_cache()
     fh:close()
 end
 
--- Script and state namespaces — must be set before scripts are dofile'd.
+-- Namespaces available to all scripts (set before dofile):
+--   scripts                   — namespace for script public APIs
+--   state.char/.room/.comm    — namespace for shared game state
+--   gmcp                      — GMCP subsystem (handlers, dispatch, modules)
 scripts = {}
 state   = { char = {}, room = {}, comm = {} }
+gmcp    = {
+    handlers = {},
+    -- Keep in sync with Core.Supports.Set payload in ttpp/core/gmcp.tin.
+    modules  = { "Char 1", "Comm.Channel 1", "Event 1" },
+}
+
+function gmcp.dispatch(module, json_body)
+    local json = require("dkjson")
+    local body, _, err = json.decode(json_body, 1, nil)
+    if err then
+        dbg("GMCP parse error [" .. module .. "]: " .. err)
+        return
+    end
+    local handler = gmcp.handlers[module]
+    if handler then
+        local ok, err2 = pcall(handler, body)
+        if not ok then
+            dbg("GMCP handler error [" .. module .. "]: " .. tostring(err2))
+        end
+    else
+        dbg("GMCP no handler: " .. module)
+    end
+end
 
 -- -----------------------------
 -- MODULES — auto-loaded from lua/scripts/
@@ -381,6 +407,7 @@ end
 -- -----------------------------
 -- STARTUP
 -- -----------------------------
+package.path = "lua/lib/?.lua;" .. package.path
 dbg("Lua brain started (" .. _VERSION .. ")")
 _clear_session_state()
 local _n_scripts = load_scripts()
