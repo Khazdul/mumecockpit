@@ -360,15 +360,25 @@ end
 --   state.char/.room/.comm    — namespace for shared game state
 --   gmcp                      — GMCP subsystem (handlers, dispatch, modules)
 scripts = {}
-state   = { char = {}, room = {}, comm = {} }
+state   = {
+    char  = {},
+    room  = {},   -- reserved, unused for now
+    comm  = {
+        history  = {},
+        max_size = 500,
+    },
+    world = {},
+}
 gmcp    = {
     handlers = {},
     -- Keep in sync with Core.Supports.Set payload in ttpp/core/gmcp.tin.
     modules  = { "Char 1", "Comm.Channel 1", "Event 1" },
+    trace    = true,
 }
 
 function gmcp.dispatch(module, payload)
     payload = payload or ""
+    local json = require("dkjson")
 
     -- %2 from IAC SB GMCP includes the package name as a prefix,
     -- e.g. "Char.Name {...}" or just "Core.Goodbye" with no body.
@@ -379,7 +389,6 @@ function gmcp.dispatch(module, payload)
 
     local body = nil
     if json_body ~= "" then
-        local json = require("dkjson")
         local parsed, _, err = json.decode(json_body, 1, nil)
         if err then
             dbg("GMCP parse error [" .. module .. "]: "
@@ -387,6 +396,11 @@ function gmcp.dispatch(module, payload)
             return
         end
         body = parsed
+    end
+
+    if gmcp.trace then
+        local encoded = body and json.encode(body) or "(nil)"
+        dbg(string.format("[GMCP] %s = %s", module, encoded))
     end
 
     local handler = gmcp.handlers[module]

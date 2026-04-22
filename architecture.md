@@ -505,6 +505,24 @@ end
 
 Unknown modules log `GMCP no handler: <Module>` to dev and drop. Modules not listed in `gmcp.modules` will never fire regardless of handlers registered — the subscription list is the gate.
 
+### Data collection (iteration 2a)
+
+**Generic flat-copy pattern.** `char_state.lua` merges Char.Name /
+Char.StatusVars / Char.Vitals into `state.char.*` by iterating the decoded
+body and converting kebab-case keys to snake_case. No explicit field list —
+consumers must treat every field as possibly nil. Field-specific formalisation
+will follow in iteration 2b once we have observed traces of actual MUME payloads.
+
+**Kebab → snake convention.** GMCP uses kebab-case keys (e.g. `hp-string`,
+`next-level-xp`). Handlers convert to snake_case when assigning to `state.*`
+fields so Lua access stays straightforward (`state.char.hp_string`, not
+`state.char["hp-string"]`).
+
+**`gmcp.trace`.** When true (default in development), every decoded GMCP body
+is dumped to debug.log as `[GMCP] <Module> = <json>`. Flip to false in
+brain.lua if volume becomes a problem. Expected load: tens of messages/minute
+during active play, line length ~100–300 chars.
+
 ### JSON library
 
 `lua/lib/dkjson.lua` — pure-Lua MIT-licensed JSON library (David Kolf, v2.8), bundled verbatim. `package.path` is extended in `brain.lua` at startup to include `lua/lib/` so no path juggling is needed. GMCP message bodies may be empty, a JSON string, a JSON number, an array, or an object depending on the module. Handlers receive whatever dkjson decodes — or `nil` for empty bodies.
@@ -1410,7 +1428,33 @@ to 2 times then flees and stops. Stops automatically if the target dies,
 disappears, or no trigger fires within 15 seconds. Uses `game_cmd` and
 `session_cmd`. Public API exposed under `scripts.autobow`.
 
+### char_state (`lua/scripts/char_state.lua`)
+Passive GMCP collector — no alias, no public API.
+
+Subscribes to Char.Name, Char.StatusVars, and Char.Vitals. Each body is
+merged flat into `state.char.*` with kebab-case keys converted to
+snake_case. On every XP increase, emits `[CHAR] xp gained: +N (total M)`
+to debug.log. Otherwise silent.
+
+### comm_log (`lua/scripts/comm_log.lua`)
+Passive GMCP collector — no alias, no public API.
+
+Subscribes to Comm.Channel. Appends `{ts, channel, talker, text}` entries
+to `state.comm.history`, capped at `state.comm.max_size` (500) via ring-
+buffer eviction. ANSI codes in `body.text` are preserved verbatim.
+
+### world_state (`lua/scripts/world_state.lua`)
+Passive GMCP collector — no alias, no public API.
+
+Subscribes to Event.Darkness and Event.Sun. Stores the decoded body into
+`state.world.darkness` / `state.world.sun` respectively. Field shape will
+be confirmed from trace output once live traffic is observed.
+
 ## Current Status
+- [x] GMCP data collection — iteration 2a
+      (trace flag + generic collectors for Char.*, Comm.Channel, Event.Darkness, Event.Sun)
+- [ ] GMCP data collection — iteration 2b
+      (formalise observed fields from trace output)
 - [x] GMCP infrastructure (telnet negotiation, dkjson, gmcp.dispatch)
 - [x] tt++ + Lua integration via #run
 - [x] Event protocol (DMG, TELL, EVENT, TARGET, HP)
