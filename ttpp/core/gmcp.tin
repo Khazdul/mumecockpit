@@ -8,6 +8,10 @@
 #nop
 #nop Module list hardcoded in Core.Supports.Set below.
 #nop Keep in sync with gmcp.modules in lua/brain.lua.
+#nop
+#nop CATCH on IAC WILL GMCP is required — tt++'s default telnet
+#nop handler replies IAC DONT GMCP automatically. CATCH interrupts
+#nop that default so we can reply IAC DO GMCP instead.
 
 #nop Read VERSION file at startup; strip newline; fall back to "dev".
 #script {_client_version} {cat VERSION 2>/dev/null | tr -d '\n' || echo -n dev}
@@ -25,7 +29,7 @@
         #%0 #var {DO}   {\xFD};
         #%0 #var {GMCP} {\xC9};
 
-        #%0 #event {IAC WILL GMCP}
+        #%0 #event {CATCH IAC WILL GMCP}
         {
             #send {$IAC$DO$GMCP\};
             #send {$IAC$SB$GMCP Core.Hello {"client":"Cockpit","version":"$_client_version"} $IAC$SE\};

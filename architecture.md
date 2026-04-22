@@ -510,7 +510,7 @@ No error is raised. During initial play, several Char / Event submessages will a
 
 ### Session-scoped event registration
 
-GMCP's IAC events are registered inside the game session, not in gts, because telnet events in tt++ fire in the session that received the byte sequence. The SESSION CONNECTED handler in `gmcp.tin` uses `#%0 #event ...` to register both `IAC WILL GMCP` and `IAC SB GMCP` directly in the connecting session. Registering in gts alone causes the events to never fire.
+GMCP's IAC events are registered inside the game session, not in gts, because telnet events in tt++ fire in the session that received the byte sequence. The SESSION CONNECTED handler in `gmcp.tin` uses `#%0 #event ...` to register both `IAC WILL GMCP` and `IAC SB GMCP` directly in the connecting session. Registering in gts alone causes the events to never fire. `IAC WILL GMCP` additionally uses the `CATCH` prefix — tt++'s built-in telnet stack auto-replies `IAC DONT GMCP` to any unrecognised option, so `CATCH` is required to override that default before we can respond `IAC DO GMCP`.
 
 ### Client identity
 
