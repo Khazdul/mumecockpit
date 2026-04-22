@@ -1,24 +1,29 @@
 #nop ===== GMCP =====
 #nop Telnet negotiation for the GMCP option, and event dispatch to Lua.
 #nop
-#nop Module list hardcoded in Core.Supports.Set below.
-#nop Keep in sync with gmcp.modules in lua/brain.lua.
+#nop Module list in Core.Supports.Set body; keep in sync with
+#nop gmcp.modules in lua/brain.lua.
 
-#nop Read VERSION file at startup via bash script; emits #var for a plain string.
+#nop Read VERSION file at startup; strip newline; fall back to "dev".
 #script {bash bridge/read_version.sh}
 
-#nop IAC constants inline as hex literals (no variable indirection).
-#nop Diagnostic dbg at top of handler confirms event fires and shows
-#nop whether $_client_version expands.
+#nop IAC constants — escapes are evaluated on assignment and the
+#nop variable stores real bytes. Required because \x escapes inside
+#nop an #event body do not get re-evaluated when the event fires.
+#var {IAC}  {\xFF}
+#var {SB}   {\xFA}
+#var {SE}   {\xF0}
+#var {DO}   {\xFD}
+#var {GMCP} {\xC9}
 
 #event {IAC WILL GMCP}
 {
     #lua {dbg("[GMCP] step 1 - event fired, version=$_client_version")};
-    #send {\xFF\xFD\xC9\};
+    #send {$IAC$DO$GMCP\};
     #lua {dbg("[GMCP] step 2 - DO GMCP sent")};
-    #send {\xFF\xFA\xC9 Core.Hello \x7B"client":"Cockpit","version":"$_client_version"\x7D \xFF\xF0\};
+    #send {$IAC$SB$GMCP Core.Hello \x7B"client":"Cockpit","version":"$_client_version"\x7D $IAC$SE\};
     #lua {dbg("[GMCP] step 3 - Core.Hello sent")};
-    #send {\xFF\xFA\xC9 Core.Supports.Set ["Char 1","Comm.Channel 1","Event 1"] \xFF\xF0\};
+    #send {$IAC$SB$GMCP Core.Supports.Set ["Char 1","Comm.Channel 1","Event 1"] $IAC$SE\};
     #lua {dbg("[GMCP] step 4 - Core.Supports.Set sent")}
 }
 
