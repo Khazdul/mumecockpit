@@ -4,8 +4,8 @@
 #nop Module list hardcoded in Core.Supports.Set below.
 #nop Keep in sync with gmcp.modules in lua/brain.lua.
 
-#nop Read VERSION file at startup; strip newline; fall back to "dev".
-#script {_client_version} {cat VERSION 2>/dev/null | tr -d '\n' || echo -n dev}
+#nop Read VERSION file at startup via bash script; emits #var for a plain string.
+#script {bash bridge/read_version.sh}
 
 #nop IAC constants inline as hex literals (no variable indirection).
 #nop Diagnostic dbg at top of handler confirms event fires and shows
