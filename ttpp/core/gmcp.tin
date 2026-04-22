@@ -18,13 +18,17 @@
 
 #event {IAC WILL GMCP}
 {
-    #lua {dbg("[GMCP] step 1 - event fired, version=$_client_version")};
-    #send {$IAC$DO$GMCP\};
-    #lua {dbg("[GMCP] step 2 - DO GMCP sent")};
-    #send {$IAC$SB$GMCP Core.Hello \x7B"client":"Cockpit","version":"$_client_version"\x7D $IAC$SE\};
-    #lua {dbg("[GMCP] step 3 - Core.Hello sent")};
-    #send {$IAC$SB$GMCP Core.Supports.Set ["Char 1","Comm.Channel 1","Event 1"] $IAC$SE\};
-    #lua {dbg("[GMCP] step 4 - Core.Supports.Set sent")}
+    #lua {dbg("[GMCP] step 1 - event fired")};
+    #showme {[GMCP DIAG] hello from event body};
+    #lua {dbg("[GMCP] step 2 - showme issued")};
+    #send {TESTGMCPMARKER};
+    #lua {dbg("[GMCP] step 3 - plain text #send done")};
+    #$game_session #send {$IAC$DO$GMCP\};
+    #lua {dbg("[GMCP] step 4 - game-session-dispatched DO sent")};
+    #$game_session #send {$IAC$SB$GMCP Core.Hello \x7B"client":"Cockpit","version":"$_client_version"\x7D $IAC$SE\};
+    #lua {dbg("[GMCP] step 5 - Core.Hello sent")};
+    #$game_session #send {$IAC$SB$GMCP Core.Supports.Set ["Char 1","Comm.Channel 1","Event 1"] $IAC$SE\};
+    #lua {dbg("[GMCP] step 6 - Core.Supports.Set sent")}
 }
 
 #event {IAC SB GMCP}
