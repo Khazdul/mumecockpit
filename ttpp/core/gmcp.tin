@@ -21,11 +21,15 @@
         {
             #send {$IAC$DO$GMCP\};
             #send {$IAC$SB${GMCP}Core.Hello \x7B"client":"Cockpit","version":"$_client_version"\x7D$IAC$SE\};
-            #send {$IAC$SB${GMCP}Core.Supports.Set ["Char 1","Comm.Channel 1","Event 1"]$IAC$SE\}
+            #send {$IAC$SB${GMCP}Core.Supports.Set ["Char 1","Comm.Channel 1","Event 1","Core 1"]$IAC$SE\}
         };
         #%0 #event {IAC SB GMCP}
         {
             #lua {gmcp.dispatch("%%0", [===[%%2]===])}
+        };
+        #%0 #alias {gmcp_enable_channel}
+        {
+            #send {$IAC$SB${GMCP}Comm.Channel.Enable "%%1"$IAC$SE\}
         }
     }
 }

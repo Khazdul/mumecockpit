@@ -1,7 +1,5 @@
 -- Passive world-state collector.
--- Stores Event.Darkness and Event.Sun bodies into state.world.
--- Body shape is undocumented — gmcp.trace will reveal the real shape
--- from live traffic.
+-- Stores Event.Darkness, Event.Moon, Event.Moved, and Event.Sun bodies into state.world.
 -- No alias, no register_script — background collector only.
 
 gmcp.handlers["Event.Darkness"] = function(body)
@@ -10,6 +8,14 @@ end
 
 gmcp.handlers["Event.Sun"] = function(body)
     state.world.sun = body
+end
+
+gmcp.handlers["Event.Moon"] = function(body)
+    state.world.moon = body
+end
+
+gmcp.handlers["Event.Moved"] = function(body)
+    state.world.moved = body
 end
 
 dbg("[WORLD_STATE] loaded")

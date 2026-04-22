@@ -460,11 +460,133 @@ tmux session (error is suppressed).
 
 GMCP (Generic MUD Communication Protocol) delivers structured data from MUME out-of-band over telnet subnegotiation. The client negotiates via `Core.Hello` + `Core.Supports.Set` at connect; the server then pushes the modules we subscribed to as `IAC SB GMCP` events. Payloads are JSON.
 
-### Subscribed modules (iteration 1)
+### GMCP module reference
 
-`"Char 1"`, `"Comm.Channel 1"`, `"Event 1"`. The canonical list lives in **two places** — keep them in sync:
+MUME supports the following GMCP modules. Cockpit currently subscribes to Char, Comm.Channel, Event, and Core. Others are documented here so future work can pick from a known map without re-reading help files.
+
+#### Module overview
+
+| Module            | Subscribed | Purpose                                   |
+|-------------------|------------|-------------------------------------------|
+| Core              | yes        | Handshake, keepalive, ping, goodbye       |
+| Char              | yes        | Character name, stats, vitals             |
+| Comm.Channel      | yes        | Communication channels (tells, says, ...) |
+| Event             | yes        | World events (darkness, sun, moon, moved) |
+| Client            | no         | Mudlet-specific client package / map      |
+| External.Discord  | no         | MUME Discord channel integration          |
+| Group             | no         | Group / party state                       |
+| MUME.Client       | no         | Remote text editing                       |
+| Room              | no         | Current room data                         |
+| Room.Chars        | no         | Characters in current room                |
+| Room.Known        | no         | Visited rooms                             |
+
+The canonical subscription list lives in **two places** — keep them in sync:
 - `gmcp.modules` in `lua/brain.lua` — Lua source of truth
 - `Core.Supports.Set` payload in `ttpp/core/gmcp.tin` — sent to the server at handshake
+
+#### Subscribed modules — message reference
+
+**Core**
+
+| Message           | Direction | Body                            | Handler               |
+|-------------------|-----------|---------------------------------|-----------------------|
+| Core.Hello        | → server  | `{client, version}`             | ttpp/core/gmcp.tin    |
+| Core.Supports.Set | → server  | array of `"Module N"` strings   | ttpp/core/gmcp.tin    |
+| Core.KeepAlive    | → server  | (none)                          | not sent              |
+| Core.Ping         | → server  | optional avg ping ms            | not sent              |
+| Core.Ping         | ← server  | (none)                          | core_state.lua        |
+| Core.Goodbye      | ← server  | optional reason string          | core_state.lua (stub) |
+
+**Char**
+
+| Message         | Direction | Body                           | Handler        |
+|-----------------|-----------|--------------------------------|----------------|
+| Char.Login      | → server  | `{name, password}`             | not sent       |
+| Char.Name       | ← server  | `{name, fullname}`             | char_state.lua |
+| Char.StatusVars | ← server  | name/caption pairs (see below) | char_state.lua |
+| Char.Vitals     | ← server  | flat object (see below)        | char_state.lua |
+
+Char.Vitals fields:
+
+    hp, hp-string, maxhp
+    mana, mana-string, maxmana
+    mp, mp-string, maxmp
+    xp, tp
+    carrying
+    ridden, ride
+    climb  (null | "c" | "C")
+    sneak  (null | "s" | "S")
+    hidden (bool)
+    swim   (bool)
+    light  ("*" | "!" | ")" | "o")
+    fog    (null | "-" | "=")
+    weather (" " | "~" | "'" | "\"" | "*" | null)
+    alertness ("normal", "careful", ...)
+    mood ("wimpy", "prudent", ...)
+    spell-effort ("quick", "fast", ...)
+    position (standing | fighting | sitting | resting | sleeping
+              | stunned | incapacitated | dying)
+    mount-moves ("rested", "slow", ...)
+    opponent       (string | null)
+    buffer         (string | null)
+    opponent-hits  ("healthy", "fine", ...)
+    buffer-hits    ("healthy", "fine", ...)
+
+Note: hp/mana/mp may be rounded — the *-string variants carry a qualitative description when precision is limited.
+
+Char.StatusVars fields:
+
+    fullname, level, name, next-level-tp, next-level-xp,
+    race, subclass, subrace
+
+Kebab → snake note: all of the above arrive in `state.char.*` with dashes converted to underscores (e.g. `state.char.hp_string`, `state.char.next_level_xp`, `state.char.mount_moves`).
+
+**Comm.Channel**
+
+| Message              | Direction | Body                                | Handler                                                    |
+|----------------------|-----------|-------------------------------------|------------------------------------------------------------|
+| Comm.Channel.Enable  | → server  | channel name string                 | comm_log.lua → alias `gmcp_enable_channel` in gmcp.tin     |
+| Comm.Channel.List    | ← server  | array of `{name, caption, command}` | comm_log.lua                                               |
+| Comm.Channel.Text    | ← server  | see below                           | comm_log.lua                                               |
+
+Comm.Channel.Text body:
+
+    channel      — channel name
+    destination  — recipient name (only for sent messages)
+    talker       — sender name ("you" for sent messages)
+    talker-type  — optional: npc | ally | neutral | enemy
+    text         — text heard, may contain ANSI codes (preserved)
+
+Channel-enable flow:
+1. tt++ sends `Core.Supports.Set` including `"Comm.Channel 1"` at handshake.
+2. Server auto-sends `Comm.Channel.List` with available channels.
+3. `comm_log.lua` receives the list, stores it in `state.comm.channels`, and issues `Comm.Channel.Enable` for each channel by calling the `gmcp_enable_channel` alias.
+4. Server begins streaming `Comm.Channel.Text` for those channels.
+
+No channel list is hardcoded client-side — whatever the server advertises gets enabled.
+
+**Event**
+
+| Message        | Body                                                        | Handler         |
+|----------------|-------------------------------------------------------------|-----------------|
+| Event.Darkness | `{what: "start"\|"grow"\|"shrink"\|"end-soon"\|"end"}`      | world_state.lua |
+| Event.Moon     | `{what: "rise"\|"set"}`                                     | world_state.lua |
+| Event.Moved    | `{dir: "north"\|"east"\|...}` (dir optional)                | world_state.lua |
+| Event.Sun      | `{what: "light"\|"rise"\|"set"\|"dark"}`                    | world_state.lua |
+
+All Event handlers store the decoded body as-is under the corresponding `state.world.<event>` field.
+
+#### Unsubscribed modules — one-liner per module
+
+- **Client** — Mudlet-specific client package and map data; used by Mudlet's MUME plugin for room mapping.
+- **External.Discord** — integrates with the MUME Discord channel; bridges in-game communication to Discord.
+- **Group** — group/party state; tracks members, their positions and vitals for group displays.
+- **MUME.Client** — remote text editing; allows the server to open an editor on the client for composing notes and mail.
+- **Room** — current room data including vnum, name, description, and exits; the basis for any mapper.
+- **Room.Chars** — characters present in the current room; used for room-level displays and targeting aids.
+- **Room.Known** — previously visited rooms; used to sync a visited-room database with the client.
+
+Subscription requires adding to both the `Core.Supports.Set` payload and `gmcp.modules`.
 
 ### Negotiation registration
 
@@ -532,6 +654,8 @@ during active play, line length ~100–300 chars.
 Turn on telnet trace with `#config {debug telnet} {on}` in gts (NOT `#config {telnet} {info} {on}` — that is invalid syntax that puts TELNET in DEBUG mode and disables the telnet stack). Turn off with `#config {debug telnet} {off}`.
 
 `GMCP no handler: <Module>` entries in `debug.log` are the health signal — if they appear, negotiation completed and the server is streaming the modules we subscribed to.
+
+With `gmcp.trace = true`, the best way to discover a module's real body shape is to subscribe, reload, and grep debug.log for `[GMCP] <Module>`.
 
 ## Input Pane
 
@@ -1439,22 +1563,33 @@ to debug.log. Otherwise silent.
 ### comm_log (`lua/scripts/comm_log.lua`)
 Passive GMCP collector — no alias, no public API.
 
-Subscribes to Comm.Channel. Appends `{ts, channel, talker, text}` entries
-to `state.comm.history`, capped at `state.comm.max_size` (500) via ring-
-buffer eviction. ANSI codes in `body.text` are preserved verbatim.
+Handles Comm.Channel.Text (message history, ring-buffered at 500),
+Comm.Channel.List (available channels stored in `state.comm.channels`), and
+drives channel enabling dynamically from the received list via the tt++ alias
+`gmcp_enable_channel`. No hardcoded channel list.
+
+### core_state (`lua/scripts/core_state.lua`)
+Passive GMCP collector — no alias, no public API.
+
+Logs arrival of Core.Goodbye (for future disconnect-flow work) and records
+the timestamp of the most recent Core.Ping in `state.core.last_ping`.
 
 ### world_state (`lua/scripts/world_state.lua`)
 Passive GMCP collector — no alias, no public API.
 
-Subscribes to Event.Darkness and Event.Sun. Stores the decoded body into
-`state.world.darkness` / `state.world.sun` respectively. Field shape will
-be confirmed from trace output once live traffic is observed.
+Handles Event.Darkness, Event.Moon, Event.Moved, and Event.Sun. Stores
+each decoded body into the corresponding `state.world.<event>` field.
 
 ## Current Status
 - [x] GMCP data collection — iteration 2a
       (trace flag + generic collectors for Char.*, Comm.Channel, Event.Darkness, Event.Sun)
-- [ ] GMCP data collection — iteration 2b
-      (formalise observed fields from trace output)
+- [x] GMCP data collection — iteration 2b-i
+      (comm.channel correction, dynamic channel enabling,
+      full event coverage, Core.Goodbye scaffold,
+      MUME GMCP documented)
+- [ ] GMCP disconnect flow — iteration 2b-ii
+      (Core.Goodbye + SESSION DISCONNECTED drive popup with
+      mode-aware reconnect)
 - [x] GMCP infrastructure (telnet negotiation, dkjson, gmcp.dispatch)
 - [x] tt++ + Lua integration via #run
 - [x] Event protocol (DMG, TELL, EVENT, TARGET, HP)

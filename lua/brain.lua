@@ -362,17 +362,19 @@ end
 scripts = {}
 state   = {
     char  = {},
-    room  = {},   -- reserved, unused for now
+    room  = {},
     comm  = {
         history  = {},
+        channels = {},
         max_size = 500,
     },
+    core  = {},
     world = {},
 }
 gmcp    = {
     handlers = {},
     -- Keep in sync with Core.Supports.Set payload in ttpp/core/gmcp.tin.
-    modules  = { "Char 1", "Comm.Channel 1", "Event 1" },
+    modules  = { "Char 1", "Comm.Channel 1", "Event 1", "Core 1" },
     trace    = true,
 }
 
