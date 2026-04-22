@@ -505,7 +505,7 @@ No error is raised. During initial play, several Char / Event submessages will a
 
 ### JSON parsing
 
-`lua/lib/dkjson.lua` — pure-Lua MIT-licensed JSON library (David Kolf, v2.8), bundled verbatim. Available to any script via `require("dkjson")`. `package.path` is extended in `brain.lua` at startup to include `lua/lib/` so no path juggling is needed in scripts.
+`lua/lib/dkjson.lua` — pure-Lua MIT-licensed JSON library (David Kolf, v2.8), bundled verbatim. Available to any script via `require("dkjson")`. `package.path` is extended in `brain.lua` at startup to include `lua/lib/` so no path juggling is needed in scripts. GMCP message bodies may be empty, a JSON string, a JSON number, an array, or an object depending on the module. Handlers receive whatever dkjson decodes — or nil for empty bodies.
 
 ### Event registration
 

@@ -368,17 +368,27 @@ gmcp    = {
 }
 
 function gmcp.dispatch(module, json_body)
-    local json = require("dkjson")
-    local body, _, err = json.decode(json_body, 1, nil)
-    if err then
-        dbg("GMCP parse error [" .. module .. "]: " .. err)
-        return
+    -- Trim whitespace; some modules send no body or just a string.
+    json_body = (json_body or ""):match("^%s*(.-)%s*$")
+
+    local body = nil
+    if json_body ~= "" then
+        local json = require("dkjson")
+        local parsed, _, err = json.decode(json_body, 1, nil)
+        if err then
+            dbg("GMCP parse error [" .. module .. "]: "
+                .. err .. " | body=" .. json_body)
+            return
+        end
+        body = parsed
     end
+
     local handler = gmcp.handlers[module]
     if handler then
         local ok, err2 = pcall(handler, body)
         if not ok then
-            dbg("GMCP handler error [" .. module .. "]: " .. tostring(err2))
+            dbg("GMCP handler error [" .. module .. "]: "
+                .. tostring(err2))
         end
     else
         dbg("GMCP no handler: " .. module)
