@@ -12,6 +12,9 @@
 #nop Read VERSION file at startup; fall back to "dev" if missing.
 #script {_client_version} {cat VERSION 2>/dev/null || echo dev}
 
+#nop Temporary: remove once GMCP is confirmed working.
+#config {telnet} {info} {on}
+
 #nop Telnet constant bytes -- set when a game session connects so IAC payloads are readable.
 #nop Priority 6 so this fires alongside system.tin's SESSION CONNECTED at default priority 5.
 #event {SESSION CONNECTED} {
@@ -27,9 +30,9 @@
 #nop IAC WILL GMCP -- server announces GMCP support.
 #nop Respond DO GMCP, then send Core.Hello and Core.Supports.Set.
 #event {IAC WILL GMCP} {
-    #send {$IAC$DO$GMCP};
-    #send {$IAC$SB$GMCP Core.Hello {"client":"Cockpit","version":"$_client_version"} $IAC$SE};
-    #send {$IAC$SB$GMCP Core.Supports.Set ["Char 1","Comm.Channel 1","Event 1"] $IAC$SE}
+    #send {$IAC$DO$GMCP\};
+    #send {$IAC$SB$GMCP Core.Hello {"client":"Cockpit","version":"$_client_version"} $IAC$SE\};
+    #send {$IAC$SB$GMCP Core.Supports.Set ["Char 1","Comm.Channel 1","Event 1"] $IAC$SE\}
 }
 
 #nop IAC SB GMCP <module> <json> -- GMCP message received; route to Lua dispatch.
