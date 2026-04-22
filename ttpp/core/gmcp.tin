@@ -1,37 +1,44 @@
 #nop ===== GMCP =====
 #nop Telnet negotiation for the GMCP option, and event dispatch to Lua.
 #nop
-#nop Module list in Core.Supports.Set body; keep in sync with
+#nop IAC events fire in the session receiving the bytes — but only if
+#nop the event is registered INSIDE that session. Registering in gts
+#nop dispatches the event to gts where there is no socket to #send on.
+#nop We register on SESSION CONNECTED via #%0 #event so the events
+#nop live inside the connecting session.
+#nop
+#nop Module list in Core.Supports.Set below. Keep in sync with
 #nop gmcp.modules in lua/brain.lua.
 
-#nop Read VERSION file at startup; strip newline; fall back to "dev".
+#nop Read VERSION once at startup (stored via bridge/read_version.sh
+#nop emitting a #var line).
 #script {bash bridge/read_version.sh}
 
-#nop IAC constants — escapes are evaluated on assignment and the
-#nop variable stores real bytes. Required because \x escapes inside
-#nop an #event body do not get re-evaluated when the event fires.
+#nop IAC byte constants — declared in gts so #var escape processing
+#nop happens at assignment time; session inherits these via
+#nop tt++ variable inheritance when it connects.
 #var {IAC}  {\xFF}
 #var {SB}   {\xFA}
 #var {SE}   {\xF0}
 #var {DO}   {\xFD}
 #var {GMCP} {\xC9}
 
-#event {IAC WILL GMCP}
+#nop Register IAC events inside the connecting game session.
+#nop %0 is the session name; skip gts and lua internal sessions.
+#event {SESSION CONNECTED}
 {
-    #lua {dbg("[GMCP] step 1 - event fired")};
-    #showme {[GMCP DIAG] hello from event body};
-    #lua {dbg("[GMCP] step 2 - showme issued")};
-    #send {TESTGMCPMARKER};
-    #lua {dbg("[GMCP] step 3 - plain text #send done")};
-    #$game_session #send {$IAC$DO$GMCP\};
-    #lua {dbg("[GMCP] step 4 - game-session-dispatched DO sent")};
-    #$game_session #send {$IAC$SB$GMCP Core.Hello \x7B"client":"Cockpit","version":"$_client_version"\x7D $IAC$SE\};
-    #lua {dbg("[GMCP] step 5 - Core.Hello sent")};
-    #$game_session #send {$IAC$SB$GMCP Core.Supports.Set ["Char 1","Comm.Channel 1","Event 1"] $IAC$SE\};
-    #lua {dbg("[GMCP] step 6 - Core.Supports.Set sent")}
-}
-
-#event {IAC SB GMCP}
-{
-    #lua {gmcp.dispatch("%0", [===[%1]===])}
-}
+    #if {"%0" != "gts" && "%0" != "lua"}
+    {
+        #%0 #event {IAC WILL GMCP}
+        {
+            #lua {dbg("[GMCP] negotiation: sending hello + supports")};
+            #send {$IAC$DO$GMCP\};
+            #send {$IAC$SB$GMCP Core.Hello \x7B"client":"Cockpit","version":"$_client_version"\x7D $IAC$SE\};
+            #send {$IAC$SB$GMCP Core.Supports.Set ["Char 1","Comm.Channel 1","Event 1"] $IAC$SE\}
+        };
+        #%0 #event {IAC SB GMCP}
+        {
+            #lua {gmcp.dispatch("%%0", [===[%%1]===])}
+        }
+    }
+} {6}

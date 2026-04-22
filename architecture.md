@@ -509,7 +509,9 @@ No error is raised. During initial play, several Char / Event submessages will a
 
 ### Event registration
 
-GMCP events register globally in gts at load time. tt++ propagates them into game sessions via trigger inheritance. When `#event {IAC WILL GMCP}` is registered, tt++ yields the reply to the handler instead of sending a default `IAC DONT`.
+IAC events are session-scoped: they fire in the session that received the bytes, but only if the event is registered in that session. Registering `#event {IAC WILL GMCP}` at top level puts it in gts — the event still fires there when bytes arrive in a game session, but there is no socket to `#send` on.
+
+Fix: register the IAC events inside the connecting game session via `#%0 #event` in a SESSION CONNECTED handler. Priority 6 so it runs after system.tin which sets `$game_session`.
 
 ### Client identity
 
