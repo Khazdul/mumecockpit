@@ -472,11 +472,10 @@ The canonical module list lives in **two places** and must be kept in sync:
 
 ### Negotiation flow
 
-1. **SESSION CONNECTED** — telnet constant variables (`$IAC`, `$SB`, `$SE`, `$DO`, `$GMCP`) are set once per game session (priority 6 handler, alongside system.tin's handler at priority 5).
-2. **IAC WILL GMCP** — server announces GMCP support. Client replies `IAC DO GMCP`, then sends:
+1. **IAC WILL GMCP** — server announces GMCP support. Client replies `IAC DO GMCP`, then sends:
    - `Core.Hello {"client":"Cockpit","version":"<VERSION>"}` — client identity
    - `Core.Supports.Set ["Char 1","Comm.Channel 1","Event 1"]` — requested modules
-3. **IAC SB GMCP \<module\> \<json\>** — per-module messages arrive and are forwarded to `gmcp.dispatch()` in Lua.
+2. **IAC SB GMCP \<module\> \<json\>** — per-module messages arrive and are forwarded to `gmcp.dispatch()` in Lua.
 
 ### Script integration pattern
 
@@ -508,9 +507,9 @@ No error is raised. During initial play, several Char / Event submessages will a
 
 `lua/lib/dkjson.lua` — pure-Lua MIT-licensed JSON library (David Kolf, v2.8), bundled verbatim. Available to any script via `require("dkjson")`. `package.path` is extended in `brain.lua` at startup to include `lua/lib/` so no path juggling is needed in scripts.
 
-### Session-scoped event registration
+### Event registration
 
-GMCP's IAC events are registered inside the game session, not in gts, because telnet events in tt++ fire in the session that received the byte sequence. The SESSION CONNECTED handler in `gmcp.tin` uses `#%0 #event ...` to register both `IAC WILL GMCP` and `IAC SB GMCP` directly in the connecting session. Registering in gts alone causes the events to never fire. `IAC WILL GMCP` additionally uses the `CATCH` prefix — tt++'s built-in telnet stack auto-replies `IAC DONT GMCP` to any unrecognised option, so `CATCH` is required to override that default before we can respond `IAC DO GMCP`.
+GMCP events register globally in gts at load time. tt++ propagates them into game sessions via trigger inheritance. When `#event {IAC WILL GMCP}` is registered, tt++ yields the reply to the handler instead of sending a default `IAC DONT`.
 
 ### Client identity
 

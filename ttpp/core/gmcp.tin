@@ -1,44 +1,38 @@
 #nop ===== GMCP =====
 #nop Telnet negotiation for the GMCP option, and event dispatch to Lua.
 #nop
-#nop IAC events must be registered inside the game session, not in gts —
-#nop telnet events are session-scoped and won't fire across sessions.
-#nop SESSION CONNECTED is the hook: the client registers constants and
-#nop the two IAC events directly in the new session.
+#nop Negotiation:
+#nop   IAC WILL GMCP       -- reply DO GMCP; send Core.Hello + Core.Supports.Set
+#nop   IAC SB GMCP <mod>   -- forward json body to gmcp.dispatch() in Lua
+#nop
+#nop Events are registered globally in gts; inheritance propagates them
+#nop into any session that opens. When tt++ has #event {IAC WILL GMCP}
+#nop registered it lets the handler own the reply -- no CATCH needed.
 #nop
 #nop Module list hardcoded in Core.Supports.Set below.
 #nop Keep in sync with gmcp.modules in lua/brain.lua.
-#nop
-#nop CATCH on IAC WILL GMCP is required — tt++'s default telnet
-#nop handler replies IAC DONT GMCP automatically. CATCH interrupts
-#nop that default so we can reply IAC DO GMCP instead.
 
 #nop Read VERSION file at startup; strip newline; fall back to "dev".
 #script {_client_version} {cat VERSION 2>/dev/null | tr -d '\n' || echo -n dev}
 
-#nop TEMPORARY: remove once GMCP handshake is confirmed working end-to-end.
-#config {telnet} {info} {on}
+#nop Telnet constant bytes.
+#var {IAC}  {\xFF}
+#var {SB}   {\xFA}
+#var {SE}   {\xF0}
+#var {DO}   {\xFD}
+#var {GMCP} {\xC9}
 
-#event {SESSION CONNECTED}
+#nop IAC WILL GMCP -- reply DO GMCP, then Core.Hello + Core.Supports.Set.
+#nop Trailing backslash on each #send suppresses the implicit \r\n.
+#event {IAC WILL GMCP}
 {
-    #if {"%0" != "gts" && "%0" != "lua"}
-    {
-        #%0 #var {IAC}  {\xFF};
-        #%0 #var {SB}   {\xFA};
-        #%0 #var {SE}   {\xF0};
-        #%0 #var {DO}   {\xFD};
-        #%0 #var {GMCP} {\xC9};
+    #send {$IAC$DO$GMCP\};
+    #send {$IAC$SB$GMCP Core.Hello {"client":"Cockpit","version":"$_client_version"} $IAC$SE\};
+    #send {$IAC$SB$GMCP Core.Supports.Set ["Char 1","Comm.Channel 1","Event 1"] $IAC$SE\}
+}
 
-        #%0 #event {CATCH IAC WILL GMCP}
-        {
-            #send {$IAC$DO$GMCP\};
-            #send {$IAC$SB$GMCP Core.Hello {"client":"Cockpit","version":"$_client_version"} $IAC$SE\};
-            #send {$IAC$SB$GMCP Core.Supports.Set ["Char 1","Comm.Channel 1","Event 1"] $IAC$SE\}
-        };
-
-        #%0 #event {IAC SB GMCP}
-        {
-            #lua {gmcp.dispatch("%%0", [===[%%1]===])}
-        }
-    }
-} {6}
+#nop IAC SB GMCP <module> <json> -- route to Lua dispatch.
+#event {IAC SB GMCP}
+{
+    #lua {gmcp.dispatch("%0", [===[%1]===])}
+}
