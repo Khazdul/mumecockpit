@@ -508,9 +508,13 @@ No error is raised. During initial play, several Char / Event submessages will a
 
 `lua/lib/dkjson.lua` — pure-Lua MIT-licensed JSON library (David Kolf, v2.8), bundled verbatim. Available to any script via `require("dkjson")`. `package.path` is extended in `brain.lua` at startup to include `lua/lib/` so no path juggling is needed in scripts.
 
+### Session-scoped event registration
+
+GMCP's IAC events are registered inside the game session, not in gts, because telnet events in tt++ fire in the session that received the byte sequence. The SESSION CONNECTED handler in `gmcp.tin` uses `#%0 #event ...` to register both `IAC WILL GMCP` and `IAC SB GMCP` directly in the connecting session. Registering in gts alone causes the events to never fire.
+
 ### Client identity
 
-`Core.Hello` sends `client="Cockpit"` and `version` read from the `VERSION` file at tt++ startup via `#script {_client_version} {cat VERSION 2>/dev/null || echo dev}`.
+`Core.Hello` sends `client="Cockpit"` and `version` read from the `VERSION` file at tt++ startup via `#script {_client_version} {cat VERSION 2>/dev/null | tr -d '\n' || echo -n dev}`.
 
 ## Input Pane
 
