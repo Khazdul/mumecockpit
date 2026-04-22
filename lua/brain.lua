@@ -367,9 +367,15 @@ gmcp    = {
     modules  = { "Char 1", "Comm.Channel 1", "Event 1" },
 }
 
-function gmcp.dispatch(module, json_body)
-    -- Trim whitespace; some modules send no body or just a string.
-    json_body = (json_body or ""):match("^%s*(.-)%s*$")
+function gmcp.dispatch(module, payload)
+    payload = payload or ""
+
+    -- %2 from IAC SB GMCP includes the package name as a prefix,
+    -- e.g. "Char.Name {...}" or just "Core.Goodbye" with no body.
+    -- Strip everything up to and including the first whitespace;
+    -- remainder is the JSON body (or empty for no-body messages).
+    local json_body = payload:match("^%S+%s+(.*)$") or ""
+    json_body = json_body:match("^%s*(.-)%s*$")   -- trim
 
     local body = nil
     if json_body ~= "" then

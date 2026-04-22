@@ -517,7 +517,7 @@ GMCP sub-negotiation uses `${GMCP}Package.Name ...` with explicit brace delimite
 
 ### IAC SB GMCP event variables: %1 vs %2
 
-IAC SB GMCP events expose the body in two forms — `%1` is tt++'s list-flattened representation (key/value pairs collapsed into a brace sequence), `%2` is the raw JSON string. We use `%2` so dkjson receives the original JSON verbatim.
+IAC SB GMCP events expose the body in two forms — `%1` is tt++'s list-flattened representation (key/value pairs collapsed into a brace sequence), `%2` is the raw sub-negotiation payload. We use `%2`. IAC SB GMCP's `%2` payload includes the leading package name (e.g. `Char.Vitals {...}`). `gmcp.dispatch` strips the first whitespace-delimited token before JSON parsing. Bodies may be empty (handler gets nil), a JSON object, array, string, or number — dkjson returns whatever the payload decodes to.
 
 ### Client identity
 
