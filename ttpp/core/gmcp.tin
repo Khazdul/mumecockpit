@@ -1,31 +1,24 @@
 #nop ===== GMCP =====
 #nop Telnet negotiation for the GMCP option, and event dispatch to Lua.
 #nop
-#nop IAC events fire in the session receiving the bytes — but only if
-#nop the event is registered INSIDE that session. Registering in gts
-#nop dispatches the event to gts where there is no socket to #send on.
-#nop We register on SESSION CONNECTED via #%0 #event so the events
-#nop live inside the connecting session.
+#nop Registered via SESSION CREATED (not CONNECTED) — CONNECTED fires
+#nop after the first telnet data swap, by which point tt++'s default
+#nop IAC DONT GMCP has already been sent. CREATED fires when the
+#nop session object is instantiated, before TCP handshake completes,
+#nop so our handler is in place when server data arrives.
 #nop
 #nop Module list in Core.Supports.Set below. Keep in sync with
 #nop gmcp.modules in lua/brain.lua.
 
-#nop Read VERSION once at startup (stored via bridge/read_version.sh
-#nop emitting a #var line).
 #script {bash bridge/read_version.sh}
 
-#nop IAC byte constants — declared in gts so #var escape processing
-#nop happens at assignment time; session inherits these via
-#nop tt++ variable inheritance when it connects.
 #var {IAC}  {\xFF}
 #var {SB}   {\xFA}
 #var {SE}   {\xF0}
 #var {DO}   {\xFD}
 #var {GMCP} {\xC9}
 
-#nop Register IAC events inside the connecting game session.
-#nop %0 is the session name; skip gts and lua internal sessions.
-#event {SESSION CONNECTED}
+#event {SESSION CREATED}
 {
     #if {"%0" != "gts" && "%0" != "lua"}
     {
@@ -41,4 +34,4 @@
             #lua {gmcp.dispatch("%%0", [===[%%1]===])}
         }
     }
-} {6}
+}

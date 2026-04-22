@@ -509,9 +509,7 @@ No error is raised. During initial play, several Char / Event submessages will a
 
 ### Event registration
 
-IAC events are session-scoped: they fire in the session that received the bytes, but only if the event is registered in that session. Registering `#event {IAC WILL GMCP}` at top level puts it in gts — the event still fires there when bytes arrive in a game session, but there is no socket to `#send` on.
-
-Fix: register the IAC events inside the connecting game session via `#%0 #event` in a SESSION CONNECTED handler. Priority 6 so it runs after system.tin which sets `$game_session`.
+GMCP events are registered on SESSION CREATED, not SESSION CONNECTED. CONNECTED fires after the first telnet data swap — by which time tt++'s built-in telnet stack has already auto-replied IAC DONT GMCP to the server's IAC WILL GMCP. CREATED fires when `#session` creates the session object, before TCP handshake starts, giving us a window to register the IAC events inside the session before any bytes flow.
 
 ### Client identity
 
