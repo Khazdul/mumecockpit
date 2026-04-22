@@ -140,7 +140,7 @@ fi
 
 # Menu order: Start/Continue/Mirror, [Update], Profile, Options, Scripts, About, Quit
 if [ "$HAS_SESSION" -eq 0 ]; then
-    _ITEMS=("Start new session")
+    _ITEMS=("New session")
 elif [ "$ATTACHED" -eq 0 ]; then
     _ITEMS=("Continue session")
 else
@@ -1007,7 +1007,7 @@ while true; do
         ESC) _quit_confirm ;;
         ENTER|SPACE)
             case "${_ITEMS[$_SEL]}" in
-                "Start new session"|"Continue session"|"Mirror session (attached elsewhere)")
+                "New session"|"Continue session"|"Mirror session (attached elsewhere)")
                     trap - EXIT INT TERM HUP
                     printf '\e[?1007h'  # re-enable alt-scroll before tmux takes over
                     if [ "$HAS_SESSION" -eq 1 ]; then

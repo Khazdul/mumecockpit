@@ -1,7 +1,7 @@
 #!/bin/bash
 # bridge/tmux_start.sh — creates and attaches to the MUME tmux cockpit session.
 # Reads show_ui / show_dev / show_input from bridge/startup.conf.
-# Called by start.sh (--no-menu / -d / -u) or bridge/launcher.sh ("Start new session").
+# Called by start.sh (--no-menu / -d / -u) or bridge/launcher.sh ("New session").
 
 cd "$(dirname "$0")/.."
 
