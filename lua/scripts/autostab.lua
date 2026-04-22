@@ -9,7 +9,7 @@
 --   on target dead/gone: abort
 --
 -- MUD triggers (success/fail/dead/gone) and watchdog (as_watch)
--- are registered dynamically by autostab_start() and cleaned up on abort.
+-- are registered dynamically by M.start() and cleaned up on abort.
 -- Watchdog fires if no escape result is seen within WATCH_TIMEOUT seconds.
 
 local RET           = { n="s", s="n", e="w", w="e", u="d", d="u" }
@@ -22,6 +22,9 @@ local as = {
     target      = nil,
     retry_count = 0,
 }
+
+local M = {}
+scripts.autostab = M
 
 local function as_dbg(msg)
     dbg("[AUTOSTAB] " .. msg)
@@ -36,10 +39,10 @@ end
 -- -----------------------------
 
 local function register_triggers()
-    session_cmd("#action {You successfully escaped the fight!} {#lua {autostab_on_success()}}")
-    session_cmd("#action {You failed to escape the fight!} {#lua {autostab_on_fail()}}")
-    session_cmd("#action {%1 is dead! R.I.P.} {#lua {autostab_on_dead()}}")
-    session_cmd("#action {%1 disappears into nothing.} {#lua {autostab_on_gone()}}")
+    session_cmd("#action {You successfully escaped the fight!} {#lua {scripts.autostab.on_success()}}")
+    session_cmd("#action {You failed to escape the fight!} {#lua {scripts.autostab.on_fail()}}")
+    session_cmd("#action {%1 is dead! R.I.P.} {#lua {scripts.autostab.on_dead()}}")
+    session_cmd("#action {%1 disappears into nothing.} {#lua {scripts.autostab.on_gone()}}")
 end
 
 local function unregister_triggers()
@@ -55,7 +58,7 @@ end
 -- -----------------------------
 
 local function reset_watchdog()
-    session_cmd(string.format("#delay {as_watch} {#lua {autostab_watchdog()}} {%d}", WATCH_TIMEOUT))
+    session_cmd(string.format("#delay {as_watch} {#lua {scripts.autostab.watchdog()}} {%d}", WATCH_TIMEOUT))
 end
 
 -- -----------------------------
@@ -80,7 +83,7 @@ end
 -- PUBLIC API (called via #lua from tt++ triggers/aliases/delays)
 -- -----------------------------
 
-function autostab_start(dir, target)
+function M.start(dir, target)
     if not RET[dir] then
         as_show("bad direction: " .. tostring(dir))
         return
@@ -111,14 +114,14 @@ function autostab_start(dir, target)
     do_cycle()
 end
 
-function autostab_on_success()
+function M.on_success()
     if not as.active then return end
     as.retry_count = 0
     reset_watchdog()
     do_cycle()
 end
 
-function autostab_on_fail()
+function M.on_fail()
     if not as.active then return end
     as.retry_count = as.retry_count + 1
     reset_watchdog()
@@ -132,17 +135,17 @@ function autostab_on_fail()
     end
 end
 
-function autostab_on_dead()
+function M.on_dead()
     if not as.active then return end
     abort("dead")
 end
 
-function autostab_on_gone()
+function M.on_gone()
     if not as.active then return end
     abort("gone")
 end
 
-function autostab_watchdog()
+function M.watchdog()
     if not as.active then return end
     -- Watchdog already fired — no need to #undelay, just clean up triggers
     as.active = false
@@ -154,7 +157,7 @@ end
 -- -----------------------------
 -- SETUP — register alias on load, declare metadata
 -- -----------------------------
-game_cmd('#alias {as%1} {#lua {autostab_start("%1", "$target")}}')
+game_cmd('#alias {as%1} {#lua {scripts.autostab.start("%1", "$target")}}')
 register_script({
     alias   = "autostab",
     summary = "backstab/escape loop",

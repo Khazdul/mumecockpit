@@ -307,7 +307,7 @@ local handlers = {}
 -- -----------------------------
 function handle_event(ses, line)
     -- Direct Lua call: functionname(args)
-    if line:match("^[%w_]+%(") then
+    if line:match("^[%w_][%w_%.]*%(") then
         local fn, err = load(line)
         if fn then
             local ok, err2 = pcall(fn)
@@ -354,6 +354,10 @@ local function _write_scripts_cache()
     end
     fh:close()
 end
+
+-- Script and state namespaces — must be set before scripts are dofile'd.
+scripts = {}
+state   = { char = {}, room = {}, comm = {} }
 
 -- -----------------------------
 -- MODULES — auto-loaded from lua/scripts/

@@ -129,6 +129,8 @@ functions from `brain.lua`:
     set_game_session(ses)     — called by SESSION CONNECTED event
     clear_game_session(ses)   — called by SESSION DISCONNECTED event
     register_script(meta)     — register script in cockpit help system
+    scripts                   — namespace for script public APIs
+    state.char/.room/.comm    — namespace for shared game state
 
 ### Startup order in `main.tin`
 Relay actions that catch Lua stdout **must be registered before `#run {lua}`**.
@@ -338,6 +340,39 @@ Scripts must never hardcode a session name. Use these functions:
 | `send(cmd)` | GAME_SESSION | MUD commands |
 | `tintin_cmd(ses, cmd)` | specific session | internal use only |
 | `tintin(ses, cmd)` | specific session | internal use only, no braces |
+
+### Lua Namespace Conventions
+
+**Global (always accessible, no prefix):** short-name hot-path utilities
+(`dbg`, `ui`, `ui_var`, `script_ui`, `system_ui`, `ui_warn`, `ui_err`,
+`tintin`, `tintin_cmd`, `tintin_show`, `send`, `game_cmd`, `session_cmd`),
+session identity (`GAME_SESSION`, `set_game_session`, `clear_game_session`),
+and the tt++/Lua contract surface (`handle_event`, `register_script`).
+These stay global because they are called from everywhere and short names
+reduce noise.
+
+**`scripts.<name>.<fn>`** — the script's public API. Any function called from
+tt++ via `#lua` must live here. Private helpers remain in file-local `local`
+scope.
+
+**`state.*`** — reserved for shared game/world data. `state.char`,
+`state.room`, and `state.comm` are empty tables in this iteration; populated
+when GMCP lands.
+
+**Private state** continues to live in `local` file-scope tables (e.g. `local as`
+in autostab, `local ab` in autobow).
+
+```lua
+-- Script module pattern
+local M = {}
+scripts.myscript = M
+
+local function helper() ... end       -- private
+
+function M.start(args) ... end        -- public
+
+game_cmd('#alias {...} {#lua {scripts.myscript.start(...)}}')
+```
 
 ### cp -r behaviour
 
@@ -1297,7 +1332,8 @@ Backstab/escape loop. Moves in a direction, backstabs `$target`, then escapes
 back. On success repeats the cycle; on escape failure retries up to 2 times then
 flees and stops. Stops automatically if the target dies, disappears, or no
 trigger fires within 10 seconds. Uses `game_cmd` for alias registration and
-`session_cmd` for trigger and delay lifecycle.
+`session_cmd` for trigger and delay lifecycle. Public API exposed under
+`scripts.autostab`.
 
 ### autobow (`lua/scripts/autobow.lua`)
 Alias: `ash<dir>` (e.g. `ashe`, `ashw`)
@@ -1307,7 +1343,7 @@ then escapes back. Auto-detects weapon type from server response on first shot �
 crossbow reloads between shots, bow skips reload. On escape failure retries up
 to 2 times then flees and stops. Stops automatically if the target dies,
 disappears, or no trigger fires within 15 seconds. Uses `game_cmd` and
-`session_cmd`.
+`session_cmd`. Public API exposed under `scripts.autobow`.
 
 ## Current Status
 - [x] tt++ + Lua integration via #run

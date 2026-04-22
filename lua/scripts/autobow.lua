@@ -18,10 +18,10 @@
 --     "But your crossbow is already loaded!" -> weapon="crossbow", proceed to shoot
 --     "You can only load crossbows."  -> weapon="bow", skip reload, proceed to shoot
 --   Once detected, ab.weapon persists across runs within the same session.
---   A fresh autobow_start() preserves the detected value — no re-detection needed.
+--   A fresh M.start() preserves the detected value — no re-detection needed.
 --
 -- MUD triggers (loaded/already_loaded/not_crossbow/success/fail/dead/gone)
--- and watchdog (ab_watch) are registered dynamically by autobow_start()
+-- and watchdog (ab_watch) are registered dynamically by M.start()
 -- and cleaned up on abort.
 -- Watchdog fires if no trigger is seen within WATCH_TIMEOUT seconds.
 
@@ -37,6 +37,9 @@ local ab = {
     weapon      = nil,   -- nil=unknown, "crossbow", "bow"
 }
 
+local M = {}
+scripts.autobow = M
+
 local function ab_dbg(msg)
     dbg("[AUTOBOW] " .. msg)
 end
@@ -50,15 +53,15 @@ end
 -- -----------------------------
 
 local function register_triggers()
-    session_cmd("#action {You load %1 into your crossbow.} {#lua {autobow_on_loaded()}}")
-    session_cmd("#action {But your crossbow is already loaded!} {#lua {autobow_on_already_loaded()}}")
-    session_cmd("#action {You can only load crossbows.} {#lua {autobow_on_not_crossbow()}}")
-    session_cmd("#action {You successfully escaped the fight!} {#lua {autobow_on_success()}}")
-    session_cmd("#action {You failed to escape the fight!} {#lua {autobow_on_fail()}}")
-    session_cmd("#action {%1 is dead! R.I.P.} {#lua {autobow_on_dead()}}")
-    session_cmd("#action {%1 disappears into nothing.} {#lua {autobow_on_gone()}}")
-    session_cmd("#action {You don't have any bolts.} {#lua {autobow_on_no_bolts()}}")
-    session_cmd("#action {You don't have any arrows.} {#lua {autobow_on_no_arrows()}}")
+    session_cmd("#action {You load %1 into your crossbow.} {#lua {scripts.autobow.on_loaded()}}")
+    session_cmd("#action {But your crossbow is already loaded!} {#lua {scripts.autobow.on_already_loaded()}}")
+    session_cmd("#action {You can only load crossbows.} {#lua {scripts.autobow.on_not_crossbow()}}")
+    session_cmd("#action {You successfully escaped the fight!} {#lua {scripts.autobow.on_success()}}")
+    session_cmd("#action {You failed to escape the fight!} {#lua {scripts.autobow.on_fail()}}")
+    session_cmd("#action {%1 is dead! R.I.P.} {#lua {scripts.autobow.on_dead()}}")
+    session_cmd("#action {%1 disappears into nothing.} {#lua {scripts.autobow.on_gone()}}")
+    session_cmd("#action {You don't have any bolts.} {#lua {scripts.autobow.on_no_bolts()}}")
+    session_cmd("#action {You don't have any arrows.} {#lua {scripts.autobow.on_no_arrows()}}")
 end
 
 local function unregister_triggers()
@@ -79,7 +82,7 @@ end
 -- -----------------------------
 
 local function reset_watchdog()
-    session_cmd(string.format("#delay {ab_watch} {#lua {autobow_watchdog()}} {%d}", WATCH_TIMEOUT))
+    session_cmd(string.format("#delay {ab_watch} {#lua {scripts.autobow.watchdog()}} {%d}", WATCH_TIMEOUT))
 end
 
 -- -----------------------------
@@ -115,7 +118,7 @@ end
 -- PUBLIC API (called via #lua from tt++ triggers/aliases/delays)
 -- -----------------------------
 
-function autobow_start(dir, target)
+function M.start(dir, target)
     if not RET[dir] then
         ab_show("bad direction: " .. tostring(dir))
         return
@@ -148,21 +151,21 @@ function autobow_start(dir, target)
     do_load_or_shoot()
 end
 
-function autobow_on_loaded()
+function M.on_loaded()
     if not ab.active then return end
     ab.weapon = "crossbow"
     reset_watchdog()
     do_shoot()
 end
 
-function autobow_on_already_loaded()
+function M.on_already_loaded()
     if not ab.active then return end
     ab.weapon = "crossbow"
     reset_watchdog()
     do_shoot()
 end
 
-function autobow_on_not_crossbow()
+function M.on_not_crossbow()
     if not ab.active then return end
     ab.weapon = "bow"
     reset_watchdog()
@@ -170,14 +173,14 @@ function autobow_on_not_crossbow()
     do_shoot()
 end
 
-function autobow_on_success()
+function M.on_success()
     if not ab.active then return end
     ab.retry_count = 0
     reset_watchdog()
     do_load_or_shoot()
 end
 
-function autobow_on_fail()
+function M.on_fail()
     if not ab.active then return end
     ab.retry_count = ab.retry_count + 1
     reset_watchdog()
@@ -191,28 +194,28 @@ function autobow_on_fail()
     end
 end
 
-function autobow_on_dead()
+function M.on_dead()
     if not ab.active then return end
     abort("dead")
 end
 
-function autobow_on_gone()
+function M.on_gone()
     if not ab.active then return end
     abort("gone")
 end
 
-function autobow_on_no_bolts()
+function M.on_no_bolts()
     if not ab.active then return end
     abort("out of bolts")
 end
 
-function autobow_on_no_arrows()
+function M.on_no_arrows()
     if not ab.active then return end
     send("escape " .. ab.ret)
     abort("out of arrows")
 end
 
-function autobow_watchdog()
+function M.watchdog()
     if not ab.active then return end
     -- Watchdog already fired — no need to #undelay, just clean up triggers
     ab.active = false
@@ -224,7 +227,7 @@ end
 -- -----------------------------
 -- SETUP — register alias on load, declare metadata
 -- -----------------------------
-game_cmd('#alias {ash%1} {#lua {autobow_start("%1", "$target")}} {4}')
+game_cmd('#alias {ash%1} {#lua {scripts.autobow.start("%1", "$target")}} {4}')
 register_script({
     alias   = "autobow",
     summary = "bow/crossbow shoot/escape loop",
