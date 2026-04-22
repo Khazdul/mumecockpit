@@ -30,8 +30,11 @@ with a scripting brain on top.
 ## Rules of thumb
 
 - **tt++ for reflexes, Lua for cognition.** Latency-critical paths stay in tt++.
-- **Self-contained Lua scripts.** New automation goes in `lua/scripts/*.lua`.
-  Auto-loaded at startup. No edits to `brain.lua` or `main.tin` needed.
+- **Two-tier Lua loading.** Always-on GMCP collectors (no alias, no
+  `register_script`) go in `lua/core/*.lua`. Opt-in automation modules
+  (must call `register_script(meta)`) go in `lua/scripts/*.lua`. Both
+  are auto-loaded at startup — core first, then scripts. No edits to
+  `brain.lua` or `main.tin` needed.
 - **Self-contained tt++ modules.** New modules go in `ttpp/core/*.tin`.
   Auto-loaded by `main.tin`.
 - **Never hardcode session names.** From inside a Lua script use
@@ -60,7 +63,7 @@ with a scripting brain on top.
 ## When in doubt
 
 - New active script pattern: read `lua/scripts/autostab.lua` or `autobow.lua`.
-- New GMCP collector pattern: read `lua/scripts/char_state.lua` or
-  `comm_log.lua`.
+- New GMCP collector pattern: read `lua/core/char_state.lua` or
+  `lua/core/comm_log.lua`.
 - tt++ syntax: open `ttpp_manual.txt`, do not guess.
 - Style questions: the relevant `docs/*.md` is authoritative over memory.

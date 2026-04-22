@@ -32,10 +32,11 @@ tracking, and UI feedback.
 │   └── sessions/         # Per-profile personal settings (.tin files)
 │
 ├── lua/
-│   ├── brain.lua         # Lua brain — infrastructure, event loop, auto-loads scripts/
+│   ├── brain.lua         # Lua brain — infrastructure, event loop, auto-loads core/ then scripts/
 │   ├── lib/              # Bundled Lua libraries (on package.path)
 │   │                     #   dkjson.lua  — pure-Lua JSON parser (MIT, David Kolf)
-│   └── scripts/          # Self-contained Lua automation scripts (.lua files)
+│   ├── core/             # Always-on GMCP collectors — no alias, no register_script
+│   └── scripts/          # Opt-in automation modules — must call register_script(meta)
 │
 ├── bridge/
 │   ├── launcher.sh           # Pre-tmux startup menu (DOS-style, pure bash)
@@ -118,11 +119,24 @@ registration in `main.tin` is needed when adding a new module.
 #script {ls ttpp/core/*.tin 2>/dev/null | sed 's/^/#read /'}
 ```
 
-### Lua scripts (`lua/scripts/`)
+### Lua scripts (`lua/core/` and `lua/scripts/`)
 
-`brain.lua` automatically loads all `.lua` files from `lua/scripts/` via
-`io.popen("ls ...")` + `dofile()` at startup. Each script runs in the global
-environment and has access to all infrastructure functions from `brain.lua`:
+`brain.lua` performs a two-tier load at startup via `io.popen("ls ...")` +
+`dofile()`, in alphabetical order within each tier:
+
+1. **`lua/core/`** — always-on GMCP collectors. These have no alias and never
+   call `register_script()`. They populate `state.*` fields that other code
+   may read at load time.
+2. **`lua/scripts/`** — opt-in automation modules. Each must call
+   `register_script(meta)` so it appears in `cp` help and the launcher's
+   Scripts page.
+
+Rule for new files: if a file has no alias and only listens to GMCP to write
+`state.*`, it belongs in `lua/core/`. If it provides a player-facing feature
+and calls `register_script()`, it belongs in `lua/scripts/`.
+
+Each script runs in the global environment and has access to all infrastructure
+functions from `brain.lua`:
 
     dbg(msg)                  — write to debug.log
     ui(msg)                   — write to ui.log (mirrors to debug.log)
@@ -236,11 +250,14 @@ game_cmd('#alias {...} {#lua {scripts.myscript.start(...)}}')
 4. **Persistent UI** — output written to log files so history
    survives pane toggles and restarts.
 5. **Single source of truth** — Lua owns all game state.
-6. **Self-contained Lua scripts** — each script in `lua/scripts/` is a
-   single `.lua` file with no paired `.tin` file. The script registers its
-   own aliases via `game_cmd()`, triggers and delays via `session_cmd()`,
-   and MUD commands via `send()` at load time. Never hardcode session names.
-   This is the approved pattern for all automation features.
+6. **Self-contained Lua modules** — every file in `lua/core/` and
+   `lua/scripts/` is a single `.lua` file with no paired `.tin` file.
+   `lua/core/` files are always-on collectors: no alias, no
+   `register_script()`, only GMCP handlers that write `state.*`.
+   `lua/scripts/` files are opt-in automation: they register their own
+   aliases via `game_cmd()`, triggers via `session_cmd()`, and MUD
+   commands via `send()` at load time, and call `register_script(meta)`.
+   Never hardcode session names in either tier.
 
 ## Cockpit System
 

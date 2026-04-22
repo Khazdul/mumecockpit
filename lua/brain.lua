@@ -418,22 +418,30 @@ function gmcp.dispatch(module, payload)
 end
 
 -- -----------------------------
--- MODULES — auto-loaded from lua/scripts/
--- Each script is self-contained: registers its own aliases/triggers at load time.
+-- MODULES — two-tier auto-load
+-- lua/core/    — always-on collectors (no alias, no register_script)
+-- lua/scripts/ — opt-in automation modules (must call register_script)
+-- Core is loaded first so state.* is populated before scripts run.
 -- -----------------------------
 local function load_scripts()
-    local n = 0
-    local p = io.popen("ls lua/scripts/*.lua 2>/dev/null")
-    if p then
-        for f in p:lines() do
-            dofile(f)
-            n = n + 1
+    local n_core, n_scripts = 0, 0
+    local function load_dir(glob)
+        local count = 0
+        local p = io.popen("ls " .. glob .. " 2>/dev/null")
+        if p then
+            for f in p:lines() do
+                dofile(f)
+                count = count + 1
+            end
+            p:close()
         end
-        p:close()
+        return count
     end
+    n_core    = load_dir("lua/core/*.lua")
+    n_scripts = load_dir("lua/scripts/*.lua")
     _register_cockpit_help()
     _write_scripts_cache()
-    return n
+    return n_core, n_scripts
 end
 
 -- -----------------------------
@@ -442,8 +450,8 @@ end
 package.path = "lua/lib/?.lua;" .. package.path
 dbg("Lua brain started (" .. _VERSION .. ")")
 _clear_session_state()
-local _n_scripts = load_scripts()
-dbg(_n_scripts .. " scripts loaded")
+local _n_core, _n_scripts = load_scripts()
+dbg(_n_core .. " core + " .. _n_scripts .. " scripts loaded")
 
 -- Main loop
 for line in io.lines() do

@@ -52,17 +52,17 @@ pick from a known map without re-reading help files.
 | Core.Supports.Set | → server  | array of `"Module N"` strings   | ttpp/core/gmcp.tin    |
 | Core.KeepAlive    | → server  | (none)                          | not sent              |
 | Core.Ping         | → server  | optional avg ping ms            | not sent              |
-| Core.Ping         | ← server  | (none)                          | core_state.lua        |
-| Core.Goodbye      | ← server  | optional reason string          | core_state.lua (stub) |
+| Core.Ping         | ← server  | (none)                          | lua/core/core_state.lua        |
+| Core.Goodbye      | ← server  | optional reason string          | lua/core/core_state.lua (stub) |
 
 **Char**
 
 | Message         | Direction | Body                           | Handler        |
 |-----------------|-----------|--------------------------------|----------------|
 | Char.Login      | → server  | `{name, password}`             | not sent       |
-| Char.Name       | ← server  | `{name, fullname}`             | char_state.lua |
-| Char.StatusVars | ← server  | name/caption pairs (see below) | char_state.lua |
-| Char.Vitals     | ← server  | flat object (see below)        | char_state.lua |
+| Char.Name       | ← server  | `{name, fullname}`             | lua/core/char_state.lua |
+| Char.StatusVars | ← server  | name/caption pairs (see below) | lua/core/char_state.lua |
+| Char.Vitals     | ← server  | flat object (see below)        | lua/core/char_state.lua |
 
 Char.Vitals fields:
 
@@ -103,9 +103,9 @@ Kebab → snake note: all of the above arrive in `state.char.*` with dashes conv
 
 | Message              | Direction | Body                                | Handler                                                    |
 |----------------------|-----------|-------------------------------------|------------------------------------------------------------|
-| Comm.Channel.Enable  | → server  | channel name string                 | comm_log.lua → alias `gmcp_enable_channel` in gmcp.tin     |
-| Comm.Channel.List    | ← server  | array of `{name, caption, command}` | comm_log.lua                                               |
-| Comm.Channel.Text    | ← server  | see below                           | comm_log.lua                                               |
+| Comm.Channel.Enable  | → server  | channel name string                 | lua/core/comm_log.lua → alias `gmcp_enable_channel` in gmcp.tin     |
+| Comm.Channel.List    | ← server  | array of `{name, caption, command}` | lua/core/comm_log.lua                                               |
+| Comm.Channel.Text    | ← server  | see below                           | lua/core/comm_log.lua                                               |
 
 Comm.Channel.Text body:
 
@@ -118,7 +118,7 @@ Comm.Channel.Text body:
 Channel-enable flow:
 1. tt++ sends `Core.Supports.Set` including `"Comm.Channel 1"` at handshake.
 2. Server auto-sends `Comm.Channel.List` with available channels.
-3. `comm_log.lua` receives the list, stores it in `state.comm.channels`, and issues `Comm.Channel.Enable` for each channel by calling the `gmcp_enable_channel` alias.
+3. `lua/core/comm_log.lua` receives the list, stores it in `state.comm.channels`, and issues `Comm.Channel.Enable` for each channel by calling the `gmcp_enable_channel` alias.
 4. Server begins streaming `Comm.Channel.Text` for those channels.
 
 No channel list is hardcoded client-side — whatever the server advertises gets enabled.
@@ -127,10 +127,10 @@ No channel list is hardcoded client-side — whatever the server advertises gets
 
 | Message        | Body                                                        | Handler         |
 |----------------|-------------------------------------------------------------|-----------------|
-| Event.Darkness | `{what: "start"\|"grow"\|"shrink"\|"end-soon"\|"end"}`      | world_state.lua |
-| Event.Moon     | `{what: "rise"\|"set"}`                                     | world_state.lua |
-| Event.Moved    | `{dir: "north"\|"east"\|...}` (dir optional)                | world_state.lua |
-| Event.Sun      | `{what: "light"\|"rise"\|"set"\|"dark"}`                    | world_state.lua |
+| Event.Darkness | `{what: "start"\|"grow"\|"shrink"\|"end-soon"\|"end"}`      | lua/core/world_state.lua |
+| Event.Moon     | `{what: "rise"\|"set"}`                                     | lua/core/world_state.lua |
+| Event.Moved    | `{dir: "north"\|"east"\|...}` (dir optional)                | lua/core/world_state.lua |
+| Event.Sun      | `{what: "light"\|"rise"\|"set"\|"dark"}`                    | lua/core/world_state.lua |
 
 All Event handlers store the decoded body as-is under the corresponding `state.world.<event>` field.
 
@@ -187,7 +187,7 @@ Unknown modules log `GMCP no handler: <Module>` to dev and drop. Modules not lis
 
 ## Data collection (iteration 2a)
 
-**Generic flat-copy pattern.** `char_state.lua` merges Char.Name /
+**Generic flat-copy pattern.** `lua/core/char_state.lua` merges Char.Name /
 Char.StatusVars / Char.Vitals into `state.char.*` by iterating the decoded
 body and converting kebab-case keys to snake_case. No explicit field list —
 consumers must treat every field as possibly nil. Field-specific formalisation
