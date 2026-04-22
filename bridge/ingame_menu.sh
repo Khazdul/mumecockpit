@@ -53,24 +53,6 @@ _rebuild_menu() {
     [ "$_SEL" -ge "$_NITEMS" ] && _SEL=$(( _NITEMS - 1 ))
 }
 
-_draw_cockpit_banner() {
-    local cols; cols=$(tput cols 2>/dev/null || echo 80)
-    local lines=(
-        '██ ███ ██ █ █ ██ █ ███'
-        '█  █ █ █  ██  ██ █  █ '
-        '██ ███ ██ █ █ █  █  █ '
-    )
-    printf '\n'
-    local line vw pad
-    for line in "${lines[@]}"; do
-        vw=${#line}
-        pad=$(( (cols - vw) / 2 ))
-        [ "$pad" -lt 0 ] && pad=0
-        printf "%${pad}s${_MR_TITLE}%s${_MR_RESET}\n" "" "$line"
-    done
-    printf '\n'
-}
-
 _render_status_header() {
     local cols; cols=$(tput cols 2>/dev/null || echo 80)
 
@@ -161,7 +143,7 @@ _render_main() {
     local cols; cols=$(tput cols 2>/dev/null || echo 80)
     local now; now=$(date +%s)
     {
-        _draw_cockpit_banner
+        draw_ascii_title
         _render_status_header
 
         local i
