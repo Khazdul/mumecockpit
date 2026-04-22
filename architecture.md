@@ -515,6 +515,10 @@ GMCP events are registered on SESSION CREATED, not SESSION CONNECTED. CONNECTED 
 
 GMCP sub-negotiation uses `${GMCP}Package.Name ...` with explicit brace delimiters on the GMCP variable — `$GMCP Package` would include a literal space after the option byte, which servers parse as part of the package name and reject.
 
+### IAC SB GMCP event variables: %1 vs %2
+
+IAC SB GMCP events expose the body in two forms — `%1` is tt++'s list-flattened representation (key/value pairs collapsed into a brace sequence), `%2` is the raw JSON string. We use `%2` so dkjson receives the original JSON verbatim.
+
 ### Client identity
 
 `Core.Hello` sends `client="Cockpit"` and `version` read from the `VERSION` file at tt++ startup via `#script {_client_version} {cat VERSION 2>/dev/null | tr -d '\n' || echo -n dev}`.

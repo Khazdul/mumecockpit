@@ -31,7 +31,7 @@
         };
         #%0 #event {IAC SB GMCP}
         {
-            #lua {gmcp.dispatch("%%0", [===[%%1]===])}
+            #lua {gmcp.dispatch("%%0", [===[%%2]===])}
         }
     }
 }
