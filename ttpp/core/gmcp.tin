@@ -26,8 +26,8 @@
         {
             #lua {dbg("[GMCP] negotiation: sending hello + supports")};
             #send {$IAC$DO$GMCP\};
-            #send {$IAC$SB$GMCP Core.Hello \x7B"client":"Cockpit","version":"$_client_version"\x7D $IAC$SE\};
-            #send {$IAC$SB$GMCP Core.Supports.Set ["Char 1","Comm.Channel 1","Event 1"] $IAC$SE\}
+            #send {$IAC$SB${GMCP}Core.Hello \x7B"client":"Cockpit","version":"$_client_version"\x7D$IAC$SE\};
+            #send {$IAC$SB${GMCP}Core.Supports.Set ["Char 1","Comm.Channel 1","Event 1"]$IAC$SE\}
         };
         #%0 #event {IAC SB GMCP}
         {

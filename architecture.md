@@ -511,6 +511,10 @@ No error is raised. During initial play, several Char / Event submessages will a
 
 GMCP events are registered on SESSION CREATED, not SESSION CONNECTED. CONNECTED fires after the first telnet data swap — by which time tt++'s built-in telnet stack has already auto-replied IAC DONT GMCP to the server's IAC WILL GMCP. CREATED fires when `#session` creates the session object, before TCP handshake starts, giving us a window to register the IAC events inside the session before any bytes flow.
 
+### Variable delimiter in SB sends
+
+GMCP sub-negotiation uses `${GMCP}Package.Name ...` with explicit brace delimiters on the GMCP variable — `$GMCP Package` would include a literal space after the option byte, which servers parse as part of the package name and reject.
+
 ### Client identity
 
 `Core.Hello` sends `client="Cockpit"` and `version` read from the `VERSION` file at tt++ startup via `#script {_client_version} {cat VERSION 2>/dev/null | tr -d '\n' || echo -n dev}`.
