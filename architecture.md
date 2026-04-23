@@ -304,6 +304,7 @@ Deferred until there's a concrete use case:
 - Live script dashboard (IDLE / RUNNING / FIRING tags)
 - Stop-all-scripts emergency button
 - Pane dimming for inactive panes
+- Cross-platform one-click installer (Windows WSL2 + Alacritty bootstrap, macOS/Linux helper scripts) — see `docs/install-bootstrap.md`.
 
 ## See also
 
@@ -315,3 +316,4 @@ Deferred until there's a concrete use case:
 - [docs/launcher.md](docs/launcher.md) — Pre-tmux startup menu, rendering conventions, exec-chain. Touched when changing launcher pages or startup options.
 - [docs/popup-menu.md](docs/popup-menu.md) — In-game ESC popup: submenus, status header, save-profile flow. Touched when changing the in-game overlay.
 - [docs/bridge-services.md](docs/bridge-services.md) — Ping monitor, version check, self-update, layout and config file formats. Touched when changing background services or persisted config.
+- [docs/install-bootstrap.md](docs/install-bootstrap.md) — Cross-platform install and bootstrap plan. Touched when scheduling installer work or when a platform constraint (WSL, Alacritty, package versions) changes.
