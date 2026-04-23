@@ -67,6 +67,38 @@ save works after link loss as well as during a live connection. Success
 and error messages are routed to the UI pane via `#lua {system_ui(...)}`
 and `#lua {ui_err(...)}` respectively, not `#showme` to the game pane.
 
+## Auto-open on disconnect
+
+The popup opens automatically whenever `mark_mume_disconnected()` transitions
+the state from connected to disconnected (i.e. removes `bridge/session.state`).
+All disconnect signals route through this single function:
+
+- `Core.Goodbye` GMCP (graceful quit, both modes)
+- `"Status: MUME closed the connection."` tt++ action (MMapper abrupt drop)
+- `SESSION DISCONNECTED` → `clear_game_session()` → `mark_mume_disconnected()`
+  (direct-mode abrupt drop and MMapper-process death)
+
+**Dedup:** The transition guard in `mark_mume_disconnected()` returns early
+when `session.state` is already absent, so a second signal for the same
+disconnect event never reaches the popup trigger.
+
+**Double-open guard:** `bridge/ingame_menu.sh` writes `bridge/.popup_open`
+on start and removes it on exit (via the `EXIT INT TERM HUP` trap). The
+trigger checks for this sentinel before calling `tmux display-popup` and
+skips if present, so a popup already on screen is never disturbed.
+
+**Bootstrap protection:** On fresh start `session.state` is absent, so
+`mark_mume_disconnected()` is a no-op and no popup fires during the ~0.5–2 s
+window before `Char.Name` arrives.
+
+**Reconnect pre-highlighted:** `_rebuild_menu` places Reconnect at index 0
+when `session.state` is absent and `_SEL=0` is the default, so the user
+can hit Enter immediately.
+
+**Stale sentinel cleanup:** `bridge/tmux_start.sh` removes `bridge/.popup_open`
+at the top of each run, guarding against a crashed popup from a previous
+cockpit session leaving the sentinel behind.
+
 ## Scope trims
 
 Deliberately NOT in the popup:

@@ -7,11 +7,14 @@ cd "$(dirname "$0")/.."
 
 source bridge/menu_render.sh
 
+touch bridge/.popup_open
+
 printf '\e[?1049h\e[?25l'
 printf '\e[?1000l\e[?1002l\e[?1003l\e[?1006l\e[?1007l'
 
 _restore_terminal() {
     printf '\e[?1007h\e[?25h\e[?1049l'
+    rm -f bridge/.popup_open
 }
 
 trap '_restore_terminal' EXIT INT TERM HUP

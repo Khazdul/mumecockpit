@@ -9,6 +9,7 @@ cd "$(dirname "$0")/.."
 # The sentinel is set by ingame_menu.sh just before firing cp -e; if tmux
 # died uncleanly the file may linger and mis-route the next cold start.
 rm -f bridge/.return_to_menu
+rm -f bridge/.popup_open
 
 CONF="bridge/startup.conf"
 

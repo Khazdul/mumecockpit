@@ -106,6 +106,16 @@ local function _clear_session_state()
     os.remove(SESSION_STATE_PATH)
 end
 
+local function _popup_is_open()
+    local f = io.open("bridge/.popup_open", "r")
+    if f then f:close(); return true end
+    return false
+end
+
+local function _open_popup()
+    os.execute('tmux display-popup -E -w 80% -h 80% -x C -y C "bash $HOME/MUME/bridge/ingame_menu.sh" >/dev/null 2>&1 &')
+end
+
 GAME_SESSION = nil  -- set dynamically when a game session connects
 
 -- mark_mume_connected() / mark_mume_disconnected() — idempotent, transition-only.
@@ -124,6 +134,7 @@ function mark_mume_disconnected()
     f:close()
     _clear_session_state()
     system_ui("Disconnected from MUME.")
+    if not _popup_is_open() then _open_popup() end
 end
 
 function set_game_session(ses)
@@ -135,12 +146,12 @@ end
 -- Called when a game session disconnects. Clears GAME_SESSION
 -- only if it matches the disconnecting session — guards against
 -- stale clears if somehow called with wrong session name.
--- Keeps _clear_session_state() as a fallback for non-graceful tt++-session
--- death (direct-mode abrupt, MMapper-process killed).
+-- Delegates to mark_mume_disconnected() so the direct-mode abrupt-drop
+-- path joins the single dispatch point (popup auto-open, dedup guard).
 function clear_game_session(ses)
     if GAME_SESSION == ses then
         GAME_SESSION = nil
-        _clear_session_state()
+        mark_mume_disconnected()
         system_ui("tt++ session " .. ui_var(ses) .. " closed.")
         tintin("gts", "#unvar game_session")
     else

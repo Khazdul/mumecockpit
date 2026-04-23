@@ -60,9 +60,15 @@ separately.
 - `"Status: MUME closed the connection."` text action (MMapper mode) →
   `mark_mume_disconnected()` — fires when MMapper detects an abrupt
   MUME-side drop while its own process stays alive.
-- `SESSION DISCONNECTED` → `clear_game_session()` → `_clear_session_state()`
+- `SESSION DISCONNECTED` → `clear_game_session()` → `mark_mume_disconnected()`
   — fallback for direct-mode abrupt disconnects and for MMapper-process-death
   (entire MMapper process killed).
+
+`mark_mume_disconnected()` is the **single dispatch point** for all disconnect
+signals. Any signal that should trigger popup auto-open and session-state teardown
+routes through it. The transition guard (no-op when state is already absent)
+handles dedup automatically — the second signal for the same event finds state
+already cleared and returns early.
 
 ### API
 
@@ -72,12 +78,16 @@ separately.
   an actual disconnected→connected or connected→disconnected transition.
 - `mark_mume_connected()` calls `_write_session_state()` (atomic temp+rename,
   reads `connection_mode` from `startup.conf`), then `system_ui("Connected to MUME.")`.
-- `mark_mume_disconnected()` calls `_clear_session_state()`, then
-  `system_ui("Disconnected from MUME.")`.
+- `mark_mume_disconnected()` calls `_clear_session_state()`, emits
+  `system_ui("Disconnected from MUME.")`, then auto-opens the popup if
+  `bridge/.popup_open` is absent (see `docs/popup-menu.md` — Auto-open on disconnect).
 
 `set_game_session()` no longer writes `session.state` — it only tracks tt++
-session liveness. `clear_game_session()` retains its `_clear_session_state()`
-call as a belt-and-braces fallback.
+session liveness. `clear_game_session()` delegates to `mark_mume_disconnected()`
+(rather than calling `_clear_session_state()` directly) so the direct-mode
+abrupt-drop path joins the single dispatch point. The belt-and-braces role
+is unchanged; the transition guard in `mark_mume_disconnected()` keeps it
+idempotent.
 
 ### Format
 
