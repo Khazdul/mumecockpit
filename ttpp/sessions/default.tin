@@ -1174,6 +1174,6 @@
 #VARIABLE {sd3} {}
 #VARIABLE {spell} {'lightning bolt'}
 #VARIABLE {ss} {normal}
-#VARIABLE {target} {pack}
+#VARIABLE {target} {*orc*}
 
 #CLASS {default} CLOSE
