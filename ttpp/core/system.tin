@@ -137,6 +137,7 @@
         } {
             #lua {set_game_session("%0")};
             #%0 #read ttpp/sessions/%0.tin;
+            #%0 #alias {reconnect} {#gts reconnect};
             #%0 #class {%0} {open}
         }
     }
