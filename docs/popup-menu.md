@@ -13,7 +13,7 @@ The popup renders via `bridge/ingame_menu.sh`, sharing `bridge/menu_render.sh`
 helpers with the launcher.
 
 The top menu item is context-aware: "Continue" when connected (dismisses
-popup) or "Reconnect" when disconnected (fires `connect` alias then
+popup) or "Reconnect" when disconnected (fires `reconnect` alias then
 dismisses). Both states are rebuilt from `bridge/session.state` on every
 render.
 

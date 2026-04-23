@@ -388,7 +388,7 @@ while true; do
             case "${_ACTIONS[$_SEL]}" in
                 continue)  exit 0 ;;
                 reconnect)
-                    tmux send-keys -t mume:cockpit.0 "connect" C-m
+                    tmux send-keys -t mume:cockpit.0 "reconnect" C-m
                     exit 0
                     ;;
                 save)      _save_profile ;;
