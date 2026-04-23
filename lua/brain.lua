@@ -108,21 +108,40 @@ end
 
 GAME_SESSION = nil  -- set dynamically when a game session connects
 
+-- mark_mume_connected() / mark_mume_disconnected() — idempotent, transition-only.
+-- Drive bridge/session.state from GMCP (Char.Name → connected, Core.Goodbye → disconnected).
+-- Only act (and only emit system_ui) on the actual state change; detect via file existence.
+function mark_mume_connected()
+    local f = io.open(SESSION_STATE_PATH, "r")
+    if f then f:close(); return end
+    _write_session_state()
+    system_ui("Connected to MUME.")
+end
+
+function mark_mume_disconnected()
+    local f = io.open(SESSION_STATE_PATH, "r")
+    if not f then return end
+    f:close()
+    _clear_session_state()
+    system_ui("Disconnected from MUME.")
+end
+
 function set_game_session(ses)
     GAME_SESSION = ses
-    system_ui("Game session " .. ui_var(ses) .. " connected.")
+    system_ui("tt++ session " .. ui_var(ses) .. " open.")
     tintin_cmd("gts", "#var {game_session} {" .. ses .. "}")
-    _write_session_state()
 end
 
 -- Called when a game session disconnects. Clears GAME_SESSION
 -- only if it matches the disconnecting session — guards against
 -- stale clears if somehow called with wrong session name.
+-- Keeps _clear_session_state() as a fallback for non-graceful tt++-session
+-- death (direct-mode abrupt, MMapper-process killed).
 function clear_game_session(ses)
     if GAME_SESSION == ses then
         GAME_SESSION = nil
         _clear_session_state()
-        system_ui("Game session " .. ui_var(ses) .. " closed.")
+        system_ui("tt++ session " .. ui_var(ses) .. " closed.")
         tintin("gts", "#unvar game_session")
     else
         dbg("clear_game_session: mismatch")

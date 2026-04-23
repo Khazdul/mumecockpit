@@ -2,8 +2,8 @@
 -- No alias, no register_script — background collector only.
 
 gmcp.handlers["Core.Goodbye"] = function(body)
-    -- body is a string ("Goodbye!") or nil
     dbg(string.format("[CORE] goodbye: %s", tostring(body)))
+    mark_mume_disconnected()
 end
 
 gmcp.handlers["Core.Ping"] = function(body)

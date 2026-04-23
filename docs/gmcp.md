@@ -53,14 +53,14 @@ pick from a known map without re-reading help files.
 | Core.KeepAlive    | → server  | (none)                          | not sent              |
 | Core.Ping         | → server  | optional avg ping ms            | not sent              |
 | Core.Ping         | ← server  | (none)                          | lua/core/core_state.lua        |
-| Core.Goodbye      | ← server  | optional reason string          | lua/core/core_state.lua (stub) |
+| Core.Goodbye      | ← server  | optional reason string          | lua/core/core_state.lua (also drives session.state) |
 
 **Char**
 
 | Message         | Direction | Body                           | Handler        |
 |-----------------|-----------|--------------------------------|----------------|
 | Char.Login      | → server  | `{name, password}`             | not sent       |
-| Char.Name       | ← server  | `{name, fullname}`             | lua/core/char_state.lua |
+| Char.Name       | ← server  | `{name, fullname}`             | lua/core/char_state.lua (also drives session.state) |
 | Char.StatusVars | ← server  | name/caption pairs (see below) | lua/core/char_state.lua |
 | Char.Vitals     | ← server  | flat object (see below)        | lua/core/char_state.lua |
 

@@ -15,7 +15,10 @@ local function merge_flat(body)
     end
 end
 
-gmcp.handlers["Char.Name"]       = merge_flat
+gmcp.handlers["Char.Name"] = function(body)
+    merge_flat(body)
+    mark_mume_connected()
+end
 gmcp.handlers["Char.StatusVars"] = merge_flat
 
 gmcp.handlers["Char.Vitals"] = function(body)
