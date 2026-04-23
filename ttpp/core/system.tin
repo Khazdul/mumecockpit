@@ -26,6 +26,32 @@
 #alias {default} {connect}
 #alias {mume}    {connect}
 
+#nop `reconnect` — mode-aware reconnect; routes on $_ses_cmd and &game_session.
+#alias {reconnect} {
+    #if {"$_ses_cmd" == "ses"} {
+        #if {&game_session} {
+            #lua {system_ui("Sending _connect to MMapper.")};
+            #$game_session _connect
+        } {
+            #lua {system_ui("Opening new session (MMapper mode).")};
+            connect
+        }
+    } {
+        #if {"$_ses_cmd" == "ssl"} {
+            #if {&game_session} {
+                #lua {system_ui("Reconnecting (direct mode) — zapping and rebuilding.")};
+                #$game_session #zap;
+                #delay {1} {connect}
+            } {
+                #lua {system_ui("Opening new session (direct mode).")};
+                connect
+            }
+        } {
+            #lua {ui_err("reconnect: unknown connection mode.")}
+        }
+    }
+}
+
 #nop ===== COCKPIT SYSTEM =====
 #nop Direct cp aliases. {cp} has priority 6 so specific {cp -X} aliases (priority 5) win.
 #nop Script aliases like {cp -autostab} are registered by Lua at startup.
