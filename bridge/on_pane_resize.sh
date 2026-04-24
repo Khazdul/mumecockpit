@@ -7,8 +7,10 @@ LOCK="$HOME/MUME/bridge/.layout_lock"
 # Save ui_width from whichever right pane exists
 NEW_WIDTH=$(tmux list-panes -t mume:cockpit \
   -F '#{pane_title} #{pane_width}' \
-  | awk '$1=="ui" || $1=="dev" {print $2; exit}')
+  | awk '$1=="ui" || $1=="dev" || $1=="status" {print $2; exit}')
 [ -z "$NEW_WIDTH" ] && exit 0
+# Clamp: manual drag cannot persist ui_width below RIGHT_MIN (33)
+[ "$NEW_WIDTH" -lt 33 ] && NEW_WIDTH=33
 sed -i "s/^ui_width=.*/ui_width=$NEW_WIDTH/" "$LAYOUT_CONF"
 
 # Save ui_height_ratio if both ui and dev are open

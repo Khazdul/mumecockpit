@@ -42,6 +42,21 @@ _persist_key() {
 }
 
 case "$TARGET" in
+    status)
+        if _pane_exists "status"; then
+            _kill_pane "status"
+        else
+            bash "$SCRIPT_DIR/open_pane.sh" status
+        fi
+        if [ "$PERSIST" -eq 1 ]; then
+            if _pane_exists "status"; then
+                _persist_key "show_status" "1"
+            else
+                _persist_key "show_status" "0"
+            fi
+        fi
+        ;;
+
     ui)
         if _pane_exists "ui"; then
             _kill_pane "ui"

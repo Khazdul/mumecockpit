@@ -24,12 +24,16 @@ COLS=$(tmux display-message -p -t mume:cockpit '#{window_width}')
 LEFT=$(( COLS - ui_width - 1 ))
 
 # Check if any right pane already exists
-HAS_RIGHT=$(tmux list-panes -t mume:cockpit -F '#{pane_title}' | grep -E '^(ui|dev)$')
+HAS_RIGHT=$(tmux list-panes -t mume:cockpit -F '#{pane_title}' | grep -E '^(ui|dev|status)$')
+
+# Load status_height (default 14) for the status case
+grep -q "^status_height=" "$LAYOUT_CONF" || echo "status_height=14" >> "$LAYOUT_CONF"
+source "$LAYOUT_CONF"
 
 if [ -n "$HAS_RIGHT" ]; then
     # Right column exists — split vertically inside it
     RIGHT_INDEX=$(tmux list-panes -t mume:cockpit -F '#{pane_index} #{pane_title}' \
-        | grep -E ' (ui|dev)$' | cut -d' ' -f1 | head -1)
+        | grep -E ' (ui|dev|status)$' | cut -d' ' -f1 | head -1)
 
     case $TYPE in
         ui)
@@ -58,6 +62,31 @@ if [ -n "$HAS_RIGHT" ]; then
               | awk '$2=="ui" {print $1; exit}')
             [ -n "$UI_INDEX" ] && tmux resize-pane -t "mume:cockpit.$UI_INDEX" -y "$APPLY_UI_H"
             ;;
+        status)
+            # status goes between ui (top) and dev (bottom).
+            # Strategy: find ui pane and split below it; if no ui, find dev and split above it.
+            UI_INDEX=$(tmux list-panes -t mume:cockpit -F '#{pane_index} #{pane_title}' \
+              | awk '$2=="ui" {print $1; exit}')
+            DEV_INDEX=$(tmux list-panes -t mume:cockpit -F '#{pane_index} #{pane_title}' \
+              | awk '$2=="dev" {print $1; exit}')
+
+            STATUS_CMD="bash -c 'stty -isig 2>/dev/null; trap \"\" INT; while true; do python3 $MUME/bridge/status_pane.py; printf \"\\n[pane kept alive — use cp -c to close]\\n\"; sleep 0.2; done'"
+
+            if [ -n "$UI_INDEX" ]; then
+                # Split below ui → status appears between ui and dev
+                NEW_INDEX=$(tmux split-window -v -t mume:cockpit.$UI_INDEX -P -F '#{pane_index}' "$STATUS_CMD")
+            elif [ -n "$DEV_INDEX" ]; then
+                # No ui — split above dev: split dev, then swap so status is on top
+                NEW_INDEX=$(tmux split-window -v -t mume:cockpit.$DEV_INDEX -P -F '#{pane_index}' "$STATUS_CMD")
+                tmux swap-pane -s mume:cockpit.$NEW_INDEX -t mume:cockpit.$DEV_INDEX
+            else
+                # Only other right pane type — split normally
+                NEW_INDEX=$(tmux split-window -v -t mume:cockpit.$RIGHT_INDEX -P -F '#{pane_index}' "$STATUS_CMD")
+            fi
+            tmux select-pane -t mume:cockpit.$NEW_INDEX -T "status"
+            tmux resize-pane -t mume:cockpit.$NEW_INDEX -y "$status_height"
+            tmux select-pane -t "$(resolve_focus_target)"
+            ;;
         input)
             NEW_INDEX=$(tmux split-window -v -l 1 -t mume:cockpit.0 -P -F '#{pane_index}' \
                 "python3 $MUME/bridge/input_pane.py")
@@ -69,6 +98,7 @@ else
     # -f is required: without it, if the input pane already exists, tmux inserts
     # the new right pane as main's sibling inside the left-column subtree, causing
     # input to span the full window width instead of staying below main only.
+    STATUS_CMD="bash -c 'stty -isig 2>/dev/null; trap \"\" INT; while true; do python3 $MUME/bridge/status_pane.py; printf \"\\n[pane kept alive — use cp -c to close]\\n\"; sleep 0.2; done'"
     case $TYPE in
         ui)
             NEW_INDEX=$(tmux split-window -h -f -t mume:cockpit.0 -P -F '#{pane_index}' \
@@ -92,6 +122,12 @@ else
             UI_INDEX=$(tmux list-panes -t mume:cockpit -F '#{pane_index} #{pane_title}' \
               | awk '$2=="ui" {print $1; exit}')
             [ -n "$UI_INDEX" ] && tmux resize-pane -t "mume:cockpit.$UI_INDEX" -y "$APPLY_UI_H"
+            ;;
+        status)
+            NEW_INDEX=$(tmux split-window -h -f -t mume:cockpit.0 -P -F '#{pane_index}' "$STATUS_CMD")
+            tmux select-pane -t mume:cockpit.$NEW_INDEX -T "status"
+            tmux resize-pane -t mume:cockpit.$NEW_INDEX -y "$status_height"
+            tmux select-pane -t "$(resolve_focus_target)"
             ;;
         input)
             NEW_INDEX=$(tmux split-window -v -l 1 -t mume:cockpit.0 -P -F '#{pane_index}' \

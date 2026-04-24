@@ -26,6 +26,7 @@ source "$CONF"
 
 SHOW_UI="${show_ui:-1}"
 SHOW_DEV="${show_dev:-0}"
+SHOW_STATUS="${show_status:-0}"
 SHOW_INPUT="${show_input:-1}"
 SHOW_DIVIDERS="${show_pane_dividers:-1}"
 
@@ -77,6 +78,7 @@ LAYOUT_CONF="bridge/layout.conf"
 [ -f "$LAYOUT_CONF" ] || printf "ui_width=33\nwindow_cols=0\nui_height_ratio=60\n" > "$LAYOUT_CONF"
 grep -q "^window_cols="     "$LAYOUT_CONF" || echo "window_cols=0"      >> "$LAYOUT_CONF"
 grep -q "^ui_height_ratio=" "$LAYOUT_CONF" || echo "ui_height_ratio=60" >> "$LAYOUT_CONF"
+grep -q "^status_height="   "$LAYOUT_CONF" || echo "status_height=14"   >> "$LAYOUT_CONF"
 source "$LAYOUT_CONF"
 LEFT_WIDTH=$(( TERM_COLS - ui_width - 1 ))
 sed -i "s/^window_cols=.*/window_cols=$TERM_COLS/" "$LAYOUT_CONF"
@@ -138,14 +140,21 @@ tmux select-pane -t mume:cockpit.0 -T "MUME"
 sleep 0.2 && tmux select-pane -t mume:cockpit.0 -T "MUME" &
 
 # ---------------------------------------------------------------------------
-# 6. Open input pane
+# 6. Open status pane (between ui and dev)
+# ---------------------------------------------------------------------------
+if [ "$SHOW_STATUS" -eq 1 ]; then
+    bash "$HOME/MUME/bridge/open_pane.sh" status
+fi
+
+# ---------------------------------------------------------------------------
+# 7. Open input pane
 # ---------------------------------------------------------------------------
 if [ "$SHOW_INPUT" -eq 1 ]; then
     bash "$HOME/MUME/bridge/open_pane.sh" input
 fi
 
 # ---------------------------------------------------------------------------
-# 7. Focus input pane (or game pane if input is off)
+# 8. Focus input pane (or game pane if input is off)
 # ---------------------------------------------------------------------------
 INPUT_INDEX=$(tmux list-panes -t mume:cockpit \
     -F '#{pane_index} #{pane_title}' \

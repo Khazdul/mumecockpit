@@ -144,6 +144,7 @@ SCRIPT:autobow
 | `connection_mode` | `mmapper`  | `mmapper` (localhost:4242) or `direct` (mume.org:4242) |
 | `show_ui`         | `1`        | Whether to open the UI pane              |
 | `show_dev`        | `0`        | Whether to open the dev pane             |
+| `show_status`     | `0`        | Whether to open the status pane          |
 | `show_input`      | `1`        | Whether to open the input pane           |
 | `show_pane_dividers` | `1`     | Whether tmux pane borders and the pane-border-status bar are visible at startup. `cp -h` toggles this at runtime without writing back to conf. `bridge/toggle_pane.sh headers --persist` is the mechanism for persistent toggles from the in-game popup. |
 | `profile`         | `default`  | Which file in `ttpp/sessions/` to load; also the tt++ session name |
@@ -166,6 +167,7 @@ State is stored in `bridge/layout.conf` (gitignored, recreated on first startup)
 | `ui_width`        | 33      | Absolute column width of the right pane column   |
 | `window_cols`     | 0       | Last known terminal width — used to distinguish terminal resize from pane drag |
 | `ui_height_ratio` | 60      | ui pane height as % of total right column height |
+| `status_height`   | 14      | Status pane height in rows                       |
 
 ### Behaviour
 - **Terminal resize** — `window-resized` hook fires `on_window_resize.sh`, which re-applies `ui_width` and `ui_height_ratio` and re-pins input to 1 row.
@@ -180,6 +182,7 @@ State is stored in `bridge/layout.conf` (gitignored, recreated on first startup)
 ```
 bridge/layout.conf
 bridge/session.state
+bridge/status.state
 bridge/version.cache
 bridge/.layout_lock
 bridge/.pane_resize_pid

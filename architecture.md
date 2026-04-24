@@ -52,6 +52,7 @@ tracking, and UI feedback.
 │   └── scripts.cache         # Script registry written by brain.lua (gitignored)
 │   ├── open_pane.sh          # Opens/manages tmux panes dynamically
 │   ├── input_pane.py         # Input pane — prompt_toolkit CLI, forwards to TT++
+│   ├── status_pane.py        # Status pane — flicker-free ANSI renderer, polls status.state
 │   ├── focus_input.sh        # Resolves input pane index at click time (MouseUp1Pane target)
 │   ├── on_window_resize.sh   # Fired on terminal resize — re-applies stored layout
 │   ├── on_pane_resize.sh     # Fired on border drag — saves new layout values
@@ -62,6 +63,7 @@ tracking, and UI feedback.
 │   ├── session.state         # Runtime state written by Lua on SESSION
 │   │                         #   CONNECTED; cleared on DISCONNECTED and
 │   │                         #   at brain startup (gitignored)
+│   ├── status.state          # Character status JSON written by status_state.lua (gitignored)
 │   ├── version.cache         # Cached latest-release tag (gitignored)
 │   └── startup.conf          # Persisted startup-menu state (gitignored)
 │
@@ -102,6 +104,7 @@ tracking, and UI feedback.
 │  pane 0 (left):   TinTin++ — game I/O   │
 │  pane 0b (bot):   input — prompt_toolkit │
 │  pane 1 (top):    ui  — tail ui.log      │
+│  pane 1b (mid):   status — status_pane.py│
 │  pane 2 (bot):    dev — tail debug.log   │
 └──────────────────────────────────────────┘
 ```
@@ -268,6 +271,7 @@ Unified window and system management via `cp` commands:
 | `cp`          | Show help                       |
 | `cp -i`       | Toggle input pane               |
 | `cp -u`       | Toggle UI pane                  |
+| `cp -c`       | Toggle status pane              |
 | `cp -d`       | Toggle dev pane                 |
 | `cp -h`       | Toggle pane title headers       |
 | `cp -s`       | Save profile to disk            |
@@ -316,4 +320,5 @@ Deferred until there's a concrete use case:
 - [docs/launcher.md](docs/launcher.md) — Pre-tmux startup menu, rendering conventions, exec-chain. Touched when changing launcher pages or startup options.
 - [docs/popup-menu.md](docs/popup-menu.md) — In-game ESC popup: submenus, status header, save-profile flow. Touched when changing the in-game overlay.
 - [docs/bridge-services.md](docs/bridge-services.md) — Ping monitor, version check, self-update, layout and config file formats. Touched when changing background services or persisted config.
+- [docs/status-pane.md](docs/status-pane.md) — Character Status pane: renderer, state-file schema, field layout, colour scheme, layout integration, phase 2–4 extension points. Touched when changing the status pane.
 - [docs/install-bootstrap.md](docs/install-bootstrap.md) — Cross-platform install and bootstrap plan. Touched when scheduling installer work or when a platform constraint (WSL, Alacritty, package versions) changes.

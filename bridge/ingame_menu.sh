@@ -170,24 +170,26 @@ _render_main() {
 
 _options_submenu() {
     local _osel=0
-    local _OCOUNT=5
+    local _OCOUNT=6
     local _ODIRTY=1
-    local _targets=(ui dev input headers)
+    local _targets=(ui dev status input headers)
 
     while true; do
         if [ "$_ODIRTY" -eq 1 ]; then
             _ODIRTY=0
             local cols; cols=$(tput cols 2>/dev/null || echo 80)
 
-            local _chk_ui="[ ]" _chk_dev="[ ]" _chk_inp="[ ]" _chk_hdr="[ ]"
-            tmux list-panes -t mume:cockpit -F '#{pane_title}' 2>/dev/null | grep -q '^ui$'    && _chk_ui="[x]"
-            tmux list-panes -t mume:cockpit -F '#{pane_title}' 2>/dev/null | grep -q '^dev$'   && _chk_dev="[x]"
-            tmux list-panes -t mume:cockpit -F '#{pane_title}' 2>/dev/null | grep -q '^input$' && _chk_inp="[x]"
+            local _chk_ui="[ ]" _chk_dev="[ ]" _chk_sts="[ ]" _chk_inp="[ ]" _chk_hdr="[ ]"
+            tmux list-panes -t mume:cockpit -F '#{pane_title}' 2>/dev/null | grep -q '^ui$'     && _chk_ui="[x]"
+            tmux list-panes -t mume:cockpit -F '#{pane_title}' 2>/dev/null | grep -q '^dev$'    && _chk_dev="[x]"
+            tmux list-panes -t mume:cockpit -F '#{pane_title}' 2>/dev/null | grep -q '^status$' && _chk_sts="[x]"
+            tmux list-panes -t mume:cockpit -F '#{pane_title}' 2>/dev/null | grep -q '^input$'  && _chk_inp="[x]"
             [ "$(tmux show-option -t mume pane-border-status 2>/dev/null | awk '{print $2}')" != "off" ] && _chk_hdr="[x]"
 
             local _olabels=(
                 "$_chk_ui UI pane"
                 "$_chk_dev Dev pane"
+                "$_chk_sts Status pane"
                 "$_chk_inp Input pane"
                 "$_chk_hdr Pane headers"
                 "    Back"
@@ -229,10 +231,10 @@ _options_submenu() {
             ESC)        return ;;
             ENTER|SPACE)
                 case "$_osel" in
-                    0|1|2|3)
+                    0|1|2|3|4)
                         bash "$HOME/MUME/bridge/toggle_pane.sh" "${_targets[$_osel]}" --persist
                         ;;
-                    4) return ;;
+                    5) return ;;
                 esac
                 ;;
         esac

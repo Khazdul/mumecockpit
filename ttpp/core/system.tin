@@ -58,6 +58,7 @@
 
 #alias {cp -u} {#system {bash $HOME/MUME/bridge/toggle_pane.sh ui}}
 #alias {cp -d} {#system {bash $HOME/MUME/bridge/toggle_pane.sh dev}}
+#alias {cp -c} {#system {bash $HOME/MUME/bridge/toggle_pane.sh status}}
 #alias {cp -i} {#system {bash $HOME/MUME/bridge/toggle_pane.sh input}}
 #alias {cp -h} {#system {bash $HOME/MUME/bridge/toggle_pane.sh headers}}
 
