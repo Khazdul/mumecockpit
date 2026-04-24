@@ -60,7 +60,7 @@ def _pair(l1, v1, l2, v2, width=WIDTH):
     """
     Paired row: l1:v1 on the left half, l2:v2 on the right half.
     Left half = width//2  cols, right half = width - width//2  cols.
-    Within each half: label left, value right-aligned.
+    Each half renders as "label value" flush-left, padded with trailing spaces.
     """
     lw = width // 2
     rw = width - lw
@@ -68,11 +68,12 @@ def _pair(l1, v1, l2, v2, width=WIDTH):
     def _half(label, value, w):
         lbl = str(label)
         val = str(value) if value is not None else "—"
-        inner = w - len(lbl) - len(val)
-        if inner < 1:
-            val = val[:max(0, w - len(lbl) - 1)]
-            inner = 1
-        return C_LABEL + lbl + C_RESET + " " * inner + C_VALUE + val + C_RESET
+        visible = len(lbl) + 1 + len(val)
+        if visible > w:
+            available = w - len(lbl) - 1
+            val = val[:max(0, available)]
+        trailing = w - len(lbl) - 1 - len(val)
+        return C_LABEL + lbl + C_RESET + " " + C_VALUE + val + C_RESET + " " * max(0, trailing)
 
     return _half(l1, v1, lw) + _half(l2, v2, rw)
 
@@ -97,7 +98,7 @@ def _build_frame(data):
 
     # Header — box drawing, exactly WIDTH cols each
     lines.append(C_FRAME + "┌" + "─" * (WIDTH - 2) + "┐" + C_RESET)
-    title  = "Character Status"
+    title  = "Character Panel"
     inner  = WIDTH - 2                          # 31
     lpad   = (inner - len(title)) // 2
     rpad   = inner - len(title) - lpad
@@ -134,11 +135,8 @@ def _build_frame(data):
     swim  = c.get("swim")  or "off"
     lines.append(_pair("Climb:", climb, "Swim:", swim))
 
-    carrying = c.get("carrying") or "—"
-    lines.append(_row("Carrying:", carrying))
-
     game_time = c.get("game_time")
-    lines.append(_row("Game time:", game_time if game_time is not None else "—"))
+    lines.append(_row("Time:", game_time if game_time is not None else "—"))
 
     lines.append(C_LABEL + "Affected by:" + C_RESET)
     affects = c.get("affects") or []

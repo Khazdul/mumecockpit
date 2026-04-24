@@ -52,7 +52,6 @@ local function serialize()
         position    = c.position,
         climb       = climb_val,
         swim        = swim_val,
-        carrying    = c.carrying,
         game_time   = nil,
         affects     = {},
     }

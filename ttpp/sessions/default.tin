@@ -1173,7 +1173,7 @@
 #VARIABLE {sd2} {}
 #VARIABLE {sd3} {}
 #VARIABLE {spell} {'lightning bolt'}
-#VARIABLE {ss} {normal}
+#VARIABLE {ss} {careful}
 #VARIABLE {target} {*orc*}
 
 #CLASS {default} CLOSE

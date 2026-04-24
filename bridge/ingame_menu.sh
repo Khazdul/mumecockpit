@@ -189,9 +189,9 @@ _options_submenu() {
             local _olabels=(
                 "$_chk_ui UI pane"
                 "$_chk_dev Dev pane"
-                "$_chk_sts Status pane"
+                "$_chk_sts Character pane"
                 "$_chk_inp Input pane"
-                "$_chk_hdr Pane headers"
+                "$_chk_hdr Pane dividers"
                 "    Back"
             )
 

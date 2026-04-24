@@ -203,6 +203,40 @@ is dumped to debug.log as `[GMCP] <Module> = <json>`. Flip to false in
 brain.lua if volume becomes a problem. Expected load: tens of messages/minute
 during active play, line length ~100–300 chars.
 
+## Null handling
+
+MUME sends JSON `null` for fields that are off or absent (e.g. `{"climb": null}`
+when the character is not climbing). Without special treatment, dkjson decodes
+`null` as Lua `nil`, which is indistinguishable from a missing key — the field
+simply disappears from the decoded table.
+
+To preserve the distinction, `brain.lua` passes `json.null` as the third argument
+to `json.decode`:
+
+```lua
+local parsed, _, err = json.decode(json_body, 1, json.null)
+```
+
+dkjson maps every JSON `null` to this sentinel object instead of `nil`. The
+sentinel is exposed on the `gmcp` namespace as `gmcp.null` so handlers can
+reference it without requiring dkjson themselves.
+
+Handlers that store into `state.*` should convert the sentinel to `nil` before
+writing, since Lua tables cannot hold `nil` values. The canonical consumer is
+`merge_flat` in `lua/core/char_state.lua`:
+
+```lua
+if v == gmcp.null then
+    state.char[key] = nil
+else
+    state.char[key] = v
+end
+```
+
+Handlers that test a body field directly (e.g. `if body.foo then`) must be
+aware that `json.null` is truthy — check `body.foo ~= gmcp.null` when the
+field can legitimately arrive as JSON `null`.
+
 ## JSON library
 
 `lua/lib/dkjson.lua` — pure-Lua MIT-licensed JSON library (David Kolf, v2.8), bundled verbatim. `package.path` is extended in `brain.lua` at startup to include `lua/lib/` so no path juggling is needed. GMCP message bodies may be empty, a JSON string, a JSON number, an array, or an object depending on the module. Handlers receive whatever dkjson decodes — or `nil` for empty bodies.

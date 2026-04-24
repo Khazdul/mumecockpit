@@ -11,7 +11,12 @@ local prev_xp = nil
 local function merge_flat(body)
     body = body or {}
     for k, v in pairs(body) do
-        state.char[k:gsub("-", "_")] = v
+        local key = k:gsub("-", "_")
+        if v == gmcp.null then
+            state.char[key] = nil
+        else
+            state.char[key] = v
+        end
     end
 end
 

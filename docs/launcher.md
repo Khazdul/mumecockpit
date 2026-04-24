@@ -35,7 +35,7 @@ Pure bash + ANSI escapes; no external dependencies beyond coreutils.
 |---------|--------|
 | Session detect | `tmux has-session -t mume` + `list-clients` → top item is "New session", "Continue session", or "Mirror session (attached elsewhere)" |
 | Profile page | Lists `ttpp/sessions/*.tin`; select, create (blank / copy from existing), delete. `default` cannot be deleted. Selected profile is written to `startup.conf` and consumed by `ttpp/core/config.tin` at tt++ startup (Phase 2). |
-| Options page | Toggle UI / Dev / Input panes; pane dividers; connection mode; live layout mockup (updates on divider toggle). Content hides progressively at small heights: descriptions → mockup → section headings; menu items always render |
+| Options page | Toggle UI / Dev / Character pane / Input panes; Pane dividers; connection mode; live layout mockup (updates on divider toggle). Content hides progressively at small heights: descriptions → mockup → section headings; menu items always render |
 | Scripts page | Reads `bridge/scripts.cache`; scrollable |
 | About page | Reads `bridge/about.txt`; word-wrapped, cached per resize, scrollable |
 | Quit | Confirmation prompt; ESC cancels |

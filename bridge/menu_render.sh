@@ -171,7 +171,7 @@ draw_layout_mockup() {
             printf '%s┌───────────────┬──────┐\n' "$p"
             printf '%s│               │  UI  │\n' "$p"
             printf '%s│     GAME      ├──────┤\n' "$p"
-            printf '%s│               │STATUS│\n' "$p"
+            printf '%s│               │ CHAR │\n' "$p"
             printf '%s├───────────────┼──────┤\n' "$p"
             printf '%s│    INPUT      │ DEV  │\n' "$p"
             printf '%s└───────────────┴──────┘\n' "$p"
@@ -181,7 +181,7 @@ draw_layout_mockup() {
             printf '%s┌───────────────┬──────┐\n' "$p"
             printf '%s│               │  UI  │\n' "$p"
             printf '%s│     GAME      ├──────┤\n' "$p"
-            printf '%s│               │STATUS│\n' "$p"
+            printf '%s│               │ CHAR │\n' "$p"
             printf '%s│               ├──────┤\n' "$p"
             printf '%s│               │ DEV  │\n' "$p"
             printf '%s└───────────────┴──────┘\n' "$p"
@@ -191,7 +191,7 @@ draw_layout_mockup() {
             printf '%s┌───────────────┬──────┐\n' "$p"
             printf '%s│               │  UI  │\n' "$p"
             printf '%s│     GAME      ├──────┤\n' "$p"
-            printf '%s│               │STATUS│\n' "$p"
+            printf '%s│               │ CHAR │\n' "$p"
             printf '%s├───────────────┤      │\n' "$p"
             printf '%s│    INPUT      │      │\n' "$p"
             printf '%s└───────────────┴──────┘\n' "$p"
@@ -199,7 +199,7 @@ draw_layout_mockup() {
         elif [ "$show_status" -eq 1 ] && [ "$show_dev" -eq 1 ] && [ "$show_input" -eq 1 ]; then
             # STATUS + DEV + INPUT, no UI
             printf '%s┌───────────────┬──────┐\n' "$p"
-            printf '%s│               │STATUS│\n' "$p"
+            printf '%s│               │ CHAR │\n' "$p"
             printf '%s│     GAME      ├──────┤\n' "$p"
             printf '%s│               │ DEV  │\n' "$p"
             printf '%s├───────────────┤      │\n' "$p"
@@ -211,13 +211,13 @@ draw_layout_mockup() {
             printf '%s┌───────────────┬──────┐\n' "$p"
             printf '%s│               │  UI  │\n' "$p"
             printf '%s│     GAME      ├──────┤\n' "$p"
-            printf '%s│               │STATUS│\n' "$p"
+            printf '%s│               │ CHAR │\n' "$p"
             printf '%s└───────────────┴──────┘\n' "$p"
 
         elif [ "$show_status" -eq 1 ] && [ "$show_dev" -eq 1 ]; then
             # STATUS + DEV (no UI, no INPUT)
             printf '%s┌───────────────┬──────┐\n' "$p"
-            printf '%s│               │STATUS│\n' "$p"
+            printf '%s│               │ CHAR │\n' "$p"
             printf '%s│     GAME      ├──────┤\n' "$p"
             printf '%s│               │ DEV  │\n' "$p"
             printf '%s└───────────────┴──────┘\n' "$p"
@@ -245,7 +245,7 @@ draw_layout_mockup() {
             local rl="      "
             [ "$show_ui"     -eq 1 ] && rl="  UI  "
             [ "$show_dev"    -eq 1 ] && rl=" DEV  "
-            [ "$show_status" -eq 1 ] && rl="STATUS"
+            [ "$show_status" -eq 1 ] && rl=" CHAR "
             printf '%s┌───────────────┬──────┐\n' "$p"
             printf '%s│               │      │\n' "$p"
             printf '%s│     GAME      │%s│\n' "$p" "$rl"
@@ -259,7 +259,7 @@ draw_layout_mockup() {
             local rl="      "
             [ "$show_ui"     -eq 1 ] && rl="  UI  "
             [ "$show_dev"    -eq 1 ] && rl=" DEV  "
-            [ "$show_status" -eq 1 ] && rl="STATUS"
+            [ "$show_status" -eq 1 ] && rl=" CHAR "
             printf '%s┌───────────────┬──────┐\n' "$p"
             printf '%s│               │      │\n' "$p"
             printf '%s│     GAME      │%s│\n' "$p" "$rl"
@@ -298,7 +298,7 @@ draw_layout_mockup() {
         printf "%s  ${_MR_DESC}%-7s${_MR_RESET}  — MUD window\n"             "$p" "GAME"
         printf "%s  ${_MR_DESC}%-7s${_MR_RESET}  — Fixed input panel\n"      "$p" "INPUT"
         printf "%s  ${_MR_DESC}%-7s${_MR_RESET}  — Game-related messages\n"  "$p" "UI"
-        printf "%s  ${_MR_DESC}%-7s${_MR_RESET}  — Character status board\n" "$p" "STATUS"
+        printf "%s  ${_MR_DESC}%-7s${_MR_RESET}  — Character data panel\n"   "$p" "CHARACTER"
         printf "%s  ${_MR_DESC}%-7s${_MR_RESET}  — Debug log (developers)\n" "$p" "DEV"
     fi
 }

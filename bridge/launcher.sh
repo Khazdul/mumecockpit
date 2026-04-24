@@ -267,7 +267,7 @@ _options_menu() {
         local _opt_labels=(
             "$chk_ui UI pane"
             "$chk_dev Dev pane"
-            "$chk_sts Status pane"
+            "$chk_sts Character pane"
             "$chk_inp Input pane"
             "$chk_pdv Pane dividers"
             "$r_mm MMapper  (localhost:4242)"
@@ -293,7 +293,7 @@ _options_menu() {
             [ "$show_headings" -eq 1 ] && _section_hdr "Panes"
             _oitem 0 "$chk_ui UI pane"
             _oitem 1 "$chk_dev Dev pane"
-            _oitem 2 "$chk_sts Status pane"
+            _oitem 2 "$chk_sts Character pane"
             _oitem 3 "$chk_inp Input pane"
             _oitem 4 "$chk_pdv Pane dividers"
             printf '\n'

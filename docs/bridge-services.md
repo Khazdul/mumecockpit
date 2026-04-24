@@ -162,18 +162,20 @@ Pane dimensions are persisted across restarts and adapt to terminal resizes.
 State is stored in `bridge/layout.conf` (gitignored, recreated on first startup).
 
 ### layout.conf keys
-| Key               | Default | Description                                      |
-|-------------------|---------|--------------------------------------------------|
-| `ui_width`        | 33      | Absolute column width of the right pane column   |
-| `window_cols`     | 0       | Last known terminal width — used to distinguish terminal resize from pane drag |
-| `ui_height_ratio` | 60      | ui pane height as % of total right column height |
-| `status_height`   | 14      | Status pane height in rows                       |
+| Key             | Default | Description                                            |
+|-----------------|---------|--------------------------------------------------------|
+| `ui_width`      | 33      | Absolute column width of the right pane column. Drag-adjustable, clamped ≥ 33. |
+| `window_cols`   | 0       | Last known terminal width — distinguishes WINCH from border drag. |
+| `status_height` | 12      | Status pane height in rows. Authoritative — always re-applied by `bridge/apply_layout.sh`. |
 
 ### Behaviour
-- **Terminal resize** — `window-resized` hook fires `on_window_resize.sh`, which re-applies `ui_width` and `ui_height_ratio` and re-pins input to 1 row.
-- **Border drag** — `MouseDragEnd1Border` binding fires `on_pane_resize.sh`, which saves the new `ui_width` and recalculates `ui_height_ratio` from current pane heights.
+- **Authoritative status height** — `bridge/apply_layout.sh` is the single path that reconciles tmux with layout.conf. Called by open_pane.sh, toggle_pane.sh (after kill), on_window_resize.sh, and on_pane_resize.sh (on any status-adjacent drag).
+- **Terminal resize** — `window-resized` hook fires `on_window_resize.sh`, which re-applies `ui_width` (main pane width) and then calls `apply_layout.sh` to re-pin status and input. ui and dev redistribute naturally via tmux.
+- **Border drag** — `MouseDragEnd1Border` binding fires `on_pane_resize.sh`, which saves the new `ui_width`. If status height changed (ui↔status or status↔dev drag), status snaps back to `status_height` via `apply_layout.sh`.
+- **ui↔dev height** — no longer tracked. If both are open, they share whatever rows remain after `status_height` is allocated; tmux handles the split.
+- **ui↔dev border drag (status absent)** — free-form and not persisted. On restart ui/dev default to an even split.
 - **Input pane** — always pinned to 1 row on every terminal resize. Never participates in layout calculations.
-- **Dev toggle** — when dev is toggled back on, `open_pane.sh` applies `ui_height_ratio` to restore the saved split.
+- **Narrow-terminal collapse** — when `on_window_resize.sh` detects that the available right-column width falls below `RIGHT_MIN` (33) it writes `bridge/.collapsed_panes` (one pane name per line) and kills all right panes. When the terminal widens back above the threshold, the sentinel is read, each listed pane is re-opened in order via `open_pane.sh`, and the sentinel is deleted. `open_pane.sh` exits silently at entry while the sentinel exists, so manual toggle commands (`cp -u`/`-d`/`-c`) are no-ops during the narrow state.
 - **Loop prevention** — `bridge/.layout_lock` is used as a lockfile to prevent `on_window_resize.sh` triggering `on_pane_resize.sh` in a feedback loop.
 - **`-f` on right-column splits.** When `open_pane.sh` creates the right column from scratch (no ui/dev exists), `split-window -h` must use `-f` (full-window). Otherwise, if the input pane already exists, the new right pane is inserted as main's sibling inside the left-column subtree, causing input to span the full window width.
 
@@ -188,6 +190,7 @@ bridge/.layout_lock
 bridge/.pane_resize_pid
 bridge/ping.cache
 bridge/.ping_pid
+bridge/.collapsed_panes
 ```
 
 ---

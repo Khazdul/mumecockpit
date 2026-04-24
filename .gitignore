@@ -26,6 +26,7 @@ bridge/.pane_resize_pid
 bridge/ping.cache
 bridge/.ping_pid
 bridge/.popup_open
+bridge/.collapsed_panes
 
 
 

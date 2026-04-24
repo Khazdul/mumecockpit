@@ -35,6 +35,7 @@ SHOW_DIVIDERS="${show_pane_dividers:-1}"
 # ---------------------------------------------------------------------------
 mkdir -p bridge logs
 
+chmod +x bridge/apply_layout.sh
 chmod +x bridge/open_pane.sh
 chmod +x bridge/focus_input.sh
 chmod +x bridge/toggle_pane.sh
@@ -75,10 +76,9 @@ fi
 # 3. Build layout
 # ---------------------------------------------------------------------------
 LAYOUT_CONF="bridge/layout.conf"
-[ -f "$LAYOUT_CONF" ] || printf "ui_width=33\nwindow_cols=0\nui_height_ratio=60\n" > "$LAYOUT_CONF"
-grep -q "^window_cols="     "$LAYOUT_CONF" || echo "window_cols=0"      >> "$LAYOUT_CONF"
-grep -q "^ui_height_ratio=" "$LAYOUT_CONF" || echo "ui_height_ratio=60" >> "$LAYOUT_CONF"
-grep -q "^status_height="   "$LAYOUT_CONF" || echo "status_height=14"   >> "$LAYOUT_CONF"
+[ -f "$LAYOUT_CONF" ] || printf "ui_width=33\nwindow_cols=0\nstatus_height=12\n" > "$LAYOUT_CONF"
+grep -q "^window_cols="   "$LAYOUT_CONF" || echo "window_cols=0"    >> "$LAYOUT_CONF"
+grep -q "^status_height=" "$LAYOUT_CONF" || echo "status_height=12" >> "$LAYOUT_CONF"
 source "$LAYOUT_CONF"
 LEFT_WIDTH=$(( TERM_COLS - ui_width - 1 ))
 sed -i "s/^window_cols=.*/window_cols=$TERM_COLS/" "$LAYOUT_CONF"
@@ -97,18 +97,6 @@ elif [ "$SHOW_DEV" -eq 1 ]; then
     tmux split-window -h -t mume:cockpit.0 "bash -c 'stty -isig 2>/dev/null; trap "" INT; while true; do tail -f $HOME/MUME/logs/debug.log; printf \"\\n[pane kept alive — use cp -d to close]\\n\"; sleep 0.2; done'"
     tmux select-pane -t mume:cockpit.1 -T "dev"
     tmux resize-pane -t mume:cockpit.0 -x "$LEFT_WIDTH"
-fi
-
-if [ "$SHOW_UI" -eq 1 ] && [ "$SHOW_DEV" -eq 1 ]; then
-    UI_H=$(tmux list-panes -t mume:cockpit -F '#{pane_title} #{pane_height}' \
-        | awk '$1=="ui" {print $2; exit}')
-    DEV_H=$(tmux list-panes -t mume:cockpit -F '#{pane_title} #{pane_height}' \
-        | awk '$1=="dev" {print $2; exit}')
-    TOTAL=$(( UI_H + DEV_H + 1 ))
-    APPLY_UI_H=$(( TOTAL * ui_height_ratio / 100 ))
-    UI_INDEX=$(tmux list-panes -t mume:cockpit -F '#{pane_index} #{pane_title}' \
-        | awk '$2=="ui" {print $1; exit}')
-    [ -n "$UI_INDEX" ] && tmux resize-pane -t "mume:cockpit.$UI_INDEX" -y "$APPLY_UI_H"
 fi
 
 # ---------------------------------------------------------------------------
@@ -145,6 +133,7 @@ sleep 0.2 && tmux select-pane -t mume:cockpit.0 -T "MUME" &
 if [ "$SHOW_STATUS" -eq 1 ]; then
     bash "$HOME/MUME/bridge/open_pane.sh" status
 fi
+bash bridge/apply_layout.sh
 
 # ---------------------------------------------------------------------------
 # 7. Open input pane

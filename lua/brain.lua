@@ -422,7 +422,7 @@ function gmcp.dispatch(module, payload)
 
     local body = nil
     if json_body ~= "" then
-        local parsed, _, err = json.decode(json_body, 1, nil)
+        local parsed, _, err = json.decode(json_body, 1, json.null)
         if err then
             dbg("GMCP parse error [" .. module .. "]: "
                 .. err .. " | body=" .. json_body)
@@ -479,6 +479,7 @@ end
 -- STARTUP
 -- -----------------------------
 package.path = "lua/lib/?.lua;" .. package.path
+gmcp.null = require("dkjson").null
 dbg("Lua brain started (" .. _VERSION .. ")")
 _clear_session_state()
 local _n_core, _n_scripts = load_scripts()

@@ -13,15 +13,14 @@ NEW_WIDTH=$(tmux list-panes -t mume:cockpit \
 [ "$NEW_WIDTH" -lt 33 ] && NEW_WIDTH=33
 sed -i "s/^ui_width=.*/ui_width=$NEW_WIDTH/" "$LAYOUT_CONF"
 
-# Save ui_height_ratio if both ui and dev are open
-HAS_UI=$(tmux list-panes -t mume:cockpit -F '#{pane_title}' | grep '^ui$')
-HAS_DEV=$(tmux list-panes -t mume:cockpit -F '#{pane_title}' | grep '^dev$')
-if [ -n "$HAS_UI" ] && [ -n "$HAS_DEV" ]; then
-  UI_H=$(tmux list-panes -t mume:cockpit -F '#{pane_title} #{pane_height}' \
-    | awk '$1=="ui" {print $2; exit}')
-  DEV_H=$(tmux list-panes -t mume:cockpit -F '#{pane_title} #{pane_height}' \
-    | awk '$1=="dev" {print $2; exit}')
-  TOTAL=$(( UI_H + DEV_H + 1 ))
-  NEW_RATIO=$(( UI_H * 100 / TOTAL ))
-  sed -i "s/^ui_height_ratio=.*/ui_height_ratio=$NEW_RATIO/" "$LAYOUT_CONF"
+HAS_STATUS=$(tmux list-panes -t mume:cockpit -F '#{pane_title}' | grep '^status$')
+if [ -n "$HAS_STATUS" ]; then
+  STATUS_H=$(tmux list-panes -t mume:cockpit -F '#{pane_title} #{pane_height}' \
+    | awk '$1=="status" {print $2; exit}')
+  source "$LAYOUT_CONF"
+  CONFIGURED=${status_height:-12}
+  if [ "$STATUS_H" -ne "$CONFIGURED" ]; then
+    # User dragged — ignore and snap back. Do NOT persist.
+    bash "$HOME/MUME/bridge/apply_layout.sh"
+  fi
 fi

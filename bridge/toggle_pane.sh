@@ -45,6 +45,7 @@ case "$TARGET" in
     status)
         if _pane_exists "status"; then
             _kill_pane "status"
+            bash "$SCRIPT_DIR/apply_layout.sh"
         else
             bash "$SCRIPT_DIR/open_pane.sh" status
         fi
@@ -60,6 +61,7 @@ case "$TARGET" in
     ui)
         if _pane_exists "ui"; then
             _kill_pane "ui"
+            bash "$SCRIPT_DIR/apply_layout.sh"
         else
             bash "$SCRIPT_DIR/open_pane.sh" ui
         fi
@@ -75,6 +77,7 @@ case "$TARGET" in
     dev)
         if _pane_exists "dev"; then
             _kill_pane "dev"
+            bash "$SCRIPT_DIR/apply_layout.sh"
         else
             bash "$SCRIPT_DIR/open_pane.sh" dev
         fi

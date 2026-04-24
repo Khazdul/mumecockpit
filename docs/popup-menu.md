@@ -29,8 +29,8 @@ State is re-probed from the files on every render — never cached.
 
 ## Options submenu
 
-Four toggles (UI / Dev / Input / Pane headers) + Back. State is re-probed
-from tmux on every render — never cached. Toggling calls
+Five toggles (UI / Dev / Character pane / Input / Pane dividers) + Back.
+State is re-probed from tmux on every render — never cached. Toggling calls
 `toggle_pane.sh --persist` directly; toggles do **not** route through tt++
 so no `cp -X` lines appear in the game pane. The popup submenu is therefore
 the persistent-toggle entry point; `cp` aliases remain runtime-only.

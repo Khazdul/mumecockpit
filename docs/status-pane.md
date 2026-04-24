@@ -1,4 +1,4 @@
-# Character Status Pane
+# Character Panel
 
 The status pane is a right-column tmux pane inserted between `ui` and `dev`
 that displays a flicker-free, live character info board driven by GMCP data.
@@ -75,7 +75,6 @@ JSON written by `lua/core/status_state.lua`. Gitignored.
   "position": "standing",
   "climb": "off",
   "swim": "off",
-  "carrying": "comfortable",
   "game_time": null,
   "affects": []
 }
@@ -99,7 +98,6 @@ displays them as `—` / empty when null/empty.
 | `position`     | `Char.Vitals` → `state.char.position` |                               |
 | `climb`        | `Char.Vitals` → `state.char.climb` | null→"off", "c"/"C"→"on"         |
 | `swim`         | `Char.Vitals` → `state.char.swim`  | bool→"on"/"off"                  |
-| `carrying`     | `Char.Vitals` → `state.char.carrying` |                               |
 | `session_xp`   | phase 4 — always null in phase 1   |                                   |
 | `session_tp`   | phase 4 — always null in phase 1   |                                   |
 | `game_time`    | phase 3 — always null in phase 1   |                                   |
@@ -123,7 +121,7 @@ Three-row box drawn at 33 columns:
 
 ```
 ┌───────────────────────────────┐
-│       Character Status        │
+│       Character Panel         │
 └───────────────────────────────┘
 ```
 
@@ -140,8 +138,7 @@ Sess XP: <sess_xp>    Sess TP: <sess_tp>
 Mood: <mood>          Alert: <alertness>
 Pos: <position>       Sneak: <sneak>
 Climb: <climb>        Swim: <swim>
-Carrying: <carrying>
-Game time: <game_time>
+Time: <game_time>
 Affected by:
   <affects or "—">
 ```
@@ -157,10 +154,15 @@ Right column (top to bottom): `ui` → `status` → `dev`. When a subset of
 right panes is open, ordering is preserved — status stays between ui and dev
 when both are present, below ui if only ui exists, above dev if only dev exists.
 
-### Default height
+### Pane height
 
-`status_height=14` in `bridge/layout.conf`. Resize with the border or set
-directly in layout.conf between sessions.
+`status_height=12` in `bridge/layout.conf` (3 header + 9 body rows). In phase 1
+this value is fixed at 12 (matches rendered content). Manual drag snaps back in
+both directions — the configured value is authoritative and is never overwritten
+by a drag. Phase 2 will drive this dynamically from `lua/core/status_state.lua`
+based on affect count.
+
+Height is restored via `bridge/apply_layout.sh` after any right-column operation.
 
 ### Width constraint
 
@@ -174,21 +176,22 @@ at least `RIGHT_MIN`. When the terminal is narrowed so main would fall below
 30, main wins and the right column shrinks below 33. Manual border drag is
 clamped to ≥ 33 in `bridge/on_pane_resize.sh`.
 
-### Height ratio
+### Height
 
-When `ui` and `dev` are both open alongside `status`, the `ui_height_ratio`
-applies to the `ui + dev` subtree only — status pane height is managed
-separately via `status_height`. The existing `on_window_resize.sh` height
-ratio logic excludes status automatically (queries ui/dev by title) and
-then explicitly restores `status_height` after the ratio resize.
+`status_height` in `bridge/layout.conf` is the only height value the layout
+system enforces. In phase 1 this is fixed at 12 (matches rendered content).
+ui and dev share whatever rows remain after `status_height` is allocated;
+tmux handles the split. `bridge/apply_layout.sh` is the single path that
+reconciles tmux with layout.conf; every right-column operation ends with a
+call to it.
 
 ## Toggle
 
-| Method                       | Mechanism                                     |
-|------------------------------|-----------------------------------------------|
-| `cp -c`                      | `toggle_pane.sh status` (runtime only)        |
-| In-game popup → Options      | `toggle_pane.sh status --persist`             |
-| Launcher Options → Status pane | `_save_conf` → `startup.conf show_status`   |
+| Method                         | Mechanism                                     |
+|--------------------------------|-----------------------------------------------|
+| `cp -c`                        | `toggle_pane.sh status` (runtime only)        |
+| In-game popup → Options        | `toggle_pane.sh status --persist`             |
+| Launcher Options → Character pane | `_save_conf` → `startup.conf show_status` |
 
 Persistence: `show_status` in `bridge/startup.conf` (default `0`).
 
@@ -199,7 +202,13 @@ Persistence: `show_status` in `bridge/startup.conf` (default `0`).
 - Set `affects` in the JSON schema to an array of strings (affect names).
 - `status_pane.py` already renders `affects` as a list when non-empty.
 - Populate from GMCP or text triggers in `status_state.lua`.
-- Dynamic pane-height adjustment based on affect count is a phase 2 item.
+- Dynamic height — Lua writes a new `status_height` to layout.conf when
+  `state.char.affects` length changes, then calls `apply_layout.sh` via
+  `tintin_cmd('gts', '#system {bash bridge/apply_layout.sh}')` (or
+  equivalent). If tmux can't grant the new height (ui and dev would be
+  squeezed below a 1-row floor), apply_layout.sh should eat dev first
+  (`tmux kill-pane` + clear show_dev runtime), then ui. Priority order:
+  status > ui > dev. Not implemented in phase 1.
 
 ### Phase 3 — Game time
 
