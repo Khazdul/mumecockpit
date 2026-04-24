@@ -47,42 +47,55 @@ Windows older than build 19041 is unsupported — WSL2 requires that baseline.
 
 ## Windows flow
 
-The realistic sequence, given that WSL install requires a reboot and Ubuntu
-first-run is interactive:
+Two realistic paths depending on whether WSL is already active on the
+machine. The installer detects which path to take via
+`Get-WindowsOptionalFeature -FeatureName VirtualMachinePlatform`.
 
-### Phase 1 — Windows side (run once, as Administrator)
+### Fast path — WSL already active (common on modern Windows 11)
+
+Fully unattended, no reboot, no user interaction after the initial UAC
+prompt:
 
 1. Pre-flight: Windows build ≥ 19041, admin rights, internet reachable.
-2. `wsl --install -d Ubuntu` — installs the WSL2 kernel and Ubuntu 24.04.
-3. Write `%UserProfile%\.wslconfig` with `networkingMode=mirrored` — **only
-   on Windows 11 22H2+**. On older Windows, skip this step and flag that
-   MMapper mode will not work.
-4. Install Alacritty via winget:
-   `winget install Alacritty.Alacritty`.
-   Fall back to an MSI download if winget is unavailable.
-5. Write `%APPDATA%\alacritty\alacritty.toml` (see Config files below).
-6. Create a desktop shortcut that runs:
-   `alacritty.exe -e wsl -- bash -lc "cd ~/MUME && ./start.sh"`.
-7. Instruct the user to reboot, complete Ubuntu's first-run setup (pick a
-   Linux username + password), then run Phase 2 manually.
+2. `wsl --install -d Ubuntu --no-launch` — installs Ubuntu 24.04 silently,
+   does **not** trigger the first-run OOBE dialog.
+3. Write `%UserProfile%\.wslconfig` with `networkingMode=mirrored` (Windows
+   11 22H2+ only).
+4. `wsl --shutdown` so the `.wslconfig` change takes effect.
+5. `wsl -d Ubuntu -u root -- bash -c "<bootstrap.sh contents>"` — runs
+   Phase 2 as root. Running as root inside WSL is fine here: the cockpit
+   has no multi-user logic and no sudo paths. The OOBE user-creation
+   dialog is never triggered.
+6. Install Alacritty (winget, MSI fallback) and write
+   `%APPDATA%\alacritty\alacritty.toml`.
+7. Create a desktop shortcut that runs:
+   `alacritty.exe -e wsl -d Ubuntu -u root -- bash -lc "cd /root/MUME && ./start.sh"`.
 
-### Phase 2 — Inside Ubuntu (run once, after first-run setup)
+No reboot. No manual first-run. The user sees UAC once, a progress
+indicator, then "done".
 
-A single bootstrap shell script, fetched via curl from the repo, performs:
+### Slow path — VMP or WSL feature not yet enabled (rare on modern Windows 11)
 
-1. `sudo apt update && sudo apt install -y tmux lua5.4 python3 python3-pip git build-essential`.
-2. `pip install prompt_toolkit --break-system-packages`.
-3. Install tt++: `apt install -y tintin++` if the packaged version is
-   recent enough; otherwise build from tintin.mudhalla.net. See Open
-   questions.
-4. `git clone https://github.com/<user>/MUME.git ~/MUME`.
-5. `chmod +x ~/MUME/start.sh`.
-6. Print "Done — close this shell and launch from the desktop icon."
+Reboot required between phases because Windows features cannot be
+enabled live:
+
+1. Pre-flight as above.
+2. Enable `VirtualMachinePlatform` and `Microsoft-Windows-Subsystem-Linux`
+   via `dism` or `Enable-WindowsOptionalFeature`.
+3. Clear instruction to reboot, with the installer writing a marker file
+   so re-running it after reboot resumes at step 4 automatically.
+4. After reboot: continue with the fast path from step 2.
+
+Resume-after-reboot is done by checking for a marker file at launch, not
+by scheduled tasks (scheduled tasks trigger antivirus friction). User
+re-runs the shortcut once; installer detects marker, continues.
 
 ### Delivery form
 
-Most likely: a signed (or unblock-on-first-run) PowerShell `.ps1` for
-Phase 1 and a `bootstrap.sh` (curl | bash) for Phase 2. See Open questions.
+Phase 1 is a single PowerShell `.ps1` wrapped in a `.bat` that sets
+execution policy and invokes the script. Phase 2 is a shell script fetched
+via curl from the repo and piped into `wsl ... -u root bash`. See Open
+questions for code-signing vs unblock-on-first-run.
 
 ## macOS flow
 
@@ -96,8 +109,8 @@ git clone https://github.com/<user>/MUME.git ~/MUME
 chmod +x ~/MUME/start.sh
 ```
 
-Write `~/.config/alacritty/alacritty.toml` (same content as the Windows
-file, minus the `[terminal.shell]` block).
+Write `~/.config/alacritty/alacritty.toml` with the macOS font mapping
+(see Config files below).
 
 No networking tricks required — `localhost` works out of the box.
 
@@ -112,9 +125,9 @@ git clone https://github.com/<user>/MUME.git ~/MUME
 chmod +x ~/MUME/start.sh
 ```
 
-Same Alacritty config path as macOS. Other distros (Fedora, Arch, …) get a
-documented manual recipe; automating all package managers is not a good
-use of time given the user base.
+Same Alacritty config path as macOS, with the Linux font mapping. Other
+distros (Fedora, Arch, …) get a documented manual recipe; automating all
+package managers is not a good use of time given the user base.
 
 ## Config files
 
@@ -137,6 +150,9 @@ Location:
 - Windows: `%APPDATA%\alacritty\alacritty.toml`
 - macOS:   `~/.config/alacritty/alacritty.toml`
 - Linux:   `~/.config/alacritty/alacritty.toml`
+
+Shared across all platforms except for two blocks: `[terminal.shell]`
+(Windows only) and `[font.*].family` (per-OS font choice, see below).
 
 ```toml
 [colors.primary]
@@ -177,25 +193,11 @@ decorations = "Full"
 [font]
 size = 15
 
-[font.normal]
-family = "Lucida Console"
-style = "Regular"
-
-[font.bold]
-family = "Lucida Console"
-style = "Bold"
-
-[font.italic]
-family = "Lucida Console"
-style = "Italic"
-
-[font.bold_italic]
-family = "Lucida Console"
-style = "Bold Italic"
+# font.normal.family / font.bold.family / etc. — see "Font selection" below.
 
 [terminal.shell]   # Windows only — drop on macOS/Linux
 program = "wsl.exe"
-args = []
+args = ["-d", "Ubuntu", "-u", "root"]
 
 [scrolling]
 history = 10000
@@ -204,31 +206,50 @@ history = 10000
 save_to_clipboard = true
 ```
 
-Almost entirely cosmetic. The `[terminal.shell]` block on Windows is the
-only functional line — it makes Alacritty spawn into WSL by default.
-`blinking = "On"` can be changed to `"Always"` if a blinking cursor is
-preferred inside the input pane; see `docs/input-pane.md` for the
-steady-cursor caveat.
+### Font selection
+
+Lucida Console is the canonical look — narrow, open, no ligatures,
+pre-installed on every Windows since Windows 2000. On other platforms it
+is absent, and Microsoft's licensing does not permit us to bundle or
+redistribute it. Alacritty does not support a CSS-style fallback chain
+inside a single `family` string: each weight takes one name, and if the
+family is missing the OS substitutes its default monospace, which may be
+something ugly.
+
+The installer therefore writes a platform-specific `family` line:
+
+| Platform | Family              | Rationale                                                    |
+|----------|---------------------|--------------------------------------------------------------|
+| Windows  | `Lucida Console`    | Preinstalled since Win 2000. Canonical look.                 |
+| macOS    | `Menlo`             | System default monospace. Narrow, open, similar proportions. |
+| Linux    | `DejaVu Sans Mono`  | Ubuntu/Debian default. Present on nearly all Linux desktops. |
+
+All three are narrow, non-ligature monospace fonts with similar
+proportions. Users never see a missing-font fallback; the file written at
+install time already contains the correct family for their OS. No font is
+bundled or installed by the installer.
+
+If a user doesn't like the default they can edit `alacritty.toml`
+afterwards — this is documented in the user-facing README, not owned by
+the installer.
 
 ## Pitfalls
 
 ### Windows
 
-- **WSL install requires a reboot.** No way around it. The installer
-  must stop cleanly, instruct the user to reboot, and rely on the user
-  to return for Phase 2. A scheduled-task trick to resume post-reboot
-  is possible but adds antivirus friction for little gain.
-- **Ubuntu first-run is interactive.** Setting a Linux username and
-  password happens in the Ubuntu terminal, not in the `.ps1`. We
-  cannot automate this without running everything as root, which is
-  a bad default.
+- **Reboot only in the slow path.** On modern Windows 11 with WSL already
+  active — the common case — `wsl --install -d Ubuntu --no-launch` runs
+  without a reboot and the entire flow is unattended. Reboot is only
+  required when `VirtualMachinePlatform` or the WSL feature itself has to
+  be enabled from scratch. The installer detects this and branches.
 - **`networkingMode=mirrored` is Windows 11-only (22H2+).** Windows 10
-  users cannot use MMapper mode with this approach. The installer
-  must detect the OS build and pin `connection_mode=direct` in
+  users cannot use MMapper mode with this approach. The installer must
+  detect the OS build and pin `connection_mode=direct` in
   `bridge/startup.conf` on older Windows.
 - **SmartScreen will warn on unsigned PowerShell.** Real code-signing
   certs are expensive and probably overkill. Documented workaround:
-  right-click the `.ps1`, Properties, Unblock, then run as admin.
+  right-click the `.ps1`, Properties, Unblock, then run as admin. The
+  `.bat` wrapper helps a little here but doesn't eliminate the warning.
 - **Corporate-locked Windows.** Often prevents enabling WSL at all,
   or blocks arbitrary installer downloads. No workaround — documented
   as a known limitation.
@@ -246,8 +267,11 @@ steady-cursor caveat.
   package is too old for our needs, we fall back to source build —
   adds `libpcre2-dev` and a few minutes of compile time.
 - **`pip install --break-system-packages`.** Required on Ubuntu 23.04+
-  (PEP 668). Harmless on older releases; the flag can stay
-  unconditional.
+  (PEP 668). Harmless on older releases; the flag can stay unconditional.
+- **Running as root inside WSL.** Fine for the cockpit (no sudo paths,
+  no multi-user logic) but surprising to some users. The desktop
+  shortcut makes this explicit via `-u root` so it's visible, not
+  hidden. Documented in the README.
 
 ### macOS
 
@@ -265,9 +289,9 @@ steady-cursor caveat.
 
 ### All platforms
 
-- **Repo path hardcoded to `~/MUME`** in the desktop shortcut and
-  Phase 2 script. Custom paths are a v2 problem — document as a
-  constraint.
+- **Repo path hardcoded.** `~/MUME` (or `/root/MUME` on Windows/WSL-as-root)
+  in the desktop shortcut and Phase 2 script. Custom paths are a v2
+  problem — document as a constraint.
 - **Collision with `bridge/update.sh`.** Self-update expects a clean
   git tree. If the installer ever gains a "repair" mode, it must not
   clobber local user changes. Cross-reference with
@@ -279,20 +303,16 @@ steady-cursor caveat.
    recent enough for our needs? If yes, Phase 2 stays short. If no,
    we add a source-build path and bring in `build-essential` +
    `libpcre2-dev`.
-2. **Phase-1 delivery.** `.ps1` vs `.bat` vs a small signed `.exe`
-   wrapper. `.ps1` is the honest answer; a `.bat` wrapper that sets
-   the execution policy and invokes the real script is probably the
-   usable answer.
-3. **Resume-after-reboot.** Keep Phase 2 as a manual step the user
-   runs themselves, or attempt a scheduled-task trick? Manual is
-   boring and reliable; automated is "one-click" but fragile.
-4. **Where the bootstrap lives.** Top-level `install/` directory in
+2. **Phase-1 delivery.** `.bat` wrapping `.ps1` is the usable answer.
+   A signed `.exe` wrapper is nicer but requires a real code-signing
+   cert ($$ per year). Defer until there are enough users to justify.
+3. **Where the bootstrap lives.** Top-level `install/` directory in
    the repo, separate repo, or a gist? Same repo is simplest and
    keeps versioning aligned.
-5. **MMapper detection.** Detect MMapper's presence on the Windows
+4. **MMapper detection.** Detect MMapper's presence on the Windows
    host from WSL (probe `localhost:4242` during Phase 2) and default
    `connection_mode` accordingly? Low effort, high user value.
-6. **Retire `misc/`.** This doc absorbs `misc/WSL and Terminal
+5. **Retire `misc/`.** This doc absorbs `misc/WSL and Terminal
    settings`. Once the installer ships, delete the `misc/` directory
    to remove duplication.
 
@@ -304,7 +324,8 @@ Suggested sequence; each a separate chunk of work:
    useful immediately for any non-Windows contributors.
 2. **Windows Phase 2 (`bootstrap.sh` inside Ubuntu).** Reusable
    regardless of how Phase 1 is delivered; worth building first.
-3. **Windows Phase 1 (`.ps1`).** Depends on 2.
+3. **Windows Phase 1 (`.ps1` + `.bat`).** Depends on 2. Starts with the
+   fast path; slow path + resume-after-reboot added as a follow-up.
 4. **Desktop shortcut + Alacritty config writer.** Integrates with 3.
 5. **MMapper auto-detection + default `connection_mode`.** Polish.
 
