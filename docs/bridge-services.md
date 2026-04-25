@@ -164,7 +164,7 @@ State is stored in `bridge/layout.conf` (gitignored, recreated on first startup)
 ### layout.conf keys
 | Key             | Default | Description                                            |
 |-----------------|---------|--------------------------------------------------------|
-| `ui_width`      | 33      | Absolute column width of the right pane column. Drag-adjustable, clamped ≥ 33 when status is open. |
+| `ui_width`      | 33      | Absolute column width of the right pane column. Drag-adjustable. Honoured exactly on terminal resize when status is closed; clamped ≥ 33 when status is open. |
 | `window_cols`   | 0       | Last known terminal width — distinguishes WINCH from border drag. |
 | `status_height` | 12      | Status pane height in rows. Authoritative — always re-applied by `bridge/apply_layout.sh`. |
 | `ui_height`     | 20      | ui pane height in rows. Drag-adjustable. Clamped so dev (when present) keeps ≥ 3 rows. |
@@ -176,7 +176,7 @@ State is stored in `bridge/layout.conf` (gitignored, recreated on first startup)
 - **ui↔dev border drag (status absent)** — free-form; ui_height is not updated (status is not present to detect the change). On restart ui takes `ui_height`, dev takes the residual.
 - **status open → right column auto-widens to 33** — `apply_layout.sh` enforces the 33-col floor whenever status is open. Opening status into a < 33-col column widens the column automatically (provided main can stay ≥ 30 cols).
 - **Input pane** — always pinned to 1 row on every terminal resize. Never participates in layout calculations.
-- **Narrow-terminal collapse** — when `on_window_resize.sh` detects that the available right-column width falls below `RIGHT_MIN` (33) it writes `bridge/.collapsed_panes` (one pane name per line) and kills all right panes. When the terminal widens back above the threshold, the sentinel is read, each listed pane is re-opened in order via `open_pane.sh`, and the sentinel is deleted. `open_pane.sh` exits silently at entry while the sentinel exists, so manual toggle commands (`cp -u`/`-d`/`-c`) are no-ops during the narrow state.
+- **Narrow-terminal collapse** — when `on_window_resize.sh` detects that the available right-column width falls below the effective floor (33 when status is open, `ui_width` otherwise) it writes `bridge/.collapsed_panes` (one pane name per line) and kills all right panes. The restore threshold is derived from the sentinel rather than live tmux state (panes are already killed at that point): if the sentinel contains `status`, the floor is 33; otherwise it is `ui_width`. When the terminal widens back above the threshold, the sentinel is read, each listed pane is re-opened in order via `open_pane.sh`, and the sentinel is deleted. `open_pane.sh` exits silently at entry while the sentinel exists, so manual toggle commands (`cp -u`/`-d`/`-c`) are no-ops during the narrow state.
 - **Loop prevention** — `bridge/.layout_lock` is used as a lockfile to prevent `on_window_resize.sh` triggering `on_pane_resize.sh` in a feedback loop.
 - **`-f` on right-column splits.** When `open_pane.sh` creates the right column from scratch (no ui/dev exists), `split-window -h` must use `-f` (full-window). Otherwise, if the input pane already exists, the new right pane is inserted as main's sibling inside the left-column subtree, causing input to span the full window width.
 

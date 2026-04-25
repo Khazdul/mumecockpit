@@ -19,18 +19,25 @@ if [ "$COLS" = "$window_cols" ]; then
 fi
 
 # Global width-priority constraint:
-#   MAIN_MIN  = 30 — main/tt++ pane floor
-#   RIGHT_MIN = 33 — right column floor when any right pane is active
+#   MAIN_MIN   = 30 — main/tt++ pane floor (always)
+#   RIGHT_FLOOR = 33 when status is open; ui_width otherwise
 MAIN_MIN=30
-RIGHT_MIN=33
 
 HAS_RIGHT=$(tmux list-panes -t mume:cockpit -F '#{pane_title}' \
     | grep -E '^(ui|dev|status)$' | head -1)
 
+HAS_STATUS=$(tmux list-panes -t mume:cockpit -F '#{pane_title}' \
+    | grep '^status$')
+if [ -n "$HAS_STATUS" ]; then
+    RIGHT_FLOOR=33
+else
+    RIGHT_FLOOR=$ui_width
+fi
+
 AVAILABLE_RIGHT=$(( COLS - MAIN_MIN - 1 ))
 
 # --- Collapse / restore logic ---
-if [ -n "$HAS_RIGHT" ] && [ "$AVAILABLE_RIGHT" -lt "$RIGHT_MIN" ]; then
+if [ -n "$HAS_RIGHT" ] && [ "$AVAILABLE_RIGHT" -lt "$RIGHT_FLOOR" ]; then
     # Terminal too narrow: record open right panes and kill them.
     touch "$LOCK"
     tmux list-panes -t mume:cockpit -F '#{pane_title}' \
@@ -48,30 +55,45 @@ if [ -n "$HAS_RIGHT" ] && [ "$AVAILABLE_RIGHT" -lt "$RIGHT_MIN" ]; then
     sed -i "s/^window_cols=.*/window_cols=$COLS/" "$LAYOUT_CONF"
     rm -f "$LOCK"
     exit 0
-elif [ -f "$SENTINEL" ] && [ "$AVAILABLE_RIGHT" -ge "$RIGHT_MIN" ]; then
-    # Terminal widened back: restore previously-collapsed panes.
-    touch "$LOCK"
-    RESTORE_PANES=()
-    while IFS= read -r pname; do
-        RESTORE_PANES+=("$pname")
-    done < "$SENTINEL"
-    rm -f "$SENTINEL"   # delete before opening so open_pane.sh sentinel check passes
-    for pname in "${RESTORE_PANES[@]}"; do
-        bash "$HOME/MUME/bridge/open_pane.sh" "$pname"
-    done
-    rm -f "$LOCK"
-    # Fall through to normal layout logic below.
-    source "$LAYOUT_CONF"
-    HAS_RIGHT=$(tmux list-panes -t mume:cockpit -F '#{pane_title}' \
-        | grep -E '^(ui|dev|status)$' | head -1)
+elif [ -f "$SENTINEL" ]; then
+    # Panes are collapsed — derive restore floor from sentinel (tmux panes already killed).
+    if grep -q '^status$' "$SENTINEL"; then
+        RESTORE_FLOOR=33
+    else
+        RESTORE_FLOOR=$ui_width
+    fi
+    if [ "$AVAILABLE_RIGHT" -ge "$RESTORE_FLOOR" ]; then
+        # Terminal widened back: restore previously-collapsed panes.
+        touch "$LOCK"
+        RESTORE_PANES=()
+        while IFS= read -r pname; do
+            RESTORE_PANES+=("$pname")
+        done < "$SENTINEL"
+        rm -f "$SENTINEL"   # delete before opening so open_pane.sh sentinel check passes
+        for pname in "${RESTORE_PANES[@]}"; do
+            bash "$HOME/MUME/bridge/open_pane.sh" "$pname"
+        done
+        rm -f "$LOCK"
+        # Fall through to normal layout logic below.
+        source "$LAYOUT_CONF"
+        HAS_RIGHT=$(tmux list-panes -t mume:cockpit -F '#{pane_title}' \
+            | grep -E '^(ui|dev|status)$' | head -1)
+        HAS_STATUS=$(tmux list-panes -t mume:cockpit -F '#{pane_title}' \
+            | grep '^status$')
+        if [ -n "$HAS_STATUS" ]; then
+            RIGHT_FLOOR=33
+        else
+            RIGHT_FLOOR=$ui_width
+        fi
+    fi
 fi
 
 # --- Normal layout logic ---
 touch "$LOCK"
 
 if [ -n "$HAS_RIGHT" ]; then
-    if [ "$AVAILABLE_RIGHT" -ge "$RIGHT_MIN" ]; then
-        EFFECTIVE_RIGHT=$(( ui_width > RIGHT_MIN ? ui_width : RIGHT_MIN ))
+    if [ "$AVAILABLE_RIGHT" -ge "$RIGHT_FLOOR" ]; then
+        EFFECTIVE_RIGHT=$(( ui_width > RIGHT_FLOOR ? ui_width : RIGHT_FLOOR ))
     else
         EFFECTIVE_RIGHT=$(( AVAILABLE_RIGHT > 0 ? AVAILABLE_RIGHT : 0 ))
     fi
