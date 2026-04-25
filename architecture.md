@@ -170,8 +170,10 @@ actions must be registered before `#run {lua}`).
 via `#lua` must live here; private helpers stay file-local.
 
 **`state.*`** — shared game and world data: `state.char`, `state.room`,
-`state.comm`, `state.world`, `state.core`. Populated by GMCP collectors;
-field schemas documented in [docs/gmcp.md](docs/gmcp.md).
+`state.comm`, `state.world`, `state.core`, `state.session`. Populated by
+GMCP collectors; field schemas documented in [docs/gmcp.md](docs/gmcp.md).
+`state.session` is owned by `lua/core/sess_kills.lua` and tracks session
+XP/TP deltas and the per-kill list.
 
 **`gmcp`** — GMCP subsystem: `gmcp.handlers`, `gmcp.modules`,
 `gmcp.dispatch`, `gmcp.trace`. See [docs/gmcp.md](docs/gmcp.md) for

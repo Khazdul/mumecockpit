@@ -61,6 +61,11 @@ All four are kills — `disappears into nothing.` is the undead-death
 message. The subscriber receives the mob name captured by `%1`; it does
 not see which variant fired.
 
+**Subscribers:** `lua/scripts/autostab.lua`, `lua/scripts/autobow.lua`
+(abort on kill), `lua/core/sess_kills.lua` (queues name for XP attribution).
+`sess_kills` is the first core module to subscribe to its own bus — direct
+parallel to script subscribers, no special wiring needed.
+
 ## Adding a new event
 
 1. Add one or more `#action` lines to `ttpp/core/mud_events.tin` at

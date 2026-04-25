@@ -1190,14 +1190,14 @@
 #VARIABLE {acontainer} {quiver}
 #VARIABLE {arrow} {arrow}
 #VARIABLE {character} {}
-#VARIABLE {class} {thief}
+#VARIABLE {class} {caster}
 #VARIABLE {mees} {}
 #VARIABLE {ring} {}
 #VARIABLE {sd1} {exit}
 #VARIABLE {sd2} {}
 #VARIABLE {sd3} {}
-#VARIABLE {spell} {'lightning bolt'}
-#VARIABLE {ss} {careful}
-#VARIABLE {target} {vines}
+#VARIABLE {spell} {'blindness'}
+#VARIABLE {ss} {normal}
+#VARIABLE {target} {orc}
 
 #CLASS {default} CLOSE

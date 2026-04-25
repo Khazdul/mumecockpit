@@ -67,8 +67,8 @@ JSON written by `lua/core/status_state.lua`. Gitignored.
   "level": 50,
   "xp": 232200,
   "tp": 3424,
-  "session_xp": null,
-  "session_tp": null,
+  "session_xp": 5400,
+  "session_tp": 0,
   "mood": "wimpy",
   "alertness": "normal",
   "sneak": "off",
@@ -80,9 +80,10 @@ JSON written by `lua/core/status_state.lua`. Gitignored.
 }
 ```
 
-Phase 1 populates all fields except `session_xp`, `session_tp`, `game_time`,
-and `affects` — these are reserved slots for phases 2–4. The renderer
-displays them as `—` / empty when null/empty.
+Phase 1 populates all fields except `game_time` and `affects` — these are
+reserved slots for phases 3–4. `session_xp` and `session_tp` are populated by
+`lua/core/sess_kills.lua` (phase 4 — implemented). The renderer displays `—`
+when null (bootstrap window before first Vitals tick) and empty for `affects`.
 
 ### Field mapping from GMCP
 
@@ -98,8 +99,8 @@ displays them as `—` / empty when null/empty.
 | `position`     | `Char.Vitals` → `state.char.position` |                               |
 | `climb`        | `Char.Vitals` → `state.char.climb` | null→"off", "c"/"C"→"on"         |
 | `swim`         | `Char.Vitals` → `state.char.swim`  | bool→"on"/"off"                  |
-| `session_xp`   | phase 4 — always null in phase 1   |                                   |
-| `session_tp`   | phase 4 — always null in phase 1   |                                   |
+| `session_xp`   | `lua/core/sess_kills.lua` → `state.session.session_xp` | null during bootstrap window |
+| `session_tp`   | `lua/core/sess_kills.lua` → `state.session.session_tp` | null during bootstrap window |
 | `game_time`    | phase 3 — always null in phase 1   |                                   |
 | `affects`      | phase 2 — always [] in phase 1     |                                   |
 
@@ -228,12 +229,18 @@ Persistence: `show_status` in `bridge/startup.conf` (default `0`).
 - Source: text-triggered world clock (no GMCP module available).
 - `status_pane.py` renders it directly when non-null.
 
-### Phase 4 — Session XP/TP deltas
+### Phase 4 — Session XP/TP deltas (implemented)
 
-- Set `session_xp` / `session_tp` to integer deltas.
-- Requires SESSION hook wiring to capture start-of-session XP/TP baseline.
-- The `_orig_vitals` wrapper in `status_state.lua` is the right place to
-  compute the delta once the baseline is available.
+Implemented in `lua/core/sess_kills.lua`. On first `Char.Vitals` after
+connect, the current XP/TP is snapshotted as the baseline. Each subsequent
+positive XP delta is attributed evenly across the kills queued via
+`mob_death` events since the previous tick, and a `▶ KILL: <name>, <xp> xp.`
+line is emitted to the UI pane per attributed kill. `state.session.kills` is
+an append-only list of `{name, xp}` for the session.
+
+`cp -r` resets the baseline: Lua state is wiped on reload, so the next
+Vitals tick rebaselines from the current XP and `Sess XP` starts fresh from 0.
+This is expected behaviour, not a bug.
 
 ---
 Back to [architecture.md](../architecture.md).

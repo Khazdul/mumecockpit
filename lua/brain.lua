@@ -126,6 +126,7 @@ function mark_mume_connected()
     if f then f:close(); return end
     _write_session_state()
     system_ui("Connected to MUME.")
+    if state.session and state.session.reset then state.session.reset() end
 end
 
 function mark_mume_disconnected()
@@ -135,6 +136,7 @@ function mark_mume_disconnected()
     _clear_session_state()
     system_ui("Disconnected from MUME.")
     if not _popup_is_open() then _open_popup() end
+    if state.session and state.session.reset then state.session.reset() end
 end
 
 function set_game_session(ses)
