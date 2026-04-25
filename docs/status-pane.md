@@ -162,7 +162,10 @@ both directions — the configured value is authoritative and is never overwritt
 by a drag. Phase 2 will drive this dynamically from `lua/core/status_state.lua`
 based on affect count.
 
-Height is restored via `bridge/apply_layout.sh` after any right-column operation.
+`bridge/apply_layout.sh` owns all right-column heights. It applies `ui_height`
+(default 20, drag-adjustable) top-down first, then `status_height`; `dev`
+receives the residual. All three are re-established after every right-column
+operation.
 
 ### Width constraint
 
@@ -176,14 +179,19 @@ at least `RIGHT_MIN`. When the terminal is narrowed so main would fall below
 30, main wins and the right column shrinks below 33. Manual border drag is
 clamped to ≥ 33 in `bridge/on_pane_resize.sh`.
 
+`bridge/apply_layout.sh` additionally enforces the 33-col floor whenever status
+is open: if the right column is narrower than 33 when `apply_layout.sh` runs
+(e.g., after `cp -c` opens status into a column that was previously dragged
+narrow), it widens the column automatically provided main can stay ≥ 30 cols.
+
 ### Height
 
-`status_height` in `bridge/layout.conf` is the only height value the layout
-system enforces. In phase 1 this is fixed at 12 (matches rendered content).
-ui and dev share whatever rows remain after `status_height` is allocated;
-tmux handles the split. `bridge/apply_layout.sh` is the single path that
-reconciles tmux with layout.conf; every right-column operation ends with a
-call to it.
+`bridge/apply_layout.sh` owns all right-column heights. Apply order is
+top-down: `ui_height` is applied first (clamped so dev keeps ≥ 3 rows when
+present), then `status_height`; dev receives the residual. Both `ui_height`
+(default 20) and `status_height` (fixed 12 in phase 1) live in `layout.conf`.
+Every right-column operation ends with a call to `apply_layout.sh`, making
+dev-zero-rows structurally impossible.
 
 ## Toggle
 

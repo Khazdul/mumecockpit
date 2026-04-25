@@ -24,6 +24,7 @@ fi
 
 LAYOUT_CONF="$HOME/MUME/bridge/layout.conf"
 [ -f "$LAYOUT_CONF" ] || echo "ui_width=33" > "$LAYOUT_CONF"
+grep -q "^ui_height=" "$LAYOUT_CONF" || echo "ui_height=20" >> "$LAYOUT_CONF"
 source "$LAYOUT_CONF"
 COLS=$(tmux display-message -p -t mume:cockpit '#{window_width}')
 LEFT=$(( COLS - ui_width - 1 ))
