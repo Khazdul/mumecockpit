@@ -46,30 +46,39 @@ local _orig_vitals = gmcp.handlers["Char.Vitals"]
 
 gmcp.handlers["Char.Vitals"] = function(body)
     if _orig_vitals then _orig_vitals(body) end
-    if not body or body.xp == nil then return end
+    if not body then return end
 
-    if M.xp_baseline == nil then
-        M.xp_baseline  = body.xp
-        M.tp_baseline  = body.tp or 0
-        M.last_fold_xp = body.xp
-        M.session_xp   = 0
-        M.session_tp   = 0
-        return
+    if body.xp then
+        if M.xp_baseline == nil then
+            M.xp_baseline  = body.xp
+            M.last_fold_xp = body.xp
+            M.session_xp   = 0
+        elseif body.xp < M.last_fold_xp then
+            -- death penalty / level loss → rebaseline, drop pending
+            M.xp_baseline   = body.xp
+            M.last_fold_xp  = body.xp
+            M.session_xp    = 0
+            M.pending_kills = {}
+        else
+        M.session_xp = body.xp - M.xp_baseline
+        end
+    end
+    if body.tp then
+        if M.tp_baseline == nil then
+            M.tp_baseline  = body.tp
+            M.last_fold_tp = body.tp
+            M.session_tp   = 0
+        elseif body.tp < M.last_fold_tp then
+            -- death penalty / level loss → rebaseline, drop pending
+            M.tp_baseline   = body.tp
+            M.last_fold_tp  = body.tp
+            M.session_tp    = 0
+        else
+            M.session_tp = body.tp - M.tp_baseline
+        end
     end
 
-    if body.xp < M.last_fold_xp then
-        -- death penalty / level loss → rebaseline, drop pending
-        M.xp_baseline   = body.xp
-        M.tp_baseline   = body.tp or 0
-        M.last_fold_xp  = body.xp
-        M.session_xp    = 0
-        M.session_tp    = 0
-        M.pending_kills = {}
-        return
-    end
-
-    M.session_xp = body.xp - M.xp_baseline
-    M.session_tp = (body.tp or 0) - M.tp_baseline
+    return
 end
 
 local function schedule_fold()
