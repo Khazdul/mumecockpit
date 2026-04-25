@@ -223,11 +223,24 @@ Persistence: `show_status` in `bridge/startup.conf` (default `0`).
   (`tmux kill-pane` + clear show_dev runtime), then ui. Priority order:
   status > ui > dev. Not implemented in phase 1.
 
-### Phase 3 — Game time
+### Phase 3 — Game time (implemented)
 
-- Set `game_time` to a string (e.g. "dusk, day 5 of March").
-- Source: text-triggered world clock (no GMCP module available).
-- `status_pane.py` renders it directly when non-null.
+Clock module `lua/core/clock.lua` is implemented and ready. To wire it to
+the status pane:
+
+1. In `lua/core/status_state.lua`, set `game_time` in `serialize()`:
+   ```lua
+   game_time = state.world.clock and state.world.clock.format("compact") or nil,
+   ```
+2. `status_pane.py` already renders `game_time` when non-null.
+
+**Consumer contract:** `state.world.clock.format("compact")` returns:
+- `"?"` when precision is UNSET (no sync yet)
+- `"Solmath 26, 2973"` (DAY precision — date known, hour unknown)
+- `"~8 am, Solmath 26"` (HOUR precision — `~` means minute unknown)
+- `"8:00, Solmath 26"` (MINUTE precision — fully synced)
+
+See [docs/clock.md](clock.md) for full API and sync source details.
 
 ### Phase 4 — Session XP/TP deltas (implemented)
 

@@ -173,7 +173,8 @@ via `#lua` must live here; private helpers stay file-local.
 `state.comm`, `state.world`, `state.core`, `state.session`. Populated by
 GMCP collectors; field schemas documented in [docs/gmcp.md](docs/gmcp.md).
 `state.session` is owned by `lua/core/sess_kills.lua` and tracks session
-XP/TP deltas and the per-kill list.
+XP/TP deltas and the per-kill list. `state.world.clock` is owned by
+`lua/core/clock.lua` — see [docs/clock.md](docs/clock.md) for API.
 
 **`gmcp`** — GMCP subsystem: `gmcp.handlers`, `gmcp.modules`,
 `gmcp.dispatch`, `gmcp.trace`. See [docs/gmcp.md](docs/gmcp.md) for
@@ -329,4 +330,5 @@ Deferred until there's a concrete use case:
 - [docs/popup-menu.md](docs/popup-menu.md) — In-game ESC popup: submenus, status header, save-profile flow. Touched when changing the in-game overlay.
 - [docs/bridge-services.md](docs/bridge-services.md) — Ping monitor, version check, self-update, layout and config file formats. Touched when changing background services or persisted config.
 - [docs/status-pane.md](docs/status-pane.md) — Character Status pane: renderer, state-file schema, field layout, colour scheme, layout integration, phase 2–4 extension points. Touched when changing the status pane.
+- [docs/clock.md](docs/clock.md) — Game clock: sync sources, state schema, persistence, seed handling, degradation rules. Touched when changing clock sync or consuming game time.
 - [docs/install-bootstrap.md](docs/install-bootstrap.md) — Cross-platform install and bootstrap plan. Touched when scheduling installer work or when a platform constraint (WSL, Alacritty, package versions) changes.

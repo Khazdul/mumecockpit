@@ -44,9 +44,12 @@ event flow. Same pattern as `gmcp.trace`.
 
 ## Catalogue
 
-| Event | Payload | Source patterns |
-|-------|---------|-----------------|
-| `mob_death` | mob name string (includes article, e.g. `"an elven slave"`) | see below |
+| Event | Payload | Source |
+|-------|---------|--------|
+| `mob_death` | mob name string (includes article, e.g. `"an elven slave"`) | `ttpp/core/mud_events.tin` |
+| `event_sun` | `{what = "rise"\|"set"\|"light"\|"dark"}` | `lua/core/world_state.lua` (GMCP) |
+| `mume_time_line` | full matched line string | `ttpp/core/clock.tin` `#action` |
+| `room_clock_line` | full matched line string | `ttpp/core/clock.tin` `#action` |
 
 ### `mob_death`
 
@@ -66,14 +69,51 @@ not see which variant fired.
 `sess_kills` is the first core module to subscribe to its own bus — direct
 parallel to script subscribers, no special wiring needed.
 
+### `event_sun`
+
+Emitted by `lua/core/world_state.lua` inside the `Event.Sun` GMCP handler,
+immediately after storing `state.world.sun`. Body is the decoded GMCP object:
+`{what = "rise"|"set"|"light"|"dark"}`.
+
+**Subscribers:** `lua/core/clock.lua` — acts only on `"rise"` and `"set"`;
+`"light"` and `"dark"` indicate room sun-shielding and are ignored.
+
+### `mume_time_line`
+
+Emitted by `ttpp/core/clock.tin` when the game session receives `time`
+command output. The payload is the full matched line string (tt++ `%0`); the
+Lua subscriber re-parses it with a full Lua pattern for correctness. Two
+game-text forms are caught by the same tt++ pre-filter:
+
+    "8 am on Mersday, the 26th of Solmath, year 2973 of the Third Age."
+    "Mersday, the 26th of Solmath, year 2973 of the Third Age."
+
+**Subscribers:** `lua/core/clock.lua`.
+
+### `room_clock_line`
+
+Emitted by `ttpp/core/clock.tin` when the game session receives room-clock
+output. Payload is the full matched line string. Game text form:
+
+    "The current time is 8:00am."
+
+**Subscribers:** `lua/core/clock.lua`.
+
 ## Adding a new event
 
-1. Add one or more `#action` lines to `ttpp/core/mud_events.tin` at
-   priority 3, emitting your chosen event name via
-   `#lua {events.emit("event_name", "%1")}`.
-2. Add an entry to the Catalogue table above.
-3. No Lua-side registration is needed — any script can subscribe at load
-   time without touching core files.
+Events can come from two sources:
+
+- **tt++ action** — add a `#action` line (at priority 3) inside a
+  `_register_<module>_actions` alias in the relevant `ttpp/core/<module>.tin`,
+  and call that alias from `SESSION CONNECTED` and `cp -r` in
+  `ttpp/core/system.tin`. For project-wide events that have no owning module,
+  use `ttpp/core/mud_events.tin` and the existing `_register_mud_events` alias.
+- **Lua GMCP handler** — call `events.emit(name, payload)` inside the handler.
+
+Then:
+1. Add an entry to the Catalogue table above.
+2. No further Lua-side registration is needed — any script can subscribe at
+   load time without touching core files.
 
 ---
 Back to [architecture.md](../architecture.md).

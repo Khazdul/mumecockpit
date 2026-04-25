@@ -8,6 +8,7 @@ end
 
 gmcp.handlers["Event.Sun"] = function(body)
     state.world.sun = body
+    events.emit("event_sun", body)
 end
 
 gmcp.handlers["Event.Moon"] = function(body)
