@@ -164,10 +164,12 @@ not user-resizable — dragging it snaps back without persisting any change;
 dynamically from `lua/core/status_state.lua` based on affect count.
 
 `bridge/apply_layout.sh` owns all right-column heights. It applies
-`status_height` first (top pane), then `ui_height` (default 20, clamped so dev
-keeps ≥ 3 rows when present); `dev` receives the residual. All three are
-re-established after every right-column operation. The ui↔dev bottom border is
-the only height-flex border — dragging it persists `ui_height = U`.
+`ui_height` first (clamped so dev keeps ≥ 1 row when present), then
+`status_height`; `dev` receives the residual. Applying ui before status means
+tmux propagates tight-height squeezes char → ui → dev, preserving char as long
+as possible. All three are re-established after every right-column operation.
+The ui↔dev bottom border is the only height-flex border — dragging it persists
+`ui_height = U`.
 
 ### Width constraint
 
@@ -189,11 +191,11 @@ narrow), it widens the column automatically provided main can stay ≥ 30 cols.
 ### Height
 
 `bridge/apply_layout.sh` owns all right-column heights. Apply order is
-top-down: `status_height` is applied first (top pane), then `ui_height`
-(clamped so dev keeps ≥ 3 rows when present); dev receives the residual.
-Both `ui_height` (default 20) and `status_height` (fixed 12 in phase 1)
-live in `layout.conf`. Every right-column operation ends with a call to
-`apply_layout.sh`, making dev-zero-rows structurally impossible.
+ui-first: `ui_height` is applied first (clamped so dev keeps ≥ 1 row when
+present), then `status_height`; dev receives the residual. This order ensures
+tmux propagates tight-height squeezes char → ui → dev. Both `ui_height`
+(default 20) and `status_height` (fixed 12 in phase 1) live in `layout.conf`.
+Every right-column operation ends with a call to `apply_layout.sh`.
 
 ## Toggle
 

@@ -30,21 +30,22 @@ AVAIL=$WIN_H
 S_HEIGHT=${status_height:-12}
 U_HEIGHT=${ui_height:-20}
 
-# Clamp ui_height so dev (when present) keeps at least 3 rows
+# Clamp ui_height so dev (when present) keeps at least 1 row
 if [ -n "$DEV_IDX" ]; then
     if [ -n "$STATUS_IDX" ]; then
-        U_MAX=$(( AVAIL - S_HEIGHT - 3 ))
+        U_MAX=$(( AVAIL - S_HEIGHT - 1 ))
     else
-        U_MAX=$(( AVAIL - 3 ))
+        U_MAX=$(( AVAIL - 1 ))
     fi
-    [ "$U_MAX" -lt 3 ] && U_MAX=3
+    [ "$U_MAX" -lt 1 ] && U_MAX=1
     [ "$U_HEIGHT" -gt "$U_MAX" ] && U_HEIGHT=$U_MAX
 fi
-[ "$U_HEIGHT" -lt 3 ] && U_HEIGHT=3
+[ "$U_HEIGHT" -lt 1 ] && U_HEIGHT=1
 
-# Apply top-down: each resize-pane drives the diff into the pane below
-[ -n "$STATUS_IDX" ] && tmux resize-pane -t "mume:cockpit.$STATUS_IDX" -y "$S_HEIGHT"
+# Apply ui first so tmux moves ui's bottom border (squeezing dev, not char);
+# then status so its bottom border squeezes ui — net direction: char → ui → dev.
 [ -n "$UI_IDX" ]     && tmux resize-pane -t "mume:cockpit.$UI_IDX"     -y "$U_HEIGHT"
+[ -n "$STATUS_IDX" ] && tmux resize-pane -t "mume:cockpit.$STATUS_IDX" -y "$S_HEIGHT"
 # dev receives the residual — no explicit sizing needed
 
 # ── Width floor (status open → right column ≥ 33 cols) ───────────────────

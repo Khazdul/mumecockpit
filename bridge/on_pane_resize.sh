@@ -33,7 +33,7 @@ if [ -n "$HAS_STATUS" ]; then
         # S is at configured height; check if ui↔dev bottom border was dragged.
         U=$(tmux list-panes -t mume:cockpit -F '#{pane_title} #{pane_height}' \
             | awk '$1=="ui" {print $2; exit}')
-        if [ -n "$U" ] && [ "$U" -ge 3 ] && [ "$U" -ne "${ui_height:-20}" ]; then
+        if [ -n "$U" ] && [ "$U" -ge 1 ] && [ "$U" -ne "${ui_height:-20}" ]; then
             # Bottom border (ui↔dev) dragged — persist new ui height.
             sed -i "s/^ui_height=.*/ui_height=$U/" "$LAYOUT_CONF"
         fi

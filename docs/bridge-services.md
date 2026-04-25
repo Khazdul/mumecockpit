@@ -167,10 +167,10 @@ State is stored in `bridge/layout.conf` (gitignored, recreated on first startup)
 | `ui_width`      | 33      | Absolute column width of the right pane column. Drag-adjustable. Honoured exactly on terminal resize when status is closed; clamped ≥ 33 when status is open. |
 | `window_cols`   | 0       | Last known terminal width — distinguishes WINCH from border drag. |
 | `status_height` | 12      | Status pane height in rows. Authoritative — always re-applied by `bridge/apply_layout.sh`. |
-| `ui_height`     | 20      | ui pane height in rows. Drag-adjustable. Clamped so dev (when present) keeps ≥ 3 rows. |
+| `ui_height`     | 20      | ui pane height in rows. Drag-adjustable. Clamped so dev (when present) keeps ≥ 1 row. |
 
 ### Behaviour
-- **Authoritative pane heights** — `bridge/apply_layout.sh` is the single path that reconciles tmux with layout.conf. Called by open_pane.sh, toggle_pane.sh (after kill), on_window_resize.sh, and on_pane_resize.sh (after any border drag). It applies status_height first (top pane), then ui_height (clamped); dev receives the residual.
+- **Authoritative pane heights** — `bridge/apply_layout.sh` is the single path that reconciles tmux with layout.conf. Called by open_pane.sh, toggle_pane.sh (after kill), on_window_resize.sh, and on_pane_resize.sh (after any border drag). It applies ui_height first (clamped so dev keeps ≥ 1 row when present), then status_height; dev receives the residual. Applying ui before status means tmux propagates tight-height squeezes char → ui → dev.
 - **Terminal resize** — `window-resized` hook fires `on_window_resize.sh`, which re-applies `ui_width` (main pane width) and then calls `apply_layout.sh` to re-establish all right-column heights.
 - **Border drag** — `MouseDragEnd1Border` binding fires `on_pane_resize.sh`, which saves the new `ui_width`. When status is open it detects which height border moved: if char height S ≠ `status_height`, the char↔ui top border was dragged — snap back only, no persistence; if S = `status_height` and ui height U ≠ `ui_height`, the ui↔dev bottom border was dragged — persist `ui_height = U`. `apply_layout.sh` then re-establishes all dimensions.
 - **ui↔dev border drag (status absent)** — free-form; ui_height is not updated (status is not present to detect the change). On restart ui takes `ui_height`, dev takes the residual.

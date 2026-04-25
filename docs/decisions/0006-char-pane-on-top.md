@@ -21,10 +21,10 @@ char on top there is exactly one resizable border: ui↔dev.
 
 Right-column order becomes `status → ui → dev`.
 
-`bridge/apply_layout.sh` applies `status_height` first (top pane), then
-`ui_height` (clamped so dev keeps ≥ 3 rows when present); dev receives the
-residual. The width-floor logic and the height-authority model (apply_layout.sh
-as sole authority, dev as residual) are unchanged from ADR 0005.
+`bridge/apply_layout.sh` applies `ui_height` first (clamped so dev keeps ≥ 1
+row when present), then `status_height`; dev receives the residual. The
+width-floor logic and the height-authority model (apply_layout.sh as sole
+authority, dev as residual) are unchanged from ADR 0005.
 
 `bridge/on_pane_resize.sh` detects border drags using S-first discrimination:
 
@@ -60,3 +60,15 @@ simpler and matches the content-driven nature of char height.
 This refines ADR 0005's apply-order. The height-authority model itself
 (apply_layout.sh as sole authority, ui_height as sole flex parameter, dev as
 residual) is unchanged.
+
+## Implementation note
+
+Apply order is ui first, then status. Rationale: `tmux resize-pane` moves a
+pane's bottom border by default. Applying ui first moves ui's bottom border,
+squeezing dev. Applying status next moves status's bottom border, squeezing ui.
+The net propagation direction under tight heights is char → ui → dev, which
+preserves char (the fixed identity panel) as long as possible. The ui floor and
+dev reservation are both 1 row (down from 3), since ui in the middle may
+legitimately be very small when the user drags ui↔dev upward to give dev more
+space. The persistence filter in on_pane_resize.sh matches: ui drag persists
+when U ≥ 1.
