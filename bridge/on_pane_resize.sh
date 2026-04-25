@@ -14,6 +14,9 @@ ORIG_WIDTH=$NEW_WIDTH
 [ "$NEW_WIDTH" -lt 33 ] && NEW_WIDTH=33
 sed -i "s/^ui_width=.*/ui_width=$NEW_WIDTH/" "$LAYOUT_CONF"
 if [ "$ORIG_WIDTH" -lt 33 ]; then
+    COLS=$(tmux display-message -p -t mume:cockpit '#{window_width}')
+    LEFT=$(( COLS - 33 - 1 ))
+    tmux resize-pane -t mume:cockpit.0 -x "$LEFT"
     bash "$HOME/MUME/bridge/apply_layout.sh"
 fi
 
