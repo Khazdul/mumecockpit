@@ -37,7 +37,7 @@ function M.reset()
     M.session_tp    = 0
     M.pending_kills = {}
     M.kills         = {}
-    tintin_cmd("gts", "#undelay {sess_kills_fold}")
+    session_cmd("#undelay {sess_kills_fold}")
 end
 
 state.session = M
@@ -73,7 +73,7 @@ gmcp.handlers["Char.Vitals"] = function(body)
 end
 
 local function schedule_fold()
-    tintin_cmd("gts", string.format(
+    session_cmd(string.format(
         "#delay {sess_kills_fold} {#lua {state.session._fold()}} {%s}",
         FOLD_DELAY))
 end
@@ -84,6 +84,8 @@ events.subscribe("mob_death", function(name)
 end)
 
 function M._fold()
+    dbg("[SESS_KILLS] fold fired, pending=" .. #M.pending_kills)
+
     local n = #M.pending_kills
     if n == 0 then return end
 

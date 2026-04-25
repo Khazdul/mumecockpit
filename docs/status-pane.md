@@ -99,8 +99,8 @@ when null (bootstrap window before first Vitals tick) and empty for `affects`.
 | `position`     | `Char.Vitals` → `state.char.position` |                               |
 | `climb`        | `Char.Vitals` → `state.char.climb` | null→"off", "c"/"C"→"on"         |
 | `swim`         | `Char.Vitals` → `state.char.swim`  | bool→"on"/"off"                  |
-| `session_xp`   | `lua/core/sess_kills.lua` → `state.session.session_xp` | null during bootstrap window |
-| `session_tp`   | `lua/core/sess_kills.lua` → `state.session.session_tp` | null during bootstrap window |
+| `session_xp`   | `lua/core/sess_kills.lua` → `state.session.session_xp` | null during bootstrap window; resets to 0 on `cp -r` (rebaselines on next Vitals tick — expected behaviour, not a bug) |
+| `session_tp`   | `lua/core/sess_kills.lua` → `state.session.session_tp` | null during bootstrap window; resets to 0 on `cp -r` (rebaselines on next Vitals tick — expected behaviour, not a bug) |
 | `game_time`    | phase 3 — always null in phase 1   |                                   |
 | `affects`      | phase 2 — always [] in phase 1     |                                   |
 
