@@ -10,8 +10,12 @@ NEW_WIDTH=$(tmux list-panes -t mume:cockpit \
   | awk '$1=="ui" || $1=="dev" || $1=="status" {print $2; exit}')
 [ -z "$NEW_WIDTH" ] && exit 0
 # Clamp: manual drag cannot persist ui_width below RIGHT_MIN (33)
+ORIG_WIDTH=$NEW_WIDTH
 [ "$NEW_WIDTH" -lt 33 ] && NEW_WIDTH=33
 sed -i "s/^ui_width=.*/ui_width=$NEW_WIDTH/" "$LAYOUT_CONF"
+if [ "$ORIG_WIDTH" -lt 33 ]; then
+    bash "$HOME/MUME/bridge/apply_layout.sh"
+fi
 
 HAS_STATUS=$(tmux list-panes -t mume:cockpit -F '#{pane_title}' | grep '^status$')
 if [ -n "$HAS_STATUS" ]; then
