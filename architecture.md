@@ -177,6 +177,11 @@ field schemas documented in [docs/gmcp.md](docs/gmcp.md).
 `gmcp.dispatch`, `gmcp.trace`. See [docs/gmcp.md](docs/gmcp.md) for
 subscription, dispatch, and scripting patterns.
 
+**`events`** — Lua event bus: `events.handlers`, `events.subscribe`,
+`events.unsubscribe`, `events.emit`, `events.trace`. See
+[docs/events.md](docs/events.md) for the event catalogue and adding new
+events.
+
 ## Communication Protocol
 
 TinTin++ communicates with Lua via two IPC patterns. **Pattern 1** (shared
@@ -314,6 +319,7 @@ Deferred until there's a concrete use case:
 
 - [docs/ui-messaging.md](docs/ui-messaging.md) — UI helpers, colour constants, and style rules. Touched when writing almost any script.
 - [docs/gmcp.md](docs/gmcp.md) — GMCP module reference, schemas, negotiation. Touched when adding a GMCP collector or subscribing to a new module.
+- [docs/events.md](docs/events.md) — Event bus API and catalogue. Touched when adding a core MUD trigger or subscribing a script to a Lua-side event.
 - [docs/ipc.md](docs/ipc.md) — tt++ ↔ Lua IPC contract, relay actions, startup ordering. Touched when changing how tt++ and Lua communicate.
 - [docs/session-lifecycle.md](docs/session-lifecycle.md) — Session connect/disconnect, session.state, cp -r, settings persistence. Touched when changing session handling or startup flow.
 - [docs/input-pane.md](docs/input-pane.md) — Input pane key forwarding, Enter semantics, history navigation. Touched when changing input behaviour or adding new forwarded keys.

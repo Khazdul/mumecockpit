@@ -408,6 +408,10 @@ gmcp    = {
     modules  = { "Char 1", "Comm.Channel 1", "Event 1", "Core 1" },
     trace    = true,
 }
+events  = {
+    handlers = {},
+    trace    = true,
+}
 
 function gmcp.dispatch(module, payload)
     payload = payload or ""

@@ -98,7 +98,8 @@
     #if {&game_session} {
         #lua {set_game_session("$game_session")};
         #$game_session #read ttpp/sessions/$game_session.tin;
-        #$game_session #class {$game_session} {open}
+        #$game_session #class {$game_session} {open};
+        _register_mud_events $game_session
     };
     #showme {[COCKPIT] Full reload complete};
     #if {&game_session} {#delay {1} {#ses {$game_session}}};
@@ -140,7 +141,8 @@
             #%0 #read ttpp/sessions/%0.tin;
             #%0 #alias {reconnect} {#gts reconnect};
             #%0 #action {^Status: MUME closed the connection.$} {#lua {mark_mume_disconnected()}};
-            #%0 #class {%0} {open}
+            #%0 #class {%0} {open};
+            _register_mud_events %0
         }
     }
 }

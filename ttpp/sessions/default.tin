@@ -1,5 +1,29 @@
 #CLASS {default} OPEN
 
+#ACTION {^%1 disappears into nothing.$}
+{
+    #lua {events.emit("mob_death", "%1")}
+}
+{3}
+
+#ACTION {^%1 has drawn her last breath! R.I.P.$}
+{
+    #lua {events.emit("mob_death", "%1")}
+}
+{3}
+
+#ACTION {^%1 has drawn his last breath! R.I.P.$}
+{
+    #lua {events.emit("mob_death", "%1")}
+}
+{3}
+
+#ACTION {^%1 is dead! R.I.P.$}
+{
+    #lua {events.emit("mob_death", "%1")}
+}
+{3}
+
 #ACTION {WARNING}
 {
     sc
@@ -1166,7 +1190,7 @@
 #VARIABLE {acontainer} {quiver}
 #VARIABLE {arrow} {arrow}
 #VARIABLE {character} {}
-#VARIABLE {class} {caster}
+#VARIABLE {class} {thief}
 #VARIABLE {mees} {}
 #VARIABLE {ring} {}
 #VARIABLE {sd1} {exit}
@@ -1174,6 +1198,6 @@
 #VARIABLE {sd3} {}
 #VARIABLE {spell} {'lightning bolt'}
 #VARIABLE {ss} {careful}
-#VARIABLE {target} {*orc*}
+#VARIABLE {target} {vines}
 
 #CLASS {default} CLOSE

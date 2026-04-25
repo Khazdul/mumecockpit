@@ -41,15 +41,11 @@ end
 local function register_triggers()
     session_cmd("#action {You successfully escaped the fight!} {#lua {scripts.autostab.on_success()}}")
     session_cmd("#action {You failed to escape the fight!} {#lua {scripts.autostab.on_fail()}}")
-    session_cmd("#action {%1 is dead! R.I.P.} {#lua {scripts.autostab.on_dead()}}")
-    session_cmd("#action {%1 disappears into nothing.} {#lua {scripts.autostab.on_gone()}}")
 end
 
 local function unregister_triggers()
     session_cmd("#unaction {You successfully escaped the fight!}")
     session_cmd("#unaction {You failed to escape the fight!}")
-    session_cmd("#unaction {%1 is dead! R.I.P.}")
-    session_cmd("#unaction {%1 disappears into nothing.}")
 end
 
 -- -----------------------------
@@ -74,6 +70,7 @@ end
 local function abort(reason)
     as.active = false
     unregister_triggers()
+    events.unsubscribe("mob_death", M.on_mob_death)
     session_cmd("#undelay {as_watch}")
     as_dbg("stopped: " .. reason)
     script_ui("AUTOSTAB", "Stopped — " .. ui_var(reason) .. ".")
@@ -96,6 +93,7 @@ function M.start(dir, target)
     -- Clean up any still-running session before starting fresh
     if as.active then
         unregister_triggers()
+        events.unsubscribe("mob_death", M.on_mob_death)
         session_cmd("#undelay {as_watch}")
     end
 
@@ -106,6 +104,7 @@ function M.start(dir, target)
     as.retry_count = 0
 
     register_triggers()
+    events.subscribe("mob_death", M.on_mob_death)
     reset_watchdog()
 
     as_dbg(string.format("start %s←%s target=%s", dir, as.ret, target))
@@ -135,14 +134,9 @@ function M.on_fail()
     end
 end
 
-function M.on_dead()
+function M.on_mob_death(_)
     if not as.active then return end
-    abort("dead")
-end
-
-function M.on_gone()
-    if not as.active then return end
-    abort("gone")
+    abort("target dead")
 end
 
 function M.watchdog()

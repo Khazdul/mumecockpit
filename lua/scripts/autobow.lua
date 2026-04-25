@@ -58,8 +58,6 @@ local function register_triggers()
     session_cmd("#action {You can only load crossbows.} {#lua {scripts.autobow.on_not_crossbow()}}")
     session_cmd("#action {You successfully escaped the fight!} {#lua {scripts.autobow.on_success()}}")
     session_cmd("#action {You failed to escape the fight!} {#lua {scripts.autobow.on_fail()}}")
-    session_cmd("#action {%1 is dead! R.I.P.} {#lua {scripts.autobow.on_dead()}}")
-    session_cmd("#action {%1 disappears into nothing.} {#lua {scripts.autobow.on_gone()}}")
     session_cmd("#action {You don't have any bolts.} {#lua {scripts.autobow.on_no_bolts()}}")
     session_cmd("#action {You don't have any arrows.} {#lua {scripts.autobow.on_no_arrows()}}")
 end
@@ -70,8 +68,6 @@ local function unregister_triggers()
     session_cmd("#unaction {You can only load crossbows.}")
     session_cmd("#unaction {You successfully escaped the fight!}")
     session_cmd("#unaction {You failed to escape the fight!}")
-    session_cmd("#unaction {%1 is dead! R.I.P.}")
-    session_cmd("#unaction {%1 disappears into nothing.}")
     session_cmd("#unaction {You don't have any bolts.}")
     session_cmd("#unaction {You don't have any arrows.}")
 end
@@ -109,6 +105,7 @@ end
 local function abort(reason)
     ab.active = false
     unregister_triggers()
+    events.unsubscribe("mob_death", M.on_mob_death)
     session_cmd("#undelay {ab_watch}")
     ab_dbg("stopped: " .. reason)
     script_ui("AUTOBOW", "Stopped — " .. ui_var(reason) .. ".")
@@ -131,6 +128,7 @@ function M.start(dir, target)
     -- Clean up any still-running session before starting fresh
     if ab.active then
         unregister_triggers()
+        events.unsubscribe("mob_death", M.on_mob_death)
         session_cmd("#undelay {ab_watch}")
     end
 
@@ -142,6 +140,7 @@ function M.start(dir, target)
     -- NOTE: ab.weapon is intentionally preserved — no reset here
 
     register_triggers()
+    events.subscribe("mob_death", M.on_mob_death)
     reset_watchdog()
 
     ab_dbg(string.format("start %s←%s target=%s [%s]", dir, ab.ret, target, tostring(ab.weapon)))
@@ -194,14 +193,9 @@ function M.on_fail()
     end
 end
 
-function M.on_dead()
+function M.on_mob_death(_)
     if not ab.active then return end
-    abort("dead")
-end
-
-function M.on_gone()
-    if not ab.active then return end
-    abort("gone")
+    abort("target dead")
 end
 
 function M.on_no_bolts()
