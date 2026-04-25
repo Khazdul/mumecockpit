@@ -8,7 +8,15 @@ SENTINEL="$HOME/MUME/bridge/.collapsed_panes"
 source "$LAYOUT_CONF"
 COLS=$(tmux display-message -p -t mume:cockpit '#{window_width}')
 
-[ "$COLS" = "$window_cols" ] && exit 0
+if [ "$COLS" = "$window_cols" ]; then
+    # Height-only resize: re-pin input and reapply layout, skip column logic.
+    INPUT_INDEX=$(tmux list-panes -t mume:cockpit \
+      -F '#{pane_index} #{pane_title}' \
+      | awk '$2=="input" {print $1}')
+    [ -n "$INPUT_INDEX" ] && tmux resize-pane -t "mume:cockpit.$INPUT_INDEX" -y 1
+    bash "$HOME/MUME/bridge/apply_layout.sh"
+    exit 0
+fi
 
 # Global width-priority constraint:
 #   MAIN_MIN  = 30 — main/tt++ pane floor
