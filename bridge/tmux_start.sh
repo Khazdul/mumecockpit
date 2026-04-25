@@ -129,7 +129,7 @@ tmux select-pane -t mume:cockpit.0 -T "MUME"
 sleep 0.2 && tmux select-pane -t mume:cockpit.0 -T "MUME" &
 
 # ---------------------------------------------------------------------------
-# 6. Open status pane (between ui and dev)
+# 6. Open status pane (top of right column)
 # ---------------------------------------------------------------------------
 if [ "$SHOW_STATUS" -eq 1 ]; then
     bash "$HOME/MUME/bridge/open_pane.sh" status

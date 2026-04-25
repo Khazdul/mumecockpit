@@ -43,8 +43,8 @@ fi
 [ "$U_HEIGHT" -lt 3 ] && U_HEIGHT=3
 
 # Apply top-down: each resize-pane drives the diff into the pane below
-[ -n "$UI_IDX" ]     && tmux resize-pane -t "mume:cockpit.$UI_IDX"     -y "$U_HEIGHT"
 [ -n "$STATUS_IDX" ] && tmux resize-pane -t "mume:cockpit.$STATUS_IDX" -y "$S_HEIGHT"
+[ -n "$UI_IDX" ]     && tmux resize-pane -t "mume:cockpit.$UI_IDX"     -y "$U_HEIGHT"
 # dev receives the residual — no explicit sizing needed
 
 # ── Width floor (status open → right column ≥ 33 cols) ───────────────────

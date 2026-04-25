@@ -167,31 +167,31 @@ draw_layout_mockup() {
         printf "${_MR_TITLE}"
 
         if [ "$show_ui" -eq 1 ] && [ "$show_status" -eq 1 ] && [ "$show_dev" -eq 1 ] && [ "$show_input" -eq 1 ]; then
-            # UI + STATUS + DEV + INPUT
+            # CHAR + UI + DEV + INPUT
             printf '%s┌───────────────┬──────┐\n' "$p"
-            printf '%s│               │  UI  │\n' "$p"
-            printf '%s│     GAME      ├──────┤\n' "$p"
             printf '%s│               │ CHAR │\n' "$p"
+            printf '%s│     GAME      ├──────┤\n' "$p"
+            printf '%s│               │  UI  │\n' "$p"
             printf '%s├───────────────┼──────┤\n' "$p"
             printf '%s│    INPUT      │ DEV  │\n' "$p"
             printf '%s└───────────────┴──────┘\n' "$p"
 
         elif [ "$show_ui" -eq 1 ] && [ "$show_status" -eq 1 ] && [ "$show_dev" -eq 1 ]; then
-            # UI + STATUS + DEV, no INPUT
+            # CHAR + UI + DEV, no INPUT
             printf '%s┌───────────────┬──────┐\n' "$p"
-            printf '%s│               │  UI  │\n' "$p"
-            printf '%s│     GAME      ├──────┤\n' "$p"
             printf '%s│               │ CHAR │\n' "$p"
+            printf '%s│     GAME      ├──────┤\n' "$p"
+            printf '%s│               │  UI  │\n' "$p"
             printf '%s│               ├──────┤\n' "$p"
             printf '%s│               │ DEV  │\n' "$p"
             printf '%s└───────────────┴──────┘\n' "$p"
 
         elif [ "$show_ui" -eq 1 ] && [ "$show_status" -eq 1 ] && [ "$show_input" -eq 1 ]; then
-            # UI + STATUS + INPUT, no DEV
+            # CHAR + UI + INPUT, no DEV
             printf '%s┌───────────────┬──────┐\n' "$p"
-            printf '%s│               │  UI  │\n' "$p"
-            printf '%s│     GAME      ├──────┤\n' "$p"
             printf '%s│               │ CHAR │\n' "$p"
+            printf '%s│     GAME      ├──────┤\n' "$p"
+            printf '%s│               │  UI  │\n' "$p"
             printf '%s├───────────────┤      │\n' "$p"
             printf '%s│    INPUT      │      │\n' "$p"
             printf '%s└───────────────┴──────┘\n' "$p"
@@ -207,11 +207,11 @@ draw_layout_mockup() {
             printf '%s└───────────────┴──────┘\n' "$p"
 
         elif [ "$show_ui" -eq 1 ] && [ "$show_status" -eq 1 ]; then
-            # UI + STATUS only (no DEV, no INPUT)
+            # CHAR + UI only (no DEV, no INPUT)
             printf '%s┌───────────────┬──────┐\n' "$p"
-            printf '%s│               │  UI  │\n' "$p"
-            printf '%s│     GAME      ├──────┤\n' "$p"
             printf '%s│               │ CHAR │\n' "$p"
+            printf '%s│     GAME      ├──────┤\n' "$p"
+            printf '%s│               │  UI  │\n' "$p"
             printf '%s└───────────────┴──────┘\n' "$p"
 
         elif [ "$show_status" -eq 1 ] && [ "$show_dev" -eq 1 ]; then

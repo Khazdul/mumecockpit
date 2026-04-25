@@ -23,21 +23,20 @@ if [ -n "$HAS_STATUS" ]; then
     grep -q "^ui_height=" "$LAYOUT_CONF" || echo "ui_height=20" >> "$LAYOUT_CONF"
     source "$LAYOUT_CONF"
 
-    U=$(tmux list-panes -t mume:cockpit -F '#{pane_title} #{pane_height}' \
-        | awk '$1=="ui" {print $2; exit}')
     S=$(tmux list-panes -t mume:cockpit -F '#{pane_title} #{pane_height}' \
         | awk '$1=="status" {print $2; exit}')
-    D=$(tmux list-panes -t mume:cockpit -F '#{pane_title} #{pane_height}' \
-        | awk '$1=="dev" {print $2; exit}')
 
-    if [ -n "$U" ] && [ "$U" -ge 3 ] && [ "$U" -ne "${ui_height:-20}" ]; then
-        # ui↔status border dragged — persist new ui height
-        sed -i "s/^ui_height=.*/ui_height=$U/" "$LAYOUT_CONF"
-    elif [ -n "$S" ] && [ "$S" -ne "${status_height:-12}" ] && [ -n "$U" ] && [ -n "$D" ]; then
-        # status↔dev border dragged — remap intent to ui_height so dev lands at D
-        NEW_U=$(( U + S - ${status_height:-12} ))
-        [ "$NEW_U" -lt 3 ] && NEW_U=3
-        sed -i "s/^ui_height=.*/ui_height=$NEW_U/" "$LAYOUT_CONF"
+    if [ -n "$S" ] && [ "$S" -ne "${status_height:-12}" ]; then
+        # Top border (char↔ui) dragged — snap back only, no persistence.
+        : # apply_layout.sh below restores everything
+    else
+        # S is at configured height; check if ui↔dev bottom border was dragged.
+        U=$(tmux list-panes -t mume:cockpit -F '#{pane_title} #{pane_height}' \
+            | awk '$1=="ui" {print $2; exit}')
+        if [ -n "$U" ] && [ "$U" -ge 3 ] && [ "$U" -ne "${ui_height:-20}" ]; then
+            # Bottom border (ui↔dev) dragged — persist new ui height.
+            sed -i "s/^ui_height=.*/ui_height=$U/" "$LAYOUT_CONF"
+        fi
     fi
 fi
 

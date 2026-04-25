@@ -56,11 +56,37 @@ if [ -n "$HAS_RIGHT" ]; then
     # Right column exists — split vertically inside it using geometric position.
 
     case $TYPE in
-        ui)
-            # ui always on top: split *before* the topmost right pane (-b = above).
+        status)
+            # status always on top: split *before* the topmost right pane (-b = above).
             TOP_IDX=$(_right_pane_at_top)
-            NEW_INDEX=$(tmux split-window -v -b -t mume:cockpit.$TOP_IDX -P -F '#{pane_index}' \
-                "bash -c 'stty -isig 2>/dev/null; trap "" INT; while true; do tail -f $MUME/logs/ui.log; printf \"\\n[pane kept alive — use cp -u to close]\\n\"; sleep 0.2; done'")
+            STATUS_CMD="bash -c 'stty -isig 2>/dev/null; trap \"\" INT; while true; do python3 $MUME/bridge/status_pane.py; printf \"\\n[pane kept alive — use cp -c to close]\\n\"; sleep 0.2; done'"
+            NEW_INDEX=$(tmux split-window -v -b -t mume:cockpit.$TOP_IDX -P -F '#{pane_index}' "$STATUS_CMD")
+            tmux select-pane -t mume:cockpit.$NEW_INDEX -T "status"
+            tmux resize-pane -t mume:cockpit.$NEW_INDEX -y "$STATUS_H_APPLY"
+            tmux select-pane -t "$(resolve_focus_target)"
+            bash "$MUME/bridge/apply_layout.sh"
+            ;;
+        ui)
+            # ui goes between status (top) and dev (bottom).
+            STATUS_INDEX=$(tmux list-panes -t mume:cockpit -F '#{pane_index} #{pane_title}' \
+              | awk '$2=="status" {print $1; exit}')
+            DEV_INDEX=$(tmux list-panes -t mume:cockpit -F '#{pane_index} #{pane_title}' \
+              | awk '$2=="dev" {print $1; exit}')
+
+            if [ -n "$STATUS_INDEX" ]; then
+                # Split below status → ui appears between status and dev
+                NEW_INDEX=$(tmux split-window -v -t mume:cockpit.$STATUS_INDEX -P -F '#{pane_index}' \
+                    "bash -c 'stty -isig 2>/dev/null; trap "" INT; while true; do tail -f $MUME/logs/ui.log; printf \"\\n[pane kept alive — use cp -u to close]\\n\"; sleep 0.2; done'")
+            elif [ -n "$DEV_INDEX" ]; then
+                # No status — split *before* dev (-b = above dev)
+                NEW_INDEX=$(tmux split-window -v -b -t mume:cockpit.$DEV_INDEX -P -F '#{pane_index}' \
+                    "bash -c 'stty -isig 2>/dev/null; trap "" INT; while true; do tail -f $MUME/logs/ui.log; printf \"\\n[pane kept alive — use cp -u to close]\\n\"; sleep 0.2; done'")
+            else
+                # Only other right pane — split below bottommost
+                BOT_IDX=$(_right_pane_at_bottom)
+                NEW_INDEX=$(tmux split-window -v -t mume:cockpit.$BOT_IDX -P -F '#{pane_index}' \
+                    "bash -c 'stty -isig 2>/dev/null; trap "" INT; while true; do tail -f $MUME/logs/ui.log; printf \"\\n[pane kept alive — use cp -u to close]\\n\"; sleep 0.2; done'")
+            fi
             tmux select-pane -t mume:cockpit.$NEW_INDEX -T "ui"
             tmux select-pane -t "$(resolve_focus_target)"
             bash "$MUME/bridge/apply_layout.sh"
@@ -71,31 +97,6 @@ if [ -n "$HAS_RIGHT" ]; then
             NEW_INDEX=$(tmux split-window -v -t mume:cockpit.$BOT_IDX -P -F '#{pane_index}' \
                 "bash -c 'stty -isig 2>/dev/null; trap "" INT; while true; do tail -f $MUME/logs/debug.log; printf \"\\n[pane kept alive — use cp -d to close]\\n\"; sleep 0.2; done'")
             tmux select-pane -t mume:cockpit.$NEW_INDEX -T "dev"
-            tmux select-pane -t "$(resolve_focus_target)"
-            bash "$MUME/bridge/apply_layout.sh"
-            ;;
-        status)
-            # status goes between ui (top) and dev (bottom).
-            UI_INDEX=$(tmux list-panes -t mume:cockpit -F '#{pane_index} #{pane_title}' \
-              | awk '$2=="ui" {print $1; exit}')
-            DEV_INDEX=$(tmux list-panes -t mume:cockpit -F '#{pane_index} #{pane_title}' \
-              | awk '$2=="dev" {print $1; exit}')
-
-            STATUS_CMD="bash -c 'stty -isig 2>/dev/null; trap \"\" INT; while true; do python3 $MUME/bridge/status_pane.py; printf \"\\n[pane kept alive — use cp -c to close]\\n\"; sleep 0.2; done'"
-
-            if [ -n "$UI_INDEX" ]; then
-                # Split below ui → status appears between ui and dev
-                NEW_INDEX=$(tmux split-window -v -t mume:cockpit.$UI_INDEX -P -F '#{pane_index}' "$STATUS_CMD")
-            elif [ -n "$DEV_INDEX" ]; then
-                # No ui — split *before* dev (-b = above dev); no swap needed
-                NEW_INDEX=$(tmux split-window -v -b -t mume:cockpit.$DEV_INDEX -P -F '#{pane_index}' "$STATUS_CMD")
-            else
-                # Only other right pane — split below bottommost
-                BOT_IDX=$(_right_pane_at_bottom)
-                NEW_INDEX=$(tmux split-window -v -t mume:cockpit.$BOT_IDX -P -F '#{pane_index}' "$STATUS_CMD")
-            fi
-            tmux select-pane -t mume:cockpit.$NEW_INDEX -T "status"
-            tmux resize-pane -t mume:cockpit.$NEW_INDEX -y "$STATUS_H_APPLY"
             tmux select-pane -t "$(resolve_focus_target)"
             bash "$MUME/bridge/apply_layout.sh"
             ;;

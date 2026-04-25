@@ -150,22 +150,24 @@ formatted with comma separators (232,200 rather than 232200).
 
 ### Pane position
 
-Right column (top to bottom): `ui` → `status` → `dev`. When a subset of
-right panes is open, ordering is preserved — status stays between ui and dev
-when both are present, below ui if only ui exists, above dev if only dev exists.
+Right column (top to bottom): `status` → `ui` → `dev`. When a subset of
+right panes is open, ordering is preserved — status stays at the top of the
+right column whenever it exists; ui sits below status (or at the top if status
+is absent); dev is always at the bottom.
 
 ### Pane height
 
 `status_height=12` in `bridge/layout.conf` (3 header + 9 body rows). In phase 1
-this value is fixed at 12 (matches rendered content). Manual drag snaps back in
-both directions — the configured value is authoritative and is never overwritten
-by a drag. Phase 2 will drive this dynamically from `lua/core/status_state.lua`
-based on affect count.
+this value is fixed at 12 (matches rendered content). The char↔ui top border is
+not user-resizable — dragging it snaps back without persisting any change;
+`status_height` is never overwritten by a drag. Phase 2 will drive this
+dynamically from `lua/core/status_state.lua` based on affect count.
 
-`bridge/apply_layout.sh` owns all right-column heights. It applies `ui_height`
-(default 20, drag-adjustable) top-down first, then `status_height`; `dev`
-receives the residual. All three are re-established after every right-column
-operation.
+`bridge/apply_layout.sh` owns all right-column heights. It applies
+`status_height` first (top pane), then `ui_height` (default 20, clamped so dev
+keeps ≥ 3 rows when present); `dev` receives the residual. All three are
+re-established after every right-column operation. The ui↔dev bottom border is
+the only height-flex border — dragging it persists `ui_height = U`.
 
 ### Width constraint
 
@@ -187,11 +189,11 @@ narrow), it widens the column automatically provided main can stay ≥ 30 cols.
 ### Height
 
 `bridge/apply_layout.sh` owns all right-column heights. Apply order is
-top-down: `ui_height` is applied first (clamped so dev keeps ≥ 3 rows when
-present), then `status_height`; dev receives the residual. Both `ui_height`
-(default 20) and `status_height` (fixed 12 in phase 1) live in `layout.conf`.
-Every right-column operation ends with a call to `apply_layout.sh`, making
-dev-zero-rows structurally impossible.
+top-down: `status_height` is applied first (top pane), then `ui_height`
+(clamped so dev keeps ≥ 3 rows when present); dev receives the residual.
+Both `ui_height` (default 20) and `status_height` (fixed 12 in phase 1)
+live in `layout.conf`. Every right-column operation ends with a call to
+`apply_layout.sh`, making dev-zero-rows structurally impossible.
 
 ## Toggle
 
