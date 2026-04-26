@@ -110,6 +110,13 @@ successful sync, `clock_changed` is emitted on the event bus so subscribers
 (e.g. `lua/core/status_state.lua`) can react immediately without waiting for
 the next `Char.Vitals` tick.
 
+Precision is monotonically non-decreasing during a session. A sync from a
+lower-precision source (e.g. `time` output arriving after a sun event)
+refreshes `mume_start_epoch` and `last_sync_epoch` but leaves precision
+unchanged if the current precision is already higher. Precision is lowered
+only by the 24 h / 7 d degradation rule applied at brain startup in
+`_load()`.
+
 > **gts-ticker constraint:** tt++ does not fire tickers in the startup session (`gts`). The clock ticker is therefore registered per game session inside `_register_clock_actions`, not at file-load time. It is created on SESSION CONNECTED and destroyed on disconnect.
 
 ### `event_sun` (emitted by `lua/core/world_state.lua`)

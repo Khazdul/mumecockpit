@@ -187,7 +187,7 @@ local function _apply_sun(body)
     local m = _compute_moment()
     local h = what == "rise" and dawn[m.month + 1] or dusk[m.month + 1]
     _set_anchor(m.year, m.month, m.day, h, 0, "sun_" .. what)
-    C.precision = P.MINUTE
+    C.precision = math.max(C.precision, P.MINUTE)
     _persist()
     dbg("[CLOCK] sync: " .. what .. " → MINUTE")
     events.emit("clock_changed")
@@ -204,7 +204,7 @@ local function _apply_time_line(line)
         local hr_n  = _parse_hour24(h_s, ampm)
         if day_n and mon_n and yr_n and hr_n then
             _set_anchor(yr_n, mon_n, day_n, hr_n, 0, "time_dated")
-            C.precision = P.HOUR
+            C.precision = math.max(C.precision, P.HOUR)
             _persist()
             dbg("[CLOCK] sync: time_dated → HOUR")
             events.emit("clock_changed")
@@ -220,7 +220,7 @@ local function _apply_time_line(line)
         local yr_n  = tonumber(yr_s2)
         if day_n and mon_n and yr_n then
             _set_anchor(yr_n, mon_n, day_n, 0, 0, "time_day")
-            C.precision = P.DAY
+            C.precision = math.max(C.precision, P.DAY)
             _persist()
             dbg("[CLOCK] sync: time_day → DAY")
             events.emit("clock_changed")
@@ -241,7 +241,7 @@ local function _apply_room_clock(line)
     if not hr_n or not min_n then return end
     local m = _compute_moment()
     _set_anchor(m.year, m.month, m.day, hr_n, min_n, "room_clock")
-    C.precision = P.MINUTE
+    C.precision = math.max(C.precision, P.MINUTE)
     _persist()
     dbg("[CLOCK] sync: room_clock → MINUTE")
     events.emit("clock_changed")
