@@ -42,6 +42,22 @@ _persist_key() {
 }
 
 case "$TARGET" in
+    comm)
+        if _pane_exists "comm"; then
+            _kill_pane "comm"
+            bash "$SCRIPT_DIR/apply_layout.sh"
+        else
+            bash "$SCRIPT_DIR/open_pane.sh" comm
+        fi
+        if [ "$PERSIST" -eq 1 ]; then
+            if _pane_exists "comm"; then
+                _persist_key "show_comm" "1"
+            else
+                _persist_key "show_comm" "0"
+            fi
+        fi
+        ;;
+
     status)
         if _pane_exists "status"; then
             _kill_pane "status"

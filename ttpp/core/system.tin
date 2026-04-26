@@ -57,6 +57,7 @@
 #nop Script aliases like {cp -autostab} are registered by Lua at startup.
 
 #alias {cp -u} {#system {bash $HOME/MUME/bridge/toggle_pane.sh ui}}
+#alias {cp -m} {#system {bash $HOME/MUME/bridge/toggle_pane.sh comm}}
 #alias {cp -d} {#system {bash $HOME/MUME/bridge/toggle_pane.sh dev}}
 #alias {cp -c} {#system {bash $HOME/MUME/bridge/toggle_pane.sh status}}
 #alias {cp -i} {#system {bash $HOME/MUME/bridge/toggle_pane.sh input}}

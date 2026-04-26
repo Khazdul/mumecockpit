@@ -303,6 +303,7 @@ local function _register_cockpit_help()
         "  Window management:",
         "   cp -i       toggle input pane",
         "   cp -u       toggle UI pane",
+        "   cp -m       toggle comm pane",
         "   cp -c       toggle status pane",
         "   cp -d       toggle dev pane",
         "   cp -h       toggle headers",
@@ -400,6 +401,7 @@ state   = {
     comm  = {
         history  = {},
         channels = {},
+        filters  = {},
         max_size = 500,
     },
     core  = {},
