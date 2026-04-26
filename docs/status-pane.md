@@ -116,6 +116,8 @@ JSON written by `lua/core/status_state.lua`. Gitignored.
   "climb": "off",
   "swim": "off",
   "game_time": null,
+  "time_period": null,
+  "time_remaining": null,
   "affects": [
     {"name": "Sanctuary", "type": "spell", "remaining_seconds": 272}
   ]
@@ -146,8 +148,10 @@ when `affects` is empty).
 | `swim`         | `Char.Vitals` → `state.char.swim`  | bool→"on"/"off"                  |
 | `session_xp`   | `lua/core/sess_kills.lua` → `state.session.session_xp` | null during bootstrap window; resets to 0 on `cp -r` (rebaselines on next Vitals tick — expected behaviour, not a bug) |
 | `session_tp`   | `lua/core/sess_kills.lua` → `state.session.session_tp` | null during bootstrap window; resets to 0 on `cp -r` (rebaselines on next Vitals tick — expected behaviour, not a bug) |
-| `game_time`    | `lua/core/clock.lua` → `state.world.clock.format("panel")` | null when precision is UNSET; `"?"` string when clock loaded but unsynced |
-| `affects`      | `lua/core/affects.lua` → `state.char.affects` via `affects_changed` | array of `{name, type, remaining_seconds}` objects; `remaining_seconds` is nil when no duration known |
+| `game_time`      | `lua/core/clock.lua` → `state.world.clock.format("panel_time")` | null when precision is UNSET; `"?"` string when clock loaded but unsynced; time-only at HOUR/MINUTE, date at DAY |
+| `time_period`    | `lua/core/clock.lua` → `state.world.clock.next_transition()` | `"day"` or `"night"` (current period); null when precision < HOUR |
+| `time_remaining` | `lua/core/clock.lua` → `state.world.clock.next_transition()` | pre-formatted countdown string (`"H:MM"` or `"~N"`); null when precision < HOUR |
+| `affects`        | `lua/core/affects.lua` → `state.char.affects` via `affects_changed` | array of `{name, type, remaining_seconds}` objects; `remaining_seconds` is nil when no duration known |
 
 ## Colour scheme
 
@@ -163,6 +167,8 @@ Constants defined at the top of `bridge/status_pane.py`:
 | `C_AFFECT_SPELL` | `\x1b[38;2;122;169;214m`        | #7AA9D6 light steel-blue — spell affects |
 | `C_AFFECT_BUFF`  | `\x1b[38;2;143;188;143m`        | #8FBC8F soft sage green — buff affects  |
 | `C_AFFECT_DEBUFF`| `\x1b[38;2;201;112;112m`        | #C97070 muted brick red — debuff affects |
+| `C_SUN`          | `\x1b[38;2;230;180;80m`         | #E6B450 warm amber — ☼ sun icon (upcoming day) |
+| `C_MOON`         | `\x1b[38;2;111;143;184m`        | #6F8FB8 muted cool blue — ☾ moon icon (upcoming night) |
 
 ## Header
 
@@ -186,10 +192,18 @@ Sess XP: <sess_xp>    Sess TP: <sess_tp>
 Mood: <mood>          Alert: <alertness>
 Pos: <position>       Sneak: <sneak>
 Climb: <climb>        Swim: <swim>
-Time: <game_time>
+Time: <game_time>                          ← UNSET / DAY: single full-width row
+Time: <H:MM AM/PM>   ☾ in <H:MM>          ← MINUTE (day→night example)
+Time: <~H AM/PM>     ☼ in <~N>            ← HOUR   (night→day example)
 Affected by:
   <affects>           ← 4 blank rows when no affects are active
 ```
+
+At HOUR/MINUTE precision the Time row splits into a 16-col left half (label +
+time-only value) and a 17-col right half (sun/moon icon + `in <countdown>`).
+Icon colour: `C_SUN` (amber ☼) for upcoming day, `C_MOON` (blue ☾) for upcoming
+night. At DAY or UNSET precision `time_period` / `time_remaining` are null and
+the single full-width `_row("Time:", ...)` fallback is used.
 
 The `Affected by:` header and the 4-row affect block are always rendered.
 
@@ -404,7 +418,11 @@ Clock module `lua/core/clock.lua` and the status-pane wiring are both active.
 `lua/core/status_state.lua` populates `game_time` in `serialize()`:
 
 ```lua
-game_time = state.world.clock and state.world.clock.format("panel") or nil,
+local nt = state.world.clock and state.world.clock.next_transition() or nil
+-- in payload:
+game_time      = state.world.clock and state.world.clock.format("panel_time") or nil,
+time_period    = nt and nt.period or nil,
+time_remaining = nt and nt.remaining or nil,
 ```
 
 It also subscribes to the `clock_changed` event emitted by `clock.lua` after
@@ -417,11 +435,14 @@ events.subscribe("clock_changed", function() serialize() end)
 This means the panel updates immediately on a sync — not on the next
 `Char.Vitals` tick.
 
-**Consumer contract:** `state.world.clock.format("panel")` returns:
+**Consumer contract:** `state.world.clock.format("panel_time")` returns:
 - `"?"` when precision is UNSET (no sync yet) — renderer shows `?`
 - `"Solmath 26, 2973"` (DAY precision — date known, hour unknown)
-- `"~8 AM on Solmath 26"` (HOUR precision — `~` means minute unknown)
-- `"8:00 AM on Solmath 26"` (MINUTE precision — fully synced)
+- `"~8 AM"` (HOUR precision — time only, no date)
+- `"8:00 AM"` (MINUTE precision — time only, no date)
+
+`state.world.clock.next_transition()` returns nil at UNSET/DAY; at HOUR/MINUTE
+it returns `{period, remaining}` driving the right-half countdown column.
 
 The `"compact"` format (`"8:00, Solmath 26"`, lowercase am/pm, comma separator)
 remains available for other consumers; the panel no longer uses it.

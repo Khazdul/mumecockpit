@@ -292,6 +292,20 @@ function C.format(style)
         else -- DAY
             return string.format("%s %d, %d", mn, m.day, m.year)
         end
+    elseif style == "panel_time" then
+        if C.precision == P.MINUTE then
+            local disp = m.hour % 12
+            if disp == 0 then disp = 12 end
+            local ampm = m.hour < 12 and "AM" or "PM"
+            return string.format("%d:%02d %s", disp, m.minute, ampm)
+        elseif C.precision == P.HOUR then
+            local disp = m.hour % 12
+            if disp == 0 then disp = 12 end
+            local ampm = m.hour < 12 and "AM" or "PM"
+            return string.format("~%d %s", disp, ampm)
+        else -- DAY
+            return string.format("%s %d, %d", mn, m.day, m.year)
+        end
     elseif style == "full" then
         local wd = weekday_name[m.weekday] or "?"
         return string.format("%s, the %dth of %s, year %d (%s)",
@@ -301,6 +315,39 @@ function C.format(style)
             C.mume_start_epoch, P_NAME[C.precision],
             m.year, m.month + 1, m.day, m.hour, m.minute)
     end
+end
+
+function C.next_transition()
+    if C.precision < P.HOUR then return nil end
+    local m      = _compute_moment()
+    local h      = m.hour
+    local min    = C.precision >= P.MINUTE and m.minute or 0
+    local dawn_h = dawn[m.month + 1]
+    local dusk_h = dusk[m.month + 1]
+
+    local period = (h >= dawn_h and h < dusk_h) and "day" or "night"
+
+    local until_minutes
+    if period == "day" then
+        until_minutes = dusk_h * 60 - (h * 60 + min)
+    elseif h < dawn_h then
+        until_minutes = dawn_h * 60 - (h * 60 + min)
+    else
+        -- night past dusk: next dawn is tomorrow
+        local next_month = (m.day == 30) and ((m.month + 1) % 12) or m.month
+        local dawn_h_next = dawn[next_month + 1]
+        until_minutes = (24 * 60 - (h * 60 + min)) + dawn_h_next * 60
+    end
+    if until_minutes < 1 then until_minutes = 1 end
+
+    local remaining
+    if C.precision >= P.MINUTE then
+        remaining = string.format("%d:%02d",
+            math.floor(until_minutes / 60), until_minutes % 60)
+    else
+        remaining = string.format("~%d", math.max(1, math.ceil(until_minutes / 60)))
+    end
+    return { period = period, remaining = remaining }
 end
 
 function C.tick()

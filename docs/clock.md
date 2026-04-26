@@ -89,18 +89,64 @@ Returns nil when precision is `"UNSET"`. Otherwise returns:
 
 **`state.world.clock.format(style)`** → string
 
-| Style     | UNSET | DAY example         | HOUR example        | MINUTE example    |
-|-----------|-------|---------------------|---------------------|-------------------|
-| `"compact"` | `"?"` | `"Solmath 26, 2973"` | `"~8 am, Solmath 26"` | `"8:00, Solmath 26"` |
-| `"panel"`   | `"?"` | `"Solmath 26, 2973"` | `"~8 AM on Solmath 26"` | `"8:00 AM on Solmath 26"` |
-| `"full"`    | `"?"` | weekday + full date + season | same | same |
-| `"debug"`   | `"?"` | mse=… prec=… date/time | same | same |
+| Style          | UNSET | DAY example          | HOUR example            | MINUTE example        |
+|----------------|-------|----------------------|-------------------------|-----------------------|
+| `"compact"`    | `"?"` | `"Solmath 26, 2973"` | `"~8 am, Solmath 26"`   | `"8:00, Solmath 26"`  |
+| `"panel"`      | `"?"` | `"Solmath 26, 2973"` | `"~8 AM on Solmath 26"` | `"8:00 AM on Solmath 26"` |
+| `"panel_time"` | `"?"` | `"Solmath 26, 2973"` | `"~8 AM"`               | `"8:00 AM"`           |
+| `"full"`       | `"?"` | weekday + full date + season | same           | same                  |
+| `"debug"`      | `"?"` | mse=… prec=… date/time | same                 | same                  |
 
 The `~` prefix on HOUR indicates the minute is unknown.
 
 `"panel"` uses 12-hour time with uppercase AM/PM and an `on` separator.
+`"panel_time"` returns only the time component (no date) — used for the left half of
+the two-column status-pane Time row. The DAY row is identical to `"compact"` in both
+`"panel"` and `"panel_time"` — no time component to show.
 Midnight renders as `12 AM` / `12:00 AM`; noon as `12 PM` / `12:00 PM`.
-The DAY row is identical to `"compact"` — no time component to show.
+
+### Transition queries
+
+**`state.world.clock.next_transition()`** → table or nil
+
+Returns nil when precision is `"UNSET"` or `"DAY"` (hour unknown). Otherwise returns:
+
+```lua
+{
+    period    = "day" | "night",   -- the CURRENT period
+    remaining = "<formatted>",     -- pre-formatted countdown to the next transition
+}
+```
+
+**Period rule** (matches MMapper visual):
+
+```
+day   = (hour >= dawn[month+1]) and (hour < dusk[month+1])
+night = everything else
+```
+
+Dawn/dusk edge hours collapse into night, so the rule is binary.
+
+**`remaining` format:**
+
+| Precision | Format | Example |
+|-----------|--------|---------|
+| MINUTE    | `"H:MM"` | `"6:20"`, `"0:45"` |
+| HOUR      | `"~N"` (N = ceil(until/60), min 1) | `"~3"` |
+
+**Computing until-minutes** (MUME minutes = real seconds):
+
+| State | Next event | Formula |
+|-------|-----------|---------|
+| Day | `dusk[month]` @ minute 0 today | `dusk_h * 60 − (hour * 60 + minute)` |
+| Night, `hour < dawn[month]` | `dawn[month]` @ minute 0 today | `dawn_h * 60 − (hour * 60 + minute)` |
+| Night, `hour >= dusk[month]` | `dawn[next_day_month]` @ minute 0 tomorrow | `(24 * 60 − (hour * 60 + minute)) + dawn_h_next * 60` |
+
+`next_day_month` handles the day-30 → next-month rollover: if `day == 30` use
+`(month + 1) % 12`, otherwise use `month`. Year rollover is ignored (acceptable
+approximation on Foreyule day 30).
+
+At HOUR precision `minute` is treated as 0.
 
 **`state.world.clock.tick()`** — called by a 1Hz tt++ ticker.
 

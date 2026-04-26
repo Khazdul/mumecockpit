@@ -27,6 +27,9 @@ C_AFFECT_SPELL  = "\x1b[38;2;122;169;214m"   # #7AA9D6 light steel-blue
 C_AFFECT_BUFF   = "\x1b[38;2;143;188;143m"   # #8FBC8F soft sage green
 C_AFFECT_DEBUFF = "\x1b[38;2;201;112;112m"   # #C97070 muted brick red
 
+C_SUN  = "\x1b[38;2;230;180;80m"    # #E6B450 warm amber
+C_MOON = "\x1b[38;2;111;143;184m"   # #6F8FB8 muted cool blue
+
 _AFFECT_COLOURS = {
     "spell":  C_AFFECT_SPELL,
     "buff":   C_AFFECT_BUFF,
@@ -104,6 +107,29 @@ def _pair(l1, v1, l2, v2, width=WIDTH):
         return C_LABEL + lbl + C_RESET + " " + C_VALUE + val + C_RESET + " " * max(0, trailing)
 
     return _half(l1, v1, lw) + _half(l2, v2, rw)
+
+
+def _time_row(time_str, period, remaining):
+    """Time row: single full-width at DAY/UNSET; two-column at HOUR/MINUTE."""
+    if period is None or remaining is None:
+        return _row("Time:", time_str)
+    lw = WIDTH // 2   # 16
+    rw = WIDTH - lw   # 17
+
+    label = "Time:"
+    val = str(time_str) if time_str is not None else "—"
+    if len(label) + 1 + len(val) > lw:
+        val = val[:max(0, lw - len(label) - 1)]
+    trailing_left = max(0, lw - len(label) - 1 - len(val))
+    left = C_LABEL + label + C_RESET + " " + C_VALUE + val + C_RESET + " " * trailing_left
+
+    icon   = "☼" if period == "night" else "☾"
+    colour = C_SUN if period == "night" else C_MOON
+    rem    = str(remaining)
+    trailing_right = max(0, rw - 1 - 4 - len(rem))   # 1=icon, 4=" in "
+    right = colour + icon + C_VALUE + " in " + rem + C_RESET + " " * trailing_right
+
+    return left + right
 
 
 def _resolve_affect_name(name):
@@ -185,8 +211,14 @@ def _build_frame(data):
     swim  = c.get("swim")  or "off"
     lines.append(_pair("Climb:", climb, "Swim:", swim))
 
-    game_time = c.get("game_time")
-    lines.append(_row("Time:", game_time if game_time is not None else "—"))
+    game_time      = c.get("game_time")
+    time_period    = c.get("time_period")
+    time_remaining = c.get("time_remaining")
+    lines.append(_time_row(
+        game_time if game_time is not None else "—",
+        time_period,
+        time_remaining,
+    ))
 
     affects    = c.get("affects") or []
     n          = len(affects)

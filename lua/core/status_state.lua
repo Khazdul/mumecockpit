@@ -69,21 +69,24 @@ local function serialize()
         return (x.name or ""):lower() < (y.name or ""):lower()
     end)
 
+    local nt = state.world.clock and state.world.clock.next_transition() or nil
     local payload = {
-        character   = c.name,
-        level       = c.level,
-        xp          = c.xp,
-        tp          = c.tp,
-        session_xp  = state.session and state.session.session_xp or nil,
-        session_tp  = state.session and state.session.session_tp or nil,
-        mood        = c.mood,
-        alertness   = c.alertness,
-        sneak       = sneak_val,
-        position    = c.position,
-        climb       = climb_val,
-        swim        = swim_val,
-        game_time   = state.world.clock and state.world.clock.format("panel") or nil,
-        affects     = list,
+        character      = c.name,
+        level          = c.level,
+        xp             = c.xp,
+        tp             = c.tp,
+        session_xp     = state.session and state.session.session_xp or nil,
+        session_tp     = state.session and state.session.session_tp or nil,
+        mood           = c.mood,
+        alertness      = c.alertness,
+        sneak          = sneak_val,
+        position       = c.position,
+        climb          = climb_val,
+        swim           = swim_val,
+        game_time      = state.world.clock and state.world.clock.format("panel_time") or nil,
+        time_period    = nt and nt.period or nil,
+        time_remaining = nt and nt.remaining or nil,
+        affects        = list,
     }
 
     local encoded = json.encode(payload)
