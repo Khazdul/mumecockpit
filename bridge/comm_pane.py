@@ -58,9 +58,16 @@ CHANNEL_VERBS = {
 }
 
 CHANNEL_LABELS = {
-    "tales": "Na", "tells": "Te", "says": "Sa", "yells": "Ye",
-    "prayers": "Pr", "emotes": "Em", "whispers": "Wh",
-    "questions": "Qu", "songs": "Son", "socials": "Soc",
+    "tales":     "Na",
+    "tells":     "Te",
+    "says":      "Sa",
+    "yells":     "Ye",
+    "prayers":   "Pr",
+    "emotes":    "Em",
+    "whispers":  "Wh",
+    "questions": "Qu",
+    "songs":     "Son",
+    "socials":   "Soc",
 }
 
 # ---------------------------------------------------------------------------
@@ -72,7 +79,7 @@ C_TALKER_SELF    = "fg:#afd2d2"               # 175,210,210
 C_TALKER_OTHER   = "fg:#96b9bc"               # 150,185,188
 C_MESSAGE_SELF   = "fg:#c3e6e9"               # 195,230,233
 C_MESSAGE_OTHER  = "fg:#91bec1"               # 145,190,193
-C_LABEL_OFF      = "fg:#666666"               # grey when filter off
+C_LABEL_OFF      = "fg:#3a3a3a"               # grey when filter off
 
 CHANNEL_COLORS = {
     "tales":     "fg:#949400",  # 148,148,0
@@ -222,13 +229,14 @@ def _header_text():
     frags = []
     if _state is None:
         return frags
-    channels = _state.get("channels") or []
+    channels   = _state.get("channels") or []
+    advertised = {ch.get("name", "") for ch in channels}
 
     frags.append(("", " "))  # leading inert space
 
-    for ch in channels:
-        name    = ch.get("name", "")
-        label   = _channel_label(name)
+    for name, label in CHANNEL_LABELS.items():
+        if name not in advertised:
+            continue
         enabled = _filters.get(name, True)
         style   = _channel_color(name) if enabled else C_LABEL_OFF
 
@@ -240,6 +248,24 @@ def _header_text():
 
         frags.append((style, label, _make_handler()))
         frags.append(("", " "))  # trailing space (also acts as separator)
+
+    # Unknown channels (not in CHANNEL_LABELS): append in server order
+    for ch in channels:
+        name = ch.get("name", "")
+        if name in CHANNEL_LABELS:
+            continue
+        label   = name[:2].capitalize()
+        enabled = _filters.get(name, True)
+        style   = _channel_color(name) if enabled else C_LABEL_OFF
+
+        def _make_handler(n=name):
+            def _handler(mouse_event):
+                if mouse_event.event_type == MouseEventType.MOUSE_DOWN:
+                    forward_toggle(n)
+            return _handler
+
+        frags.append((style, label, _make_handler()))
+        frags.append(("", " "))
 
     return frags
 
@@ -441,6 +467,7 @@ def main():
 
     list_window = Window(
         content=ListControl(text=_list_text, focusable=False),
+        wrap_lines=True,
     )
 
     root      = HSplit([header_window, list_window])

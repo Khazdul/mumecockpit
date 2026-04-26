@@ -128,6 +128,13 @@ of `bridge/comm_pane.py`. Unknown channels fall back to `channel[:2].capitalize(
 | songs     | Son   |
 | socials   | Soc   |
 
+Header order is fixed by the `CHANNEL_LABELS` declaration order (Na Te Sa Ye Pr Em
+Wh Qu Son Soc), filtered against the channels actually advertised by the server
+(`state["channels"]`). Any channels the server advertises that are not in
+`CHANNEL_LABELS` are appended at the end in `Comm.Channel.List` order with the
+`name[:2].capitalize()` fallback label — so the header stays correct if MUME ever
+adds a new channel.
+
 The old label-collision algorithm (first unused uppercase character of the channel
 name) is retired. The `label` field emitted by Lua into `comm.state` is preserved
 for backward compatibility but is not read by the renderer.
@@ -222,8 +229,9 @@ remaining rows.
 ### Header
 
 Format: ` Na Te Sa Ye Pr Em Wh Qu Son Soc ` (single leading inert space, label,
-space after each label). Iteration order is `Comm.Channel.List` order from
-`state["channels"]`.
+space after each label). Iteration order is `CHANNEL_LABELS` declaration order,
+filtered against channels advertised in `state["channels"]`; unknown channels
+appended in server order. See **Header labels** above.
 
 `FormattedTextControl` with `(style, text, mouse_handler)` tuples. One fragment
 per label + one inert space fragment after each, plus a leading inert space.
@@ -232,7 +240,7 @@ Foreground colour indicates filter state:
 | State    | Style                                  |
 |----------|----------------------------------------|
 | Enabled  | `CHANNEL_COLORS[name]` — channel color |
-| Disabled | `C_LABEL_OFF` — `fg:#666666` grey      |
+| Disabled | `C_LABEL_OFF` — `fg:#3a3a3a` grey      |
 
 No background color. Each label fragment's mouse handler calls
 `forward_toggle(channel.name)` on `MouseEventType.MOUSE_DOWN`.
@@ -245,6 +253,11 @@ event. This eliminates missed clicks caused by press and release landing on
 different fragments.
 
 ### List
+
+The list `Window` has `wrap_lines=True` so long messages soft-wrap rather than
+truncating. The scroll-slice math (`_scroll_offset`, `visible_rows`) counts
+logical lines, not wrapped display rows, so a burst of long messages may render
+slightly fewer entries than the window height — newest entries are always correct.
 
 Each row: `HH:MM <Talker> <verb> <message>`
 
@@ -301,7 +314,7 @@ All constants are defined at the top of `bridge/comm_pane.py`:
 | `C_TALKER_OTHER`  | `fg:#96b9bc`            | Talker for other players/NPCs     |
 | `C_MESSAGE_SELF`  | `fg:#c3e6e9`            | Message text when self            |
 | `C_MESSAGE_OTHER` | `fg:#91bec1`            | Message text from others          |
-| `C_LABEL_OFF`     | `fg:#666666`            | Header label when filter off      |
+| `C_LABEL_OFF`     | `fg:#3a3a3a`            | Header label when filter off      |
 | `C_INDICATOR`     | `fg:#d4a04e italic`     | ↓ N newer messages                |
 
 Per-channel verb/label colors are in `CHANNEL_COLORS` (see top of file).
