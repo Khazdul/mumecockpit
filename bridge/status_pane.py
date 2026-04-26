@@ -111,10 +111,6 @@ def _build_frame(data):
     level = c.get("level")
     lines.append(_pair("Name:", name, "Lv:", level if level is not None else "—"))
 
-    xp = _fmt_num(c.get("xp"))
-    tp = _fmt_num(c.get("tp"))
-    lines.append(_pair("XP:", xp, "TP:", tp))
-
     sess_xp = c.get("session_xp")
     sess_tp = c.get("session_tp")
     lines.append(_pair("Sess XP:", _fmt_num(sess_xp) if sess_xp is not None else "—",
