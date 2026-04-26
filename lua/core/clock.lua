@@ -203,10 +203,12 @@ local function _apply_time_line(line)
         local yr_n  = tonumber(yr_s)
         local hr_n  = _parse_hour24(h_s, ampm)
         if day_n and mon_n and yr_n and hr_n then
-            _set_anchor(yr_n, mon_n, day_n, hr_n, 0, "time_dated")
+            local cur = _compute_moment()
+            local min_n = C.precision >= P.MINUTE and cur.minute or 0
+            _set_anchor(yr_n, mon_n, day_n, hr_n, min_n, "time_dated")
             C.precision = math.max(C.precision, P.HOUR)
             _persist()
-            dbg("[CLOCK] sync: time_dated → HOUR")
+            dbg("[CLOCK] sync: time_dated → " .. P_NAME[C.precision])
             events.emit("clock_changed")
         end
         return
@@ -219,10 +221,13 @@ local function _apply_time_line(line)
         local mon_n = _parse_month(mon_s2)
         local yr_n  = tonumber(yr_s2)
         if day_n and mon_n and yr_n then
-            _set_anchor(yr_n, mon_n, day_n, 0, 0, "time_day")
+            local cur   = _compute_moment()
+            local hr_n  = C.precision >= P.HOUR   and cur.hour   or 0
+            local min_n = C.precision >= P.MINUTE and cur.minute or 0
+            _set_anchor(yr_n, mon_n, day_n, hr_n, min_n, "time_day")
             C.precision = math.max(C.precision, P.DAY)
             _persist()
-            dbg("[CLOCK] sync: time_day → DAY")
+            dbg("[CLOCK] sync: time_day → " .. P_NAME[C.precision])
             events.emit("clock_changed")
         end
     end

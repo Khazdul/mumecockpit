@@ -136,10 +136,17 @@ precision to MINUTE and writes `bridge/clock.state`.
 Two patterns matched in Lua (tt++ pre-filter passes the full line):
 
 1. `"8 am on Mersday, the 26th of Solmath, year 2973 of the Third Age."` →
-   full date + hour → DAY+HOUR anchor, precision HOUR
+   full date + hour → DAY+HOUR anchor, precision HOUR (or MINUTE if already
+   at MINUTE — minute is preserved from the current moment)
 2. `"Mersday, the 26th of Solmath, year 2973 of the Third Age."` →
-   date only (orc/troll/BN indoors) → DAY anchor (hour set to 0 as
-   placeholder), precision DAY
+   date only (orc/troll/BN indoors) → DAY anchor, precision DAY (or higher
+   if already higher — hour and minute are preserved from the current moment
+   when current precision is ≥ HOUR / ≥ MINUTE respectively)
+
+Hour and minute fields not communicated by the `time` output are preserved
+from the existing moment when current precision makes them meaningful (HOUR
+or MINUTE respectively). Mirrors MMapper's `parseMumeTime` field-overwrite
+model.
 
 The response `"You cannot guess the time indoors."` and the qualitative
 outdoor snippets (`"It should be the end of the night soon."`, etc.) are
