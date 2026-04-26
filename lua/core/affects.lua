@@ -177,34 +177,6 @@ events.subscribe("affect_down", function(name)
 end)
 
 -- ---------------------------------------------------------------------------
--- Pattern conversion (Mudlet regex → tt++ action pattern)
--- ---------------------------------------------------------------------------
-
-local function _convert_pattern(raw)
-    local orig = raw
-    local pat  = raw
-
-    -- Strip single leading ^
-    if pat:sub(1, 1) == "^" then pat = pat:sub(2) end
-    -- Strip single trailing $
-    if pat:sub(-1) == "$" then pat = pat:sub(1, -2) end
-    -- .* → %* (tt++ any-characters wildcard)
-    pat = pat:gsub("%.%*", "%%*")
-    -- \. → . (escaped literal dot → plain dot; tt++ treats . as literal)
-    pat = pat:gsub("\\%.", ".")
-
-    -- Reject any remaining regex metacharacters unsupported by tt++ patterns
-    if pat:find("\\")   or pat:find("%[") or pat:find("%]") or
-       pat:find("%(")   or pat:find("%)") or pat:find("%+") or
-       pat:find("%?")   or pat:find("|") then
-        dbg("[AFFECTS] unsupported pattern: " .. orig)
-        return nil
-    end
-
-    return pat
-end
-
--- ---------------------------------------------------------------------------
 -- Hook installation (called once per load cycle from _affects_register_triggers)
 -- ---------------------------------------------------------------------------
 
@@ -258,22 +230,19 @@ function _affects_register_triggers()
     local pat_map = {}
     for affect_name, entry in pairs(affects_data.affects) do
         for field, ev in pairs(field_to_event) do
-            local raw = entry[field]
-            if raw then
-                local pat = _convert_pattern(raw)
-                if pat then
-                    if not pat_map[pat] then pat_map[pat] = {} end
-                    local list = pat_map[pat]
-                    -- Deduplicate (dropString_1/2 may share a pattern for the same affect+event)
-                    local dup = false
-                    for _, p in ipairs(list) do
-                        if p.name == affect_name and p.ev == ev then
-                            dup = true; break
-                        end
+            local pat = entry[field]
+            if pat then
+                if not pat_map[pat] then pat_map[pat] = {} end
+                local list = pat_map[pat]
+                -- Deduplicate (dropString_1/2 may share a pattern for the same affect+event)
+                local dup = false
+                for _, p in ipairs(list) do
+                    if p.name == affect_name and p.ev == ev then
+                        dup = true; break
                     end
-                    if not dup then
-                        list[#list + 1] = {name = affect_name, ev = ev}
-                    end
+                end
+                if not dup then
+                    list[#list + 1] = {name = affect_name, ev = ev}
                 end
             end
         end
