@@ -314,7 +314,7 @@ here — it's described in the relevant `docs/*.md` and visible in the
       popup with mode-aware reconnect)
 - [ ] Live-server connection and real-server trigger mapping
 - [ ] Spell timer system
-- [ ] Affect tracker
+- [x] Affect tracker
 - [ ] Tells history UI
 - [ ] PvP keybinds finalized
 

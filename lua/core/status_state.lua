@@ -10,8 +10,11 @@
 -- reader never sees a partial file.
 
 local json = require("dkjson")
-local STATE_PATH = os.getenv("HOME") .. "/MUME/bridge/status.state"
-local TMP_PATH   = STATE_PATH .. ".tmp"
+local STATE_PATH  = os.getenv("HOME") .. "/MUME/bridge/status.state"
+local TMP_PATH    = STATE_PATH .. ".tmp"
+local LAYOUT_PATH = os.getenv("HOME") .. "/MUME/bridge/layout.conf"
+
+local _last_height = nil
 
 local function fmt_num(n)
     if type(n) ~= "number" then return n end
@@ -39,6 +42,30 @@ local function serialize()
     local swim_val = "off"
     if c.swim then swim_val = "on" end
 
+    local now = os.time()
+    local list = {}
+    for _, a in ipairs(state.char.affects or {}) do
+        local remaining
+        if a.expires_at then
+            remaining = a.expires_at - now
+            if remaining < 0 then remaining = 0 end
+        end
+        list[#list + 1] = {
+            name              = a.name,
+            type              = a.type,
+            remaining_seconds = remaining,
+        }
+    end
+    table.sort(list, function(x, y)
+        local xr = x.remaining_seconds
+        local yr = y.remaining_seconds
+        if xr == nil and yr == nil then return x.name < y.name end
+        if xr == nil then return false end
+        if yr == nil then return true end
+        if xr ~= yr then return xr < yr end
+        return x.name < y.name
+    end)
+
     local payload = {
         character   = c.name,
         level       = c.level,
@@ -53,7 +80,7 @@ local function serialize()
         climb       = climb_val,
         swim        = swim_val,
         game_time   = state.world.clock and state.world.clock.format("panel") or nil,
-        affects     = {},
+        affects     = list,
     }
 
     local encoded = json.encode(payload)
@@ -65,6 +92,37 @@ local function serialize()
     f:write(encoded)
     f:close()
     os.rename(TMP_PATH, STATE_PATH)
+
+    local n = #list
+    local new_height = 11 + math.max(1, n)
+    if new_height ~= _last_height then
+        local conf_lines = {}
+        local found = false
+        local lf = io.open(LAYOUT_PATH, "r")
+        if lf then
+            for line in lf:lines() do
+                if line:match("^status_height=") then
+                    conf_lines[#conf_lines + 1] = "status_height=" .. new_height
+                    found = true
+                else
+                    conf_lines[#conf_lines + 1] = line
+                end
+            end
+            lf:close()
+        end
+        if not found then
+            conf_lines[#conf_lines + 1] = "status_height=" .. new_height
+        end
+        local ltmp = LAYOUT_PATH .. ".tmp"
+        local lf2 = io.open(ltmp, "w")
+        if lf2 then
+            lf2:write(table.concat(conf_lines, "\n") .. "\n")
+            lf2:close()
+            os.rename(ltmp, LAYOUT_PATH)
+        end
+        tintin_cmd("gts", "#system {bash bridge/apply_layout.sh}")
+        _last_height = new_height
+    end
 end
 
 -- Wrap handlers: call original first, then serialize.
@@ -94,6 +152,7 @@ state.char.reset = function()
     serialize()
 end
 
-events.subscribe("clock_changed", function() serialize() end)
+events.subscribe("clock_changed",   function() serialize() end)
+events.subscribe("affects_changed", function() serialize() end)
 
 dbg("[STATUS_STATE] loaded")

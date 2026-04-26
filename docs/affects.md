@@ -143,6 +143,15 @@ The tick is armed on the 0→1 transition in `affect_init` and cancelled:
   delays automatically).
 - By `cp -r`: `#kill delay` on GAME_SESSION kills all delays including the tick.
 
+## Rendering
+
+`lua/core/status_state.lua` subscribes to `affects_changed` and projects
+the active list into `bridge/status.state` with `name`, `type`, and
+`remaining_seconds` for each entry. `bridge/status_pane.py` renders each
+entry as a type-coloured `"- <name> <Xm>"` row. See
+[docs/status-pane.md](status-pane.md) for layout, colour constants, and
+dynamic-height details.
+
 ## Known limitations
 
 ### `cp -r` mid-session without reconnect

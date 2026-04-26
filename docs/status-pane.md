@@ -114,15 +114,18 @@ JSON written by `lua/core/status_state.lua`. Gitignored.
   "climb": "off",
   "swim": "off",
   "game_time": null,
-  "affects": []
+  "affects": [
+    {"name": "Sanctuary", "type": "spell", "remaining_seconds": 272}
+  ]
 }
 ```
 
 `session_xp` and `session_tp` are populated by `lua/core/sess_kills.lua`
 (phase 4 — implemented). `game_time` is populated by the `clock_changed`
 subscription in `lua/core/status_state.lua` (phase 3 — implemented). `affects`
-is a reserved slot for phase 2. The renderer displays `—` when null (bootstrap
-window before first Vitals tick) and empty for `affects`.
+is populated by the `affects_changed` subscription in `lua/core/status_state.lua`
+(phase 2 — implemented). The renderer displays `—` when null (bootstrap window
+before first Vitals tick) and an em-dash row when `affects` is empty.
 
 ### Field mapping from GMCP
 
@@ -141,19 +144,22 @@ window before first Vitals tick) and empty for `affects`.
 | `session_xp`   | `lua/core/sess_kills.lua` → `state.session.session_xp` | null during bootstrap window; resets to 0 on `cp -r` (rebaselines on next Vitals tick — expected behaviour, not a bug) |
 | `session_tp`   | `lua/core/sess_kills.lua` → `state.session.session_tp` | null during bootstrap window; resets to 0 on `cp -r` (rebaselines on next Vitals tick — expected behaviour, not a bug) |
 | `game_time`    | `lua/core/clock.lua` → `state.world.clock.format("panel")` | null when precision is UNSET; `"?"` string when clock loaded but unsynced |
-| `affects`      | phase 2 — always [] in phase 1     |                                   |
+| `affects`      | `lua/core/affects.lua` → `state.char.affects` via `affects_changed` | array of `{name, type, remaining_seconds}` objects; `remaining_seconds` is nil when no duration known |
 
 ## Colour scheme
 
 Constants defined at the top of `bridge/status_pane.py`:
 
-| Constant  | Escape                          | Role                          |
-|-----------|---------------------------------|-------------------------------|
-| `C_LABEL` | `\x1b[38;2;154;168;183m`        | #9AA8B7 steel-blue — labels  |
-| `C_VALUE` | `\x1b[1;97m`                    | Bold bright white — values    |
-| `C_FRAME` | `\x1b[38;2;166;140;90m`         | Muted gold — box frame        |
-| `C_TITLE` | `\x1b[1;38;2;222;184;135m`      | Burlywood — header title      |
-| `C_RESET` | `\x1b[0m`                       | Reset all                     |
+| Constant         | Escape                          | Role                                |
+|------------------|---------------------------------|-------------------------------------|
+| `C_LABEL`        | `\x1b[38;2;154;168;183m`        | #9AA8B7 steel-blue — labels        |
+| `C_VALUE`        | `\x1b[1;97m`                    | Bold bright white — values          |
+| `C_FRAME`        | `\x1b[38;2;166;140;90m`         | Muted gold — box frame              |
+| `C_TITLE`        | `\x1b[1;38;2;222;184;135m`      | Burlywood — header title            |
+| `C_RESET`        | `\x1b[0m`                       | Reset all                           |
+| `C_AFFECT_SPELL` | `\x1b[38;2;122;169;214m`        | #7AA9D6 light steel-blue — spell affects |
+| `C_AFFECT_BUFF`  | `\x1b[38;2;143;188;143m`        | #8FBC8F soft sage green — buff affects  |
+| `C_AFFECT_DEBUFF`| `\x1b[38;2;201;112;112m`        | #C97070 muted brick red — debuff affects |
 
 ## Header
 
@@ -247,20 +253,73 @@ Every right-column operation ends with a call to `apply_layout.sh`.
 
 Persistence: `show_status` in `bridge/startup.conf` (default `0`).
 
-## Extension points (phases 2–4)
+## Affects
 
-### Phase 2 — Affects tracker
+`lua/core/status_state.lua` subscribes to `affects_changed` (emitted by
+`lua/core/affects.lua` on every state mutation and every tick). On each
+notification it re-serialises `state.char.affects` into the `affects` array
+in `bridge/status.state`.
 
-- Set `affects` in the JSON schema to an array of strings (affect names).
-- `status_pane.py` already renders `affects` as a list when non-empty.
-- Populate from GMCP or text triggers in `status_state.lua`.
-- Dynamic height — Lua writes a new `status_height` to layout.conf when
-  `state.char.affects` length changes, then calls `apply_layout.sh` via
-  `tintin_cmd('gts', '#system {bash bridge/apply_layout.sh}')` (or
-  equivalent). If tmux can't grant the new height (ui and dev would be
-  squeezed below a 1-row floor), apply_layout.sh should eat dev first
-  (`tmux kill-pane` + clear show_dev runtime), then ui. Priority order:
-  status > ui > dev. Not implemented in phase 1.
+### Schema
+
+Each entry is an object:
+
+```json
+{"name": "Sanctuary", "type": "spell", "remaining_seconds": 272}
+```
+
+`remaining_seconds` is omitted (`null`) when no duration is known (affect has
+no duration in the data table and no observed samples yet).
+
+### Rendering
+
+`status_pane.py` renders each entry as one line:
+
+```
+- <name> <Xm>
+```
+
+- Prefix: `"- "` (two characters).
+- Suffix: `" Xm"` using **ceiling division** — 0–59 s shows `1m`; this is
+  intentional ("less than a minute left" is more useful than `0m`).
+- Omitted when `remaining_seconds` is null (no time suffix).
+- Colour is chosen by `type` via `_AFFECT_COLOURS`:
+
+  | `type`    | Constant          | Hex      |
+  |-----------|-------------------|----------|
+  | `spell`   | `C_AFFECT_SPELL`  | #7AA9D6  |
+  | `buff`    | `C_AFFECT_BUFF`   | #8FBC8F  |
+  | `debuff`  | `C_AFFECT_DEBUFF` | #C97070  |
+  | (unknown) | `C_VALUE`         | fallback |
+
+- Truncation: the **name** is truncated to fit `WIDTH=33`; the suffix is
+  always preserved intact.
+- Each line is padded to exactly `WIDTH` visible characters so a shorter
+  line clears any longer previous content on the same row.
+- When `affects` is empty: `"  —"` padded to `WIDTH` in `C_VALUE`.
+
+### Sort order
+
+Ascending `remaining_seconds`, with nil-duration affects at the bottom.
+Ties (same remaining or both nil) broken alphabetically by name.
+
+### Dynamic height
+
+Formula: `status_height = 11 + max(1, N)` where N is the current affect
+count. `lua/core/status_state.lua` owns this: after each atomic write to
+`bridge/status.state` it checks the new height against `_last_height`; if
+different it rewrites `status_height=` in `bridge/layout.conf` (atomic
+tmp-rename) and fires:
+
+```lua
+tintin_cmd("gts", "#system {bash bridge/apply_layout.sh}")
+```
+
+The existing clamp behaviour in `apply_layout.sh` ensures dev pane keeps
+≥ 1 row regardless of affect count. The floor `max(1, N)` means an empty
+affect list produces height 12 (matching the phase 1 fixed value).
+
+## Extension points (phases 3–4)
 
 ### Phase 3 — Game time (implemented)
 

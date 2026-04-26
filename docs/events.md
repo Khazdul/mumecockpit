@@ -57,6 +57,7 @@ event flow. Same pattern as `gmcp.trace`.
 | `affect_init` | affect name string (e.g. `"armour"`) | `ttpp/core/affects.tin` `#action` (via `_affects_register_triggers`) |
 | `affect_refresh` | affect name string | `ttpp/core/affects.tin` `#action` |
 | `affect_down` | affect name string | `ttpp/core/affects.tin` `#action` |
+| `affects_changed` | (none) | `lua/core/affects.lua` — emitted on every state mutation and every tick |
 
 ### `mob_death`
 
@@ -148,6 +149,20 @@ Payload is the affect name string.
 **Subscribers:** `lua/core/affects.lua` — records the observed duration to
 the ring-buffer, persists to disk, removes the entry from `state.char.affects`,
 cancels the tick if the list is now empty.
+
+### `affects_changed`
+
+Emitted by `lua/core/affects.lua` with no payload whenever `state.char.affects`
+is mutated — at the end of each `affect_init`, `affect_refresh`, and
+`affect_down` handler (normal execution path only, after the actual mutation),
+and at the end of every `_affects_tick()` invocation regardless of whether any
+entries were pruned.
+
+Subscribers should read `state.char.affects` directly for the new state.
+
+**Subscribers:** `lua/core/status_state.lua` — calls `serialize()` to update
+`bridge/status.state` and rewrite `status_height` in `bridge/layout.conf`
+when the affect count changes.
 
 ## Adding a new event
 

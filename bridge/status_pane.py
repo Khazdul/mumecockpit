@@ -23,6 +23,16 @@ C_FRAME  = "\x1b[38;2;166;140;90m"     # muted gold — box frame
 C_TITLE  = "\x1b[1;38;2;222;184;135m"  # burlywood — header title
 C_RESET  = "\x1b[0m"
 
+C_AFFECT_SPELL  = "\x1b[38;2;122;169;214m"   # #7AA9D6 light steel-blue
+C_AFFECT_BUFF   = "\x1b[38;2;143;188;143m"   # #8FBC8F soft sage green
+C_AFFECT_DEBUFF = "\x1b[38;2;201;112;112m"   # #C97070 muted brick red
+
+_AFFECT_COLOURS = {
+    "spell":  C_AFFECT_SPELL,
+    "buff":   C_AFFECT_BUFF,
+    "debuff": C_AFFECT_DEBUFF,
+}
+
 # ---------------------------------------------------------------------------
 # Renderer state
 # ---------------------------------------------------------------------------
@@ -135,12 +145,26 @@ def _build_frame(data):
     affects = c.get("affects") or []
     if affects:
         for aff in affects:
-            line = "  " + str(aff)
-            if len(line) > WIDTH:
-                line = line[:WIDTH]
-            lines.append(C_VALUE + line + C_RESET)
+            name      = str(aff.get("name") or "?")
+            atype     = aff.get("type") or "spell"
+            remaining = aff.get("remaining_seconds")
+            colour    = _AFFECT_COLOURS.get(atype, C_VALUE)
+
+            if remaining is not None:
+                mins   = max(0, -(-int(remaining) // 60))   # ceil division
+                suffix = f" {mins}m"
+            else:
+                suffix = ""
+
+            prefix = "- "
+            budget = WIDTH - len(prefix) - len(suffix)
+            if len(name) > budget:
+                name = name[:max(0, budget)]
+            line = prefix + name + suffix
+            line = line + " " * (WIDTH - len(line))
+            lines.append(colour + line + C_RESET)
     else:
-        lines.append(C_VALUE + "  —" + C_RESET)
+        lines.append(C_VALUE + "  —" + " " * (WIDTH - 3) + C_RESET)
 
     return lines
 

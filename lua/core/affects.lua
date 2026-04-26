@@ -95,6 +95,7 @@ function _affects_tick()
     if #t > 0 then
         session_cmd("#delay {affects_tick} {#lua {_affects_tick()}} {10}")
     end
+    events.emit("affects_changed")
 end
 
 -- ---------------------------------------------------------------------------
@@ -136,6 +137,7 @@ events.subscribe("affect_init", function(name)
         session_cmd("#delay {affects_tick} {#lua {_affects_tick()}} {10}")
     end
     dbg("[AFFECTS] init: " .. name)
+    events.emit("affects_changed")
 end)
 
 events.subscribe("affect_refresh", function(name)
@@ -150,6 +152,7 @@ events.subscribe("affect_refresh", function(name)
     existing.expected_duration = dur
     existing.expires_at        = dur and (now + dur) or nil
     dbg("[AFFECTS] refresh: " .. name)
+    events.emit("affects_changed")
 end)
 
 events.subscribe("affect_down", function(name)
@@ -170,6 +173,7 @@ events.subscribe("affect_down", function(name)
         session_cmd("#undelay {affects_tick}")
     end
     dbg("[AFFECTS] down: " .. name .. " observed=" .. observed)
+    events.emit("affects_changed")
 end)
 
 -- ---------------------------------------------------------------------------
