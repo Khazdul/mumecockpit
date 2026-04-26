@@ -349,6 +349,27 @@ applied as the default for plain (non-ANSI-styled) text.
 case is preserved (e.g. `"Vit the innkeeper"` stays `"Vit the innkeeper"`).
 `"you"` → `"You"`.
 
+### Dev fixture
+
+`bridge/dev/comm.state.fixture` is a static JSON file covering all ten channels
+in self and other form. Two env vars override the live paths:
+
+| Variable           | Default                              | Purpose                         |
+|--------------------|--------------------------------------|---------------------------------|
+| `COMM_STATE_PATH`  | `bridge/comm.state`                  | State file the pane polls       |
+| `COMM_FILTERS_CONF`| `bridge/comm_filters.conf`           | Filter persistence file         |
+
+Usage:
+
+```sh
+COMM_STATE_PATH=bridge/dev/comm.state.fixture \
+COMM_FILTERS_CONF=/tmp/comm_filters.fixture.conf \
+python3 bridge/comm_pane.py
+```
+
+Point `COMM_FILTERS_CONF` at `/tmp` so toggling in fixture mode does not touch the
+real config. See `bridge/dev/README.md` for edge cases covered by the fixture.
+
 ## Layout integration
 
 ### Pane position

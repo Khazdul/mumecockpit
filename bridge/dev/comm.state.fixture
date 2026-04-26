@@ -1,0 +1,216 @@
+{
+  "channels": [
+    {
+      "name": "tales",
+      "label": "Na",
+      "caption": "Tales"
+    },
+    {
+      "name": "tells",
+      "label": "Te",
+      "caption": "Tells"
+    },
+    {
+      "name": "says",
+      "label": "Sa",
+      "caption": "Says"
+    },
+    {
+      "name": "yells",
+      "label": "Ye",
+      "caption": "Yells"
+    },
+    {
+      "name": "prayers",
+      "label": "Pr",
+      "caption": "Prayers"
+    },
+    {
+      "name": "emotes",
+      "label": "Em",
+      "caption": "Emotes"
+    },
+    {
+      "name": "whispers",
+      "label": "Wh",
+      "caption": "Whispers"
+    },
+    {
+      "name": "questions",
+      "label": "Qu",
+      "caption": "Questions"
+    },
+    {
+      "name": "songs",
+      "label": "Son",
+      "caption": "Songs"
+    },
+    {
+      "name": "socials",
+      "label": "Soc",
+      "caption": "Socials"
+    }
+  ],
+  "history": [
+    {
+      "ts": 1777200000,
+      "channel": "tales",
+      "talker": "you",
+      "talker_type": null,
+      "destination": null,
+      "text": "the fog lifts at dawn"
+    },
+    {
+      "ts": 1777200030,
+      "channel": "tales",
+      "talker": "Besor",
+      "talker_type": null,
+      "destination": null,
+      "text": "Besor narrates 'don't give up'"
+    },
+    {
+      "ts": 1777200060,
+      "channel": "tells",
+      "talker": "you",
+      "talker_type": null,
+      "destination": "Gandalf",
+      "text": "come to the inn"
+    },
+    {
+      "ts": 1777200090,
+      "channel": "tells",
+      "talker": "Gandalf",
+      "talker_type": "ally",
+      "destination": null,
+      "text": "Gandalf tells 'I shall pass'"
+    },
+    {
+      "ts": 1777200120,
+      "channel": "says",
+      "talker": "you",
+      "talker_type": null,
+      "destination": null,
+      "text": "hello there"
+    },
+    {
+      "ts": 1777200150,
+      "channel": "says",
+      "talker": "Vit the innkeeper",
+      "talker_type": "npc",
+      "destination": null,
+      "text": "\u001b[1mVit the innkeeper\u001b[0m says 'Vit at your service' in Khuzdul."
+    },
+    {
+      "ts": 1777200180,
+      "channel": "yells",
+      "talker": "you",
+      "talker_type": null,
+      "destination": null,
+      "text": "watch out"
+    },
+    {
+      "ts": 1777200210,
+      "channel": "yells",
+      "talker": "Sauron",
+      "talker_type": "enemy",
+      "destination": null,
+      "text": "Sauron yells 'You shall not pass'"
+    },
+    {
+      "ts": 1777200240,
+      "channel": "prayers",
+      "talker": "you",
+      "talker_type": null,
+      "destination": null,
+      "text": "grant us strength"
+    },
+    {
+      "ts": 1777200270,
+      "channel": "prayers",
+      "talker": "Elrond",
+      "talker_type": "neutral",
+      "destination": null,
+      "text": "Elrond prays for guidance and wisdom"
+    },
+    {
+      "ts": 1777200300,
+      "channel": "emotes",
+      "talker": "you",
+      "talker_type": null,
+      "destination": null,
+      "text": "You wave goodbye."
+    },
+    {
+      "ts": 1777200330,
+      "channel": "emotes",
+      "talker": "Vainamoinen",
+      "talker_type": null,
+      "destination": null,
+      "text": "smiles warmly."
+    },
+    {
+      "ts": 1777200360,
+      "channel": "whispers",
+      "talker": "you",
+      "talker_type": null,
+      "destination": null,
+      "text": "over here"
+    },
+    {
+      "ts": 1777200390,
+      "channel": "whispers",
+      "talker": "Aragorn",
+      "talker_type": "ally",
+      "destination": null,
+      "text": "Aragorn whispers 'meet me at the gate'"
+    },
+    {
+      "ts": 1777200420,
+      "channel": "questions",
+      "talker": "you",
+      "talker_type": null,
+      "destination": null,
+      "text": "where is the nearest inn"
+    },
+    {
+      "ts": 1777200450,
+      "channel": "questions",
+      "talker": "Frodo",
+      "talker_type": "neutral",
+      "destination": null,
+      "text": "Frodo asks 'has anyone seen my ring'"
+    },
+    {
+      "ts": 1777200480,
+      "channel": "songs",
+      "talker": "you",
+      "talker_type": null,
+      "destination": null,
+      "text": "la la la"
+    },
+    {
+      "ts": 1777200510,
+      "channel": "songs",
+      "talker": "Glorfindel",
+      "talker_type": "ally",
+      "destination": null,
+      "text": "Glorfindel sings 'ancient songs of power'"
+    },
+    {
+      "ts": 1777200540,
+      "channel": "socials",
+      "talker": "you",
+      "talker_type": null,
+      "destination": null,
+      "text": "You wave goodbye."
+    },
+    {
+      "ts": 1777200570,
+      "channel": "socials",
+      "talker": "Bombur",
+      "talker_type": "enemy",
+      "destination": null,
+      "text": "Bombur waves cheerfully."
+    }
+  ]
+}

@@ -29,8 +29,14 @@ import signal
 import sys
 import time
 
-COMM_STATE_PATH   = os.path.join(os.environ["HOME"], "MUME", "bridge", "comm.state")
-COMM_FILTERS_CONF = os.path.join(os.environ["HOME"], "MUME", "bridge", "comm_filters.conf")
+COMM_STATE_PATH   = os.environ.get(
+    "COMM_STATE_PATH",
+    os.path.join(os.environ["HOME"], "MUME", "bridge", "comm.state"),
+)
+COMM_FILTERS_CONF = os.environ.get(
+    "COMM_FILTERS_CONF",
+    os.path.join(os.environ["HOME"], "MUME", "bridge", "comm_filters.conf"),
+)
 COMM_FILTERS_TMP  = COMM_FILTERS_CONF + ".tmp"
 POLL_MS           = 0.25
 
