@@ -2,7 +2,7 @@
 -- Self-contained script. Registers alias on load — no paired .tin file needed.
 --
 -- Alias:  as<dir>  (e.g. ase = autostab east)
--- Flow:   go dir -> backstab $target -> escape retDir
+-- Flow:   [if !sneak: sneak] -> go dir -> backstab $target -> escape retDir
 --   on escape success: repeat cycle, reset watchdog
 --   on escape fail:    retry escape up to 2 times per cycle, reset watchdog
 --                      if both retries fail: flee + abort
@@ -110,6 +110,12 @@ function M.start(dir, target)
     as_dbg(string.format("start %s←%s target=%s", dir, as.ret, target))
     as_show(string.format("target: %s dir: %s", as.target, as.dir))
     script_ui("AUTOSTAB", "Running.")
+    -- Ensure sneak is on before starting the cycle.
+    -- Fire-and-forget: sneak toggle in MUME is reliable and cannot fail.
+    if not state.char.sneak then
+        as_dbg("sneak off — toggling on")
+        send("sneak")
+    end
     do_cycle()
 end
 

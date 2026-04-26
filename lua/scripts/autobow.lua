@@ -3,6 +3,8 @@
 --
 -- Alias:  ash<dir>  (e.g. ashe = autobow east)
 --
+-- Preflight (both paths): if !sneak, send "sneak" once.
+--
 -- Crossbow path:
 --   draw -> load -> (wait for on_loaded) -> go dir -> shoot $target -> escape retDir
 --   on escape success: draw -> reload -> repeat cycle
@@ -96,7 +98,7 @@ local function do_load_or_shoot()
         do_shoot()
     else
         if ab.weapon == "crossbow" then
-            tintin_show(GAME_SESSION or "gts", "<F719FC7>reloading...<099>")
+            tintin_show(GAME_SESSION or "gts", "..reloading..")
         end
         send("load")
     end
@@ -146,6 +148,12 @@ function M.start(dir, target)
     ab_dbg(string.format("start %s←%s target=%s [%s]", dir, ab.ret, target, tostring(ab.weapon)))
     ab_show(string.format("target: %s dir: %s", ab.target, ab.dir))
     script_ui("AUTOBOW", "Running.")
+    -- Ensure sneak is on before starting the cycle.
+    -- Fire-and-forget: sneak toggle in MUME is reliable and cannot fail.
+    if not state.char.sneak then
+        ab_dbg("sneak off — toggling on")
+        send("sneak")
+    end
     send("draw bow")
     do_load_or_shoot()
 end
