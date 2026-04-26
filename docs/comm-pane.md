@@ -271,7 +271,7 @@ Row format depends on channel class (see **Display normalization** below):
 | Field       | Style                                      | Notes                                                    |
 |-------------|--------------------------------------------|---------------------------------------------------------|
 | HH:MM       | `C_TIME` — `fg:#3d4651`                    | From `ts`; renders as DD/MM for messages older than 24 h |
-| Talker      | `C_TALKER_YOU` or `C_TALKER_OTHER`         | `C_TALKER_YOU` (bold white) when `talker == "you"`; `C_TALKER_OTHER` (warm tan) otherwise; first char capitalized |
+| Talker      | `C_TALKER_YOU` or `C_TALKER_OTHER`         | `C_TALKER_YOU` (soft cyan) when `talker == "you"`; `C_TALKER_OTHER` (warm tan) otherwise; first char capitalized |
 | verb        | `CHANNEL_COLORS[channel]`                  | From `CHANNEL_VERBS` (self/other form); unknown → channel name |
 | destination | `C_TALKER_YOU` or `C_TALKER_OTHER`         | `C_TALKER_YOU` when `destination == "you"`; `C_TALKER_OTHER` otherwise; present only when non-empty |
 | message     | `C_MESSAGE_SELF` or `C_MESSAGE_OTHER`      | Extracted from `text` (see Display normalization); ANSI preserved |
@@ -321,7 +321,7 @@ All constants are defined at the top of `bridge/comm_pane.py`:
 | Constant          | Value                   | Role                                                        |
 |-------------------|-------------------------|-------------------------------------------------------------|
 | `C_TIME`          | `fg:#3d4651`            | Timestamp — muted dark grey, recedes visually               |
-| `C_TALKER_YOU`    | `bold fg:#ffffff`       | "you" as talker or destination, everywhere it appears       |
+| `C_TALKER_YOU`    | `fg:#afd2d2`            | "you" as talker or destination — soft cyan, no bold         |
 | `C_TALKER_OTHER`  | `fg:#c2a878`            | Talker/destination for other players/NPCs — warm tan        |
 | `C_MESSAGE_SELF`  | `fg:#c3e6e9`            | Message text when self                                      |
 | `C_MESSAGE_OTHER` | `fg:#91bec1`            | Message text from others                                    |
