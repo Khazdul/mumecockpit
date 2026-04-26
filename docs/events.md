@@ -54,6 +54,9 @@ event flow. Same pattern as `gmcp.trace`.
 | `mume_time_line` | full matched line string | `ttpp/core/clock.tin` `#action` |
 | `room_clock_line` | full matched line string | `ttpp/core/clock.tin` `#action` |
 | `clock_changed` | (none) | `lua/core/clock.lua` — emitted on each successful sync and on minute rollover in `tick()` |
+| `affect_init` | affect name string (e.g. `"armour"`) | `ttpp/core/affects.tin` `#action` (via `_affects_register_triggers`) |
+| `affect_refresh` | affect name string | `ttpp/core/affects.tin` `#action` |
+| `affect_down` | affect name string | `ttpp/core/affects.tin` `#action` |
 
 ### `mob_death`
 
@@ -113,6 +116,38 @@ subscribers should read `state.world.clock.format(...)` for the new value.
 **Subscribers:** `lua/core/status_state.lua` — calls `serialize()` to update
 `bridge/status.state` immediately, without waiting for the next `Char.Vitals`
 tick.
+
+### `affect_init`
+
+Emitted when a new affect becomes active on the character. The payload is the
+affect name exactly as keyed in `affects_data.affects` (e.g. `"armour"`,
+`"second wind"`).
+
+Source: a `#action` registered by `_affects_register_triggers()` in
+`lua/core/affects.lua`. One action fires per unique converted pattern; a single
+game line can emit both `affect_down` for one affect and `affect_init` for
+another (e.g. the shared second-wind / winded trigger).
+
+**Subscribers:** `lua/core/affects.lua` — appends to `state.char.affects`,
+arms the 10 s tick on the 0→1 transition.
+
+### `affect_refresh`
+
+Emitted when an already-active affect is re-applied (its `initString_2`
+matches, or `initString_1` matches while the affect is already in
+`state.char.affects`). Payload is the affect name string.
+
+**Subscribers:** `lua/core/affects.lua` — updates `started_at` and
+recomputes `expires_at` on the existing entry.
+
+### `affect_down`
+
+Emitted when an affect ends naturally (game sends the drop message).
+Payload is the affect name string.
+
+**Subscribers:** `lua/core/affects.lua` — records the observed duration to
+the ring-buffer, persists to disk, removes the entry from `state.char.affects`,
+cancels the tick if the list is now empty.
 
 ## Adding a new event
 
