@@ -81,7 +81,7 @@ CHANNEL_LABELS = {
 # Colour palette (24-bit truecolor, CSS-style for prompt_toolkit)
 # ---------------------------------------------------------------------------
 
-C_TIME           = "fg:#3d4651"               # muted dark grey
+C_TIME           = "fg:#687685"               # 104,118,133 — muted blue-grey
 C_TALKER_YOU     = "fg:#afd2d2"               # soft cyan — "you" as talker or destination
 C_TALKER_OTHER   = "fg:#c2a878"               # warm tan — contrasts with light-blue message
 C_MESSAGE_SELF   = "fg:#c3e6e9"               # 195,230,233
