@@ -38,8 +38,9 @@ it wipes every non-function key in `state.char` while keeping the table
 identity intact so cached references elsewhere stay valid. The `status_state.lua`
 wrapper around `state.char.reset` then calls `serialize()`, producing a single
 atomic write to `bridge/status.state` with all character fields null. The
-renderer already displays `—` for null values, so the pane blanks within one
-poll tick (≤ 250 ms) without any renderer changes.
+renderer displays `—` for null values and omits the `Affected by:` block
+when the affects list is empty, so the pane shrinks to `STATIC_ROWS` within
+one poll tick (≤ 250 ms).
 
 `mark_mume_disconnected()` is idempotent: a duplicate signal finds
 `bridge/session.state` already absent and returns before reaching the reset
@@ -185,9 +186,12 @@ Mood: <mood>          Alert: <alertness>
 Pos: <position>       Sneak: <sneak>
 Climb: <climb>        Swim: <swim>
 Time: <game_time>
-Affected by:
-  <affects or "—">
+Affected by:          ← omitted when no affects are active
+  <affects>
 ```
+
+When no affects are active, the `Affected by:` row and the affects block below
+it are omitted entirely — the pane ends after `Time:`.
 
 Labels in `C_LABEL`, values in `C_VALUE`. Numeric values (`xp`, `tp`)
 formatted with comma separators (232,200 rather than 232200).
@@ -296,7 +300,7 @@ no duration in the data table and no observed samples yet).
   always preserved intact.
 - Each line is padded to exactly `WIDTH` visible characters so a shorter
   line clears any longer previous content on the same row.
-- When `affects` is empty: `"  —"` padded to `WIDTH` in `C_VALUE`.
+- When `affects` is empty: the `Affected by:` header and this block are omitted entirely.
 
 ### Sort order
 
@@ -305,8 +309,15 @@ Ties (same remaining or both nil) broken alphabetically by name.
 
 ### Dynamic height
 
-Formula: `status_height = 11 + max(1, N)` where N is the current affect
-count. `lua/core/status_state.lua` owns this: after each atomic write to
+`status_height = STATIC_ROWS` when no affects are active;
+`status_height = STATIC_ROWS + 1 + N` when N ≥ 1 affects are active
+(the `+1` accounts for the `Affected by:` header row).
+`STATIC_ROWS` is the count of always-rendered rows (3 header rows plus the
+6 fixed body rows above the affects block) — currently `9`. The constant
+lives in `lua/core/status_state.lua`; bump it whenever a static body row
+is added or removed in `bridge/status_pane.py`.
+
+`lua/core/status_state.lua` owns this: after each atomic write to
 `bridge/status.state` it checks the new height against `_last_height`; if
 different it rewrites `status_height=` in `bridge/layout.conf` (atomic
 tmp-rename) and fires:
@@ -316,8 +327,7 @@ tintin_cmd("gts", "#system {bash bridge/apply_layout.sh}")
 ```
 
 The existing clamp behaviour in `apply_layout.sh` ensures dev pane keeps
-≥ 1 row regardless of affect count. The floor `max(1, N)` means an empty
-affect list produces height 12 (matching the phase 1 fixed value).
+≥ 1 row regardless of affect count.
 
 ## Extension points (phases 3–4)
 

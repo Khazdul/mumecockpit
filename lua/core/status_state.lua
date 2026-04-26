@@ -14,6 +14,11 @@ local STATE_PATH  = os.getenv("HOME") .. "/MUME/bridge/status.state"
 local TMP_PATH    = STATE_PATH .. ".tmp"
 local LAYOUT_PATH = os.getenv("HOME") .. "/MUME/bridge/layout.conf"
 
+-- 3 header rows + 6 fixed body rows (Name/Lv, SessXP/TP, Mood/Alert,
+-- Pos/Sneak, Climb/Swim, Time). Bump when a static row is added/removed
+-- in bridge/status_pane.py.
+local STATIC_ROWS = 9
+
 local _last_height = nil
 
 local function fmt_num(n)
@@ -94,7 +99,12 @@ local function serialize()
     os.rename(TMP_PATH, STATE_PATH)
 
     local n = #list
-    local new_height = 11 + math.max(1, n)
+    local new_height
+    if n == 0 then
+        new_height = STATIC_ROWS
+    else
+        new_height = STATIC_ROWS + 1 + n  -- +1 for "Affected by:" label
+    end
     if new_height ~= _last_height then
         local conf_lines = {}
         local found = false

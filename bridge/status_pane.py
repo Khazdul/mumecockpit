@@ -141,9 +141,9 @@ def _build_frame(data):
     game_time = c.get("game_time")
     lines.append(_row("Time:", game_time if game_time is not None else "—"))
 
-    lines.append(C_LABEL + "Affected by:" + C_RESET)
     affects = c.get("affects") or []
     if affects:
+        lines.append(C_LABEL + "Affected by:" + C_RESET)
         for aff in affects:
             name      = str(aff.get("name") or "?")
             atype     = aff.get("type") or "spell"
@@ -163,8 +163,6 @@ def _build_frame(data):
             line = prefix + name + suffix
             line = line + " " * (WIDTH - len(line))
             lines.append(colour + line + C_RESET)
-    else:
-        lines.append(C_VALUE + "  —" + " " * (WIDTH - 3) + C_RESET)
 
     return lines
 
