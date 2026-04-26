@@ -30,6 +30,22 @@ within `lua/core/`). It wraps each of char_state's three handlers:
 runs (updating `state.char.*`), the wrapper serialises the projected view and
 writes it atomically:
 
+### Disconnect clear
+
+`mark_mume_disconnected()` in `lua/brain.lua` calls `state.char.reset()` after
+`state.session.reset()`. `state.char.reset()` is defined in `char_state.lua`;
+it wipes every non-function key in `state.char` while keeping the table
+identity intact so cached references elsewhere stay valid. The `status_state.lua`
+wrapper around `state.char.reset` then calls `serialize()`, producing a single
+atomic write to `bridge/status.state` with all character fields null. The
+renderer already displays `—` for null values, so the pane blanks within one
+poll tick (≤ 250 ms) without any renderer changes.
+
+`mark_mume_disconnected()` is idempotent: a duplicate signal finds
+`bridge/session.state` already absent and returns before reaching the reset
+call, so no double-clear occurs. `Time:` retains its last value — `state.world`
+(the clock) is separate state and is out of scope for the disconnect clear.
+
 1. `io.open(bridge/status.state.tmp, "w")` → write JSON
 2. `os.rename(tmp, bridge/status.state)` → atomic replace
 

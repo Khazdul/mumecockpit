@@ -71,6 +71,7 @@ end
 local _orig_name    = gmcp.handlers["Char.Name"]
 local _orig_vars    = gmcp.handlers["Char.StatusVars"]
 local _orig_vitals  = gmcp.handlers["Char.Vitals"]
+local _orig_reset   = state.char.reset
 
 gmcp.handlers["Char.Name"] = function(body)
     if _orig_name then _orig_name(body) end
@@ -84,6 +85,12 @@ end
 
 gmcp.handlers["Char.Vitals"] = function(body)
     if _orig_vitals then _orig_vitals(body) end
+    serialize()
+end
+
+---@diagnostic disable-next-line: duplicate-set-field
+state.char.reset = function()
+    if _orig_reset then _orig_reset() end
     serialize()
 end
 

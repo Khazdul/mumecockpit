@@ -26,4 +26,12 @@ gmcp.handlers["Char.Vitals"] = function(body)
     merge_flat(body)
 end
 
+function state.char.reset()
+    for k, v in pairs(state.char) do
+        if type(v) ~= "function" then
+            state.char[k] = nil
+        end
+    end
+end
+
 dbg("[CHAR_STATE] loaded")

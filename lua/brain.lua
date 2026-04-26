@@ -137,6 +137,7 @@ function mark_mume_disconnected()
     system_ui("Disconnected from MUME.")
     if not _popup_is_open() then _open_popup() end
     if state.session and state.session.reset then state.session.reset() end
+    if state.char and state.char.reset then state.char.reset() end
 end
 
 function set_game_session(ses)
