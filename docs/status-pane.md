@@ -51,6 +51,28 @@ call, so no double-clear occurs. `Time:` retains its last value — `state.world
 
 The Python reader never sees a partial file.
 
+### cp -r partial blank
+
+After `cp -r` mid-session, **Name** and **Lv** show `—` and **Sess XP** /
+**Sess TP** show `0` until the next full reconnect. Other fields (XP, TP,
+mood, alertness, sneak, climb, swim, position) repopulate within seconds.
+
+`cp -r` restarts the Lua brain. `state.char` is re-initialised empty.
+`Char.Vitals` ticks on a steady cadence, so it fires within seconds and
+triggers `serialize()` via the existing wrap in `status_state.lua` — writing
+a partial snapshot to `bridge/status.state`. `Char.Name` and
+`Char.StatusVars` are sticky modules: MUME emits them at login and does not
+re-emit on a TCP connection that stays open across the reload, so
+`state.char.name` and `state.char.level` remain nil for the remainder of the
+session.
+
+Same root cause as the "cp -r clears uptime" limitation described in
+[docs/session-lifecycle.md](session-lifecycle.md): Lua state is process-local
+and one-shot GMCP modules are not re-emitted over an existing connection.
+
+**Status:** Accepted. Cosmetic effect under a secondary developer workflow.
+Full reconnect restores all fields.
+
 ### Polling
 
 `bridge/status_pane.py` polls `bridge/status.state` every 250 ms using
