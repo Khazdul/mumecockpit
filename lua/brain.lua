@@ -413,8 +413,9 @@ gmcp    = {
     trace    = true,
 }
 events  = {
-    handlers = {},
-    trace    = true,
+    handlers   = {},
+    trace      = true,
+    trace_skip = { clock_changed = true },
 }
 
 function events.subscribe(name, fn)
@@ -438,7 +439,7 @@ end
 
 function events.emit(name, ...)
     local t = events.handlers[name]
-    if events.trace then
+    if events.trace and not events.trace_skip[name] then
         local args = {...}
         local strs = {}
         for _, v in ipairs(args) do strs[#strs+1] = tostring(v) end
