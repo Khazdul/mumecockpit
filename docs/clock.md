@@ -148,7 +148,7 @@ approximation on Foreyule day 30).
 
 At HOUR precision `minute` is treated as 0.
 
-**`state.world.clock.tick()`** — called by a 1Hz tt++ ticker.
+**`state.world.clock.tick()`** — called by a 10Hz tt++ ticker.
 
 Computes the current moment and tracks whether the MUME minute has changed
 since the previous tick. When the minute changes, emits `clock_changed` on

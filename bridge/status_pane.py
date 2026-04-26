@@ -1,6 +1,6 @@
 # Character Status pane renderer.
 #
-# Polls bridge/status.state (JSON) every 250 ms via mtime comparison.
+# Polls bridge/status.state (JSON) every 50 ms via mtime comparison.
 # Redraws in-place using ANSI sequences — no ESC[2J, no flicker.
 # Internal width: 33 columns.
 
@@ -11,7 +11,7 @@ import sys
 import time
 
 STATE_PATH = os.path.join(os.environ["HOME"], "MUME", "bridge", "status.state")
-POLL_MS    = 0.25   # seconds between mtime checks
+POLL_MS    = 0.05   # seconds between mtime checks
 WIDTH      = 33
 
 # ---------------------------------------------------------------------------

@@ -16,7 +16,7 @@ GMCP payload ──► lua/core/char_state.lua ──► state.char.*
                           handlers; serialises projected view to
                           bridge/status.state (JSON, atomic write)
                                                    │
-                                       mtime change │  250 ms poll
+                                       mtime change │  50 ms poll
                                                    ▼
                           bridge/status_pane.py (tail-like loop)
                           redraws in-place via ANSI (no \e[2J)
@@ -40,7 +40,7 @@ wrapper around `state.char.reset` then calls `serialize()`, producing a single
 atomic write to `bridge/status.state` with all character fields null. The
 renderer displays `—` for null values. The `Affected by:` header and the
 4-row affect block are always rendered, so the pane height stays at
-`STATIC_ROWS + 1 + 4 = 14` within one poll tick (≤ 250 ms) — blank affect
+`STATIC_ROWS + 1 + 4 = 14` within one poll tick (≤ 50 ms) — blank affect
 rows replace any previously shown affects.
 
 `mark_mume_disconnected()` is idempotent: a duplicate signal finds
@@ -77,7 +77,7 @@ Full reconnect restores all fields.
 
 ### Polling
 
-`bridge/status_pane.py` polls `bridge/status.state` every 250 ms using
+`bridge/status_pane.py` polls `bridge/status.state` every 50 ms using
 `os.stat().st_mtime`. On mtime change it re-reads and re-renders. SIGWINCH
 sets a dirty flag; the next poll tick redraws even without mtime change.
 
