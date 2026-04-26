@@ -242,7 +242,7 @@ Each row: `HH:MM <talker> <verb> <text>`
 
 | Field    | Style                        | Notes                              |
 |----------|------------------------------|------------------------------------|
-| HH:MM    | `C_TIME` — dim blue-grey     | From `ts` (Unix epoch)             |
+| HH:MM    | `C_TIME` — dim blue-grey     | From `ts` (Unix epoch); renders as DD/MM for messages older than 24 h |
 | talker   | `C_TALKER_*` — per type      | Coloured by `talker_type`          |
 | verb     | `C_VERB` — muted blue-grey   | `caption` lowercased               |
 | text     | Passthrough ANSI             | Parsed via `prompt_toolkit.ANSI()` |

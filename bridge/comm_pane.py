@@ -192,6 +192,7 @@ def _list_text():
     start = max(0, end - visible_rows)
     visible = filtered[start:end]
 
+    now      = time.time()
     last_idx = len(visible) - 1
     for idx, entry in enumerate(visible):
         ts          = entry.get("ts", 0)
@@ -201,7 +202,12 @@ def _list_text():
         text        = entry.get("text", "")
 
         verb     = _verb_for_channel(channel, channels)
-        time_str = time.strftime("%H:%M", time.localtime(ts)) if ts else "??:??"
+        if not ts:
+            time_str = "??:??"
+        elif now - ts < 86400:
+            time_str = time.strftime("%H:%M", time.localtime(ts))
+        else:
+            time_str = time.strftime("%d/%m", time.localtime(ts))
 
         frags.append((C_TIME, time_str + " "))
         frags.append((_talker_style(talker_type), talker + " "))
