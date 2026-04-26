@@ -172,36 +172,85 @@ draw_layout_mockup() {
 
     _draw_box_lines() {
         printf "${_MR_TITLE}"
-        if [ "$N" -gt 0 ]; then
-            # game_rows = N label rows + (N-1) divider rows = 2N-1
-            local game_rows=$(( 2 * N - 1 ))
-            local game_mid=$(( (game_rows - 1) / 2 ))
+        if [ "$N" -gt 0 ] && [ "$show_input" -eq 1 ]; then
+            # Case A: right column + INPUT
+            # body = max(2N-1, 5); natural fit when 2N-1 == body (N >= 3)
+            local nm=$(( 2 * N - 1 ))
+            local body; [ "$nm" -lt 5 ] && body=5 || body="$nm"
+            local nat=$(( nm == body ? 1 : 0 ))
+            # bot_start: first row of bottom right pane (= body for natural fit)
+            local bs; [ "$nat" -eq 1 ] && bs="$body" || bs=$(( 2 * (N - 1) + 1 ))
+            # bot_label_row: where to print the bottom pane label
+            local blr; [ "$N" -eq 1 ] && blr=$(( (1 + body) / 2 )) || blr="$bs"
+            # game_label_row: center of GAME area (rows 1..body-2)
+            local glr=$(( (body - 1) / 2 ))
+
             printf '%s┌───────────────┬──────┐\n' "$p"
-            local row=0 rc_idx=0
-            while [ "$row" -lt "$game_rows" ]; do
-                if (( row % 2 == 0 )); then
-                    local rl="${_rc_labels[$rc_idx]}"
-                    rc_idx=$(( rc_idx + 1 ))
-                    if [ "$row" -eq "$game_mid" ]; then
-                        printf '%s│     GAME      │%s│\n' "$p" "$rl"
+            local r lc rl
+            for (( r = 1; r <= body; r++ )); do
+                if [ "$r" -eq $(( body - 1 )) ]; then
+                    # GAME/INPUT separator row
+                    [ "$nat" -eq 1 ] \
+                        && printf '%s├───────────────┼──────┤\n' "$p" \
+                        || printf '%s├───────────────┤      │\n' "$p"
+                elif [ "$r" -eq "$body" ]; then
+                    # INPUT row: natural fit lands bottom pane here; stretched is blank
+                    if [ "$nat" -eq 1 ]; then
+                        rl="${_rc_labels[$((N-1))]}"
+                        printf '%s│    INPUT      │%s│\n' "$p" "$rl"
                     else
-                        printf '%s│               │%s│\n' "$p" "$rl"
+                        printf '%s│    INPUT      │      │\n' "$p"
                     fi
                 else
-                    if [ "$row" -eq "$game_mid" ]; then
-                        printf '%s│     GAME      ├──────┤\n' "$p"
+                    # Body rows 1..body-2
+                    [ "$r" -eq "$glr" ] && lc="     GAME      " || lc="               "
+                    if [ "$N" -ge 2 ] && [ "$r" -le $(( 2 * (N - 1) )) ]; then
+                        # Top panes and their separators (handles natural fit too)
+                        if (( r % 2 == 1 )); then
+                            rl="${_rc_labels[$(( (r-1)/2 ))]}"
+                            printf '%s│%s│%s│\n' "$p" "$lc" "$rl"
+                        else
+                            printf '%s│%s├──────┤\n' "$p" "$lc"
+                        fi
                     else
-                        printf '%s│               ├──────┤\n' "$p"
+                        # Stretched bottom pane (rows bs..body-2, label at blr)
+                        [ "$r" -eq "$blr" ] && rl="${_rc_labels[$((N-1))]}" || rl="      "
+                        printf '%s│%s│%s│\n' "$p" "$lc" "$rl"
                     fi
                 fi
-                row=$(( row + 1 ))
             done
-            if [ "$show_input" -eq 1 ]; then
-                printf '%s├───────────────┼──────┤\n' "$p"
-                printf '%s│    INPUT      │      │\n' "$p"
-            fi
             printf '%s└───────────────┴──────┘\n' "$p"
+
+        elif [ "$N" -gt 0 ]; then
+            # Case B: right column, no INPUT
+            # body = max(2N-1, 3); natural fit when N >= 2
+            local nm=$(( 2 * N - 1 ))
+            local body; [ "$nm" -lt 3 ] && body=3 || body="$nm"
+            local nat=$(( nm == body ? 1 : 0 ))
+            local glr=$(( (body + 1) / 2 ))
+            local blr=$(( (body + 1) / 2 ))  # for N=1 stretched only
+
+            printf '%s┌───────────────┬──────┐\n' "$p"
+            local r lc rl
+            for (( r = 1; r <= body; r++ )); do
+                [ "$r" -eq "$glr" ] && lc="     GAME      " || lc="               "
+                if [ "$nat" -eq 1 ]; then
+                    if (( r % 2 == 1 )); then
+                        rl="${_rc_labels[$(( (r-1)/2 ))]}"
+                        printf '%s│%s│%s│\n' "$p" "$lc" "$rl"
+                    else
+                        printf '%s│%s├──────┤\n' "$p" "$lc"
+                    fi
+                else
+                    # N=1 stretched: single pane fills body rows, label centered
+                    [ "$r" -eq "$blr" ] && rl="${_rc_labels[0]}" || rl="      "
+                    printf '%s│%s│%s│\n' "$p" "$lc" "$rl"
+                fi
+            done
+            printf '%s└───────────────┴──────┘\n' "$p"
+
         elif [ "$show_input" -eq 1 ]; then
+            # Case C: no right column, INPUT only
             printf '%s┌──────────────────────┐\n' "$p"
             printf '%s│                      │\n' "$p"
             printf '%s│        GAME          │\n' "$p"
@@ -210,6 +259,7 @@ draw_layout_mockup() {
             printf '%s│       INPUT          │\n' "$p"
             printf '%s└──────────────────────┘\n' "$p"
         else
+            # Case D: no right column, no INPUT
             printf '%s┌──────────────────────┐\n' "$p"
             printf '%s│                      │\n' "$p"
             printf '%s│        GAME          │\n' "$p"
