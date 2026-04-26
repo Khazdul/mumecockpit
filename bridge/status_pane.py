@@ -33,8 +33,8 @@ _AFFECT_COLOURS = {
     "debuff": C_AFFECT_DEBUFF,
 }
 
-LEFT_W  = 15
-RIGHT_W = WIDTH - LEFT_W   # 18
+LEFT_W  = 16
+RIGHT_W = 16
 
 _AFFECT_SHORTNAMES = {
     "breath of briskness":             "briskness",
@@ -49,9 +49,8 @@ _AFFECT_SHORTNAMES = {
     "heightened senses (faded)":       "h. senses-",
     "dark aura":                       "dark aura",
     "dark aura (faded)":               "dark aura-",
-    "spectral health":                 "spec. hlth",
+    "spectral health":                 "spec. health",
     "very comfortable":                "v. comfort.",
-    "heavy burden":                    "hvy burden",
     "shadow-link":                     "shadow-link",
 }
 
@@ -108,10 +107,10 @@ def _pair(l1, v1, l2, v2, width=WIDTH):
 
 
 def _resolve_affect_name(name):
-    """Resolve display name using MAX_NAME budget (11): shortmap → truncate → as-is."""
+    """Resolve display name using MAX_NAME budget (12): shortmap → truncate → as-is."""
     if name in _AFFECT_SHORTNAMES:
         return _AFFECT_SHORTNAMES[name]
-    limit = LEFT_W - 4   # 11: name + " " + "99m" must fit in LEFT_W
+    limit = LEFT_W - 4   # 12: name + min-padding(1) + "99m"(3) must fit in LEFT_W
     if len(name) > limit:
         return name[:limit - 1] + "."
     return name
@@ -126,11 +125,10 @@ def _affect_cell(aff, cell_w):
     display   = _resolve_affect_name(name)
 
     if remaining is not None:
-        mins    = max(0, -(-int(remaining) // 60))
-        suffix  = f"{mins}m"
-        content = display + " " + suffix   # single space separator
-        pad     = max(0, cell_w - len(content))
-        return colour + content + " " * pad
+        mins   = max(0, -(-int(remaining) // 60))
+        suffix = f"{mins}m"
+        pad    = max(1, cell_w - len(display) - len(suffix))
+        return colour + display + " " * pad + suffix
     else:
         text = display[:cell_w]
         return colour + text + " " * (cell_w - len(text))
@@ -204,7 +202,7 @@ def _build_frame(data):
         ri = li + 1
         left  = _affect_cell(affects[li], LEFT_W)  if li < n else C_RESET + " " * LEFT_W
         right = _affect_cell(affects[ri], RIGHT_W) if ri < n else C_RESET + " " * RIGHT_W
-        lines.append(left + right + C_RESET)
+        lines.append(left + C_RESET + " " + right + C_RESET)
 
     return lines
 

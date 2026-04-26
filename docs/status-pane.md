@@ -293,29 +293,41 @@ then right cell, in sort order. Empty cells render as spaces.
 
 | Cell  | Width |
 |-------|-------|
-| Left  | 15    |
-| Right | 18    |
+| Left  | 16    |
+| Right | 16    |
+
+A 1-col `C_RESET` separator space sits between the two cells; total per affect row: `LEFT_W + 1 + RIGHT_W = 33`.
 
 **Cell format — duration-bearing affect** (`remaining_seconds` is not null):
 
 ```
-<name> <suffix><padding to cell_w>
+<name><padding><suffix>
 ```
 
-- Single space between name and suffix (literal separator, not part of suffix).
 - `suffix`: `"Xm"` using ceiling division — 0–59 s shows `1m`.
-- `MAX_NAME = 11` (`LEFT_W − len(" 99m") = 15 − 4`). Applied globally before
-  cell placement; the right cell gets extra trailing padding.
-- Padding fills `name + " " + suffix` to exactly `cell_w`.
+- `padding` = `cell_w − len(name) − len(suffix)`, minimum 1 space. Suffix is right-aligned at the cell edge.
+- `MAX_NAME = 12` (`LEFT_W − min-padding(1) − len("99m")(3) = 16 − 4`). Applied globally before cell placement.
+- Total = exactly `cell_w` visible chars.
 
 **Cell format — indefinite affect** (`remaining_seconds` is null):
 
 - Name fills `cell_w`, padded/truncated; no suffix, no separator space.
 
-**Name resolution** (applied once using `MAX_NAME = 11`):
+**Reference rendering** (`bless` 7m + `armour` 18m, both `spell` type):
+
+```
+bless         7m armour       18m
+^^^^^^^^^^^^^^^^ ^^^^^^^^^^^^^^^^
+   LEFT_W=16   ↑    RIGHT_W=16
+           separator
+```
+
+Left cell: `bless`(5) + 9 padding + `7m`(2) = 16. Separator: 1. Right cell: `armour`(6) + 7 padding + `18m`(3) = 16. Total 33.
+
+**Name resolution** (applied once using `MAX_NAME = 12`):
 
 1. If name is in `_AFFECT_SHORTNAMES` → use shortname.
-2. Else if `len(name) > 11` → truncate to 10 chars + `"."`.
+2. Else if `len(name) > 12` → truncate to 11 chars + `"."`.
 3. Else use name as-is.
 
 **Shortname mapping:**
@@ -334,9 +346,8 @@ then right cell, in sort order. Empty cells render as spaces.
 | `heightened senses (faded)`            | `h. senses-`    |
 | `dark aura`                            | `dark aura`     |
 | `dark aura (faded)`                    | `dark aura-`    |
-| `spectral health`                      | `spec. hlth`    |
+| `spectral health`                      | `spec. health`  |
 | `very comfortable`                     | `v. comfort.`   |
-| `heavy burden`                         | `hvy burden`    |
 | `shadow-link`                          | `shadow-link`   |
 
 **Colour:** each cell is coloured independently by its affect's `type`:
