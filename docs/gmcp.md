@@ -60,7 +60,7 @@ pick from a known map without re-reading help files.
 | Message         | Direction | Body                           | Handler        |
 |-----------------|-----------|--------------------------------|----------------|
 | Char.Login      | → server  | `{name, password}`             | not sent       |
-| Char.Name       | ← server  | `{name, fullname}`             | lua/core/char_state.lua (also drives session.state) |
+| Char.Name       | ← server  | `{name, fullname}`             | lua/core/char_state.lua (also drives session.state); wrapped by lua/core/status_state.lua (serialises to bridge) and lua/core/server_prefs.lua (locks server wrap width) |
 | Char.StatusVars | ← server  | name/caption pairs (see below) | lua/core/char_state.lua |
 | Char.Vitals     | ← server  | flat object (see below)        | lua/core/char_state.lua |
 
