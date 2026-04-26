@@ -165,7 +165,9 @@ events.subscribe("affect_refresh", function(name)
     existing.expires_at        = dur and (now + dur) or nil
     dbg("[AFFECTS] refresh: " .. name)
     events.emit("affects_changed")
-    affect_ui(data and data.type, name, "refreshed")
+    if data and data.duration then
+        affect_ui(data.type, name, "refreshed")
+    end
 end)
 
 events.subscribe("affect_down", function(name)

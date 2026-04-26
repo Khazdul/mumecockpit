@@ -72,6 +72,12 @@ and `expires_at` are both nil regardless of any legacy samples on disk. The
 tick never prunes indefinite entries. Duration-less affects never appear in
 `logs/affect_times/<character>.json`.
 
+- No `◆ TAG: name refreshed.` UI line is emitted when `initString_2`
+  matches for a duration-less affect. The internal refresh path still
+  runs (`started_at` is updated, `affects_changed` fires), but the
+  player-facing announcement is suppressed because "refreshed" has no
+  meaningful semantics without a timer.
+
 ## Persistence
 
 **Path:** `logs/affect_times/<character>.json`
