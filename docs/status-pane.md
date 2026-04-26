@@ -167,8 +167,8 @@ Constants defined at the top of `bridge/status_pane.py`:
 | `C_AFFECT_SPELL` | `\x1b[38;2;122;169;214m`        | #7AA9D6 light steel-blue — spell affects |
 | `C_AFFECT_BUFF`  | `\x1b[38;2;143;188;143m`        | #8FBC8F soft sage green — buff affects  |
 | `C_AFFECT_DEBUFF`| `\x1b[38;2;201;112;112m`        | #C97070 muted brick red — debuff affects |
-| `C_SUN`          | `\x1b[38;2;230;180;80m`         | #E6B450 warm amber — ☼ sun icon (upcoming day) |
-| `C_MOON`         | `\x1b[38;2;111;143;184m`        | #6F8FB8 muted cool blue — ☾ moon icon (upcoming night) |
+| `C_SUN`          | `\x1b[38;2;255;176;0m`          | #FFB000 intense amber gold — ☼ sun icon (upcoming day) |
+| `C_MOON`         | `\x1b[38;2;74;144;226m`         | #4A90E2 vivid sky blue — ☾ moon icon (upcoming night) |
 
 ## Header
 
@@ -200,10 +200,11 @@ Affected by:
 ```
 
 At HOUR/MINUTE precision the Time row splits into a 16-col left half (label +
-time-only value) and a 17-col right half (sun/moon icon + `in <countdown>`).
-Icon colour: `C_SUN` (amber ☼) for upcoming day, `C_MOON` (blue ☾) for upcoming
-night. At DAY or UNSET precision `time_period` / `time_remaining` are null and
-the single full-width `_row("Time:", ...)` fallback is used.
+time-only value in `C_VALUE`) and a 17-col right half with a three-colour split:
+icon in `C_SUN` (☼, intense amber) or `C_MOON` (☾, vivid sky blue), the literal
+`"in:"` label in `C_LABEL` (steel-blue), and the countdown value in `C_VALUE`
+(bright white). At DAY or UNSET precision `time_period` / `time_remaining` are
+null and the single full-width `_row("Time:", ...)` fallback is used.
 
 The `Affected by:` header and the 4-row affect block are always rendered.
 

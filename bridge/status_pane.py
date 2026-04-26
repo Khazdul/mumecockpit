@@ -27,8 +27,8 @@ C_AFFECT_SPELL  = "\x1b[38;2;122;169;214m"   # #7AA9D6 light steel-blue
 C_AFFECT_BUFF   = "\x1b[38;2;143;188;143m"   # #8FBC8F soft sage green
 C_AFFECT_DEBUFF = "\x1b[38;2;201;112;112m"   # #C97070 muted brick red
 
-C_SUN  = "\x1b[38;2;230;180;80m"    # #E6B450 warm amber
-C_MOON = "\x1b[38;2;111;143;184m"   # #6F8FB8 muted cool blue
+C_SUN  = "\x1b[38;2;255;176;0m"     # #FFB000 intense amber gold
+C_MOON = "\x1b[38;2;74;144;226m"    # #4A90E2 vivid sky blue
 
 _AFFECT_COLOURS = {
     "spell":  C_AFFECT_SPELL,
@@ -126,8 +126,8 @@ def _time_row(time_str, period, remaining):
     icon   = "☼" if period == "night" else "☾"
     colour = C_SUN if period == "night" else C_MOON
     rem    = str(remaining)
-    trailing_right = max(0, rw - 1 - 4 - len(rem))   # 1=icon, 4=" in "
-    right = colour + icon + C_VALUE + " in " + rem + C_RESET + " " * trailing_right
+    trailing_right = max(0, rw - 1 - 1 - 3 - 1 - len(rem))   # 1=icon, 1=sp, 3="in:", 1=sp
+    right = colour + icon + C_RESET + " " + C_LABEL + "in:" + C_RESET + " " + C_VALUE + rem + C_RESET + " " * trailing_right
 
     return left + right
 
