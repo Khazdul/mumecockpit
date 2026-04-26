@@ -46,7 +46,7 @@ C_TALKER_NEUTRAL = "fg:#ffd700"                    # gold
 C_TALKER_NPC     = "fg:#9e9e9e"                    # grey
 C_TALKER_UNSET   = "fg:#bdbdbd"                    # light grey
 C_VERB           = "fg:#78909c"                    # muted blue-grey
-C_INDICATOR      = "fg:#546e7a"                    # dim blue-grey (↑ N newer)
+C_INDICATOR      = "fg:#d4a04e italic"              # amber, italic — system message
 C_SEP            = "fg:#37474f"                    # kept for compatibility; unused
 
 # ---------------------------------------------------------------------------
@@ -178,12 +178,12 @@ def _list_text():
     total     = len(filtered)
     channels  = _state.get("channels") or []
 
-    # Clamp scroll offset against current list length
-    _scroll_offset = min(_scroll_offset, max(0, total))
+    rows         = _term_rows()
+    list_height  = max(1, rows - 1)               # minus 1 for the header
+    max_offset   = max(0, total - (list_height - 1))
+    _scroll_offset = min(_scroll_offset, max_offset)
 
     newer         = _scroll_offset
-    rows          = _term_rows()
-    list_height   = max(1, rows - 1)               # minus 1 for the header
     indicator_h   = 1 if newer > 0 else 0
     visible_rows  = max(0, list_height - indicator_h)
 
@@ -191,19 +191,6 @@ def _list_text():
     end   = total - _scroll_offset
     start = max(0, end - visible_rows)
     visible = filtered[start:end]
-
-    if newer > 0:
-        indicator_text = f"↑ {newer} newer messages"
-
-        def _indicator_handler(mouse_event):
-            global _scroll_offset
-            if mouse_event.event_type == MouseEventType.MOUSE_DOWN:
-                _scroll_offset = 0
-                if _app:
-                    _app.invalidate()
-
-        frags.append((C_INDICATOR, indicator_text, _indicator_handler))
-        frags.append(("", "\n"))
 
     last_idx = len(visible) - 1
     for idx, entry in enumerate(visible):
@@ -231,6 +218,19 @@ def _list_text():
         if idx < last_idx:
             frags.append(("", "\n"))
 
+    if newer > 0:
+        indicator_text = f"↓ {newer} newer messages"
+
+        def _indicator_handler(mouse_event):
+            global _scroll_offset
+            if mouse_event.event_type == MouseEventType.MOUSE_DOWN:
+                _scroll_offset = 0
+                if _app:
+                    _app.invalidate()
+
+        frags.append(("", "\n"))
+        frags.append((C_INDICATOR, indicator_text, _indicator_handler))
+
     return frags
 
 
@@ -246,7 +246,10 @@ class ListControl(FormattedTextControl):
             if mouse_event.event_type == MouseEventType.SCROLL_UP:
                 if _state is not None:
                     total = len(_get_filtered(_state))
-                    _scroll_offset = min(_scroll_offset + 1, total)
+                    rows = _term_rows()
+                    list_height = max(1, rows - 1)
+                    max_offset = max(0, total - (list_height - 1))
+                    _scroll_offset = min(_scroll_offset + 1, max_offset)
                 if _app:
                     _app.invalidate()
                 return None

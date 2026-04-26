@@ -189,13 +189,13 @@ Each row: `HH:MM <talker> <verb> <text>`
 `_scroll_offset` integer: **0 = bottom (live-follow)**. Increasing values hide
 that many messages at the bottom.
 
-| Event                         | Effect                                           |
-|-------------------------------|--------------------------------------------------|
-| Mouse wheel up on list        | `_scroll_offset += 1` (cap at history length)    |
-| Mouse wheel down on list      | `_scroll_offset -= 1` (floor at 0)               |
-| New messages while offset > 0 | `_scroll_offset += delta` (sticky view)          |
-| Click `↑ N newer messages`    | `_scroll_offset = 0` (jump to bottom)            |
-| Filter flip                   | `_scroll_offset` clamped against new list length |
+| Event                         | Effect                                                              |
+|-------------------------------|---------------------------------------------------------------------|
+| Mouse wheel up on list        | `_scroll_offset += 1` (cap at `max(0, total - (list_height - 1))`) |
+| Mouse wheel down on list      | `_scroll_offset -= 1` (floor at 0)                                 |
+| New messages while offset > 0 | `_scroll_offset += delta` (sticky view)                            |
+| Click `↓ N newer messages`    | `_scroll_offset = 0` (jump to bottom)                              |
+| Filter flip                   | `_scroll_offset` clamped against new list length on next render    |
 
 Mouse wheel scroll is handled by `ListControl`, a `FormattedTextControl`
 subclass that overrides `mouse_handler`. On `SCROLL_UP`/`SCROLL_DOWN` events
@@ -203,13 +203,18 @@ not consumed by the base class, it adjusts `_scroll_offset` and calls
 `_app.invalidate()`. The previous `@kb.add("<scroll-up>")` / `<scroll-down>`
 key bindings were no-ops and have been removed.
 
-When `_scroll_offset > 0`, the first visible row of the list is the indicator:
+`_scroll_offset` is clamped against `max(0, total - (list_height - 1))` so
+the oldest message stays pinned to the top once reached. This prevents blank
+rows above the oldest message and the all-blank locked-view state.
+
+When `_scroll_offset > 0`, the last visible row of the list is the indicator:
 
 ```
-↑ N newer messages
+↓ N newer messages
 ```
 
-in `C_INDICATOR` style. Clicking it (`MOUSE_DOWN`) resets offset to 0.
+in `C_INDICATOR` style (amber, italic — reads as system meta-information, not
+chat content). Clicking it (`MOUSE_DOWN`) resets offset to 0.
 
 ### Colour palette
 
@@ -226,7 +231,7 @@ All constants are defined at the top of `bridge/comm_pane.py`:
 | `C_TALKER_NPC`    | `fg:#9e9e9e`                         | NPC talker               |
 | `C_TALKER_UNSET`  | `fg:#bdbdbd`                         | Unknown talker type      |
 | `C_VERB`          | `fg:#78909c`                         | Channel verb             |
-| `C_INDICATOR`     | `fg:#546e7a`                         | ↑ N newer messages       |
+| `C_INDICATOR`     | `fg:#d4a04e italic`                  | ↓ N newer messages       |
 
 ## Layout integration
 
