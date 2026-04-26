@@ -166,15 +166,14 @@ Constants defined at the top of `bridge/status_pane.py`:
 
 ## Header
 
-Three-row box drawn at 33 columns:
+Three rows: blank / centered title / blank. No border characters.
 
 ```
-┌───────────────────────────────┐
-│       Character Panel         │
-└───────────────────────────────┘
+        Character Panel
 ```
 
-Frame in `C_FRAME`, title text in `C_TITLE`.
+Title in `C_TITLE` on row 2, between two blank rows. `C_FRAME` is defined but
+not used in the header.
 
 ## Field layout
 

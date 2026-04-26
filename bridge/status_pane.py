@@ -152,18 +152,16 @@ def _build_frame(data):
     c = data or {}
     lines = []
 
-    # Header — box drawing, exactly WIDTH cols each
-    lines.append(C_FRAME + "┌" + "─" * (WIDTH - 2) + "┐" + C_RESET)
-    title  = "Character Panel"
-    inner  = WIDTH - 2                          # 31
-    lpad   = (inner - len(title)) // 2
-    rpad   = inner - len(title) - lpad
-    lines.append(
-        C_FRAME + "│" + C_RESET
-        + " " * lpad + C_TITLE + title + C_RESET + " " * rpad
-        + C_FRAME + "│" + C_RESET
-    )
-    lines.append(C_FRAME + "└" + "─" * (WIDTH - 2) + "┘" + C_RESET)
+    # Header — blank / centered title / blank, exactly WIDTH cols each
+    blank = " " * WIDTH
+    title = "Character Panel"
+    inner = WIDTH
+    lpad  = (inner - len(title)) // 2
+    rpad  = inner - len(title) - lpad
+
+    lines.append(blank)
+    lines.append(" " * lpad + C_TITLE + title + C_RESET + " " * rpad)
+    lines.append(blank)
 
     # Content rows
     name  = c.get("character") or "—"
