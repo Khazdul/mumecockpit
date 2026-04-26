@@ -272,7 +272,7 @@
 
 #ACTION {You feel a pale surge of energy flow back into you.}
 {
-    #lua {events.emit("affect_down", "a pure white robe (pale tones)"); events.emit("affect_down", "a pitch-black robe (pale tones)")}
+    #lua {events.emit("affect_down", "a pitch-black robe (pale tones)"); events.emit("affect_down", "a pure white robe (pale tones)")}
 }
 {3}
 
@@ -410,7 +410,7 @@
 
 #ACTION {You feel slightly less comfortable.}
 {
-    #lua {events.emit("affect_down", "very comfortable"); events.emit("affect_refresh", "comfortable")}
+    #lua {events.emit("affect_refresh", "comfortable"); events.emit("affect_down", "very comfortable")}
 }
 {3}
 
@@ -584,7 +584,7 @@
 
 #ACTION {You're starting to feel very comfortable.}
 {
-    #lua {events.emit("affect_init", "very comfortable"); events.emit("affect_down", "comfortable")}
+    #lua {events.emit("affect_down", "comfortable"); events.emit("affect_init", "very comfortable")}
 }
 {3}
 
