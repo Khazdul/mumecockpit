@@ -76,3 +76,46 @@ messages.
 **Normalize in `comm_store.lua` at archive-write time.** Rejected — same
 objection as normalizing in `comm_log.lua`; the archive loses its round-trip
 fidelity.
+
+---
+
+## 2026-04-26 update — Action channels use text-verbatim rendering
+
+**Problem:** The original decision described action channels (`emotes`, `socials`)
+as stripping a leading `<talker> ` or `You ` prefix from `text`, then rendering
+the remainder with the standard `<time> <Talker> <verb> <message>` layout. In
+practice this produced doubled talker artifacts:
+
+- `"Vainamoinen emotes Vainamoinen smiles warmly."` — talker appears twice when
+  `text` already begins with the talker name.
+- `"You social You wave goodbye."` — same doubling for self socials.
+
+The root cause: MUME's GMCP `Comm.Channel.Text` for `emotes` and `socials` embeds
+the full `<talker> <verb-phrase>` in `text` (e.g. `"Vit the innkeeper bows
+respectfully."`). There is no clean way to strip just the verb without also
+consuming part of the talker's embedded name in edge cases.
+
+**Change:** Action channels now use text-verbatim rendering (`_render_action_row`):
+
+```
+HH:MM <text>
+```
+
+No channel verb is prepended. No standalone talker fragment is emitted. Instead,
+`text` is rendered verbatim with a talker-prefix color split:
+
+- `talker == "you"` and `text` starts with `"You "` → `"You "` in
+  `C_TALKER_SELF`, rest in `C_MESSAGE_SELF`.
+- `text` starts with `talker + " "` (exact prefix, including multi-word names) →
+  prefix in `C_TALKER_OTHER`, rest in `C_MESSAGE_OTHER`.
+- Malformed (talker not at start of `text`) → prepend `<Talker> ` in talker
+  color, then `text` verbatim in message color.
+
+**Why:** GMCP for emotes and socials embeds the talker and verb inside `text`;
+reconstructing the layout client-side produced doubled talkers. Text-verbatim
+rendering is faithful to the server's intended output while still applying the
+self/other color split.
+
+**Not changed:** Quoted channels (`tales`, `tells`, `says`, `yells`, `whispers`,
+`prayers`, `songs`, `questions`) retain the original verb+extraction layout, now
+extended to also render an optional `destination` field between verb and message.

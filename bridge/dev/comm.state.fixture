@@ -73,7 +73,7 @@
       "channel": "tells",
       "talker": "you",
       "talker_type": null,
-      "destination": "Gandalf",
+      "destination": "Ibuki",
       "text": "come to the inn"
     },
     {
@@ -169,7 +169,7 @@
       "channel": "questions",
       "talker": "you",
       "talker_type": null,
-      "destination": null,
+      "destination": "Aragorn",
       "text": "where is the nearest inn"
     },
     {
@@ -177,8 +177,8 @@
       "channel": "questions",
       "talker": "Frodo",
       "talker_type": "neutral",
-      "destination": null,
-      "text": "Frodo asks 'has anyone seen my ring'"
+      "destination": "you",
+      "text": "Frodo asks you 'has anyone seen my ring'"
     },
     {
       "ts": 1777200480,
@@ -211,6 +211,22 @@
       "talker_type": "enemy",
       "destination": null,
       "text": "Bombur waves cheerfully."
+    },
+    {
+      "ts": 1777200600,
+      "channel": "tells",
+      "talker": "Frodo",
+      "talker_type": null,
+      "destination": "you",
+      "text": "Frodo tells you 'hi there'"
+    },
+    {
+      "ts": 1777200630,
+      "channel": "emotes",
+      "talker": "Vit the innkeeper",
+      "talker_type": "npc",
+      "destination": null,
+      "text": "Vit the innkeeper bows respectfully."
     }
   ]
 }
