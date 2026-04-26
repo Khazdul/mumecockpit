@@ -17,7 +17,7 @@ try:
     from prompt_toolkit.layout import Layout
     from prompt_toolkit.layout.containers import ConditionalContainer, HSplit, Window
     from prompt_toolkit.layout.controls import FormattedTextControl
-    from prompt_toolkit.mouse_events import MouseEventType
+    from prompt_toolkit.mouse_events import MouseButton, MouseEventType  # prompt_toolkit >= 3.0
     from prompt_toolkit.output import ColorDepth
 except ImportError:
     print("Error: prompt_toolkit is not installed.")
@@ -113,6 +113,8 @@ _scroll_offset  = 0         # 0 = bottom (live-follow); N = N newer msgs hidden
 _prev_filtered  = 0         # filtered-list length before last update
 _app            = None      # set in main() after Application is created
 _filters        = {}        # sparse map: missing key = enabled (True)
+_solo_channel   = None      # name of currently soloed channel, or None
+_solo_snapshot  = None      # dict copy of _filters at solo entry, or None
 
 # ---------------------------------------------------------------------------
 # Filter persistence
@@ -294,8 +296,37 @@ def _term_rows():
 
 def forward_toggle(name):
     """Toggle filter for a named channel, persist, and invalidate the app."""
+    global _solo_channel, _solo_snapshot
+    if _solo_channel is not None:
+        _solo_channel = None
+        _solo_snapshot = None
     current = _filters.get(name, True)
     _filters[name] = not current
+    _save_filters()
+    if _app:
+        _app.invalidate()
+
+
+def forward_solo(name):
+    """Right-click handler: solo a channel, or restore on re-click."""
+    global _solo_channel, _solo_snapshot
+
+    if _solo_channel == name:
+        if _solo_snapshot is not None:
+            _filters.clear()
+            _filters.update(_solo_snapshot)
+        _solo_channel = None
+        _solo_snapshot = None
+    else:
+        if _solo_channel is None:
+            _solo_snapshot = dict(_filters)
+        channels = (_state or {}).get("channels") or []
+        for ch in channels:
+            cn = ch.get("name", "")
+            if cn:
+                _filters[cn] = (cn == name)
+        _solo_channel = name
+
     _save_filters()
     if _app:
         _app.invalidate()
@@ -328,7 +359,11 @@ def _header_text():
 
         def _make_handler(n=name):
             def _handler(mouse_event):
-                if mouse_event.event_type == MouseEventType.MOUSE_DOWN:
+                if mouse_event.event_type != MouseEventType.MOUSE_DOWN:
+                    return
+                if mouse_event.button == MouseButton.RIGHT:
+                    forward_solo(n)
+                else:
                     forward_toggle(n)
             return _handler
 
@@ -346,7 +381,11 @@ def _header_text():
 
         def _make_handler(n=name):
             def _handler(mouse_event):
-                if mouse_event.event_type == MouseEventType.MOUSE_DOWN:
+                if mouse_event.event_type != MouseEventType.MOUSE_DOWN:
+                    return
+                if mouse_event.button == MouseButton.RIGHT:
+                    forward_solo(n)
+                else:
                     forward_toggle(n)
             return _handler
 

@@ -256,6 +256,18 @@ Using `MOUSE_DOWN` (rather than `MOUSE_UP`) means toggling fires on the press
 event. This eliminates missed clicks caused by press and release landing on
 different fragments.
 
+Right-click solos a channel: every other advertised channel is disabled,
+leaving only the clicked one. A second right-click on the same label restores
+the filter state that was active before solo was entered. Right-clicking a
+different label while in solo mode switches the soloed channel without losing
+the original snapshot. A left-click while soloed drops the snapshot and resumes
+normal manual filtering.
+
+Solo state is runtime-only — it is not persisted to `comm_filters.conf`. The
+post-solo filter values *are* persisted (each channel's enabled/disabled state
+writes through normally), so a process restart while soloed leaves the snapshot
+lost.
+
 ### List
 
 The list `Window` has `wrap_lines=True` so long messages soft-wrap rather than
