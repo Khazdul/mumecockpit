@@ -61,14 +61,12 @@ local function serialize()
             remaining_seconds = remaining,
         }
     end
+    local TYPE_ORDER = { buff = 0, spell = 1, debuff = 2 }
     table.sort(list, function(x, y)
-        local xr = x.remaining_seconds
-        local yr = y.remaining_seconds
-        if xr == nil and yr == nil then return x.name < y.name end
-        if xr == nil then return false end
-        if yr == nil then return true end
-        if xr ~= yr then return xr < yr end
-        return x.name < y.name
+        local xo = TYPE_ORDER[x.type] or 3
+        local yo = TYPE_ORDER[y.type] or 3
+        if xo ~= yo then return xo < yo end
+        return (x.name or ""):lower() < (y.name or ""):lower()
     end)
 
     local payload = {
@@ -99,12 +97,7 @@ local function serialize()
     os.rename(TMP_PATH, STATE_PATH)
 
     local n = #list
-    local new_height
-    if n == 0 then
-        new_height = STATIC_ROWS
-    else
-        new_height = STATIC_ROWS + 1 + n  -- +1 for "Affected by:" label
-    end
+    local new_height = STATIC_ROWS + 1 + math.max(4, math.ceil(n / 2))
     if new_height ~= _last_height then
         local conf_lines = {}
         local found = false

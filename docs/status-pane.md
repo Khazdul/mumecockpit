@@ -38,9 +38,10 @@ it wipes every non-function key in `state.char` while keeping the table
 identity intact so cached references elsewhere stay valid. The `status_state.lua`
 wrapper around `state.char.reset` then calls `serialize()`, producing a single
 atomic write to `bridge/status.state` with all character fields null. The
-renderer displays `—` for null values and omits the `Affected by:` block
-when the affects list is empty, so the pane shrinks to `STATIC_ROWS` within
-one poll tick (≤ 250 ms).
+renderer displays `—` for null values. The `Affected by:` header and the
+4-row affect block are always rendered, so the pane height stays at
+`STATIC_ROWS + 1 + 4 = 14` within one poll tick (≤ 250 ms) — blank affect
+rows replace any previously shown affects.
 
 `mark_mume_disconnected()` is idempotent: a duplicate signal finds
 `bridge/session.state` already absent and returns before reaching the reset
@@ -126,7 +127,8 @@ JSON written by `lua/core/status_state.lua`. Gitignored.
 subscription in `lua/core/status_state.lua` (phase 3 — implemented). `affects`
 is populated by the `affects_changed` subscription in `lua/core/status_state.lua`
 (phase 2 — implemented). The renderer displays `—` when null (bootstrap window
-before first Vitals tick) and an em-dash row when `affects` is empty.
+before first Vitals tick). The affect block is always rendered (4 blank rows
+when `affects` is empty).
 
 ### Field mapping from GMCP
 
@@ -186,12 +188,11 @@ Mood: <mood>          Alert: <alertness>
 Pos: <position>       Sneak: <sneak>
 Climb: <climb>        Swim: <swim>
 Time: <game_time>
-Affected by:          ← omitted when no affects are active
-  <affects>
+Affected by:
+  <affects>           ← 4 blank rows when no affects are active
 ```
 
-When no affects are active, the `Affected by:` row and the affects block below
-it are omitted entirely — the pane ends after `Time:`.
+The `Affected by:` header and the 4-row affect block are always rendered.
 
 Labels in `C_LABEL`, values in `C_VALUE`. Numeric values (`xp`, `tp`)
 formatted with comma separators (232,200 rather than 232200).
@@ -277,17 +278,68 @@ no duration in the data table and no observed samples yet).
 
 ### Rendering
 
-`status_pane.py` renders each entry as one line:
+`status_pane.py` renders the affect block as a two-column grid. One
+`Affected by:` header row is always emitted, followed by `BLOCK_ROWS` affect
+rows:
 
 ```
-- <name> <Xm>
+BLOCK_ROWS = max(4, ceil(N / 2))
 ```
 
-- Prefix: `"- "` (two characters).
-- Suffix: `" Xm"` using **ceiling division** — 0–59 s shows `1m`; this is
-  intentional ("less than a minute left" is more useful than `0m`).
-- Omitted when `remaining_seconds` is null (no time suffix).
-- Colour is chosen by `type` via `_AFFECT_COLOURS`:
+where N is the current affect count. Affects fill top-to-bottom, left cell
+then right cell, in sort order. Empty cells render as spaces.
+
+**Cell widths** (total `WIDTH = 33`):
+
+| Cell  | Width |
+|-------|-------|
+| Left  | 15    |
+| Right | 18    |
+
+**Cell format — duration-bearing affect** (`remaining_seconds` is not null):
+
+```
+<name> <suffix><padding to cell_w>
+```
+
+- Single space between name and suffix (literal separator, not part of suffix).
+- `suffix`: `"Xm"` using ceiling division — 0–59 s shows `1m`.
+- `MAX_NAME = 11` (`LEFT_W − len(" 99m") = 15 − 4`). Applied globally before
+  cell placement; the right cell gets extra trailing padding.
+- Padding fills `name + " " + suffix` to exactly `cell_w`.
+
+**Cell format — indefinite affect** (`remaining_seconds` is null):
+
+- Name fills `cell_w`, padded/truncated; no suffix, no separator space.
+
+**Name resolution** (applied once using `MAX_NAME = 11`):
+
+1. If name is in `_AFFECT_SHORTNAMES` → use shortname.
+2. Else if `len(name) > 11` → truncate to 10 chars + `"."`.
+3. Else use name as-is.
+
+**Shortname mapping:**
+
+| Full name                              | Shortname       |
+|----------------------------------------|-----------------|
+| `breath of briskness`                  | `briskness`     |
+| `detect magic`                         | `det. magic`    |
+| `detect evil`                          | `det. evil`     |
+| `night vision`                         | `night vis.`    |
+| `sense life`                           | `sense life`    |
+| `Blood of Sauron`                      | `BoS`           |
+| `a pitch-black robe (pale tones)`      | `pitch robe`    |
+| `a pure white robe (pale tones)`       | `white robe`    |
+| `heightened senses`                    | `h. senses`     |
+| `heightened senses (faded)`            | `h. senses-`    |
+| `dark aura`                            | `dark aura`     |
+| `dark aura (faded)`                    | `dark aura-`    |
+| `spectral health`                      | `spec. hlth`    |
+| `very comfortable`                     | `v. comfort.`   |
+| `heavy burden`                         | `hvy burden`    |
+| `shadow-link`                          | `shadow-link`   |
+
+**Colour:** each cell is coloured independently by its affect's `type`:
 
   | `type`    | Constant          | Hex      |
   |-----------|-------------------|----------|
@@ -296,26 +348,27 @@ no duration in the data table and no observed samples yet).
   | `debuff`  | `C_AFFECT_DEBUFF` | #C97070  |
   | (unknown) | `C_VALUE`         | fallback |
 
-- Truncation: the **name** is truncated to fit `WIDTH=33`; the suffix is
-  always preserved intact.
-- Each line is padded to exactly `WIDTH` visible characters so a shorter
-  line clears any longer previous content on the same row.
-- When `affects` is empty: the `Affected by:` header and this block are omitted entirely.
+Empty cells use `C_RESET`. Each row ends with `C_RESET`.
 
 ### Sort order
 
-Ascending `remaining_seconds`, with nil-duration affects at the bottom.
-Ties (same remaining or both nil) broken alphabetically by name.
+Category order: **buff → spell → debuff → unknown**, alphabetical within each
+category (case-insensitive). Unknown types sort after debuffs. Sort is applied
+in `lua/core/status_state.lua` before serialisation; the renderer uses the
+order as-is.
 
 ### Dynamic height
 
-`status_height = STATIC_ROWS` when no affects are active;
-`status_height = STATIC_ROWS + 1 + N` when N ≥ 1 affects are active
-(the `+1` accounts for the `Affected by:` header row).
-`STATIC_ROWS` is the count of always-rendered rows (3 header rows plus the
-6 fixed body rows above the affects block) — currently `9`. The constant
-lives in `lua/core/status_state.lua`; bump it whenever a static body row
-is added or removed in `bridge/status_pane.py`.
+```
+status_height = STATIC_ROWS + 1 + max(4, ceil(N / 2))
+```
+
+- `STATIC_ROWS`: count of always-rendered rows (3 header rows + 6 fixed body
+  rows) — currently `9`. Lives in `lua/core/status_state.lua`; bump whenever
+  a static body row is added or removed in `bridge/status_pane.py`.
+- `+ 1`: the always-rendered `Affected by:` header row.
+- `max(4, …)`: height is stable for N ≤ 8 (minimum 4 affect rows = height
+  14). For N > 8, height grows by one row per two additional affects.
 
 `lua/core/status_state.lua` owns this: after each atomic write to
 `bridge/status.state` it checks the new height against `_last_height`; if

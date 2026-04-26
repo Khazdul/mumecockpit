@@ -33,6 +33,28 @@ _AFFECT_COLOURS = {
     "debuff": C_AFFECT_DEBUFF,
 }
 
+LEFT_W  = 15
+RIGHT_W = WIDTH - LEFT_W   # 18
+
+_AFFECT_SHORTNAMES = {
+    "breath of briskness":             "briskness",
+    "detect magic":                    "det. magic",
+    "detect evil":                     "det. evil",
+    "night vision":                    "night vis.",
+    "sense life":                      "sense life",
+    "Blood of Sauron":                 "BoS",
+    "a pitch-black robe (pale tones)": "pitch robe",
+    "a pure white robe (pale tones)":  "white robe",
+    "heightened senses":               "h. senses",
+    "heightened senses (faded)":       "h. senses-",
+    "dark aura":                       "dark aura",
+    "dark aura (faded)":               "dark aura-",
+    "spectral health":                 "spec. hlth",
+    "very comfortable":                "v. comfort.",
+    "heavy burden":                    "hvy burden",
+    "shadow-link":                     "shadow-link",
+}
+
 # ---------------------------------------------------------------------------
 # Renderer state
 # ---------------------------------------------------------------------------
@@ -83,6 +105,35 @@ def _pair(l1, v1, l2, v2, width=WIDTH):
         return C_LABEL + lbl + C_RESET + " " + C_VALUE + val + C_RESET + " " * max(0, trailing)
 
     return _half(l1, v1, lw) + _half(l2, v2, rw)
+
+
+def _resolve_affect_name(name):
+    """Resolve display name using MAX_NAME budget (11): shortmap → truncate → as-is."""
+    if name in _AFFECT_SHORTNAMES:
+        return _AFFECT_SHORTNAMES[name]
+    limit = LEFT_W - 4   # 11: name + " " + "99m" must fit in LEFT_W
+    if len(name) > limit:
+        return name[:limit - 1] + "."
+    return name
+
+
+def _affect_cell(aff, cell_w):
+    """Render one affect into exactly cell_w visible characters (no trailing reset)."""
+    name      = str(aff.get("name") or "?")
+    atype     = aff.get("type") or "spell"
+    remaining = aff.get("remaining_seconds")
+    colour    = _AFFECT_COLOURS.get(atype, C_VALUE)
+    display   = _resolve_affect_name(name)
+
+    if remaining is not None:
+        mins    = max(0, -(-int(remaining) // 60))
+        suffix  = f"{mins}m"
+        content = display + " " + suffix   # single space separator
+        pad     = max(0, cell_w - len(content))
+        return colour + content + " " * pad
+    else:
+        text = display[:cell_w]
+        return colour + text + " " * (cell_w - len(text))
 
 
 def _fmt_num(n):
@@ -141,28 +192,19 @@ def _build_frame(data):
     game_time = c.get("game_time")
     lines.append(_row("Time:", game_time if game_time is not None else "—"))
 
-    affects = c.get("affects") or []
-    if affects:
-        lines.append(C_LABEL + "Affected by:" + C_RESET)
-        for aff in affects:
-            name      = str(aff.get("name") or "?")
-            atype     = aff.get("type") or "spell"
-            remaining = aff.get("remaining_seconds")
-            colour    = _AFFECT_COLOURS.get(atype, C_VALUE)
+    affects    = c.get("affects") or []
+    n          = len(affects)
+    block_rows = max(4, -(-n // 2))   # ceil(n/2), min 4
 
-            if remaining is not None:
-                mins   = max(0, -(-int(remaining) // 60))   # ceil division
-                suffix = f" {mins}m"
-            else:
-                suffix = ""
+    header = "Affected by:"
+    lines.append(C_LABEL + header + C_RESET + " " * (WIDTH - len(header)))
 
-            prefix = "- "
-            budget = WIDTH - len(prefix) - len(suffix)
-            if len(name) > budget:
-                name = name[:max(0, budget)]
-            line = prefix + name + suffix
-            line = line + " " * (WIDTH - len(line))
-            lines.append(colour + line + C_RESET)
+    for row in range(block_rows):
+        li = row * 2
+        ri = li + 1
+        left  = _affect_cell(affects[li], LEFT_W)  if li < n else C_RESET + " " * LEFT_W
+        right = _affect_cell(affects[ri], RIGHT_W) if ri < n else C_RESET + " " * RIGHT_W
+        lines.append(left + right + C_RESET)
 
     return lines
 
