@@ -3,44 +3,7 @@ TinTin++ owns the socket, triggers, and keybinds at the latency floor;
 a Lua brain runs above it for state, timers, and anything that benefits
 from a real programming language; tmux composes game, input, UI, and
 character panes into one window. Starts in under a second, has no update
-cycle, and behaves the same on every machine you own — remote it, tile
-it, attach to it from anywhere.
-
-
-MUME — MULTI-USERS IN MIDDLE-EARTH
-
-MUME is a free, text-based multiplayer game set in Tolkien's Middle-earth
-during the late Third Age — the years leading up to the War of the Ring.
-Continuously running since 1991 and maintained by a volunteer community,
-it remains one of the oldest active DikuMUDs and the reason this client
-exists.
-
-Pick a side. The Free Peoples — Men, Elves, Hobbits, Dwarves, Beornings
-— hold the West. The forces of Sauron — Trolls, Black Númenóreans, Orcs
-— push from the East. Renegade Zaugurz orcs are hated by both.
-Three-faction warfare is the spine of the game.
-
-The world is wide and faithful to the source material. The Shire, Bree,
-Rivendell, the Grey Havens, Moria, Lothlórien, Fangorn, Fornost,
-Tharbad, Isengard, the Warrens, the Orc Caves of the Misty Mountains,
-and the Rohan zone — all recognizable, all explorable, all consequential.
-Different regions have different laws; magic is illegal in the Shire
-unless you're a citizen. Roleplaying is encouraged; names that don't
-fit Middle-earth don't last.
-
-PvP is what sets MUME apart. Capturable towers and terrain,
-leaderboards, deep skill and spell systems, and a 30–50 player peak
-that produces constant skirmishes between the sides. Big events draw
-100+ players — trolls bringing battering rams to break the gates of
-Blue Mountain, orcs and trolls raiding cities in coordinated waves.
-The reaction-speed floor is high. A fast, scriptable client isn't a
-luxury here; it's the thing that lets you keep up.
-
-Free to play. No subscription. Just connect.
-
-  Website   mume.org
-  Discord   discord.gg/XkZN55am9a
-
+cycle, and behaves the same on every machine.
 
 CONNECTION
 
@@ -81,20 +44,20 @@ the intended use.
 
 PANES
 
-Beyond the main game window, the cockpit can show three side panes,
+Beyond the main game window, the cockpit can show four side panes,
 each toggleable at runtime: a UI pane for structured status messages
 from scripts and the core systems (kills, warnings, lifecycle events);
 a character panel with live vitals, position, mood, and session XP/TP
-totals; and a dedicated input pane on its own line.
+totals; a communication pane that shows in-game communication channels;
+and a dedicated input pane on its own line.
 
 The input pane fixes long-standing terminal-client annoyances. The
 buffer doesn't auto-clear after sending — the last command stays
-highlighted, so a second Enter repeats it, exactly the rhythm MUDs
-are built around. Any printable key wipes the highlight and starts a
-fresh command. Empty Enter sends a bare newline (MUME uses this to
-cancel delayed casts) — never a silent re-send. Shift+Home, Shift+End,
-and Ctrl+A all select the full buffer in one move, so the next
-keystroke clears it.
+highlighted, so a second Enter repeats it. Any printable key wipes
+the highlight and starts a fresh command. Empty Enter sends a bare
+newline (MUME uses this to cancel delayed casts) — never a silent
+re-send. Shift+Home, Shift+End, and Ctrl+A all select the full 
+buffer in one move, so the next keystroke clears it.
 
 
 COCKPIT COMMANDS
@@ -110,8 +73,42 @@ same controls plus a few extras useful for scripting and reload:
   cp -c     toggle character panel
   cp -i     toggle input pane
   cp -h     toggle pane border headers
+  cp -m     toggle communication pane
   cp        show the full command reference
 
+MUME — MULTI-USERS IN MIDDLE-EARTH
+
+MUME is a free, text-based multiplayer game set in Tolkien's Middle-earth
+during the late Third Age — the years leading up to the War of the Ring.
+Continuously running since 1991 and maintained by a volunteer community,
+it remains one of the oldest active DikuMUDs and the reason this client
+exists.
+
+Pick a side. The Free Peoples — Men, Elves, Hobbits, Dwarves, Beornings
+— hold the West. The forces of Sauron — Trolls, Black Númenóreans, Orcs
+— push from the East. Renegade Zaugurz orcs are hated by both.
+Three-faction warfare is the spine of the game.
+
+The world is wide and faithful to the source material. The Shire, Bree,
+Rivendell, the Grey Havens, Moria, Lothlórien, Fangorn, Fornost,
+Tharbad, Isengard, the Warrens, the Orc Caves of the Misty Mountains,
+and the Rohan zone — all recognizable, all explorable, all consequential.
+Different regions have different laws; magic is illegal in the Shire
+unless you're a citizen. Roleplaying is encouraged; names that don't
+fit Middle-earth don't last.
+
+PvP is what sets MUME apart. Capturable towers and terrain,
+leaderboards, deep skill and spell systems, and a 30–50 player peak
+that produces constant skirmishes between the sides. Big events draw
+100+ players — trolls bringing battering rams to break the gates of
+Blue Mountain, orcs and trolls raiding cities in coordinated waves.
+The reaction-speed floor is high. A fast, scriptable client isn't a
+luxury here; it's the thing that lets you keep up.
+
+Free to play. No subscription. Just connect.
+
+  Website   mume.org
+  Discord   discord.gg/XkZN55am9a
 
 PROJECT
 
