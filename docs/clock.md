@@ -92,10 +92,15 @@ Returns nil when precision is `"UNSET"`. Otherwise returns:
 | Style     | UNSET | DAY example         | HOUR example        | MINUTE example    |
 |-----------|-------|---------------------|---------------------|-------------------|
 | `"compact"` | `"?"` | `"Solmath 26, 2973"` | `"~8 am, Solmath 26"` | `"8:00, Solmath 26"` |
+| `"panel"`   | `"?"` | `"Solmath 26, 2973"` | `"~8 AM on Solmath 26"` | `"8:00 AM on Solmath 26"` |
 | `"full"`    | `"?"` | weekday + full date + season | same | same |
 | `"debug"`   | `"?"` | mse=… prec=… date/time | same | same |
 
 The `~` prefix on HOUR indicates the minute is unknown.
+
+`"panel"` uses 12-hour time with uppercase AM/PM and an `on` separator.
+Midnight renders as `12 AM` / `12:00 AM`; noon as `12 PM` / `12:00 PM`.
+The DAY row is identical to `"compact"` — no time component to show.
 
 **`state.world.clock.tick()`** — called by a 1Hz tt++ ticker.
 

@@ -140,7 +140,7 @@ window before first Vitals tick) and empty for `affects`.
 | `swim`         | `Char.Vitals` → `state.char.swim`  | bool→"on"/"off"                  |
 | `session_xp`   | `lua/core/sess_kills.lua` → `state.session.session_xp` | null during bootstrap window; resets to 0 on `cp -r` (rebaselines on next Vitals tick — expected behaviour, not a bug) |
 | `session_tp`   | `lua/core/sess_kills.lua` → `state.session.session_tp` | null during bootstrap window; resets to 0 on `cp -r` (rebaselines on next Vitals tick — expected behaviour, not a bug) |
-| `game_time`    | `lua/core/clock.lua` → `state.world.clock.format("compact")` | null when precision is UNSET; `"?"` string when clock loaded but unsynced |
+| `game_time`    | `lua/core/clock.lua` → `state.world.clock.format("panel")` | null when precision is UNSET; `"?"` string when clock loaded but unsynced |
 | `affects`      | phase 2 — always [] in phase 1     |                                   |
 
 ## Colour scheme
@@ -269,7 +269,7 @@ Clock module `lua/core/clock.lua` and the status-pane wiring are both active.
 `lua/core/status_state.lua` populates `game_time` in `serialize()`:
 
 ```lua
-game_time = state.world.clock and state.world.clock.format("compact") or nil,
+game_time = state.world.clock and state.world.clock.format("panel") or nil,
 ```
 
 It also subscribes to the `clock_changed` event emitted by `clock.lua` after
@@ -282,11 +282,14 @@ events.subscribe("clock_changed", function() serialize() end)
 This means the panel updates immediately on a sync — not on the next
 `Char.Vitals` tick.
 
-**Consumer contract:** `state.world.clock.format("compact")` returns:
+**Consumer contract:** `state.world.clock.format("panel")` returns:
 - `"?"` when precision is UNSET (no sync yet) — renderer shows `?`
 - `"Solmath 26, 2973"` (DAY precision — date known, hour unknown)
-- `"~8 am, Solmath 26"` (HOUR precision — `~` means minute unknown)
-- `"8:00, Solmath 26"` (MINUTE precision — fully synced)
+- `"~8 AM on Solmath 26"` (HOUR precision — `~` means minute unknown)
+- `"8:00 AM on Solmath 26"` (MINUTE precision — fully synced)
+
+The `"compact"` format (`"8:00, Solmath 26"`, lowercase am/pm, comma separator)
+remains available for other consumers; the panel no longer uses it.
 
 See [docs/clock.md](clock.md) for full API and sync source details.
 

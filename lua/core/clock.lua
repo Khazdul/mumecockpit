@@ -277,6 +277,21 @@ function C.format(style)
         else -- DAY
             return string.format("%s %d, %d", mn, m.day, m.year)
         end
+    elseif style == "panel" then
+        local function to12(h)
+            local disp = h % 12
+            if disp == 0 then disp = 12 end
+            return disp, h < 12 and "AM" or "PM"
+        end
+        if C.precision == P.MINUTE then
+            local disp, ampm = to12(m.hour)
+            return string.format("%d:%02d %s on %s %d", disp, m.minute, ampm, mn, m.day)
+        elseif C.precision == P.HOUR then
+            local disp, ampm = to12(m.hour)
+            return string.format("~%d %s on %s %d", disp, ampm, mn, m.day)
+        else -- DAY
+            return string.format("%s %d, %d", mn, m.day, m.year)
+        end
     elseif style == "full" then
         local wd = weekday_name[m.weekday] or "?"
         return string.format("%s, the %dth of %s, year %d (%s)",

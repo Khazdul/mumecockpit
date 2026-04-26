@@ -52,7 +52,7 @@ local function serialize()
         position    = c.position,
         climb       = climb_val,
         swim        = swim_val,
-        game_time   = state.world.clock and state.world.clock.format("compact") or nil,
+        game_time   = state.world.clock and state.world.clock.format("panel") or nil,
         affects     = {},
     }
 
