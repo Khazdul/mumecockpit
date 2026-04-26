@@ -2,7 +2,7 @@
 #
 # prompt_toolkit full-screen Application with mouse_support=True.
 # Layout: fixed 1-row header + scrollable list (HSplit).
-# Header: 3-col padded cell per channel; click toggles filter on MOUSE_DOWN.
+# Header: per-channel label (clickable), fg-colored by channel or greyed when off.
 # List: history filtered by channel, with sticky-bottom scrollback.
 # Polls bridge/comm.state every 250 ms via mtime comparison.
 # Filters are owned here: read/write bridge/comm_filters.conf directly.
@@ -35,19 +35,54 @@ COMM_FILTERS_TMP  = COMM_FILTERS_CONF + ".tmp"
 POLL_MS           = 0.25
 
 # ---------------------------------------------------------------------------
+# Channel tables
+# ---------------------------------------------------------------------------
+
+CHANNEL_VERBS = {
+    "tales":     ("narrate",  "narrates"),
+    "tells":     ("tell",     "tells"),
+    "emotes":    ("emote",    "emotes"),
+    "says":      ("say",      "says"),
+    "yells":     ("yell",     "yells"),
+    "whispers":  ("whisper",  "whispers"),
+    "prayers":   ("pray",     "prays"),
+    "songs":     ("sing",     "sings"),
+    "questions": ("ask",      "asks"),
+    "socials":   ("social",   "socials"),
+}
+
+CHANNEL_LABELS = {
+    "tales": "Na", "tells": "Te", "says": "Sa", "yells": "Ye",
+    "prayers": "Pr", "emotes": "Em", "whispers": "Wh",
+    "questions": "Qu", "songs": "Son", "socials": "Soc",
+}
+
+# ---------------------------------------------------------------------------
 # Colour palette (24-bit truecolor, CSS-style for prompt_toolkit)
 # ---------------------------------------------------------------------------
-C_LABEL_ON       = "bg:#1e5c30 fg:#ffffff bold"   # filter on:  deep green
-C_LABEL_OFF      = "bg:#3d1f1f fg:#666666"         # filter off: dark red, dim
-C_TIME           = "fg:#5a6a7a"                    # dim blue-grey
-C_TALKER_ALLY    = "fg:#90ee90 bold"               # light green
-C_TALKER_ENEMY   = "fg:#ff6b6b bold"               # light red
-C_TALKER_NEUTRAL = "fg:#ffd700"                    # gold
-C_TALKER_NPC     = "fg:#9e9e9e"                    # grey
-C_TALKER_UNSET   = "fg:#bdbdbd"                    # light grey
-C_VERB           = "fg:#78909c"                    # muted blue-grey
-C_INDICATOR      = "fg:#d4a04e italic"              # amber, italic — system message
-C_SEP            = "fg:#37474f"                    # kept for compatibility; unused
+
+C_TIME           = "fg:#687685"               # 104,118,133
+C_TALKER_SELF    = "fg:#afd2d2"               # 175,210,210
+C_TALKER_OTHER   = "fg:#96b9bc"               # 150,185,188
+C_MESSAGE_SELF   = "fg:#c3e6e9"               # 195,230,233
+C_MESSAGE_OTHER  = "fg:#91bec1"               # 145,190,193
+C_LABEL_OFF      = "fg:#666666"               # grey when filter off
+
+CHANNEL_COLORS = {
+    "tales":     "fg:#949400",  # 148,148,0
+    "tells":     "fg:#008000",  # 0,128,0
+    "emotes":    "fg:#008000",
+    "says":      "fg:#008f8f",  # 0,143,143
+    "yells":     "fg:#640064",  # 100,0,100
+    "whispers":  "fg:#965a00",  # 150,90,0
+    "prayers":   "fg:#c3c36e",  # 195,195,110
+    "songs":     "fg:#b49696",  # 180,150,150
+    "questions": "fg:#008f8f",
+    "socials":   "fg:#9600a0",  # 150,0,160
+}
+
+C_VERB_UNKNOWN   = "fg:#78909c"               # neutral grey for unknown channels
+C_INDICATOR      = "fg:#d4a04e italic"        # amber, italic — system message
 
 # ---------------------------------------------------------------------------
 # Application state
@@ -101,21 +136,53 @@ def _get_filtered(state):
     return [e for e in history if _filters.get(e.get("channel", ""), True)]
 
 
-def _talker_style(talker_type):
-    t = (talker_type or "").lower()
-    if t == "ally":     return C_TALKER_ALLY
-    if t == "enemy":    return C_TALKER_ENEMY
-    if t == "neutral":  return C_TALKER_NEUTRAL
-    if t == "npc":      return C_TALKER_NPC
-    return C_TALKER_UNSET
+def _channel_label(name):
+    return CHANNEL_LABELS.get(name, name[:2].capitalize())
 
 
-def _verb_for_channel(channel_name, channels_list):
-    """Derive the channel verb from its caption (lowercased)."""
-    for ch in channels_list:
-        if ch.get("name") == channel_name:
-            return (ch.get("caption") or channel_name).lower()
-    return channel_name
+def _channel_verb(channel, talker):
+    verbs = CHANNEL_VERBS.get(channel)
+    if verbs is None:
+        return channel
+    return verbs[0] if talker == "you" else verbs[1]
+
+
+def _channel_color(channel):
+    return CHANNEL_COLORS.get(channel, C_VERB_UNKNOWN)
+
+
+def _extract_message(channel, talker, text):
+    """Normalize raw GMCP text to (open_quote, body, close_quote).
+
+    Quoted channels: extract between first and last single-quote in text.
+    Action channels: strip leading "<talker> " or "You " prefix.
+    open/close_quote is "'" for quoted channels, "" for action/unknown.
+    When talker is "you" on a quoted channel, text is already the bare message.
+    """
+    quoted  = {"tales", "tells", "says", "yells", "whispers",
+               "prayers", "songs", "questions"}
+    actions = {"emotes", "socials"}
+
+    if channel in quoted:
+        if talker == "you":
+            return ("'", text, "'")
+        first = text.find("'")
+        last  = text.rfind("'")
+        if first != -1 and last != -1 and last > first:
+            return ("'", text[first + 1:last], "'")
+        return ("'", text, "'")
+
+    if channel in actions:
+        if talker == "you":
+            return ("", text, "")
+        prefix = talker + " "
+        if text.startswith(prefix):
+            return ("", text[len(prefix):], "")
+        if text.startswith("You "):
+            return ("", text[4:], "")
+        return ("", text, "")
+
+    return ("", text, "")
 
 
 def _term_rows():
@@ -150,11 +217,14 @@ def _header_text():
     if _state is None:
         return frags
     channels = _state.get("channels") or []
+
+    frags.append(("", " "))  # leading inert space
+
     for ch in channels:
         name    = ch.get("name", "")
-        label   = ch.get("label", "?")
+        label   = _channel_label(name)
         enabled = _filters.get(name, True)
-        style   = C_LABEL_ON if enabled else C_LABEL_OFF
+        style   = _channel_color(name) if enabled else C_LABEL_OFF
 
         def _make_handler(n=name):
             def _handler(mouse_event):
@@ -162,7 +232,9 @@ def _header_text():
                     forward_toggle(n)
             return _handler
 
-        frags.append((style, f" {label} ", _make_handler()))
+        frags.append((style, label, _make_handler()))
+        frags.append(("", " "))  # trailing space (also acts as separator)
+
     return frags
 
 
@@ -176,7 +248,6 @@ def _list_text():
 
     filtered  = _get_filtered(_state)
     total     = len(filtered)
-    channels  = _state.get("channels") or []
 
     rows         = _term_rows()
     list_height  = max(1, rows - 1)               # minus 1 for the header
@@ -187,7 +258,6 @@ def _list_text():
     indicator_h   = 1 if newer > 0 else 0
     visible_rows  = max(0, list_height - indicator_h)
 
-    # Visible slice: newest-minus-offset .. newest-minus-offset+visible_rows
     end   = total - _scroll_offset
     start = max(0, end - visible_rows)
     visible = filtered[start:end]
@@ -195,13 +265,12 @@ def _list_text():
     now      = time.time()
     last_idx = len(visible) - 1
     for idx, entry in enumerate(visible):
-        ts          = entry.get("ts", 0)
-        channel     = entry.get("channel", "")
-        talker      = entry.get("talker", "")
-        talker_type = entry.get("talker_type", "")
-        text        = entry.get("text", "")
+        ts      = entry.get("ts", 0)
+        channel = entry.get("channel", "")
+        talker  = entry.get("talker", "")
+        text    = entry.get("text", "")
 
-        verb     = _verb_for_channel(channel, channels)
+        # Time
         if not ts:
             time_str = "??:??"
         elif now - ts < 86400:
@@ -209,17 +278,38 @@ def _list_text():
         else:
             time_str = time.strftime("%d/%m", time.localtime(ts))
 
-        frags.append((C_TIME, time_str + " "))
-        frags.append((_talker_style(talker_type), talker + " "))
-        frags.append((C_VERB, verb + " "))
+        # Talker: capitalize first character only, preserve internal case
+        if talker == "you":
+            display_talker = "You"
+        elif talker:
+            display_talker = talker[0].upper() + talker[1:]
+        else:
+            display_talker = talker
 
-        # Preserve embedded ANSI codes from MUME using prompt_toolkit's ANSI parser.
-        if text:
+        talker_style = C_TALKER_SELF if talker == "you" else C_TALKER_OTHER
+        verb         = _channel_verb(channel, talker)
+        verb_style   = _channel_color(channel)
+        msg_style    = C_MESSAGE_SELF if talker == "you" else C_MESSAGE_OTHER
+
+        open_q, msg_body, close_q = _extract_message(channel, talker, text)
+
+        frags.append((C_TIME, time_str + " "))
+        frags.append((talker_style, display_talker + " "))
+        frags.append((verb_style, verb + " "))
+
+        if open_q:
+            frags.append((msg_style, open_q))
+
+        if msg_body:
             try:
-                ansi_frags = to_formatted_text(ANSI(text))
-                frags.extend(ansi_frags)
+                # Apply msg_style as default; ANSI codes in msg_body override it.
+                ansi_frags = to_formatted_text(ANSI(msg_body))
+                frags.extend((msg_style if s == "" else s, t) for s, t in ansi_frags)
             except Exception:
-                frags.append(("", text))
+                frags.append((msg_style, msg_body))
+
+        if close_q:
+            frags.append((msg_style, close_q))
 
         if idx < last_idx:
             frags.append(("", "\n"))

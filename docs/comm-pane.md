@@ -101,32 +101,36 @@ to repopulate history and channels after `cp -r`.
 ```
 
 **`channels`** — derived from `state.comm.channels` (set by `Comm.Channel.List`)
-with a computed `label` field. Deterministic label assignment on each serialize.
+with a computed `label` field. The `label` field is kept for backward compatibility
+but is **no longer consulted by the renderer** — the pane uses `CHANNEL_LABELS`
+(hardcoded 2–3 char abbreviations) instead.
 
 **`history`** — full `state.comm.history`, including ANSI codes verbatim in the
 `text` field. dkjson encodes `\x1b` as ``; Python's json module decodes it
 back to the ESC byte; prompt_toolkit's `ANSI()` class then converts it to styled
 fragments.
 
-## Label-collision policy
+## Header labels
 
-The label for a channel is the first uppercase character of `channel.name` that
-is not already taken by an earlier channel in the `Comm.Channel.List` order. If
-all characters of the name are taken, the label falls back to `?`.
+Labels are hardcoded 2–3 character abbreviations in `CHANNEL_LABELS` at the top
+of `bridge/comm_pane.py`. Unknown channels fall back to `channel[:2].capitalize()`.
 
-Examples with four channels `tells`, `narrates`, `news`, `emotes`:
+| Channel   | Label |
+|-----------|-------|
+| tales     | Na    |
+| tells     | Te    |
+| says      | Sa    |
+| yells     | Ye    |
+| prayers   | Pr    |
+| emotes    | Em    |
+| whispers  | Wh    |
+| questions | Qu    |
+| songs     | Son   |
+| socials   | Soc   |
 
-| Channel   | Taken before | Chosen label |
-|-----------|--------------|--------------|
-| tells     | —            | T            |
-| narrates  | T            | N            |
-| news      | T, N         | E (2nd char) |
-| emotes    | T, N, E      | M (2nd char) |
-
-This policy is deterministic by `Comm.Channel.List` order. If the server reorders
-channels across sessions the labels may change; players relying on muscle memory
-should be aware. The policy is documented here rather than in code so the
-trade-off is explicit.
+The old label-collision algorithm (first unused uppercase character of the channel
+name) is retired. The `label` field emitted by Lua into `comm.state` is preserved
+for backward compatibility but is not read by the renderer.
 
 ## Filter persistence
 
@@ -217,17 +221,21 @@ remaining rows.
 
 ### Header
 
-`FormattedTextControl` with `(style, text, mouse_handler)` tuples. One cell per
-channel, 3 columns wide (` label ` — space + letter + space). Background colour
-indicates filter state:
+Format: ` Na Te Sa Ye Pr Em Wh Qu Son Soc ` (single leading inert space, label,
+space after each label). Iteration order is `Comm.Channel.List` order from
+`state["channels"]`.
 
-| State      | Style                      |
-|------------|----------------------------|
-| Enabled    | `C_LABEL_ON` — deep green  |
-| Disabled   | `C_LABEL_OFF` — dark red   |
+`FormattedTextControl` with `(style, text, mouse_handler)` tuples. One fragment
+per label + one inert space fragment after each, plus a leading inert space.
+Foreground colour indicates filter state:
 
-Padded cells abut directly — no separator between them. Each cell's mouse
-handler calls `forward_toggle(channel.name)` on `MouseEventType.MOUSE_DOWN`.
+| State    | Style                                  |
+|----------|----------------------------------------|
+| Enabled  | `CHANNEL_COLORS[name]` — channel color |
+| Disabled | `C_LABEL_OFF` — `fg:#666666` grey      |
+
+No background color. Each label fragment's mouse handler calls
+`forward_toggle(channel.name)` on `MouseEventType.MOUSE_DOWN`.
 
 `forward_toggle(name)` flips `_filters[name]`, calls `_save_filters()`, and
 calls `_app.invalidate()`. No subprocess, no tmux, no tt++ involvement.
@@ -238,24 +246,17 @@ different fragments.
 
 ### List
 
-Each row: `HH:MM <talker> <verb> <text>`
+Each row: `HH:MM <Talker> <verb> <message>`
 
-| Field    | Style                        | Notes                              |
-|----------|------------------------------|------------------------------------|
-| HH:MM    | `C_TIME` — dim blue-grey     | From `ts` (Unix epoch); renders as DD/MM for messages older than 24 h |
-| talker   | `C_TALKER_*` — per type      | Coloured by `talker_type`          |
-| verb     | `C_VERB` — muted blue-grey   | `caption` lowercased               |
-| text     | Passthrough ANSI             | Parsed via `prompt_toolkit.ANSI()` |
+| Field   | Style                              | Notes                                                    |
+|---------|------------------------------------|----------------------------------------------------------|
+| HH:MM   | `C_TIME` — `fg:#687685`            | From `ts`; renders as DD/MM for messages older than 24 h |
+| Talker  | `C_TALKER_SELF` or `C_TALKER_OTHER`| Self/other determined by `talker == "you"`; first char capitalized |
+| verb    | `CHANNEL_COLORS[channel]`          | From `CHANNEL_VERBS` (self/other form); unknown → channel name |
+| message | `C_MESSAGE_SELF` or `C_MESSAGE_OTHER` | Extracted from `text` (see Display normalization); ANSI preserved |
 
-`talker_type` colour mapping:
-
-| Type    | Style              | Colour    |
-|---------|--------------------|-----------|
-| ally    | `C_TALKER_ALLY`    | #90ee90   |
-| enemy   | `C_TALKER_ENEMY`   | #ff6b6b   |
-| neutral | `C_TALKER_NEUTRAL` | #ffd700   |
-| npc     | `C_TALKER_NPC`     | #9e9e9e   |
-| (unset) | `C_TALKER_UNSET`   | #bdbdbd   |
+Talker-type (`ally`/`enemy`/`neutral`/`npc`) coloring has been removed. Talker
+color is now purely self vs other.
 
 ### Scroll semantics
 
@@ -293,18 +294,60 @@ chat content). Clicking it (`MOUSE_DOWN`) resets offset to 0.
 
 All constants are defined at the top of `bridge/comm_pane.py`:
 
-| Constant          | Value (CSS-style for prompt_toolkit) | Role                     |
-|-------------------|--------------------------------------|--------------------------|
-| `C_LABEL_ON`      | `bg:#1e5c30 fg:#ffffff bold`         | Filter on — deep green   |
-| `C_LABEL_OFF`     | `bg:#3d1f1f fg:#666666`              | Filter off — dark red    |
-| `C_TIME`          | `fg:#5a6a7a`                         | Timestamp — dim          |
-| `C_TALKER_ALLY`   | `fg:#90ee90 bold`                    | Ally talker              |
-| `C_TALKER_ENEMY`  | `fg:#ff6b6b bold`                    | Enemy talker             |
-| `C_TALKER_NEUTRAL`| `fg:#ffd700`                         | Neutral talker           |
-| `C_TALKER_NPC`    | `fg:#9e9e9e`                         | NPC talker               |
-| `C_TALKER_UNSET`  | `fg:#bdbdbd`                         | Unknown talker type      |
-| `C_VERB`          | `fg:#78909c`                         | Channel verb             |
-| `C_INDICATOR`     | `fg:#d4a04e italic`                  | ↓ N newer messages       |
+| Constant          | Value                   | Role                              |
+|-------------------|-------------------------|-----------------------------------|
+| `C_TIME`          | `fg:#687685`            | Timestamp                         |
+| `C_TALKER_SELF`   | `fg:#afd2d2`            | Talker when `talker == "you"`     |
+| `C_TALKER_OTHER`  | `fg:#96b9bc`            | Talker for other players/NPCs     |
+| `C_MESSAGE_SELF`  | `fg:#c3e6e9`            | Message text when self            |
+| `C_MESSAGE_OTHER` | `fg:#91bec1`            | Message text from others          |
+| `C_LABEL_OFF`     | `fg:#666666`            | Header label when filter off      |
+| `C_INDICATOR`     | `fg:#d4a04e italic`     | ↓ N newer messages                |
+
+Per-channel verb/label colors are in `CHANNEL_COLORS` (see top of file).
+
+### Display normalization
+
+`bridge/comm_pane.py` normalizes raw GMCP payloads at render time. Raw data in
+`state.comm.history`, `comm.state`, and the JSONL archive is untouched.
+
+**Verb table (`CHANNEL_VERBS`)** — two forms per channel: self (used when
+`talker == "you"`) and other:
+
+| Channel   | Self form | Other form |
+|-----------|-----------|------------|
+| tales     | narrate   | narrates   |
+| tells     | tell      | tells      |
+| emotes    | emote     | emotes     |
+| says      | say       | says       |
+| yells     | yell      | yells      |
+| whispers  | whisper   | whispers   |
+| prayers   | pray      | prays      |
+| songs     | sing      | sings      |
+| questions | ask       | asks       |
+| socials   | social    | socials    |
+
+Unknown channels fall back to the channel name as both forms.
+
+**Message extraction** — keyed off channel:
+
+- **Quoted** (`tales`, `tells`, `says`, `yells`, `whispers`, `prayers`, `songs`,
+  `questions`): extract the substring between the *first* `'` and the *last* `'`
+  in `text`. Wrap the result in `'…'` for display. If `text` does not contain at
+  least two `'`, fall back to `text` verbatim wrapped in `'…'`. When
+  `talker == "you"`, `text` is already the bare message — wrap directly.
+
+- **Action** (`emotes`, `socials`): strip a leading `<talker> ` (exact match plus
+  one space) or `You ` prefix from `text` if present. Display without surrounding
+  quotes. If the prefix does not match, fall back to `text` verbatim.
+
+Embedded ANSI in the extracted message body is preserved via
+`prompt_toolkit.formatted_text.ANSI()`. The configured `C_MESSAGE_*` color is
+applied as the default for plain (non-ANSI-styled) text.
+
+**Talker capitalization** — first character of `talker` is uppercased; internal
+case is preserved (e.g. `"Vit the innkeeper"` stays `"Vit the innkeeper"`).
+`"you"` → `"You"`.
 
 ## Layout integration
 
