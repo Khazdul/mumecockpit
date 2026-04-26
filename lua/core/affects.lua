@@ -50,9 +50,22 @@ local function _load_times(char_name)
     if not f then return end
     local content = f:read("*a")
     f:close()
-    local ok, data = pcall(json.decode, content)
-    if ok and type(data) == "table" then
-        state.char.affect_times = data
+    local ok, loaded = pcall(json.decode, content)
+    if ok and type(loaded) == "table" then
+        local cleaned = {}
+        local skipped = 0
+        for k, v in pairs(loaded) do
+            local d = affects_data.affects[k]
+            if d and d.duration then
+                cleaned[k] = v
+            else
+                skipped = skipped + 1
+            end
+        end
+        state.char.affect_times = cleaned
+        if skipped > 0 then
+            dbg("[AFFECTS] load: skipped " .. skipped .. " stale entries")
+        end
     else
         state.char.affect_times = {}
         dbg("[AFFECTS] affect_times load failed for " .. char_name)
@@ -63,18 +76,15 @@ end
 -- Duration estimation
 -- ---------------------------------------------------------------------------
 
-local function _expected_duration(name)
+local function _expected_duration(name, data)
+    if not data.duration then return nil end
     local times = state.char.affect_times[name]
     if times and #times >= 1 then
         local sum = 0
         for _, t in ipairs(times) do sum = sum + t end
         return math.floor(sum / #times)
     end
-    local entry = affects_data.affects[name]
-    if entry and entry.duration then
-        return entry.duration
-    end
-    return nil
+    return data.duration
 end
 
 -- ---------------------------------------------------------------------------
@@ -122,7 +132,7 @@ events.subscribe("affect_init", function(name)
         events.emit("affect_refresh", name)
         return
     end
-    local dur = _expected_duration(name)
+    local dur = _expected_duration(name, entry)
     local now = os.time()
     local rec = {
         name              = name,
@@ -146,7 +156,8 @@ events.subscribe("affect_refresh", function(name)
         events.emit("affect_init", name)
         return
     end
-    local dur = _expected_duration(name)
+    local data = affects_data.affects[name]
+    local dur = _expected_duration(name, data or {})
     local now = os.time()
     existing.started_at        = now
     existing.expected_duration = dur
@@ -162,12 +173,15 @@ events.subscribe("affect_down", function(name)
         return
     end
     local observed = os.time() - existing.started_at
-    local times = state.char.affect_times
-    if not times[name] then times[name] = {} end
-    local arr = times[name]
-    arr[#arr + 1] = observed
-    if #arr > 3 then table.remove(arr, 1) end
-    _save()
+    local data = affects_data.affects[name]
+    if data and data.duration then
+        local times = state.char.affect_times
+        if not times[name] then times[name] = {} end
+        local arr = times[name]
+        arr[#arr + 1] = observed
+        if #arr > 3 then table.remove(arr, 1) end
+        _save()
+    end
     table.remove(state.char.affects, idx)
     if #state.char.affects == 0 then
         session_cmd("#undelay {affects_tick}")

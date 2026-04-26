@@ -39,9 +39,9 @@ Array of currently-active affect entries:
 }
 ```
 
-`expected_duration` and `expires_at` are nil when no duration is known (e.g.
-affects with no `duration` field in the data table and no observed samples yet,
-or affects without `dropString` entries like `growth`).
+`expected_duration` and `expires_at` are nil for indefinite affects — those
+whose data-table entry has no `duration` field (e.g. `hunger`, `thirst`,
+`comfortable`, `growth`, `depression`).
 
 ### `state.char.affect_times`
 
@@ -58,6 +58,19 @@ seconds). FIFO ring-buffer: push to end, drop from front when length exceeds 3.
 Both slots are initialised to `{}` at module load and re-initialised to `{}`
 on each `Char.Name` (login). `state.char.reset()` (called on disconnect) wipes
 them via the standard non-function-key sweep in `char_state.lua`.
+
+## Indefinite affects
+
+Entries in `affects_data.lua` without a `duration` field are indefinite. They
+are tracked while active (entry exists in `state.char.affects`, removed when
+the drop string fires), but no remaining time is computed, no row suffix is
+rendered, and no observed durations are recorded. Examples: `hunger`, `thirst`,
+`comfortable`, `growth`, `depression`.
+
+The `duration` field is the single gate: if it is absent, `expected_duration`
+and `expires_at` are both nil regardless of any legacy samples on disk. The
+tick never prunes indefinite entries. Duration-less affects never appear in
+`logs/affect_times/<character>.json`.
 
 ## Persistence
 
@@ -77,7 +90,10 @@ them via the standard non-function-key sweep in `char_state.lua`.
 
 Only affects that have been seen to drop naturally are persisted. Affects
 pruned by the tick (past predicted expiry with no game confirmation) are NOT
-recorded — that duration sample is suspect.
+recorded — that duration sample is suspect. Duration-less affects (no
+`duration` field in the data table) never appear in this file; any such
+entries written by an older version are filtered out at load time and removed
+on the next write.
 
 **Write:** atomic temp-file + `os.rename`, synchronous, inside `affect_down`.
 
