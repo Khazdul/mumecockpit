@@ -86,7 +86,7 @@
 
 #ACTION {The dark aura surrounding you fades.}
 {
-    #lua {events.emit("affect_down", "dark aura"); events.emit("affect_init", "dark aura (faded)")}
+    #lua {events.emit("affect_init", "dark aura (faded)"); events.emit("affect_down", "dark aura")}
 }
 {3}
 
@@ -410,7 +410,7 @@
 
 #ACTION {You feel slightly less comfortable.}
 {
-    #lua {events.emit("affect_refresh", "comfortable"); events.emit("affect_down", "very comfortable")}
+    #lua {events.emit("affect_down", "very comfortable"); events.emit("affect_refresh", "comfortable")}
 }
 {3}
 
@@ -584,7 +584,7 @@
 
 #ACTION {You're starting to feel very comfortable.}
 {
-    #lua {events.emit("affect_down", "comfortable"); events.emit("affect_init", "very comfortable")}
+    #lua {events.emit("affect_init", "very comfortable"); events.emit("affect_down", "comfortable")}
 }
 {3}
 
@@ -638,7 +638,7 @@
 
 #ACTION {Your energy wanes as your second wind fades.}
 {
-    #lua {events.emit("affect_down", "second wind"); events.emit("affect_init", "winded")}
+    #lua {events.emit("affect_init", "winded"); events.emit("affect_down", "second wind")}
 }
 {3}
 
@@ -1996,7 +1996,7 @@
 #SUBSTITUTE {^-%1wound%2} {<Fff0000>%0<900>} {5}
 #SUBSTITUTE {^A pair of tiny eyes gleam at you from the shadows.} {<F00ffff>%0<900>} {5}
 #TICKER {affects_tick} {#lua {_affects_tick()}} {10}
-#TICKER {clock} {#lua {state.world.clock.tick()}} {1.0}
+#TICKER {clock} {#lua {state.world.clock.tick()}} {0.25}
 #VARIABLE {_sd_line} {<F9AA8B7> SD1: <FFFFFFF>exit}
 #VARIABLE {abody} {}
 #VARIABLE {acontainer} {quiver}
@@ -2010,6 +2010,6 @@
 #VARIABLE {sd3} {}
 #VARIABLE {spell} {'blindness'}
 #VARIABLE {ss} {normal}
-#VARIABLE {target} {slave}
+#VARIABLE {target} {*man*}
 
 #CLASS {default} CLOSE

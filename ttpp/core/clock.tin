@@ -1,5 +1,5 @@
 #nop ===== CLOCK =====
-#nop Per-session: 10Hz ticker + action pre-filters for game-time sync.
+#nop Per-session: 4Hz ticker + action pre-filters for game-time sync.
 #nop Registered into the game session by _register_clock_actions, called
 #nop from SESSION CONNECTED and cp -r in ttpp/core/system.tin.
 #nop
@@ -15,6 +15,6 @@
         #nop Both `time` patterns end with "of the Third Age." — one action catches both.;
         #%1 #action {^%%1 of the Third Age.$} {#lua {events.emit("mume_time_line", "%%0")}} {3};
         #%1 #action {^The current time is %%1.$} {#lua {events.emit("room_clock_line", "%%0")}} {3};
-        #%1 #ticker {clock} {#lua {state.world.clock.tick()}} {0.1}
+        #%1 #ticker {clock} {#lua {state.world.clock.tick()}} {0.25}
     }
 }
