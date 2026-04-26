@@ -111,8 +111,8 @@ case "$TARGET" in
         STATUS=$(tmux show-option -t mume pane-border-status 2>/dev/null | awk '{print $2}')
         if [ "$STATUS" = "off" ]; then
             tmux set-option -t mume pane-border-status top
-            tmux set-option -t mume pane-border-style        fg=colour238
-            tmux set-option -t mume pane-active-border-style fg=colour238
+            tmux set-option -t mume pane-border-style        fg=colour235
+            tmux set-option -t mume pane-active-border-style fg=colour235
         else
             tmux set-option -t mume pane-border-status off
             tmux set-option -t mume pane-border-style        fg=black

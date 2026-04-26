@@ -61,11 +61,11 @@ tmux new-session -d -s mume -x "$TERM_COLS" -y "$TERM_LINES" -n cockpit \
 tmux set-option -t mume status off
 tmux set-option -t mume mouse on
 
-tmux set-option -t mume pane-border-format "#{?#{==:#{pane_title},MUME},,#{?#{==:#{pane_title},input},,#{?pane_title,#{pane_title},}}}"
+tmux set-option -t mume pane-border-format "#{?#{==:#{pane_title},dev},#{pane_title},}"
 if [ "$SHOW_DIVIDERS" -eq 1 ]; then
     tmux set-option -t mume pane-border-status top
-    tmux set-option -t mume pane-border-style "fg=colour238"
-    tmux set-option -t mume pane-active-border-style "fg=colour238"
+    tmux set-option -t mume pane-border-style "fg=colour235"
+    tmux set-option -t mume pane-active-border-style "fg=colour235"
 else
     tmux set-option -t mume pane-border-status off
     tmux set-option -t mume pane-border-style "fg=black"
