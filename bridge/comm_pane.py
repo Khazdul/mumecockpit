@@ -1,9 +1,11 @@
 # Communication channel pane.
 #
 # prompt_toolkit full-screen Application with mouse_support=True.
-# Layout: fixed 1-row header + scrollable list (HSplit).
+# Layout: fixed 1-row header + scrollable list + conditional indicator (HSplit).
 # Header: per-channel label (clickable), fg-colored by channel or greyed when off.
 # List: history filtered by channel, with sticky-bottom scrollback.
+# Indicator: "↓ N newer messages" in its own Window below the list, only when
+#   _scroll_offset > 0 — prevents list wrapping from clipping it.
 # Polls bridge/comm.state every 250 ms via mtime comparison.
 # Filters are owned here: read/write bridge/comm_filters.conf directly.
 
@@ -11,8 +13,9 @@ try:
     from prompt_toolkit import Application
     from prompt_toolkit.formatted_text import ANSI, to_formatted_text
     from prompt_toolkit.key_binding import KeyBindings
+    from prompt_toolkit.filters import Condition
     from prompt_toolkit.layout import Layout
-    from prompt_toolkit.layout.containers import HSplit, Window
+    from prompt_toolkit.layout.containers import ConditionalContainer, HSplit, Window
     from prompt_toolkit.layout.controls import FormattedTextControl
     from prompt_toolkit.mouse_events import MouseEventType
     from prompt_toolkit.output import ColorDepth
@@ -365,13 +368,10 @@ def _list_text():
     total     = len(filtered)
 
     rows         = _term_rows()
-    list_height  = max(1, rows - 1)               # minus 1 for the header
-    max_offset   = max(0, total - (list_height - 1))
+    list_height  = max(1, rows - 1 - (1 if _scroll_offset > 0 else 0))
+    max_offset   = max(0, total - list_height)
     _scroll_offset = min(_scroll_offset, max_offset)
-
-    newer         = _scroll_offset
-    indicator_h   = 1 if newer > 0 else 0
-    visible_rows  = max(0, list_height - indicator_h)
+    visible_rows = list_height
 
     end   = total - _scroll_offset
     start = max(0, end - visible_rows)
@@ -389,20 +389,23 @@ def _list_text():
         if idx < last_idx:
             frags.append(("", "\n"))
 
-    if newer > 0:
-        indicator_text = f"↓ {newer} newer messages"
-
-        def _indicator_handler(mouse_event):
-            global _scroll_offset
-            if mouse_event.event_type == MouseEventType.MOUSE_DOWN:
-                _scroll_offset = 0
-                if _app:
-                    _app.invalidate()
-
-        frags.append(("", "\n"))
-        frags.append((C_INDICATOR, indicator_text, _indicator_handler))
-
     return frags
+
+
+def _indicator_text():
+    """Single-fragment row shown below the list when scroll_offset > 0."""
+    if _state is None or _scroll_offset <= 0:
+        return []
+    newer = _scroll_offset
+
+    def _handler(mouse_event):
+        global _scroll_offset
+        if mouse_event.event_type == MouseEventType.MOUSE_DOWN:
+            _scroll_offset = 0
+            if _app:
+                _app.invalidate()
+
+    return [(C_INDICATOR, f"↓ {newer} newer messages", _handler)]
 
 
 # ---------------------------------------------------------------------------
@@ -418,8 +421,8 @@ class ListControl(FormattedTextControl):
                 if _state is not None:
                     total = len(_get_filtered(_state))
                     rows = _term_rows()
-                    list_height = max(1, rows - 1)
-                    max_offset = max(0, total - (list_height - 1))
+                    list_height = max(1, rows - 1 - (1 if _scroll_offset > 0 else 0))
+                    max_offset = max(0, total - list_height)
                     _scroll_offset = min(_scroll_offset + 1, max_offset)
                 if _app:
                     _app.invalidate()
@@ -513,7 +516,15 @@ def main():
         wrap_lines=True,
     )
 
-    root      = HSplit([header_window, list_window])
+    indicator_container = ConditionalContainer(
+        content=Window(
+            content=FormattedTextControl(_indicator_text),
+            height=1,
+        ),
+        filter=Condition(lambda: _scroll_offset > 0),
+    )
+
+    root      = HSplit([header_window, list_window, indicator_container])
     layout    = Layout(root)
 
     app = Application(

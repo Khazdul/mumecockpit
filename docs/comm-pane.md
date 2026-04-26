@@ -223,8 +223,12 @@ mouse_support=True)`.
 
 ### Layout
 
-`HSplit([header_window, list_window])`. Header height fixed at 1. List fills
-remaining rows.
+`HSplit([header_window, list_window, indicator_container])`. Header height
+fixed at 1. List fills remaining rows. `indicator_container` is a
+`ConditionalContainer` keyed off `_scroll_offset > 0` — it occupies 1 row
+below the list only when there are hidden newer messages, and disappears
+completely otherwise. Because the indicator lives in its own `Window`, list
+`wrap_lines=True` can never clip it.
 
 ### Header
 
@@ -298,14 +302,17 @@ key bindings were no-ops and have been removed.
 the oldest message stays pinned to the top once reached. This prevents blank
 rows above the oldest message and the all-blank locked-view state.
 
-When `_scroll_offset > 0`, the last visible row of the list is the indicator:
+When `_scroll_offset > 0`, a dedicated indicator row appears **below** the list
+(not inside it):
 
 ```
 ↓ N newer messages
 ```
 
 in `C_INDICATOR` style (amber, italic — reads as system meta-information, not
-chat content). Clicking it (`MOUSE_DOWN`) resets offset to 0.
+chat content). It is rendered by `_indicator_text()` inside its own
+`ConditionalContainer / Window`, so list `wrap_lines=True` can never push it
+off the bottom. Clicking it (`MOUSE_DOWN`) resets offset to 0.
 
 ### Colour palette
 
