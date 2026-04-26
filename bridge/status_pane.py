@@ -126,8 +126,8 @@ def _time_row(time_str, period, remaining):
     icon   = "☼" if period == "night" else "☾"
     colour = C_SUN if period == "night" else C_MOON
     rem    = str(remaining)
-    trailing_right = max(0, rw - 1 - 1 - 3 - 1 - len(rem))   # 1=icon, 1=sp, 3="in:", 1=sp
-    right = colour + icon + C_RESET + " " + C_LABEL + "in:" + C_RESET + " " + C_VALUE + rem + C_RESET + " " * trailing_right
+    trailing_right = max(0, rw - 1 - 1 - 1 - len(rem))   # 1=icon, 1=":", 1=sp
+    right = colour + icon + C_LABEL + ":" + C_RESET + " " + C_VALUE + rem + C_RESET + " " * trailing_right
 
     return left + right
 

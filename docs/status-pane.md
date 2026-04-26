@@ -201,10 +201,11 @@ Affected by:
 
 At HOUR/MINUTE precision the Time row splits into a 16-col left half (label +
 time-only value in `C_VALUE`) and a 17-col right half with a three-colour split:
-icon in `C_SUN` (☼, intense amber) or `C_MOON` (☾, vivid sky blue), the literal
-`"in:"` label in `C_LABEL` (steel-blue), and the countdown value in `C_VALUE`
-(bright white). At DAY or UNSET precision `time_period` / `time_remaining` are
-null and the single full-width `_row("Time:", ...)` fallback is used.
+icon in `C_SUN` (☼, intense amber) or `C_MOON` (☾, vivid sky blue), a `":"`
+separator in `C_LABEL` (steel-blue), and the countdown value in `C_VALUE`
+(bright white) — e.g. `☾: 4:20` or `☼: ~3`. At DAY or UNSET precision
+`time_period` / `time_remaining` are null and the single full-width
+`_row("Time:", ...)` fallback is used.
 
 The `Affected by:` header and the 4-row affect block are always rendered.
 
