@@ -401,7 +401,7 @@ state   = {
     comm  = {
         history  = {},
         channels = {},
-        max_size = 500,
+        max_size = 1000,
     },
     core  = {},
     world = {},

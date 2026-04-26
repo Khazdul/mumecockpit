@@ -16,8 +16,13 @@ Comm.Channel.List ──► lua/core/comm_log.lua ──► state.comm.channels
                                              wraps both handlers;
                                              serialises history + channels
                                              to bridge/comm.state (JSON);
-                                             reads comm.state at load
-                                             to survive cp -r
+                                             restores channels at load
+                                                        │
+                                             lua/core/comm_store.lua
+                                             wraps Comm.Channel.Text;
+                                             appends to per-profile JSONL;
+                                             seeds history at load from
+                                             archive (7-day window)
                                                         │
                                             mtime change │  250 ms poll
                                                         ▼
@@ -35,7 +40,9 @@ Comm.Channel.List ──► lua/core/comm_log.lua ──► state.comm.channels
 `lua/core/comm_log.lua` registers the original `Comm.Channel.Text` and
 `Comm.Channel.List` handlers. `lua/core/comm_state.lua` loads immediately after
 (alphabetical: `comm_log` < `comm_state`) and wraps both handlers in the same
-wrap-and-call pattern as `status_state.lua`.
+wrap-and-call pattern as `status_state.lua`. `lua/core/comm_store.lua` loads
+last (alphabetical: `comm_state` < `comm_store`) and wraps `Comm.Channel.Text`
+a second time to append each new message to the per-profile archive.
 
 ### State flow
 
@@ -46,11 +53,14 @@ calls `invalidate()` to trigger a redraw.
 
 ### cp -r persistence
 
-At Lua load time, `comm_state.lua` calls `_load_state_file()`, which reads and
-JSON-decodes the previous `bridge/comm.state`. It populates `state.comm.history`
-(clamped to `max_size`) and `state.comm.channels` (name + caption only; label
-is re-derived). After loading, `serialize()` is called once to write a
-well-formed file. This means channel header and history reappear immediately
+History is restored by `comm_store.lua` from the per-profile JSONL archive
+(see **Per-profile archive** below), clamped to `max_size` (1000). Channel
+state is restored by `comm_state.lua`'s `_load_state_file()`, which reads
+`bridge/comm.state` and repopulates `state.comm.channels` (name + caption
+only; label is re-derived). After channels load, `serialize()` is called once
+to write a well-formed file; after `comm_store.lua` seeds history it calls
+`state.comm.serialize()` again so the pane picks up the full history on its
+next 250 ms poll. This means channel header and history reappear immediately
 after `cp -r`, even though `Comm.Channel.List` is not re-emitted on a
 persistent TCP connection. Filter state survives `cp -r` independently:
 `comm_pane.py` reads `comm_filters.conf` at startup.
@@ -131,6 +141,69 @@ enabled (sparse-map semantics, default-on for new channels).
 a filter is entirely silent; nothing appears in the game pane.
 
 See [docs/decisions/0010-comm-filter-persistence.md](decisions/0010-comm-filter-persistence.md).
+
+## Per-profile archive
+
+`lua/core/comm_store.lua` maintains a durable, per-profile JSONL file at:
+
+```
+logs/comm_archive/<profile>.jsonl
+```
+
+`<profile>` is resolved at brain startup by parsing `bridge/startup.conf` for
+the `profile=` key; falls back to `"default"` if the key is absent or the file
+is missing.
+
+### File format
+
+One JSON object per line (JSONL). Each line is an entry with the same schema as
+`state.comm.history`:
+
+```json
+{"ts":1714000000,"channel":"narrates","talker":"Aragorn","talker_type":"ally","destination":null,"text":"with preserved ANSI codes"}
+```
+
+ANSI escape sequences in `text` are stored verbatim (dkjson encodes `\x1b` as
+``; it round-trips correctly through both dkjson and Python's json module).
+
+### 7-day retention
+
+At brain startup, `comm_store.lua` reads the archive and discards any entry with
+`ts < os.time() - 604800` (7 days). The pruned set is atomically rewritten via
+`tmp + rename` before history is seeded. Pruning is O(n) and happens once per
+brain start.
+
+### History seeding
+
+After pruning, the filtered entries are clamped to `state.comm.max_size` (1000,
+keeping the most recent) and assigned to `state.comm.history`. Then
+`state.comm.serialize()` is called once so `bridge/comm.state` reflects the
+seeded history before the pane's next 250 ms poll.
+
+`comm_state.lua` owns `bridge/comm.state` and channel restore; it does **not**
+seed history. This split is deliberate: the archive is the authoritative source
+of truth for history across restarts; `bridge/comm.state` is a derived
+projection used only by the pane renderer.
+
+### Append path
+
+Each new `Comm.Channel.Text` event appends one JSON line to the archive
+(open-append, write, close). No tmp+rename — JSONL truncation on a partial
+write is recoverable: the trailing partial line is silently skipped on the next
+startup read.
+
+### Storage bound
+
+Archive size is bounded by message activity within the 7-day window. In
+practice sub-MB. The `logs/` tree is gitignored.
+
+### Profile isolation
+
+Each profile gets its own file. Switching profiles via the launcher starts a
+fresh brain process; `comm_store.lua` resolves the new profile name and reads
+only that file. Other profiles' archives are never read or modified.
+
+See [docs/decisions/0011-per-profile-comm-archive.md](decisions/0011-per-profile-comm-archive.md).
 
 ## comm_pane.py
 

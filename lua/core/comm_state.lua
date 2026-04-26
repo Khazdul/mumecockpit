@@ -1,12 +1,13 @@
 -- Wraps Comm.Channel.Text and Comm.Channel.List handlers from comm_log.lua.
 -- Serialises history and channels to bridge/comm.state on every change.
--- Reads bridge/comm.state at load time to restore history and channels after
--- cp -r, working around one-shot Comm.Channel.List on persistent connections.
+-- Reads bridge/comm.state at load time to restore channels after cp -r,
+-- working around one-shot Comm.Channel.List on persistent connections.
+-- History seeding after cp -r is handled by comm_store.lua (loads after this
+-- file alphabetically); this file owns channels-only restore.
 -- Filter state is owned by bridge/comm_pane.py; this file does not touch it.
 --
 -- Disconnect policy: state.comm.history is NOT cleared on SESSION DISCONNECTED.
 -- Channel history is retained across reconnects within the same brain process.
--- cp -r restarts Lua; _load_state_file() repopulates from the previous run.
 
 local json = require("dkjson")
 local COMM_STATE_PATH = os.getenv("HOME") .. "/MUME/bridge/comm.state"
@@ -60,8 +61,9 @@ local function serialize()
     os.rename(TMP_PATH, COMM_STATE_PATH)
 end
 
--- Read bridge/comm.state at load to restore history and channels from the
--- previous run. Non-fatal: any error leaves state empty and continues.
+-- Read bridge/comm.state at load to restore channels from the previous run.
+-- Non-fatal: any error leaves state empty and continues.
+-- History seeding is intentionally omitted here; comm_store.lua owns that.
 local function _load_state_file()
     local f = io.open(COMM_STATE_PATH, "r")
     if not f then return end
@@ -71,17 +73,6 @@ local function _load_state_file()
     if not ok or type(decoded) ~= "table" then
         dbg("[COMM_STATE] load_state_file: decode failed")
         return
-    end
-    -- Restore history (clamped to max_size)
-    if type(decoded.history) == "table" then
-        local h = decoded.history
-        local max = state.comm.max_size or 500
-        if #h > max then
-            local trimmed = {}
-            for i = #h - max + 1, #h do trimmed[#trimmed + 1] = h[i] end
-            h = trimmed
-        end
-        state.comm.history = h
     end
     -- Restore channels (name + caption only; label is re-derived in serialize)
     if type(decoded.channels) == "table" then
@@ -111,6 +102,9 @@ gmcp.handlers["Comm.Channel.List"] = function(body)
     if _orig_list then _orig_list(body) end
     serialize()
 end
+
+-- Expose so comm_store.lua can trigger a re-serialise after seeding history.
+state.comm.serialize = serialize
 
 _load_state_file()
 serialize()

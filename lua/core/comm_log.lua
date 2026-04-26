@@ -16,7 +16,7 @@ gmcp.handlers["Comm.Channel.Text"] = function(body)
     }
     local hist = state.comm.history
     hist[#hist + 1] = entry
-    -- NOTE: table.remove(t, 1) is O(n). Fine for max_size=500 and
+    -- NOTE: table.remove(t, 1) is O(n). Fine for max_size=1000 and
     -- expected message rates. If volume grows, convert to a head-index
     -- ring buffer.
     while #hist > state.comm.max_size do
