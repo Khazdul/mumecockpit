@@ -57,6 +57,10 @@ CHANNEL_VERBS = {
     "socials":   ("social",   "socials"),
 }
 
+QUOTED_CHANNELS = {"tales", "tells", "says", "yells", "whispers",
+                   "prayers", "songs", "questions"}
+ACTION_CHANNELS = {"emotes", "socials"}
+
 CHANNEL_LABELS = {
     "tales":     "Na",
     "tells":     "Te",
@@ -74,9 +78,9 @@ CHANNEL_LABELS = {
 # Colour palette (24-bit truecolor, CSS-style for prompt_toolkit)
 # ---------------------------------------------------------------------------
 
-C_TIME           = "fg:#687685"               # 104,118,133
-C_TALKER_SELF    = "fg:#afd2d2"               # 175,210,210
-C_TALKER_OTHER   = "fg:#96b9bc"               # 150,185,188
+C_TIME           = "fg:#3d4651"               # muted dark grey
+C_TALKER_YOU     = "bold fg:#ffffff"          # bold white — "you" as talker or destination
+C_TALKER_OTHER   = "fg:#c2a878"               # warm tan — contrasts with light-blue message
 C_MESSAGE_SELF   = "fg:#c3e6e9"               # 195,230,233
 C_MESSAGE_OTHER  = "fg:#91bec1"               # 145,190,193
 C_LABEL_OFF      = "fg:#3a3a3a"               # grey when filter off
@@ -164,38 +168,117 @@ def _channel_color(channel):
     return CHANNEL_COLORS.get(channel, C_VERB_UNKNOWN)
 
 
-def _extract_message(channel, talker, text):
-    """Normalize raw GMCP text to (open_quote, body, close_quote).
+def _ts_str(ts):
+    now = time.time()
+    if not ts:
+        return "??:??"
+    elif now - ts < 86400:
+        return time.strftime("%H:%M", time.localtime(ts))
+    else:
+        return time.strftime("%d/%m", time.localtime(ts))
 
-    Quoted channels: extract between first and last single-quote in text.
-    Action channels: strip leading "<talker> " or "You " prefix.
-    open/close_quote is "'" for quoted channels, "" for action/unknown.
-    When talker is "you" on a quoted channel, text is already the bare message.
-    """
-    quoted  = {"tales", "tells", "says", "yells", "whispers",
-               "prayers", "songs", "questions"}
-    actions = {"emotes", "socials"}
 
-    if channel in quoted:
+def _render_quoted_row(entry, channels):
+    """Fragments for a quoted-channel row: time + Talker + verb + [dest] + 'message'."""
+    frags       = []
+    channel     = entry.get("channel", "")
+    talker      = entry.get("talker", "")
+    text        = entry.get("text", "")
+    destination = entry.get("destination") or ""
+
+    if talker == "you":
+        display_talker = "You"
+    elif talker:
+        display_talker = talker[0].upper() + talker[1:]
+    else:
+        display_talker = talker
+
+    talker_style = C_TALKER_YOU if talker == "you" else C_TALKER_OTHER
+    verb_style   = _channel_color(channel)
+    msg_style    = C_MESSAGE_SELF if talker == "you" else C_MESSAGE_OTHER
+
+    if channel in QUOTED_CHANNELS:
         if talker == "you":
-            return ("'", text, "'")
-        first = text.find("'")
-        last  = text.rfind("'")
-        if first != -1 and last != -1 and last > first:
-            return ("'", text[first + 1:last], "'")
-        return ("'", text, "'")
+            open_q, msg_body, close_q = ("'", text, "'")
+        else:
+            first = text.find("'")
+            last  = text.rfind("'")
+            if first != -1 and last != -1 and last > first:
+                open_q, msg_body, close_q = ("'", text[first + 1:last], "'")
+            else:
+                open_q, msg_body, close_q = ("'", text, "'")
+    else:
+        open_q, msg_body, close_q = ("", text, "")
 
-    if channel in actions:
-        if talker == "you":
-            return ("", text, "")
+    frags.append((C_TIME, _ts_str(entry.get("ts", 0)) + " "))
+    frags.append((talker_style, display_talker + " "))
+    frags.append((verb_style, _channel_verb(channel, talker) + " "))
+
+    if destination:
+        display_dest = "you" if destination == "you" else destination[0].upper() + destination[1:]
+        dest_style = C_TALKER_YOU if destination == "you" else C_TALKER_OTHER
+        frags.append((dest_style, display_dest + " "))
+
+    if open_q:
+        frags.append((msg_style, open_q))
+
+    if msg_body:
+        try:
+            ansi_frags = to_formatted_text(ANSI(msg_body))
+            frags.extend((msg_style if s == "" else s, t) for s, t in ansi_frags)
+        except Exception:
+            frags.append((msg_style, msg_body))
+
+    if close_q:
+        frags.append((msg_style, close_q))
+
+    return frags
+
+
+def _render_action_row(entry):
+    """Fragments for an action-channel row: time + text with talker-prefix color split."""
+    frags  = []
+    talker = entry.get("talker", "")
+    text   = entry.get("text", "")
+
+    frags.append((C_TIME, _ts_str(entry.get("ts", 0)) + " "))
+
+    talker_style = C_TALKER_YOU if talker == "you" else C_TALKER_OTHER
+    msg_style    = C_MESSAGE_SELF if talker == "you" else C_MESSAGE_OTHER
+
+    if talker == "you" and text.startswith("You "):
+        frags.append((C_TALKER_YOU, "You "))
+        rest = text[4:]
+        try:
+            ansi_frags = to_formatted_text(ANSI(rest))
+            frags.extend((C_MESSAGE_SELF if s == "" else s, t) for s, t in ansi_frags)
+        except Exception:
+            frags.append((C_MESSAGE_SELF, rest))
+    elif talker and text.startswith(talker + " "):
         prefix = talker + " "
-        if text.startswith(prefix):
-            return ("", text[len(prefix):], "")
-        if text.startswith("You "):
-            return ("", text[4:], "")
-        return ("", text, "")
+        frags.append((C_TALKER_OTHER, prefix))
+        rest = text[len(prefix):]
+        try:
+            ansi_frags = to_formatted_text(ANSI(rest))
+            frags.extend((C_MESSAGE_OTHER if s == "" else s, t) for s, t in ansi_frags)
+        except Exception:
+            frags.append((C_MESSAGE_OTHER, rest))
+    else:
+        if talker == "you":
+            display_talker = "You"
+        elif talker:
+            display_talker = talker[0].upper() + talker[1:]
+        else:
+            display_talker = ""
+        if display_talker:
+            frags.append((talker_style, display_talker + " "))
+        try:
+            ansi_frags = to_formatted_text(ANSI(text))
+            frags.extend((msg_style if s == "" else s, t) for s, t in ansi_frags)
+        except Exception:
+            frags.append((msg_style, text))
 
-    return ("", text, "")
+    return frags
 
 
 def _term_rows():
@@ -294,55 +377,15 @@ def _list_text():
     start = max(0, end - visible_rows)
     visible = filtered[start:end]
 
-    now      = time.time()
+    channels = _state.get("channels") or []
     last_idx = len(visible) - 1
     for idx, entry in enumerate(visible):
-        ts      = entry.get("ts", 0)
         channel = entry.get("channel", "")
-        talker  = entry.get("talker", "")
-        text    = entry.get("text", "")
-
-        # Time
-        if not ts:
-            time_str = "??:??"
-        elif now - ts < 86400:
-            time_str = time.strftime("%H:%M", time.localtime(ts))
+        if channel in ACTION_CHANNELS:
+            row_frags = _render_action_row(entry)
         else:
-            time_str = time.strftime("%d/%m", time.localtime(ts))
-
-        # Talker: capitalize first character only, preserve internal case
-        if talker == "you":
-            display_talker = "You"
-        elif talker:
-            display_talker = talker[0].upper() + talker[1:]
-        else:
-            display_talker = talker
-
-        talker_style = C_TALKER_SELF if talker == "you" else C_TALKER_OTHER
-        verb         = _channel_verb(channel, talker)
-        verb_style   = _channel_color(channel)
-        msg_style    = C_MESSAGE_SELF if talker == "you" else C_MESSAGE_OTHER
-
-        open_q, msg_body, close_q = _extract_message(channel, talker, text)
-
-        frags.append((C_TIME, time_str + " "))
-        frags.append((talker_style, display_talker + " "))
-        frags.append((verb_style, verb + " "))
-
-        if open_q:
-            frags.append((msg_style, open_q))
-
-        if msg_body:
-            try:
-                # Apply msg_style as default; ANSI codes in msg_body override it.
-                ansi_frags = to_formatted_text(ANSI(msg_body))
-                frags.extend((msg_style if s == "" else s, t) for s, t in ansi_frags)
-            except Exception:
-                frags.append((msg_style, msg_body))
-
-        if close_q:
-            frags.append((msg_style, close_q))
-
+            row_frags = _render_quoted_row(entry, channels)
+        frags.extend(row_frags)
         if idx < last_idx:
             frags.append(("", "\n"))
 

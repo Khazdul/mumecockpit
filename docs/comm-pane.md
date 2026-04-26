@@ -259,14 +259,18 @@ truncating. The scroll-slice math (`_scroll_offset`, `visible_rows`) counts
 logical lines, not wrapped display rows, so a burst of long messages may render
 slightly fewer entries than the window height — newest entries are always correct.
 
-Each row: `HH:MM <Talker> <verb> <message>`
+Row format depends on channel class (see **Display normalization** below):
 
-| Field   | Style                              | Notes                                                    |
-|---------|------------------------------------|----------------------------------------------------------|
-| HH:MM   | `C_TIME` — `fg:#687685`            | From `ts`; renders as DD/MM for messages older than 24 h |
-| Talker  | `C_TALKER_SELF` or `C_TALKER_OTHER`| Self/other determined by `talker == "you"`; first char capitalized |
-| verb    | `CHANNEL_COLORS[channel]`          | From `CHANNEL_VERBS` (self/other form); unknown → channel name |
-| message | `C_MESSAGE_SELF` or `C_MESSAGE_OTHER` | Extracted from `text` (see Display normalization); ANSI preserved |
+- **Quoted channels:** `HH:MM <Talker> <verb> [destination] '<message>'`
+- **Action channels:** `HH:MM <text>` (talker-prefix color split, no verb)
+
+| Field       | Style                                      | Notes                                                    |
+|-------------|--------------------------------------------|---------------------------------------------------------|
+| HH:MM       | `C_TIME` — `fg:#3d4651`                    | From `ts`; renders as DD/MM for messages older than 24 h |
+| Talker      | `C_TALKER_YOU` or `C_TALKER_OTHER`         | `C_TALKER_YOU` (bold white) when `talker == "you"`; `C_TALKER_OTHER` (warm tan) otherwise; first char capitalized |
+| verb        | `CHANNEL_COLORS[channel]`                  | From `CHANNEL_VERBS` (self/other form); unknown → channel name |
+| destination | `C_TALKER_YOU` or `C_TALKER_OTHER`         | `C_TALKER_YOU` when `destination == "you"`; `C_TALKER_OTHER` otherwise; present only when non-empty |
+| message     | `C_MESSAGE_SELF` or `C_MESSAGE_OTHER`      | Extracted from `text` (see Display normalization); ANSI preserved |
 
 Talker-type (`ally`/`enemy`/`neutral`/`npc`) coloring has been removed. Talker
 color is now purely self vs other.
@@ -307,15 +311,15 @@ chat content). Clicking it (`MOUSE_DOWN`) resets offset to 0.
 
 All constants are defined at the top of `bridge/comm_pane.py`:
 
-| Constant          | Value                   | Role                              |
-|-------------------|-------------------------|-----------------------------------|
-| `C_TIME`          | `fg:#687685`            | Timestamp                         |
-| `C_TALKER_SELF`   | `fg:#afd2d2`            | Talker when `talker == "you"`     |
-| `C_TALKER_OTHER`  | `fg:#96b9bc`            | Talker for other players/NPCs     |
-| `C_MESSAGE_SELF`  | `fg:#c3e6e9`            | Message text when self            |
-| `C_MESSAGE_OTHER` | `fg:#91bec1`            | Message text from others          |
-| `C_LABEL_OFF`     | `fg:#3a3a3a`            | Header label when filter off      |
-| `C_INDICATOR`     | `fg:#d4a04e italic`     | ↓ N newer messages                |
+| Constant          | Value                   | Role                                                        |
+|-------------------|-------------------------|-------------------------------------------------------------|
+| `C_TIME`          | `fg:#3d4651`            | Timestamp — muted dark grey, recedes visually               |
+| `C_TALKER_YOU`    | `bold fg:#ffffff`       | "you" as talker or destination, everywhere it appears       |
+| `C_TALKER_OTHER`  | `fg:#c2a878`            | Talker/destination for other players/NPCs — warm tan        |
+| `C_MESSAGE_SELF`  | `fg:#c3e6e9`            | Message text when self                                      |
+| `C_MESSAGE_OTHER` | `fg:#91bec1`            | Message text from others                                    |
+| `C_LABEL_OFF`     | `fg:#3a3a3a`            | Header label when filter off                                |
+| `C_INDICATOR`     | `fg:#d4a04e italic`     | ↓ N newer messages                                          |
 
 Per-channel verb/label colors are in `CHANNEL_COLORS` (see top of file).
 
@@ -324,37 +328,66 @@ Per-channel verb/label colors are in `CHANNEL_COLORS` (see top of file).
 `bridge/comm_pane.py` normalizes raw GMCP payloads at render time. Raw data in
 `state.comm.history`, `comm.state`, and the JSONL archive is untouched.
 
+**Channel classes** — the renderer dispatches on two sets:
+
+```python
+QUOTED_CHANNELS = {"tales", "tells", "says", "yells", "whispers",
+                   "prayers", "songs", "questions"}
+ACTION_CHANNELS = {"emotes", "socials"}
+```
+
+Unknown channel names default to quoted-style rendering with the channel name as
+the fallback verb.
+
 **Verb table (`CHANNEL_VERBS`)** — two forms per channel: self (used when
-`talker == "you"`) and other:
+`talker == "you"`) and other. Action channels have entries in the table but their
+verbs are not used at render time.
 
 | Channel   | Self form | Other form |
 |-----------|-----------|------------|
 | tales     | narrate   | narrates   |
 | tells     | tell      | tells      |
-| emotes    | emote     | emotes     |
 | says      | say       | says       |
 | yells     | yell      | yells      |
 | whispers  | whisper   | whispers   |
 | prayers   | pray      | prays      |
 | songs     | sing      | sings      |
 | questions | ask       | asks       |
-| socials   | social    | socials    |
 
 Unknown channels fall back to the channel name as both forms.
 
-**Message extraction** — keyed off channel:
+**Quoted-channel rendering** (`_render_quoted_row`) — format:
+`HH:MM <Talker> <verb> [destination] '<message>'`
 
-- **Quoted** (`tales`, `tells`, `says`, `yells`, `whispers`, `prayers`, `songs`,
-  `questions`): extract the substring between the *first* `'` and the *last* `'`
-  in `text`. Wrap the result in `'…'` for display. If `text` does not contain at
-  least two `'`, fall back to `text` verbatim wrapped in `'…'`. When
+- Message body extracted from `text`: substring between the *first* `'` and the
+  *last* `'`. Falls back to `text` verbatim if no two quotes found. When
   `talker == "you"`, `text` is already the bare message — wrap directly.
+- **Destination** — when `destination` is present and non-empty, it is inserted
+  between verb and message, in `C_TALKER_OTHER`. Capitalization: `"you"` stays
+  lowercase; any other value has its first character uppercased. Examples:
+  - `You tell Ibuki 'come to the inn'`
+  - `Frodo tells you 'hi there'`
+  - `You ask Aragorn 'where is the nearest inn'`
 
-- **Action** (`emotes`, `socials`): strip a leading `<talker> ` (exact match plus
-  one space) or `You ` prefix from `text` if present. Display without surrounding
-  quotes. If the prefix does not match, fall back to `text` verbatim.
+**Action-channel rendering** (`_render_action_row`) — format: `HH:MM <text>`
 
-Embedded ANSI in the extracted message body is preserved via
+No channel verb and no separately-rendered talker fragment. `text` from the GMCP
+payload is rendered verbatim with a talker-prefix color split:
+
+- If `talker == "you"` and `text` starts with `"You "`: `"You "` in
+  `C_TALKER_YOU`, remainder in `C_MESSAGE_SELF`.
+- Else if `text` starts with `talker + " "` (exact case-sensitive match against
+  the raw `talker` field, including multi-word names): prefix in `C_TALKER_OTHER`,
+  remainder in `C_MESSAGE_OTHER`.
+- Else (malformed — talker not present at start of `text`): prepend `<Talker> `
+  in talker color (`"you"` → `"You"`), then render `text` verbatim in message
+  color.
+
+This eliminates double-talker artifacts such as `"You social You wave goodbye."` or
+`"Vainamoinen emotes Vainamoinen smiles warmly."` that arise when the channel verb
+is prepended to a `text` field that already embeds the talker.
+
+Embedded ANSI in the message portion is preserved via
 `prompt_toolkit.formatted_text.ANSI()`. The configured `C_MESSAGE_*` color is
 applied as the default for plain (non-ANSI-styled) text.
 
