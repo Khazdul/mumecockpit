@@ -25,7 +25,6 @@ tracking, and UI feedback.
 ├── ttpp/
 │   ├── main.tin          # tt++ entry point — auto-loads all of core/
 │   ├── core/             # System modules (.tin files), auto-loaded
-│   │                     #   comm.tin    — comm_toggle alias (calls state.comm.toggle)
 │   │                     #   config.tin  — reads startup.conf → _profile/_host/_port/_ses_cmd
 │   │                     #   gmcp.tin    — GMCP telnet negotiation and Lua dispatch
 │   │                     #   system.tin  — connection aliases, cp commands, session events
@@ -38,8 +37,9 @@ tracking, and UI feedback.
 │   │                     #   dkjson.lua  — pure-Lua JSON parser (MIT, David Kolf)
 │   ├── core/             # Always-on GMCP collectors — no alias, no register_script
 │   │                     #   comm_log.lua   — Comm.Channel.Text/List → state.comm history/channels
-│   │                     #   comm_state.lua — wraps comm_log handlers; owns state.comm.filters;
-│   │                     #                   serialises to bridge/comm.state
+│   │                     #   comm_state.lua — wraps comm_log handlers; serialises history and
+│   │                     #                   channels to bridge/comm.state; reads bridge/comm.state
+│   │                     #                   at load to survive cp -r
 │   └── scripts/          # Opt-in automation modules — must call register_script(meta)
 │
 ├── bridge/
@@ -69,7 +69,7 @@ tracking, and UI feedback.
 │   ├── session.state         # Runtime state written by Lua on SESSION
 │   │                         #   CONNECTED; cleared on DISCONNECTED and
 │   │                         #   at brain startup (gitignored)
-│   ├── comm.state            # Comm history + channel + filter projection (gitignored)
+│   ├── comm.state            # Comm history + channel projection (gitignored)
 │   ├── comm_filters.conf     # Persisted channel filter overrides, sparse map (gitignored)
 │   ├── status.state          # Character status JSON written by status_state.lua (gitignored)
 │   ├── version.cache         # Cached latest-release tag (gitignored)
@@ -111,9 +111,9 @@ tracking, and UI feedback.
 │            tmux Cockpit                  │
 │  pane 0 (left):   TinTin++ — game I/O    │
 │  pane 0b (bot):   input — prompt_toolkit  │
-│  pane 1 (top):    ui  — tail ui.log       │
+│  pane 1 (top):    status — status_pane.py │
 │  pane 1b (mid):   comm — comm_pane.py     │
-│  pane 1c (mid):   status — status_pane.py │
+│  pane 1c (mid):   ui  — tail ui.log       │
 │  pane 2 (bot):    dev — tail debug.log    │
 └──────────────────────────────────────────┘
 ```

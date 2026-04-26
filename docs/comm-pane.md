@@ -1,7 +1,7 @@
 # Communication Pane
 
-The comm pane is a right-column tmux pane positioned between `ui` and `status`
-(top to bottom: ui → comm → status → dev). It displays `state.comm.history` with
+The comm pane is a right-column tmux pane positioned between `status` and `ui`
+(top to bottom: status → comm → ui → dev). It displays `state.comm.history` with
 a one-row click-to-toggle channel-filter header. Touch this file when changing
 the renderer, the state-file schema, filter persistence, scroll semantics, or
 the label-collision policy.
@@ -14,16 +14,20 @@ Comm.Channel.List ──► lua/core/comm_log.lua ──► state.comm.channels
                                                         │
                                              lua/core/comm_state.lua
                                              wraps both handlers;
-                                             owns state.comm.filters
-                                             and state.comm.toggle();
-                                             serialises to
-                                             bridge/comm.state (JSON)
+                                             serialises history + channels
+                                             to bridge/comm.state (JSON);
+                                             reads comm.state at load
+                                             to survive cp -r
                                                         │
                                             mtime change │  250 ms poll
                                                         ▼
                                           bridge/comm_pane.py
                                           prompt_toolkit full-screen
                                           Application with mouse_support
+                                                        │
+                                          reads/writes  │
+                                                        ▼
+                                          bridge/comm_filters.conf
 ```
 
 ### Load order
@@ -40,19 +44,32 @@ atomically (tmp + rename). `bridge/comm_pane.py` polls via mtime every 250 ms
 and redraws on change. `SIGWINCH` is forwarded via signal handler; the app
 calls `invalidate()` to trigger a redraw.
 
+### cp -r persistence
+
+At Lua load time, `comm_state.lua` calls `_load_state_file()`, which reads and
+JSON-decodes the previous `bridge/comm.state`. It populates `state.comm.history`
+(clamped to `max_size`) and `state.comm.channels` (name + caption only; label
+is re-derived). After loading, `serialize()` is called once to write a
+well-formed file. This means channel header and history reappear immediately
+after `cp -r`, even though `Comm.Channel.List` is not re-emitted on a
+persistent TCP connection. Filter state survives `cp -r` independently:
+`comm_pane.py` reads `comm_filters.conf` at startup.
+
 ### Disconnect policy
 
 `state.comm.history` is **not** cleared on `SESSION DISCONNECTED`. Channel
 history is retained across reconnects within the same brain process. `cp -r`
-clears it via Lua restart. This diverges from `status_pane`, which blanks on
-disconnect because its fields have meaningful null states (e.g. "character is
-dead / logged out"). Communication history is purely append-only log data with
-no meaningful null state — blanking it on disconnect would discard information
-the player may want to review.
+restarts Lua; `_load_state_file()` repopulates from the previous run.
+This diverges from `status_pane`, which blanks on disconnect because its
+fields have meaningful null states. Communication history is purely
+append-only log data with no meaningful null state.
 
 ## comm.state schema
 
-JSON, atomic write (tmp + rename), gitignored.
+JSON, atomic write (tmp + rename), gitignored. Filter state is **not** included
+— it is owned by `comm_pane.py` and stored separately in `comm_filters.conf`.
+The file also serves as a load-time cache: `comm_state.lua` reads it at startup
+to repopulate history and channels after `cp -r`.
 
 ```json
 {
@@ -60,9 +77,6 @@ JSON, atomic write (tmp + rename), gitignored.
     { "name": "tells",    "label": "T", "caption": "Tells" },
     { "name": "narrates", "label": "N", "caption": "Narrates" }
   ],
-  "filters": {
-    "narrates": false
-  },
   "history": [
     {
       "ts": 1714000000,
@@ -79,11 +93,8 @@ JSON, atomic write (tmp + rename), gitignored.
 **`channels`** — derived from `state.comm.channels` (set by `Comm.Channel.List`)
 with a computed `label` field. Deterministic label assignment on each serialize.
 
-**`filters`** — sparse map: missing key means the channel is enabled (default-on
-for new channels). Only channels with an explicitly flipped state appear here.
-
 **`history`** — full `state.comm.history`, including ANSI codes verbatim in the
-`text` field. dkjson encodes `\x1b` as ``; Python's json module decodes it
+`text` field. dkjson encodes `\x1b` as ``; Python's json module decodes it
 back to the ESC byte; prompt_toolkit's `ANSI()` class then converts it to styled
 fragments.
 
@@ -109,16 +120,15 @@ trade-off is explicit.
 
 ## Filter persistence
 
-Filter state lives in `bridge/comm_filters.conf` (gitignored). Format: one
-`name=true|false` line per explicitly-set channel. Missing key means enabled.
+Filter state lives in `bridge/comm_filters.conf` (gitignored), owned entirely by
+`comm_pane.py`. Lua does not read or write this file.
 
-`state.comm.toggle(name)` flips the effective value (nil→false, true→false,
-false→true) and rewrites the file immediately. `comm_state.lua` reads the file
-at load time so filters survive `cp -r`.
+Format: one `name=true|false` line per explicitly-set channel. Missing key means
+enabled (sparse-map semantics, default-on for new channels).
 
-New channels advertised by `Comm.Channel.List` that are absent from the conf
-file appear enabled by default, because the sparse-map representation treats
-missing entries as `true`.
+`comm_pane.py` loads the file at startup via `_load_filters()`. On every toggle,
+`_save_filters()` writes atomically (tmp + rename). No tt++ involvement — toggling
+a filter is entirely silent; nothing appears in the game pane.
 
 See [docs/decisions/0010-comm-filter-persistence.md](decisions/0010-comm-filter-persistence.md).
 
@@ -134,24 +144,24 @@ remaining rows.
 
 ### Header
 
-`FormattedTextControl` with `(style, text, mouse_handler)` tuples. One
-uppercase-letter cell per channel; background colour indicates filter state:
+`FormattedTextControl` with `(style, text, mouse_handler)` tuples. One cell per
+channel, 3 columns wide (` label ` — space + letter + space). Background colour
+indicates filter state:
 
 | State      | Style                      |
 |------------|----------------------------|
 | Enabled    | `C_LABEL_ON` — deep green  |
 | Disabled   | `C_LABEL_OFF` — dark red   |
 
-Single-space separator between label cells (no `|` divider). Each cell's mouse
-handler calls `forward_toggle(channel.name)` on `MouseEventType.MOUSE_UP`.
+Padded cells abut directly — no separator between them. Each cell's mouse
+handler calls `forward_toggle(channel.name)` on `MouseEventType.MOUSE_DOWN`.
 
-`forward_toggle(name)` runs:
-```
-tmux send-keys -t mume:cockpit.0 "comm_toggle <name>" Enter
-```
-which reaches `comm_toggle` in tt++, which calls `state.comm.toggle()` in Lua,
-which flips the filter and rewrites `comm.state`. The pane picks up the mtime
-change within 250 ms.
+`forward_toggle(name)` flips `_filters[name]`, calls `_save_filters()`, and
+calls `_app.invalidate()`. No subprocess, no tmux, no tt++ involvement.
+
+Using `MOUSE_DOWN` (rather than `MOUSE_UP`) means toggling fires on the press
+event. This eliminates missed clicks caused by press and release landing on
+different fragments.
 
 ### List
 
@@ -181,11 +191,17 @@ that many messages at the bottom.
 
 | Event                         | Effect                                           |
 |-------------------------------|--------------------------------------------------|
-| `<scroll-up>` key             | `_scroll_offset += 1` (cap at history length)    |
-| `<scroll-down>` key           | `_scroll_offset -= 1` (floor at 0)               |
+| Mouse wheel up on list        | `_scroll_offset += 1` (cap at history length)    |
+| Mouse wheel down on list      | `_scroll_offset -= 1` (floor at 0)               |
 | New messages while offset > 0 | `_scroll_offset += delta` (sticky view)          |
 | Click `↑ N newer messages`    | `_scroll_offset = 0` (jump to bottom)            |
 | Filter flip                   | `_scroll_offset` clamped against new list length |
+
+Mouse wheel scroll is handled by `ListControl`, a `FormattedTextControl`
+subclass that overrides `mouse_handler`. On `SCROLL_UP`/`SCROLL_DOWN` events
+not consumed by the base class, it adjusts `_scroll_offset` and calls
+`_app.invalidate()`. The previous `@kb.add("<scroll-up>")` / `<scroll-down>`
+key bindings were no-ops and have been removed.
 
 When `_scroll_offset > 0`, the first visible row of the list is the indicator:
 
@@ -193,7 +209,7 @@ When `_scroll_offset > 0`, the first visible row of the list is the indicator:
 ↑ N newer messages
 ```
 
-in `C_INDICATOR` style. Clicking it resets offset to 0.
+in `C_INDICATOR` style. Clicking it (`MOUSE_DOWN`) resets offset to 0.
 
 ### Colour palette
 
@@ -211,24 +227,23 @@ All constants are defined at the top of `bridge/comm_pane.py`:
 | `C_TALKER_UNSET`  | `fg:#bdbdbd`                         | Unknown talker type      |
 | `C_VERB`          | `fg:#78909c`                         | Channel verb             |
 | `C_INDICATOR`     | `fg:#546e7a`                         | ↑ N newer messages       |
-| `C_SEP`           | `fg:#37474f`                         | Space between labels     |
 
 ## Layout integration
 
 ### Pane position
 
-Right column, top to bottom: **ui → comm → status → dev**. The comm pane sits
-between `ui` and `status`. `dev` is always bottommost. When any subset of panes
+Right column, top to bottom: **status → comm → ui → dev**. The comm pane sits
+between `status` and `ui`. `dev` is always bottommost. When any subset of panes
 is open, ordering is preserved.
 
 ### Height
 
 `comm_height` in `bridge/layout.conf` (default 10). Unlike `status_height`
-(fixed in phase 1), `comm_height` is user-resizable: dragging the comm↔status
+(fixed in phase 1), `comm_height` is user-resizable: dragging the comm↔ui
 border persists the new value to `layout.conf` via `on_pane_resize.sh`.
 
-The ui↔comm border drag persists `ui_height`. The status↔dev border snaps back
-(status height is fixed at 12 in phase 1).
+The status↔comm border drag persists `status_height`. The ui↔dev border
+persists `ui_height`.
 
 ### Width floor
 

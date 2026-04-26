@@ -1,5 +1,0 @@
-#nop ===== COMM =====
-#nop Channel filter toggle alias — called by bridge/comm_pane.py's forward_toggle.
-#nop Single argument: channel name (e.g. "tells", "narrates").
-
-#alias {comm_toggle %1} {#lua {state.comm.toggle("%1")}}

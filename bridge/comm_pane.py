@@ -2,9 +2,10 @@
 #
 # prompt_toolkit full-screen Application with mouse_support=True.
 # Layout: fixed 1-row header + scrollable list (HSplit).
-# Header: one uppercase letter per channel; click toggles filter.
+# Header: 3-col padded cell per channel; click toggles filter on MOUSE_DOWN.
 # List: history filtered by channel, with sticky-bottom scrollback.
 # Polls bridge/comm.state every 250 ms via mtime comparison.
+# Filters are owned here: read/write bridge/comm_filters.conf directly.
 
 try:
     from prompt_toolkit import Application
@@ -25,13 +26,13 @@ import asyncio
 import json
 import os
 import signal
-import subprocess
 import sys
 import time
 
-COMM_STATE_PATH = os.path.join(os.environ["HOME"], "MUME", "bridge", "comm.state")
-TMUX_TARGET     = "mume:cockpit.0"
-POLL_MS         = 0.25
+COMM_STATE_PATH   = os.path.join(os.environ["HOME"], "MUME", "bridge", "comm.state")
+COMM_FILTERS_CONF = os.path.join(os.environ["HOME"], "MUME", "bridge", "comm_filters.conf")
+COMM_FILTERS_TMP  = COMM_FILTERS_CONF + ".tmp"
+POLL_MS           = 0.25
 
 # ---------------------------------------------------------------------------
 # Colour palette (24-bit truecolor, CSS-style for prompt_toolkit)
@@ -46,7 +47,7 @@ C_TALKER_NPC     = "fg:#9e9e9e"                    # grey
 C_TALKER_UNSET   = "fg:#bdbdbd"                    # light grey
 C_VERB           = "fg:#78909c"                    # muted blue-grey
 C_INDICATOR      = "fg:#546e7a"                    # dim blue-grey (↑ N newer)
-C_SEP            = "fg:#37474f"                    # dark separator between labels
+C_SEP            = "fg:#37474f"                    # kept for compatibility; unused
 
 # ---------------------------------------------------------------------------
 # Application state
@@ -56,6 +57,37 @@ _last_mtime     = None
 _scroll_offset  = 0         # 0 = bottom (live-follow); N = N newer msgs hidden
 _prev_filtered  = 0         # filtered-list length before last update
 _app            = None      # set in main() after Application is created
+_filters        = {}        # sparse map: missing key = enabled (True)
+
+# ---------------------------------------------------------------------------
+# Filter persistence
+# ---------------------------------------------------------------------------
+
+def _load_filters():
+    """Read comm_filters.conf into _filters at startup. Missing file is fine."""
+    try:
+        with open(COMM_FILTERS_CONF, "r") as fh:
+            for line in fh:
+                line = line.strip()
+                if "=" not in line:
+                    continue
+                name, _, val = line.partition("=")
+                if val in ("true", "false"):
+                    _filters[name] = (val == "true")
+    except OSError:
+        pass
+
+
+def _save_filters():
+    """Atomic write of _filters to comm_filters.conf. Sparse: only explicit keys."""
+    try:
+        with open(COMM_FILTERS_TMP, "w") as fh:
+            for name, val in _filters.items():
+                fh.write(f"{name}={'true' if val else 'false'}\n")
+        os.replace(COMM_FILTERS_TMP, COMM_FILTERS_CONF)
+    except OSError:
+        pass
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -66,8 +98,7 @@ def _get_filtered(state):
     if state is None:
         return []
     history = state.get("history") or []
-    filters = state.get("filters") or {}
-    return [e for e in history if filters.get(e.get("channel", ""), True)]
+    return [e for e in history if _filters.get(e.get("channel", ""), True)]
 
 
 def _talker_style(talker_type):
@@ -96,11 +127,12 @@ def _term_rows():
 
 
 def forward_toggle(name):
-    """Send comm_toggle <name> to the tt++ pane."""
-    subprocess.run(
-        ["tmux", "send-keys", "-t", TMUX_TARGET, f"comm_toggle {name}", "Enter"],
-        capture_output=True,
-    )
+    """Toggle filter for a named channel, persist, and invalidate the app."""
+    current = _filters.get(name, True)
+    _filters[name] = not current
+    _save_filters()
+    if _app:
+        _app.invalidate()
 
 
 def _restore_cursor():
@@ -118,24 +150,19 @@ def _header_text():
     if _state is None:
         return frags
     channels = _state.get("channels") or []
-    filters  = _state.get("filters")  or {}
-    first = True
     for ch in channels:
-        if not first:
-            frags.append((C_SEP, " "))
-        first = False
         name    = ch.get("name", "")
         label   = ch.get("label", "?")
-        enabled = filters.get(name, True)
+        enabled = _filters.get(name, True)
         style   = C_LABEL_ON if enabled else C_LABEL_OFF
 
         def _make_handler(n=name):
             def _handler(mouse_event):
-                if mouse_event.event_type == MouseEventType.MOUSE_UP:
+                if mouse_event.event_type == MouseEventType.MOUSE_DOWN:
                     forward_toggle(n)
             return _handler
 
-        frags.append((style, label, _make_handler()))
+        frags.append((style, f" {label} ", _make_handler()))
     return frags
 
 
@@ -170,7 +197,7 @@ def _list_text():
 
         def _indicator_handler(mouse_event):
             global _scroll_offset
-            if mouse_event.event_type == MouseEventType.MOUSE_UP:
+            if mouse_event.event_type == MouseEventType.MOUSE_DOWN:
                 _scroll_offset = 0
                 if _app:
                     _app.invalidate()
@@ -208,29 +235,34 @@ def _list_text():
 
 
 # ---------------------------------------------------------------------------
+# ListControl — FormattedTextControl subclass with mouse wheel scroll support
+# ---------------------------------------------------------------------------
+
+class ListControl(FormattedTextControl):
+    def mouse_handler(self, mouse_event):
+        result = super().mouse_handler(mouse_event)
+        if result is NotImplemented:
+            global _scroll_offset
+            if mouse_event.event_type == MouseEventType.SCROLL_UP:
+                if _state is not None:
+                    total = len(_get_filtered(_state))
+                    _scroll_offset = min(_scroll_offset + 1, total)
+                if _app:
+                    _app.invalidate()
+                return None
+            if mouse_event.event_type == MouseEventType.SCROLL_DOWN:
+                if _scroll_offset > 0:
+                    _scroll_offset -= 1
+                if _app:
+                    _app.invalidate()
+                return None
+        return result
+
+
+# ---------------------------------------------------------------------------
 # Key bindings
 # ---------------------------------------------------------------------------
 kb = KeyBindings()
-
-
-@kb.add("<scroll-up>")
-def _scroll_up(event):
-    global _scroll_offset, _state
-    if _state is None:
-        return
-    total = len(_get_filtered(_state))
-    _scroll_offset = min(_scroll_offset + 1, total)
-    if _app:
-        _app.invalidate()
-
-
-@kb.add("<scroll-down>")
-def _scroll_down(event):
-    global _scroll_offset
-    if _scroll_offset > 0:
-        _scroll_offset -= 1
-    if _app:
-        _app.invalidate()
 
 
 @kb.add("q")
@@ -294,6 +326,8 @@ def main():
     sys.stdout.flush()
     atexit.register(_restore_cursor)
 
+    _load_filters()
+
     header_window = Window(
         content=FormattedTextControl(text=_header_text, focusable=False),
         height=1,
@@ -301,7 +335,7 @@ def main():
     )
 
     list_window = Window(
-        content=FormattedTextControl(text=_list_text, focusable=False),
+        content=ListControl(text=_list_text, focusable=False),
     )
 
     root      = HSplit([header_window, list_window])

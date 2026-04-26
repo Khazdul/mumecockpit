@@ -53,3 +53,11 @@ File format: `name=true|false` (one line per explicitly-set channel).
 - **No persistence (in-memory only).** Rejected: filter state is lost on every
   `cp -r`, which is frequent during development. Players who disable busy channels
   (e.g. `news`) should not need to redo this on every reload.
+
+## 2026-04-26 update
+
+Filter ownership moved from Lua to `comm_pane.py`. Filters are UI preferences,
+not game state, and routing them through tt++ caused the alias text to echo in
+the game pane. `comm_pane.py` now reads and writes `comm_filters.conf` directly;
+Lua no longer references filters at all. The sparse-map persistence format is
+unchanged, so existing `comm_filters.conf` files remain valid.
