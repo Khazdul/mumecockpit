@@ -201,9 +201,8 @@ Affected by:
 
 At HOUR/MINUTE precision the Time row splits into a 16-col left half (label +
 time-only value in `C_VALUE`) and a 17-col right half with a three-colour split:
-icon in `C_SUN` (☼, intense amber) or `C_MOON` (☾, vivid sky blue), a `":"`
-separator in `C_LABEL` (steel-blue), and the countdown value in `C_VALUE`
-(bright white) — e.g. `☾: 4:20` or `☼: ~3`. At DAY or UNSET precision
+icon in `C_SUN` (☼, intense amber) or `C_MOON` (☾, vivid sky blue), and the
+countdown value in `C_VALUE` (bright white) — e.g. `☾ 4:20` or `☼ ~3`. At DAY or UNSET precision
 `time_period` / `time_remaining` are null and the single full-width
 `_row("Time:", ...)` fallback is used.
 
