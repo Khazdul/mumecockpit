@@ -86,7 +86,7 @@
 
 #ACTION {The dark aura surrounding you fades.}
 {
-    #lua {events.emit("affect_init", "dark aura (faded)"); events.emit("affect_down", "dark aura")}
+    #lua {events.emit("affect_down", "dark aura"); events.emit("affect_init", "dark aura (faded)")}
 }
 {3}
 
@@ -272,7 +272,7 @@
 
 #ACTION {You feel a pale surge of energy flow back into you.}
 {
-    #lua {events.emit("affect_down", "a pure white robe (pale tones)"); events.emit("affect_down", "a pitch-black robe (pale tones)")}
+    #lua {events.emit("affect_down", "a pitch-black robe (pale tones)"); events.emit("affect_down", "a pure white robe (pale tones)")}
 }
 {3}
 
@@ -638,7 +638,7 @@
 
 #ACTION {Your energy wanes as your second wind fades.}
 {
-    #lua {events.emit("affect_down", "second wind"); events.emit("affect_init", "winded")}
+    #lua {events.emit("affect_init", "winded"); events.emit("affect_down", "second wind")}
 }
 {3}
 
