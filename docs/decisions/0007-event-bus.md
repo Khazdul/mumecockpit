@@ -44,3 +44,16 @@ script registers all patterns and calls into other scripts. Solves the
 ownership collision but conflates ownership with logic and creates a hidden
 dependency: every script must be known to the dispatcher. Adding a new
 subscriber requires editing core infrastructure.
+
+## Addendum — 2026-04-26: API hoisted into brain.lua
+
+The original implementation defined `events.subscribe`, `events.emit`, and
+`events.unsubscribe` in `lua/core/events.lua`. Core modules are auto-loaded
+in alphabetical order; `clock.lua` (loaded before `events.lua`) called
+`events.subscribe` at load time, hit a nil value, and crashed the Lua
+session — breaking every `#lua {...}` call from tt++ until restart.
+
+The API has been moved into `lua/brain.lua` alongside `gmcp.dispatch`, where
+it is unconditionally available before any core or script file runs.
+`lua/core/events.lua` has been deleted. No behaviour changed; the fix is
+purely structural.

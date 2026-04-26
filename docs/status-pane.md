@@ -80,10 +80,11 @@ JSON written by `lua/core/status_state.lua`. Gitignored.
 }
 ```
 
-Phase 1 populates all fields except `game_time` and `affects` — these are
-reserved slots for phases 3–4. `session_xp` and `session_tp` are populated by
-`lua/core/sess_kills.lua` (phase 4 — implemented). The renderer displays `—`
-when null (bootstrap window before first Vitals tick) and empty for `affects`.
+`session_xp` and `session_tp` are populated by `lua/core/sess_kills.lua`
+(phase 4 — implemented). `game_time` is populated by the `clock_changed`
+subscription in `lua/core/status_state.lua` (phase 3 — implemented). `affects`
+is a reserved slot for phase 2. The renderer displays `—` when null (bootstrap
+window before first Vitals tick) and empty for `affects`.
 
 ### Field mapping from GMCP
 
@@ -101,7 +102,7 @@ when null (bootstrap window before first Vitals tick) and empty for `affects`.
 | `swim`         | `Char.Vitals` → `state.char.swim`  | bool→"on"/"off"                  |
 | `session_xp`   | `lua/core/sess_kills.lua` → `state.session.session_xp` | null during bootstrap window; resets to 0 on `cp -r` (rebaselines on next Vitals tick — expected behaviour, not a bug) |
 | `session_tp`   | `lua/core/sess_kills.lua` → `state.session.session_tp` | null during bootstrap window; resets to 0 on `cp -r` (rebaselines on next Vitals tick — expected behaviour, not a bug) |
-| `game_time`    | phase 3 — always null in phase 1   |                                   |
+| `game_time`    | `lua/core/clock.lua` → `state.world.clock.format("compact")` | null when precision is UNSET; `"?"` string when clock loaded but unsynced |
 | `affects`      | phase 2 — always [] in phase 1     |                                   |
 
 ## Colour scheme
@@ -225,17 +226,26 @@ Persistence: `show_status` in `bridge/startup.conf` (default `0`).
 
 ### Phase 3 — Game time (implemented)
 
-Clock module `lua/core/clock.lua` is implemented and ready. To wire it to
-the status pane:
+Clock module `lua/core/clock.lua` and the status-pane wiring are both active.
 
-1. In `lua/core/status_state.lua`, set `game_time` in `serialize()`:
-   ```lua
-   game_time = state.world.clock and state.world.clock.format("compact") or nil,
-   ```
-2. `status_pane.py` already renders `game_time` when non-null.
+`lua/core/status_state.lua` populates `game_time` in `serialize()`:
+
+```lua
+game_time = state.world.clock and state.world.clock.format("compact") or nil,
+```
+
+It also subscribes to the `clock_changed` event emitted by `clock.lua` after
+every sync and on each minute rollover:
+
+```lua
+events.subscribe("clock_changed", function() serialize() end)
+```
+
+This means the panel updates immediately on a sync — not on the next
+`Char.Vitals` tick.
 
 **Consumer contract:** `state.world.clock.format("compact")` returns:
-- `"?"` when precision is UNSET (no sync yet)
+- `"?"` when precision is UNSET (no sync yet) — renderer shows `?`
 - `"Solmath 26, 2973"` (DAY precision — date known, hour unknown)
 - `"~8 am, Solmath 26"` (HOUR precision — `~` means minute unknown)
 - `"8:00, Solmath 26"` (MINUTE precision — fully synced)

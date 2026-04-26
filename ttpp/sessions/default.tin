@@ -24,6 +24,18 @@
 }
 {3}
 
+#ACTION {^%1 of the Third Age.$}
+{
+    #lua {events.emit("mume_time_line", "%0")}
+}
+{3}
+
+#ACTION {^The current time is %1.$}
+{
+    #lua {events.emit("room_clock_line", "%0")}
+}
+{3}
+
 #ACTION {WARNING}
 {
     sc
@@ -1185,12 +1197,13 @@
 #SUBSTITUTE {^-%1miruvor%2} {<F00aa00>%0<900>} {5}
 #SUBSTITUTE {^-%1wound%2} {<Fff0000>%0<900>} {5}
 #SUBSTITUTE {^A pair of tiny eyes gleam at you from the shadows.} {<F00ffff>%0<900>} {5}
+#TICKER {clock} {#lua {state.world.clock.tick()}} {1.0}
 #VARIABLE {_sd_line} {<F9AA8B7> SD1: <FFFFFFF>exit}
 #VARIABLE {abody} {}
 #VARIABLE {acontainer} {quiver}
 #VARIABLE {arrow} {arrow}
 #VARIABLE {character} {}
-#VARIABLE {class} {caster}
+#VARIABLE {class} {thief}
 #VARIABLE {mees} {}
 #VARIABLE {ring} {}
 #VARIABLE {sd1} {exit}
@@ -1198,6 +1211,6 @@
 #VARIABLE {sd3} {}
 #VARIABLE {spell} {'blindness'}
 #VARIABLE {ss} {normal}
-#VARIABLE {target} {orc}
+#VARIABLE {target} {slave}
 
 #CLASS {default} CLOSE

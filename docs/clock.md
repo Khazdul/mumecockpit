@@ -100,12 +100,17 @@ The `~` prefix on HOUR indicates the minute is unknown.
 **`state.world.clock.tick()`** — called by a 1Hz tt++ ticker.
 
 Computes the current moment and tracks whether the MUME minute has changed
-since the previous tick. No file I/O on tick. The status pane reads
-`format("compact")` directly from its own poll loop.
+since the previous tick. When the minute changes, emits `clock_changed` on
+the event bus. No file I/O on tick.
 
 ## Sync sources
 
-All three are passive subscribers on the Lua event bus.
+All three are passive subscribers on the Lua event bus. After every
+successful sync, `clock_changed` is emitted on the event bus so subscribers
+(e.g. `lua/core/status_state.lua`) can react immediately without waiting for
+the next `Char.Vitals` tick.
+
+> **gts-ticker constraint:** tt++ does not fire tickers in the startup session (`gts`). The clock ticker is therefore registered per game session inside `_register_clock_actions`, not at file-load time. It is created on SESSION CONNECTED and destroyed on disconnect.
 
 ### `event_sun` (emitted by `lua/core/world_state.lua`)
 
@@ -182,7 +187,7 @@ reduces the UNSET window on future installs.
 | File | Role |
 |------|------|
 | `lua/core/clock.lua` | Clock module — sync, state, public API |
-| `ttpp/core/clock.tin` | 1Hz ticker + `#action` pre-filters + `_register_clock_actions` |
+| `ttpp/core/clock.tin` | Per-session ticker + `#action` pre-filters, registered via `_register_clock_actions` |
 | `bridge/clock.state` | Persisted anchor (gitignored) |
 
 ---

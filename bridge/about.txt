@@ -1,75 +1,116 @@
-WHY TERMINAL?
-
-Most MUD clients live in a GUI window. This one doesn't. The terminal is not a
-constraint — it's the point. A terminal can be remoted, tiled, scripted, and
-composed with other tools without friction. It starts fast, has no update
-cycle, and behaves the same on every machine you own.
-
-The cockpit uses tmux to split the screen into panes: game output, a dedicated
-input prompt, a script status log, and optionally a debug feed from the Lua
-brain. Each pane is independently toggleable at runtime. The layout survives
-disconnects. Nothing resets when you scroll.
+A terminal-based MUD client built for MUME and tuned for fast PvP. 
+TinTin++ owns the socket, triggers, and keybinds at the latency floor;
+a Lua brain runs above it for state, timers, and anything that benefits
+from a real programming language; tmux composes game, input, UI, and
+character panes into one window. Starts in under a second, has no update
+cycle, and behaves the same on every machine you own — remote it, tile
+it, attach to it from anywhere.
 
 
-FOUNDATION: TINTIN++
+MUME — MULTI-USERS IN MIDDLE-EARTH
 
-TinTin++ (tt++) is the I/O engine. It speaks directly to the MUD socket,
-processes triggers line-by-line, and dispatches keybinds with sub-frame
-latency. Anything that must react before the next game tick lives here — combat
-actions, highlight rules, session aliases.
+MUME is a free, text-based multiplayer game set in Tolkien's Middle-earth
+during the late Third Age — the years leading up to the War of the Ring.
+Continuously running since 1991 and maintained by a volunteer community,
+it remains one of the oldest active DikuMUDs and the reason this client
+exists.
 
-TinTin++ has been developed continuously since 1993. It is fast, stable, and
-does not try to be clever about things it shouldn't own.
+Pick a side. The Free Peoples — Men, Elves, Hobbits, Dwarves, Beornings
+— hold the West. The forces of Sauron — Trolls, Black Númenóreans, Orcs
+— push from the East. Renegade Zaugurz orcs are hated by both.
+Three-faction warfare is the spine of the game.
+
+The world is wide and faithful to the source material. The Shire, Bree,
+Rivendell, the Grey Havens, Moria, Lothlórien, Fangorn, Fornost,
+Tharbad, Isengard, the Warrens, the Orc Caves of the Misty Mountains,
+and the Rohan zone — all recognizable, all explorable, all consequential.
+Different regions have different laws; magic is illegal in the Shire
+unless you're a citizen. Roleplaying is encouraged; names that don't
+fit Middle-earth don't last.
+
+PvP is what sets MUME apart. Capturable towers and terrain,
+leaderboards, deep skill and spell systems, and a 30–50 player peak
+that produces constant skirmishes between the sides. Big events draw
+100+ players — trolls bringing battering rams to break the gates of
+Blue Mountain, orcs and trolls raiding cities in coordinated waves.
+The reaction-speed floor is high. A fast, scriptable client isn't a
+luxury here; it's the thing that lets you keep up.
+
+Free to play. No subscription. Just connect.
+
+  Website   mume.org
+  Discord   discord.gg/XkZN55am9a
 
 
-LUA BRAIN
+CONNECTION
 
-Above TinTin++ sits a Lua process called the brain. It runs as a persistent
-subprocess, communicating over stdin and stdout. The brain owns the slow things:
-state tracking, timers, cross-session coordination, and any logic that benefits
-from a real programming language.
+  MMapper   Routes through MMapper (localhost:4242). Recommended.
+            MMapper is a graphical mapping companion for MUME — it
+            sits between the cockpit and the server and gives you a
+            live map of your surroundings, terrain colouring, room
+            search, and pathfinding. Group map sharing lets you see
+            party members move on the same map in real time.
+            Multi-platform (Windows, macOS, Linux). Start MMapper
+            before connecting.
+            Download: github.com/MUME/MMapper/releases
 
-Scripts are self-contained Lua files in lua/scripts/. Each one loads at startup,
-registers its own aliases and triggers, and adds a documentation entry to the
-Scripts page. Nothing is hardcoded — removing a script file removes its
-features cleanly.
-
-The brain writes to two log files: ui.log (structured status messages for the
-UI pane) and debug.log (raw developer output for the DEV pane). Both persist
-across pane toggles and reconnects.
+  Direct    Connects to mume.org:4242 directly, bypassing MMapper.
 
 
-STARTUP MENU
+GMCP
 
-This menu runs before tmux starts, in a pure-bash alt-screen TUI with no
-external dependencies. It keeps pane layout, connection mode, and the active
-profile in bridge/startup.conf — a plain text file you can also edit directly.
+Full GMCP integration. Char, Comm.Channel, Event, and Core modules are
+negotiated at handshake and dispatched into Lua handlers. Background
+collectors populate state.char, state.comm, and state.session as
+messages arrive — vitals, kills, channel traffic, alertness, sneak,
+climb, position. New collectors are drop-in: subscribe to a module,
+write to state.*, done.
 
-Profiles correspond to TinTin++ session files in ttpp/sessions/. The default
-profile is a working starting point. Create new profiles from the Profile page
-— blank stubs or copies of an existing one.
+
+SCRIPTING
+
+Everyday reflexes — aliases, triggers, macros, highlights — live in
+tt++ where they fire fastest. More complex automation lives on the Lua
+layer above. Drop a self-contained .lua file in lua/scripts/, call
+register_script(), and it auto-loads at startup, registers its own
+commands, and shows up in cp help and on the launcher Scripts page.
+Remove the file and the feature is gone — no leftover state. A small
+set of automation scripts ships with the client; writing your own is
+the intended use.
+
+
+PANES
+
+Beyond the main game window, the cockpit can show three side panes,
+each toggleable at runtime: a UI pane for structured status messages
+from scripts and the core systems (kills, warnings, lifecycle events);
+a character panel with live vitals, position, mood, and session XP/TP
+totals; and a dedicated input pane on its own line.
+
+The input pane fixes long-standing terminal-client annoyances. The
+buffer doesn't auto-clear after sending — the last command stays
+highlighted, so a second Enter repeats it, exactly the rhythm MUDs
+are built around. Any printable key wipes the highlight and starts a
+fresh command. Empty Enter sends a bare newline (MUME uses this to
+cancel delayed casts) — never a silent re-send. Shift+Home, Shift+End,
+and Ctrl+A all select the full buffer in one move, so the next
+keystroke clears it.
 
 
 COCKPIT COMMANDS
 
-Once inside, the cp prefix gives you runtime control:
+Most cockpit features are reachable from the in-game menu — press
+<Esc> from any pane to open it. The cp command prefix offers the
+same controls plus a few extras useful for scripting and reload:
 
   cp -r     full reload (TinTin++ + Lua brain, no tmux restart)
   cp -e     clean shutdown
   cp -u     toggle UI pane
   cp -d     toggle dev pane
+  cp -c     toggle character panel
   cp -i     toggle input pane
   cp -h     toggle pane border headers
   cp        show the full command reference
-
-
-CONNECTION
-
-  MMapper   Routes through MMapper (localhost:4242). Recommended —
-            MMapper provides an in-game map, room search, and
-            pathfinding. Start MMapper before connecting.
-
-  Direct    Connects to mume.org:4242 directly, bypassing MMapper.
 
 
 PROJECT

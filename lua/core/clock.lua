@@ -190,6 +190,7 @@ local function _apply_sun(body)
     C.precision = P.MINUTE
     _persist()
     dbg("[CLOCK] sync: " .. what .. " → MINUTE")
+    events.emit("clock_changed")
 end
 
 local function _apply_time_line(line)
@@ -206,6 +207,7 @@ local function _apply_time_line(line)
             C.precision = P.HOUR
             _persist()
             dbg("[CLOCK] sync: time_dated → HOUR")
+            events.emit("clock_changed")
         end
         return
     end
@@ -221,6 +223,7 @@ local function _apply_time_line(line)
             C.precision = P.DAY
             _persist()
             dbg("[CLOCK] sync: time_day → DAY")
+            events.emit("clock_changed")
         end
     end
 end
@@ -241,6 +244,7 @@ local function _apply_room_clock(line)
     C.precision = P.MINUTE
     _persist()
     dbg("[CLOCK] sync: room_clock → MINUTE")
+    events.emit("clock_changed")
 end
 
 -- ---------------------------------------------------------------------------
@@ -285,6 +289,7 @@ function C.tick()
     local cur = m.hour * 60 + m.minute
     if C._last_emitted_minute ~= cur then
         C._last_emitted_minute = cur
+        events.emit("clock_changed")
     end
 end
 

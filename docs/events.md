@@ -11,7 +11,10 @@ design rationale.
 ## Overview
 
 The event bus provides a lightweight fan-out mechanism for MUD events that
-multiple scripts need to react to. High-priority core triggers in
+multiple scripts need to react to. The API (`events.subscribe`,
+`events.emit`, `events.unsubscribe`) is defined in `lua/brain.lua`
+alongside `gmcp.dispatch`, ensuring it is available before any core or
+script module loads. High-priority core triggers in
 `ttpp/core/mud_events.tin` (priority 3) capture MUD output and call
 `events.emit(name, ...)`. Scripts subscribe at start time and unsubscribe
 on abort — no changes to core files are needed when adding a new subscriber.
@@ -50,6 +53,7 @@ event flow. Same pattern as `gmcp.trace`.
 | `event_sun` | `{what = "rise"\|"set"\|"light"\|"dark"}` | `lua/core/world_state.lua` (GMCP) |
 | `mume_time_line` | full matched line string | `ttpp/core/clock.tin` `#action` |
 | `room_clock_line` | full matched line string | `ttpp/core/clock.tin` `#action` |
+| `clock_changed` | (none) | `lua/core/clock.lua` — emitted on each successful sync and on minute rollover in `tick()` |
 
 ### `mob_death`
 
@@ -98,6 +102,17 @@ output. Payload is the full matched line string. Game text form:
     "The current time is 8:00am."
 
 **Subscribers:** `lua/core/clock.lua`.
+
+### `clock_changed`
+
+Emitted by `lua/core/clock.lua` whenever the displayed clock value would
+change — after each successful sync (`event_sun`, `mume_time_line`,
+`room_clock_line`) and on minute rollover inside `tick()`. No payload;
+subscribers should read `state.world.clock.format(...)` for the new value.
+
+**Subscribers:** `lua/core/status_state.lua` — calls `serialize()` to update
+`bridge/status.state` immediately, without waiting for the next `Char.Vitals`
+tick.
 
 ## Adding a new event
 

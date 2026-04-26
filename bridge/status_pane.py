@@ -45,15 +45,12 @@ def _restore_cursor():
 # Layout helpers
 # ---------------------------------------------------------------------------
 def _row(label, value, width=WIDTH):
-    """Single row: label left, value right, total `width` visible chars."""
+    """Single row: label left, value left (one space after label), truncated to width."""
     lbl = str(label)
     val = str(value) if value is not None else "—"
-    gap = width - len(lbl) - len(val)
-    if gap < 1:
-        # truncate value to fit
+    if len(lbl) + 1 + len(val) > width:
         val = val[:max(0, width - len(lbl) - 1)]
-        gap = 1
-    return C_LABEL + lbl + C_RESET + " " * gap + C_VALUE + val + C_RESET
+    return C_LABEL + lbl + C_RESET + " " + C_VALUE + val + C_RESET
 
 
 def _pair(l1, v1, l2, v2, width=WIDTH):

@@ -52,7 +52,7 @@ local function serialize()
         position    = c.position,
         climb       = climb_val,
         swim        = swim_val,
-        game_time   = nil,
+        game_time   = state.world.clock and state.world.clock.format("compact") or nil,
         affects     = {},
     }
 
@@ -86,5 +86,7 @@ gmcp.handlers["Char.Vitals"] = function(body)
     if _orig_vitals then _orig_vitals(body) end
     serialize()
 end
+
+events.subscribe("clock_changed", function() serialize() end)
 
 dbg("[STATUS_STATE] loaded")
