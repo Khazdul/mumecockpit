@@ -182,6 +182,10 @@ entry as a type-coloured `"- <name> <Xm>"` row. See
 [docs/status-pane.md](status-pane.md) for layout, colour constants, and
 dynamic-height details.
 
+Each `affect_init`, `affect_refresh`, and `affect_down` event also emits a
+`◆ TAG: name verb.` line to the UI pane via `affect_ui()` — see
+[docs/ui-messaging.md](ui-messaging.md) for the format and colour palette.
+
 ## Known limitations
 
 ### `cp -r` mid-session without reconnect

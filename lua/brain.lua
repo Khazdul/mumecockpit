@@ -38,6 +38,9 @@ local _C_VAR    = "\027[1;38;2;255;238;88m" -- bold yellow #FFEE58 — dynamic v
 local _C_SYSTEM = "\027[38;2;66;165;245m"  -- blue #42A5F5 — system events
 local _C_WARN   = "\027[38;2;255;179;0m"   -- amber      #FFB300 — warnings
 local _C_ERR    = "\027[38;2;229;57;53m"   -- red        #E53935 — errors
+local _C_SPELL  = "\027[38;2;122;169;214m"  -- light steel-blue #7AA9D6
+local _C_BUFF   = "\027[38;2;143;188;143m"  -- soft sage green  #8FBC8F
+local _C_DEBUFF = "\027[38;2;201;112;112m"  -- muted brick red  #C97070
 local _C_RESET  = "\027[0m"
 
 function script_ui(name, msg)
@@ -75,6 +78,26 @@ end
 -- Format: ✖ ERROR: message.
 function ui_err(msg)
     ui(string.format("%s✖ ERROR:%s %s%s%s", _C_ERR, _C_RESET, _C_TEXT, msg, _C_RESET))
+end
+
+-- affect_ui(type, name, verb) — affect-event line for the UI pane.
+-- type: "spell" | "buff" | "debuff" — selects prefix colour and tag.
+-- name: affect name (rendered with ui_var for the dynamic-value style).
+-- verb: "up" | "refreshed" | "down".
+-- Format: ◆ TAG: name verb.
+function affect_ui(typ, name, verb)
+    local colour, tag
+    if typ == "spell" then
+        colour, tag = _C_SPELL, "SPELL"
+    elseif typ == "buff" then
+        colour, tag = _C_BUFF, "BUFF"
+    elseif typ == "debuff" then
+        colour, tag = _C_DEBUFF, "DEBUFF"
+    else
+        colour, tag = _C_SCRIPT, "AFFECT"  -- defensive fallback
+    end
+    ui(string.format("%s◆ %s:%s %s%s %s.%s",
+        colour, tag, _C_RESET, _C_TEXT, ui_var(name), verb, _C_RESET))
 end
 
 local SESSION_STATE_PATH = "bridge/session.state"

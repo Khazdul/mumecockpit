@@ -88,6 +88,39 @@ script-load diagnostics) go to `dbg()` and appear in the dev pane only.
 Use `system_ui` for user-relevant state transitions only — not for game events,
 script lifecycle (use `script_ui`), warnings (`ui_warn`), or errors (`ui_err`).
 
+## Affect Events
+
+Affect lifecycle events from MUD output use `affect_ui()` in `brain.lua`:
+
+```lua
+affect_ui("spell",  "armour", "up")
+affect_ui("buff",   "Orkish draught", "up")
+affect_ui("debuff", "lethargy", "down")
+```
+
+Renders in the UI pane as:
+
+```
+◆ SPELL: armour up.
+◆ BUFF: Orkish draught up.
+◆ DEBUFF: lethargy down.
+```
+
+Prefix and tag are coloured per type, matching the character-pane palette:
+
+| Type   | Colour            | Hex       |
+|--------|-------------------|-----------|
+| spell  | light steel-blue  | `#7AA9D6` |
+| buff   | soft sage green   | `#8FBC8F` |
+| debuff | muted brick red   | `#C97070` |
+
+Affect names are rendered via `ui_var()` (bold yellow) for the same visual
+treatment dynamic values get in `script_ui` / `system_ui`.
+
+Verbs are fixed: `up` (init), `refreshed` (re-application while active),
+`down` (drop). One `affect_ui` call per event — no other helper is invoked
+for the same event.
+
 ## UI Warnings and Errors
 
 When the player needs to see a warning or error, use the severity helpers in
@@ -195,6 +228,9 @@ are known without guessing.
 | `_C_SYSTEM` | `"\027[38;2;66;165;245m"`           | Blue `#42A5F5` — `● SYSTEM` prefix   |
 | `_C_WARN`   | `"\027[38;2;255;179;0m"`            | Amber `#FFB300` — `⚠ WARN` prefix    |
 | `_C_ERR`    | `"\027[38;2;229;57;53m"`            | Red `#E53935` — `✖ ERROR` prefix     |
+| `_C_SPELL`  | `"\027[38;2;122;169;214m"`          | Light steel-blue `#7AA9D6` — `◆ SPELL` prefix |
+| `_C_BUFF`   | `"\027[38;2;143;188;143m"`          | Soft sage green `#8FBC8F` — `◆ BUFF` prefix |
+| `_C_DEBUFF` | `"\027[38;2;201;112;112m"`          | Muted brick red `#C97070` — `◆ DEBUFF` prefix |
 | `_C_VAR`    | `"\027[1;38;2;255;238;88m"`         | Bold yellow `#FFEE58` — dynamic values |
 | `_C_TEXT`   | `"\027[1;97m"`                      | Bold bright white — base message text |
 | `_C_RESET`  | `"\027[0m"`                         | Reset all attributes                  |
