@@ -15,6 +15,7 @@ logs/cmd_*.tin
 
 *.tmp
 
+bridge/clock.state
 bridge/layout.conf
 bridge/startup.conf
 bridge/scripts.cache
@@ -33,4 +34,3 @@ bridge/.collapsed_panes
 # VS Code settings (optional — remove if you want to sync these)
 
 .vscode/
-
