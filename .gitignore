@@ -34,6 +34,13 @@ bridge/.collapsed_panes
 
 
 
+# Python bytecode
+
+__pycache__/
+*.pyc
+
+
+
 # VS Code settings (optional — remove if you want to sync these)
 
 .vscode/
