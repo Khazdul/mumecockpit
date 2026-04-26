@@ -249,13 +249,16 @@ Every right-column operation ends with a call to `apply_layout.sh`.
 
 ## Toggle
 
-| Method                         | Mechanism                                     |
-|--------------------------------|-----------------------------------------------|
-| `cp -c`                        | `toggle_pane.sh status` (runtime only)        |
-| In-game popup → Options        | `toggle_pane.sh status --persist`             |
-| Launcher Options → Character pane | `_save_conf` → `startup.conf show_status` |
+| Method                            | Mechanism                                       |
+|-----------------------------------|-------------------------------------------------|
+| `cp -c`                           | `toggle_pane.sh status` (runtime only)          |
+| In-game popup → Options           | `toggle_pane.sh status --persist`               |
+| Launcher Options → Character pane | `_save_conf` → `startup.conf show_status`       |
 
-Persistence: `show_status` in `bridge/startup.conf` (default `0`).
+Persistence key: `show_status` in `bridge/startup.conf`. Fresh-install default
+is `1` (status pane on). Existing `startup.conf` files that lack `show_status`
+fall through to the runtime `${show_status:-0}` guard — existing installs see
+no change.
 
 ## Affects
 

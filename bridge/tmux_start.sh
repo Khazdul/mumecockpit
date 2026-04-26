@@ -15,7 +15,7 @@ CONF="bridge/startup.conf"
 
 # Create startup.conf with defaults if missing
 if [ ! -f "$CONF" ]; then
-    printf 'connection_mode=mmapper\nshow_ui=1\nshow_dev=0\nshow_input=1\n' > "$CONF"
+    printf 'connection_mode=mmapper\nshow_status=1\nshow_comm=1\nshow_ui=1\nshow_dev=0\nshow_input=1\nshow_pane_dividers=1\nprofile=default\n' > "$CONF"
 fi
 source "$CONF"
 
@@ -27,6 +27,7 @@ source "$CONF"
 SHOW_UI="${show_ui:-1}"
 SHOW_DEV="${show_dev:-0}"
 SHOW_STATUS="${show_status:-0}"
+SHOW_COMM="${show_comm:-0}"
 SHOW_INPUT="${show_input:-1}"
 SHOW_DIVIDERS="${show_pane_dividers:-1}"
 
@@ -129,10 +130,13 @@ tmux select-pane -t mume:cockpit.0 -T "MUME"
 sleep 0.2 && tmux select-pane -t mume:cockpit.0 -T "MUME" &
 
 # ---------------------------------------------------------------------------
-# 6. Open status pane (top of right column)
+# 6. Open right-column panes (top to bottom: status → comm → ui → dev)
 # ---------------------------------------------------------------------------
 if [ "$SHOW_STATUS" -eq 1 ]; then
     bash "$HOME/MUME/bridge/open_pane.sh" status
+fi
+if [ "$SHOW_COMM" -eq 1 ]; then
+    bash "$HOME/MUME/bridge/open_pane.sh" comm
 fi
 bash bridge/apply_layout.sh
 

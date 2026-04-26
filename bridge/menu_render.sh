@@ -146,128 +146,62 @@ draw_menu_item() {
 }
 
 # ---------------------------------------------------------------------------
-# draw_layout_mockup <show_ui> <show_dev> <show_input> [show_desc=1] [show_dividers=1]
+# draw_layout_mockup <show_ui> <show_dev> <show_input> [show_desc=1] [show_dividers=1] [show_status=0] [show_comm=0]
 # Prints a small ASCII wireframe of the tmux cockpit layout, centered.
 # Right column inner width = 6, left column inner width = 15. Total = 24 wide.
+# Right-column panes are stacked top-to-bottom: status → comm → ui → dev.
 # When show_dividers=0, box-drawing characters are replaced with spaces;
 # labels and dimensions stay identical so the mockup doesn't jump on toggle.
-# Followed by a 4-line pane description block.
+# Followed by a description block when show_desc=1.
 # ---------------------------------------------------------------------------
 draw_layout_mockup() {
-    local show_ui="${1:-1}" show_dev="${2:-0}" show_input="${3:-1}" show_desc="${4:-1}" show_dividers="${5:-1}" show_status="${6:-0}"
-    local has_right=0
-    ( [ "$show_ui" -eq 1 ] || [ "$show_dev" -eq 1 ] || [ "$show_status" -eq 1 ] ) && has_right=1
+    local show_ui="${1:-1}" show_dev="${2:-0}" show_input="${3:-1}" show_desc="${4:-1}" show_dividers="${5:-1}" show_status="${6:-0}" show_comm="${7:-0}"
 
     local cols; cols=$(tput cols 2>/dev/null || echo 80)
     local indent=$(( (cols - 24) / 2 ))
     [ "$indent" -lt 0 ] && indent=0
     local p; printf -v p "%${indent}s" ""
 
+    # Build right-column pane list in top-to-bottom order
+    local -a _rc_labels=()
+    [ "$show_status" -eq 1 ] && _rc_labels+=(" CHAR ")
+    [ "$show_comm"   -eq 1 ] && _rc_labels+=(" COMM ")
+    [ "$show_ui"     -eq 1 ] && _rc_labels+=("  UI  ")
+    [ "$show_dev"    -eq 1 ] && _rc_labels+=(" DEV  ")
+    local N=${#_rc_labels[@]}
+
     _draw_box_lines() {
         printf "${_MR_TITLE}"
-
-        if [ "$show_ui" -eq 1 ] && [ "$show_status" -eq 1 ] && [ "$show_dev" -eq 1 ] && [ "$show_input" -eq 1 ]; then
-            # CHAR + UI + DEV + INPUT
+        if [ "$N" -gt 0 ]; then
+            # game_rows = N label rows + (N-1) divider rows = 2N-1
+            local game_rows=$(( 2 * N - 1 ))
+            local game_mid=$(( (game_rows - 1) / 2 ))
             printf '%s┌───────────────┬──────┐\n' "$p"
-            printf '%s│               │ CHAR │\n' "$p"
-            printf '%s│     GAME      ├──────┤\n' "$p"
-            printf '%s│               │  UI  │\n' "$p"
-            printf '%s├───────────────┼──────┤\n' "$p"
-            printf '%s│    INPUT      │ DEV  │\n' "$p"
+            local row=0 rc_idx=0
+            while [ "$row" -lt "$game_rows" ]; do
+                if (( row % 2 == 0 )); then
+                    local rl="${_rc_labels[$rc_idx]}"
+                    rc_idx=$(( rc_idx + 1 ))
+                    if [ "$row" -eq "$game_mid" ]; then
+                        printf '%s│     GAME      │%s│\n' "$p" "$rl"
+                    else
+                        printf '%s│               │%s│\n' "$p" "$rl"
+                    fi
+                else
+                    if [ "$row" -eq "$game_mid" ]; then
+                        printf '%s│     GAME      ├──────┤\n' "$p"
+                    else
+                        printf '%s│               ├──────┤\n' "$p"
+                    fi
+                fi
+                row=$(( row + 1 ))
+            done
+            if [ "$show_input" -eq 1 ]; then
+                printf '%s├───────────────┼──────┤\n' "$p"
+                printf '%s│    INPUT      │      │\n' "$p"
+            fi
             printf '%s└───────────────┴──────┘\n' "$p"
-
-        elif [ "$show_ui" -eq 1 ] && [ "$show_status" -eq 1 ] && [ "$show_dev" -eq 1 ]; then
-            # CHAR + UI + DEV, no INPUT
-            printf '%s┌───────────────┬──────┐\n' "$p"
-            printf '%s│               │ CHAR │\n' "$p"
-            printf '%s│     GAME      ├──────┤\n' "$p"
-            printf '%s│               │  UI  │\n' "$p"
-            printf '%s│               ├──────┤\n' "$p"
-            printf '%s│               │ DEV  │\n' "$p"
-            printf '%s└───────────────┴──────┘\n' "$p"
-
-        elif [ "$show_ui" -eq 1 ] && [ "$show_status" -eq 1 ] && [ "$show_input" -eq 1 ]; then
-            # CHAR + UI + INPUT, no DEV
-            printf '%s┌───────────────┬──────┐\n' "$p"
-            printf '%s│               │ CHAR │\n' "$p"
-            printf '%s│     GAME      ├──────┤\n' "$p"
-            printf '%s│               │  UI  │\n' "$p"
-            printf '%s├───────────────┤      │\n' "$p"
-            printf '%s│    INPUT      │      │\n' "$p"
-            printf '%s└───────────────┴──────┘\n' "$p"
-
-        elif [ "$show_status" -eq 1 ] && [ "$show_dev" -eq 1 ] && [ "$show_input" -eq 1 ]; then
-            # STATUS + DEV + INPUT, no UI
-            printf '%s┌───────────────┬──────┐\n' "$p"
-            printf '%s│               │ CHAR │\n' "$p"
-            printf '%s│     GAME      ├──────┤\n' "$p"
-            printf '%s│               │ DEV  │\n' "$p"
-            printf '%s├───────────────┤      │\n' "$p"
-            printf '%s│    INPUT      │      │\n' "$p"
-            printf '%s└───────────────┴──────┘\n' "$p"
-
-        elif [ "$show_ui" -eq 1 ] && [ "$show_status" -eq 1 ]; then
-            # CHAR + UI only (no DEV, no INPUT)
-            printf '%s┌───────────────┬──────┐\n' "$p"
-            printf '%s│               │ CHAR │\n' "$p"
-            printf '%s│     GAME      ├──────┤\n' "$p"
-            printf '%s│               │  UI  │\n' "$p"
-            printf '%s└───────────────┴──────┘\n' "$p"
-
-        elif [ "$show_status" -eq 1 ] && [ "$show_dev" -eq 1 ]; then
-            # STATUS + DEV (no UI, no INPUT)
-            printf '%s┌───────────────┬──────┐\n' "$p"
-            printf '%s│               │ CHAR │\n' "$p"
-            printf '%s│     GAME      ├──────┤\n' "$p"
-            printf '%s│               │ DEV  │\n' "$p"
-            printf '%s└───────────────┴──────┘\n' "$p"
-
-        elif [ "$show_ui" -eq 1 ] && [ "$show_dev" -eq 1 ] && [ "$show_input" -eq 1 ]; then
-            # All on — staggered separators matching actual tmux geometry
-            printf '%s┌───────────────┬──────┐\n' "$p"
-            printf '%s│               │  UI  │\n' "$p"
-            printf '%s│     GAME      │      │\n' "$p"
-            printf '%s│               ├──────┤\n' "$p"
-            printf '%s├───────────────┤      │\n' "$p"
-            printf '%s│    INPUT      │ DEV  │\n' "$p"
-            printf '%s└───────────────┴──────┘\n' "$p"
-
-        elif [ "$show_ui" -eq 1 ] && [ "$show_dev" -eq 1 ]; then
-            # UI + DEV, no INPUT
-            printf '%s┌───────────────┬──────┐\n' "$p"
-            printf '%s│               │  UI  │\n' "$p"
-            printf '%s│     GAME      ├──────┤\n' "$p"
-            printf '%s│               │ DEV  │\n' "$p"
-            printf '%s└───────────────┴──────┘\n' "$p"
-
-        elif [ "$has_right" -eq 1 ] && [ "$show_input" -eq 1 ]; then
-            # Single right pane + INPUT
-            local rl="      "
-            [ "$show_ui"     -eq 1 ] && rl="  UI  "
-            [ "$show_dev"    -eq 1 ] && rl=" DEV  "
-            [ "$show_status" -eq 1 ] && rl=" CHAR "
-            printf '%s┌───────────────┬──────┐\n' "$p"
-            printf '%s│               │      │\n' "$p"
-            printf '%s│     GAME      │%s│\n' "$p" "$rl"
-            printf '%s│               │      │\n' "$p"
-            printf '%s├───────────────┤      │\n' "$p"
-            printf '%s│    INPUT      │      │\n' "$p"
-            printf '%s└───────────────┴──────┘\n' "$p"
-
-        elif [ "$has_right" -eq 1 ]; then
-            # Single right pane, no INPUT
-            local rl="      "
-            [ "$show_ui"     -eq 1 ] && rl="  UI  "
-            [ "$show_dev"    -eq 1 ] && rl=" DEV  "
-            [ "$show_status" -eq 1 ] && rl=" CHAR "
-            printf '%s┌───────────────┬──────┐\n' "$p"
-            printf '%s│               │      │\n' "$p"
-            printf '%s│     GAME      │%s│\n' "$p" "$rl"
-            printf '%s│               │      │\n' "$p"
-            printf '%s└───────────────┴──────┘\n' "$p"
-
         elif [ "$show_input" -eq 1 ]; then
-            # No right column, with INPUT
             printf '%s┌──────────────────────┐\n' "$p"
             printf '%s│                      │\n' "$p"
             printf '%s│        GAME          │\n' "$p"
@@ -275,16 +209,13 @@ draw_layout_mockup() {
             printf '%s├──────────────────────┤\n' "$p"
             printf '%s│       INPUT          │\n' "$p"
             printf '%s└──────────────────────┘\n' "$p"
-
         else
-            # GAME only
             printf '%s┌──────────────────────┐\n' "$p"
             printf '%s│                      │\n' "$p"
             printf '%s│        GAME          │\n' "$p"
             printf '%s│                      │\n' "$p"
             printf '%s└──────────────────────┘\n' "$p"
         fi
-
         printf "${_MR_RESET}"
     }
 
@@ -297,6 +228,7 @@ draw_layout_mockup() {
     if [ "$show_desc" -eq 1 ]; then
         printf "%s  ${_MR_DESC}%-7s${_MR_RESET}  — MUD window\n"             "$p" "GAME"
         printf "%s  ${_MR_DESC}%-7s${_MR_RESET}  — Fixed input panel\n"      "$p" "INPUT"
+        printf "%s  ${_MR_DESC}%-7s${_MR_RESET}  — Comm channels\n"          "$p" "COMM"
         printf "%s  ${_MR_DESC}%-7s${_MR_RESET}  — Game-related messages\n"  "$p" "UI"
         printf "%s  ${_MR_DESC}%-7s${_MR_RESET}  — Character data panel\n"   "$p" "CHARACTER"
         printf "%s  ${_MR_DESC}%-7s${_MR_RESET}  — Debug log (developers)\n" "$p" "DEV"

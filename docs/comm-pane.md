@@ -460,13 +460,16 @@ requirement — it adapts to available width.
 
 ## Toggle
 
-| Method         | Mechanism                          |
-|----------------|------------------------------------|
-| `cp -m`        | `toggle_pane.sh comm` (runtime)    |
-| (no popup yet) | —                                  |
+| Method                            | Mechanism                                       |
+|-----------------------------------|-------------------------------------------------|
+| `cp -m`                           | `toggle_pane.sh comm` (runtime only)            |
+| In-game popup → Options           | `toggle_pane.sh comm --persist`                 |
+| Launcher Options → Comm pane      | `_save_conf` → `startup.conf show_comm`         |
 
-Persistence key: `show_comm` in `bridge/startup.conf` (not yet wired to the
-launcher startup flow; `cp -m` is runtime-only for now).
+Persistence key: `show_comm` in `bridge/startup.conf`. Fresh-install default
+is `1` (comm pane on). Existing `startup.conf` files that lack `show_comm`
+fall through to the runtime `${show_comm:-0}` guard — existing installs see
+no change.
 
 ---
 Back to [architecture.md](../architecture.md).
