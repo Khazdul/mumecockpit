@@ -50,6 +50,19 @@ if grep -qi microsoft /proc/version 2>/dev/null; then
 fi
 
 # ---------------------------------------------------------------------------
+# Determine target home directory from the password database, not $HOME.
+# When invoked via `wsl ... -- bash -c` from a Windows process, $HOME
+# may inherit a Windows path and corrupt every `~`-expansion downstream.
+TARGET_USER="$(id -un)"
+TARGET_HOME="$(getent passwd "$TARGET_USER" | cut -d: -f6)"
+if [ -z "$TARGET_HOME" ] || [ ! -d "$TARGET_HOME" ]; then
+    echo "ERROR: Could not determine a valid home directory for user $TARGET_USER." >&2
+    echo "       getent returned: $TARGET_HOME" >&2
+    exit 1
+fi
+REPO_DIR="$TARGET_HOME/MUME"
+
+# ---------------------------------------------------------------------------
 # Install packages
 # ---------------------------------------------------------------------------
 
@@ -69,24 +82,24 @@ $RUN apt-get install -y $PACKAGES
 # Clone or update the cockpit repo
 # ---------------------------------------------------------------------------
 
-if [ ! -d "$HOME/MUME" ]; then
-    git clone "$REPO_URL" "$HOME/MUME"
+if [ ! -d "$REPO_DIR" ]; then
+    git clone "$REPO_URL" "$REPO_DIR"
 else
-    echo "~/MUME already exists — pulling latest changes."
-    if ! git -C "$HOME/MUME" pull --ff-only 2>&1; then
+    echo "$REPO_DIR already exists — pulling latest changes."
+    if ! git -C "$REPO_DIR" pull --ff-only 2>&1; then
         echo "Warning: git pull failed (local changes or diverged history). Continuing with existing state." >&2
     fi
 fi
 
-chmod +x "$HOME/MUME/start.sh"
+chmod +x "$REPO_DIR/start.sh"
 
 # ---------------------------------------------------------------------------
 # Done
 # ---------------------------------------------------------------------------
 
 echo "Installation complete."
-echo "Run the cockpit with: cd ~/MUME && ./start.sh"
+echo "Run the cockpit with: cd $REPO_DIR && ./start.sh"
 
-if [ "$IS_WSL" -eq 0 ] && [ ! -f "$HOME/.config/alacritty/alacritty.toml" ]; then
-    echo "An example Alacritty config is available at ~/MUME/install/examples/alacritty.toml if you want to try it."
+if [ "$IS_WSL" -eq 0 ] && [ ! -f "$TARGET_HOME/.config/alacritty/alacritty.toml" ]; then
+    echo "An example Alacritty config is available at $REPO_DIR/install/examples/alacritty.toml if you want to try it."
 fi
