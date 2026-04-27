@@ -2,7 +2,9 @@
 # bridge/update.sh — safe self-update runner for the MUME cockpit.
 # Usage: bash bridge/update.sh
 # Exit codes: 0=updated, 10=no update, 20=dev checkout, 21=dirty tree,
-#             22=ahead of origin, 30=git failure.
+#             22=ahead of latest release tag, 30=git failure.
+# Checks out the latest release tag named in bridge/version.cache.
+# Clients end up on detached HEAD — correct for a stable install.
 # All output is a single human-friendly line; caller renders it verbatim.
 
 set -u
@@ -58,20 +60,21 @@ if [ -n "$(git ls-files --others --exclude-standard)" ]; then
     exit 21
 fi
 
-# Step 4c: local commits ahead of origin/main
-git fetch origin main --quiet 2>/dev/null || {
+# Step 4c: local commits ahead of the latest release tag
+LATEST_TAG="$latest"
+git fetch --tags --quiet 2>/dev/null || {
     echo "git fetch failed (network?)."
     exit 30
 }
-AHEAD=$(git rev-list --count origin/main..HEAD 2>/dev/null || echo "0")
+AHEAD=$(git rev-list --count "refs/tags/$LATEST_TAG"..HEAD 2>/dev/null || echo "0")
 if [ "${AHEAD:-0}" -gt 0 ]; then
-    echo "Local commits ahead of origin/main. Update refuses to discard them. Push or reset manually."
+    echo "Local commits ahead of the latest release tag. Update refuses to discard them. Push or reset manually."
     exit 22
 fi
 
-# Step 5: perform update
-git fetch origin main --tags --quiet || { echo "git fetch failed."; exit 30; }
-git reset --hard origin/main --quiet || { echo "git reset failed."; exit 30; }
+# Step 5: perform update — check out the release tag (detached HEAD is correct)
+git -c advice.detachedHead=false checkout --quiet "refs/tags/$LATEST_TAG" || { echo "git checkout failed."; exit 30; }
+git reset --hard "refs/tags/$LATEST_TAG" --quiet || { echo "git reset failed."; exit 30; }
 
 # Step 6: success
 NEW_VERSION=$(tr -d '[:space:]' < VERSION 2>/dev/null || echo "?")

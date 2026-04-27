@@ -48,14 +48,28 @@ Start/Continue/Mirror row. Selecting it runs `bridge/update.sh`, which:
      commit author in the repo history.
    - Working tree clean: no uncommitted changes, no untracked files
      outside `.gitignore`.
-   - Local commits: zero commits ahead of `origin/main`.
-3. `git fetch origin main --tags`
-4. `git reset --hard origin/main`
+   - Local commits: zero commits ahead of the latest release tag.
+3. `git fetch --tags`
+4. `git checkout` / `git reset --hard` to `refs/tags/<latest>`
 5. Prompts user to restart the launcher. Any-key press re-execs
    `launcher.sh`, loading the fresh code.
 
 Guard failure aborts with a specific exit code (20/21/22) and message.
 Git failures exit 30.
+
+**Why tag-checkout, not main-reset.** update.sh consumes exactly the same
+artifact that version_check.sh advertises — the latest GitHub release tag.
+This gives the update channel stable-release semantics: end users only ever
+see code that was explicitly tagged and released. Unreleased commits on main
+are never shipped to clients, and there is no window during which main HEAD
+could have a VERSION older than the most recent tag (which would cause an
+update loop). Developers stay on main; clients stay on tags.
+
+**Post-update repo state.** After a successful update the working tree is on
+a detached HEAD pointing at the release tag. This is intentional and not an
+error condition for end users — they track releases, not a branch. Only
+developers should ever run on a branch, and the email fingerprint guard
+already prevents them from running update.sh.
 
 The in-game popup does NOT expose an Update affordance. Update runs
 pre-tmux, from the launcher only, so the cockpit never has to deal with
@@ -65,9 +79,10 @@ mid-session binary changes.
 for active developers. If you clone on a fresh machine without setting
 `git config user.email`, guards (b) and (c) still protect against
 accidental damage. If all three guards somehow pass on a dev machine
-(unlikely) and Update runs: `git reset --hard` discards nothing that
-wasn't already pushed, but force-resets the branch pointer to
-`origin/main`. Recovery: `git reflog` still contains your old HEAD.
+(unlikely) and Update runs: the checkout discards nothing that wasn't already
+tagged, and leaves you on the release tag's detached HEAD. Recovery:
+`git reflog` still contains your old HEAD; `git checkout main` returns you
+to the branch.
 
 ## Ping monitor (`bridge/ping_monitor.sh` + `bridge/ping.cache`)
 
