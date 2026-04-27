@@ -196,12 +196,23 @@ tmux session (error is suppressed).
 **Load sequence on SESSION CONNECTED:**
 1. `sanitize_profile.sh ttpp/sessions/%0.tin` — strips any class wrapping (defensive)
 2. `#class {%0} {open}` — opens the session class
-3. `#read ttpp/sessions/%0.tin` — loads settings into the open class
+3. `#read ttpp/sessions/%0.tin` — loads profile content into the open class
+4. `#class {%0} {close}` — closes the class; subsequent registrations land in no class
+5. Register infrastructure: reconnect alias, disconnect action, `_register_mud_events`,
+   `_register_clock_actions`, `_register_affect_actions` — these are not user data
+6. `#class {%0} {open}` — re-opens the class so runtime additions during play are captured
+
+Core/script registrations after step 4 take priority over the profile on name collisions:
+stale aliases in saved profiles do not block updates to core.
 
 **Load sequence on cp -r (already-connected session):**
 1. `sanitize_profile.sh ttpp/sessions/$game_session.tin` — strips any class wrapping
 2. `#class {$game_session} {open}` — opens the session class
-3. `#read ttpp/sessions/$game_session.tin` — reloads settings
+3. `#read ttpp/sessions/$game_session.tin` — loads profile content into the open class
+4. `#class {$game_session} {close}` — closes the class; subsequent registrations land in no class
+5. Register infrastructure: `_register_mud_events`, `_register_clock_actions`,
+   `_register_affect_actions` — these are not user data
+6. `#class {$game_session} {open}` — re-opens the class so runtime additions are captured
 
 **Save sequence (cp -s and SESSION DEACTIVATED):**
 1. `#class {name} {write} {ttpp/sessions/name.tin}` — writes file with wrapping

@@ -102,9 +102,11 @@
         #system {bash $HOME/MUME/bridge/sanitize_profile.sh ttpp/sessions/$game_session.tin};
         #$game_session #class {$game_session} {open};
         #$game_session #read ttpp/sessions/$game_session.tin;
+        #$game_session #class {$game_session} {close};
         _register_mud_events $game_session;
         _register_clock_actions $game_session;
-        _register_affect_actions
+        _register_affect_actions;
+        #$game_session #class {$game_session} {open}
     };
     #showme {[COCKPIT] Full reload complete};
     #if {&game_session} {#delay {1} {#ses {$game_session}}};
@@ -146,11 +148,13 @@
             #lua {set_game_session("%0")};
             #%0 #class {%0} {open};
             #%0 #read ttpp/sessions/%0.tin;
+            #%0 #class {%0} {close};
             #%0 #alias {reconnect} {#gts reconnect};
             #%0 #action {^Status: MUME closed the connection.$} {#lua {mark_mume_disconnected()}};
             _register_mud_events %0;
             _register_clock_actions %0;
-            _register_affect_actions
+            _register_affect_actions;
+            #%0 #class {%0} {open}
         }
     }
 }
