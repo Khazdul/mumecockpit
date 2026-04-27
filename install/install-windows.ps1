@@ -97,10 +97,21 @@ Write-Host "Checking WSL Ubuntu distribution..."
 # wsl --list --quiet outputs UTF-16 with embedded null bytes on some Windows
 # versions; strip nulls before matching so the check is reliable.
 $wslList = & wsl --list --quiet 2>&1 | ForEach-Object { "$_" -replace '\x00', '' }
-$ubuntuInstalled = $wslList | Where-Object { $_ -match 'Ubuntu' }
 
-if ($ubuntuInstalled) {
-    Write-Host "Ubuntu is already registered in WSL -- skipping installation."
+# Priority: exact 'Ubuntu' > first 'Ubuntu*' match > install fresh 'Ubuntu'.
+$distroName = $null
+$exactMatch = $wslList | Where-Object { $_.Trim() -eq 'Ubuntu' } | Select-Object -First 1
+if ($exactMatch) {
+    $distroName = 'Ubuntu'
+} else {
+    $prefixMatch = $wslList | Where-Object { $_ -match '^Ubuntu' } | Select-Object -First 1
+    if ($prefixMatch) {
+        $distroName = $prefixMatch.Trim()
+    }
+}
+
+if ($distroName) {
+    Write-Host "Using WSL distribution: $distroName"
 } else {
     Write-Host "Installing Ubuntu (this may take several minutes)..."
     & wsl --install -d Ubuntu --no-launch
@@ -110,7 +121,8 @@ if ($ubuntuInstalled) {
         Write-Host "       Try running it manually in an admin PowerShell and check the output."
         exit 1
     }
-    Write-Host "Ubuntu installed."
+    $distroName = 'Ubuntu'
+    Write-Host "Using WSL distribution: $distroName"
 }
 Write-Host ""
 
@@ -169,7 +181,7 @@ Write-Host "Running Linux bootstrap inside Ubuntu (as root)..."
 Write-Host "This installs tmux, Lua, TinTin++, and the cockpit repo."
 Write-Host ""
 
-& wsl -d Ubuntu -u root -- bash -c "curl -fsSL https://raw.githubusercontent.com/Khazdul/mumecockpit/main/install/bootstrap-linux.sh | bash"
+& wsl -d $distroName -u root -- bash -c "curl -fsSL https://raw.githubusercontent.com/Khazdul/mumecockpit/main/install/bootstrap-linux.sh | bash"
 if ($LASTEXITCODE -ne 0) {
     Write-Host ""
     Write-Host "ERROR: Linux bootstrap failed (exit code $LASTEXITCODE)."
@@ -308,7 +320,7 @@ if (Test-Path $alacrittyConfigPath) {
         '',
         '[terminal.shell]',
         'program = "wsl.exe"',
-        'args = ["-d", "Ubuntu", "-u", "root"]',
+        "args = [""-d"", ""$distroName"", ""-u"", ""root""]",
         '',
         '[scrolling]',
         'history = 10000',
@@ -356,7 +368,7 @@ $shortcutPath = Join-Path ([Environment]::GetFolderPath('Desktop')) 'MUME Cockpi
 $wsh      = New-Object -ComObject WScript.Shell
 $shortcut = $wsh.CreateShortcut($shortcutPath)
 $shortcut.TargetPath   = $alacrittyExe
-$shortcut.Arguments    = '-e wsl -d Ubuntu -u root -- bash -lc "cd /root/MUME && ./start.sh"'
+$shortcut.Arguments    = "-e wsl -d $distroName -u root -- bash -lc `"cd /root/MUME && ./start.sh`""
 $shortcut.IconLocation = "$alacrittyExe,0"
 $shortcut.Save()
 Write-Host "Desktop shortcut created: $shortcutPath"
