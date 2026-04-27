@@ -1,3 +1,5 @@
+#CLASS {default} OPEN
+
 #ACTION {WARNING}
 {
     sc
@@ -1169,3 +1171,4 @@
 #VARIABLE {ss} {normal}
 #VARIABLE {target} {*orc*}
 
+#CLASS {default} CLOSE
