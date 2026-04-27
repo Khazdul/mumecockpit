@@ -151,12 +151,21 @@ cockpit handles class assignment externally. Legacy MUME settings files can
 be dropped into `ttpp/sessions/` and renamed to match the session without
 modification.
 
-**Sanitizer:** `bridge/sanitize_profile.sh <path>` strips any
-`#class {…} {open|close}` lines from a profile file in place, using an
-atomic temp-file + rename. It matches any class name (not just the session
-name) so it cleans legacy files dragged in under a different class name.
+**Sanitizer:** `bridge/sanitize_profile.sh <path>` is the boundary between
+user-editable profile files and tt++'s strict `#read` parser. It normalizes
+common file-header artifacts in place using an atomic temp-file + rename:
+
+- **UTF-8 BOM** — stripped if present in the first three bytes (VS Code on
+  Windows writes a BOM by default).
+- **CRLF / bare `\r`** — normalized to LF (same source).
+- **`#class {…} {open|close}` wrapping** — stripped (any class name, so
+  legacy files dragged in under a different class name are cleaned).
+- **Leading blank lines** — whitespace-only lines before the first non-blank
+  line are removed (tt++ rejects files that do not start with a `#` command).
+
 Non-existent path: exits 0 silently (handles first connect on a new profile).
 The script is idempotent — a second run on an already-clean file is a no-op.
+Trailing blank lines are untouched.
 
 The `mume` alias is retained as a legacy shortcut that connects as `default`
 — the game session name is always `default` unless a profile is explicitly
@@ -194,7 +203,7 @@ Standalone tt++ runs outside the cockpit are unaffected by the missing
 tmux session (error is suppressed).
 
 **Load sequence on SESSION CONNECTED:**
-1. `sanitize_profile.sh ttpp/sessions/%0.tin` — strips any class wrapping (defensive)
+1. `sanitize_profile.sh ttpp/sessions/%0.tin` — normalizes BOM, CRLF, class wrapping, leading blanks
 2. `#class {%0} {open}` — opens the session class
 3. `#read ttpp/sessions/%0.tin` — loads profile content into the open class
 4. `#class {%0} {close}` — closes the class; subsequent registrations land in no class
@@ -206,7 +215,7 @@ Core/script registrations after step 4 take priority over the profile on name co
 stale aliases in saved profiles do not block updates to core.
 
 **Load sequence on cp -r (already-connected session):**
-1. `sanitize_profile.sh ttpp/sessions/$game_session.tin` — strips any class wrapping
+1. `sanitize_profile.sh ttpp/sessions/$game_session.tin` — normalizes BOM, CRLF, class wrapping, leading blanks
 2. `#class {$game_session} {open}` — opens the session class
 3. `#read ttpp/sessions/$game_session.tin` — loads profile content into the open class
 4. `#class {$game_session} {close}` — closes the class; subsequent registrations land in no class
@@ -216,7 +225,7 @@ stale aliases in saved profiles do not block updates to core.
 
 **Save sequence (cp -s and SESSION DEACTIVATED):**
 1. `#class {name} {write} {ttpp/sessions/name.tin}` — writes file with wrapping
-2. `sanitize_profile.sh ttpp/sessions/name.tin` — strips the wrapping
+2. `sanitize_profile.sh ttpp/sessions/name.tin` — normalizes the file (strips wrapping and header artifacts)
 
 **Conventions:**
 - Never hardcode `mume` as the class name in system code — always use
