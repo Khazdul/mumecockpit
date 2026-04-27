@@ -85,6 +85,10 @@
 
 #alias {cp -r} {
     #gts;
+    #if {&game_session} {
+        #$game_session #class {$game_session} {write} {ttpp/sessions/$game_session.tin};
+        #system {bash $HOME/MUME/bridge/sanitize_profile.sh ttpp/sessions/$game_session.tin}
+    };
     #system {echo "[$(date '+%H:%M:%S')] COCKPIT RELOAD — wiping state" >> $HOME/MUME/logs/debug.log};
     #zap lua;
     #kill alias;
@@ -121,6 +125,10 @@
 
 #alias {cp -e} {
     #gts;
+    #if {&game_session} {
+        #$game_session #class {$game_session} {write} {ttpp/sessions/$game_session.tin};
+        #system {bash $HOME/MUME/bridge/sanitize_profile.sh ttpp/sessions/$game_session.tin}
+    };
     #showme {[COCKPIT] Goodbye. Shutting down client...};
     #if {&game_session} {#$game_session #zap};
     #zap
@@ -181,6 +189,13 @@
         #showme {[SYSTEM] Session %0 timed out -- returning to gts};
         #session {gts};
         #lua {clear_game_session("%0")}
+    }
+}
+
+#event {SESSION DEACTIVATED} {
+    #if {"%0" != "gts" && "%0" != "lua"} {
+        #%0 #class {%0} {write} {ttpp/sessions/%0.tin};
+        #system {bash $HOME/MUME/bridge/sanitize_profile.sh ttpp/sessions/%0.tin}
     }
 }
 
