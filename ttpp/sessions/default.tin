@@ -1,3 +1,4 @@
+
 #ACTION {A blue transparent wall slowly appears around you.}
 {
     #lua {events.emit("affect_init", "armour")}
@@ -84,7 +85,7 @@
 
 #ACTION {The dark aura surrounding you fades.}
 {
-    #lua {events.emit("affect_init", "dark aura (faded)"); events.emit("affect_down", "dark aura")}
+    #lua {events.emit("affect_down", "dark aura"); events.emit("affect_init", "dark aura (faded)")}
 }
 {3}
 
@@ -270,7 +271,7 @@
 
 #ACTION {You feel a pale surge of energy flow back into you.}
 {
-    #lua {events.emit("affect_down", "a pure white robe (pale tones)"); events.emit("affect_down", "a pitch-black robe (pale tones)")}
+    #lua {events.emit("affect_down", "a pitch-black robe (pale tones)"); events.emit("affect_down", "a pure white robe (pale tones)")}
 }
 {3}
 
@@ -354,7 +355,7 @@
 
 #ACTION {You feel less hasty.}
 {
-    #lua {events.emit("affect_init", "haste (recovery)"); events.emit("affect_down", "haste (active)")}
+    #lua {events.emit("affect_down", "haste (active)"); events.emit("affect_init", "haste (recovery)")}
 }
 {3}
 
@@ -636,7 +637,7 @@
 
 #ACTION {Your energy wanes as your second wind fades.}
 {
-    #lua {events.emit("affect_init", "winded"); events.emit("affect_down", "second wind")}
+    #lua {events.emit("affect_down", "second wind"); events.emit("affect_init", "winded")}
 }
 {3}
 
@@ -2007,6 +2008,7 @@
 #VARIABLE {sd1} {exit}
 #VARIABLE {sd2} {}
 #VARIABLE {sd3} {}
-#VARIABLE {spell} {'blindness'}
+#VARIABLE {spell} {'lightning bolt'}
 #VARIABLE {ss} {normal}
 #VARIABLE {target} {*man*}
+

@@ -1,1 +1,10 @@
-#alias {tp} {profile_version}
+
+#ALIAS {bajs}
+{
+    #showme bajskorv
+}
+
+#ALIAS {tp}
+{
+    profile_version
+}
