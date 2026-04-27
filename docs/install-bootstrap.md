@@ -60,6 +60,8 @@ machine. The installer detects which path to take via
 
 ### Fast path — WSL already active (common on modern Windows 11)
 
+Implemented in `install/install-windows.bat` + `install/install-windows.ps1`.
+
 Fully unattended, no reboot, no user interaction after the initial UAC
 prompt:
 
@@ -82,6 +84,11 @@ No reboot. No manual first-run. The user sees UAC once, a progress
 indicator, then "done".
 
 ### Slow path — VMP or WSL feature not yet enabled (rare on modern Windows 11)
+
+Not yet implemented. `install-windows.ps1` currently detects a Disabled
+`VirtualMachinePlatform` or WSL feature and exits with a clear instruction
+to run `wsl --install` manually in an admin PowerShell, reboot, and then
+re-run the installer. The resume-after-reboot flow is the next PR.
 
 Reboot required between phases because Windows features cannot be
 enabled live:
@@ -316,9 +323,10 @@ the installer.
    `libpcre2-dev`. Decided: shipping apt-only first and validating
    against real cockpit usage in WSL. Source-build fallback is parked
    until a missing feature actually surfaces.
-2. **Phase-1 delivery.** `.bat` wrapping `.ps1` is the usable answer.
-   A signed `.exe` wrapper is nicer but requires a real code-signing
-   cert ($$ per year). Defer until there are enough users to justify.
+2. **Phase-1 delivery.** ~~Resolved.~~ `.bat` wrapping `.ps1`, unsigned.
+   SmartScreen may warn on the unsigned `.ps1`; documented workaround:
+   right-click the file → Properties → Unblock, then run via the `.bat`.
+   Real code-signing deferred until user volume justifies the cost.
 3. **Where the bootstrap lives.** Top-level `install/` directory in
    the repo, separate repo, or a gist? Same repo is simplest and
    keeps versioning aligned.
