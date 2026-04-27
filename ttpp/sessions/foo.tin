@@ -3,7 +3,14 @@
     #showme bajskorv
 }
 
+#ALIAS {runtimething}
+{
+    bar
+}
+
 #ALIAS {tp}
 {
     profile_version
 }
+
+

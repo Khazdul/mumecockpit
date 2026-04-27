@@ -1153,14 +1153,13 @@
 #SUBSTITUTE {^-%1miruvor%2} {<F00aa00>%0<900>} {5}
 #SUBSTITUTE {^-%1wound%2} {<Fff0000>%0<900>} {5}
 #SUBSTITUTE {^A pair of tiny eyes gleam at you from the shadows.} {<F00ffff>%0<900>} {5}
-#TICKER {affects_tick} {#lua {_affects_tick()}} {10}
 #TICKER {clock} {#lua {state.world.clock.tick()}} {0.25}
 #VARIABLE {_sd_line} {<F9AA8B7> SD1: <FFFFFFF>exit}
 #VARIABLE {abody} {}
 #VARIABLE {acontainer} {quiver}
 #VARIABLE {arrow} {arrow}
 #VARIABLE {character} {}
-#VARIABLE {class} {thief}
+#VARIABLE {class} {caster}
 #VARIABLE {mees} {}
 #VARIABLE {ring} {rubyring}
 #VARIABLE {sd1} {exit}
@@ -1168,4 +1167,5 @@
 #VARIABLE {sd3} {}
 #VARIABLE {spell} {'lightning bolt'}
 #VARIABLE {ss} {normal}
-#VARIABLE {target} {*man*}
+#VARIABLE {target} {*orc*}
+
