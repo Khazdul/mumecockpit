@@ -251,72 +251,72 @@ if (Test-Path $alacrittyConfigPath) {
     Write-Host "Alacritty config already exists at $alacrittyConfigPath — not overwriting."
 } else {
     New-Item -ItemType Directory -Path $alacrittyConfigDir -Force | Out-Null
-    $toml = @"
-# Alacritty config — MUME Cockpit, Windows.
-# Written by install-windows.ps1. Edit freely; the installer will not touch
-# this file on subsequent runs.
-
-[colors.primary]
-foreground = "#C0C0C0"
-background = "#000000"
-
-[colors.normal]
-black   = "#000000"
-red     = "#800000"
-green   = "#008000"
-yellow  = "#808000"
-blue    = "#000080"
-magenta = "#800080"
-cyan    = "#008080"
-white   = "#C0C0C0"
-
-[colors.bright]
-black   = "#808080"
-red     = "#FF0000"
-green   = "#00FF00"
-yellow  = "#FFFF00"
-blue    = "#0000FF"
-magenta = "#FF00FF"
-cyan    = "#00FFFF"
-white   = "#FFFFFF"
-
-[cursor]
-style = { shape = "Beam", blinking = "On" }
-blink_interval = 500
-thickness = 0.15
-
-[window]
-startup_mode = "Windowed"
-padding = { x = 6, y = 6 }
-dynamic_padding = true
-decorations = "Full"
-
-[font]
-size = 15
-
-[font.normal]
-family = "Lucida Console"
-
-[font.bold]
-family = "Lucida Console"
-
-[font.italic]
-family = "Lucida Console"
-
-[font.bold_italic]
-family = "Lucida Console"
-
-[terminal.shell]
-program = "wsl.exe"
-args = ["-d", "Ubuntu", "-u", "root"]
-
-[scrolling]
-history = 10000
-
-[selection]
-save_to_clipboard = true
-"@
-    $toml | Set-Content -Path $alacrittyConfigPath -Encoding UTF8
+    $tomlLines = @(
+        '# Alacritty config - MUME Cockpit, Windows.',
+        '# Written by install-windows.ps1. Edit freely; the installer will not touch',
+        '# this file on subsequent runs.',
+        '',
+        '[colors.primary]',
+        'foreground = "#C0C0C0"',
+        'background = "#000000"',
+        '',
+        '[colors.normal]',
+        'black   = "#000000"',
+        'red     = "#800000"',
+        'green   = "#008000"',
+        'yellow  = "#808000"',
+        'blue    = "#000080"',
+        'magenta = "#800080"',
+        'cyan    = "#008080"',
+        'white   = "#C0C0C0"',
+        '',
+        '[colors.bright]',
+        'black   = "#808080"',
+        'red     = "#FF0000"',
+        'green   = "#00FF00"',
+        'yellow  = "#FFFF00"',
+        'blue    = "#0000FF"',
+        'magenta = "#FF00FF"',
+        'cyan    = "#00FFFF"',
+        'white   = "#FFFFFF"',
+        '',
+        '[cursor]',
+        'style = { shape = "Beam", blinking = "On" }',
+        'blink_interval = 500',
+        'thickness = 0.15',
+        '',
+        '[window]',
+        'startup_mode = "Windowed"',
+        'padding = { x = 6, y = 6 }',
+        'dynamic_padding = true',
+        'decorations = "Full"',
+        '',
+        '[font]',
+        'size = 15',
+        '',
+        '[font.normal]',
+        'family = "Lucida Console"',
+        '',
+        '[font.bold]',
+        'family = "Lucida Console"',
+        '',
+        '[font.italic]',
+        'family = "Lucida Console"',
+        '',
+        '[font.bold_italic]',
+        'family = "Lucida Console"',
+        '',
+        '[terminal.shell]',
+        'program = "wsl.exe"',
+        'args = ["-d", "Ubuntu", "-u", "root"]',
+        '',
+        '[scrolling]',
+        'history = 10000',
+        '',
+        '[selection]',
+        'save_to_clipboard = true'
+    )
+    $tomlLines | Set-Content -Path $alacrittyConfigPath -Encoding UTF8
     Write-Host "Wrote $alacrittyConfigPath."
 }
 Write-Host ""
