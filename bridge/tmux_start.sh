@@ -62,7 +62,8 @@ tmux new-session -d -s mume -x "$TERM_COLS" -y "$TERM_LINES" -n cockpit \
 tmux set-option -t mume status off
 tmux set-option -t mume mouse on
 
-tmux set-option -t mume pane-border-format "#{?#{==:#{pane_title},dev},#{pane_title},}"
+tmux set-option -t mume pane-border-format \
+  "#{?#{==:#{pane_title},status}, Character ,#{?#{==:#{pane_title},comm}, Communication ,#{?#{==:#{pane_title},ui}, UI ,#{?#{==:#{pane_title},dev}, Dev ,}}}}"
 if [ "$SHOW_DIVIDERS" -eq 1 ]; then
     tmux set-option -t mume pane-border-status top
     tmux set-option -t mume pane-border-style "fg=colour235"
@@ -77,9 +78,9 @@ fi
 # 3. Build layout
 # ---------------------------------------------------------------------------
 LAYOUT_CONF="bridge/layout.conf"
-[ -f "$LAYOUT_CONF" ] || printf "ui_width=33\nwindow_cols=0\nstatus_height=12\nui_height=20\n" > "$LAYOUT_CONF"
-grep -q "^window_cols="   "$LAYOUT_CONF" || echo "window_cols=0"    >> "$LAYOUT_CONF"
-grep -q "^status_height=" "$LAYOUT_CONF" || echo "status_height=12" >> "$LAYOUT_CONF"
+[ -f "$LAYOUT_CONF" ] || printf "ui_width=33\nwindow_cols=0\nstatus_height=9\nui_height=20\n" > "$LAYOUT_CONF"
+grep -q "^window_cols="   "$LAYOUT_CONF" || echo "window_cols=0"   >> "$LAYOUT_CONF"
+grep -q "^status_height=" "$LAYOUT_CONF" || echo "status_height=9" >> "$LAYOUT_CONF"
 grep -q "^ui_height="     "$LAYOUT_CONF" || echo "ui_height=20"     >> "$LAYOUT_CONF"
 source "$LAYOUT_CONF"
 LEFT_WIDTH=$(( TERM_COLS - ui_width - 1 ))
