@@ -238,8 +238,8 @@ local function _apply_room_clock(line)
         dbg("[CLOCK] room_clock skipped: precision < DAY")
         return
     end
-    -- "The current time is 8:00am."
-    local h_s, min_s, ampm = line:match("^The current time is (%d+):(%d+)(%a+)%.$")
+    -- "The current time is 2:31 am."
+    local h_s, min_s, ampm = line:match("^The current time is (%d+):(%d+)%s*(%a+)%.$")
     if not h_s then return end
     local hr_n  = _parse_hour24(h_s, ampm)
     local min_n = tonumber(min_s)

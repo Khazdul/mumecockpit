@@ -103,7 +103,7 @@ game-text forms are caught by the same tt++ pre-filter:
 Emitted by `ttpp/core/clock.tin` when the game session receives room-clock
 output. Payload is the full matched line string. Game text form:
 
-    "The current time is 8:00am."
+    "The current time is 2:31 am."
 
 **Subscribers:** `lua/core/clock.lua`.
 
