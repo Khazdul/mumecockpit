@@ -26,7 +26,7 @@ LAYOUT_CONF="$HOME/MUME/bridge/layout.conf"
 [ -f "$LAYOUT_CONF" ] || echo "ui_width=33" > "$LAYOUT_CONF"
 grep -q "^ui_height=" "$LAYOUT_CONF"     || echo "ui_height=20"    >> "$LAYOUT_CONF"
 grep -q "^comm_height=" "$LAYOUT_CONF"   || echo "comm_height=10"  >> "$LAYOUT_CONF"
-grep -q "^status_height=" "$LAYOUT_CONF" || echo "status_height=12" >> "$LAYOUT_CONF"
+grep -q "^status_height=" "$LAYOUT_CONF" || echo "status_height=9" >> "$LAYOUT_CONF"
 source "$LAYOUT_CONF"
 COLS=$(tmux display-message -p -t mume:cockpit '#{window_width}')
 LEFT=$(( COLS - ui_width - 1 ))
@@ -34,8 +34,8 @@ LEFT=$(( COLS - ui_width - 1 ))
 # Check if any right pane already exists
 HAS_RIGHT=$(tmux list-panes -t mume:cockpit -F '#{pane_title}' | grep -E '^(ui|comm|dev|status)$')
 
-# Clamp status_height to minimum 12
-STATUS_MIN_HEIGHT=12
+# Clamp status_height to minimum 9
+STATUS_MIN_HEIGHT=9
 STATUS_H_APPLY=$(( status_height > STATUS_MIN_HEIGHT ? status_height : STATUS_MIN_HEIGHT ))
 
 # Geometric helpers: pick right-column panes by vertical position.

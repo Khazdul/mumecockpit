@@ -19,8 +19,6 @@ WIDTH      = 33
 # ---------------------------------------------------------------------------
 C_LABEL  = "\x1b[38;2;154;168;183m"    # #9AA8B7 steel-blue — labels
 C_VALUE  = "\x1b[1;97m"                # bold bright white — values
-C_FRAME  = "\x1b[38;2;166;140;90m"     # muted gold — box frame
-C_TITLE  = "\x1b[1;38;2;222;184;135m"  # burlywood — header title
 C_RESET  = "\x1b[0m"
 
 C_AFFECT_SPELL  = "\x1b[38;2;122;169;214m"   # #7AA9D6 light steel-blue
@@ -178,18 +176,6 @@ def _build_frame(data):
     c = data or {}
     lines = []
 
-    # Header — blank / centered title / blank, exactly WIDTH cols each
-    blank = " " * WIDTH
-    title = "Character Panel"
-    inner = WIDTH
-    lpad  = (inner - len(title)) // 2
-    rpad  = inner - len(title) - lpad
-
-    lines.append(blank)
-    lines.append(" " * lpad + C_TITLE + title + C_RESET + " " * rpad)
-    lines.append(blank)
-
-    # Content rows
     name  = c.get("character") or "—"
     level = c.get("level")
     lines.append(_pair("Name:", name, "Lv:", level if level is not None else "—"))

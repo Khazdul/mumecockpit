@@ -14,10 +14,10 @@ local STATE_PATH  = os.getenv("HOME") .. "/MUME/bridge/status.state"
 local TMP_PATH    = STATE_PATH .. ".tmp"
 local LAYOUT_PATH = os.getenv("HOME") .. "/MUME/bridge/layout.conf"
 
--- 3 header rows + 6 fixed body rows (Name/Lv, SessXP/TP, Mood/Alert,
--- Pos/Sneak, Climb/Swim, Time). Bump when a static row is added/removed
--- in bridge/status_pane.py.
-local STATIC_ROWS = 9
+-- 6 fixed body rows (Name/Lv, SessXP/TP, Mood/Alert, Pos/Sneak,
+-- Climb/Swim, Time). Bump when a static row is added/removed in
+-- bridge/status_pane.py.
+local STATIC_ROWS = 6
 
 local _last_height = nil
 

@@ -40,7 +40,7 @@ wrapper around `state.char.reset` then calls `serialize()`, producing a single
 atomic write to `bridge/status.state` with all character fields null. The
 renderer displays `—` for null values. The `Affected by:` header and the
 4-row affect block are always rendered, so the pane height stays at
-`STATIC_ROWS + 1 + 4 = 14` within one poll tick (≤ 50 ms) — blank affect
+`STATIC_ROWS + 1 + 4 = 11` within one poll tick (≤ 50 ms) — blank affect
 rows replace any previously shown affects.
 
 `mark_mume_disconnected()` is idempotent: a duplicate signal finds
@@ -161,8 +161,6 @@ Constants defined at the top of `bridge/status_pane.py`:
 |------------------|---------------------------------|-------------------------------------|
 | `C_LABEL`        | `\x1b[38;2;154;168;183m`        | #9AA8B7 steel-blue — labels        |
 | `C_VALUE`        | `\x1b[1;97m`                    | Bold bright white — values          |
-| `C_FRAME`        | `\x1b[38;2;166;140;90m`         | Muted gold — box frame              |
-| `C_TITLE`        | `\x1b[1;38;2;222;184;135m`      | Burlywood — header title            |
 | `C_RESET`        | `\x1b[0m`                       | Reset all                           |
 | `C_AFFECT_SPELL` | `\x1b[38;2;122;169;214m`        | #7AA9D6 light steel-blue — spell affects |
 | `C_AFFECT_BUFF`  | `\x1b[38;2;143;188;143m`        | #8FBC8F soft sage green — buff affects  |
@@ -170,16 +168,12 @@ Constants defined at the top of `bridge/status_pane.py`:
 | `C_SUN`          | `\x1b[38;2;255;176;0m`          | #FFB000 intense amber gold — ☼ sun icon (upcoming day) |
 | `C_MOON`         | `\x1b[38;2;74;144;226m`         | #4A90E2 vivid sky blue — ☾ moon icon (upcoming night) |
 
-## Header
+## Identity
 
-Three rows: blank / centered title / blank. No border characters.
-
-```
-        Character Panel
-```
-
-Title in `C_TITLE` on row 2, between two blank rows. `C_FRAME` is defined but
-not used in the header.
+The pane title is `status` (set via `select-pane -T`). The tmux
+`pane-border-format` in `bridge/tmux_start.sh` maps the `status` title to the
+label ` Character ` displayed in the top pane border. No header rows are
+rendered inside the pane content.
 
 ## Field layout
 
@@ -222,11 +216,10 @@ is absent); dev is always at the bottom.
 
 ### Pane height
 
-`status_height=12` in `bridge/layout.conf` (3 header + 9 body rows). In phase 1
-this value is fixed at 12 (matches rendered content). The char↔ui top border is
-not user-resizable — dragging it snaps back without persisting any change;
-`status_height` is never overwritten by a drag. Phase 2 will drive this
-dynamically from `lua/core/status_state.lua` based on affect count.
+`status_height=9` in `bridge/layout.conf` (9 body rows, no header). The pane
+identity is shown in the tmux border label instead. `status_height` is driven
+dynamically by `lua/core/status_state.lua` based on affect count; 9 is the
+cold-start default before the first Lua serialise fires.
 
 `bridge/apply_layout.sh` owns all right-column heights. It applies
 `ui_height` first (clamped so dev keeps ≥ 1 row when present), then
@@ -259,7 +252,7 @@ narrow), it widens the column automatically provided main can stay ≥ 30 cols.
 ui-first: `ui_height` is applied first (clamped so dev keeps ≥ 1 row when
 present), then `status_height`; dev receives the residual. This order ensures
 tmux propagates tight-height squeezes char → ui → dev. Both `ui_height`
-(default 20) and `status_height` (fixed 12 in phase 1) live in `layout.conf`.
+(default 20) and `status_height` (default 9) live in `layout.conf`.
 Every right-column operation ends with a call to `apply_layout.sh`.
 
 ## Toggle
@@ -391,9 +384,10 @@ order as-is.
 status_height = STATIC_ROWS + 1 + max(4, ceil(N / 2))
 ```
 
-- `STATIC_ROWS`: count of always-rendered rows (3 header rows + 6 fixed body
-  rows) — currently `9`. Lives in `lua/core/status_state.lua`; bump whenever
-  a static body row is added or removed in `bridge/status_pane.py`.
+- `STATIC_ROWS`: count of always-rendered body rows (Name/Lv, SessXP/TP,
+  Mood/Alert, Pos/Sneak, Climb/Swim, Time) — currently `6`. Lives in
+  `lua/core/status_state.lua`; bump whenever a static body row is added or
+  removed in `bridge/status_pane.py`.
 - `+ 1`: the always-rendered `Affected by:` header row.
 - `max(4, …)`: height is stable for N ≤ 8 (minimum 4 affect rows = height
   14). For N > 8, height grows by one row per two additional affects.
