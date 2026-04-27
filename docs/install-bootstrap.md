@@ -55,7 +55,7 @@ Windows older than build 22621 is not supported. See the Scope section above.
 
 ## Windows flow
 
-Implemented in `install/install-windows.bat` + `install/install-windows.ps1`.
+Implemented in `install/cockpit-installer.bat` + `install/installer-core.ps1`.
 
 Requires WSL2 to already be enabled (`VirtualMachinePlatform` and
 `Microsoft-Windows-Subsystem-Linux` features active). If either is disabled,
@@ -84,11 +84,13 @@ indicator, then "done".
 
 ### Delivery form
 
-A single PowerShell `.ps1` wrapped in a `.bat` that sets execution policy
-and invokes the script. The Linux bootstrap is fetched via curl from the
-repo and piped into `wsl ... -u root bash`. Unsigned; SmartScreen may warn
-on first run — documented workaround: right-click the `.ps1`, Properties,
-Unblock, then run via the `.bat`.
+User-facing entry point: `cockpit-installer.bat` (double-click to run).
+Internal PowerShell script: `installer-core.ps1` (invoked by the `.bat`
+after UAC elevation; not meant to be run directly). The Linux bootstrap
+is fetched via curl from the repo and piped into `wsl ... -u root bash`.
+Unsigned; SmartScreen may warn on first run — documented workaround:
+right-click `installer-core.ps1`, Properties, Unblock, then run via
+`cockpit-installer.bat`.
 
 ## macOS flow
 

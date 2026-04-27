@@ -1,15 +1,15 @@
-# install-windows.ps1 -- MUME Cockpit Windows installer
+# installer-core.ps1 -- MUME Cockpit Windows installer
 #
 # Requires Windows 11 22H2 (build 22621) or newer. Older Windows is rejected
 # at pre-flight because WSL2 mirrored networking -- required for MMapper mode
 # -- is not available on earlier builds.
 #
-# Run via install-windows.bat, which handles UAC elevation automatically.
+# Run via cockpit-installer.bat, which handles UAC elevation automatically.
 # Safe to re-run: every step checks state before acting, so a second run
 # on the same machine produces no destructive changes.
 #
 # To start over: delete the desktop shortcut, run 'wsl --unregister Ubuntu'
-# in an admin PowerShell, then double-click install-windows.bat again.
+# in an admin PowerShell, then double-click cockpit-installer.bat again.
 
 Write-Host ""
 Write-Host "MUME Cockpit -- Windows Installer"
@@ -23,7 +23,7 @@ Write-Host ""
 $principal = [Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
 if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
     Write-Host "ERROR: This script must be run as Administrator."
-    Write-Host "       Double-click install-windows.bat instead of running this .ps1 directly."
+    Write-Host "       Double-click cockpit-installer.bat instead of running this .ps1 directly."
     exit 1
 }
 
@@ -259,7 +259,7 @@ if (Test-Path $alacrittyConfigPath) {
     New-Item -ItemType Directory -Path $alacrittyConfigDir -Force | Out-Null
     $tomlLines = @(
         '# Alacritty config - MUME Cockpit, Windows.',
-        '# Written by install-windows.ps1. Edit freely; the installer will not touch',
+        '# Written by installer-core.ps1. Edit freely; the installer will not touch',
         '# this file on subsequent runs.',
         '',
         '[colors.primary]',
