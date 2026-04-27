@@ -335,7 +335,7 @@ Deferred until there's a concrete use case:
 - Live script dashboard (IDLE / RUNNING / FIRING tags)
 - Stop-all-scripts emergency button
 - Pane dimming for inactive panes
-- Windows slow path (enabling VirtualMachinePlatform + resume-after-reboot) and MMapper auto-detection — Linux, macOS, and Windows fast path are implemented; see `docs/install-bootstrap.md`.
+- MMapper auto-detection (probe `localhost:4242` from WSL, default `connection_mode` accordingly) — see `docs/install-bootstrap.md`.
 
 ## See also
 

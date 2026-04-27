@@ -1,15 +1,17 @@
 # Install & Bootstrap
 
-Plan for cross-platform one-click installation of the MUME cockpit. Windows
-is the primary target — the only platform with current or prospective users
-who cannot be expected to drive a terminal manually. macOS and Linux are
-documented for completeness and to keep the install story honest.
-
-This is a **plan document**. Nothing here is implemented yet. Touch this
-file when the installer work is scheduled, when a platform constraint
-changes, or when decisions in "Open questions" are resolved.
+Cross-platform installation of the MUME cockpit. Windows is the primary
+target — the only platform with current or prospective users who cannot be
+expected to drive a terminal manually. macOS and Linux are documented for
+completeness and to keep the install story honest.
 
 ## Scope
+
+**Windows support is limited to Windows 11 22H2 (build 22621) or newer.**
+This is a deliberate floor, not a placeholder — the cockpit's MMapper
+integration requires WSL2 mirrored networking, which is only available on
+22H2+. See [ADR 0015](decisions/0015-windows-installer-scope.md) for the
+full rationale and alternatives considered.
 
 **In scope**
 
@@ -29,7 +31,7 @@ changes, or when decisions in "Open questions" are resolved.
   installer will *detect* MMapper (see Open questions) and default
   `connection_mode` accordingly, but it will not install or configure
   MMapper.
-- Auto-upgrading Windows. Required version floors are hard prerequisites,
+- Auto-upgrading Windows. The 22H2 floor is a hard prerequisite,
   documented below.
 - Unattended installs in corporate-locked environments.
 
@@ -45,36 +47,33 @@ platform.
 | OS                             | Target                                                        | Priority |
 |--------------------------------|---------------------------------------------------------------|----------|
 | Windows 11 (22H2+)             | Primary                                                       | 1        |
-| Windows 10 (build 19041+)      | Secondary — no mirrored networking, must use direct mode      | 2        |
-| macOS (Apple Silicon or Intel) | Supported                                                     | 3        |
-| Linux, Debian/Ubuntu family    | Supported                                                     | 3        |
-| Linux, other distros           | Manual install; documented only                               | 4        |
+| macOS (Apple Silicon or Intel) | Supported                                                     | 2        |
+| Linux, Debian/Ubuntu family    | Supported                                                     | 2        |
+| Linux, other distros           | Manual install; documented only                               | 3        |
 
-Windows older than build 19041 is unsupported — WSL2 requires that baseline.
+Windows older than build 22621 is not supported. See the Scope section above.
 
 ## Windows flow
 
-Two realistic paths depending on whether WSL is already active on the
-machine. The installer detects which path to take via
-`Get-WindowsOptionalFeature -FeatureName VirtualMachinePlatform`.
-
-### Fast path — WSL already active (common on modern Windows 11)
-
 Implemented in `install/install-windows.bat` + `install/install-windows.ps1`.
 
-Fully unattended, no reboot, no user interaction after the initial UAC
-prompt:
+Requires WSL2 to already be enabled (`VirtualMachinePlatform` and
+`Microsoft-Windows-Subsystem-Linux` features active). If either is disabled,
+the installer exits with instructions to run `wsl --install` in an admin
+PowerShell, reboot, then re-run.
 
-1. Pre-flight: Windows build ≥ 19041, admin rights, internet reachable.
+Fully unattended beyond the initial UAC prompt:
+
+1. Pre-flight: Windows build ≥ 22621, admin rights, WSL features enabled,
+   internet reachable.
 2. `wsl --install -d Ubuntu --no-launch` — installs Ubuntu 24.04 silently,
    does **not** trigger the first-run OOBE dialog.
-3. Write `%UserProfile%\.wslconfig` with `networkingMode=mirrored` (Windows
-   11 22H2+ only).
+3. Write `%UserProfile%\.wslconfig` with `networkingMode=mirrored`.
 4. `wsl --shutdown` so the `.wslconfig` change takes effect.
 5. `wsl -d Ubuntu -u root -- bash -c "<bootstrap.sh contents>"` — runs
-   Phase 2 as root. Running as root inside WSL is fine here: the cockpit
-   has no multi-user logic and no sudo paths. The OOBE user-creation
-   dialog is never triggered.
+   the Linux bootstrap as root. Running as root inside WSL is fine here:
+   the cockpit has no multi-user logic and no sudo paths. The OOBE
+   user-creation dialog is never triggered.
 6. Install Alacritty (winget, MSI fallback) and write
    `%APPDATA%\alacritty\alacritty.toml`.
 7. Create a desktop shortcut that runs:
@@ -83,33 +82,13 @@ prompt:
 No reboot. No manual first-run. The user sees UAC once, a progress
 indicator, then "done".
 
-### Slow path — VMP or WSL feature not yet enabled (rare on modern Windows 11)
-
-Not yet implemented. `install-windows.ps1` currently detects a Disabled
-`VirtualMachinePlatform` or WSL feature and exits with a clear instruction
-to run `wsl --install` manually in an admin PowerShell, reboot, and then
-re-run the installer. The resume-after-reboot flow is the next PR.
-
-Reboot required between phases because Windows features cannot be
-enabled live:
-
-1. Pre-flight as above.
-2. Enable `VirtualMachinePlatform` and `Microsoft-Windows-Subsystem-Linux`
-   via `dism` or `Enable-WindowsOptionalFeature`.
-3. Clear instruction to reboot, with the installer writing a marker file
-   so re-running it after reboot resumes at step 4 automatically.
-4. After reboot: continue with the fast path from step 2.
-
-Resume-after-reboot is done by checking for a marker file at launch, not
-by scheduled tasks (scheduled tasks trigger antivirus friction). User
-re-runs the shortcut once; installer detects marker, continues.
-
 ### Delivery form
 
-Phase 1 is a single PowerShell `.ps1` wrapped in a `.bat` that sets
-execution policy and invokes the script. Phase 2 is a shell script fetched
-via curl from the repo and piped into `wsl ... -u root bash`. See Open
-questions for code-signing vs unblock-on-first-run.
+A single PowerShell `.ps1` wrapped in a `.bat` that sets execution policy
+and invokes the script. The Linux bootstrap is fetched via curl from the
+repo and piped into `wsl ... -u root bash`. Unsigned; SmartScreen may warn
+on first run — documented workaround: right-click the `.ps1`, Properties,
+Unblock, then run via the `.bat`.
 
 ## macOS flow
 
@@ -250,15 +229,6 @@ the installer.
 
 ### Windows
 
-- **Reboot only in the slow path.** On modern Windows 11 with WSL already
-  active — the common case — `wsl --install -d Ubuntu --no-launch` runs
-  without a reboot and the entire flow is unattended. Reboot is only
-  required when `VirtualMachinePlatform` or the WSL feature itself has to
-  be enabled from scratch. The installer detects this and branches.
-- **`networkingMode=mirrored` is Windows 11-only (22H2+).** Windows 10
-  users cannot use MMapper mode with this approach. The installer must
-  detect the OS build and pin `connection_mode=direct` in
-  `bridge/startup.conf` on older Windows.
 - **SmartScreen will warn on unsigned PowerShell.** Real code-signing
   certs are expensive and probably overkill. Documented workaround:
   right-click the `.ps1`, Properties, Unblock, then run as admin. The
@@ -274,8 +244,8 @@ the installer.
   MMapper's map download or MUME routing config. The existing launcher
   already lets the user switch between MMapper and direct mode, which
   covers this cleanly.
-- **`winget` is not everywhere.** Pre-1809 Windows 10 lacks it;
-  policy-managed machines sometimes disable it. MSI fallback needed.
+- **`winget` not available on policy-managed machines.** MSI fallback
+  handles this case automatically.
 - **tt++ apt version may be stale.** If Ubuntu 24.04's `tintin++`
   package is too old for our needs, we fall back to source build —
   adds `libpcre2-dev` and a few minutes of compile time.
@@ -308,7 +278,7 @@ the installer.
 ### All platforms
 
 - **Repo path hardcoded.** `~/MUME` (or `/root/MUME` on Windows/WSL-as-root)
-  in the desktop shortcut and Phase 2 script. Custom paths are a v2
+  in the desktop shortcut and bootstrap script. Custom paths are a v2
   problem — document as a constraint.
 - **Collision with `bridge/update.sh`.** Self-update expects a clean
   git tree. If the installer ever gains a "repair" mode, it must not
@@ -318,37 +288,26 @@ the installer.
 ## Open questions
 
 1. **Packaged tt++ version.** Is `tintin++` in Ubuntu 24.04's apt
-   recent enough for our needs? If yes, Phase 2 stays short. If no,
+   recent enough for our needs? If yes, the bootstrap stays short. If no,
    we add a source-build path and bring in `build-essential` +
    `libpcre2-dev`. Decided: shipping apt-only first and validating
    against real cockpit usage in WSL. Source-build fallback is parked
    until a missing feature actually surfaces.
-2. **Phase-1 delivery.** ~~Resolved.~~ `.bat` wrapping `.ps1`, unsigned.
-   SmartScreen may warn on the unsigned `.ps1`; documented workaround:
-   right-click the file → Properties → Unblock, then run via the `.bat`.
-   Real code-signing deferred until user volume justifies the cost.
-3. **Where the bootstrap lives.** Top-level `install/` directory in
-   the repo, separate repo, or a gist? Same repo is simplest and
-   keeps versioning aligned.
-4. **MMapper detection.** Detect MMapper's presence on the Windows
-   host from WSL (probe `localhost:4242` during Phase 2) and default
+2. **MMapper detection.** Detect MMapper's presence on the Windows
+   host from WSL (probe `localhost:4242` during the bootstrap) and default
    `connection_mode` accordingly? Low effort, high user value.
-5. **Retire `misc/`.** This doc absorbs `misc/WSL and Terminal
+3. **Retire `misc/`.** This doc absorbs `misc/WSL and Terminal
    settings`. Once the installer ships, delete the `misc/` directory
    to remove duplication.
 
 ## Rollout phases
 
-Suggested sequence; each a separate chunk of work:
-
-1. **macOS + Linux bootstrap script.** Trivial, proves the model,
-   useful immediately for any non-Windows contributors.
-2. **Windows Phase 2 (`bootstrap.sh` inside Ubuntu).** Reusable
-   regardless of how Phase 1 is delivered; worth building first.
-3. **Windows Phase 1 (`.ps1` + `.bat`).** Depends on 2. Starts with the
-   fast path; slow path + resume-after-reboot added as a follow-up.
-4. **Desktop shortcut + Alacritty config writer.** Integrates with 3.
-5. **MMapper auto-detection + default `connection_mode`.** Polish.
+1. **macOS + Linux bootstrap script.** Done.
+2. **Windows installer** (`.ps1` + `.bat`, Ubuntu install, `.wslconfig`,
+   Alacritty, desktop shortcut). Done. Windows 11 22H2+ only; slow path
+   is explicitly out of scope, not deferred — see
+   [ADR 0015](decisions/0015-windows-installer-scope.md).
+3. **MMapper auto-detection + default `connection_mode`.** Next polish item.
 
 ## See also
 
@@ -360,3 +319,5 @@ Suggested sequence; each a separate chunk of work:
   `update.sh` behaviour and exit codes.
 - `docs/input-pane.md` — prompt_toolkit and cursor-blink caveats
   relevant to the Alacritty config choices above.
+- [ADR 0015](decisions/0015-windows-installer-scope.md) — scope decision
+  for the Windows installer: why 22H2+, what was considered and rejected.

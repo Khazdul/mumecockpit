@@ -1,4 +1,8 @@
-# install-windows.ps1 -- MUME Cockpit Windows installer (fast path)
+# install-windows.ps1 -- MUME Cockpit Windows installer
+#
+# Requires Windows 11 22H2 (build 22621) or newer. Older Windows is rejected
+# at pre-flight because WSL2 mirrored networking -- required for MMapper mode
+# -- is not available on earlier builds.
 #
 # Run via install-windows.bat, which handles UAC elevation automatically.
 # Safe to re-run: every step checks state before acting, so a second run
@@ -23,40 +27,47 @@ if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administra
     exit 1
 }
 
-# Windows build -- WSL2 requires 19041+.
+# Windows build -- mirrored networking requires Windows 11 22H2 (build 22621)+.
 $build = [Environment]::OSVersion.Version.Build
 Write-Host "Windows build: $build"
-if ($build -lt 19041) {
+if ($build -lt 22621) {
     Write-Host ""
-    Write-Host "ERROR: Your Windows version (build $build) is not supported."
-    Write-Host "       WSL2 requires Windows 10 build 19041 or newer."
+    Write-Host "ERROR: This installer requires Windows 11 22H2 (build 22621) or newer."
+    Write-Host "       Detected build: $build."
+    Write-Host "       The cockpit needs WSL2 mirrored networking for MMapper mode,"
+    Write-Host "       which is only available on Windows 11 22H2+. Older versions"
+    Write-Host "       of Windows are not supported."
+    Write-Host ""
+    Write-Host "       If you only intend to play in direct mode (no MMapper), you"
+    Write-Host "       can install the cockpit manually inside WSL using"
+    Write-Host "       install/bootstrap-linux.sh -- but the desktop shortcut and"
+    Write-Host "       Alacritty config must then be set up by hand."
     exit 1
 }
 
-# VirtualMachinePlatform and WSL feature -- if either is Disabled the machine
-# needs a reboot to enable them, which the fast-path installer cannot do.
+# VirtualMachinePlatform and WSL feature -- a Win 11 22H2 machine can still
+# have WSL disabled (uncommon but possible). Instruct the user to enable it
+# manually and re-run.
 Write-Host "Checking WSL prerequisites..."
 $vmp = Get-WindowsOptionalFeature -Online -FeatureName VirtualMachinePlatform
 if ($vmp.State -ne 'Enabled') {
     Write-Host ""
-    Write-Host "WSL2 is not enabled on this machine. The slow-path installer that"
-    Write-Host "handles this case is not yet available. For now, run:"
+    Write-Host "WSL2 is not enabled on this machine. Enable it first by running:"
     Write-Host ""
     Write-Host "    wsl --install"
     Write-Host ""
-    Write-Host "in an admin PowerShell, reboot, then re-run this installer."
+    Write-Host "in an admin PowerShell, then reboot, and re-run this installer."
     exit 1
 }
 
 $wslFeature = Get-WindowsOptionalFeature -Online -FeatureName Microsoft-Windows-Subsystem-Linux
 if ($wslFeature.State -ne 'Enabled') {
     Write-Host ""
-    Write-Host "WSL2 is not enabled on this machine. The slow-path installer that"
-    Write-Host "handles this case is not yet available. For now, run:"
+    Write-Host "WSL2 is not enabled on this machine. Enable it first by running:"
     Write-Host ""
     Write-Host "    wsl --install"
     Write-Host ""
-    Write-Host "in an admin PowerShell, reboot, then re-run this installer."
+    Write-Host "in an admin PowerShell, then reboot, and re-run this installer."
     exit 1
 }
 
@@ -74,20 +85,7 @@ try {
 Write-Host "Pre-flight checks passed."
 Write-Host ""
 
-# -- Step 2: Detect Windows 11 22H2+ -----------------------------------------
-#
-# networkingMode=mirrored requires build 22621 (Windows 11 22H2) or newer.
-# On older Windows, MMapper mode is unavailable; the user must use direct mode.
-
-$useMirrored = ($build -ge 22621)
-if ($useMirrored) {
-    Write-Host "Windows 11 22H2+ detected -- mirrored networking will be configured."
-} else {
-    Write-Host "Pre-22H2 Windows detected -- mirrored networking is not available."
-}
-Write-Host ""
-
-# -- Step 3: Install Ubuntu ---------------------------------------------------
+# -- Step 2: Install Ubuntu ---------------------------------------------------
 #
 # --no-launch is critical: without it, wsl --install opens the Ubuntu OOBE
 # first-run dialog and blocks the script waiting for a username and password.
@@ -126,39 +124,36 @@ if ($distroName) {
 }
 Write-Host ""
 
-# -- Step 4: Write %UserProfile%\.wslconfig -----------------------------------
+# -- Step 3: Write %UserProfile%\.wslconfig -----------------------------------
 #
 # networkingMode=mirrored lets processes inside WSL reach services listening
 # on localhost on the Windows host (e.g. MMapper on port 4242).
-# Only write on Windows 11 22H2+; the setting is silently ignored on older
-# builds but we avoid writing a confusing config on machines that can't use it.
+# All supported builds (22H2+) support this setting.
 #
 # Never overwrite an existing .wslconfig -- the user's existing config is theirs.
 
 $wroteWslConfig = $false
-if ($useMirrored) {
-    $wslConfigPath = Join-Path $env:USERPROFILE '.wslconfig'
-    if (Test-Path $wslConfigPath) {
-        $existing = Get-Content $wslConfigPath -Raw
-        if ($existing -match 'networkingMode\s*=\s*mirrored') {
-            Write-Host ".wslconfig already contains networkingMode=mirrored -- skipping."
-        } else {
-            Write-Host ""
-            Write-Host "WARNING: $wslConfigPath already exists with different contents."
-            Write-Host "         It has not been modified. For MMapper mode to work, add"
-            Write-Host "         the following line under [wsl2] in that file manually:"
-            Write-Host ""
-            Write-Host "             networkingMode=mirrored"
-            Write-Host ""
-        }
+$wslConfigPath = Join-Path $env:USERPROFILE '.wslconfig'
+if (Test-Path $wslConfigPath) {
+    $existing = Get-Content $wslConfigPath -Raw
+    if ($existing -match 'networkingMode\s*=\s*mirrored') {
+        Write-Host ".wslconfig already contains networkingMode=mirrored -- skipping."
     } else {
-        "[wsl2]`r`nnetworkingMode=mirrored" | Set-Content -Path $wslConfigPath -Encoding UTF8
-        Write-Host "Wrote $wslConfigPath with networkingMode=mirrored."
-        $wroteWslConfig = $true
+        Write-Host ""
+        Write-Host "WARNING: $wslConfigPath already exists with different contents."
+        Write-Host "         It has not been modified. For MMapper mode to work, add"
+        Write-Host "         the following line under [wsl2] in that file manually:"
+        Write-Host ""
+        Write-Host "             networkingMode=mirrored"
+        Write-Host ""
     }
+} else {
+    "[wsl2]`r`nnetworkingMode=mirrored" | Set-Content -Path $wslConfigPath -Encoding UTF8
+    Write-Host "Wrote $wslConfigPath with networkingMode=mirrored."
+    $wroteWslConfig = $true
 }
 
-# -- Step 5: Cycle WSL --------------------------------------------------------
+# -- Step 4: Cycle WSL --------------------------------------------------------
 #
 # .wslconfig changes only take effect after a full WSL shutdown.
 # Skip if we did not write the file -- no need to interrupt a running WSL.
@@ -170,7 +165,7 @@ if ($wroteWslConfig) {
 }
 Write-Host ""
 
-# -- Step 6: Run Linux bootstrap ----------------------------------------------
+# -- Step 5: Run Linux bootstrap ----------------------------------------------
 #
 # All Linux-side provisioning (tmux, Lua, TinTin++, Python, repo clone) is
 # delegated to bootstrap-linux.sh, which already exists and is tested.
@@ -193,10 +188,9 @@ Write-Host ""
 Write-Host "Linux bootstrap complete."
 Write-Host ""
 
-# -- Step 7: Install Alacritty ------------------------------------------------
+# -- Step 6: Install Alacritty ------------------------------------------------
 #
-# Prefer winget (present on Windows 10 1809+ and Windows 11).
-# Fall back to downloading the MSI from the latest GitHub release.
+# Prefer winget; fall back to downloading the MSI from the latest GitHub release.
 # Skip entirely if alacritty is already on PATH.
 
 Write-Host "Checking Alacritty..."
@@ -251,7 +245,7 @@ if ($alacrittyCmd) {
 }
 Write-Host ""
 
-# -- Step 8: Write %APPDATA%\alacritty\alacritty.toml -------------------------
+# -- Step 7: Write %APPDATA%\alacritty\alacritty.toml -------------------------
 #
 # Write the canonical Windows config only if no config file exists yet.
 # The user's existing alacritty.toml is never overwritten.
@@ -333,7 +327,7 @@ if (Test-Path $alacrittyConfigPath) {
 }
 Write-Host ""
 
-# -- Step 9: Create desktop shortcut ------------------------------------------
+# -- Step 8: Create desktop shortcut ------------------------------------------
 #
 # Overwrites any existing shortcut -- it is a regenerable artifact, not user
 # state. Resolves alacritty.exe via Get-Command so the path is correct
@@ -374,17 +368,9 @@ $shortcut.Save()
 Write-Host "Desktop shortcut created: $shortcutPath"
 Write-Host ""
 
-# -- Step 10: Done ------------------------------------------------------------
+# -- Step 9: Done ------------------------------------------------------------
 
 Write-Host "Installation complete."
 Write-Host "A ""MUME Cockpit"" shortcut has been added to your desktop."
 Write-Host "Double-click it to launch."
-
-if (-not $useMirrored) {
-    Write-Host ""
-    Write-Host "Note: MMapper mode requires 'networkingMode=mirrored' in .wslconfig,"
-    Write-Host "which is only available on Windows 11 22H2 (build 22621) or newer."
-    Write-Host "Your Windows version does not support it. You can play in direct mode."
-    Write-Host "See docs/install-bootstrap.md for details."
-}
 Write-Host ""
