@@ -1,4 +1,4 @@
-# install-windows.ps1 — MUME Cockpit Windows installer (fast path)
+# install-windows.ps1 -- MUME Cockpit Windows installer (fast path)
 #
 # Run via install-windows.bat, which handles UAC elevation automatically.
 # Safe to re-run: every step checks state before acting, so a second run
@@ -8,13 +8,13 @@
 # in an admin PowerShell, then double-click install-windows.bat again.
 
 Write-Host ""
-Write-Host "MUME Cockpit — Windows Installer"
+Write-Host "MUME Cockpit -- Windows Installer"
 Write-Host "================================="
 Write-Host ""
 
-# ── Step 1: Pre-flight checks ────────────────────────────────────────────────
+# -- Step 1: Pre-flight checks ------------------------------------------------
 
-# Elevation — should always pass when launched via the .bat, but checked
+# Elevation -- should always pass when launched via the .bat, but checked
 # here as defence in depth in case someone runs the .ps1 directly.
 $principal = [Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
 if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
@@ -23,7 +23,7 @@ if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administra
     exit 1
 }
 
-# Windows build — WSL2 requires 19041+.
+# Windows build -- WSL2 requires 19041+.
 $build = [Environment]::OSVersion.Version.Build
 Write-Host "Windows build: $build"
 if ($build -lt 19041) {
@@ -33,7 +33,7 @@ if ($build -lt 19041) {
     exit 1
 }
 
-# VirtualMachinePlatform and WSL feature — if either is Disabled the machine
+# VirtualMachinePlatform and WSL feature -- if either is Disabled the machine
 # needs a reboot to enable them, which the fast-path installer cannot do.
 Write-Host "Checking WSL prerequisites..."
 $vmp = Get-WindowsOptionalFeature -Online -FeatureName VirtualMachinePlatform
@@ -74,20 +74,20 @@ try {
 Write-Host "Pre-flight checks passed."
 Write-Host ""
 
-# ── Step 2: Detect Windows 11 22H2+ ─────────────────────────────────────────
+# -- Step 2: Detect Windows 11 22H2+ -----------------------------------------
 #
 # networkingMode=mirrored requires build 22621 (Windows 11 22H2) or newer.
 # On older Windows, MMapper mode is unavailable; the user must use direct mode.
 
 $useMirrored = ($build -ge 22621)
 if ($useMirrored) {
-    Write-Host "Windows 11 22H2+ detected — mirrored networking will be configured."
+    Write-Host "Windows 11 22H2+ detected -- mirrored networking will be configured."
 } else {
-    Write-Host "Pre-22H2 Windows detected — mirrored networking is not available."
+    Write-Host "Pre-22H2 Windows detected -- mirrored networking is not available."
 }
 Write-Host ""
 
-# ── Step 3: Install Ubuntu ───────────────────────────────────────────────────
+# -- Step 3: Install Ubuntu ---------------------------------------------------
 #
 # --no-launch is critical: without it, wsl --install opens the Ubuntu OOBE
 # first-run dialog and blocks the script waiting for a username and password.
@@ -100,7 +100,7 @@ $wslList = & wsl --list --quiet 2>&1 | ForEach-Object { "$_" -replace '\x00', ''
 $ubuntuInstalled = $wslList | Where-Object { $_ -match 'Ubuntu' }
 
 if ($ubuntuInstalled) {
-    Write-Host "Ubuntu is already registered in WSL — skipping installation."
+    Write-Host "Ubuntu is already registered in WSL -- skipping installation."
 } else {
     Write-Host "Installing Ubuntu (this may take several minutes)..."
     & wsl --install -d Ubuntu --no-launch
@@ -114,14 +114,14 @@ if ($ubuntuInstalled) {
 }
 Write-Host ""
 
-# ── Step 4: Write %UserProfile%\.wslconfig ───────────────────────────────────
+# -- Step 4: Write %UserProfile%\.wslconfig -----------------------------------
 #
 # networkingMode=mirrored lets processes inside WSL reach services listening
 # on localhost on the Windows host (e.g. MMapper on port 4242).
 # Only write on Windows 11 22H2+; the setting is silently ignored on older
 # builds but we avoid writing a confusing config on machines that can't use it.
 #
-# Never overwrite an existing .wslconfig — the user's existing config is theirs.
+# Never overwrite an existing .wslconfig -- the user's existing config is theirs.
 
 $wroteWslConfig = $false
 if ($useMirrored) {
@@ -129,7 +129,7 @@ if ($useMirrored) {
     if (Test-Path $wslConfigPath) {
         $existing = Get-Content $wslConfigPath -Raw
         if ($existing -match 'networkingMode\s*=\s*mirrored') {
-            Write-Host ".wslconfig already contains networkingMode=mirrored — skipping."
+            Write-Host ".wslconfig already contains networkingMode=mirrored -- skipping."
         } else {
             Write-Host ""
             Write-Host "WARNING: $wslConfigPath already exists with different contents."
@@ -146,10 +146,10 @@ if ($useMirrored) {
     }
 }
 
-# ── Step 5: Cycle WSL ────────────────────────────────────────────────────────
+# -- Step 5: Cycle WSL --------------------------------------------------------
 #
 # .wslconfig changes only take effect after a full WSL shutdown.
-# Skip if we did not write the file — no need to interrupt a running WSL.
+# Skip if we did not write the file -- no need to interrupt a running WSL.
 
 if ($wroteWslConfig) {
     Write-Host "Restarting WSL so .wslconfig takes effect..."
@@ -158,7 +158,7 @@ if ($wroteWslConfig) {
 }
 Write-Host ""
 
-# ── Step 6: Run Linux bootstrap ──────────────────────────────────────────────
+# -- Step 6: Run Linux bootstrap ----------------------------------------------
 #
 # All Linux-side provisioning (tmux, Lua, TinTin++, Python, repo clone) is
 # delegated to bootstrap-linux.sh, which already exists and is tested.
@@ -174,14 +174,14 @@ if ($LASTEXITCODE -ne 0) {
     Write-Host ""
     Write-Host "ERROR: Linux bootstrap failed (exit code $LASTEXITCODE)."
     Write-Host "       Check the output above. Once you've fixed the issue, re-run this"
-    Write-Host "       installer — it is safe to run again."
+    Write-Host "       installer -- it is safe to run again."
     exit 1
 }
 Write-Host ""
 Write-Host "Linux bootstrap complete."
 Write-Host ""
 
-# ── Step 7: Install Alacritty ────────────────────────────────────────────────
+# -- Step 7: Install Alacritty ------------------------------------------------
 #
 # Prefer winget (present on Windows 10 1809+ and Windows 11).
 # Fall back to downloading the MSI from the latest GitHub release.
@@ -191,7 +191,7 @@ Write-Host "Checking Alacritty..."
 
 $alacrittyCmd = Get-Command alacritty -ErrorAction SilentlyContinue
 if ($alacrittyCmd) {
-    Write-Host "Alacritty is already installed at $($alacrittyCmd.Source) — skipping."
+    Write-Host "Alacritty is already installed at $($alacrittyCmd.Source) -- skipping."
 } else {
     $installed = $false
 
@@ -202,10 +202,10 @@ if ($alacrittyCmd) {
             $installed = $true
             Write-Host "Alacritty installed via winget."
         } else {
-            Write-Host "winget install failed (exit code $LASTEXITCODE) — trying MSI fallback."
+            Write-Host "winget install failed (exit code $LASTEXITCODE) -- trying MSI fallback."
         }
     } else {
-        Write-Host "winget not found — trying MSI fallback."
+        Write-Host "winget not found -- trying MSI fallback."
     }
 
     if (-not $installed) {
@@ -239,7 +239,7 @@ if ($alacrittyCmd) {
 }
 Write-Host ""
 
-# ── Step 8: Write %APPDATA%\alacritty\alacritty.toml ─────────────────────────
+# -- Step 8: Write %APPDATA%\alacritty\alacritty.toml -------------------------
 #
 # Write the canonical Windows config only if no config file exists yet.
 # The user's existing alacritty.toml is never overwritten.
@@ -248,7 +248,7 @@ $alacrittyConfigDir  = Join-Path $env:APPDATA 'alacritty'
 $alacrittyConfigPath = Join-Path $alacrittyConfigDir 'alacritty.toml'
 
 if (Test-Path $alacrittyConfigPath) {
-    Write-Host "Alacritty config already exists at $alacrittyConfigPath — not overwriting."
+    Write-Host "Alacritty config already exists at $alacrittyConfigPath -- not overwriting."
 } else {
     New-Item -ItemType Directory -Path $alacrittyConfigDir -Force | Out-Null
     $tomlLines = @(
@@ -321,9 +321,9 @@ if (Test-Path $alacrittyConfigPath) {
 }
 Write-Host ""
 
-# ── Step 9: Create desktop shortcut ──────────────────────────────────────────
+# -- Step 9: Create desktop shortcut ------------------------------------------
 #
-# Overwrites any existing shortcut — it is a regenerable artifact, not user
+# Overwrites any existing shortcut -- it is a regenerable artifact, not user
 # state. Resolves alacritty.exe via Get-Command so the path is correct
 # regardless of whether winget or MSI installed it.
 
@@ -362,7 +362,7 @@ $shortcut.Save()
 Write-Host "Desktop shortcut created: $shortcutPath"
 Write-Host ""
 
-# ── Step 10: Done ────────────────────────────────────────────────────────────
+# -- Step 10: Done ------------------------------------------------------------
 
 Write-Host "Installation complete."
 Write-Host "A ""MUME Cockpit"" shortcut has been added to your desktop."

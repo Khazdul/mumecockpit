@@ -10,7 +10,7 @@ if %errorlevel% neq 0 (
     exit /b 0
 )
 
-:: Elevated — hand off to the PowerShell installer.
+:: Elevated -- hand off to the PowerShell installer.
 :: %~dp0 resolves to the directory containing this .bat file so both files
 :: can live anywhere together without path assumptions.
 powershell -ExecutionPolicy Bypass -NoProfile -File "%~dp0install-windows.ps1"
