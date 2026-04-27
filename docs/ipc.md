@@ -78,6 +78,14 @@ TT++ reads the file via `#read` and the `#ses` prefix dispatches to the target s
 Braces in the file are never passed through wildcard substitution — they survive intact.
 Unique filenames prevent race conditions when multiple calls happen in rapid succession.
 
+Each call produces exactly one `#ses cmd` file. A semicolon-chained `cmd1;cmd2` would
+only dispatch the first statement to `ses` — subsequent statements execute in the `lua`
+session context. When multiple commands must land in the same session in sequence, use
+one `tintin_cmd` call per command. Lua is single-threaded, so consecutive calls within
+a single function are guaranteed adjacent in the relay queue (FIFO). `game_cmd` and
+`session_cmd` rely on this property to bracket each registration with
+`#class {core} {open}` / `#class {core} {close}` as three separate calls.
+
 ```lua
 tintin_cmd("gts",  "#alias {name} {body}")  -- registers alias in gts
 session_cmd("#action {pat} {body}")          -- registers trigger in GAME_SESSION

@@ -189,10 +189,13 @@ end
 -- Use for: #alias, #substitute, #highlight
 -- Safe to call before a game session exists (GAME_SESSION nil = skip game session).
 function game_cmd(cmd)
-    local wrapped = "#class {core} {open};" .. cmd .. ";#class {core} {close}"
-    tintin_cmd("gts", wrapped)
+    tintin_cmd("gts", "#class {core} {open}")
+    tintin_cmd("gts", cmd)
+    tintin_cmd("gts", "#class {core} {close}")
     if GAME_SESSION then
-        tintin_cmd(GAME_SESSION, wrapped)
+        tintin_cmd(GAME_SESSION, "#class {core} {open}")
+        tintin_cmd(GAME_SESSION, cmd)
+        tintin_cmd(GAME_SESSION, "#class {core} {close}")
     end
 end
 
@@ -201,8 +204,9 @@ end
 -- where MUD output arrives. Safe to call when GAME_SESSION is nil.
 function session_cmd(cmd)
     if GAME_SESSION then
-        local wrapped = "#class {core} {open};" .. cmd .. ";#class {core} {close}"
-        tintin_cmd(GAME_SESSION, wrapped)
+        tintin_cmd(GAME_SESSION, "#class {core} {open}")
+        tintin_cmd(GAME_SESSION, cmd)
+        tintin_cmd(GAME_SESSION, "#class {core} {close}")
     else
         dbg("session_cmd: no session")
     end
