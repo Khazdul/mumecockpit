@@ -180,6 +180,10 @@ while it is still alive — whenever the session loses focus. This covers:
 After `#class write`, `sanitize_profile.sh` strips the wrapping lines that
 `#class write` always emits, keeping the at-rest file bare.
 
+`#class write` serializes only the named profile class (`{<profile>}`), by design.
+The `{core}` class — which holds all registrations made via `game_cmd()` and
+`session_cmd()` — is runtime-only infrastructure and is never written to disk.
+
 PROGRAM TERMINATION does not save — by the time the event fires, the
 game session has already been torn down by tt++ and `#class write` against
 it is a no-op. The event is only used for tmux teardown (see Shutdown
@@ -213,6 +217,15 @@ tmux session (error is suppressed).
 
 Core/script registrations after step 4 take priority over the profile on name collisions:
 stale aliases in saved profiles do not block updates to core.
+
+The order-based class hygiene above (close before step 5, re-open at step 6) governs
+synchronous tt++ registrations and runtime-typed user input. Registrations that go through
+the Lua relay (`game_cmd()` / `session_cmd()`) execute asynchronously — after the
+synchronous handler completes, including after the class is re-opened at step 6. These
+functions explicitly wrap their command in `#class {core} {open}` / `#class {core} {close}`,
+so they land in `{core}` regardless of session class state when the relay drains. Two-class
+model: `{<profile>}` holds user data, `{core}` holds all script and infrastructure
+registrations.
 
 **Load sequence on cp -r (already-connected session):**
 1. `sanitize_profile.sh ttpp/sessions/$game_session.tin` — normalizes BOM, CRLF, class wrapping, leading blanks

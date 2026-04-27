@@ -226,6 +226,12 @@ Scripts must never hardcode a session name. Use these functions:
 | `tintin_cmd(ses, cmd)` | specific session | internal use only |
 | `tintin(ses, cmd)` | specific session | internal use only, no braces |
 
+Registrations made via `game_cmd()` / `session_cmd()` are placed in the permanent
+`{core}` class, separate from the user's profile class (`{<profile>}`). The profile
+class contains only what is loaded from `ttpp/sessions/<profile>.tin` plus any
+runtime user-typed additions. `cp -s` only serializes the profile class, so script
+registrations never leak into saved profiles.
+
 ## Lua Namespace Conventions
 
 **Global (always accessible, no prefix):** short-name hot-path utilities
