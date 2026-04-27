@@ -5,6 +5,9 @@ target — the only platform with current or prospective users who cannot be
 expected to drive a terminal manually. macOS and Linux are documented for
 completeness and to keep the install story honest.
 
+End-user instructions live in `install/README.md`. This document is the
+contributor-facing plan and rationale.
+
 ## Scope
 
 **Windows support is limited to Windows 11 22H2 (build 22621) or newer.**
