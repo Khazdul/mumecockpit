@@ -1,5 +1,3 @@
-#CLASS {default} OPEN
-
 #ACTION {A blue transparent wall slowly appears around you.}
 {
     #lua {events.emit("affect_init", "armour")}
@@ -1906,7 +1904,8 @@
 #CONFIG {DEBUG TELNET} {OFF}
 #EVENT {SESSION DEACTIVATED}
 {
-    #class {default} {write} {ttpp/sessions/default.tin}
+    #class {default} {write} {ttpp/sessions/default.tin};
+    #system {bash $HOME/MUME/bridge/sanitize_profile.sh ttpp/sessions/default.tin}
 }
 
 #MACRO {\eOP}
@@ -2011,5 +2010,3 @@
 #VARIABLE {spell} {'blindness'}
 #VARIABLE {ss} {normal}
 #VARIABLE {target} {*man*}
-
-#CLASS {default} CLOSE

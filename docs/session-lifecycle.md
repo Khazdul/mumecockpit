@@ -145,6 +145,19 @@ of the same name on SESSION CONNECTED, and the class is kept open for
 the duration of the session so that any aliases, variables, or other
 settings added at runtime are captured automatically.
 
+**Profile file format:** Profile files are stored bare — no
+`#class {name} {open}` / `{close}` wrapping is required or expected. The
+cockpit handles class assignment externally. Legacy MUME settings files can
+be dropped into `ttpp/sessions/` and renamed to match the session without
+modification.
+
+**Sanitizer:** `bridge/sanitize_profile.sh <path>` strips any
+`#class {…} {open|close}` lines from a profile file in place, using an
+atomic temp-file + rename. It matches any class name (not just the session
+name) so it cleans legacy files dragged in under a different class name.
+Non-existent path: exits 0 silently (handles first connect on a new profile).
+The script is idempotent — a second run on an already-clean file is a no-op.
+
 The `mume` alias is retained as a legacy shortcut that connects as `default`
 — the game session name is always `default` unless a profile is explicitly
 selected (Phase 2).
@@ -154,6 +167,9 @@ while it is still alive — whenever the session loses focus. This covers:
 - `#zap` — user disconnects directly
 - `cp -r` — `#gts` at the start of reload deactivates the game session
 - `cp -e` — `#gts` at the start of shutdown deactivates the game session
+
+After `#class write`, `sanitize_profile.sh` strips the wrapping lines that
+`#class write` always emits, keeping the at-rest file bare.
 
 PROGRAM TERMINATION does not save — by the time the event fires, the
 game session has already been torn down by tt++ and `#class write` against
@@ -178,12 +194,18 @@ Standalone tt++ runs outside the cockpit are unaffected by the missing
 tmux session (error is suppressed).
 
 **Load sequence on SESSION CONNECTED:**
-1. `#read ttpp/sessions/%0.tin` — loads settings, file opens and closes class
-2. `#class {%0} {open}` — reopens class to capture runtime additions
+1. `sanitize_profile.sh ttpp/sessions/%0.tin` — strips any class wrapping (defensive)
+2. `#class {%0} {open}` — opens the session class
+3. `#read ttpp/sessions/%0.tin` — loads settings into the open class
 
 **Load sequence on cp -r (already-connected session):**
-1. `#read ttpp/sessions/$game_session.tin` — reloads settings
-2. `#class {$game_session} {open}` — reopens class
+1. `sanitize_profile.sh ttpp/sessions/$game_session.tin` — strips any class wrapping
+2. `#class {$game_session} {open}` — opens the session class
+3. `#read ttpp/sessions/$game_session.tin` — reloads settings
+
+**Save sequence (cp -s and SESSION DEACTIVATED):**
+1. `#class {name} {write} {ttpp/sessions/name.tin}` — writes file with wrapping
+2. `sanitize_profile.sh ttpp/sessions/name.tin` — strips the wrapping
 
 **Conventions:**
 - Never hardcode `mume` as the class name in system code — always use
