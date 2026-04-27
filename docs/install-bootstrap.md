@@ -33,6 +33,13 @@ changes, or when decisions in "Open questions" are resolved.
   documented below.
 - Unattended installs in corporate-locked environments.
 
+On macOS and Linux the installer provisions backend dependencies only (tmux,
+lua, tt++, python3-prompt-toolkit, git) and clones the repo. It does **not**
+install or configure the terminal emulator — users run the cockpit from
+whatever terminal they already prefer. Alacritty bundling is Windows-specific,
+motivated by the lack of a sensible default WSL-aware terminal on that
+platform.
+
 ## Target platforms
 
 | OS                             | Target                                                        | Priority |
@@ -102,15 +109,11 @@ questions for code-signing vs unblock-on-first-run.
 A single shell script:
 
 ```bash
-brew install --cask alacritty
 brew install tmux lua python3 git tintin
 pip3 install prompt_toolkit
 git clone https://github.com/<user>/MUME.git ~/MUME
 chmod +x ~/MUME/start.sh
 ```
-
-Write `~/.config/alacritty/alacritty.toml` with the macOS font mapping
-(see Config files below).
 
 No networking tricks required — `localhost` works out of the box.
 
@@ -120,13 +123,12 @@ Debian/Ubuntu family, the macOS flow with `apt`:
 
 ```bash
 sudo apt install -y tmux lua5.4 python3 python3-prompt-toolkit \
-                    git tintin++ alacritty
+                    git tintin++
 git clone https://github.com/<user>/MUME.git ~/MUME
 chmod +x ~/MUME/start.sh
 ```
 
-Same Alacritty config path as macOS, with the Linux font mapping. Other
-distros (Fedora, Arch, …) get a documented manual recipe; automating all
+Other distros (Fedora, Arch, …) get a documented manual recipe; automating all
 package managers is not a good use of time given the user base.
 
 ## Config files
@@ -144,6 +146,12 @@ listening on `localhost:4242`) to be reachable from tt++ inside WSL.
 effect only after `wsl --shutdown`.
 
 ### `alacritty.toml`
+
+On macOS and Linux, `alacritty.toml` is shipped as an example file at
+`install/examples/alacritty.toml` and is **not** written by the installer.
+Users who want the cockpit's canonical look can copy it to the path below.
+Only the Windows installer writes the file directly — because there the user
+typically has no existing Alacritty config.
 
 Location:
 
@@ -302,7 +310,9 @@ the installer.
 1. **Packaged tt++ version.** Is `tintin++` in Ubuntu 24.04's apt
    recent enough for our needs? If yes, Phase 2 stays short. If no,
    we add a source-build path and bring in `build-essential` +
-   `libpcre2-dev`.
+   `libpcre2-dev`. Decided: shipping apt-only first and validating
+   against real cockpit usage in WSL. Source-build fallback is parked
+   until a missing feature actually surfaces.
 2. **Phase-1 delivery.** `.bat` wrapping `.ps1` is the usable answer.
    A signed `.exe` wrapper is nicer but requires a real code-signing
    cert ($$ per year). Defer until there are enough users to justify.
