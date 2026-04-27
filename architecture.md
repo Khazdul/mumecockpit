@@ -328,6 +328,9 @@ here — it's described in the relevant `docs/*.md` and visible in the
 
 Deferred until there's a concrete use case:
 
+- Periodic profile auto-save for ungraceful-exit coverage
+  (terminal close, kill, crash) — see
+  [docs/session-lifecycle.md](docs/session-lifecycle.md).
 - Reset-layout-to-defaults option in launcher Options
 - Live script dashboard (IDLE / RUNNING / FIRING tags)
 - Stop-all-scripts emergency button

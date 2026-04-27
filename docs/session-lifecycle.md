@@ -171,11 +171,19 @@ The `mume` alias is retained as a legacy shortcut that connects as `default`
 — the game session name is always `default` unless a profile is explicitly
 selected (Phase 2).
 
-**Save mechanism:** SESSION DEACTIVATED fires inside the game session
-while it is still alive — whenever the session loses focus. This covers:
-- `#zap` — user disconnects directly
-- `cp -r` — `#gts` at the start of reload deactivates the game session
-- `cp -e` — `#gts` at the start of shutdown deactivates the game session
+**Save mechanism:** Two save paths cover graceful exit and reload:
+
+1. **SESSION DEACTIVATED handler** (registered in `system.tin`, runs in gts) —
+   fires when the game session loses focus. This covers:
+   - `#zap` — user disconnects directly
+   - `cp -r` — `#gts` at the start of reload deactivates the game session
+   - `cp -e` — `#gts` at the start of shutdown deactivates the game session
+
+2. **Explicit save in `cp -e` and `cp -r`** — immediately after `#gts` and
+   before any teardown or reload logic. Runs idempotently after the event
+   handler as defense in depth against any tt++ event-context subtleties.
+
+`cp -s` is the user-triggered save path (popup Save button) and is unchanged.
 
 After `#class write`, `sanitize_profile.sh` strips the wrapping lines that
 `#class write` always emits, keeping the at-rest file bare.
@@ -184,10 +192,17 @@ After `#class write`, `sanitize_profile.sh` strips the wrapping lines that
 The `{core}` class — which holds all registrations made via `game_cmd()` and
 `session_cmd()` — is runtime-only infrastructure and is never written to disk.
 
+**SESSION DEACTIVATED is reserved as a system event.** User profiles must not
+register their own SESSION DEACTIVATED handler. A handler in the profile file
+would be loaded into the session class and would shadow the system handler,
+silently breaking auto-save. This is a known footgun; sanitizer enforcement
+of the reserved-event rule is out of scope for this PR.
+
 PROGRAM TERMINATION does not save — by the time the event fires, the
 game session has already been torn down by tt++ and `#class write` against
 it is a no-op. The event is only used for tmux teardown (see Shutdown
-Teardown below).
+Teardown below). Periodic save for terminal close / SIGKILL / crash is a
+separate future phase.
 
 **Known limitation — settings modified from gts are not saved.** The save
 hook is SESSION DEACTIVATED, which fires when the game session loses focus.
@@ -236,15 +251,54 @@ registrations.
    `_register_affect_actions` — these are not user data
 6. `#class {$game_session} {open}` — re-opens the class so runtime additions are captured
 
-**Save sequence (cp -s and SESSION DEACTIVATED):**
+**Save sequence** (same two-step body at every call site):
 1. `#class {name} {write} {ttpp/sessions/name.tin}` — writes file with wrapping
 2. `sanitize_profile.sh ttpp/sessions/name.tin` — normalizes the file (strips wrapping and header artifacts)
+
+Call sites: SESSION DEACTIVATED handler, `cp -s`, `cp -e`, `cp -r`.
 
 **Conventions:**
 - Never hardcode `mume` as the class name in system code — always use
   the session name variable (`%0` or `$game_session`)
 - Scripts must not register permanent aliases via `session_cmd()` —
   use `game_cmd()` instead, or they will be written into the session file
+
+## Possible future: periodic auto-save
+
+**Motivation.** Phase 1 covers all graceful exit paths (SESSION DEACTIVATED,
+`cp -e`, `cp -r`). Remaining gap: ungraceful termination — terminal window
+closed, tmux kill-server, SIGKILL, system crash. PROGRAM TERMINATION cannot
+save (sessions already torn down — see Shutdown Teardown above). Current
+mitigations are the popup Save button and the user habit of `cp -s` before
+risky operations.
+
+**Approach (sketch).** Lua-driven periodic save. `brain.lua` starts a
+recurring timer at startup that, every N seconds, calls `tintin_cmd()` to
+fire the same two-step save against the active GAME_SESSION: `#class write`
+followed by `sanitize_profile.sh`. Falls through silently when GAME_SESSION
+is nil. Re-armed each tick. Survives `cp -r` naturally because `cp -r`
+restarts `brain.lua` and the new brain re-arms the timer at startup.
+
+**Why Lua-driven, not tt++-driven.** A tt++ `#delay`-based timer is killed
+by `cp -r`'s `#kill delay` and would need explicit re-arming in the `cp -r`
+alias body. Lua already has clean tick infrastructure used by the clock
+module — a save tick is a copy of that pattern, no new mechanism.
+
+**Configuration.** Interval lives in `bridge/startup.conf`, e.g.
+`save_interval_seconds=300` (default 300, 0 disables). Read by
+`bridge/read_config.sh` (and surfaced as a tt++ var) or directly by
+`brain.lua` at startup. Decision deferred until implementation.
+
+**Tradeoffs.** Worst-case data loss bounded to one interval rather than the
+full session. Cost: one file write to `ttpp/sessions/<profile>.tin` every N
+seconds while connected — negligible. No tt++ event-loop impact; the work
+happens in Lua and reaches tt++ via the existing IPC.
+
+**Why parked.** Phase 1 covers all documented exit paths (`cp -e`, `cp -r`,
+popup Exit). Remaining failure modes are infrequent enough that the
+explicit-save habit suffices for now. Pick up when there is a concrete
+trigger — recurring data-loss reports from users, unattended long-session
+use cases, or a planned move toward less graceful shutdown paths.
 
 ## Clean client startup
 
