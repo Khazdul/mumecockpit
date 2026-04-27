@@ -106,14 +106,12 @@ questions for code-signing vs unblock-on-first-run.
 
 ## macOS flow
 
-A single shell script:
-
-```bash
-brew install tmux lua python3 git tintin
-pip3 install prompt_toolkit
-git clone https://github.com/<user>/MUME.git ~/MUME
-chmod +x ~/MUME/start.sh
-```
+Run `install/bootstrap-macos.sh` for the automated path. The script
+installs backend dependencies (tmux, lua, tintin, git, python3) via
+Homebrew and prompt_toolkit via pip, then clones the repo to `~/MUME`.
+**Homebrew must already be installed** — if it isn't, the script exits
+with instructions pointing to https://brew.sh. No terminal emulator is
+installed; run the cockpit from whichever terminal you already use.
 
 No networking tricks required — `localhost` works out of the box.
 
@@ -287,6 +285,11 @@ the installer.
   install brew from inside our script.
 - **`tintin` brew formula** — verify it's a current release before
   relying on it.
+- **prompt_toolkit comes via pip, not brew.** No brew formula tracks
+  it cleanly. Homebrew Python normally permits user-site installs
+  without `--break-system-packages`; the bootstrap script tries the
+  clean install first and falls back automatically if pip refuses with
+  the externally-managed-environment error.
 
 ### Linux
 
