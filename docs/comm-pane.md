@@ -271,9 +271,15 @@ lost.
 ### List
 
 The list `Window` has `wrap_lines=True` so long messages soft-wrap rather than
-truncating. The scroll-slice math (`_scroll_offset`, `visible_rows`) counts
-logical lines, not wrapped display rows, so a burst of long messages may render
-slightly fewer entries than the window height — newest entries are always correct.
+truncating. `_list_text()` uses a wrap-aware bottom-up selection: given
+`anchor_idx = total - 1 - _scroll_offset`, it walks backward from the anchor
+accumulating wrapped display rows (via `_row_count`) until the window is filled
+or index 0 is reached. The anchor entry is always included even when it alone
+exceeds `list_height` — the surplus falls off the top (clip-top semantics). The
+`Window` passes `get_vertical_scroll=_anchor_bottom`, which pins the rendered
+content's bottom row to the window's bottom edge, so the newest included message
+is always visible at the bottom, never obscured by prompt_toolkit's default
+top-anchor scroll.
 
 Row format depends on channel class (see **Display normalization** below):
 
@@ -296,13 +302,13 @@ color is now purely self vs other.
 `_scroll_offset` integer: **0 = bottom (live-follow)**. Increasing values hide
 that many messages at the bottom.
 
-| Event                         | Effect                                                              |
-|-------------------------------|---------------------------------------------------------------------|
-| Mouse wheel up on list        | `_scroll_offset += 1` (cap at `max(0, total - (list_height - 1))`) |
-| Mouse wheel down on list      | `_scroll_offset -= 1` (floor at 0)                                 |
-| New messages while offset > 0 | `_scroll_offset += delta` (sticky view)                            |
-| Click `↓ N newer messages`    | `_scroll_offset = 0` (jump to bottom)                              |
-| Filter flip                   | `_scroll_offset` clamped against new list length on next render    |
+| Event                         | Effect                                                                          |
+|-------------------------------|---------------------------------------------------------------------------------|
+| Mouse wheel up on list        | `_scroll_offset += 1` (wrap-aware cap — see below)                             |
+| Mouse wheel down on list      | `_scroll_offset -= 1` (floor at 0)                                              |
+| New messages while offset > 0 | `_scroll_offset += delta` (sticky view)                                         |
+| Click `↓ N newer messages`    | `_scroll_offset = 0` (jump to bottom)                                           |
+| Filter flip                   | `_scroll_offset` clamped to `[0, total-1]` on next render                       |
 
 Mouse wheel scroll is handled by `ListControl`, a `FormattedTextControl`
 subclass that overrides `mouse_handler`. On `SCROLL_UP`/`SCROLL_DOWN` events
@@ -310,9 +316,13 @@ not consumed by the base class, it adjusts `_scroll_offset` and calls
 `_app.invalidate()`. The previous `@kb.add("<scroll-up>")` / `<scroll-down>`
 key bindings were no-ops and have been removed.
 
-`_scroll_offset` is clamped against `max(0, total - (list_height - 1))` so
-the oldest message stays pinned to the top once reached. This prevents blank
-rows above the oldest message and the all-blank locked-view state.
+**Wrap-aware `max_offset`** — on each scroll-up tick the handler walks forward
+from `filtered[0]`, accumulating wrapped display rows via `_row_count`. The
+smallest index `i` at which the running sum reaches `list_height` gives
+`max_offset = total - 1 - i`. This means scrolling all the way up pins the
+oldest message at the top of the window, with no blank rows above it. If the
+entire history fits within `list_height` rows, `max_offset = 0` (no scrolling
+possible).
 
 When `_scroll_offset > 0`, a dedicated indicator row appears **below** the list
 (not inside it):

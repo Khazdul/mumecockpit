@@ -27,10 +27,14 @@ except ImportError:
 import atexit
 import asyncio
 import json
+import math
 import os
+import re
 import signal
 import sys
 import time
+
+_SGR_RE = re.compile(r"\x1b\[[0-9;]*m")
 
 COMM_STATE_PATH   = os.environ.get(
     "COMM_STATE_PATH",
@@ -303,6 +307,26 @@ def _term_rows():
         return 24
 
 
+def _term_cols():
+    """Width of the pane (columns available for the whole application)."""
+    try:
+        return os.get_terminal_size().columns
+    except OSError:
+        return 80
+
+
+def _row_count(entry, cols, channels):
+    """Approximate wrapped display row count for entry given terminal column count."""
+    channel = entry.get("channel", "")
+    if channel in ACTION_CHANNELS:
+        frags = _render_action_row(entry)
+    else:
+        frags = _render_quoted_row(entry, channels)
+    text     = "".join(f[1] for f in frags)
+    stripped = _SGR_RE.sub("", text)
+    return max(1, math.ceil(len(stripped) / cols))
+
+
 def forward_toggle(name):
     """Toggle filter for a named channel, persist, and invalidate the app."""
     global _solo_channel, _solo_snapshot
@@ -412,20 +436,37 @@ def _list_text():
     if _state is None:
         return frags
 
-    filtered  = _get_filtered(_state)
-    total     = len(filtered)
-
-    rows         = _term_rows()
-    list_height  = max(1, rows - 1 - (1 if _scroll_offset > 0 else 0))
-    max_offset   = max(0, total - list_height)
-    _scroll_offset = min(_scroll_offset, max_offset)
-    visible_rows = list_height
-
-    end   = total - _scroll_offset
-    start = max(0, end - visible_rows)
-    visible = filtered[start:end]
-
+    filtered = _get_filtered(_state)
+    total    = len(filtered)
     channels = _state.get("channels") or []
+
+    if total == 0:
+        return frags
+
+    # Clamp so anchor_idx stays in [0, total-1]; wrap-aware upper bound is
+    # enforced by the mouse handler before offsets grow too large.
+    _scroll_offset = max(0, min(_scroll_offset, total - 1))
+
+    rows        = _term_rows()
+    cols        = max(1, _term_cols())
+    list_height = max(1, rows - 1 - (1 if _scroll_offset > 0 else 0))
+    anchor_idx  = total - 1 - _scroll_offset
+
+    # Walk backward from anchor accumulating wrapped display rows until the
+    # window is filled or index 0 is reached.  The anchor is always included
+    # even when it alone exceeds list_height (clip-top handles the overflow).
+    accumulated = 0
+    start       = anchor_idx
+    for i in range(anchor_idx, -1, -1):
+        rc = _row_count(filtered[i], cols, channels)
+        if accumulated + rc > list_height and i < anchor_idx:
+            break
+        accumulated += rc
+        start = i
+        if accumulated >= list_height:
+            break
+
+    visible  = filtered[start:anchor_idx + 1]
     last_idx = len(visible) - 1
     for idx, entry in enumerate(visible):
         channel = entry.get("channel", "")
@@ -467,10 +508,21 @@ class ListControl(FormattedTextControl):
             global _scroll_offset
             if mouse_event.event_type == MouseEventType.SCROLL_UP:
                 if _state is not None:
-                    total = len(_get_filtered(_state))
-                    rows = _term_rows()
+                    filtered    = _get_filtered(_state)
+                    total       = len(filtered)
+                    channels    = _state.get("channels") or []
+                    rows        = _term_rows()
+                    cols        = max(1, _term_cols())
                     list_height = max(1, rows - 1 - (1 if _scroll_offset > 0 else 0))
-                    max_offset = max(0, total - list_height)
+                    # Wrap-aware max_offset: walk forward to find the oldest
+                    # entry that pins at the top when fully scrolled up.
+                    running    = 0
+                    max_offset = 0
+                    for i, entry in enumerate(filtered):
+                        running += _row_count(entry, cols, channels)
+                        if running >= list_height:
+                            max_offset = total - 1 - i
+                            break
                     _scroll_offset = min(_scroll_offset + 1, max_offset)
                 if _app:
                     _app.invalidate()
@@ -540,6 +592,18 @@ async def _poll_state(app):
 
 
 # ---------------------------------------------------------------------------
+# Vertical scroll anchor
+# ---------------------------------------------------------------------------
+
+def _anchor_bottom(window):
+    """Pin list content to the bottom of the window (clip-top for overflow)."""
+    info = window.render_info
+    if info is None:
+        return 0
+    return max(0, info.content_height - info.window_height)
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -562,6 +626,7 @@ def main():
     list_window = Window(
         content=ListControl(text=_list_text, focusable=False),
         wrap_lines=True,
+        get_vertical_scroll=_anchor_bottom,
     )
 
     indicator_container = ConditionalContainer(
