@@ -6,88 +6,79 @@ try:
     from prompt_toolkit.layout.containers import HSplit, Window
     from prompt_toolkit.layout.controls import BufferControl
     from prompt_toolkit.layout.layout import Layout
-    from prompt_toolkit.layout.processors import BeforeInput, Processor, Transformation
+    from prompt_toolkit.layout.processors import BeforeInput
+    from prompt_toolkit.selection import SelectionState
 except ImportError:
     print("Error: prompt_toolkit is not installed.")
-    print("Run: pip install prompt_toolkit --break-system-packages")
+    print("Run: pip install prompt_toolkit pyperclip --break-system-packages")
     exit(1)
 
 import atexit
+import base64
 import os
-import string
 import subprocess
 import sys
 
 TMUX_TARGET = "mume:cockpit.0"
 
-class HighlightRecalled(Processor):
-    def __init__(self, is_recalled_fn):
-        self.is_recalled_fn = is_recalled_fn
-
-    def apply_transformation(self, ti):
-        if self.is_recalled_fn():
-            return Transformation([
-                ("bg:white fg:black", text)
-                for _, text in ti.fragments
-            ])
-        return Transformation(ti.fragments)
-
 last_cmd = ""
 history: list = []           # sent commands, oldest -> newest
 history_index = None         # None = at pending_input; else index into history
 pending_input = ""           # draft saved when Up first pressed from None-state
-is_recalled = False          # True if buffer text was set programmatically
-_programmatic = False        # internal: suppress on_text_changed side effect
+_programmatic = False        # suppress on_text_changed during programmatic refills
 _draft_restored = False      # True after Down steps out of history to pending_input
 
-def _set_buffer_text(buf, text, recalled, cursor_pos=None):
-    global _programmatic, is_recalled
+
+def _set_buffer_text(buf, text, cursor_pos=None):
+    """Set buffer text and cursor, no selection. For draft restore and clearing."""
+    global _programmatic
     _programmatic = True
     try:
         pos = len(text) if cursor_pos is None else cursor_pos
         buf.document = Document(text, pos)
-        is_recalled = recalled
+        buf.selection_state = None
     finally:
         _programmatic = False
 
-def _exit_recall_state(buf):
-    global is_recalled, history_index, pending_input, _draft_restored
-    if _programmatic:
-        return
-    is_recalled = False
-    history_index = None
-    pending_input = buf.text
-    _draft_restored = False
+
+def _set_buffer_text_selected(buf, text, cursor_at_start=False):
+    """Set buffer text and select the whole buffer (recall state)."""
+    global _programmatic
+    _programmatic = True
+    try:
+        pos = 0 if cursor_at_start else len(text)
+        buf.document = Document(text, pos)
+        if text:
+            buf.selection_state = SelectionState(len(text) if cursor_at_start else 0)
+        else:
+            buf.selection_state = None
+    finally:
+        _programmatic = False
+
+
+def _is_fully_selected(buf):
+    if not buf.text or buf.selection_state is None:
+        return False
+    a, b = buf.document.selection_range()
+    return a == 0 and b == len(buf.text)
+
+
+def _copy_to_clipboard(text):
+    encoded = base64.b64encode(text.encode("utf-8")).decode("ascii")
+    sys.stdout.write(f"\033]52;c;{encoded}\007")
+    sys.stdout.flush()
+
+
+def _read_clipboard():
+    try:
+        import pyperclip
+        return pyperclip.paste() or ""
+    except Exception:
+        return ""
+
 
 kb = KeyBindings()
 
-_PRINTABLE = [c for c in string.printable if c not in string.whitespace]
-
-for _c in _PRINTABLE:
-    @kb.add(_c)
-    def _handle(event, c=_c):
-        buf = event.app.current_buffer
-        if is_recalled:
-            buf.reset()
-        buf.insert_text(c)
-
-@kb.add("backspace")
-def _handle_backspace(event):
-    buf = event.app.current_buffer
-    if is_recalled:
-        buf.reset()
-        _exit_recall_state(buf)
-    else:
-        buf.delete_before_cursor()
-
-@kb.add("delete")
-def _handle_delete(event):
-    buf = event.app.current_buffer
-    if is_recalled:
-        buf.reset()
-        _exit_recall_state(buf)
-    else:
-        buf.delete()
 
 @kb.add("up")
 def _handle_up(event):
@@ -96,17 +87,17 @@ def _handle_up(event):
     if not history:
         return
     _draft_restored = False
-    if is_recalled and history_index is None:
-        # Just refilled after Enter. Step back one entry.
+    if _is_fully_selected(buf) and history_index is None:
+        # Just refilled after Enter — step back one entry.
         history_index = max(0, len(history) - 2)
     elif history_index is None:
-        # Not recalled, not browsing. Save current as draft.
+        # Not browsing. Save current as draft.
         pending_input = buf.text
         history_index = len(history) - 1
     else:
-        # Already browsing.
         history_index = max(0, history_index - 1)
-    _set_buffer_text(buf, history[history_index], recalled=True)
+    _set_buffer_text_selected(buf, history[history_index])
+
 
 @kb.add("down")
 def _handle_down(event):
@@ -116,70 +107,50 @@ def _handle_down(event):
         # Second Down after returning to draft — clear buffer.
         _draft_restored = False
         pending_input = ""
-        _set_buffer_text(buf, "", recalled=False)
+        _set_buffer_text(buf, "")
         return
     if history_index is None:
         return
     if history_index < len(history) - 1:
         history_index += 1
-        _set_buffer_text(buf, history[history_index], recalled=True)
+        _set_buffer_text_selected(buf, history[history_index])
     else:
         # At newest — step out to pending_input.
         history_index = None
         _draft_restored = True
-        _set_buffer_text(buf, pending_input, recalled=False)
+        _set_buffer_text(buf, pending_input)
 
-@kb.add("left")
-def _handle_left(event):
-    buf = event.app.current_buffer
-    if buf.cursor_position > 0:
-        buf.cursor_position -= 1
-    _exit_recall_state(buf)
-
-@kb.add("right")
-def _handle_right(event):
-    buf = event.app.current_buffer
-    if buf.cursor_position < len(buf.text):
-        buf.cursor_position += 1
-    _exit_recall_state(buf)
-
-@kb.add("home")
-def _handle_home(event):
-    buf = event.app.current_buffer
-    buf.cursor_position = 0
-    _exit_recall_state(buf)
-
-@kb.add("end")
-def _handle_end(event):
-    buf = event.app.current_buffer
-    buf.cursor_position = len(buf.text)
-    _exit_recall_state(buf)
 
 @kb.add("s-home")
 def _handle_shift_home(event):
     buf = event.app.current_buffer
     if buf.text:
-        _set_buffer_text(buf, buf.text, recalled=True, cursor_pos=0)
+        _set_buffer_text_selected(buf, buf.text, cursor_at_start=True)
+
 
 @kb.add("s-end")
 def _handle_shift_end(event):
     buf = event.app.current_buffer
     if buf.text:
-        _set_buffer_text(buf, buf.text, recalled=True, cursor_pos=len(buf.text))
+        _set_buffer_text_selected(buf, buf.text)
+
 
 @kb.add("c-a")
 def _handle_ctrl_a(event):
     buf = event.app.current_buffer
     if buf.text:
-        _set_buffer_text(buf, buf.text, recalled=True, cursor_pos=len(buf.text))
+        _set_buffer_text_selected(buf, buf.text)
+
 
 @kb.add("pageup")
 def _handle_pageup(event):
     subprocess.run(["tmux", "send-keys", "-t", TMUX_TARGET, "PageUp"])
 
+
 @kb.add("pagedown")
 def _handle_pagedown(event):
     subprocess.run(["tmux", "send-keys", "-t", TMUX_TARGET, "PageDown"])
+
 
 @kb.add("enter")
 def _handle_enter(event):
@@ -195,18 +166,66 @@ def _handle_enter(event):
         history_index = None
         pending_input = ""
         _draft_restored = False
-        _set_buffer_text(buf, last_cmd, recalled=True)
+        _set_buffer_text_selected(buf, last_cmd)
     else:
         # Empty Enter — bare newline to tt++ (MUME uses this to
         # cancel delayed commands). No refill, no last_cmd repeat.
         send("")
 
+
+@kb.add("c-c")
+def _handle_ctrl_c(event):
+    buf = event.app.current_buffer
+    if not buf.selection_state:
+        return
+    a, b = buf.document.selection_range()
+    text = buf.text[a:b]
+    if text:
+        _copy_to_clipboard(text)
+
+
+@kb.add("c-x")
+def _handle_ctrl_x(event):
+    buf = event.app.current_buffer
+    if not buf.selection_state:
+        return
+    a, b = buf.document.selection_range()
+    text = buf.text[a:b]
+    if text:
+        _copy_to_clipboard(text)
+        new_text = buf.text[:a] + buf.text[b:]
+        buf.document = Document(new_text, a)
+        buf.selection_state = None
+
+
+@kb.add("c-v")
+def _handle_ctrl_v(event):
+    buf = event.app.current_buffer
+    clip = _read_clipboard()
+    if not clip:
+        return
+    if buf.selection_state:
+        a, b = buf.document.selection_range()
+        new_text = buf.text[:a] + clip + buf.text[b:]
+        buf.document = Document(new_text, a + len(clip))
+        buf.selection_state = None
+    else:
+        buf.insert_text(clip)
+
+
+@kb.add("c-d")
+def _handle_ctrl_d(event):
+    pass  # no-op; prevent EOFError from exiting the pane
+
+
 def send(line):
     subprocess.run(["tmux", "send-keys", "-t", TMUX_TARGET, line, "Enter"])
+
 
 # Keys forwarded to tt++ so that #macro bindings fire from the input pane.
 # Reserved editing/history/scrollback keys are NOT listed here and remain
 # handled by prompt_toolkit.
+# c-c, c-x, c-v handle clipboard ops in the input pane and are not forwarded.
 FORWARDED_KEYS = [
     ("f1", "F1"), ("f2", "F2"), ("f3", "F3"), ("f4", "F4"),
     ("f5", "F5"), ("f6", "F6"), ("f7", "F7"), ("f8", "F8"),
@@ -215,7 +234,6 @@ FORWARDED_KEYS = [
 
     # Ctrl+letter (safe subset — excludes editing/history/terminal-reserved)
     ("c-g", "C-g"), ("c-l", "C-l"), ("c-o", "C-o"),
-    ("c-v", "C-v"), ("c-x", "C-x"),
 ]
 
 # Alt+letter forwarded set (excludes b, d, f which are reserved for word ops).
@@ -267,6 +285,7 @@ for _seq, _kp_key in NUMPAD_FORWARDED_KEYS:
     def _fwd_kp(event, tk=_kp_key):
         subprocess.run(["tmux", "send-keys", "-t", TMUX_TARGET, tk])
 
+
 def get_input_pane_index():
     result = subprocess.run(
         ["tmux", "list-panes", "-t", "mume:cockpit",
@@ -278,6 +297,7 @@ def get_input_pane_index():
         if len(parts) == 2 and parts[1] == "input":
             return parts[0]
     return None
+
 
 def setup_mouse_binding():
     if get_input_pane_index() is None:
@@ -304,6 +324,16 @@ def _restore_keypad():
     sys.stdout.write('\033>')
     sys.stdout.flush()
 
+
+def _on_text_changed(buf):
+    global history_index, pending_input, _draft_restored
+    if _programmatic:
+        return
+    history_index = None
+    pending_input = buf.text
+    _draft_restored = False
+
+
 def main():
     global last_cmd
     setup_mouse_binding()
@@ -315,9 +345,7 @@ def main():
     atexit.register(_restore_keypad)
 
     buf = Buffer(name="input")
-
-    buf.on_text_changed += lambda _: _exit_recall_state(buf)
-    buf.on_cursor_position_changed += lambda _: _exit_recall_state(buf)
+    buf.on_text_changed += lambda _: _on_text_changed(buf)
 
     layout = Layout(
         HSplit([
@@ -325,7 +353,6 @@ def main():
                 BufferControl(
                     buffer=buf,
                     input_processors=[
-                        HighlightRecalled(lambda: is_recalled),
                         BeforeInput("> "),
                     ],
                     key_bindings=kb,
@@ -341,6 +368,7 @@ def main():
         app.run()
     except (KeyboardInterrupt, EOFError):
         pass
+
 
 if __name__ == "__main__":
     main()
