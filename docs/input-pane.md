@@ -100,10 +100,9 @@ highlight processor. The visual appearance is whatever the terminal uses
 for selected text, consistent with any other selection in the input pane.
 
 When the buffer is selected:
-- **Typing any printable key** replaces the selection (prompt_toolkit default)
-- **Backspace or Delete** deletes the selection (prompt_toolkit default)
+- **Typing any printable key** replaces the selection
+- **Backspace or Delete** deletes the selection
 - **Left, Right, Home, End** clear the selection and move the cursor
-  (prompt_toolkit default)
 - **Shift+arrows** adjust the selection boundary (prompt_toolkit default)
 - **Ctrl+C** copies the selected text to the system clipboard
 

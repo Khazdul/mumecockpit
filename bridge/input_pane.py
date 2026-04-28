@@ -16,10 +16,12 @@ except ImportError:
 import atexit
 import base64
 import os
+import string
 import subprocess
 import sys
 
 TMUX_TARGET = "mume:cockpit.0"
+_PRINTABLE = [c for c in string.printable if c.isprintable()]
 
 last_cmd = ""
 history: list = []           # sent commands, oldest -> newest
@@ -63,10 +65,29 @@ def _is_fully_selected(buf):
     return a == 0 and b == len(buf.text)
 
 
-def _copy_to_clipboard(text):
+def _has_selection(buf):
+    return buf.selection_state is not None and buf.text != ""
+
+
+def _drop_selection_to(buf, position):
+    buf.selection_state = None
+    buf.cursor_position = max(0, min(position, len(buf.text)))
+
+
+def _replace_selection(buf, text):
+    if _has_selection(buf):
+        buf.cut_selection()
+    buf.insert_text(text)
+
+
+def _copy_to_clipboard(event, text):
+    if not text:
+        return
     encoded = base64.b64encode(text.encode("utf-8")).decode("ascii")
-    sys.stdout.write(f"\033]52;c;{encoded}\007")
-    sys.stdout.flush()
+    seq = f"\033]52;c;{encoded}\007"
+    out = event.app.output
+    out.write_raw(seq)
+    out.flush()
 
 
 def _read_clipboard():
@@ -78,6 +99,60 @@ def _read_clipboard():
 
 
 kb = KeyBindings()
+
+for _c in _PRINTABLE:
+    @kb.add(_c)
+    def _handle_printable(event, c=_c):
+        _replace_selection(event.current_buffer, c)
+
+
+@kb.add("backspace")
+def _backspace(event):
+    buf = event.current_buffer
+    if _has_selection(buf):
+        buf.cut_selection()
+    else:
+        buf.delete_before_cursor()
+
+
+@kb.add("delete")
+def _delete(event):
+    buf = event.current_buffer
+    if _has_selection(buf):
+        buf.cut_selection()
+    else:
+        buf.delete()
+
+
+@kb.add("left")
+def _left(event):
+    buf = event.current_buffer
+    if _has_selection(buf):
+        a, _ = buf.document.selection_range()
+        _drop_selection_to(buf, a)
+    elif buf.cursor_position > 0:
+        buf.cursor_position -= 1
+
+
+@kb.add("right")
+def _right(event):
+    buf = event.current_buffer
+    if _has_selection(buf):
+        _, b = buf.document.selection_range()
+        _drop_selection_to(buf, b)
+    elif buf.cursor_position < len(buf.text):
+        buf.cursor_position += 1
+
+
+@kb.add("home")
+def _home(event):
+    _drop_selection_to(event.current_buffer, 0)
+
+
+@kb.add("end")
+def _end(event):
+    buf = event.current_buffer
+    _drop_selection_to(buf, len(buf.text))
 
 
 @kb.add("up")
@@ -181,7 +256,7 @@ def _handle_ctrl_c(event):
     a, b = buf.document.selection_range()
     text = buf.text[a:b]
     if text:
-        _copy_to_clipboard(text)
+        _copy_to_clipboard(event, text)
 
 
 @kb.add("c-x")
@@ -192,25 +267,19 @@ def _handle_ctrl_x(event):
     a, b = buf.document.selection_range()
     text = buf.text[a:b]
     if text:
-        _copy_to_clipboard(text)
-        new_text = buf.text[:a] + buf.text[b:]
-        buf.document = Document(new_text, a)
-        buf.selection_state = None
+        _copy_to_clipboard(event, text)
+        buf.cut_selection()
 
 
 @kb.add("c-v")
 def _handle_ctrl_v(event):
     buf = event.app.current_buffer
-    clip = _read_clipboard()
-    if not clip:
+    text = _read_clipboard()
+    if not text:
         return
-    if buf.selection_state:
-        a, b = buf.document.selection_range()
-        new_text = buf.text[:a] + clip + buf.text[b:]
-        buf.document = Document(new_text, a + len(clip))
-        buf.selection_state = None
-    else:
-        buf.insert_text(clip)
+    if _has_selection(buf):
+        buf.cut_selection()
+    buf.insert_text(text)
 
 
 @kb.add("c-d")
