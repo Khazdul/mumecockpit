@@ -89,9 +89,10 @@ column alignment.
   `\e[H` home, each line followed by `\e[K`, `\e[J` at end. Never `\e[2J`.
 - **No trailing newline** after the last line of any frame — it scrolls the
   terminal and jitters the title/footer row.
-- **Dirty-flag redraw.** Main loop uses `_DIRTY=1` set by a `WINCH` trap or
-  state-changing key handler; `read -rsn1 -t 0.2` yields fast enough resize
-  response without a busy loop.
+- **Dirty-flag redraw.** Main loop uses `_DIRTY=1` set by a `WINCH` trap,
+  state-changing key handler, or by the cache-mtime poll when
+  `bridge/version.cache` is updated mid-session; `read -rsn1 -t 0.2` yields
+  fast enough resize response without a busy loop.
 - **Handoff via `exec`.** Launcher → tmux_start.sh uses `exec bash …`; the
   tmux session is created and then attached with a plain `tmux attach` (not
   exec, so the return-to-menu sentinel check can run after attach exits).

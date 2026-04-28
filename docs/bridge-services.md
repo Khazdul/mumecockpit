@@ -22,8 +22,8 @@ the endpoint returns 404 and the script exits silently without writing the
 cache — the About page then shows the current version only. Any other failure
 (offline, rate-limit, parse) leaves the cache unchanged and exits silently.
 
-If `bridge/version.cache` holds a stale or wrong value, delete the file and
-restart the launcher to trigger a fresh check.
+If `bridge/version.cache` holds a stale or wrong value, delete the file; the
+launcher re-runs the check on its next start.
 
 Consumers:
 - Launcher About page: version is displayed top-right on the title row,
@@ -32,7 +32,10 @@ Consumers:
 
 The consumer does not block on the network. If the cache is missing or stale
 the UI still shows the current version; background refresh catches up within
-seconds.
+seconds. The launcher polls the cache file's mtime in its main loop (~200ms
+cadence) and rebuilds the menu items array if the cache is updated, so the
+Update row appears on the first launcher run if the GitHub query completes
+while the menu is open.
 
 ## Self-update (`bridge/update.sh`)
 

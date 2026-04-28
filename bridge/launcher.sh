@@ -113,6 +113,22 @@ _update_available() {
     [ "$a" != "$b" ]
 }
 
+_build_menu_items() {
+    _ITEMS=()
+    if [ "$HAS_SESSION" -eq 0 ]; then
+        _ITEMS+=("New session")
+    elif [ "$ATTACHED" -eq 0 ]; then
+        _ITEMS+=("Continue session")
+    else
+        _ITEMS+=("Mirror session (attached elsewhere)")
+    fi
+    if _update_available; then
+        _ITEMS+=("Update")
+    fi
+    _ITEMS+=("Profile" "Options" "Scripts" "About" "Quit")
+    _NITEMS=${#_ITEMS[@]}
+}
+
 # ---------------------------------------------------------------------------
 # Pick one random Tolkien quote for this launcher run (stable across redraws)
 # ---------------------------------------------------------------------------
@@ -144,19 +160,7 @@ if tmux has-session -t mume 2>/dev/null; then
     ATTACHED=$(( ATTACHED + 0 ))
 fi
 
-# Menu order: Start/Continue/Mirror, [Update], Profile, Options, Scripts, About, Quit
-if [ "$HAS_SESSION" -eq 0 ]; then
-    _ITEMS=("New session")
-elif [ "$ATTACHED" -eq 0 ]; then
-    _ITEMS=("Continue session")
-else
-    _ITEMS=("Mirror session (attached elsewhere)")
-fi
-if _update_available; then
-    _ITEMS+=("Update")
-fi
-_ITEMS+=("Profile" "Options" "Scripts" "About" "Quit")
-_NITEMS=${#_ITEMS[@]}
+_build_menu_items
 
 _SEL=0
 
@@ -1004,6 +1008,28 @@ _run_update() {
 check_min_size
 
 # ---------------------------------------------------------------------------
+# Cache-mtime poll — detects version.cache appearing/changing mid-session
+# ---------------------------------------------------------------------------
+_CACHE_MTIME=""
+[ -f bridge/version.cache ] && _CACHE_MTIME=$(stat -c '%Y' bridge/version.cache 2>/dev/null || echo "")
+
+_check_cache_change() {
+    local current_mtime=""
+    [ -f bridge/version.cache ] && current_mtime=$(stat -c '%Y' bridge/version.cache 2>/dev/null || echo "")
+    if [ "$current_mtime" != "$_CACHE_MTIME" ]; then
+        _CACHE_MTIME="$current_mtime"
+        local prev_name="${_ITEMS[$_SEL]:-}"
+        _build_menu_items
+        local i
+        _SEL=0
+        for i in "${!_ITEMS[@]}"; do
+            [ "${_ITEMS[$i]}" = "$prev_name" ] && { _SEL="$i"; break; }
+        done
+        _DIRTY=1
+    fi
+}
+
+# ---------------------------------------------------------------------------
 # Main loop
 # ---------------------------------------------------------------------------
 while true; do
@@ -1012,7 +1038,9 @@ while true; do
         _render_main
     fi
 
-    read_key 0.2 || continue
+    read_key 0.2
+    _check_cache_change
+    [ -z "${LAST_KEY:-}" ] && continue
 
     _DIRTY=1
     case "$LAST_KEY" in
