@@ -283,22 +283,32 @@ def setup_mouse_binding():
     if get_input_pane_index() is None:
         return
     focus = os.path.expanduser("~/MUME/bridge/focus_input.sh")
-    refocus = os.path.expanduser("~/MUME/bridge/select_and_refocus.sh")
-    cond = '[ "#{pane_title}" != "input" ]'
+    not_input = '[ "#{pane_title}" != "input" ]'
+
+    # Click without drag: just refocus the input pane.
     subprocess.run([
         "tmux", "bind-key", "-n", "MouseUp1Pane",
-        "if-shell", cond,
-        "run-shell " + focus
+        "if-shell", not_input, f"run-shell {focus}",
     ])
-    for event, mode in [
-        ("MouseDragEnd1Pane", "drag"),
-        ("DoubleClick1Pane",  "word"),
-        ("TripleClick1Pane",  "line"),
-    ]:
+
+    # Drag-end fires from the copy-mode table because the drag
+    # transitioned the pane into copy-mode. Override the copy-mode
+    # default to add the refocus step.
+    subprocess.run([
+        "tmux", "bind-key", "-T", "copy-mode", "MouseDragEnd1Pane",
+        f"send-keys -X copy-pipe-and-cancel ; run-shell {focus}",
+    ])
+
+    # Double / triple click: chain stays inline so the mouse
+    # position context survives into copy-mode entry.
+    for evt, sel in (("DoubleClick1Pane", "select-word"),
+                     ("TripleClick1Pane", "select-line")):
         subprocess.run([
-            "tmux", "bind-key", "-n", event,
-            "if-shell", cond,
-            "run-shell \"" + refocus + " " + mode + "\""
+            "tmux", "bind-key", "-n", evt,
+            "if-shell", "-F", not_input,
+            f"{{ copy-mode ; send-keys -X {sel} ; "
+            f"send-keys -X copy-pipe-and-cancel ; "
+            f"run-shell {focus} }}",
         ])
 
 def _restore_keypad():
