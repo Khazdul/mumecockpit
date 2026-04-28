@@ -16,6 +16,7 @@ except ImportError:
 import atexit
 import base64
 import os
+import signal
 import string
 import subprocess
 import sys
@@ -430,7 +431,8 @@ def main():
         ])
     )
 
-    app = Application(layout=layout, key_bindings=kb, full_screen=False, handle_sigint=False)
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
+    app = Application(layout=layout, key_bindings=kb, full_screen=False)
 
     try:
         app.run()
