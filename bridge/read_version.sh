@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # bridge/read_version.sh — reads VERSION and emits a tt++ #var command.
 # Called by ttpp/core/gmcp.tin via #script at startup.
 # Falls back to "dev" if VERSION is missing.

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # bridge/toggle_pane.sh — toggle ui/dev/input panes and pane-border headers.
 # Usage: toggle_pane.sh <target> [--persist]
 # Targets: ui, dev, input, headers

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # bridge/update.sh — safe self-update runner for the MUME cockpit.
 # Usage: bash bridge/update.sh
 # Exit codes: 0=updated, 10=no update, 20=dev checkout, 21=dirty tree,

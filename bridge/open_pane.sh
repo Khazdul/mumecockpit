@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 TYPE=$1
 MUME="$HOME/MUME"
 SENTINEL="$HOME/MUME/bridge/.collapsed_panes"

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # bridge/tmux_start.sh — creates and attaches to the MUME tmux cockpit session.
 # Reads show_ui / show_dev / show_input from bridge/startup.conf.
 # Called by start.sh (--no-menu / -d / -u) or bridge/launcher.sh ("New session").
@@ -51,8 +51,7 @@ touch logs/debug.log logs/ui.log
 # ---------------------------------------------------------------------------
 tmux kill-session -t mume 2>/dev/null || true
 
-TERM_COLS=$(tput cols)
-TERM_LINES=$(tput lines)
+read -r TERM_LINES TERM_COLS < <(stty size </dev/tty 2>/dev/null || echo "24 80")
 
 # Delay tt++ launch until the pane setup below (split-window, resize-pane)
 # has completed. Otherwise tt++/Lua emit startup output while tail -f

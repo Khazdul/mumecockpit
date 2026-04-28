@@ -32,7 +32,7 @@ fi
 
 # tintin is the formula name — no plus signs, unlike the Debian/Ubuntu package
 # name (tintin++). Do not "fix" this.
-brew install tmux lua tintin git python3
+brew install bash tmux lua tintin git python3
 
 # ---------------------------------------------------------------------------
 # Install prompt_toolkit via pip

@@ -44,13 +44,28 @@ _MR_ERR='\e[1;31m'
 
 # ---------------------------------------------------------------------------
 # term_cols / term_lines
-# Portable terminal-dimension queries. `tput cols` lies on macOS (BSD ncurses)
-# when called from non-interactive subshells, falling back to the termcap
-# default (80x24). `stty size </dev/tty` reads controlling-tty dimensions
-# directly from the kernel and is accurate on both Linux and macOS.
+# Portable terminal-dimension queries. tput lies on macOS (BSD ncurses) when
+# called from non-interactive subshells, returning the termcap default (80x24).
+# `stty size </dev/tty` reads controlling-tty dimensions directly from the
+# kernel and is accurate on both Linux and macOS. See ADR 0021.
 # ---------------------------------------------------------------------------
 term_cols()  { stty size </dev/tty 2>/dev/null | awk '{print $2}' || echo 80; }
 term_lines() { stty size </dev/tty 2>/dev/null | awk '{print $1}' || echo 24; }
+
+# ---------------------------------------------------------------------------
+# file_mtime <path>
+# Portable mtime in epoch seconds. macOS BSD stat uses `-f '%m'`,
+# GNU/Linux stat uses `-c '%Y'`. Detect once via `uname -s` and
+# cache the format string at source time.
+if [ "$(uname -s)" = "Darwin" ]; then
+    _FMT_MTIME="-f %m"
+else
+    _FMT_MTIME="-c %Y"
+fi
+file_mtime() {
+    # shellcheck disable=SC2086  # word-splitting of $_FMT_MTIME is intentional
+    stat $_FMT_MTIME "$1" 2>/dev/null
+}
 
 # ---------------------------------------------------------------------------
 # render_frame

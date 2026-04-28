@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # bridge/ingame_menu.sh — in-game popup menu (Phase 3)
 # Launched via: tmux display-popup -E -w 80% -h 80% -x C -y C "bash .../ingame_menu.sh"
 # Do NOT invoke directly from outside a tmux popup context.

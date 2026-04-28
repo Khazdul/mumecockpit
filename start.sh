@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # start.sh — MUME cockpit entry point.
 # Installs dependencies, then launches the startup menu or goes straight to tmux.
 #

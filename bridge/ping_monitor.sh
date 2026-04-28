@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # bridge/ping_monitor.sh — session-scoped background ping monitor.
 # Spawned by tmux_start.sh and launcher.sh; self-terminates when tmux:mume dies.
 # Single-instance guard via bridge/.ping_pid. Writes bridge/ping.cache atomically.
@@ -12,6 +12,11 @@ _CACHE="bridge/ping.cache"
 _TMP="${_CACHE}.tmp"
 _SAMPLES=""
 _MAX=60
+
+case "$(uname -s)" in
+    Darwin) _PING_W="-W 1000" ;;  # BSD: milliseconds
+    *)      _PING_W="-W 1"    ;;  # iputils Linux: seconds
+esac
 
 # Single-instance guard
 if [ -f "$_PID_FILE" ]; then
@@ -31,7 +36,8 @@ while true; do
     fi
 
     # Ping and round to integer milliseconds
-    _out=$(ping -c 1 -W 1 mume.org 2>/dev/null)
+    # shellcheck disable=SC2086  # word-splitting of $_PING_W is intentional
+    _out=$(ping -c 1 $_PING_W mume.org 2>/dev/null)
     _ms=$(printf '%s\n' "$_out" | grep -oE 'time=[0-9.]+ ms' | head -1 \
           | sed 's/time=\([0-9.]*\) ms/\1/')
     if [ -n "$_ms" ]; then

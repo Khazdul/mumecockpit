@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # bridge/apply_layout.sh — single authority for right-column geometry.
 # Column order (top to bottom): ui → comm → status → dev
 # Called after any right-column operation. Idempotent.

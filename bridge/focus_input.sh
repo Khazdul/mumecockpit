@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Resolve the input pane's current index and focus it.
 # Used by the MouseUp1Pane binding registered from input_pane.py.
 IDX=$(tmux list-panes -t mume:cockpit -F '#{pane_index} #{pane_title}' \

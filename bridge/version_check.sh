@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # bridge/version_check.sh — queries GitHub for the latest release tag and caches it.
 # Usage: bash bridge/version_check.sh [--force]
 # Writes bridge/version.cache atomically (temp-file + rename) with a 6h TTL.

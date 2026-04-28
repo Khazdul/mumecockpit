@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 LAYOUT_CONF="$HOME/MUME/bridge/layout.conf"
 LOCK="$HOME/MUME/bridge/.layout_lock"
 

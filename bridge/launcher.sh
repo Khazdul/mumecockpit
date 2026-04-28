@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # bridge/launcher.sh — pre-tmux startup menu for the MUME cockpit.
 # Called by start.sh when no bypass flags are given.
 # Execs into bridge/tmux_start.sh or `tmux attach` on user selection.
@@ -1011,11 +1011,11 @@ check_min_size
 # Cache-mtime poll — detects version.cache appearing/changing mid-session
 # ---------------------------------------------------------------------------
 _CACHE_MTIME=""
-[ -f bridge/version.cache ] && _CACHE_MTIME=$(stat -c '%Y' bridge/version.cache 2>/dev/null || echo "")
+[ -f bridge/version.cache ] && _CACHE_MTIME=$(file_mtime bridge/version.cache)
 
 _check_cache_change() {
     local current_mtime=""
-    [ -f bridge/version.cache ] && current_mtime=$(stat -c '%Y' bridge/version.cache 2>/dev/null || echo "")
+    [ -f bridge/version.cache ] && current_mtime=$(file_mtime bridge/version.cache)
     if [ "$current_mtime" != "$_CACHE_MTIME" ]; then
         _CACHE_MTIME="$current_mtime"
         local prev_name="${_ITEMS[$_SEL]:-}"

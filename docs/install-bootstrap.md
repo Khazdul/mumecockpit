@@ -98,11 +98,18 @@ right-click `installer-core.ps1`, Properties, Unblock, then run via
 ## macOS flow
 
 Run `install/bootstrap-macos.sh` for the automated path. The script
-installs backend dependencies (tmux, lua, tintin, git, python3) via
+installs backend dependencies (bash, tmux, lua, tintin, git, python3) via
 Homebrew and prompt_toolkit via pip, then clones the repo to `~/MUME`.
 **Homebrew must already be installed** — if it isn't, the script exits
 with instructions pointing to https://brew.sh. No terminal emulator is
 installed; run the cockpit from whichever terminal you already use.
+
+**The cockpit requires bash 4+.** macOS ships `/bin/bash` 3.2 (Apple
+avoids the GPLv3-licensed bash 4+). The bootstrap installs Homebrew bash 5
+and the cockpit's `#!/usr/bin/env bash` shebangs pick it up via PATH
+(`/opt/homebrew/bin` comes first on a brew-default Mac). See
+[ADR 0020](decisions/0020-platform-support-policy.md) for the full
+platform-support policy.
 
 No networking tricks required — `localhost` works out of the box.
 
