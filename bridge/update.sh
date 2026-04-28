@@ -6,6 +6,8 @@
 # Checks out the latest release tag named in bridge/version.cache.
 # Clients end up on detached HEAD — correct for a stable install.
 # All output is a single human-friendly line; caller renders it verbatim.
+# User-created files in ttpp/sessions/ and lua/scripts/ are preserved
+# across the reset; see docs/bridge-services.md for details.
 
 set -u
 
@@ -51,12 +53,23 @@ if [ -n "$AUTHOR_EMAIL" ] && \
 fi
 
 # Step 4b: dirty working tree / untracked files
-if ! git diff --quiet || ! git diff --cached --quiet; then
-    echo "Uncommitted local changes. Update refuses to overwrite them. Commit or stash first."
+# ttpp/sessions/ and lua/scripts/ are excluded — auto-save writes there normally.
+if ! git diff --quiet -- ':(exclude)ttpp/sessions/*' \
+                         ':(exclude)lua/scripts/*'; then
+    echo "Uncommitted local changes outside user data directories. Update refuses to overwrite them. Commit or stash first."
     exit 21
 fi
-if [ -n "$(git ls-files --others --exclude-standard)" ]; then
-    echo "Untracked files present. Update refuses to overwrite them. Commit, stash, or delete first."
+if ! git diff --cached --quiet -- ':(exclude)ttpp/sessions/*' \
+                                   ':(exclude)lua/scripts/*'; then
+    echo "Staged local changes outside user data directories. Update refuses to overwrite them. Commit or stash first."
+    exit 21
+fi
+
+# Untracked files: ignore the two user-data dirs
+untracked=$(git ls-files --others --exclude-standard \
+            | grep -v -E '^(ttpp/sessions|lua/scripts)/' || true)
+if [ -n "$untracked" ]; then
+    echo "Untracked files present outside user data directories. Update refuses to overwrite them. Commit, stash, or delete first."
     exit 21
 fi
 
@@ -72,11 +85,46 @@ if [ "${AHEAD:-0}" -gt 0 ]; then
     exit 22
 fi
 
+# Step 4.5: snapshot user-created files before the reset
+_UPDATE_OK=0
+trap '
+    if [ "$_UPDATE_OK" -eq 0 ] && [ -d "bridge/.update_preserve" ]; then
+        echo "Update interrupted. Preserved user files are in bridge/.update_preserve/. Restore manually if needed." >&2
+    fi
+' EXIT
+
+PRESERVE_DIR="bridge/.update_preserve"
+rm -rf "$PRESERVE_DIR"
+
+for dir in ttpp/sessions lua/scripts; do
+    [ -d "$dir" ] || continue
+    for f in "$dir"/*; do
+        [ -f "$f" ] || continue
+        relpath="$f"
+        if [ "$relpath" = "ttpp/sessions/default.tin" ]; then
+            mkdir -p "$PRESERVE_DIR/$(dirname "$relpath")"
+            cp -p "$f" "$PRESERVE_DIR/$relpath"
+            continue
+        fi
+        if ! git cat-file -e "refs/tags/$LATEST_TAG:$relpath" 2>/dev/null; then
+            mkdir -p "$PRESERVE_DIR/$(dirname "$relpath")"
+            cp -p "$f" "$PRESERVE_DIR/$relpath"
+        fi
+    done
+done
+
 # Step 5: perform update — check out the release tag (detached HEAD is correct)
 git -c advice.detachedHead=false checkout --quiet "refs/tags/$LATEST_TAG" || { echo "git checkout failed."; exit 30; }
 git reset --hard "refs/tags/$LATEST_TAG" --quiet || { echo "git reset failed."; exit 30; }
 
+# Restore preserved user files
+if [ -d "$PRESERVE_DIR" ]; then
+    cp -rp "$PRESERVE_DIR"/. .
+    rm -rf "$PRESERVE_DIR"
+fi
+
 # Step 6: success
+_UPDATE_OK=1
 NEW_VERSION=$(tr -d '[:space:]' < VERSION 2>/dev/null || echo "?")
 echo "Updated to v${NEW_VERSION#v}."
 exit 0

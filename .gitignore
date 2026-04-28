@@ -31,6 +31,7 @@ bridge/ping.cache
 bridge/.ping_pid
 bridge/.popup_open
 bridge/.collapsed_panes
+bridge/.update_preserve/
 
 
 

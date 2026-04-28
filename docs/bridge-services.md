@@ -47,7 +47,9 @@ Start/Continue/Mirror row. Selecting it runs `bridge/update.sh`, which:
    - Developer fingerprint: `git config user.email` must NOT match any
      commit author in the repo history.
    - Working tree clean: no uncommitted changes, no untracked files
-     outside `.gitignore`.
+     outside `.gitignore`. Files in `ttpp/sessions/` and `lua/scripts/`
+     are excluded from this check — auto-save writes there as part of
+     normal operation.
    - Local commits: zero commits ahead of the latest release tag.
 3. `git fetch --tags`
 4. `git checkout` / `git reset --hard` to `refs/tags/<latest>`
@@ -56,6 +58,40 @@ Start/Continue/Mirror row. Selecting it runs `bridge/update.sh`, which:
 
 Guard failure aborts with a specific exit code (20/21/22) and message.
 Git failures exit 30.
+
+### User data preservation
+
+Before the `git reset --hard`, `update.sh` snapshots files that must survive
+the reset to `bridge/.update_preserve/`, then copies them back after the reset
+succeeds. The preserve dir is then deleted on clean exit.
+
+**Shipped vs user-created.** Each file in `ttpp/sessions/` and `lua/scripts/`
+is classified by checking whether it exists in the target release tag
+(`git cat-file -e "refs/tags/$TAG:$path"`):
+
+- **Exists in tag → shipped.** Overwritten by the reset without preservation.
+  These are product files (e.g. `autostab.lua`, `bogger.tin`) that should
+  receive their new tagged versions.
+- **Does not exist in tag → user-created.** Preserved across the reset. These
+  are files the user created via the launcher's Profile page or by writing a
+  new script (e.g. `ttpp/sessions/myhero.tin`, `lua/scripts/mybot.lua`).
+
+**`ttpp/sessions/default.tin` is always preserved**, even though it ships in
+the repo as a starting template. The auto-save hook writes the user's live
+session data to it; its in-repo contents are irrelevant after first launch.
+
+**Failure mode.** If `git checkout` or `git reset --hard` exits non-zero, the
+script aborts and prints to stderr:
+
+    Update interrupted. Preserved user files are in
+    bridge/.update_preserve/. Restore manually if needed.
+
+Recovery: `cp -rp bridge/.update_preserve/. .` from the repo root, then
+`rm -rf bridge/.update_preserve`.
+
+**Limitation.** Edits made directly to shipped files (e.g. modifying
+`autostab.lua` in place) are silently overwritten on the next update. Users
+who want to customize a shipped script should copy it under a new name first.
 
 **Why tag-checkout, not main-reset.** update.sh consumes exactly the same
 artifact that version_check.sh advertises — the latest GitHub release tag.
@@ -207,6 +243,7 @@ bridge/.pane_resize_pid
 bridge/ping.cache
 bridge/.ping_pid
 bridge/.collapsed_panes
+bridge/.update_preserve/
 ```
 
 ---
