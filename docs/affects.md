@@ -72,6 +72,11 @@ and `expires_at` are both nil regardless of any legacy samples on disk. The
 tick never prunes indefinite entries. Duration-less affects never appear in
 `logs/affect_times/<character>.json`.
 
+Indefinite affects are also excluded from active-list persistence (see
+[Persistence — active list](#persistence--active-list) below). Rationale:
+their state is unreliable across long absences and we prefer fresh
+re-initialisation from in-game refresh strings.
+
 - No `◆ TAG: name refreshed.` UI line is emitted when `initString_2`
   matches for a duration-less affect. The internal refresh path still
   runs (`started_at` is updated, `affects_changed` fires), but the
@@ -106,6 +111,54 @@ on the next write.
 **Read:** on `Char.Name` (via the `gmcp.handlers["Char.Name"]` wrap installed
 by `_install_hooks()`). If the file is absent or malformed, `state.char.affect_times`
 stays `{}` and a non-fatal `dbg` warning is logged.
+
+## Persistence — active list
+
+**Path:** `logs/affects_active/<character>.json`
+
+`<character>` is `state.char.name` verbatim (same convention as
+`logs/affect_times/`).
+
+**Schema:** a JSON array of entries with the same shape as
+`state.char.affects` items:
+
+```json
+[
+  {
+    "name": "armour",
+    "type": "protection",
+    "started_at": 1714000000,
+    "expected_duration": 1800,
+    "expires_at": 1714001800
+  }
+]
+```
+
+Indefinite affects (`expires_at == nil`) are never written. When the last
+timed affect drops the file is written as an empty array (`[]`) rather
+than deleted, keeping it as a stable presence indicator.
+
+**Write (atomic temp-file + `os.rename`)** at four points:
+
+- End of `affect_init` handler (after entry appended).
+- End of `affect_refresh` handler (after `started_at` / `expires_at` updated).
+- End of `affect_down` handler (after `table.remove`).
+- End of `_affects_tick` after the prune sweep, but only when at least one
+  entry was removed (tracked with a `pruned` flag).
+
+**Read** on `Char.Name` as step 4 of the `_install_hooks()` wrap, immediately
+after `_load_times()`:
+
+- Missing or malformed file → `dbg` warning, `state.char.affects` stays `{}`.
+- Each entry is skipped if: `expires_at == nil` (indefinite / corrupt), the
+  affect name is absent from `affects_data.affects`, the data-table entry has
+  no `duration` field (table changed under us), or `expires_at <= os.time()`
+  (expired during downtime). Expired entries are counted separately in the
+  `dbg` log line.
+- Surviving entries are appended to `state.char.affects`. If any survive, the
+  tick delay is armed and `affects_changed` is emitted.
+- No `affect_ui` lines are emitted — restore is silent.
+- `dbg` line: `[AFFECTS] restored N active affects (M expired)`.
 
 ## Pattern storage convention
 
@@ -202,6 +255,14 @@ connection is live, so the persisted `affect_times` file is not reloaded until
 the next full reconnect. Any affects that were active at the time of `cp -r`
 are lost from the tracker's view. Accepted limitation — same root cause as
 documented for `docs/status-pane.md`.
+
+### `cp -r` does not restore the active affect list
+
+For the same reason above, the active affect list is not restored after
+`cp -r`: `Char.Name` is not re-emitted on a live TCP connection, so
+`_load_active()` never runs. The affect list stays empty until the next full
+login. Accepted — same root cause as the Name/Lv blank documented in
+`docs/status-pane.md` and `docs/session-lifecycle.md`.
 
 ---
 Back to [architecture.md](../architecture.md).

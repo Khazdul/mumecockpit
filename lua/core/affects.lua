@@ -12,7 +12,8 @@
 local json        = require("dkjson")
 local affects_data = dofile(os.getenv("HOME") .. "/MUME/lua/core/affects_data.lua")
 
-local TIMES_DIR = os.getenv("HOME") .. "/MUME/logs/affect_times/"
+local TIMES_DIR  = os.getenv("HOME") .. "/MUME/logs/affect_times/"
+local ACTIVE_DIR = os.getenv("HOME") .. "/MUME/logs/affects_active/"
 
 -- Initialise state slots. state.char.reset() (char_state.lua) wipes all
 -- non-function keys on disconnect, so these are cleared automatically.
@@ -37,6 +38,33 @@ local function _save()
     local f = io.open(tmp, "w")
     if not f then
         dbg("[AFFECTS] open tmp failed: " .. tmp)
+        return
+    end
+    f:write(encoded)
+    f:close()
+    os.rename(tmp, path)
+end
+
+local function _save_active()
+    local name = state.char.name
+    if not name then return end
+    os.execute("mkdir -p '" .. ACTIVE_DIR .. "'")
+    local path = ACTIVE_DIR .. name .. ".json"
+    local tmp  = path .. ".tmp"
+    local to_save = {}
+    for _, e in ipairs(state.char.affects) do
+        if e.expires_at ~= nil then
+            to_save[#to_save + 1] = e
+        end
+    end
+    local ok, encoded = pcall(json.encode, to_save)
+    if not ok then
+        dbg("[AFFECTS] active encode failed: " .. tostring(encoded))
+        return
+    end
+    local f = io.open(tmp, "w")
+    if not f then
+        dbg("[AFFECTS] active open tmp failed: " .. tmp)
         return
     end
     f:write(encoded)
@@ -72,6 +100,39 @@ local function _load_times(char_name)
     end
 end
 
+local function _load_active(char_name)
+    local path = ACTIVE_DIR .. char_name .. ".json"
+    local f = io.open(path, "r")
+    if not f then return end
+    local content = f:read("*a")
+    f:close()
+    local ok, loaded = pcall(json.decode, content)
+    if not ok or type(loaded) ~= "table" then
+        dbg("[AFFECTS] active load failed for " .. char_name)
+        return
+    end
+    local now      = os.time()
+    local restored = 0
+    local expired  = 0
+    for _, e in ipairs(loaded) do
+        if e.expires_at == nil then
+            -- indefinite / corrupt — never written by current code
+        elseif not affects_data.affects[e.name] or not affects_data.affects[e.name].duration then
+            -- data-table changed under us
+        elseif e.expires_at <= now then
+            expired = expired + 1
+        else
+            state.char.affects[#state.char.affects + 1] = e
+            restored = restored + 1
+        end
+    end
+    if #state.char.affects > 0 then
+        session_cmd("#delay {affects_tick} {#lua {_affects_tick()}} {10}")
+        events.emit("affects_changed")
+    end
+    dbg("[AFFECTS] restored " .. restored .. " active affects (" .. expired .. " expired)")
+end
+
 -- ---------------------------------------------------------------------------
 -- Duration estimation
 -- ---------------------------------------------------------------------------
@@ -94,18 +155,21 @@ end
 function _affects_tick()
     local t = state.char.affects
     if not t then return end
-    local now = os.time()
+    local now    = os.time()
+    local pruned = false
     for i = #t, 1, -1 do
         local e = t[i]
         if e.expires_at and e.expires_at <= now then
             dbg("[AFFECTS] tick expire: " .. e.name)
             table.remove(t, i)
+            pruned = true
         end
     end
     if #t > 0 then
         session_cmd("#delay {affects_tick} {#lua {_affects_tick()}} {10}")
     end
     events.emit("affects_changed")
+    if pruned then _save_active() end
 end
 
 -- ---------------------------------------------------------------------------
@@ -149,6 +213,7 @@ events.subscribe("affect_init", function(name)
     dbg("[AFFECTS] init: " .. name)
     events.emit("affects_changed")
     affect_ui(entry.type, name, "up")
+    _save_active()
 end)
 
 events.subscribe("affect_refresh", function(name)
@@ -168,6 +233,7 @@ events.subscribe("affect_refresh", function(name)
     if data and data.duration then
         affect_ui(data.type, name, "refreshed")
     end
+    _save_active()
 end)
 
 events.subscribe("affect_down", function(name)
@@ -193,6 +259,7 @@ events.subscribe("affect_down", function(name)
     dbg("[AFFECTS] down: " .. name .. " observed=" .. observed)
     events.emit("affects_changed")
     affect_ui(data and data.type, name, "down")
+    _save_active()
 end)
 
 -- ---------------------------------------------------------------------------
@@ -215,6 +282,7 @@ local function _install_hooks()
         state.char.affect_times = {}
         if state.char.name then
             _load_times(state.char.name)
+            _load_active(state.char.name)
         end
     end
 
