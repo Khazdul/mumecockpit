@@ -290,21 +290,16 @@ def setup_mouse_binding():
         "if-shell", cond,
         "run-shell " + focus
     ])
-    subprocess.run([
-        "tmux", "bind-key", "-n", "MouseDragEnd1Pane",
-        "if-shell", cond,
-        "send-keys -X copy-pipe-and-cancel ; run-shell " + focus
-    ])
-    subprocess.run([
-        "tmux", "bind-key", "-n", "DoubleClick1Pane",
-        "if-shell", cond,
-        "run-shell \"" + refocus + " word\""
-    ])
-    subprocess.run([
-        "tmux", "bind-key", "-n", "TripleClick1Pane",
-        "if-shell", cond,
-        "run-shell \"" + refocus + " line\""
-    ])
+    for event, mode in [
+        ("MouseDragEnd1Pane", "drag"),
+        ("DoubleClick1Pane",  "word"),
+        ("TripleClick1Pane",  "line"),
+    ]:
+        subprocess.run([
+            "tmux", "bind-key", "-n", event,
+            "if-shell", cond,
+            "run-shell \"" + refocus + " " + mode + "\""
+        ])
 
 def _restore_keypad():
     sys.stdout.write('\033>')
