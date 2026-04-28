@@ -387,10 +387,18 @@ Unknown channels fall back to the channel name as both forms.
   `DIRECTED_CHANNELS` (`tells`, `whispers`) and `talker != "you"`, the renderer
   fills in `destination = "you"` before display. This covers the common case of
   `"Gibur tells you 'np :)'"` arriving with no destination in the payload.
+- **`DESTINATION_PREPOSITIONS`** — some channels require a preposition between
+  the verb and the destination. The table is `{"whispers": "to"}`. When a channel
+  has an entry, the preposition is inserted as a separate fragment in `verb_style`
+  before the destination fragment. Channels with no entry take the destination as
+  a direct object (no preposition). Examples:
+  - `You whisper to Dori the armourer 'hej'` (preposition inserted)
+  - `You tell Ibuki 'come to the inn'` (no preposition — tells not in table)
 - **Destination** — when `destination` is present (or filled by the fallback),
-  it is inserted between verb and message in `C_TALKER_YOU` when the value is
-  `"you"`, `C_TALKER_OTHER` otherwise. Capitalization: `"you"` stays lowercase;
-  any other value has its first character uppercased. Examples:
+  it is inserted between verb (and preposition, if any) and message in
+  `C_TALKER_YOU` when the value is `"you"`, `C_TALKER_OTHER` otherwise.
+  Capitalization: `"you"` stays lowercase; any other value has its first character
+  uppercased. Examples:
   - `You tell Ibuki 'come to the inn'`
   - `Frodo tells you 'hi there'`
   - `Gibur tells you 'np :)'` (destination absent in payload; fallback applied)

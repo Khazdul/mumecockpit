@@ -148,6 +148,13 @@ extended to also render an optional `destination` field between verb and message
   `destination = "you"`. Applied only to incoming directed channels; `says`,
   `yells`, `tales`, `prayers`, `songs`, `questions` are unaffected.
 
+- **`DESTINATION_PREPOSITIONS`** — new module-level dict `{"whispers": "to"}`.
+  In `_render_quoted_row`, when `destination` is set, a preposition fragment is
+  inserted in `verb_style` between the verb and destination fragments for channels
+  that have a table entry. Whispers becomes `"whisper to <dest>"`. Channels with
+  no entry (tells, questions, etc.) take the destination as a direct object and
+  are unaffected.
+
 - **`_render_action_row` self-detection** — priority now driven by `text` prefix,
   not by `talker`. Branch a: `text.startswith("You ")` → self render (ignores
   `talker`). Branch b: case-insensitive `text.lower().startswith(talker.lower() + " ")`

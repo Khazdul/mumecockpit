@@ -64,6 +64,9 @@ QUOTED_CHANNELS   = {"tales", "tells", "says", "yells", "whispers",
                      "prayers", "songs", "questions"}
 ACTION_CHANNELS   = {"emotes", "socials"}
 DIRECTED_CHANNELS = {"tells", "whispers"}
+DESTINATION_PREPOSITIONS = {
+    "whispers": "to",
+}
 
 CHANNEL_LABELS = {
     "tales":     "Na",
@@ -224,6 +227,9 @@ def _render_quoted_row(entry, channels):
     frags.append((verb_style, _channel_verb(channel, talker) + " "))
 
     if destination:
+        prep = DESTINATION_PREPOSITIONS.get(channel)
+        if prep:
+            frags.append((verb_style, prep + " "))
         display_dest = "you" if destination == "you" else destination[0].upper() + destination[1:]
         dest_style = C_TALKER_YOU if destination == "you" else C_TALKER_OTHER
         frags.append((dest_style, display_dest + " "))

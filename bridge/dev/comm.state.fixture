@@ -165,6 +165,14 @@
       "text": "Aragorn whispers 'meet me at the gate'"
     },
     {
+      "ts": 1777200405,
+      "channel": "whispers",
+      "talker": "you",
+      "talker_type": null,
+      "destination": "Dori the armourer",
+      "text": "hej"
+    },
+    {
       "ts": 1777200420,
       "channel": "questions",
       "talker": "you",
