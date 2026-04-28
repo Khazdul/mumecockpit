@@ -299,17 +299,6 @@ def setup_mouse_binding():
         f"send-keys -X copy-pipe-and-cancel ; run-shell {focus}",
     ])
 
-    # Double / triple click: chain stays inline so the mouse
-    # position context survives into copy-mode entry.
-    for evt, sel in (("DoubleClick1Pane", "select-word"),
-                     ("TripleClick1Pane", "select-line")):
-        subprocess.run([
-            "tmux", "bind-key", "-n", evt,
-            "if-shell", "-F", not_input,
-            f"{{ copy-mode ; send-keys -X {sel} ; "
-            f"send-keys -X copy-pipe-and-cancel ; "
-            f"run-shell {focus} }}",
-        ])
 
 def _restore_keypad():
     sys.stdout.write('\033>')

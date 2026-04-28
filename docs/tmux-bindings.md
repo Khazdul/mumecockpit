@@ -26,16 +26,13 @@ from unexpected clicks) are disabled or overridden.
 | `MouseDragEnd1Border` | Resize panes (`on_pane_resize.sh`) | `bridge/tmux_start.sh` |
 | `MouseUp1Pane` | Refocus input pane (`focus_input.sh`), gated on `pane_title != input` | `bridge/input_pane.py` |
 | `MouseDragEnd1Pane` | Copy selection + refocus input pane, gated on `pane_title != input` | `bridge/input_pane.py` |
-| `DoubleClick1Pane` | Select word, copy, refocus input (`select_and_refocus.sh word`) | `bridge/input_pane.py` |
-| `TripleClick1Pane` | Select line, copy, refocus input (`select_and_refocus.sh line`) | `bridge/input_pane.py` |
 | `WheelUpPane` | Stock copy-mode entry; no-op in the cockpit status pane | `bridge/tmux_start.sh` |
 | `WheelDownPane` | Pass-through in copy-mode; no-op in the cockpit status pane | `bridge/tmux_start.sh` |
 
-The four click/drag bindings (`MouseUp1Pane`, `MouseDragEnd1Pane`,
-`DoubleClick1Pane`, `TripleClick1Pane`) are registered by `bridge/input_pane.py`
-at input-pane startup and removed by `bridge/toggle_pane.sh` when the input pane
-closes (`cp -i`). With no input pane there is nowhere to refocus, so removing the
-bindings is cleaner than leaving them.
+The two click/drag bindings (`MouseUp1Pane`, `MouseDragEnd1Pane`) are registered
+by `bridge/input_pane.py` at input-pane startup and removed by
+`bridge/toggle_pane.sh` when the input pane closes (`cp -i`). With no input pane
+there is nowhere to refocus, so removing the bindings is cleaner than leaving them.
 
 ## Disabled defaults
 
@@ -53,8 +50,8 @@ bindings is cleaner than leaving them.
 - **Drag in game / comm / ui / dev:** tmux enters copy-mode automatically on drag
   start; on drag end `copy-pipe-and-cancel` copies the selection to the system
   clipboard via OSC 52 and cancels copy-mode; focus returns to the input pane.
-- **Double-click:** selects the word under the cursor, copies via OSC 52, returns focus.
-- **Triple-click:** selects the full line, copies via OSC 52, returns focus.
+- **Double-click:** selects the word under the cursor and copies to system clipboard via tmux defaults. Focus does not return to the input pane after these — click anywhere or press a key in the input pane to refocus.
+- **Triple-click:** selects the full line and copies to system clipboard via tmux defaults. Focus does not return to the input pane after these — click anywhere or press a key in the input pane to refocus.
 - **Scroll wheel in game / comm / ui / dev:** enters copy-mode and scrolls scrollback
   (stock tmux behaviour, preserved). The `-e` flag exits copy-mode when scrolled back
   to the bottom.
