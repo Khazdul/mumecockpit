@@ -6,6 +6,7 @@ try:
     from prompt_toolkit.layout.containers import HSplit, Window
     from prompt_toolkit.layout.controls import BufferControl
     from prompt_toolkit.layout.layout import Layout
+    from prompt_toolkit.keys import Keys
     from prompt_toolkit.layout.processors import BeforeInput
     from prompt_toolkit.selection import SelectionState
 except ImportError:
@@ -286,6 +287,19 @@ def _handle_ctrl_v(event):
 @kb.add("c-d")
 def _handle_ctrl_d(event):
     pass  # no-op; prevent EOFError from exiting the pane
+
+
+@kb.add(Keys.BracketedPaste)
+def _handle_bracketed_paste(event):
+    """Terminal-level paste (Ctrl+Shift+V, middle-click). Replaces
+    selection if any, then inserts at cursor — same semantics as Ctrl+V."""
+    buf = event.current_buffer
+    text = event.data
+    if not text:
+        return
+    if _has_selection(buf):
+        buf.cut_selection()
+    buf.insert_text(text)
 
 
 def send(line):

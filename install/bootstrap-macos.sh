@@ -42,15 +42,15 @@ brew install bash tmux lua tintin git python3
 # --break-system-packages. Try the clean install first and fall back if pip
 # refuses with the externally-managed-environment error.
 
-install_prompt_toolkit() {
-    if python3 -m pip install --user prompt_toolkit 2>/dev/null; then
+install_python_deps() {
+    if python3 -m pip install --user prompt_toolkit pyperclip 2>/dev/null; then
         return 0
     fi
     echo "Clean pip install declined (externally-managed-environment). Retrying with --break-system-packages..."
-    python3 -m pip install --user --break-system-packages prompt_toolkit
+    python3 -m pip install --user --break-system-packages prompt_toolkit pyperclip
 }
 
-install_prompt_toolkit
+install_python_deps
 
 # ---------------------------------------------------------------------------
 # Clone or update the cockpit repo

@@ -68,7 +68,7 @@ REPO_DIR="$TARGET_HOME/MUME"
 
 # tintin++ is the correct apt package name — the plus signs are part of the
 # package name; do not "fix" them to tintin or tintin-plus.
-PACKAGES="tmux lua5.4 python3 python3-prompt-toolkit git tintin++"
+PACKAGES="tmux lua5.4 python3 python3-prompt-toolkit python3-pyperclip git tintin++"
 
 if [ "$IS_WSL" -eq 0 ]; then
     PACKAGES="$PACKAGES alacritty"

@@ -65,7 +65,7 @@ curl -fsSL https://raw.githubusercontent.com/Khazdul/mumecockpit/main/install/bo
 ### What got installed
 
 - Homebrew formulae: tmux, lua, tintin, git, python3
-- prompt_toolkit via pip
+- prompt_toolkit, pyperclip via pip
 - The MUME Cockpit repo at `~/MUME`
 - An optional Alacritty config example at `~/MUME/install/examples/alacritty.toml`
   if you want to switch terminals -- not installed automatically
@@ -94,7 +94,7 @@ curl -fsSL https://raw.githubusercontent.com/Khazdul/mumecockpit/main/install/bo
 
 ### What got installed
 
-- apt packages: tmux, lua5.4, tintin++, git, python3-prompt-toolkit
+- apt packages: tmux, lua5.4, tintin++, git, python3-prompt-toolkit, python3-pyperclip
 - Alacritty (on native Linux only -- skipped on WSL since the Windows
   installer handles the terminal there)
 - The MUME Cockpit repo at `~/MUME`
@@ -118,6 +118,7 @@ packages manually and clone the repo:
 | tintin++             | tintin               | tintin (AUR)         |
 | git                  | git                  | git                  |
 | python3-prompt-toolkit | python3-prompt-toolkit | python-prompt-toolkit |
+| python3-pyperclip    | python3-pyperclip    | python-pyperclip     |
 
 Then clone the repo:
 
