@@ -119,3 +119,42 @@ self/other color split.
 **Not changed:** Quoted channels (`tales`, `tells`, `says`, `yells`, `whispers`,
 `prayers`, `songs`, `questions`) retain the original verb+extraction layout, now
 extended to also render an optional `destination` field between verb and message.
+
+---
+
+## 2026-04-28 update — Destination fallback and case-insensitive action detection
+
+**Problem:** Two further GMCP inconsistencies observed in live traces:
+
+1. Incoming tells and whispers omit `destination`. MUME embeds `"tells you"` in
+   `text` but sends no `destination` field. The renderer was displaying
+   `"Gibur tells 'np :)'"` — missing the `"you"` destination entirely.
+
+2. Own socials arrive with `talker` set to the character name (e.g. `"Globur"`)
+   rather than `"you"`, while `text` starts with `"You "`. The `talker == "you"`
+   guard in the old self-detection branch never fired, so the renderer fell
+   through to the "other" branch and produced `"Globur You tip your helmet."`.
+
+3. Mob socials have `talker` in lowercase (e.g. `"a dwarven sergeant"`) while
+   `text` capitalizes the first word (`"A dwarven sergeant bows for you."`). The
+   case-sensitive `text.startswith(talker + " ")` match failed, triggering the
+   fallback prepend and producing doubled talker output.
+
+**Changes:**
+
+- **`DIRECTED_CHANNELS`** — new module-level set `{"tells", "whispers"}`. In
+  `_render_quoted_row`, after reading `destination`: if `destination` is absent
+  and `channel in DIRECTED_CHANNELS` and `talker != "you"`, fill
+  `destination = "you"`. Applied only to incoming directed channels; `says`,
+  `yells`, `tales`, `prayers`, `songs`, `questions` are unaffected.
+
+- **`_render_action_row` self-detection** — priority now driven by `text` prefix,
+  not by `talker`. Branch a: `text.startswith("You ")` → self render (ignores
+  `talker`). Branch b: case-insensitive `text.lower().startswith(talker.lower() + " ")`
+  → other render, with `text`'s original casing used for the displayed prefix.
+  Branch c (fallback) unchanged.
+
+**Rationale:** GMCP inconsistency originates on the MUME server and is not
+predictably fixable at the Lua layer without mutating stored history. Normalizing
+in the renderer keeps raw data pristine while correcting display artifacts at the
+only place that owns the view.

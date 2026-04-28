@@ -227,6 +227,30 @@
       "talker_type": "npc",
       "destination": null,
       "text": "Vit the innkeeper bows respectfully."
+    },
+    {
+      "ts": 1777200660,
+      "channel": "tells",
+      "talker": "Gibur",
+      "talker_type": null,
+      "destination": null,
+      "text": "\u001b[1mGibur\u001b[0m tells you 'np :)'"
+    },
+    {
+      "ts": 1777200690,
+      "channel": "socials",
+      "talker": "Globur",
+      "talker_type": null,
+      "destination": null,
+      "text": "You tip your helmet."
+    },
+    {
+      "ts": 1777200720,
+      "channel": "socials",
+      "talker": "a dwarven sergeant",
+      "talker_type": null,
+      "destination": null,
+      "text": "A dwarven sergeant bows for you."
     }
   ]
 }

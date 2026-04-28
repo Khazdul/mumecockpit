@@ -350,9 +350,10 @@ Per-channel verb/label colors are in `CHANNEL_COLORS` (see top of file).
 **Channel classes** — the renderer dispatches on two sets:
 
 ```python
-QUOTED_CHANNELS = {"tales", "tells", "says", "yells", "whispers",
-                   "prayers", "songs", "questions"}
-ACTION_CHANNELS = {"emotes", "socials"}
+QUOTED_CHANNELS   = {"tales", "tells", "says", "yells", "whispers",
+                     "prayers", "songs", "questions"}
+ACTION_CHANNELS   = {"emotes", "socials"}
+DIRECTED_CHANNELS = {"tells", "whispers"}
 ```
 
 Unknown channel names default to quoted-style rendering with the channel name as
@@ -381,26 +382,37 @@ Unknown channels fall back to the channel name as both forms.
 - Message body extracted from `text`: substring between the *first* `'` and the
   *last* `'`. Falls back to `text` verbatim if no two quotes found. When
   `talker == "you"`, `text` is already the bare message — wrap directly.
-- **Destination** — when `destination` is present and non-empty, it is inserted
-  between verb and message, in `C_TALKER_OTHER`. Capitalization: `"you"` stays
-  lowercase; any other value has its first character uppercased. Examples:
+- **Destination fallback** — MUME omits the `destination` field on incoming
+  tells and whispers. If `destination` is absent and `channel` is in
+  `DIRECTED_CHANNELS` (`tells`, `whispers`) and `talker != "you"`, the renderer
+  fills in `destination = "you"` before display. This covers the common case of
+  `"Gibur tells you 'np :)'"` arriving with no destination in the payload.
+- **Destination** — when `destination` is present (or filled by the fallback),
+  it is inserted between verb and message in `C_TALKER_YOU` when the value is
+  `"you"`, `C_TALKER_OTHER` otherwise. Capitalization: `"you"` stays lowercase;
+  any other value has its first character uppercased. Examples:
   - `You tell Ibuki 'come to the inn'`
   - `Frodo tells you 'hi there'`
+  - `Gibur tells you 'np :)'` (destination absent in payload; fallback applied)
   - `You ask Aragorn 'where is the nearest inn'`
 
 **Action-channel rendering** (`_render_action_row`) — format: `HH:MM <text>`
 
 No channel verb and no separately-rendered talker fragment. `text` from the GMCP
-payload is rendered verbatim with a talker-prefix color split:
+payload is rendered verbatim with a talker-prefix color split. Detection runs in
+priority order:
 
-- If `talker == "you"` and `text` starts with `"You "`: `"You "` in
-  `C_TALKER_YOU`, remainder in `C_MESSAGE_SELF`.
-- Else if `text` starts with `talker + " "` (exact case-sensitive match against
-  the raw `talker` field, including multi-word names): prefix in `C_TALKER_OTHER`,
-  remainder in `C_MESSAGE_OTHER`.
-- Else (malformed — talker not present at start of `text`): prepend `<Talker> `
-  in talker color (`"you"` → `"You"`), then render `text` verbatim in message
-  color.
+1. If `text.startswith("You ")`: render as self — `"You "` in `C_TALKER_YOU`,
+   remainder in `C_MESSAGE_SELF`. The `talker` field is ignored; MUME may set it
+   to the character name for own socials rather than `"you"`.
+2. Else if `talker` is non-empty and `text.lower().startswith(talker.lower() + " ")`:
+   render as other — slice the matching prefix from `text` (preserving `text`'s
+   original casing, case-insensitive match) in `C_TALKER_OTHER`, remainder in
+   `C_MESSAGE_OTHER`. Covers multi-word talker names and talker/text case
+   mismatches (e.g. `talker="a dwarven sergeant"`, `text="A dwarven sergeant …"`).
+3. Else (malformed — talker not at start of `text`): prepend `<Talker> ` in
+   talker color (`"you"` → `"You"`), then render `text` verbatim in message
+   color.
 
 This eliminates double-talker artifacts such as `"You social You wave goodbye."` or
 `"Vainamoinen emotes Vainamoinen smiles warmly."` that arise when the channel verb

@@ -60,9 +60,10 @@ CHANNEL_VERBS = {
     "socials":   ("social",   "socials"),
 }
 
-QUOTED_CHANNELS = {"tales", "tells", "says", "yells", "whispers",
-                   "prayers", "songs", "questions"}
-ACTION_CHANNELS = {"emotes", "socials"}
+QUOTED_CHANNELS   = {"tales", "tells", "says", "yells", "whispers",
+                     "prayers", "songs", "questions"}
+ACTION_CHANNELS   = {"emotes", "socials"}
+DIRECTED_CHANNELS = {"tells", "whispers"}
 
 CHANNEL_LABELS = {
     "tales":     "Na",
@@ -191,6 +192,9 @@ def _render_quoted_row(entry, channels):
     text        = entry.get("text", "")
     destination = entry.get("destination") or ""
 
+    if not destination and channel in DIRECTED_CHANNELS and talker != "you":
+        destination = "you"
+
     if talker == "you":
         display_talker = "You"
     elif talker:
@@ -248,10 +252,7 @@ def _render_action_row(entry):
 
     frags.append((C_TIME, _ts_str(entry.get("ts", 0)) + " "))
 
-    talker_style = C_TALKER_YOU if talker == "you" else C_TALKER_OTHER
-    msg_style    = C_MESSAGE_SELF if talker == "you" else C_MESSAGE_OTHER
-
-    if talker == "you" and text.startswith("You "):
+    if text.startswith("You "):
         frags.append((C_TALKER_YOU, "You "))
         rest = text[4:]
         try:
@@ -259,8 +260,8 @@ def _render_action_row(entry):
             frags.extend((C_MESSAGE_SELF if s == "" else s, t) for s, t in ansi_frags)
         except Exception:
             frags.append((C_MESSAGE_SELF, rest))
-    elif talker and text.startswith(talker + " "):
-        prefix = talker + " "
+    elif talker and text.lower().startswith(talker.lower() + " "):
+        prefix = text[:len(talker) + 1]
         frags.append((C_TALKER_OTHER, prefix))
         rest = text[len(prefix):]
         try:
@@ -275,6 +276,8 @@ def _render_action_row(entry):
             display_talker = talker[0].upper() + talker[1:]
         else:
             display_talker = ""
+        talker_style = C_TALKER_YOU if talker == "you" else C_TALKER_OTHER
+        msg_style    = C_MESSAGE_SELF if talker == "you" else C_MESSAGE_OTHER
         if display_talker:
             frags.append((talker_style, display_talker + " "))
         try:
