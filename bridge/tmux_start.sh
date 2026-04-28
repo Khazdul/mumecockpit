@@ -41,6 +41,7 @@ chmod +x bridge/open_pane.sh
 chmod +x bridge/focus_input.sh
 chmod +x bridge/toggle_pane.sh
 chmod +x bridge/read_version.sh
+chmod +x bridge/select_and_refocus.sh
 
 touch logs/debug.log logs/ui.log
 > logs/debug.log
@@ -116,6 +117,32 @@ tmux set-option -s escape-time 10
 tmux bind-key -T root Escape display-popup -E \
     -w 80% -h 80% -x C -y C \
     "bash $HOME/MUME/bridge/ingame_menu.sh"
+
+# ---------------------------------------------------------------------------
+# Cockpit interaction lockdown — hide tmux from the player.
+# ---------------------------------------------------------------------------
+
+# Right-click context menus — removed; no useful action for the player.
+tmux unbind-key -n MouseDown3Pane
+tmux unbind-key -n MouseDown3Status
+tmux unbind-key -n MouseDown3StatusLeft
+tmux unbind-key -n MouseDown3StatusRight
+
+# Prefix key — disabled; tt++ macros and prompt_toolkit own all keys.
+tmux set-option -t mume prefix None
+
+# OSC 52 clipboard — lets selection reach the system clipboard via terminal
+# emulator (Alacritty, Windows Terminal, kitty, iTerm2, modern xterm).
+tmux set-option -s set-clipboard on
+
+# Wheel in status pane = no-op; stock copy-mode behaviour preserved elsewhere.
+# Confirmed stock WheelUpPane (tmux list-keys -T root | grep Wheel):
+#   if-shell -F "#{||:#{pane_in_mode},#{mouse_any_flag}}" { send-keys -M } { copy-mode -e }
+# WheelDownPane had no explicit root binding — complementary form used.
+STOCK_WHEEL_UP='if-shell -F "#{||:#{pane_in_mode},#{mouse_any_flag}}" { send-keys -M } { copy-mode -e }'
+STOCK_WHEEL_DOWN='if-shell -F "#{||:#{pane_in_mode},#{mouse_any_flag}}" { send-keys -M } {}'
+tmux bind-key -n WheelUpPane   "if-shell -F '#{==:#{pane_title},status}' '' '$STOCK_WHEEL_UP'"
+tmux bind-key -n WheelDownPane "if-shell -F '#{==:#{pane_title},status}' '' '$STOCK_WHEEL_DOWN'"
 
 # Start ping monitor. Guarded against double-starts; self-terminates when
 # tmux:mume dies.

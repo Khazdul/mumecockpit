@@ -110,6 +110,9 @@ case "$TARGET" in
         if _pane_exists "input"; then
             _kill_pane "input"
             tmux unbind-key -n MouseUp1Pane
+            tmux unbind-key -n MouseDragEnd1Pane
+            tmux unbind-key -n DoubleClick1Pane
+            tmux unbind-key -n TripleClick1Pane
             tmux select-pane -t mume:cockpit.0
         else
             bash "$SCRIPT_DIR/open_pane.sh" input

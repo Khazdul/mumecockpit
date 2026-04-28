@@ -346,6 +346,7 @@ Deferred until there's a concrete use case:
 - [docs/ipc.md](docs/ipc.md) — tt++ ↔ Lua IPC contract, relay actions, startup ordering. Touched when changing how tt++ and Lua communicate.
 - [docs/session-lifecycle.md](docs/session-lifecycle.md) — Session connect/disconnect, session.state, cp -r, settings persistence. Touched when changing session handling or startup flow.
 - [docs/input-pane.md](docs/input-pane.md) — Input pane key forwarding, Enter semantics, history navigation. Touched when changing input behaviour or adding new forwarded keys.
+- [docs/tmux-bindings.md](docs/tmux-bindings.md) — tmux root-table bindings, disabled defaults, mouse interaction model, clipboard portability. Touched when changing any tmux binding or mouse behaviour.
 - [docs/launcher.md](docs/launcher.md) — Pre-tmux startup menu, rendering conventions, exec-chain. Touched when changing launcher pages or startup options.
 - [docs/popup-menu.md](docs/popup-menu.md) — In-game ESC popup: submenus, status header, save-profile flow. Touched when changing the in-game overlay.
 - [docs/bridge-services.md](docs/bridge-services.md) — Ping monitor, version check, self-update, layout and config file formats. Touched when changing background services or persisted config.

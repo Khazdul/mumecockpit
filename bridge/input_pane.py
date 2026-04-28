@@ -282,12 +282,28 @@ def get_input_pane_index():
 def setup_mouse_binding():
     if get_input_pane_index() is None:
         return
-    script = os.path.expanduser("~/MUME/bridge/focus_input.sh")
+    focus = os.path.expanduser("~/MUME/bridge/focus_input.sh")
+    refocus = os.path.expanduser("~/MUME/bridge/select_and_refocus.sh")
+    cond = '[ "#{pane_title}" != "input" ]'
     subprocess.run([
         "tmux", "bind-key", "-n", "MouseUp1Pane",
-        "if-shell",
-        "[ \"#{pane_title}\" != \"input\" ]",
-        "run-shell " + script
+        "if-shell", cond,
+        "run-shell " + focus
+    ])
+    subprocess.run([
+        "tmux", "bind-key", "-n", "MouseDragEnd1Pane",
+        "if-shell", cond,
+        "send-keys -X copy-pipe-and-cancel ; run-shell " + focus
+    ])
+    subprocess.run([
+        "tmux", "bind-key", "-n", "DoubleClick1Pane",
+        "if-shell", cond,
+        "run-shell \"" + refocus + " word\""
+    ])
+    subprocess.run([
+        "tmux", "bind-key", "-n", "TripleClick1Pane",
+        "if-shell", cond,
+        "run-shell \"" + refocus + " line\""
     ])
 
 def _restore_keypad():
