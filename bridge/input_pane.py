@@ -128,8 +128,8 @@ def _delete(event):
 def _left(event):
     buf = event.current_buffer
     if _has_selection(buf):
-        a, _ = buf.document.selection_range()
-        _drop_selection_to(buf, a)
+        target = max(0, buf.cursor_position - 1)
+        _drop_selection_to(buf, target)
     elif buf.cursor_position > 0:
         buf.cursor_position -= 1
 
@@ -248,7 +248,7 @@ def _handle_enter(event):
         send("")
 
 
-@kb.add("c-c")
+@kb.add("c-c", eager=True)
 def _handle_ctrl_c(event):
     buf = event.app.current_buffer
     if not buf.selection_state:
@@ -259,7 +259,7 @@ def _handle_ctrl_c(event):
         _copy_to_clipboard(event, text)
 
 
-@kb.add("c-x")
+@kb.add("c-x", eager=True)
 def _handle_ctrl_x(event):
     buf = event.app.current_buffer
     if not buf.selection_state:
@@ -271,7 +271,7 @@ def _handle_ctrl_x(event):
         buf.cut_selection()
 
 
-@kb.add("c-v")
+@kb.add("c-v", eager=True)
 def _handle_ctrl_v(event):
     buf = event.app.current_buffer
     text = _read_clipboard()
@@ -424,14 +424,13 @@ def main():
                     input_processors=[
                         BeforeInput("> "),
                     ],
-                    key_bindings=kb,
                 ),
                 height=1,
             )
         ])
     )
 
-    app = Application(layout=layout, full_screen=False)
+    app = Application(layout=layout, key_bindings=kb, full_screen=False, handle_sigint=False)
 
     try:
         app.run()
