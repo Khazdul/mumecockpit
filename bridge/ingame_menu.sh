@@ -57,7 +57,7 @@ _rebuild_menu() {
 }
 
 _render_status_header() {
-    local cols; cols=$(tput cols 2>/dev/null || echo 80)
+    local cols; cols=$(term_cols)
 
     local profile="default" connection_mode="mmapper"
     [ -f bridge/startup.conf ] && source bridge/startup.conf
@@ -143,7 +143,7 @@ _save_profile() {
 
 
 _render_main() {
-    local cols; cols=$(tput cols 2>/dev/null || echo 80)
+    local cols; cols=$(term_cols)
     local now; now=$(date +%s)
     {
         draw_ascii_title
@@ -177,7 +177,7 @@ _options_submenu() {
     while true; do
         if [ "$_ODIRTY" -eq 1 ]; then
             _ODIRTY=0
-            local cols; cols=$(tput cols 2>/dev/null || echo 80)
+            local cols; cols=$(term_cols)
 
             local _chk_sts="[ ]" _chk_comm="[ ]" _chk_ui="[ ]" _chk_dev="[ ]" _chk_inp="[ ]" _chk_hdr="[ ]"
             tmux list-panes -t mume:cockpit -F '#{pane_title}' 2>/dev/null | grep -q '^status$' && _chk_sts="[x]"
@@ -252,8 +252,8 @@ _scripts_submenu() {
     while true; do
         if [ "$_SDIRTY" -eq 1 ]; then
             _SDIRTY=0
-            local cols; cols=$(tput cols 2>/dev/null || echo 80)
-            local rows; rows=$(tput lines 2>/dev/null || echo 24)
+            local cols; cols=$(term_cols)
+            local rows; rows=$(term_lines)
 
             _slines=()
             local _sin_script=0
@@ -323,7 +323,7 @@ _scripts_submenu() {
                 [ "$_soffset" -gt 0 ] && _soffset=$(( _soffset - 1 )) || _SDIRTY=0
                 ;;
             DOWN)
-                local rows; rows=$(tput lines 2>/dev/null || echo 24)
+                local rows; rows=$(term_lines)
                 local vis=$(( rows - 6 ))
                 [ "$vis" -lt 1 ] && vis=1
                 local mx=$(( _stotal - vis ))
@@ -343,7 +343,7 @@ _exit_confirm() {
     while true; do
         if [ "$_DIRTY" -eq 1 ]; then
             _DIRTY=0
-            local cols; cols=$(tput cols 2>/dev/null || echo 80)
+            local cols; cols=$(term_cols)
             local msg="Exit to main menu?  Y to confirm, any other key to cancel."
             local pad=$(( (cols - ${#msg}) / 2 ))
             [ "$pad" -lt 0 ] && pad=0

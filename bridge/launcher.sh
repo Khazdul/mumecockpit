@@ -174,7 +174,7 @@ trap '_DIRTY=1' WINCH
 # Main menu render
 # ---------------------------------------------------------------------------
 _render_main() {
-    local cols; cols=$(tput cols 2>/dev/null || echo 80)
+    local cols; cols=$(term_cols)
     {
         draw_ascii_title
 
@@ -210,7 +210,7 @@ _quit_confirm() {
     while true; do
         if [ "$_DIRTY" -eq 1 ]; then
             _DIRTY=0
-            local cols; cols=$(tput cols 2>/dev/null || echo 80)
+            local cols; cols=$(term_cols)
             local msg="Quit? Press Y to confirm, any other key to cancel."
             local pad=$(( (cols - ${#msg}) / 2 ))
             { printf '\n\n'; printf "%${pad}s${_MR_ACTIVE}%s${_MR_RESET}\n" "" "$msg"; } | render_frame
@@ -247,15 +247,15 @@ _options_menu() {
 
     _section_hdr() {
         local title="$1"
-        local cols; cols=$(tput cols 2>/dev/null || echo 80)
+        local cols; cols=$(term_cols)
         local hpad=$(( (cols - ${#title}) / 2 ))
         [ "$hpad" -lt 0 ] && hpad=0
         printf "%${hpad}s${_MR_SECTION}%s${_MR_RESET}\n" "" "$title"
     }
 
     _render_opts() {
-        local cols; cols=$(tput cols 2>/dev/null || echo 80)
-        local rows; rows=$(tput lines 2>/dev/null || echo 24)
+        local cols; cols=$(term_cols)
+        local rows; rows=$(term_lines)
         local chk_sts="[ ]" chk_comm="[ ]" chk_ui="[ ]" chk_dev="[ ]" chk_inp="[ ]" chk_pdv="[ ]"
         [ "$_sts"  -eq 1 ] && chk_sts="[x]"
         [ "$_comm" -eq 1 ] && chk_comm="[x]"
@@ -371,7 +371,7 @@ _create_profile_flow() {
     while true; do
         if [ "$_DIRTY" -eq 1 ] || [ "$nr" -eq 1 ]; then
             _DIRTY=0; nr=0
-            cols=$(tput cols 2>/dev/null || echo 80)
+            cols=$(term_cols)
             local ctitle="─── Create New Profile ───"
             local ctpad=$(( (cols - ${#ctitle}) / 2 ))
             local hint="letters and _ only · must start with a letter · max 32"
@@ -431,7 +431,7 @@ _create_profile_flow() {
     while true; do
         if [ "$_DIRTY" -eq 1 ]; then
             _DIRTY=0
-            cols=$(tput cols 2>/dev/null || echo 80)
+            cols=$(term_cols)
             local p2title="─── Create New Profile ───"
             local p2tpad=$(( (cols - ${#p2title}) / 2 ))
             local bfooter="B  Blank profile · C  Copy from existing · ESC  Cancel"
@@ -472,7 +472,7 @@ _create_profile_flow() {
                     while true; do
                         if [ "$_DIRTY" -eq 1 ]; then
                             _DIRTY=0
-                            cols=$(tput cols 2>/dev/null || echo 80)
+                            cols=$(term_cols)
                             local etitle="─── Create New Profile ───"
                             local etpad=$(( (cols - ${#etitle}) / 2 ))
                             local emsg="No profiles available to copy from."
@@ -497,7 +497,7 @@ _create_profile_flow() {
                 while true; do
                     if [ "$_DIRTY" -eq 1 ]; then
                         _DIRTY=0
-                        cols=$(tput cols 2>/dev/null || echo 80)
+                        cols=$(term_cols)
                         local cptitle="─── Create New Profile ───"
                         local cptpad=$(( (cols - ${#cptitle}) / 2 ))
                         local cfooter="↑↓ Navigate · Enter  Select · ESC  Cancel"
@@ -569,7 +569,7 @@ _profile_page() {
     _render_profile() {
         local create_idx=${#_profiles[@]}
         local back_idx=$(( create_idx + 1 ))
-        local cols; cols=$(tput cols 2>/dev/null || echo 80)
+        local cols; cols=$(term_cols)
         local title="─── Profile ───"
         local tpad=$(( (cols - ${#title}) / 2 ))
         local footer="↑↓ Navigate · Enter Select · D Delete · ESC Back"
@@ -641,7 +641,7 @@ _profile_page() {
                 if [ "$_psel" -ge "${#_profiles[@]}" ]; then
                     _DIRTY=0  # ignore on Create/Back rows
                 else
-                    local cols; cols=$(tput cols 2>/dev/null || echo 80)
+                    local cols; cols=$(term_cols)
                     local dname="${_profiles[$_psel]}"
                     local dtitle="─── Profile ───"
                     local dtpad=$(( (cols - ${#dtitle}) / 2 ))
@@ -711,7 +711,7 @@ _about_page() {
     local _acols=0  # cols at last wrap; checked to skip unnecessary re-wraps
 
     _load_about_lines() {
-        local cols; cols=$(tput cols 2>/dev/null || echo 80)
+        local cols; cols=$(term_cols)
         local width=$(( cols - 4 ))
         [ "$width" -gt 76 ] && width=76
         [ "$width" -lt 20 ] && width=20
@@ -727,8 +727,8 @@ _about_page() {
     }
 
     _render_about() {
-        local cols; cols=$(tput cols 2>/dev/null || echo 80)
-        local rows; rows=$(tput lines 2>/dev/null || echo 24)
+        local cols; cols=$(term_cols)
+        local rows; rows=$(term_lines)
         local width=$(( cols - 4 ))
         [ "$width" -gt 76 ] && width=76
         [ "$width" -lt 20 ] && width=20
@@ -811,7 +811,7 @@ _about_page() {
         read_key 0.2 || continue
 
         local atotal=${#_alines[@]}
-        local rows; rows=$(tput lines 2>/dev/null || echo 24)
+        local rows; rows=$(term_lines)
         local visible=$(( rows - 5 ))
         [ "$visible" -lt 1 ] && visible=1
         local max_off=$(( atotal - visible ))
@@ -872,8 +872,8 @@ _scripts_page() {
     local _stotal=${#_slines[@]}
 
     _render_scripts() {
-        local cols; cols=$(tput cols 2>/dev/null || echo 80)
-        local rows; rows=$(tput lines 2>/dev/null || echo 24)
+        local cols; cols=$(term_cols)
+        local rows; rows=$(term_lines)
         local pad=$(( (cols - 60) / 2 ))
         [ "$pad" -lt 0 ] && pad=0
         local p; printf -v p "%${pad}s" ""
@@ -928,7 +928,7 @@ _scripts_page() {
                 [ "$_soffset" -gt 0 ] && _soffset=$(( _soffset - 1 )) || _DIRTY=0
                 ;;
             DOWN)
-                local rows; rows=$(tput lines 2>/dev/null || echo 24)
+                local rows; rows=$(term_lines)
                 local vis=$(( rows - 6 ))
                 [ "$vis" -lt 1 ] && vis=1
                 local mx=$(( _stotal - vis ))
@@ -972,7 +972,7 @@ _run_update() {
     while true; do
         if [ "$_DIRTY" -eq 1 ]; then
             _DIRTY=0
-            local cols; cols=$(tput cols 2>/dev/null || echo 80)
+            local cols; cols=$(term_cols)
             local tpad=$(( (cols - ${#title}) / 2 ))
             [ "$tpad" -lt 0 ] && tpad=0
             local fpad=$(( (cols - ${#footer}) / 2 ))

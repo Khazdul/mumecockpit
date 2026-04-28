@@ -43,6 +43,16 @@ _MR_YELLOW='\e[1;33m'
 _MR_ERR='\e[1;31m'
 
 # ---------------------------------------------------------------------------
+# term_cols / term_lines
+# Portable terminal-dimension queries. `tput cols` lies on macOS (BSD ncurses)
+# when called from non-interactive subshells, falling back to the termcap
+# default (80x24). `stty size </dev/tty` reads controlling-tty dimensions
+# directly from the kernel and is accurate on both Linux and macOS.
+# ---------------------------------------------------------------------------
+term_cols()  { stty size </dev/tty 2>/dev/null | awk '{print $2}' || echo 80; }
+term_lines() { stty size </dev/tty 2>/dev/null | awk '{print $1}' || echo 24; }
+
+# ---------------------------------------------------------------------------
 # render_frame
 # Read a full frame from stdin and write it without flicker.
 # Each line is written followed by \e[K (clear to end of line) so shorter
@@ -71,7 +81,7 @@ render_frame() {
 # COCKPIT block-letter banner (3 rows), both centered and in the same cyan.
 # ---------------------------------------------------------------------------
 draw_ascii_title() {
-    local cols; cols=$(tput cols 2>/dev/null || echo 80)
+    local cols; cols=$(term_cols)
 
     # ANSI Shadow font — MUME
     local mume_lines=(
@@ -116,7 +126,7 @@ draw_ascii_title() {
 # ---------------------------------------------------------------------------
 draw_menu_item() {
     local label="$1" is_active="${2:-0}" pad_override="${3:-}" inactive_color="${4:-}"
-    local cols; cols=$(tput cols 2>/dev/null || echo 80)
+    local cols; cols=$(term_cols)
     [ -z "$inactive_color" ] && inactive_color="$_MR_ITEM"
 
     local prefix suffix
@@ -157,7 +167,7 @@ draw_menu_item() {
 draw_layout_mockup() {
     local show_ui="${1:-1}" show_dev="${2:-0}" show_input="${3:-1}" show_desc="${4:-1}" show_dividers="${5:-1}" show_status="${6:-0}" show_comm="${7:-0}"
 
-    local cols; cols=$(tput cols 2>/dev/null || echo 80)
+    local cols; cols=$(term_cols)
     local indent=$(( (cols - 24) / 2 ))
     [ "$indent" -lt 0 ] && indent=0
     local p; printf -v p "%${indent}s" ""
@@ -387,8 +397,8 @@ read_key() {
 # ---------------------------------------------------------------------------
 _mr_size_ok() {
     local c l
-    c=$(tput cols  2>/dev/null || echo 0)
-    l=$(tput lines 2>/dev/null || echo 0)
+    c=$(term_cols)
+    l=$(term_lines)
     [ "$c" -ge 80 ] && [ "$l" -ge 24 ]
 }
 
@@ -398,8 +408,8 @@ check_min_size() {
     trap ':' WINCH   # make SIGWINCH interrupt read so the loop re-checks
     while ! _mr_size_ok; do
         local c l
-        c=$(tput cols  2>/dev/null || echo 0)
-        l=$(tput lines 2>/dev/null || echo 0)
+        c=$(term_cols)
+        l=$(term_lines)
         {
             printf "\n${_MR_YELLOW}  Terminal too small: %dx%d${_MR_RESET}\n" "$c" "$l"
             printf "${_MR_ACTIVE}  Please resize to at least 80x24.${_MR_RESET}\n"
