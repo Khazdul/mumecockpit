@@ -79,6 +79,16 @@ reconsidering if contributors join.
 revertable. A hook that silently amends history or creates a commit on push is
 harder to reason about.
 
+## Validation
+
+The full self-update flow was validated end-to-end on a fresh WSL Ubuntu test
+distro on 2026-04-28. Six on-rails update cycles were performed (v0.2.1 →
+v0.2.6) covering: tag-checkout under happy path, all three guards (dev
+fingerprint, dirty tree, ahead-of-tag), user-file preservation across the four
+classification cases, EXIT-trap recovery on a deliberately interrupted update,
+and the cache-mtime race fix. No issues found that the existing exit-code
+taxonomy did not already cover.
+
 ## Out of scope
 
 - Signed tags (GPG verification of release integrity).

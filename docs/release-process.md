@@ -138,3 +138,129 @@ commit is pushed):
 **Verify:**
 
     bash bridge/version_check.sh --force && cat bridge/version.cache
+
+---
+
+# Orchestration: running the release process via VS Code Claude
+
+This section is written for VS Code Claude. When given a prompt such as:
+
+> Make a new release. Follow the runbook in docs/release-process.md.
+> Summarize what's new since the last release based on commit history.
+
+Claude should execute the steps below autonomously, confirming each step in
+chat as it completes.
+
+## Preconditions
+
+Before starting, verify silently:
+
+1. Working directory is the repo root (a `VERSION` file exists).
+2. On branch `main` — `git branch --show-current` returns `main`.
+3. Working tree is clean — `git status --porcelain` returns nothing.
+4. Local branch is up to date with origin — `git fetch origin main` followed
+   by `git rev-list HEAD..origin/main --count` returns `0`.
+5. `gh auth status` exits 0 (GitHub CLI is authenticated).
+6. The most recent release tag exists and is reachable —
+   `git describe --tags --abbrev=0` should succeed.
+
+If any precondition fails, report which one and stop. Do not attempt to fix it.
+
+## Determining the next version
+
+Read `VERSION`. That is the currently installed version (no `v` prefix).
+
+Determine the bump by inspecting commit subjects since the last release tag:
+
+    git log $(git describe --tags --abbrev=0)..HEAD --oneline
+
+Apply these rules to the subjects:
+
+- Any subject matching `feat!:` or containing `BREAKING CHANGE:` → **MAJOR**
+  bump (X+1.0.0).
+- Any subject matching `feat(` or `feat:` (without `!`) → **MINOR** bump
+  (X.Y+1.0).
+- Otherwise → **PATCH** bump (X.Y.Z+1).
+
+Use the highest-priority signal found. State the chosen bump and the reasoning
+(which subject triggered it, or "all fixes/chores") in chat before proceeding.
+
+For explicit pre-release versions (e.g. `v0.3.0-rc1`), the user must supply
+the exact version string. Default behaviour is always a stable release.
+
+## Generating the commit summary
+
+Read the commits since the last tag:
+
+    git log $(git describe --tags --abbrev=0)..HEAD --oneline
+
+Group them by type prefix (`feat`, `fix`, `refactor`, `docs`, `chore`, etc.).
+Write 3–5 bullet points describing what changed at user-visible level. Each
+bullet starts with an imperative verb and is at most ~80 characters. Skip
+pure-internal items such as `chore: bump VERSION`. Output this summary in chat
+for human reference before executing the release steps.
+
+## Execution sequence
+
+Run steps 2–6 from this document in order. After each step, confirm in one
+line what happened. Exact commands:
+
+**Step 1 — Bump VERSION on main:**
+
+    echo "X.Y.Z" > VERSION
+    git add VERSION
+    git commit -m "chore: bump VERSION to X.Y.Z"
+    git push origin main
+
+**Step 2 — Run the pre-tag sanity check:**
+
+    bash bridge/check_release.sh vX.Y.Z
+
+Expected output: `VERSION matches vX.Y.Z. Safe to tag.`
+If it fails, stop and report the output. Do not proceed to the tag step.
+
+**Step 3 — Tag and push:**
+
+    git tag vX.Y.Z
+    git push origin vX.Y.Z
+
+**Step 4 — Create the GitHub release:**
+
+For a stable release:
+
+    gh release create vX.Y.Z --generate-notes
+
+For a pre-release:
+
+    gh release create vX.Y.Z --generate-notes --prerelease
+
+**Step 5 — Verify the cache:**
+
+    bash bridge/version_check.sh --force && cat bridge/version.cache
+
+Confirm that the output contains `latest=vX.Y.Z`. If it does not (and this is
+not a pre-release), report the anomaly and stop. Do not attempt to fix it.
+
+## Failure handling
+
+- If any step exits non-zero, **stop immediately**. Do not attempt automatic
+  recovery.
+- Report: which step failed, the exact command that ran, and the full error
+  output.
+- If the failure occurred after the tag was pushed, refer the user to the
+  Recovery section above.
+- Never delete a tag or release without explicit user confirmation.
+- Never force-push.
+
+## What not to do autonomously
+
+- Do not edit any file other than `VERSION`. If commits since the last release
+  imply something else should change (e.g. a hardcoded version string),
+  surface the question to the user; do not change it silently.
+- Do not edit ADRs or other documentation as part of a release. Documentation
+  updates are a separate concern handled outside the release flow.
+- Do not edit the release note body after creation. If the generated notes look
+  incorrect, surface the release URL for the user to edit manually.
+
+Stable releases are visible to end users via `version_check.sh`; pre-releases
+are not.

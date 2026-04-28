@@ -323,6 +323,7 @@ here — it's described in the relevant `docs/*.md` and visible in the
 - [x] Affect tracker
 - [ ] Tells history UI
 - [ ] PvP keybinds finalized
+- [x] Self-update flow validated end-to-end (v0.2.1–v0.2.6, 2026-04-28)
 
 ## Parked
 
