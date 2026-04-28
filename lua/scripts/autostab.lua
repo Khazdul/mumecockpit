@@ -157,7 +157,7 @@ end
 -- -----------------------------
 -- SETUP — register alias on load, declare metadata
 -- -----------------------------
-game_cmd('#alias {as%1} {#lua {scripts.autostab.start("%1", "$target")}}')
+game_cmd('#alias {as{[nesudw]}} {#lua {scripts.autostab.start("%1", "$target")}}')
 register_script({
     alias   = "autostab",
     summary = "backstab/escape loop",

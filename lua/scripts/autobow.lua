@@ -229,7 +229,7 @@ end
 -- -----------------------------
 -- SETUP — register alias on load, declare metadata
 -- -----------------------------
-game_cmd('#alias {ash%1} {#lua {scripts.autobow.start("%1", "$target")}} {4}')
+game_cmd('#alias {ash{[nesudw]}} {#lua {scripts.autobow.start("%1", "$target")}} {4}')
 register_script({
     alias   = "autobow",
     summary = "bow/crossbow shoot/escape loop",
