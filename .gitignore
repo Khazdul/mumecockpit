@@ -45,3 +45,8 @@ __pycache__/
 # VS Code settings (optional — remove if you want to sync these)
 
 .vscode/
+
+# Private scripts
+
+lua/scripts/autostab.lua
+lua/scripts/autobow.lua
