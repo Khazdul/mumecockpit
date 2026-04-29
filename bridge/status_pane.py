@@ -121,8 +121,8 @@ def _time_row(time_str, period, remaining, width):
     trailing_left = max(0, lw - len(label) - 1 - len(val))
     left = C_LABEL + label + C_RESET + " " + C_VALUE + val + C_RESET + " " * trailing_left
 
-    icon   = "☼" if period == "night" else "☾"
-    colour = C_SUN if period == "night" else C_MOON
+    icon   = "☼" if period == "day" else "☾"
+    colour = C_SUN if period == "day" else C_MOON
     rem    = str(remaining)
     if len(rem) > rw - 2:
         rem = rem[:rw - 2]
