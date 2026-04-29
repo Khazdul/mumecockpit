@@ -17,7 +17,7 @@ local _orig_name = gmcp.handlers["Char.Name"]
 gmcp.handlers["Char.Name"] = function(body)
     if _orig_name then _orig_name(body) end
     send("change width all 500")
-    send("change width terminal")
+    send("change width table terminal")
 end
 
 dbg("[SERVER_PREFS] loaded")
