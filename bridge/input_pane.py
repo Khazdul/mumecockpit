@@ -221,12 +221,23 @@ def _handle_ctrl_a(event):
 
 @kb.add("pageup")
 def _handle_pageup(event):
-    subprocess.run(["tmux", "send-keys", "-t", TMUX_TARGET, "PageUp"])
+    # Mirror wheel-up: enter copy-mode with auto-exit (-e), then scroll one
+    # page up. copy-mode -e is idempotent — already-in-copy-mode is a no-op.
+    # Page Down past bottom auto-exits and pane-mode-changed refocuses input.
+    subprocess.run(["tmux", "copy-mode", "-e", "-t", TMUX_TARGET])
+    subprocess.run(["tmux", "send-keys", "-t", TMUX_TARGET, "-X", "page-up"])
 
 
 @kb.add("pagedown")
 def _handle_pagedown(event):
-    subprocess.run(["tmux", "send-keys", "-t", TMUX_TARGET, "PageDown"])
+    # Only scroll in copy-mode. At the live tail there is nothing below
+    # the cursor — Page Down is a no-op.
+    subprocess.run([
+        "tmux", "if-shell",
+        "-t", TMUX_TARGET,
+        "-F", "#{pane_in_mode}",
+        f"send-keys -t {TMUX_TARGET} -X page-down",
+    ])
 
 
 @kb.add("enter")

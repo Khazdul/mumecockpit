@@ -17,7 +17,10 @@ left column, 1 row tall.
 - Pressing Enter again repeats the last command
 - Pressing any printable key while the buffer is selected replaces it and
   starts a new command (prompt_toolkit default selection replacement)
-- Page Up / Page Down scroll the TT++ pane without leaving the input pane
+- Page Up / Page Down drive the game pane's tmux copy-mode (the same scrollback
+  as the mouse wheel) without leaving the input pane. Page Down past the live
+  bottom auto-exits copy-mode, and the `pane-mode-changed` hook refocuses the
+  input pane
 - On startup, a tmux `MouseUp1Pane` binding is registered so that clicking
   any other pane returns focus to the input pane automatically. The binding
   calls `bridge/focus_input.sh`, which resolves the input pane's current
@@ -61,7 +64,7 @@ Keys are split into three disjoint categories:
 | Editing    | prompt_toolkit     | printable chars, Backspace, Ctrl+E/W, Alt+Backspace   |
 | Selection  | prompt_toolkit     | Shift+arrows, Ctrl+Shift+arrows (native selection)    |
 | History    | input_pane.py      | Up, Down                                              |
-| Scrollback | input_pane.py      | PageUp, PageDown (forwarded to tt++ pane's buffer)    |
+| Scrollback | input_pane.py      | PageUp, PageDown (drive tmux copy-mode in the game pane — same buffer as the mouse wheel) |
 | Clipboard  | input_pane.py      | Ctrl+C (copy), Ctrl+X (cut), Ctrl+V (paste)           |
 | Forwarded  | tt++ via send-keys | F1–F12, numpad (SS3), Alt+letter (subset), Ctrl+letter (subset) |
 

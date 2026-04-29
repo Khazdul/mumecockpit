@@ -64,6 +64,23 @@ cockpit session. The pane no longer closes during normal use.
 - **Scroll wheel in cockpit status pane:** no-op — the status pane has no meaningful
   scrollback, and letting the wheel enter copy-mode there is confusing.
 
+## Page Up / Page Down from the input pane
+
+Page Up and Page Down operate on the game pane's tmux copy-mode — the same
+scrollback as the mouse wheel. They share identical entry and exit behaviour:
+
+- **Page Up** calls `tmux copy-mode -e -t <game pane>` (idempotent — a no-op
+  when already in copy-mode) then `send-keys -X page-up`. The `-e` flag means
+  scrolling past the bottom auto-exits copy-mode.
+- **Page Down** is gated on `#{pane_in_mode}` — it is a silent no-op when the
+  game pane is not in copy-mode, matching the wheel's behaviour at the live tail.
+- When copy-mode exits via Page Down past the bottom, the `pane-mode-changed`
+  hook fires and refocuses the input pane, identical to wheel-down exit.
+
+Mouse wheel and keyboard scrollback are therefore interchangeable: scrolling up
+with the wheel and then pressing Page Up continues from the same position, and
+vice versa.
+
 The input pane is intentionally excluded from the drag / double-click / triple-click
 overrides so that prompt_toolkit's own click and selection behaviour is not disturbed.
 
