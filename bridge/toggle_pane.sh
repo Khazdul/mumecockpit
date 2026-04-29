@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# bridge/toggle_pane.sh — toggle ui/dev/input panes and pane-border headers.
+# bridge/toggle_pane.sh — toggle ui/dev/comm/status panes and pane-border headers.
 # Usage: toggle_pane.sh <target> [--persist]
-# Targets: ui, dev, input, headers
-# Called by cp -u/-d/-i/-h aliases in system.tin.
+# Targets: ui, dev, comm, status, headers
+# Called by cp -u/-d/-m/-c/-h aliases in system.tin.
 # With --persist, writes the new state to bridge/startup.conf (used by the in-game popup).
 
 set -u
@@ -102,23 +102,6 @@ case "$TARGET" in
                 _persist_key "show_dev" "1"
             else
                 _persist_key "show_dev" "0"
-            fi
-        fi
-        ;;
-
-    input)
-        if _pane_exists "input"; then
-            _kill_pane "input"
-            tmux unbind-key -n MouseUp1Pane
-            tmux select-pane -t mume:cockpit.0
-        else
-            bash "$SCRIPT_DIR/open_pane.sh" input
-        fi
-        if [ "$PERSIST" -eq 1 ]; then
-            if _pane_exists "input"; then
-                _persist_key "show_input" "1"
-            else
-                _persist_key "show_input" "0"
             fi
         fi
         ;;

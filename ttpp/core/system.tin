@@ -60,7 +60,6 @@
 #alias {cp -m} {#system {bash $HOME/MUME/bridge/toggle_pane.sh comm}}
 #alias {cp -d} {#system {bash $HOME/MUME/bridge/toggle_pane.sh dev}}
 #alias {cp -c} {#system {bash $HOME/MUME/bridge/toggle_pane.sh status}}
-#alias {cp -i} {#system {bash $HOME/MUME/bridge/toggle_pane.sh input}}
 #alias {cp -h} {#system {bash $HOME/MUME/bridge/toggle_pane.sh headers}}
 
 #alias {cp -s}
@@ -118,8 +117,8 @@
         EXISTS=$(tmux list-panes -t mume:cockpit -F '#{pane_title}' | grep '^input$');
         if [ -n "$EXISTS" ]; then
             tmux kill-pane -t $(tmux list-panes -t mume:cockpit -F '#{pane_index} #{pane_title}' | awk '/input/{print "mume:cockpit." $1}');
-            bash $HOME/MUME/bridge/open_pane.sh input;
-        fi
+        fi;
+        bash $HOME/MUME/bridge/open_pane.sh input;
     }
 }
 

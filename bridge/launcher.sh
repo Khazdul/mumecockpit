@@ -45,7 +45,6 @@ if [ ! -f "$CONF" ]; then
     printf 'show_comm=1\n'                                         >> "$CONF"
     printf 'show_ui=1\n'                                           >> "$CONF"
     printf 'show_dev=0\n'                                          >> "$CONF"
-    printf 'show_input=1\n'                                        >> "$CONF"
     printf 'show_pane_dividers=1\n'                                >> "$CONF"
     printf 'profile=default\n'                                     >> "$CONF"
 fi
@@ -57,7 +56,6 @@ show_ui="${show_ui:-1}"
 show_dev="${show_dev:-0}"
 show_status="${show_status:-0}"
 show_comm="${show_comm:-0}"
-show_input="${show_input:-1}"
 show_pane_dividers="${show_pane_dividers:-1}"
 profile="${profile:-default}"
 
@@ -71,7 +69,6 @@ _save_conf() {
     printf 'show_comm=%s\n'          "$show_comm"                  >> "$CONF"
     printf 'show_ui=%s\n'            "$show_ui"                    >> "$CONF"
     printf 'show_dev=%s\n'           "$show_dev"                   >> "$CONF"
-    printf 'show_input=%s\n'         "$show_input"                 >> "$CONF"
     printf 'show_pane_dividers=%s\n' "$show_pane_dividers"         >> "$CONF"
     printf 'profile=%s\n'            "$profile"                    >> "$CONF"
 }
@@ -230,13 +227,12 @@ _options_menu() {
     local _dev="$show_dev"
     local _sts="$show_status"
     local _comm="$show_comm"
-    local _inp="$show_input"
     local _pdv="$show_pane_dividers"
     local _conn="$connection_mode"
 
-    # Selectable items: 0=Status 1=Comm 2=UI 3=Dev 4=Input 5=PaneDividers 6=MMapper 7=Direct 8=Back
+    # Selectable items: 0=Status 1=Comm 2=UI 3=Dev 4=PaneDividers 5=MMapper 6=Direct 7=Back
     local _osel=0
-    local _OCOUNT=9
+    local _OCOUNT=8
 
     _oitem() {
         local idx="$1" label="$2"
@@ -256,12 +252,11 @@ _options_menu() {
     _render_opts() {
         local cols; cols=$(term_cols)
         local rows; rows=$(term_lines)
-        local chk_sts="[ ]" chk_comm="[ ]" chk_ui="[ ]" chk_dev="[ ]" chk_inp="[ ]" chk_pdv="[ ]"
+        local chk_sts="[ ]" chk_comm="[ ]" chk_ui="[ ]" chk_dev="[ ]" chk_pdv="[ ]"
         [ "$_sts"  -eq 1 ] && chk_sts="[x]"
         [ "$_comm" -eq 1 ] && chk_comm="[x]"
         [ "$_ui"   -eq 1 ] && chk_ui="[x]"
         [ "$_dev"  -eq 1 ] && chk_dev="[x]"
-        [ "$_inp"  -eq 1 ] && chk_inp="[x]"
         [ "$_pdv"  -eq 1 ] && chk_pdv="[x]"
         local r_mm="( )" r_di="( )"
         [ "$_conn" = "mmapper" ] && r_mm="(•)"
@@ -279,7 +274,6 @@ _options_menu() {
             "$chk_comm Comm pane"
             "$chk_ui UI pane"
             "$chk_dev Dev pane"
-            "$chk_inp Input pane"
             "$chk_pdv Pane dividers"
             "$r_mm MMapper  (localhost:4242)"
             "$r_di Direct   (mume.org:4242)"
@@ -306,17 +300,16 @@ _options_menu() {
             _oitem 1 "$chk_comm Comm pane"
             _oitem 2 "$chk_ui UI pane"
             _oitem 3 "$chk_dev Dev pane"
-            _oitem 4 "$chk_inp Input pane"
-            _oitem 5 "$chk_pdv Pane dividers"
+            _oitem 4 "$chk_pdv Pane dividers"
             printf '\n'
             [ "$show_headings" -eq 1 ] && _section_hdr "Connection"
-            _oitem 6 "$r_mm MMapper  (localhost:4242)"
-            _oitem 7 "$r_di Direct   (mume.org:4242)"
+            _oitem 5 "$r_mm MMapper  (localhost:4242)"
+            _oitem 6 "$r_di Direct   (mume.org:4242)"
             printf '\n'
-            _oitem 8 "    Back"
+            _oitem 7 "    Back"
             if [ "$show_mockup" -eq 1 ]; then
                 printf '\n'
-                draw_layout_mockup "$_ui" "$_dev" "$_inp" "$show_desc" "$_pdv" "$_sts" "$_comm"
+                draw_layout_mockup "$_ui" "$_dev" 1 "$show_desc" "$_pdv" "$_sts" "$_comm"
             fi
             printf '\n'
             printf "%${fpad}s${_MR_HINT}%s${_MR_RESET}\n" "" "$footer"
@@ -342,19 +335,16 @@ _options_menu() {
                     1) _comm=$(( 1 - _comm )) ;;
                     2) _ui=$(( 1 - _ui )) ;;
                     3) _dev=$(( 1 - _dev )) ;;
-                    4) _inp=$(( 1 - _inp )) ;;
-                    5) _pdv=$(( 1 - _pdv )) ;;
-                    6) _conn="mmapper" ;;
-                    7) _conn="direct" ;;
-                    8) show_ui="$_ui"; show_dev="$_dev"; show_status="$_sts"
-                       show_comm="$_comm"
-                       show_input="$_inp"; show_pane_dividers="$_pdv"
+                    4) _pdv=$(( 1 - _pdv )) ;;
+                    5) _conn="mmapper" ;;
+                    6) _conn="direct" ;;
+                    7) show_ui="$_ui"; show_dev="$_dev"; show_status="$_sts"
+                       show_comm="$_comm"; show_pane_dividers="$_pdv"
                        connection_mode="$_conn"; _save_conf; return ;;
                 esac
                 ;;
             ESC) show_ui="$_ui"; show_dev="$_dev"; show_status="$_sts"
-                 show_comm="$_comm"
-                 show_input="$_inp"; show_pane_dividers="$_pdv"
+                 show_comm="$_comm"; show_pane_dividers="$_pdv"
                  connection_mode="$_conn"; _save_conf; return ;;
         esac
     done

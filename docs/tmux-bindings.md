@@ -30,9 +30,8 @@ from unexpected clicks) are disabled or overridden.
 | `WheelDownPane` | Pass-through in copy-mode; no-op in the cockpit status pane | `bridge/tmux_start.sh` |
 
 The two click/drag bindings (`MouseUp1Pane`, `MouseDragEnd1Pane`) are registered
-by `bridge/input_pane.py` at input-pane startup and removed by
-`bridge/toggle_pane.sh` when the input pane closes (`cp -i`). With no input pane
-there is nowhere to refocus, so removing the bindings is cleaner than leaving them.
+by `bridge/input_pane.py` at input-pane startup and remain for the lifetime of the
+cockpit session. The pane no longer closes during normal use.
 
 ## Disabled defaults
 

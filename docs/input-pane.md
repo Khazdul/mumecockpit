@@ -1,5 +1,7 @@
 # Input Pane
 
+The input pane is an always-on integral part of the cockpit; there is no toggle.
+
 Full specification for `bridge/input_pane.py` — the prompt_toolkit-based
 command input pane. Touch this file when changing key forwarding behaviour,
 Enter semantics, history navigation, or the DECKPAM/keypad setup.
@@ -34,10 +36,9 @@ left column, 1 row tall.
 request that persists while the input pane is running and is inherited
 by other panes when focus shifts. Terminals with app-override blinking
 (e.g. Alacritty `blinking = "On"`) will therefore show a steady cursor
-in the input pane, tt++ after `cp -i` off, and bash after `cp -e`. Set
-the terminal to force blinking (Alacritty: `blinking = "Always"`) if
-a blinking cursor is preferred. The client works fully without this
-setting — it is purely cosmetic.
+in the input pane and bash after `cp -e`. Set the terminal to force
+blinking (Alacritty: `blinking = "Always"`) if a blinking cursor is
+preferred. The client works fully without this setting — it is purely cosmetic.
 
 **Known limitation:** drag-select in the TT++ pane does not auto-return
 focus to the input pane. Click once in the input pane to return.

@@ -171,7 +171,7 @@ draw_menu_item() {
 }
 
 # ---------------------------------------------------------------------------
-# draw_layout_mockup <show_ui> <show_dev> <show_input> [show_desc=1] [show_dividers=1] [show_status=0] [show_comm=0]
+# draw_layout_mockup <show_ui> <show_dev> <show_inp> [show_desc=1] [show_dividers=1] [show_status=0] [show_comm=0]
 # Prints a small ASCII wireframe of the tmux cockpit layout, centered.
 # Right column inner width = 6, left column inner width = 15. Total = 24 wide.
 # Right-column panes are stacked top-to-bottom: status → comm → ui → dev.
@@ -180,7 +180,7 @@ draw_menu_item() {
 # Followed by a description block when show_desc=1.
 # ---------------------------------------------------------------------------
 draw_layout_mockup() {
-    local show_ui="${1:-1}" show_dev="${2:-0}" show_input="${3:-1}" show_desc="${4:-1}" show_dividers="${5:-1}" show_status="${6:-0}" show_comm="${7:-0}"
+    local show_ui="${1:-1}" show_dev="${2:-0}" show_inp="${3:-1}" show_desc="${4:-1}" show_dividers="${5:-1}" show_status="${6:-0}" show_comm="${7:-0}"
 
     local cols; cols=$(term_cols)
     local indent=$(( (cols - 24) / 2 ))
@@ -197,7 +197,7 @@ draw_layout_mockup() {
 
     _draw_box_lines() {
         printf "${_MR_TITLE}"
-        if [ "$N" -gt 0 ] && [ "$show_input" -eq 1 ]; then
+        if [ "$N" -gt 0 ] && [ "$show_inp" -eq 1 ]; then
             # Case A: right column + INPUT
             # body = max(2N-1, 5); natural fit when 2N-1 == body (N >= 3)
             local nm=$(( 2 * N - 1 ))
@@ -274,7 +274,7 @@ draw_layout_mockup() {
             done
             printf '%s└───────────────┴──────┘\n' "$p"
 
-        elif [ "$show_input" -eq 1 ]; then
+        elif [ "$show_inp" -eq 1 ]; then
             # Case C: no right column, INPUT only
             printf '%s┌──────────────────────┐\n' "$p"
             printf '%s│                      │\n' "$p"

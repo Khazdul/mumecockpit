@@ -330,7 +330,6 @@ local function _register_cockpit_help()
         "   connect    connect to MUME",
         "",
         "  Window management:",
-        "   cp -i       toggle input pane",
         "   cp -u       toggle UI pane",
         "   cp -m       toggle comm pane",
         "   cp -c       toggle status pane",

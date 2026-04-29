@@ -292,7 +292,6 @@ Unified window and system management via `cp` commands:
 | Command       | Action                          |
 |---------------|---------------------------------|
 | `cp`          | Show help                       |
-| `cp -i`       | Toggle input pane               |
 | `cp -u`       | Toggle UI pane                  |
 | `cp -m`       | Toggle comm pane                |
 | `cp -c`       | Toggle status pane              |

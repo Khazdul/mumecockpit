@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # bridge/tmux_start.sh — creates and attaches to the MUME tmux cockpit session.
-# Reads show_ui / show_dev / show_input from bridge/startup.conf.
+# Reads show_ui / show_dev / show_status / show_comm from bridge/startup.conf.
 # Called by start.sh (--no-menu / -d / -u) or bridge/launcher.sh ("New session").
 
 cd "$(dirname "$0")/.."
@@ -15,7 +15,7 @@ CONF="bridge/startup.conf"
 
 # Create startup.conf with defaults if missing
 if [ ! -f "$CONF" ]; then
-    printf 'connection_mode=mmapper\nshow_status=1\nshow_comm=1\nshow_ui=1\nshow_dev=0\nshow_input=1\nshow_pane_dividers=1\nprofile=default\n' > "$CONF"
+    printf 'connection_mode=mmapper\nshow_status=1\nshow_comm=1\nshow_ui=1\nshow_dev=0\nshow_pane_dividers=1\nprofile=default\n' > "$CONF"
 fi
 source "$CONF"
 
@@ -28,7 +28,6 @@ SHOW_UI="${show_ui:-1}"
 SHOW_DEV="${show_dev:-0}"
 SHOW_STATUS="${show_status:-0}"
 SHOW_COMM="${show_comm:-0}"
-SHOW_INPUT="${show_input:-1}"
 SHOW_DIVIDERS="${show_pane_dividers:-1}"
 
 # ---------------------------------------------------------------------------
@@ -169,21 +168,15 @@ bash bridge/apply_layout.sh
 # ---------------------------------------------------------------------------
 # 7. Open input pane
 # ---------------------------------------------------------------------------
-if [ "$SHOW_INPUT" -eq 1 ]; then
-    bash "$HOME/MUME/bridge/open_pane.sh" input
-fi
+bash "$HOME/MUME/bridge/open_pane.sh" input
 
 # ---------------------------------------------------------------------------
-# 8. Focus input pane (or game pane if input is off)
+# 8. Focus input pane
 # ---------------------------------------------------------------------------
 INPUT_INDEX=$(tmux list-panes -t mume:cockpit \
     -F '#{pane_index} #{pane_title}' \
     | awk '/^[0-9]+ input$/{print $1}')
-if [ -n "$INPUT_INDEX" ]; then
-    tmux select-pane -t mume:cockpit.$INPUT_INDEX
-else
-    tmux select-pane -t mume:cockpit.0
-fi
+tmux select-pane -t mume:cockpit.$INPUT_INDEX
 
 tmux attach -t mume
 
