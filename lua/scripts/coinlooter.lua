@@ -36,7 +36,6 @@ register_script({
         "  Undead mob killed  →  get all.coins",
         "",
         "1-second debounce: at most one loot send per second.",
-        "Always-on — toggle support via the main menu is planned.",
     }
 })
 
