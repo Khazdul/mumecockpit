@@ -53,7 +53,7 @@ local function serialize()
         local remaining
         if a.expires_at then
             remaining = a.expires_at - now
-            if remaining < 0 then remaining = 0 end
+            -- negative values are valid: they signal overrun (drop pending)
         end
         list[#list + 1] = {
             name              = a.name,

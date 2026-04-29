@@ -216,9 +216,26 @@ game session's action list from the data table.
 ## Periodic tick
 
 A named `#delay {affects_tick}` runs every 10 seconds in GAME_SESSION while
-at least one affect is active. It prunes entries whose `expires_at` is non-nil
-and in the past. Pruned entries are silently removed — no observed-duration
-sample is recorded because the game never confirmed the drop.
+at least one affect is active. Tick behaviour depends on whether the affect
+has a configured drop string (`dropString_1` or `dropString_2`):
+
+**No drop string** — prune at `expires_at` as before. No observed-duration
+sample is recorded (game never confirmed the drop). Dbg log:
+`[AFFECTS] tick expire: <name>`.
+
+**Has drop string** — the drop message is the sole expiry signal. The tick
+keeps the entry in overrun (`expires_at <= now`) and does nothing, so the
+renderer can show `!` and `affect_down` can record the actual duration when
+the drop arrives. A hard 2.5× safety net applies: if
+`now - started_at >= floor(2.5 × expected_duration)` the entry is silently
+pruned with no sample and no `affect_ui` "down" line. Dbg log:
+`[AFFECTS] tick timeout (no drop): <name>`.
+
+**Corrupt entry** (affect name absent from `affects_data.affects`) — pruned
+immediately; dbg log `[AFFECTS] tick expire: <name>` (same path as no-drop).
+
+The tick fires every 10 s regardless of overrun — `affects_changed` is emitted
+each cycle so the renderer re-evaluates overrun cells.
 
 The tick is self-rescheduling: if `state.char.affects` is non-empty after the
 sweep it re-issues `#delay {affects_tick} {#lua {_affects_tick()}} {10}`.
@@ -232,6 +249,15 @@ The tick is armed on the 0→1 transition in `affect_init` and cancelled:
   fallback path finds GAME_SESSION nil, but the session dying clears all its
   delays automatically).
 - By `cp -r`: `#kill delay` on GAME_SESSION kills all delays including the tick.
+
+## Overrun
+
+An affect with a drop string that remains active past its `expires_at` is in
+**overrun**. Its entry stays in `state.char.affects` with no change to
+`expires_at`. `status_state.lua` therefore emits a negative `remaining_seconds`
+(not clamped). The status pane renders the cell with a `!` suffix instead of
+`Xm`. The affect is removed — and its observed duration recorded — when
+`affect_down` fires. The 2.5× safety net is the only tick-driven removal.
 
 ## Rendering
 

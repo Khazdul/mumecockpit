@@ -150,8 +150,11 @@ def _affect_cell(aff, cell_w):
     colour    = _AFFECT_COLOURS.get(atype, C_VALUE)
     display   = _resolve_affect_name(name, cell_w)
 
-    if remaining is not None:
-        mins     = max(0, -(-int(remaining) // 60))
+    if remaining is None:
+        text = display[:cell_w]
+        return colour + text + " " * (cell_w - len(text))
+    elif remaining > 0:
+        mins     = -(-int(remaining) // 60)   # ceil(remaining/60), floor at 1
         suffix   = f"{mins}m"
         max_name = max(0, cell_w - 1 - len(suffix))
         if len(display) > max_name:
@@ -159,8 +162,13 @@ def _affect_cell(aff, cell_w):
         pad = max(1, cell_w - len(display) - len(suffix))
         return colour + display + " " * pad + suffix
     else:
-        text = display[:cell_w]
-        return colour + text + " " * (cell_w - len(text))
+        # overrun: drop not yet received; show "!" instead of a countdown
+        suffix   = "!"
+        max_name = max(0, cell_w - 1 - len(suffix))
+        if len(display) > max_name:
+            display = display[:max_name]
+        pad = max(1, cell_w - len(display) - len(suffix))
+        return colour + display + " " * pad + suffix
 
 
 def _fmt_num(n):

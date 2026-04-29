@@ -306,8 +306,18 @@ Each entry is an object:
 {"name": "Sanctuary", "type": "spell", "remaining_seconds": 272}
 ```
 
-`remaining_seconds` is omitted (`null`) when no duration is known (affect has
-no duration in the data table and no observed samples yet).
+`remaining_seconds` convention:
+
+| Value           | Meaning                                                    |
+|-----------------|------------------------------------------------------------|
+| `null`          | indefinite affect (no `duration` in data table)            |
+| `> 0`           | active countdown (seconds remaining)                       |
+| `<= 0`          | overrun — expected drop has not arrived yet                |
+
+Negative values are **not clamped** in `status_state.lua`. They signal that
+the affect has a configured drop string, its `expires_at` has passed, and the
+tick is holding the entry until the drop fires (or the 2.5× safety net prunes
+it). See [docs/affects.md](affects.md) for the overrun lifecycle.
 
 ### Rendering
 
@@ -331,16 +341,22 @@ rows. Both cells share the separator space, so `cell_w` varies with width:
 
 At W=29: lw=rw=14, MAX_NAME=10. At W=33: lw=rw=16, MAX_NAME=12.
 
-**Cell format — duration-bearing affect** (`remaining_seconds` is not null):
+**Cell format — active countdown** (`remaining_seconds > 0`):
 
 ```
 <name><padding><suffix>
 ```
 
-- `suffix`: `"Xm"` using ceiling division — 0–59 s shows `1m`.
+- `suffix`: `"Xm"` using ceiling division — 1–59 s shows `1m`.
 - `padding` = `cell_w − len(name) − len(suffix)`, minimum 1 space. Suffix is right-aligned at the cell edge.
 - Name is right-chopped (no ellipsis) to `max(0, cell_w - 1 - len(suffix))` if needed.
 - Total = exactly `cell_w` visible chars.
+
+**Cell format — overrun** (`remaining_seconds <= 0`):
+
+- Same layout as countdown, but `suffix` is the literal `"!"` (1 char).
+- Suffix and name share the same affect-type colour (no new constant).
+- `MAX_NAME = cell_w - 4` is unchanged, so name resolution is identical.
 
 **Cell format — indefinite affect** (`remaining_seconds` is null):
 

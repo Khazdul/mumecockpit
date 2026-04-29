@@ -160,9 +160,27 @@ function _affects_tick()
     for i = #t, 1, -1 do
         local e = t[i]
         if e.expires_at and e.expires_at <= now then
-            dbg("[AFFECTS] tick expire: " .. e.name)
-            table.remove(t, i)
-            pruned = true
+            local data = affects_data.affects[e.name]
+            if not data then
+                -- corrupt / removed from data table
+                dbg("[AFFECTS] tick expire: " .. e.name)
+                table.remove(t, i)
+                pruned = true
+            elseif data.dropString_1 or data.dropString_2 then
+                -- drop string present: only the drop message may expire this entry;
+                -- tick acts solely as a 2.5× safety net (silent, no sample)
+                if now - e.started_at >= math.floor(2.5 * e.expected_duration) then
+                    dbg("[AFFECTS] tick timeout (no drop): " .. e.name)
+                    table.remove(t, i)
+                    pruned = true
+                end
+                -- else: overrun — keep entry, let affect_down fire normally
+            else
+                -- no drop string: prune at expires_at as before
+                dbg("[AFFECTS] tick expire: " .. e.name)
+                table.remove(t, i)
+                pruned = true
+            end
         end
     end
     if #t > 0 then
