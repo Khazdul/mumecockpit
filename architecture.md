@@ -284,6 +284,12 @@ game_cmd('#alias {...} {#lua {scripts.myscript.start(...)}}')
    aliases via `game_cmd()`, triggers via `session_cmd()`, and MUD
    commands via `send()` at load time, and call `register_script(meta)`.
    Never hardcode session names in either tier.
+7. **Anchored core actions** — every `#action` registered from
+   `ttpp/core/*.tin` or `lua/core/*.lua` that matches a single complete
+   server-emitted line uses `^...$`. Anchoring blocks false triggers
+   from tells, says, narrates, and social emotes that quote the same
+   line. Exceptions (intentional fragments) must be commented inline
+   at the registration site.
 
 ## Cockpit System
 

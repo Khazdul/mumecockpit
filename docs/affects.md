@@ -163,9 +163,9 @@ after `_load_times()`:
 ## Pattern storage convention
 
 Pattern strings in `affects_data.lua` (`initString_1`, `initString_2`,
-`dropString_1`, `dropString_2`) are stored in tt++-compatible form and passed
-verbatim to `#action` at registration time. No transformation happens at
-runtime.
+`dropString_1`, `dropString_2`) are stored anchored (`^...$`) in
+tt++-compatible form and passed verbatim to `#action` at registration time.
+No transformation happens at runtime.
 
 Patterns that share the same string (e.g. `second wind`'s `dropString_1` and
 `winded`'s `initString_1`) are collapsed into a single `#action` whose body
@@ -177,21 +177,22 @@ Pre-convert patterns before committing to the data file:
 
 1. Replace `\.` with `.` (tt++ treats `.` as a literal dot; no escaping needed).
 2. Replace `.*` with `%*` (tt++ zero-or-more wildcard).
-3. Drop a leading `^` if present.
-4. Drop a trailing `$` if present.
+3. Anchor the pattern with `^` at the start and `$` at the end.
+   This guards against false matches from tells, says, narrates, and
+   social emotes that quote the same line.
 
-If the pattern contains regex metacharacters not covered by these four steps
+If the pattern contains regex metacharacters not covered by these steps
 (`\d`, `\w`, `[...]`, `(...)`, `?`, `+`, `|`), it cannot be used directly —
 rewrite the pattern or split it into separate entries.
 
 Examples:
 
-| Game string trigger                    | Pattern to store               |
-|----------------------------------------|--------------------------------|
-| `^You start glowing.`                  | `You start glowing.`           |
-| `[[^You feel weaker\.]]`               | `[[You feel weaker.]]`         |
-| `^You completely drain.*$`             | `You completely drain%*`       |
-| `^Your lungs seem to burst as.*$`      | `Your lungs seem to burst as%*`|
+| Game string trigger                    | Pattern to store                  |
+|----------------------------------------|-----------------------------------|
+| `^You start glowing.`                  | `^You start glowing.$`            |
+| `^You feel weaker.$`                   | `^You feel weaker.$`              |
+| `^You completely drain.*$`             | `^You completely drain%*$`        |
+| `^Your lungs seem to burst as.*$`      | `^Your lungs seem to burst as%*$` |
 
 ## Registration global
 
