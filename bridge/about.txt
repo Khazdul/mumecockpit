@@ -1,9 +1,9 @@
-A terminal-based MUD client built for MUME and tuned for fast PvP. 
+A fast, terminal-based MUD client built for MUME and tuned for fast PvP.
 TinTin++ owns the socket, triggers, and keybinds at the latency floor;
 a Lua brain runs above it for state, timers, and anything that benefits
-from a real programming language; tmux composes game, input, UI, and
-character panes into one window. Starts in under a second, has no update
-cycle, and behaves the same on every machine.
+from a real programming language; tmux composes game, input, status,
+comm, and UI panes into one window. Starts in under a second, with
+opt-in updates from the launcher, and behaves the same on every machine.
 
 CONNECTION
 
@@ -26,8 +26,8 @@ Full GMCP integration. Char, Comm.Channel, Event, and Core modules are
 negotiated at handshake and dispatched into Lua handlers. Background
 collectors populate state.char, state.comm, and state.session as
 messages arrive — vitals, kills, channel traffic, alertness, sneak,
-climb, position. New collectors are drop-in: subscribe to a module,
-write to state.*, done.
+climb, swim, and position. New collectors are drop-in: subscribe to a
+module, write to state.*, done.
 
 
 SCRIPTING
@@ -45,18 +45,20 @@ the intended use.
 PANES
 
 Beyond the main game window, the cockpit can show four side panes,
-each toggleable at runtime: a UI pane for structured status messages
-from scripts and the core systems (kills, warnings, lifecycle events);
-a character panel with live vitals, position, mood, and session XP/TP
-totals; a communication pane that shows in-game communication channels;
-and a dedicated input pane on its own line.
+each toggleable at runtime: a character panel with live vitals,
+position, mood, alertness, affects, in-game time, and session XP/TP
+deltas; a communication pane with clickable channel filters and a
+per-profile 7-day history that survives reloads and reconnects; a UI
+pane for structured status messages from scripts and the core systems
+(kills, warnings, lifecycle events); and a dedicated input pane on
+its own line.
 
 The input pane fixes long-standing terminal-client annoyances. The
 buffer doesn't auto-clear after sending — the last command stays
 highlighted, so a second Enter repeats it. Any printable key wipes
 the highlight and starts a fresh command. Empty Enter sends a bare
 newline (MUME uses this to cancel delayed casts) — never a silent
-re-send. Shift+Home, Shift+End, and Ctrl+A all select the full 
+re-send. Shift+Home, Shift+End, and Ctrl+A all select the full
 buffer in one move, so the next keystroke clears it.
 
 
@@ -68,11 +70,12 @@ same controls plus a few extras useful for scripting and reload:
 
   cp -r     full reload (TinTin++ + Lua brain, no tmux restart)
   cp -e     clean shutdown
+  cp -s     save the current profile to disk
   cp -u     toggle UI pane
   cp -d     toggle dev pane
   cp -c     toggle character panel
-  cp -h     toggle pane border headers
   cp -m     toggle communication pane
+  cp -h     toggle pane border headers
   cp        show the full command reference
 
 MUME — MULTI-USERS IN MIDDLE-EARTH
