@@ -34,8 +34,8 @@ _AFFECT_COLOURS = {
     "debuff": C_AFFECT_DEBUFF,
 }
 
-LEFT_W  = 16
-RIGHT_W = 16
+LEFT_W  = 15
+RIGHT_W = 17
 
 _AFFECT_SHORTNAMES = {
     "breath of briskness":             "briskness",
@@ -50,7 +50,7 @@ _AFFECT_SHORTNAMES = {
     "heightened senses (faded)":       "h. senses-",
     "dark aura":                       "dark aura",
     "dark aura (faded)":               "dark aura-",
-    "spectral health":                 "spec. health",
+    "spectral health":                 "spec.health",
     "very comfortable":                "v. comfort.",
     "shadow-link":                     "shadow-link",
 }
@@ -131,10 +131,10 @@ def _time_row(time_str, period, remaining):
 
 
 def _resolve_affect_name(name):
-    """Resolve display name using MAX_NAME budget (12): shortmap → truncate → as-is."""
+    """Resolve display name using MAX_NAME budget (11): shortmap → truncate → as-is."""
     if name in _AFFECT_SHORTNAMES:
         return _AFFECT_SHORTNAMES[name]
-    limit = LEFT_W - 4   # 12: name + min-padding(1) + "99m"(3) must fit in LEFT_W
+    limit = LEFT_W - 4   # 11: name + min-padding(1) + "99m"(3) must fit in LEFT_W
     if len(name) > limit:
         return name[:limit - 1] + "."
     return name
