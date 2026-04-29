@@ -115,6 +115,12 @@ No networking tricks required — `localhost` works out of the box.
 
 ## Linux flow
 
+**The cockpit requires tmux 3.2 or newer.** `display-popup -E` (used for the
+in-game ESC popup) and the `pane-mode-changed` hook (used for
+refocus-on-copy-mode-exit) both require 3.2+. Ubuntu 22.04 ships 3.2a; Ubuntu
+24.04 ships 3.4; macOS Homebrew currently ships 3.5+. All current bootstrap
+targets satisfy this floor.
+
 Debian/Ubuntu family, the macOS flow with `apt`:
 
 ```bash

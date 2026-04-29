@@ -29,6 +29,12 @@ from unexpected clicks) are disabled or overridden.
 | `WheelUpPane` | Stock copy-mode entry; no-op in the cockpit status pane | `bridge/tmux_start.sh` |
 | `WheelDownPane` | Pass-through in copy-mode; no-op in the cockpit status pane | `bridge/tmux_start.sh` |
 
+## Active hooks
+
+| Hook | Trigger | Action | Gating | Set in |
+|------|---------|--------|--------|--------|
+| `pane-mode-changed` | Any pane enters or exits copy-mode | Refocus input pane (`focus_input.sh`) | `pane_in_mode != 1` (exit only) and `pane_title != input` (avoid self-refocus) | `bridge/tmux_start.sh` |
+
 The two click/drag bindings (`MouseUp1Pane`, `MouseDragEnd1Pane`) are registered
 by `bridge/input_pane.py` at input-pane startup and remain for the lifetime of the
 cockpit session. The pane no longer closes during normal use.
@@ -53,7 +59,8 @@ cockpit session. The pane no longer closes during normal use.
 - **Triple-click:** selects the full line and copies to system clipboard via tmux defaults. Focus does not return to the input pane after these — click anywhere or press a key in the input pane to refocus.
 - **Scroll wheel in game / comm / ui / dev:** enters copy-mode and scrolls scrollback
   (stock tmux behaviour, preserved). The `-e` flag exits copy-mode when scrolled back
-  to the bottom.
+  to the bottom. When copy-mode exits (by scrolling back to the bottom or any other
+  path), the `pane-mode-changed` hook fires and returns focus to the input pane.
 - **Scroll wheel in cockpit status pane:** no-op — the status pane has no meaningful
   scrollback, and letting the wheel enter copy-mode there is confusing.
 

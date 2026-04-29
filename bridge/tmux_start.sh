@@ -142,6 +142,14 @@ STOCK_WHEEL_DOWN='if-shell -F "#{||:#{pane_in_mode},#{mouse_any_flag}}" { send-k
 tmux bind-key -n WheelUpPane   "if-shell -F '#{==:#{pane_title},status}' '' '$STOCK_WHEEL_UP'"
 tmux bind-key -n WheelDownPane "if-shell -F '#{==:#{pane_title},status}' '' '$STOCK_WHEEL_DOWN'"
 
+# Refocus input pane when any other pane leaves copy-mode.
+# Covers wheel-down past bottom, drag-end, q, Escape, Enter — all paths.
+# Guard: pane_in_mode != 1 means we are exiting (entry hook fires too);
+#        pane_title != input avoids self-refocus.
+tmux set-hook -g pane-mode-changed \
+    "if-shell -F '#{&&:#{!=:#{pane_in_mode},1},#{!=:#{pane_title},input}}' \
+        'run-shell $HOME/MUME/bridge/focus_input.sh'"
+
 # Start ping monitor. Guarded against double-starts; self-terminates when
 # tmux:mume dies.
 bash "$HOME/MUME/bridge/ping_monitor.sh" \

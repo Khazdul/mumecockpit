@@ -40,9 +40,6 @@ in the input pane and bash after `cp -e`. Set the terminal to force
 blinking (Alacritty: `blinking = "Always"`) if a blinking cursor is
 preferred. The client works fully without this setting — it is purely cosmetic.
 
-**Known limitation:** drag-select in the TT++ pane does not auto-return
-focus to the input pane. Click once in the input pane to return.
-
 ## Keypad application mode
 
 On startup, the input pane writes DECKPAM (`\e=`) to stdout to enable
