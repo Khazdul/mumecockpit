@@ -46,7 +46,7 @@ tracking, and UI feedback.
 │   ├── launcher.sh           # Pre-tmux startup menu (DOS-style, pure bash)
 │   ├── menu_render.sh        # Render/input helpers sourced by launcher.sh
 │   ├── tmux_start.sh         # tmux session creation (extracted from start.sh)
-│   ├── toggle_pane.sh        # Toggle ui/dev/input panes and pane headers
+│   ├── toggle_pane.sh        # Toggle ui/dev/comm/status panes and pane headers
 │   │                         #   (called by cp aliases and in-game popup)
 │   ├── version_check.sh      # Queries GitHub for latest tag; updates
 │   │                         #   bridge/version.cache with 6h TTL

@@ -71,7 +71,6 @@ same controls plus a few extras useful for scripting and reload:
   cp -u     toggle UI pane
   cp -d     toggle dev pane
   cp -c     toggle character panel
-  cp -i     toggle input pane
   cp -h     toggle pane border headers
   cp -m     toggle communication pane
   cp        show the full command reference
