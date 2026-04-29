@@ -2,17 +2,20 @@
 #
 # Polls bridge/status.state (JSON) every 50 ms via mtime comparison.
 # Redraws in-place using ANSI sequences — no ESC[2J, no flicker.
-# Internal width: 33 columns.
+# Width is read from the live pane size (shutil.get_terminal_size) on every
+# render; SIGWINCH sets a dirty flag so the next poll tick redraws.
+# Minimum useful width: 29 columns (enforced by the bridge, not here).
 
 import json
 import os
+import shutil
 import signal
 import sys
 import time
 
 STATE_PATH = os.path.join(os.environ["HOME"], "MUME", "bridge", "status.state")
 POLL_MS    = 0.05   # seconds between mtime checks
-WIDTH      = 33
+MIN_WIDTH  = 29     # bridge enforces this floor; renderer trusts the pane size
 
 # ---------------------------------------------------------------------------
 # Colour constants (24-bit truecolor)
@@ -33,9 +36,6 @@ _AFFECT_COLOURS = {
     "buff":   C_AFFECT_BUFF,
     "debuff": C_AFFECT_DEBUFF,
 }
-
-LEFT_W  = 15
-RIGHT_W = 17
 
 _AFFECT_SHORTNAMES = {
     "breath of briskness":             "briskness",
@@ -76,7 +76,7 @@ def _restore_cursor():
 # ---------------------------------------------------------------------------
 # Layout helpers
 # ---------------------------------------------------------------------------
-def _row(label, value, width=WIDTH):
+def _row(label, value, width):
     """Single row: label left, value left (one space after label), truncated to width."""
     lbl = str(label)
     val = str(value) if value is not None else "—"
@@ -85,14 +85,14 @@ def _row(label, value, width=WIDTH):
     return C_LABEL + lbl + C_RESET + " " + C_VALUE + val + C_RESET
 
 
-def _pair(l1, v1, l2, v2, width=WIDTH):
+def _pair(l1, v1, l2, v2, width):
     """
     Paired row: l1:v1 on the left half, l2:v2 on the right half.
-    Left half = width//2  cols, right half = width - width//2  cols.
-    Each half renders as "label value" flush-left, padded with trailing spaces.
+    lw = width//2, rw = width - 1 - lw, separator = 1 space.
+    Total visible = lw + 1 + rw = width.
     """
     lw = width // 2
-    rw = width - lw
+    rw = width - 1 - lw
 
     def _half(label, value, w):
         lbl = str(label)
@@ -104,15 +104,15 @@ def _pair(l1, v1, l2, v2, width=WIDTH):
         trailing = w - len(lbl) - 1 - len(val)
         return C_LABEL + lbl + C_RESET + " " + C_VALUE + val + C_RESET + " " * max(0, trailing)
 
-    return _half(l1, v1, lw) + _half(l2, v2, rw)
+    return _half(l1, v1, lw) + " " + _half(l2, v2, rw)
 
 
-def _time_row(time_str, period, remaining):
+def _time_row(time_str, period, remaining, width):
     """Time row: single full-width at DAY/UNSET; two-column at HOUR/MINUTE."""
     if period is None or remaining is None:
-        return _row("Time:", time_str)
-    lw = WIDTH // 2   # 16
-    rw = WIDTH - lw   # 17
+        return _row("Time:", time_str, width)
+    lw = width // 2
+    rw = width - 1 - lw
 
     label = "Time:"
     val = str(time_str) if time_str is not None else "—"
@@ -124,17 +124,19 @@ def _time_row(time_str, period, remaining):
     icon   = "☼" if period == "night" else "☾"
     colour = C_SUN if period == "night" else C_MOON
     rem    = str(remaining)
-    trailing_right = max(0, rw - 1 - 1 - len(rem))   # 1=icon, 1=sp
+    if len(rem) > rw - 2:
+        rem = rem[:rw - 2]
+    trailing_right = max(0, rw - 2 - len(rem))   # 1=icon, 1=sp
     right = colour + icon + C_RESET + " " + C_VALUE + rem + C_RESET + " " * trailing_right
 
-    return left + right
+    return left + " " + right
 
 
-def _resolve_affect_name(name):
-    """Resolve display name using MAX_NAME budget (11): shortmap → truncate → as-is."""
+def _resolve_affect_name(name, cell_w):
+    """Resolve display name: shortmap → truncate with dot → as-is. MAX_NAME = cell_w - 4."""
     if name in _AFFECT_SHORTNAMES:
         return _AFFECT_SHORTNAMES[name]
-    limit = LEFT_W - 4   # 11: name + min-padding(1) + "99m"(3) must fit in LEFT_W
+    limit = cell_w - 4   # name + min-pad(1) + "99m"(3) must fit in cell_w
     if len(name) > limit:
         return name[:limit - 1] + "."
     return name
@@ -146,12 +148,15 @@ def _affect_cell(aff, cell_w):
     atype     = aff.get("type") or "spell"
     remaining = aff.get("remaining_seconds")
     colour    = _AFFECT_COLOURS.get(atype, C_VALUE)
-    display   = _resolve_affect_name(name)
+    display   = _resolve_affect_name(name, cell_w)
 
     if remaining is not None:
-        mins   = max(0, -(-int(remaining) // 60))
-        suffix = f"{mins}m"
-        pad    = max(1, cell_w - len(display) - len(suffix))
+        mins     = max(0, -(-int(remaining) // 60))
+        suffix   = f"{mins}m"
+        max_name = max(0, cell_w - 1 - len(suffix))
+        if len(display) > max_name:
+            display = display[:max_name]
+        pad = max(1, cell_w - len(display) - len(suffix))
         return colour + display + " " * pad + suffix
     else:
         text = display[:cell_w]
@@ -172,30 +177,34 @@ def _fmt_num(n):
 # Frame builder
 # ---------------------------------------------------------------------------
 def _build_frame(data):
-    """Return list of lines (no newlines), each exactly WIDTH visible chars."""
+    """Return list of lines (no newlines), each exactly `width` visible chars."""
+    width = shutil.get_terminal_size().columns
+    lw    = width // 2
+    rw    = width - 1 - lw
+
     c = data or {}
     lines = []
 
     name  = c.get("character") or "—"
     level = c.get("level")
-    lines.append(_pair("Name:", name, "Lv:", level if level is not None else "—"))
+    lines.append(_pair("Name:", name, "Lv:", level if level is not None else "—", width))
 
     sess_xp = c.get("session_xp")
     sess_tp = c.get("session_tp")
     lines.append(_pair("Sess XP:", _fmt_num(sess_xp) if sess_xp is not None else "—",
-                        "Sess TP:", _fmt_num(sess_tp) if sess_tp is not None else "—"))
+                        "Sess TP:", _fmt_num(sess_tp) if sess_tp is not None else "—", width))
 
     mood      = c.get("mood")      or "—"
     alertness = c.get("alertness") or "—"
-    lines.append(_pair("Mood:", mood, "Alert:", alertness))
+    lines.append(_pair("Mood:", mood, "Alert:", alertness, width))
 
     position = c.get("position") or "—"
     sneak    = c.get("sneak")    or "off"
-    lines.append(_pair("Pos:", position, "Sneak:", sneak))
+    lines.append(_pair("Pos:", position, "Sneak:", sneak, width))
 
     climb = c.get("climb") or "off"
     swim  = c.get("swim")  or "off"
-    lines.append(_pair("Climb:", climb, "Swim:", swim))
+    lines.append(_pair("Climb:", climb, "Swim:", swim, width))
 
     game_time      = c.get("game_time")
     time_period    = c.get("time_period")
@@ -204,6 +213,7 @@ def _build_frame(data):
         game_time if game_time is not None else "—",
         time_period,
         time_remaining,
+        width,
     ))
 
     affects    = c.get("affects") or []
@@ -211,13 +221,13 @@ def _build_frame(data):
     block_rows = max(4, -(-n // 2))   # ceil(n/2), min 4
 
     header = "Affected by:"
-    lines.append(C_LABEL + header + C_RESET + " " * (WIDTH - len(header)))
+    lines.append(C_LABEL + header + C_RESET + " " * (width - len(header)))
 
     for row in range(block_rows):
         li = row * 2
         ri = li + 1
-        left  = _affect_cell(affects[li], LEFT_W)  if li < n else C_RESET + " " * LEFT_W
-        right = _affect_cell(affects[ri], RIGHT_W) if ri < n else C_RESET + " " * RIGHT_W
+        left  = _affect_cell(affects[li], lw) if li < n else C_RESET + " " * lw
+        right = _affect_cell(affects[ri], rw) if ri < n else C_RESET + " " * rw
         lines.append(left + C_RESET + " " + right + C_RESET)
 
     return lines

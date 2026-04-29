@@ -75,17 +75,17 @@ U_MAX=$AVAIL
 [ -n "$STATUS_IDX" ] && tmux resize-pane -t "mume:cockpit.$STATUS_IDX" -y "$S_HEIGHT"
 # dev receives the residual — no explicit sizing needed
 
-# ── Width floor (status open → right column ≥ 33 cols) ───────────────────
+# ── Width floor (status open → right column ≥ 29 cols) ───────────────────
 if [ -n "$STATUS_IDX" ]; then
     RIGHT_W=$(tmux list-panes -t mume:cockpit \
         -F '#{pane_title} #{pane_width}' \
         | awk '$1=="ui" || $1=="comm" || $1=="dev" || $1=="status" {print $2; exit}')
-    if [ -n "$RIGHT_W" ] && [ "$RIGHT_W" -lt 33 ]; then
+    if [ -n "$RIGHT_W" ] && [ "$RIGHT_W" -lt 29 ]; then
         COLS=$(tmux display-message -p -t mume:cockpit '#{window_width}')
-        NEW_LEFT=$(( COLS - 33 - 1 ))
+        NEW_LEFT=$(( COLS - 29 - 1 ))
         if [ "$NEW_LEFT" -ge 30 ]; then
             tmux resize-pane -t mume:cockpit.0 -x "$NEW_LEFT"
-            sed -i "s/^ui_width=.*/ui_width=33/" "$LAYOUT_CONF"
+            sed -i "s/^ui_width=.*/ui_width=29/" "$LAYOUT_CONF"
         fi
     fi
 fi

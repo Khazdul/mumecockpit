@@ -12,9 +12,9 @@ NEW_WIDTH=$(tmux list-panes -t mume:cockpit \
 
 HAS_STATUS=$(tmux list-panes -t mume:cockpit -F '#{pane_title}' | grep '^status$')
 
-# Clamp: status pane requires ≥ 33 cols for its field layout
-if [ -n "$HAS_STATUS" ] && [ "$NEW_WIDTH" -lt 33 ]; then
-    NEW_WIDTH=33
+# Clamp: status pane requires ≥ 29 cols for its field layout
+if [ -n "$HAS_STATUS" ] && [ "$NEW_WIDTH" -lt 29 ]; then
+    NEW_WIDTH=29
 fi
 sed -i "s/^ui_width=.*/ui_width=$NEW_WIDTH/" "$LAYOUT_CONF"
 

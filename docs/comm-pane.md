@@ -484,9 +484,9 @@ persists `ui_height`.
 
 ### Width floor
 
-The 33-column `RIGHT_MIN` floor in `on_window_resize.sh` and `apply_layout.sh`
-is driven by the `status` pane's render width. The comm pane has no fixed column
-requirement — it adapts to available width.
+The 29-column `RIGHT_MIN` floor in `on_window_resize.sh` and `apply_layout.sh`
+is driven by the `status` pane's minimum render width. The comm pane has no
+fixed column requirement — it adapts to available width.
 
 ## Toggle
 

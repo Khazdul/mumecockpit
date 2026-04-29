@@ -20,7 +20,7 @@ fi
 
 # Global width-priority constraint:
 #   MAIN_MIN    = 30 — main/tt++ pane floor (always)
-#   RIGHT_FLOOR = 33 when status is open; ui_width otherwise
+#   RIGHT_FLOOR = 29 when status is open; ui_width otherwise
 MAIN_MIN=30
 
 HAS_RIGHT=$(tmux list-panes -t mume:cockpit -F '#{pane_title}' \
@@ -29,7 +29,7 @@ HAS_RIGHT=$(tmux list-panes -t mume:cockpit -F '#{pane_title}' \
 HAS_STATUS=$(tmux list-panes -t mume:cockpit -F '#{pane_title}' \
     | grep '^status$')
 if [ -n "$HAS_STATUS" ]; then
-    RIGHT_FLOOR=33
+    RIGHT_FLOOR=29
 else
     RIGHT_FLOOR=$ui_width
 fi
@@ -58,7 +58,7 @@ if [ -n "$HAS_RIGHT" ] && [ "$AVAILABLE_RIGHT" -lt "$RIGHT_FLOOR" ]; then
 elif [ -f "$SENTINEL" ]; then
     # Panes are collapsed — derive restore floor from sentinel.
     if grep -q '^status$' "$SENTINEL"; then
-        RESTORE_FLOOR=33
+        RESTORE_FLOOR=29
     else
         RESTORE_FLOOR=$ui_width
     fi
@@ -81,7 +81,7 @@ elif [ -f "$SENTINEL" ]; then
         HAS_STATUS=$(tmux list-panes -t mume:cockpit -F '#{pane_title}' \
             | grep '^status$')
         if [ -n "$HAS_STATUS" ]; then
-            RIGHT_FLOOR=33
+            RIGHT_FLOOR=29
         else
             RIGHT_FLOOR=$ui_width
         fi

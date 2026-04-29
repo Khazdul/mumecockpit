@@ -94,8 +94,11 @@ Same flicker-free rules as `bridge/launcher.sh` (see `docs/launcher.md`):
 
 ### Width
 
-Internal render width: **33 columns**. Overflow is truncated. The right-column
-floor for the layout system is also 33 (`RIGHT_MIN` in `on_window_resize.sh`).
+The renderer reads its width from the live pane size on every frame via
+`shutil.get_terminal_size().columns`. SIGWINCH sets a dirty flag so the next
+poll tick redraws at the new width without a restart. The bridge layer enforces
+a minimum of **29 columns** (`RIGHT_MIN` in `on_window_resize.sh` and
+`apply_layout.sh`); the renderer itself trusts the reported size.
 
 ## State-file schema (`bridge/status.state`)
 
@@ -177,28 +180,48 @@ rendered inside the pane content.
 
 ## Field layout
 
-Paired rows (two fields side by side in 33 cols) and single rows:
+All rows use a uniform **lw + 1 + rw** split formula derived from the active
+pane width W:
 
 ```
-Name: <name>          Lv: <level>
-XP: <xp>              TP: <tp>
-Sess XP: <sess_xp>    Sess TP: <sess_tp>
-Mood: <mood>          Alert: <alertness>
-Pos: <position>       Sneak: <sneak>
-Climb: <climb>        Swim: <swim>
-Time: <game_time>                          ← UNSET / DAY: single full-width row
-Time: <H:MM AM/PM>   ☾ in <H:MM>          ← MINUTE (day→night example)
-Time: <~H AM/PM>     ☼ in <~N>            ← HOUR   (night→day example)
+lw = W // 2
+rw = W - 1 - lw
+separator = 1 space character between cells
+total = lw + 1 + rw = W
+```
+
+Examples:
+
+| W  | lw | rw | Right label starts at col |
+|----|----|----|---------------------------|
+| 29 | 14 | 14 | 16                        |
+| 30 | 15 | 14 | 17                        |
+| 31 | 15 | 15 | 17                        |
+| 32 | 16 | 15 | 18                        |
+| 33 | 16 | 16 | 18                        |
+
+Paired rows (two fields side by side) and single rows:
+
+```
+Name: <name>         Lv: <level>
+XP: <xp>             TP: <tp>
+Sess XP: <sess_xp>   Sess TP: <sess_tp>
+Mood: <mood>         Alert: <alertness>
+Pos: <position>      Sneak: <sneak>
+Climb: <climb>       Swim: <swim>
+Time: <game_time>                         ← UNSET / DAY: single full-width row
+Time: <H:MM AM/PM>  ☾ in <H:MM>          ← MINUTE (day→night example)
+Time: <~H AM/PM>    ☼ in <~N>            ← HOUR   (night→day example)
 Affected by:
-  <affects>           ← 4 blank rows when no affects are active
+  <affects>          ← 4 blank rows when no affects are active
 ```
 
-At HOUR/MINUTE precision the Time row splits into a 16-col left half (label +
-time-only value in `C_VALUE`) and a 17-col right half with a three-colour split:
-icon in `C_SUN` (☼, intense amber) or `C_MOON` (☾, vivid sky blue), and the
-countdown value in `C_VALUE` (bright white) — e.g. `☾ 4:20` or `☼ ~3`. At DAY or UNSET precision
-`time_period` / `time_remaining` are null and the single full-width
-`_row("Time:", ...)` fallback is used.
+At HOUR/MINUTE precision the Time row splits using the same lw + 1 + rw formula:
+left half = label + time-only value (`C_VALUE`); right half = icon in `C_SUN`
+(☼, intense amber) or `C_MOON` (☾, vivid sky blue) + countdown in `C_VALUE`
+— e.g. `☾ 4:20` or `☼ ~3`. At DAY or UNSET precision `time_period` /
+`time_remaining` are null and the single full-width `_row("Time:", ...)` fallback
+is used.
 
 The `Affected by:` header and the 4-row affect block are always rendered.
 
@@ -234,15 +257,15 @@ The ui↔dev bottom border is the only height-flex border — dragging it persis
 `bridge/on_window_resize.sh` enforces a global constraint:
 
 - `MAIN_MIN = 30` — main/tt++ pane floor
-- `RIGHT_MIN = 33` — right column floor when any right pane is active
+- `RIGHT_MIN = 29` — right column floor when status is open
 
 When the terminal is wide enough for both floors, right column is clamped to
 at least `RIGHT_MIN`. When the terminal is narrowed so main would fall below
-30, main wins and the right column shrinks below 33. Manual border drag is
-clamped to ≥ 33 in `bridge/on_pane_resize.sh`.
+30, main wins and the right column shrinks below 29. Manual border drag is
+clamped to ≥ 29 in `bridge/on_pane_resize.sh`.
 
-`bridge/apply_layout.sh` additionally enforces the 33-col floor whenever status
-is open: if the right column is narrower than 33 when `apply_layout.sh` runs
+`bridge/apply_layout.sh` additionally enforces the 29-col floor whenever status
+is open: if the right column is narrower than 29 when `apply_layout.sh` runs
 (e.g., after `cp -c` opens status into a column that was previously dragged
 narrow), it widens the column automatically provided main can stay ≥ 30 cols.
 
@@ -299,14 +322,14 @@ BLOCK_ROWS = max(4, ceil(N / 2))
 where N is the current affect count. Affects fill top-to-bottom, left cell
 then right cell, in sort order. Empty cells render as spaces.
 
-**Cell widths** (total `WIDTH = 33`):
+**Cell widths** — the affect block uses the same lw + 1 + rw formula as paired
+rows. Both cells share the separator space, so `cell_w` varies with width:
 
-| Cell  | Width |
-|-------|-------|
-| Left  | 15    |
-| Right | 17    |
+- Left cell width  = `lw = W // 2`
+- Right cell width = `rw = W - 1 - lw`
+- `MAX_NAME = cell_w - 4` (name + min-pad(1) + "99m"(3) must fit in `cell_w`)
 
-A 1-col `C_RESET` separator space sits between the two cells; total per affect row: `15 + 1 + 17 = 33`. The asymmetric 15/17 split is chosen so the affect right column aligns with the right column of `_pair` rows: `_pair` places its right half at column 17 (`lw = 33//2 = 16` cols), and `LEFT_W(15) + separator(1) = 16` gives the same starting position.
+At W=29: lw=rw=14, MAX_NAME=10. At W=33: lw=rw=16, MAX_NAME=12.
 
 **Cell format — duration-bearing affect** (`remaining_seconds` is not null):
 
@@ -316,28 +339,43 @@ A 1-col `C_RESET` separator space sits between the two cells; total per affect r
 
 - `suffix`: `"Xm"` using ceiling division — 0–59 s shows `1m`.
 - `padding` = `cell_w − len(name) − len(suffix)`, minimum 1 space. Suffix is right-aligned at the cell edge.
-- `MAX_NAME = 11` (`LEFT_W − min-padding(1) − len("99m")(3) = 15 − 4`). Applied globally before cell placement.
+- Name is right-chopped (no ellipsis) to `max(0, cell_w - 1 - len(suffix))` if needed.
 - Total = exactly `cell_w` visible chars.
 
 **Cell format — indefinite affect** (`remaining_seconds` is null):
 
 - Name fills `cell_w`, padded/truncated; no suffix, no separator space.
 
-**Reference rendering** (`bless` 7m + `armour` 18m, both `spell` type):
+**Truncation** — when a value or affect name does not fit, it is right-chopped
+without an ellipsis indicator. The affect duration suffix (`Xm`) is always
+preserved; the name is sacrificed first.
+
+**Reference rendering** at W=33 (`bless` 7m + `armour` 18m, both `spell`):
 
 ```
-bless        7m armour        18m
-^^^^^^^^^^^^^^^ ^^^^^^^^^^^^^^^^^
-  LEFT_W=15   ↑    RIGHT_W=17
+bless           7m armour          18m
+^^^^^^^^^^^^^^^^   ^^^^^^^^^^^^^^^^
+    lw=16       ↑      rw=16
+            separator
+```
+
+Left cell: `bless`(5) + 9 padding + `7m`(2) = 16. Separator: 1. Right cell: `armour`(6) + 7 padding + `18m`(3) = 16. Total 33.
+
+**Reference rendering** at W=29 (`comfortable` 5m + `armour` 5m):
+
+```
+comfortab.  5m armour      5m
+^^^^^^^^^^^^^^ ^^^^^^^^^^^^^^
+    lw=14    ↑    rw=14
           separator
 ```
 
-Left cell: `bless`(5) + 8 padding + `7m`(2) = 15. Separator: 1. Right cell: `armour`(6) + 8 padding + `18m`(3) = 17. Total 33.
+Left cell: `comfortab.`(10) + 2 padding + `5m`(2) = 14. (`comfortable` is 11 chars, exceeds MAX_NAME=10, so _resolve_affect_name truncates to 9 chars + `.` → `comfortab.`). Right cell: `armour`(6) + 6 padding + `5m`(2) = 14. Total 29.
 
-**Name resolution** (applied once using `MAX_NAME = 11`):
+**Name resolution** (applied once using `MAX_NAME = cell_w - 4`):
 
-1. If name is in `_AFFECT_SHORTNAMES` → use shortname.
-2. Else if `len(name) > 11` → truncate to 10 chars + `"."`.
+1. If name is in `_AFFECT_SHORTNAMES` → use shortname as-is (further chop in `_affect_cell` if needed).
+2. Else if `len(name) > cell_w - 4` → truncate to `cell_w - 5` chars + `"."`.
 3. Else use name as-is.
 
 **Shortname mapping:**
