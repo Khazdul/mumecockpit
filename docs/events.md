@@ -49,7 +49,7 @@ event flow. Same pattern as `gmcp.trace`.
 
 | Event | Payload | Source |
 |-------|---------|--------|
-| `mob_death` | mob name string (includes article, e.g. `"an elven slave"`) | `ttpp/core/mud_events.tin` |
+| `mob_death` | mob name string, kind (`"living"` \| `"undead"`) | `ttpp/core/mud_events.tin` |
 | `event_sun` | `{what = "rise"\|"set"\|"light"\|"dark"}` | `lua/core/world_state.lua` (GMCP) |
 | `mume_time_line` | full matched line string | `ttpp/core/clock.tin` `#action` |
 | `room_clock_line` | full matched line string | `ttpp/core/clock.tin` `#action` |
@@ -61,19 +61,23 @@ event flow. Same pattern as `gmcp.trace`.
 
 ### `mob_death`
 
-Emitted by the four patterns in `ttpp/core/mud_events.tin`:
+Emitted by the four patterns in `ttpp/core/mud_events.tin`. Payload:
+`(name, kind)` where `name` is the mob name captured by `%1` (includes
+article, e.g. `"an elven slave"`) and `kind` is `"living"` or `"undead"`.
 
-    ^%1 is dead! R.I.P.$
-    ^%1 has drawn his last breath! R.I.P.$
-    ^%1 has drawn her last breath! R.I.P.$
-    ^%1 disappears into nothing.$
+| Pattern | kind |
+|---------|------|
+| `^%1 is dead! R.I.P.$` | `"living"` |
+| `^%1 has drawn his last breath! R.I.P.$` | `"living"` |
+| `^%1 has drawn her last breath! R.I.P.$` | `"living"` |
+| `^%1 disappears into nothing.$` | `"undead"` |
 
-All four are kills — `disappears into nothing.` is the undead-death
-message. The subscriber receives the mob name captured by `%1`; it does
-not see which variant fired.
+The `kind` argument is new; existing subscribers that only take `name` are
+unaffected — Lua ignores extra positional args.
 
 **Subscribers:** `lua/scripts/autostab.lua`, `lua/scripts/autobow.lua`
-(abort on kill), `lua/core/sess_kills.lua` (queues name for XP attribution).
+(abort on kill), `lua/core/sess_kills.lua` (queues name for XP attribution),
+`lua/scripts/coinlooter.lua` (loot coins, dispatches on kind).
 `sess_kills` is the first core module to subscribe to its own bus — direct
 parallel to script subscribers, no special wiring needed.
 
