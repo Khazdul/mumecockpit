@@ -18,7 +18,7 @@ events.subscribe("mob_death", function(name, kind)
     if kind == "living" then
         send("get coins all.corpse")
     elseif kind == "undead" then
-        send("get coins")
+        send("get all.coins")
     else
         return
     end
@@ -33,7 +33,7 @@ register_script({
         "Subscribes to mob_death and sends the appropriate get-coins command.",
         "",
         "  Living mob killed  →  get coins all.corpse",
-        "  Undead mob killed  →  get coins",
+        "  Undead mob killed  →  get all.coins",
         "",
         "1-second debounce: at most one loot send per second.",
         "Always-on — toggle support via the main menu is planned.",
