@@ -92,6 +92,7 @@ else
 fi
 
 chmod +x "$REPO_DIR/start.sh"
+chmod +x "$REPO_DIR/bridge/launch.sh"
 
 # ---------------------------------------------------------------------------
 # Done

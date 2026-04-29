@@ -362,7 +362,7 @@ $shortcutPath = Join-Path ([Environment]::GetFolderPath('Desktop')) 'MUME Cockpi
 $wsh      = New-Object -ComObject WScript.Shell
 $shortcut = $wsh.CreateShortcut($shortcutPath)
 $shortcut.TargetPath   = $alacrittyExe
-$shortcut.Arguments    = "-e wsl -d $distroName -u root -- bash -lc `"cd /root/MUME && ./start.sh`""
+$shortcut.Arguments    = "-e wsl -d $distroName -u root -- /root/MUME/bridge/launch.sh"
 $shortcut.IconLocation = "$alacrittyExe,0"
 $shortcut.Save()
 Write-Host "Desktop shortcut created: $shortcutPath"
