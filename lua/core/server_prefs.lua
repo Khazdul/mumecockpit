@@ -7,7 +7,7 @@
 --   change width all 500   — locks server-side line wrap to a width MUME
 --                            never reaches in a single logical line, preventing
 --                            trigger patterns from being split across lines.
---   change width terminal  — sets terminal-width reporting to follow the actual
+--   change width table terminal — sets terminal-width reporting to follow the actual
 --                            terminal so MUME formats screen-aware output correctly.
 --
 -- Both sends are idempotent and handle reconnects and server restarts transparently.
