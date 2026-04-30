@@ -521,15 +521,15 @@ def _menu_visible():
 
 
 def _menu_text():
-    """Fragments for the 29-col right-aligned CHAR/BUFFS/COMS/UI/clock menu bar.
+    """Fragments for the 29-col right-aligned CHAR/BUFFS/COM/UI/clock menu bar.
 
-    Layout: █CHAR▌█BUFFS▌█COMS▌█UI█ <time><icon>
-    Total = 6+7+6+4+1+5 = 29 columns.
+    Layout: █CHAR▌█BUFFS▌█COM▌█UI█ <time> <icon>
+    Total = 6+7+5+4+1+6 = 29 columns.
     """
     buttons = [
         ("CHAR",  _menu_show_status, _BTN_STATUS),
         ("BUFFS", False,             None),
-        ("COMS",  _menu_show_comm,   _BTN_COMM),
+        ("COM",   _menu_show_comm,   _BTN_COMM),
         ("UI",    _menu_show_ui,     _BTN_UI),
     ]
     frags    = []
@@ -537,7 +537,7 @@ def _menu_text():
     for i, (label, on, handler) in enumerate(buttons):
         bg         = BTN_BG_ON  if on else BTN_BG_OFF
         fg         = BTN_FG_ON  if on else BTN_FG_OFF
-        trail      = "█" if i == last_idx else "▌"
+        trail      = "▌" if i == last_idx else "▌"
         btn_style  = f"bg:{bg} fg:{fg}"
         edge_style = f"fg:{bg}"
         frags.append((edge_style, "█"))
@@ -550,10 +550,11 @@ def _menu_text():
     if _menu_time_period is not None and _menu_time_remaining is not None:
         icon       = "☼" if _menu_time_period == "day" else "☾"
         icon_style = f"fg:{C_SUN_HEX}" if _menu_time_period == "day" else f"fg:{C_MOON_HEX}"
-        frags.append(("bold fg:#ffffff", str(_menu_time_remaining)))
+        rem        = str(_menu_time_remaining)[:5]
+        frags.append(("bold fg:#ffffff", f"{rem:<5}"))
         frags.append((icon_style, icon))
     else:
-        frags.append(("", "     "))  # 5 blank spaces — same slot as time+icon
+        frags.append(("", "      "))  # 6 blank spaces — same slot as time+icon
     return frags
 
 
