@@ -35,6 +35,11 @@ State is re-probed from tmux on every render — never cached. Toggling calls
 so no `cp -X` lines appear in the game pane. The popup submenu is therefore
 the persistent-toggle entry point; `cp` aliases remain runtime-only.
 
+The input-pane menu bar (CHAR / BUFFS / COMS / UI buttons in the bottom row)
+is a sibling surface for the same three pane toggles. Both surfaces write
+`startup.conf` via `toggle_pane.sh --persist`; each reflects changes made by
+the other within ≤ 250 ms.
+
 `cp -u`, `cp -d`, and `cp -h` are thin wrappers around
 `bridge/toggle_pane.sh`. Each alias passes its target (`ui`, `dev`,
 or `headers`) to the script via `#system`. The script also accepts an

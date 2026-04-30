@@ -3,11 +3,13 @@ try:
     from prompt_toolkit.buffer import Buffer
     from prompt_toolkit.document import Document
     from prompt_toolkit.key_binding import KeyBindings
-    from prompt_toolkit.layout.containers import HSplit, Window
-    from prompt_toolkit.layout.controls import BufferControl
+    from prompt_toolkit.layout.containers import HSplit, VSplit, Window
+    from prompt_toolkit.layout.controls import BufferControl, FormattedTextControl
     from prompt_toolkit.layout.layout import Layout
     from prompt_toolkit.keys import Keys
     from prompt_toolkit.layout.processors import BeforeInput
+    from prompt_toolkit.mouse_events import MouseEventType
+    from prompt_toolkit.output import ColorDepth
     from prompt_toolkit.selection import SelectionState
 except ImportError:
     print("Error: prompt_toolkit is not installed.")
@@ -15,7 +17,9 @@ except ImportError:
     exit(1)
 
 import atexit
+import asyncio
 import base64
+import json
 import os
 import signal
 import string
@@ -23,7 +27,32 @@ import subprocess
 import sys
 
 TMUX_TARGET = "mume:cockpit.0"
-_PRINTABLE = [c for c in string.printable if c.isprintable()]
+_PRINTABLE  = [c for c in string.printable if c.isprintable()]
+
+BRIDGE_DIR        = os.path.dirname(os.path.abspath(__file__))
+STATUS_STATE_PATH = os.path.join(BRIDGE_DIR, "status.state")
+STARTUP_CONF_PATH = os.path.join(BRIDGE_DIR, "startup.conf")
+MENU_POLL_MS      = 0.25
+MENU_WIDTH        = 29
+
+# Button colours — toggle-state indicator
+BTN_BG_ON  = "#006464"   # rgb(0,100,100) — ON state background
+BTN_BG_OFF = "#003232"   # rgb(0,50,50)   — OFF state background
+BTN_FG_ON  = "#d8d8d8"   # ON text — light grey, slightly brighter
+BTN_FG_OFF = "#bfbfbf"   # OFF text — light grey
+
+# Sun/Moon colours — source of truth: bridge/status_pane.py C_SUN / C_MOON
+C_SUN_HEX  = "#ffb000"   # \x1b[38;2;255;176;0m
+C_MOON_HEX = "#4a90e2"   # \x1b[38;2;74;144;226m
+
+# Menu state — updated by _poll_menu asyncio task
+_menu_time_period    = None
+_menu_time_remaining = None
+_menu_show_status    = False
+_menu_show_comm      = False
+_menu_show_ui        = False
+_menu_status_mtime   = None
+_menu_conf_mtime     = None
 
 last_cmd = ""
 history: list = []           # sent commands, oldest -> newest
@@ -429,6 +458,153 @@ def _on_text_changed(buf):
     _draft_restored = False
 
 
+# ---------------------------------------------------------------------------
+# Menu bar helpers
+# ---------------------------------------------------------------------------
+
+def _parse_startup_conf(path):
+    conf = {}
+    try:
+        with open(path) as fh:
+            for line in fh:
+                line = line.strip()
+                if "=" not in line or line.startswith("#"):
+                    continue
+                key, _, val = line.partition("=")
+                key = key.strip()
+                if key:
+                    conf[key] = val.strip()
+    except OSError:
+        pass
+    return conf
+
+
+def _conf_bool(conf, key):
+    try:
+        return int(conf.get(key, "0")) != 0
+    except (ValueError, TypeError):
+        return False
+
+
+def _make_btn_handler(pane):
+    def _handler(mouse_event):
+        if mouse_event.event_type != MouseEventType.MOUSE_DOWN:
+            return
+        subprocess.Popen([
+            "bash", os.path.join(BRIDGE_DIR, "toggle_pane.sh"),
+            pane, "--persist",
+        ])
+    return _handler
+
+
+_BTN_STATUS = _make_btn_handler("status")
+_BTN_COMM   = _make_btn_handler("comm")
+_BTN_UI     = _make_btn_handler("ui")
+
+
+def _menu_text():
+    """Fragments for the 29-col right-aligned CHAR/BUFFS/COMS/UI/clock menu bar.
+
+    Layout: █CHAR▌█BUFFS▌█COMS▌█UI█ <time><icon>
+    Total = 6+7+6+4+1+5 = 29 columns.
+    """
+    buttons = [
+        ("CHAR",  _menu_show_status, _BTN_STATUS),
+        ("BUFFS", False,             None),
+        ("COMS",  _menu_show_comm,   _BTN_COMM),
+        ("UI",    _menu_show_ui,     _BTN_UI),
+    ]
+    frags    = []
+    last_idx = len(buttons) - 1
+    for i, (label, on, handler) in enumerate(buttons):
+        bg         = BTN_BG_ON  if on else BTN_BG_OFF
+        fg         = BTN_FG_ON  if on else BTN_FG_OFF
+        trail      = "█" if i == last_idx else "▌"
+        btn_style  = f"bg:{bg} fg:{fg}"
+        edge_style = f"fg:{bg}"
+        frags.append((edge_style, "█"))
+        if handler is not None:
+            frags.append((btn_style, label, handler))
+        else:
+            frags.append((btn_style, label))
+        frags.append((edge_style, trail))
+    frags.append(("", " "))
+    if _menu_time_period is not None and _menu_time_remaining is not None:
+        icon       = "☼" if _menu_time_period == "day" else "☾"
+        icon_style = f"fg:{C_SUN_HEX}" if _menu_time_period == "day" else f"fg:{C_MOON_HEX}"
+        frags.append(("bold fg:#ffffff", str(_menu_time_remaining)))
+        frags.append((icon_style, icon))
+    else:
+        frags.append(("", "     "))  # 5 blank spaces — same slot as time+icon
+    return frags
+
+
+# ---------------------------------------------------------------------------
+# Menu state polling (250 ms asyncio task)
+# ---------------------------------------------------------------------------
+
+async def _poll_menu(app):
+    global _menu_time_period, _menu_time_remaining
+    global _menu_show_status, _menu_show_comm, _menu_show_ui
+    global _menu_status_mtime, _menu_conf_mtime
+
+    while True:
+        changed = False
+
+        # status.state — time_period and time_remaining
+        try:
+            smtime = os.stat(STATUS_STATE_PATH).st_mtime
+        except OSError:
+            smtime = None
+
+        if smtime != _menu_status_mtime:
+            _menu_status_mtime = smtime
+            if smtime is not None:
+                try:
+                    with open(STATUS_STATE_PATH) as fh:
+                        data = json.load(fh)
+                    tp = data.get("time_period")
+                    tr = data.get("time_remaining")
+                    if tp != _menu_time_period or tr != _menu_time_remaining:
+                        _menu_time_period    = tp
+                        _menu_time_remaining = tr
+                        changed = True
+                except Exception:
+                    pass  # keep last good state; silent recovery
+            else:
+                if _menu_time_period is not None or _menu_time_remaining is not None:
+                    _menu_time_period    = None
+                    _menu_time_remaining = None
+                    changed = True
+
+        # startup.conf — show_status, show_comm, show_ui
+        try:
+            cmtime = os.stat(STARTUP_CONF_PATH).st_mtime
+        except OSError:
+            cmtime = None
+
+        if cmtime != _menu_conf_mtime:
+            _menu_conf_mtime = cmtime
+            conf = _parse_startup_conf(STARTUP_CONF_PATH)
+            ss = _conf_bool(conf, "show_status")
+            sc = _conf_bool(conf, "show_comm")
+            su = _conf_bool(conf, "show_ui")
+            if ss != _menu_show_status or sc != _menu_show_comm or su != _menu_show_ui:
+                _menu_show_status = ss
+                _menu_show_comm   = sc
+                _menu_show_ui     = su
+                changed = True
+
+        if changed:
+            app.invalidate()
+
+        await asyncio.sleep(MENU_POLL_MS)
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
 def main():
     global last_cmd
     setup_mouse_binding()
@@ -442,25 +618,50 @@ def main():
     buf = Buffer(name="input")
     buf.on_text_changed += lambda _: _on_text_changed(buf)
 
+    input_window = Window(
+        BufferControl(
+            buffer=buf,
+            input_processors=[
+                BeforeInput("> "),
+            ],
+        ),
+        height=1,
+    )
+
+    menu_window = Window(
+        content=FormattedTextControl(text=_menu_text, focusable=False),
+        width=MENU_WIDTH,
+        height=1,
+    )
+
     layout = Layout(
         HSplit([
-            Window(
-                BufferControl(
-                    buffer=buf,
-                    input_processors=[
-                        BeforeInput("> "),
-                    ],
-                ),
-                height=1,
-            )
+            VSplit([input_window, menu_window]),
         ])
     )
 
     signal.signal(signal.SIGINT, signal.SIG_IGN)
-    app = Application(layout=layout, key_bindings=kb, full_screen=False)
+    app = Application(
+        layout=layout,
+        key_bindings=kb,
+        full_screen=False,
+        mouse_support=True,
+        color_depth=ColorDepth.DEPTH_24_BIT,
+    )
+
+    async def _run():
+        task = asyncio.ensure_future(_poll_menu(app))
+        try:
+            await app.run_async()
+        finally:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
 
     try:
-        app.run()
+        asyncio.run(_run())
     except (KeyboardInterrupt, EOFError):
         pass
 

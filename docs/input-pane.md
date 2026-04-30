@@ -210,5 +210,93 @@ not trigger EOFError).
   `docs/tmux-bindings.md` — macOS Terminal.app does not support OSC 52.
   Ctrl+C / Ctrl+X will not reach the system clipboard on that terminal.
 
+## Menu bar
+
+A 29-column clickable menu bar occupies the right end of the input pane's
+single row, sharing it with the input buffer. The input buffer takes all
+remaining width; the menu strip is a fixed-width `VSplit` sibling.
+
+### Layout
+
+`bridge/input_pane.py` restructures the Application layout to:
+
+```
+HSplit([
+    VSplit([
+        input_window,    # flex width — prompt_toolkit BufferControl
+        menu_window,     # fixed width = 29 cols, FormattedTextControl
+    ]),
+])
+```
+
+`mouse_support=True` is set on the Application. Clicking inside the input area
+positions the cursor (consistent with `comm_pane`). Focus never leaves the
+input buffer — `menu_window` is not focusable.
+
+### Visual layout
+
+```
+█CHAR▌█BUFFS▌█COMS▌█UI█ 4:33☼
+```
+
+| Segment | Cols | Notes |
+|---------|------|-------|
+| `█CHAR▌` | 6 | CHAR button |
+| `█BUFFS▌` | 7 | BUFFS button |
+| `█COMS▌` | 6 | COMS button |
+| `█UI█` | 4 | UI button (full-block right edge) |
+| ` ` | 1 | separator |
+| `<time><icon>` | 5 | clock (see below) |
+
+Total: 29 columns. The leading `█` of each button and the trailing `▌`/`█`
+are rendered in the button's background colour so they blend visually.
+
+| State | Background | Foreground |
+|-------|------------|------------|
+| ON  | `#006464` (0,100,100) | `#d8d8d8` |
+| OFF | `#003232` (0,50,50)   | `#bfbfbf` |
+
+### Click semantics
+
+| Button | Pane target | On click |
+|--------|-------------|----------|
+| CHAR   | `status`    | `toggle_pane.sh status --persist` |
+| BUFFS  | —           | inert (no pane yet) |
+| COMS   | `comm`      | `toggle_pane.sh comm --persist`   |
+| UI     | `ui`        | `toggle_pane.sh ui --persist`     |
+
+Clicks use `MouseEventType.MOUSE_DOWN` and `subprocess.Popen` (fire-and-
+forget). The button state updates within ≤ 250 ms via the polling path.
+
+### Persistence source
+
+Button toggle state is read from `bridge/startup.conf` keys `show_status`,
+`show_comm`, and `show_ui`. The file is polled every 250 ms via mtime
+comparison; toggling via the popup Options menu (which also writes
+`startup.conf` via `toggle_pane.sh --persist`) is therefore reflected in the
+menu bar within one poll tick. The two surfaces are siblings — they share the
+same persistence file with no other synchronisation needed.
+
+### Clock
+
+The clock segment (rightmost 5 columns) renders the time remaining in the
+current day/night period, sourced from `bridge/status.state`:
+
+| Field | Key in `status.state` |
+|-------|----------------------|
+| Period | `time_period` — `"day"` or `"night"` |
+| Remaining | `time_remaining` — displayed verbatim |
+
+Format: `<time_remaining><icon>`, e.g. `4:33☼` (day) or `4:33☾` (night).
+Time text is bold white. The sun icon (☼) is rendered in `#ffb000`; the moon
+icon (☾) in `#4a90e2` — matching the status pane's Time row colours.
+
+When `time_period` or `time_remaining` is null (precision below HOUR), or
+when `status.state` is missing or unreadable, the clock area renders as five
+blank spaces. No partial value or lone icon is shown.
+
+`status.state` and `startup.conf` are both polled by a single asyncio task
+(250 ms interval, mtime-based, mirrors `comm_pane.py`).
+
 ---
 Back to [architecture.md](../architecture.md).
