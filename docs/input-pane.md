@@ -236,17 +236,17 @@ input buffer — `menu_window` is not focusable.
 ### Visual layout
 
 ```
-█CHAR▌█BUFFS▌█COMS▌█UI█ 4:33☼
+█CHAR▌█BUFFS▌█COM▌█UI█ 4:33 ☼
 ```
 
 | Segment | Cols | Notes |
 |---------|------|-------|
 | `█CHAR▌` | 6 | CHAR button |
 | `█BUFFS▌` | 7 | BUFFS button |
-| `█COMS▌` | 6 | COMS button |
+| `█COM▌` | 5 | COM button |
 | `█UI█` | 4 | UI button (full-block right edge) |
 | ` ` | 1 | separator |
-| `<time><icon>` | 5 | clock (see below) |
+| `<time> <icon>` | 6 | clock (see below) |
 
 Total: 29 columns. The leading `█` of each button and the trailing `▌`/`█`
 are rendered in the button's background colour so they blend visually.
@@ -262,7 +262,7 @@ are rendered in the button's background colour so they blend visually.
 |--------|-------------|----------|
 | CHAR   | `status`    | `toggle_pane.sh status --persist` |
 | BUFFS  | —           | inert (no pane yet) |
-| COMS   | `comm`      | `toggle_pane.sh comm --persist`   |
+| COM    | `comm`      | `toggle_pane.sh comm --persist`   |
 | UI     | `ui`        | `toggle_pane.sh ui --persist`     |
 
 Clicks use `MouseEventType.MOUSE_DOWN` and `subprocess.Popen` (fire-and-
@@ -279,7 +279,7 @@ same persistence file with no other synchronisation needed.
 
 ### Clock
 
-The clock segment (rightmost 5 columns) renders the time remaining in the
+The clock segment (rightmost 6 columns) renders the time remaining in the
 current day/night period, sourced from `bridge/status.state`:
 
 | Field | Key in `status.state` |
@@ -287,12 +287,14 @@ current day/night period, sourced from `bridge/status.state`:
 | Period | `time_period` — `"day"` or `"night"` |
 | Remaining | `time_remaining` — displayed verbatim |
 
-Format: `<time_remaining><icon>`, e.g. `4:33☼` (day) or `4:33☾` (night).
+Format: `<time_remaining><icon>`, with the icon pinned to the rightmost column
+and `time_remaining` left-aligned in the preceding 5 columns, right-padded with
+spaces. E.g. `4:33 ☼` (day, 4-char time) or `15:21☼` (day, 5-char time).
 Time text is bold white. The sun icon (☼) is rendered in `#ffb000`; the moon
 icon (☾) in `#4a90e2` — matching the status pane's Time row colours.
 
 When `time_period` or `time_remaining` is null (precision below HOUR), or
-when `status.state` is missing or unreadable, the clock area renders as five
+when `status.state` is missing or unreadable, the clock area renders as six
 blank spaces. No partial value or lone icon is shown.
 
 `status.state`, `startup.conf`, and `layout.conf` are polled by a single

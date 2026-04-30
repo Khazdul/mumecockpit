@@ -55,7 +55,7 @@ tracking, and UI feedback.
 │   ├── about.txt             # About page body text
 │   └── scripts.cache         # Script registry written by brain.lua (gitignored)
 │   ├── open_pane.sh          # Opens/manages tmux panes dynamically
-│   ├── input_pane.py         # Input pane — prompt_toolkit CLI, forwards to TT++, right-aligned menu bar (CHAR/BUFFS/COMS/UI + clock)
+│   ├── input_pane.py         # Input pane — prompt_toolkit CLI, forwards to TT++, right-aligned menu bar (CHAR/BUFFS/COM/UI + clock)
 │   ├── comm_pane.py          # Comm pane — clickable channel-filter header + scrollable history
 │   ├── status_pane.py        # Status pane — flicker-free ANSI renderer, polls status.state
 │   ├── focus_input.sh        # Resolves input pane index at click time (MouseUp1Pane target)
