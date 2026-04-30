@@ -55,7 +55,7 @@ tracking, and UI feedback.
 │   ├── about.txt             # About page body text
 │   └── scripts.cache         # Script registry written by brain.lua (gitignored)
 │   ├── open_pane.sh          # Opens/manages tmux panes dynamically
-│   ├── input_pane.py         # Input pane — prompt_toolkit CLI, forwards to TT++
+│   ├── input_pane.py         # Input pane — prompt_toolkit CLI, forwards to TT++, right-aligned menu bar (CHAR/BUFFS/COMS/UI + clock)
 │   ├── comm_pane.py          # Comm pane — clickable channel-filter header + scrollable history
 │   ├── status_pane.py        # Status pane — flicker-free ANSI renderer, polls status.state
 │   ├── focus_input.sh        # Resolves input pane index at click time (MouseUp1Pane target)
@@ -351,7 +351,7 @@ Deferred until there's a concrete use case:
 - [docs/events.md](docs/events.md) — Event bus API and catalogue. Touched when adding a core MUD trigger or subscribing a script to a Lua-side event.
 - [docs/ipc.md](docs/ipc.md) — tt++ ↔ Lua IPC contract, relay actions, startup ordering. Touched when changing how tt++ and Lua communicate.
 - [docs/session-lifecycle.md](docs/session-lifecycle.md) — Session connect/disconnect, session.state, cp -r, settings persistence. Touched when changing session handling or startup flow.
-- [docs/input-pane.md](docs/input-pane.md) — Input pane key forwarding, Enter semantics, history navigation. Touched when changing input behaviour or adding new forwarded keys.
+- [docs/input-pane.md](docs/input-pane.md) — Input pane key forwarding, Enter semantics, history navigation, menu bar (clickable pane toggles + clock). Touched when changing input behaviour, forwarded keys, or the menu bar.
 - [docs/tmux-bindings.md](docs/tmux-bindings.md) — tmux root-table bindings, disabled defaults, mouse interaction model, clipboard portability. Touched when changing any tmux binding or mouse behaviour.
 - [docs/launcher.md](docs/launcher.md) — Pre-tmux startup menu, rendering conventions, exec-chain. Touched when changing launcher pages or startup options.
 - [docs/popup-menu.md](docs/popup-menu.md) — In-game ESC popup: submenus, status header, save-profile flow. Touched when changing the in-game overlay.
