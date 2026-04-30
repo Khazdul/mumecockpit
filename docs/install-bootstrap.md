@@ -80,7 +80,11 @@ Fully unattended beyond the initial UAC prompt:
 6. Install Alacritty (winget, MSI fallback) and write
    `%APPDATA%\alacritty\alacritty.toml`.
 7. Create a desktop shortcut that runs:
-   `alacritty.exe -e wsl -d Ubuntu -u root -- bash -lc "cd /root/MUME && ./start.sh"`.
+   `alacritty.exe -e wsl -d Ubuntu -u root -- /root/MUME/bridge/launch.sh`.
+   The launcher script handles the cd-and-exec on the Linux side; see
+   [ADR 0028](decisions/0028-windows-shortcut-delegation.md) for rationale.
+8. Verify `/root/MUME/bridge/launch.sh` and `/root/MUME/start.sh` are
+   executable. Abort with a clear error if either is missing.
 
 No reboot. No manual first-run. The user sees UAC once, a progress
 indicator, then "done".
