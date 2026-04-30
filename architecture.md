@@ -65,7 +65,7 @@ tracking, and UI feedback.
 │   │                         #   (spawned by tmux_start.sh + launcher.sh; self-terminates)
 │   ├── ping.cache            # Ping ring buffer: latest, quality, 60-sample history (gitignored)
 │   ├── layout.conf           # Persisted layout state (gitignored)
-│   │                         #   keys: ui_width, window_cols, ui_height, comm_height, status_height
+│   │                         #   keys: ui_width, window_cols
 │   ├── session.state         # Runtime state written by Lua on SESSION
 │   │                         #   CONNECTED; cleared on DISCONNECTED and
 │   │                         #   at brain startup (gitignored)

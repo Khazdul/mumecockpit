@@ -239,18 +239,10 @@ is absent); dev is always at the bottom.
 
 ### Pane height
 
-`status_height=9` in `bridge/layout.conf` (9 body rows, no header). The pane
-identity is shown in the tmux border label instead. `status_height` is driven
-dynamically by `lua/core/status_state.lua` based on affect count; 9 is the
-cold-start default before the first Lua serialise fires.
-
-`bridge/apply_layout.sh` owns all right-column heights. It applies
-`ui_height` first (clamped so dev keeps ≥ 1 row when present), then
-`status_height`; `dev` receives the residual. Applying ui before status means
-tmux propagates tight-height squeezes char → ui → dev, preserving char as long
-as possible. All three are re-established after every right-column operation.
-The ui↔dev bottom border is the only height-flex border — dragging it persists
-`ui_height = U`.
+Right-column pane heights are managed by tmux directly. Every pane in the right
+column is freely resizable by the user, with no snap-back and no persistence
+across sessions. tmux assigns a default share of the column height on pane
+creation; the user can drag any internal border without interference.
 
 ### Width constraint
 
@@ -271,12 +263,9 @@ narrow), it widens the column automatically provided main can stay ≥ 30 cols.
 
 ### Height
 
-`bridge/apply_layout.sh` owns all right-column heights. Apply order is
-ui-first: `ui_height` is applied first (clamped so dev keeps ≥ 1 row when
-present), then `status_height`; dev receives the residual. This order ensures
-tmux propagates tight-height squeezes char → ui → dev. Both `ui_height`
-(default 20) and `status_height` (default 9) live in `layout.conf`.
-Every right-column operation ends with a call to `apply_layout.sh`.
+Right-column pane heights are tmux-managed. `apply_layout.sh` does not
+set or restore any right-column height; it only pins the input row to 1 row
+and enforces the 29-col width floor when status is open.
 
 ## Toggle
 
@@ -446,17 +435,12 @@ status_height = STATIC_ROWS + 1 + max(4, ceil(N / 2))
 - `max(4, …)`: height is stable for N ≤ 8 (minimum 4 affect rows = height
   14). For N > 8, height grows by one row per two additional affects.
 
-`lua/core/status_state.lua` owns this: after each atomic write to
-`bridge/status.state` it checks the new height against `_last_height`; if
-different it rewrites `status_height=` in `bridge/layout.conf` (atomic
-tmp-rename) and fires:
-
-```lua
-tintin_cmd("gts", "#system {bash bridge/apply_layout.sh}")
-```
-
-The existing clamp behaviour in `apply_layout.sh` ensures dev pane keeps
-≥ 1 row regardless of affect count.
+Dynamic height means Lua calls `tmux resize-pane -y N -t status` directly
+when `state.char.affects` length changes. The call is gated on the right column
+having more than one pane: when status is the only pane in the column, resizing
+it would move the outer boundary and push the input row up, so the resize is
+skipped — status fills the entire column anyway in that state. No
+`layout.conf` write, no `apply_layout.sh` round-trip.
 
 ## Extension points (phases 3–4)
 

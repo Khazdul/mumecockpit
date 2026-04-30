@@ -1,6 +1,6 @@
 # 0005 — apply_layout.sh owns all right-column dimensions
 
-**Status:** Accepted
+**Status:** Superseded by 0030
 **Date:** 2026-04-25
 
 ## Context
