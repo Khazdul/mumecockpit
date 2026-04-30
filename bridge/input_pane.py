@@ -3,7 +3,8 @@ try:
     from prompt_toolkit.buffer import Buffer
     from prompt_toolkit.document import Document
     from prompt_toolkit.key_binding import KeyBindings
-    from prompt_toolkit.layout.containers import HSplit, VSplit, Window
+    from prompt_toolkit.filters import Condition
+    from prompt_toolkit.layout.containers import ConditionalContainer, HSplit, VSplit, Window
     from prompt_toolkit.layout.controls import BufferControl, FormattedTextControl
     from prompt_toolkit.layout.layout import Layout
     from prompt_toolkit.keys import Keys
@@ -32,8 +33,14 @@ _PRINTABLE  = [c for c in string.printable if c.isprintable()]
 BRIDGE_DIR        = os.path.dirname(os.path.abspath(__file__))
 STATUS_STATE_PATH = os.path.join(BRIDGE_DIR, "status.state")
 STARTUP_CONF_PATH = os.path.join(BRIDGE_DIR, "startup.conf")
+LAYOUT_CONF_PATH  = os.path.join(BRIDGE_DIR, "layout.conf")
 MENU_POLL_MS      = 0.25
 MENU_WIDTH        = 29
+
+# Layout constants duplicated from bridge/on_window_resize.sh and
+# bridge/apply_layout.sh. Keep in sync; see ADR 0031.
+MAIN_MIN                = 30   # main/tt++ pane floor
+RIGHT_FLOOR_WITH_STATUS = 29   # right column floor when status pane is open
 
 # Button colours — toggle-state indicator
 BTN_BG_ON  = "#006464"   # rgb(0,100,100) — ON state background
@@ -51,8 +58,10 @@ _menu_time_remaining = None
 _menu_show_status    = False
 _menu_show_comm      = False
 _menu_show_ui        = False
+_menu_ui_width       = 50
 _menu_status_mtime   = None
 _menu_conf_mtime     = None
+_menu_layout_mtime   = None
 
 last_cmd = ""
 history: list = []           # sent commands, oldest -> newest
@@ -502,6 +511,15 @@ _BTN_COMM   = _make_btn_handler("comm")
 _BTN_UI     = _make_btn_handler("ui")
 
 
+def _menu_visible():
+    try:
+        cols = os.get_terminal_size().columns
+    except OSError:
+        return True
+    floor = RIGHT_FLOOR_WITH_STATUS if _menu_show_status else _menu_ui_width
+    return (cols - MAIN_MIN - 1) >= floor
+
+
 def _menu_text():
     """Fragments for the 29-col right-aligned CHAR/BUFFS/COMS/UI/clock menu bar.
 
@@ -545,8 +563,8 @@ def _menu_text():
 
 async def _poll_menu(app):
     global _menu_time_period, _menu_time_remaining
-    global _menu_show_status, _menu_show_comm, _menu_show_ui
-    global _menu_status_mtime, _menu_conf_mtime
+    global _menu_show_status, _menu_show_comm, _menu_show_ui, _menu_ui_width
+    global _menu_status_mtime, _menu_conf_mtime, _menu_layout_mtime
 
     while True:
         changed = False
@@ -595,6 +613,24 @@ async def _poll_menu(app):
                 _menu_show_ui     = su
                 changed = True
 
+        # layout.conf — ui_width (controls menu visibility floor)
+        try:
+            lmtime = os.stat(LAYOUT_CONF_PATH).st_mtime
+        except OSError:
+            lmtime = None
+
+        if lmtime != _menu_layout_mtime:
+            _menu_layout_mtime = lmtime
+            if lmtime is not None:
+                lconf = _parse_startup_conf(LAYOUT_CONF_PATH)
+                try:
+                    uw = int(lconf.get("ui_width", 50))
+                except (ValueError, TypeError):
+                    uw = 50
+                if uw != _menu_ui_width:
+                    _menu_ui_width = uw
+                    changed = True
+
         if changed:
             app.invalidate()
 
@@ -634,9 +670,14 @@ def main():
         height=1,
     )
 
+    menu_container = ConditionalContainer(
+        content=menu_window,
+        filter=Condition(_menu_visible),
+    )
+
     layout = Layout(
         HSplit([
-            VSplit([input_window, menu_window]),
+            VSplit([input_window, menu_container]),
         ])
     )
 
