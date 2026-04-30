@@ -15,7 +15,30 @@ Use semver: `MAJOR.MINOR.PATCH`.
 
 ---
 
-## 2. Bump VERSION on main
+## 2. Build the Windows installer zip
+
+Build the zip from the `install/` directory. The subshell `cd` ensures files
+land at the archive root (no `install/` prefix inside the zip):
+
+    mkdir -p release
+    (cd install && zip ../release/MUME-Cockpit-vX.Y.Z.zip \
+        cockpit-installer.bat installer-core.ps1 README.md)
+
+Commit and push alongside (or just before) the VERSION bump:
+
+    git add release/MUME-Cockpit-vX.Y.Z.zip
+    git commit -m "chore: build vX.Y.Z installer zip"
+    git push origin main
+
+**Why commit the zip rather than only upload it as a release asset.**
+Committing to `release/` means that checking out the tag yields the exact
+zip that shipped — no dependency on GitHub assets being available. If
+GitHub release assets are ever lost or the release is accidentally deleted
+and recreated, the in-repo copy is the authoritative artifact.
+
+---
+
+## 3. Bump VERSION on main
 
 Edit `VERSION` to contain exactly the new version string (no `v` prefix, no
 trailing newline beyond what the editor adds):
@@ -43,7 +66,7 @@ tag, bump VERSION on main, retag on the bump commit (see Recovery below).
 
 ---
 
-## 3. Verify VERSION matches the tag
+## 4. Verify VERSION matches the tag
 
 Run the pre-tag sanity check:
 
@@ -57,7 +80,7 @@ If it says `Bump VERSION first` — stop, go back to step 2.
 
 ---
 
-## 4. Create and push the tag
+## 5. Create and push the tag
 
 Tag the bump commit (the HEAD of main after step 2):
 
@@ -66,7 +89,7 @@ Tag the bump commit (the HEAD of main after step 2):
 
 ---
 
-## 5. Create the GitHub release
+## 6. Create the GitHub release
 
     gh release create vX.Y.Z --generate-notes
 
@@ -79,7 +102,95 @@ with no associated release will not be picked up by clients.
 
 ---
 
-## 6. Verify the cache
+## 7. Upload the installer zip as a release asset
+
+    gh release upload vX.Y.Z release/MUME-Cockpit-vX.Y.Z.zip
+
+This is the same file committed in step 2 — the in-repo copy and the
+release asset are identical by design. End users get a download button on
+the release page; the in-repo copy remains the authoritative artifact.
+
+---
+
+## Release notes body
+
+`--generate-notes` produces a detailed changelog but does not answer the
+user's first question on the release page: "does this affect me, and should
+I update?" Hand-edit the release body to prepend a short **Summary** block
+before the auto-generated content.
+
+**Which template to use:**
+- PATCH release (bug fixes only) → patch template.
+- MINOR or MAJOR release (new features or breaking changes) → minor/major
+  template.
+
+After editing, verify that the `## Summary` heading renders as a heading and
+bold text renders as bold. If the body shows a literal `##` prefix or bare
+asterisks, the editor was in text mode — re-open "Edit release", switch to
+Markdown mode, and re-paste. This was the failure mode in the v0.5.1
+first-paste attempt.
+
+### Patch template
+
+    ## Summary
+
+    **Who this affects:** <audience>
+
+    **What changed:** <one short paragraph>
+
+    **Action needed:** <action>
+
+    ---
+
+Keep it prose — one change, one paragraph. No bullet list. The
+auto-generated content follows after the `---` separator; do not delete it.
+
+### Minor / major template
+
+    ## Summary
+
+    <One or two sentences framing what this release is about overall —
+    the narrative direction, not a feature list.>
+
+    **Who this affects:** <audience>
+
+    **Highlights:**
+    - <bullet — end-user language, not commit subject>
+    - <bullet>
+    - <bullet>
+
+    **Action needed:** <action>
+
+    ---
+
+For a MAJOR release with breaking changes, add a `**Breaking changes:**`
+subsection immediately above the `---` separator, listing what users must
+do to migrate. The auto-generated content follows after `---`; do not
+delete it.
+
+### Worked example — v0.5.1 (patch)
+
+    ## Summary
+
+    **Who this affects:** Windows users only.
+
+    **What changed:** The Windows desktop shortcut now reliably launches the
+    cockpit on all hosts. Previously some installs left a broken shortcut
+    that opened a terminal and immediately closed with
+    `./start.sh: No such file or directory`.
+
+    **Action needed:** If your existing install works, no action — this
+    release does not change runtime behaviour. If you have a broken shortcut
+    from a v0.5.0 install, delete it and re-run `cockpit-installer.bat`
+    from the v0.5.1 zip below.
+
+    macOS and Linux users are unaffected.
+
+    ---
+
+---
+
+## 8. Verify the cache
 
 Force a fresh version check and confirm the cache reflects the new tag:
 
@@ -134,6 +245,10 @@ commit is pushed):
 **Recreate the GitHub release:**
 
     gh release create vX.Y.Z --generate-notes
+
+The in-repo zip in `release/` is still correct (its content does not depend
+on tag placement), but the release-asset upload must be redone after recreating
+the release: `gh release upload vX.Y.Z release/MUME-Cockpit-vX.Y.Z.zip`.
 
 **Verify:**
 
@@ -202,29 +317,38 @@ for human reference before executing the release steps.
 
 ## Execution sequence
 
-Run steps 2–6 from this document in order. After each step, confirm in one
+Run steps 2–8 from this document in order. After each step, confirm in one
 line what happened. Exact commands:
 
-**Step 1 — Bump VERSION on main:**
+**Step 1 — Build the Windows installer zip:**
+
+    mkdir -p release
+    (cd install && zip ../release/MUME-Cockpit-vX.Y.Z.zip \
+        cockpit-installer.bat installer-core.ps1 README.md)
+    git add release/MUME-Cockpit-vX.Y.Z.zip
+    git commit -m "chore: build vX.Y.Z installer zip"
+    git push origin main
+
+**Step 2 — Bump VERSION on main:**
 
     echo "X.Y.Z" > VERSION
     git add VERSION
     git commit -m "chore: bump VERSION to X.Y.Z"
     git push origin main
 
-**Step 2 — Run the pre-tag sanity check:**
+**Step 3 — Run the pre-tag sanity check:**
 
     bash bridge/check_release.sh vX.Y.Z
 
 Expected output: `VERSION matches vX.Y.Z. Safe to tag.`
 If it fails, stop and report the output. Do not proceed to the tag step.
 
-**Step 3 — Tag and push:**
+**Step 4 — Tag and push:**
 
     git tag vX.Y.Z
     git push origin vX.Y.Z
 
-**Step 4 — Create the GitHub release:**
+**Step 5 — Create the GitHub release:**
 
 For a stable release:
 
@@ -234,7 +358,39 @@ For a pre-release:
 
     gh release create vX.Y.Z --generate-notes --prerelease
 
-**Step 5 — Verify the cache:**
+**Step 6 — Draft the Summary block:**
+
+Based on the bump type already determined in this run, select the matching
+template from the "Release notes body" section above:
+
+- PATCH bump → patch template.
+- MINOR or MAJOR bump → minor/major template.
+
+Fill in the audience, what changed, and action needed using the commit summary
+already drafted. Output the completed block as a fenced code block in chat.
+
+Then say to the user:
+
+> Paste the block above into the GitHub release body via **Edit release** on
+> the release page. Prepend it before the auto-generated content, keeping the
+> `---` separator between them. Do not delete the auto-generated section. After
+> saving, confirm the paste is done, then spot-check that the `## Summary`
+> heading renders as a heading (not as literal `## Summary`) and that bold text
+> appears bold. If either looks wrong, the editor was in text mode — re-open
+> Edit release, switch to Markdown mode, and re-paste.
+
+Do NOT use `gh release edit --notes` to do this automatically. The hand-paste
+step is intentional: it gives the user a beat to review and adjust the wording
+before the release goes public, and it avoids shell-quoting issues with
+multi-line `--notes` content.
+
+Wait for the user to confirm the paste is done before proceeding.
+
+**Step 7 — Upload the installer zip as a release asset:**
+
+    gh release upload vX.Y.Z release/MUME-Cockpit-vX.Y.Z.zip
+
+**Step 8 — Verify the cache:**
 
     bash bridge/version_check.sh --force && cat bridge/version.cache
 
@@ -254,13 +410,15 @@ not a pre-release), report the anomaly and stop. Do not attempt to fix it.
 
 ## What not to do autonomously
 
-- Do not edit any file other than `VERSION`. If commits since the last release
-  imply something else should change (e.g. a hardcoded version string),
-  surface the question to the user; do not change it silently.
+- Do not edit any file other than `VERSION` and the new `release/` zip artifact
+  created in step 2. If commits since the last release imply something else
+  should change (e.g. a hardcoded version string), surface the question to the
+  user; do not change it silently.
 - Do not edit ADRs or other documentation as part of a release. Documentation
   updates are a separate concern handled outside the release flow.
-- Do not edit the release note body after creation. If the generated notes look
-  incorrect, surface the release URL for the user to edit manually.
+- Do not edit the release note body via `gh release edit`. Draft the Summary
+  block in chat and let the user paste it manually via the GitHub web UI
+  (see step 6 in the execution sequence above).
 
 Stable releases are visible to end users via `version_check.sh`; pre-releases
 are not.
