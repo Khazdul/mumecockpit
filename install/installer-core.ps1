@@ -188,6 +188,32 @@ Write-Host ""
 Write-Host "Linux bootstrap complete."
 Write-Host ""
 
+# -- Step 5b: Verify cockpit artifacts ----------------------------------------
+#
+# The shortcut depends on launch.sh and start.sh being present and executable.
+# Probe them now so a partially-failed bootstrap fails loudly here instead of
+# leaving a broken shortcut on the desktop.
+
+Write-Host "Verifying cockpit installation..."
+& wsl -d $distroName -u root -- test -x /root/MUME/bridge/launch.sh
+if ($LASTEXITCODE -ne 0) {
+    Write-Host ""
+    Write-Host "ERROR: Cockpit installation looks incomplete."
+    Write-Host "       /root/MUME/bridge/launch.sh is missing or not executable."
+    Write-Host "       This usually means the bootstrap step did not finish cleanly."
+    Write-Host "       Re-run this installer; if the problem persists, file an issue."
+    exit 1
+}
+& wsl -d $distroName -u root -- test -x /root/MUME/start.sh
+if ($LASTEXITCODE -ne 0) {
+    Write-Host ""
+    Write-Host "ERROR: /root/MUME/start.sh is missing or not executable."
+    Write-Host "       Re-run this installer; if the problem persists, file an issue."
+    exit 1
+}
+Write-Host "Verification passed."
+Write-Host ""
+
 # -- Step 6: Install Alacritty ------------------------------------------------
 #
 # Prefer winget; fall back to downloading the MSI from the latest GitHub release.
