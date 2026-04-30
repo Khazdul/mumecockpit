@@ -131,46 +131,45 @@ if [ -n "$HAS_RIGHT" ]; then
             ;;
 
         input)
-            NEW_INDEX=$(tmux split-window -v -l 1 -t mume:cockpit.0 -P -F '#{pane_index}' \
+            NEW_INDEX=$(tmux split-window -v -f -l 1 -t mume:cockpit.0 -P -F '#{pane_index}' \
                 "python3 $MUME/bridge/input_pane.py")
             tmux select-pane -t mume:cockpit.$NEW_INDEX -T "input"
             ;;
     esac
 else
-    # No right column yet — create horizontal split at window level.
-    # -f is required: without it, if the input pane already exists, tmux inserts
-    # the new right pane as main's sibling inside the left-column subtree, causing
-    # input to span the full window width instead of staying below main only.
+    # No right column yet — split horizontally within the top container (main's
+    # subtree). Do NOT use -f: with input now a window-level full-width split,
+    # -f would span across the input row too, breaking the layout. See ADR 0029.
     case $TYPE in
         status)
-            NEW_INDEX=$(tmux split-window -h -f -t mume:cockpit.0 -P -F '#{pane_index}' "$STATUS_CMD")
+            NEW_INDEX=$(tmux split-window -h -t mume:cockpit.0 -P -F '#{pane_index}' "$STATUS_CMD")
             tmux select-pane -t mume:cockpit.$NEW_INDEX -T "status"
             tmux resize-pane -t mume:cockpit.$NEW_INDEX -y "$STATUS_H_APPLY"
             tmux select-pane -t "$(resolve_focus_target)"
             bash "$MUME/bridge/apply_layout.sh"
             ;;
         comm)
-            NEW_INDEX=$(tmux split-window -h -f -t mume:cockpit.0 -P -F '#{pane_index}' "$COMM_CMD")
+            NEW_INDEX=$(tmux split-window -h -t mume:cockpit.0 -P -F '#{pane_index}' "$COMM_CMD")
             tmux select-pane -t mume:cockpit.$NEW_INDEX -T "comm"
             tmux select-pane -t "$(resolve_focus_target)"
             bash "$MUME/bridge/apply_layout.sh"
             ;;
         ui)
-            NEW_INDEX=$(tmux split-window -h -f -t mume:cockpit.0 -P -F '#{pane_index}' \
+            NEW_INDEX=$(tmux split-window -h -t mume:cockpit.0 -P -F '#{pane_index}' \
                 "bash -c 'stty -isig 2>/dev/null; trap \"\" INT; while true; do tail -f $MUME/logs/ui.log; printf \"\\n[pane kept alive — use cp -u to close]\\n\"; sleep 0.2; done'")
             tmux select-pane -t mume:cockpit.$NEW_INDEX -T "ui"
             tmux select-pane -t "$(resolve_focus_target)"
             bash "$MUME/bridge/apply_layout.sh"
             ;;
         dev)
-            NEW_INDEX=$(tmux split-window -h -f -t mume:cockpit.0 -P -F '#{pane_index}' \
+            NEW_INDEX=$(tmux split-window -h -t mume:cockpit.0 -P -F '#{pane_index}' \
                 "bash -c 'stty -isig 2>/dev/null; trap \"\" INT; while true; do tail -f $MUME/logs/debug.log; printf \"\\n[pane kept alive — use cp -d to close]\\n\"; sleep 0.2; done'")
             tmux select-pane -t mume:cockpit.$NEW_INDEX -T "dev"
             tmux select-pane -t "$(resolve_focus_target)"
             bash "$MUME/bridge/apply_layout.sh"
             ;;
         input)
-            NEW_INDEX=$(tmux split-window -v -l 1 -t mume:cockpit.0 -P -F '#{pane_index}' \
+            NEW_INDEX=$(tmux split-window -v -f -l 1 -t mume:cockpit.0 -P -F '#{pane_index}' \
                 "python3 $MUME/bridge/input_pane.py")
             tmux select-pane -t mume:cockpit.$NEW_INDEX -T "input"
             ;;

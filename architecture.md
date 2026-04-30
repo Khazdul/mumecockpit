@@ -109,12 +109,13 @@ tracking, and UI feedback.
                    ▼
 ┌──────────────────────────────────────────┐
 │            tmux Cockpit                  │
-│  pane 0 (left):   TinTin++ — game I/O    │
-│  pane 0b (bot):   input — prompt_toolkit  │
-│  pane 1 (top):    status — status_pane.py │
-│  pane 1b (mid):   comm — comm_pane.py     │
-│  pane 1c (mid):   ui  — tail ui.log       │
-│  pane 2 (bot):    dev — tail debug.log    │
+│  pane 0 (top-left):  TinTin++ — game I/O │
+│  pane 1 (top-right): status — status_pane.py │
+│  pane 1b (right):    comm — comm_pane.py  │
+│  pane 1c (right):    ui  — tail ui.log    │
+│  pane 2 (right):     dev — tail debug.log │
+│  pane 0b (full-width bottom):             │
+│                      input — prompt_toolkit│
 └──────────────────────────────────────────┘
 ```
 

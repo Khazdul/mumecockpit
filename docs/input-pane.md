@@ -7,8 +7,8 @@ command input pane. Touch this file when changing key forwarding behaviour,
 Enter semantics, history navigation, or the DECKPAM/keypad setup.
 
 A dedicated input pane (`bridge/input_pane.py`) replaces typing directly
-in the TT++ pane. It runs as a separate tmux pane at the bottom of the
-left column, 1 row tall.
+in the TT++ pane. It runs as a separate tmux pane spanning the full window width at the bottom
+of the cockpit, 1 row tall.
 
 **Behaviour:**
 - Commands are typed here and forwarded to TT++ via `tmux send-keys`
