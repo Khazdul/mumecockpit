@@ -110,10 +110,11 @@ tracking, and UI feedback.
 ┌──────────────────────────────────────────┐
 │            tmux Cockpit                  │
 │  pane 0 (top-left):  TinTin++ — game I/O │
-│  pane 1 (top-right): status — status_pane.py │
-│  pane 1b (right):    comm — comm_pane.py  │
-│  pane 1c (right):    ui  — tail ui.log    │
-│  pane 2 (right):     dev — tail debug.log │
+│  pane 1 (top-right): status — status_pane.py  │
+│  pane 1b (right):    buffs — buffs_pane.py    │
+│  pane 1c (right):    comm — comm_pane.py      │
+│  pane 1d (right):    ui  — tail ui.log        │
+│  pane 2 (right):     dev — tail debug.log     │
 │  pane 0b (full-width bottom):             │
 │                      input — prompt_toolkit│
 └──────────────────────────────────────────┘
@@ -327,7 +328,8 @@ here — it's described in the relevant `docs/*.md` and visible in the
       popup with mode-aware reconnect)
 - [ ] Live-server connection and real-server trigger mapping
 - [ ] Spell timer system
-- [x] Affect tracker
+- [x] Affect tracker (data layer complete)
+- [ ] Buffs pane renderer (scaffold done; `bridge/buffs_pane.py` renderer pending)
 - [ ] Tells history UI
 - [ ] PvP keybinds finalized
 - [x] Self-update flow validated end-to-end (v0.2.1–v0.2.6, 2026-04-28)
@@ -362,4 +364,5 @@ Deferred until there's a concrete use case:
 - [docs/status-pane.md](docs/status-pane.md) — Character Status pane: renderer, state-file schema, field layout, colour scheme, layout integration, phase 2–4 extension points. Touched when changing the status pane.
 - [docs/clock.md](docs/clock.md) — Game clock: sync sources, state schema, persistence, seed handling, degradation rules. Touched when changing clock sync or consuming game time.
 - [docs/affects.md](docs/affects.md) — Affect tracker: data flow, state schemas, persistence, pattern-conversion rules, tick lifecycle. Touched when changing affect tracking or adding new affect entries.
+- [docs/buffs-pane.md](docs/buffs-pane.md) — Buffs pane: renderer, layout integration, overflow policy. Touched when building or changing the buffs pane renderer.
 - [docs/install-bootstrap.md](docs/install-bootstrap.md) — Cross-platform install and bootstrap plan. Touched when scheduling installer work or when a platform constraint (WSL, Alacritty, package versions) changes.
