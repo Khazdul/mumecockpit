@@ -24,36 +24,8 @@ C_LABEL  = "\x1b[38;2;154;168;183m"    # #9AA8B7 steel-blue — labels
 C_VALUE  = "\x1b[1;97m"                # bold bright white — values
 C_RESET  = "\x1b[0m"
 
-C_AFFECT_SPELL  = "\x1b[38;2;122;169;214m"   # #7AA9D6 light steel-blue
-C_AFFECT_BUFF   = "\x1b[38;2;143;188;143m"   # #8FBC8F soft sage green
-C_AFFECT_DEBUFF = "\x1b[38;2;201;112;112m"   # #C97070 muted brick red
-
 C_SUN  = "\x1b[38;2;255;176;0m"     # #FFB000 intense amber gold
 C_MOON = "\x1b[38;2;74;144;226m"    # #4A90E2 vivid sky blue
-
-_AFFECT_COLOURS = {
-    "spell":  C_AFFECT_SPELL,
-    "buff":   C_AFFECT_BUFF,
-    "debuff": C_AFFECT_DEBUFF,
-}
-
-_AFFECT_SHORTNAMES = {
-    "breath of briskness":             "briskness",
-    "detect magic":                    "det. magic",
-    "detect evil":                     "det. evil",
-    "night vision":                    "night vis.",
-    "sense life":                      "sense life",
-    "Blood of Sauron":                 "BoS",
-    "a pitch-black robe (pale tones)": "pitch robe",
-    "a pure white robe (pale tones)":  "white robe",
-    "heightened senses":               "h. senses",
-    "heightened senses (faded)":       "h. senses-",
-    "dark aura":                       "dark aura",
-    "dark aura (faded)":               "dark aura-",
-    "spectral health":                 "spec.health",
-    "very comfortable":                "v. comfort.",
-    "shadow-link":                     "shadow-link",
-}
 
 # ---------------------------------------------------------------------------
 # Renderer state
@@ -132,44 +104,6 @@ def _time_row(time_str, period, remaining, width):
     return left + " " + right
 
 
-def _resolve_affect_name(name, cell_w):
-    """Resolve display name: shortmap → truncate with dot → as-is. MAX_NAME = cell_w - 4."""
-    if name in _AFFECT_SHORTNAMES:
-        return _AFFECT_SHORTNAMES[name]
-    limit = cell_w - 4   # name + min-pad(1) + "99m"(3) must fit in cell_w
-    if len(name) > limit:
-        return name[:limit - 1] + "."
-    return name
-
-
-def _affect_cell(aff, cell_w):
-    """Render one affect into exactly cell_w visible characters (no trailing reset)."""
-    name      = str(aff.get("name") or "?")
-    atype     = aff.get("type") or "spell"
-    remaining = aff.get("remaining_seconds")
-    colour    = _AFFECT_COLOURS.get(atype, C_VALUE)
-    display   = _resolve_affect_name(name, cell_w)
-
-    if remaining is None:
-        text = display[:cell_w]
-        return colour + text + " " * (cell_w - len(text))
-    elif remaining > 0:
-        mins     = -(-int(remaining) // 60)   # ceil(remaining/60), floor at 1
-        suffix   = f"{mins}m"
-        max_name = max(0, cell_w - 1 - len(suffix))
-        if len(display) > max_name:
-            display = display[:max_name]
-        pad = max(1, cell_w - len(display) - len(suffix))
-        return colour + display + " " * pad + suffix
-    else:
-        # overrun: drop not yet received; show "!" instead of a countdown
-        suffix   = "!"
-        max_name = max(0, cell_w - 1 - len(suffix))
-        if len(display) > max_name:
-            display = display[:max_name]
-        pad = max(1, cell_w - len(display) - len(suffix))
-        return colour + display + " " * pad + suffix
-
 
 def _fmt_num(n):
     """Format integer with comma thousands separator."""
@@ -223,20 +157,6 @@ def _build_frame(data):
         time_remaining,
         width,
     ))
-
-    affects    = c.get("affects") or []
-    n          = len(affects)
-    block_rows = max(4, -(-n // 2))   # ceil(n/2), min 4
-
-    header = "Affected by:"
-    lines.append(C_LABEL + header + C_RESET + " " * (width - len(header)))
-
-    for row in range(block_rows):
-        li = row * 2
-        ri = li + 1
-        left  = _affect_cell(affects[li], lw) if li < n else C_RESET + " " * lw
-        right = _affect_cell(affects[ri], rw) if ri < n else C_RESET + " " * rw
-        lines.append(left + C_RESET + " " + right + C_RESET)
 
     return lines
 

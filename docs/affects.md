@@ -2,8 +2,8 @@
 
 Tracks active affects per character, learns observed durations from the last
 3 sessions, and persists per character to disk. Phase A: data layer and event
-bus only — no UI rendering. Phase B will extend `status_state.lua` and
-`status_pane.py` to render the affect list.
+bus only — no UI rendering. Phase B will render the affect list in the buffs
+pane (`bridge/buffs_pane.py`); see [`docs/buffs-pane.md`](buffs-pane.md).
 
 ## Data flow
 
@@ -261,12 +261,8 @@ An affect with a drop string that remains active past its `expires_at` is in
 
 ## Rendering
 
-`lua/core/status_state.lua` subscribes to `affects_changed` and projects
-the active list into `bridge/status.state` with `name`, `type`, and
-`remaining_seconds` for each entry. `bridge/status_pane.py` renders each
-entry as a type-coloured `"- <name> <Xm>"` row. See
-[docs/status-pane.md](status-pane.md) for layout, colour constants, and
-dynamic-height details.
+`state.char.affects` is the data source for the buffs pane renderer. See
+[docs/buffs-pane.md](buffs-pane.md) for the rendering phase details.
 
 Each `affect_init`, `affect_refresh`, and `affect_down` event also emits a
 `◆ TAG: name verb.` line to the UI pane via `affect_ui()` — see

@@ -38,10 +38,8 @@ it wipes every non-function key in `state.char` while keeping the table
 identity intact so cached references elsewhere stay valid. The `status_state.lua`
 wrapper around `state.char.reset` then calls `serialize()`, producing a single
 atomic write to `bridge/status.state` with all character fields null. The
-renderer displays `—` for null values. The `Affected by:` header and the
-4-row affect block are always rendered, so the pane height stays at
-`STATIC_ROWS + 1 + 4 = 11` within one poll tick (≤ 50 ms) — blank affect
-rows replace any previously shown affects.
+renderer displays `—` for null values. Pane height stays at `STATIC_ROWS = 6`
+within one poll tick (≤ 50 ms).
 
 `mark_mume_disconnected()` is idempotent: a duplicate signal finds
 `bridge/session.state` already absent and returns before reaching the reset
@@ -120,20 +118,14 @@ JSON written by `lua/core/status_state.lua`. Gitignored.
   "swim": "off",
   "game_time": null,
   "time_period": null,
-  "time_remaining": null,
-  "affects": [
-    {"name": "Sanctuary", "type": "spell", "remaining_seconds": 272}
-  ]
+  "time_remaining": null
 }
 ```
 
 `session_xp` and `session_tp` are populated by `lua/core/sess_kills.lua`
 (phase 4 — implemented). `game_time` is populated by the `clock_changed`
-subscription in `lua/core/status_state.lua` (phase 3 — implemented). `affects`
-is populated by the `affects_changed` subscription in `lua/core/status_state.lua`
-(phase 2 — implemented). The renderer displays `—` when null (bootstrap window
-before first Vitals tick). The affect block is always rendered (4 blank rows
-when `affects` is empty).
+subscription in `lua/core/status_state.lua` (phase 3 — implemented). The
+renderer displays `—` when null (bootstrap window before first Vitals tick).
 
 ### Field mapping from GMCP
 
@@ -154,22 +146,18 @@ when `affects` is empty).
 | `game_time`      | `lua/core/clock.lua` → `state.world.clock.format("panel_time")` | null when precision is UNSET; `"?"` string when clock loaded but unsynced; time-only at HOUR/MINUTE, date at DAY |
 | `time_period`    | `lua/core/clock.lua` → `state.world.clock.next_transition()` | `"day"` or `"night"` (current period); null when precision < HOUR |
 | `time_remaining` | `lua/core/clock.lua` → `state.world.clock.next_transition()` | pre-formatted countdown string (`"H:MM"` or `"~N"`); null when precision < HOUR |
-| `affects`        | `lua/core/affects.lua` → `state.char.affects` via `affects_changed` | array of `{name, type, remaining_seconds}` objects; `remaining_seconds` is nil when no duration known |
 
 ## Colour scheme
 
 Constants defined at the top of `bridge/status_pane.py`:
 
-| Constant         | Escape                          | Role                                |
-|------------------|---------------------------------|-------------------------------------|
-| `C_LABEL`        | `\x1b[38;2;154;168;183m`        | #9AA8B7 steel-blue — labels        |
-| `C_VALUE`        | `\x1b[1;97m`                    | Bold bright white — values          |
-| `C_RESET`        | `\x1b[0m`                       | Reset all                           |
-| `C_AFFECT_SPELL` | `\x1b[38;2;122;169;214m`        | #7AA9D6 light steel-blue — spell affects |
-| `C_AFFECT_BUFF`  | `\x1b[38;2;143;188;143m`        | #8FBC8F soft sage green — buff affects  |
-| `C_AFFECT_DEBUFF`| `\x1b[38;2;201;112;112m`        | #C97070 muted brick red — debuff affects |
-| `C_SUN`          | `\x1b[38;2;255;176;0m`          | #FFB000 intense amber gold — ☼ sun icon (upcoming day) |
-| `C_MOON`         | `\x1b[38;2;74;144;226m`         | #4A90E2 vivid sky blue — ☾ moon icon (upcoming night) |
+| Constant  | Escape                   | Role                                              |
+|-----------|--------------------------|---------------------------------------------------|
+| `C_LABEL` | `\x1b[38;2;154;168;183m` | #9AA8B7 steel-blue — labels                      |
+| `C_VALUE` | `\x1b[1;97m`             | Bold bright white — values                        |
+| `C_RESET` | `\x1b[0m`                | Reset all                                         |
+| `C_SUN`   | `\x1b[38;2;255;176;0m`   | #FFB000 intense amber gold — ☼ sun icon           |
+| `C_MOON`  | `\x1b[38;2;74;144;226m`  | #4A90E2 vivid sky blue — ☾ moon icon              |
 
 ## Identity
 
@@ -212,8 +200,6 @@ Climb: <climb>       Swim: <swim>
 Time: <game_time>                         ← UNSET / DAY: single full-width row
 Time: <H:MM AM/PM>  ☾ in <H:MM>          ← MINUTE (day→night example)
 Time: <~H AM/PM>    ☼ in <~N>            ← HOUR   (night→day example)
-Affected by:
-  <affects>          ← 4 blank rows when no affects are active
 ```
 
 At HOUR/MINUTE precision the Time row splits using the same lw + 1 + rw formula:
@@ -222,8 +208,6 @@ left half = label + time-only value (`C_VALUE`); right half = icon in `C_SUN`
 — e.g. `☾ 4:20` or `☼ ~3`. At DAY or UNSET precision `time_period` /
 `time_remaining` are null and the single full-width `_row("Time:", ...)` fallback
 is used.
-
-The `Affected by:` header and the 4-row affect block are always rendered.
 
 Labels in `C_LABEL`, values in `C_VALUE`. Numeric values (`xp`, `tp`)
 formatted with comma separators (232,200 rather than 232200).
@@ -280,167 +264,7 @@ is `1` (status pane on). Existing `startup.conf` files that lack `show_status`
 fall through to the runtime `${show_status:-0}` guard — existing installs see
 no change.
 
-## Affects
-
-`lua/core/status_state.lua` subscribes to `affects_changed` (emitted by
-`lua/core/affects.lua` on every state mutation and every tick). On each
-notification it re-serialises `state.char.affects` into the `affects` array
-in `bridge/status.state`.
-
-### Schema
-
-Each entry is an object:
-
-```json
-{"name": "Sanctuary", "type": "spell", "remaining_seconds": 272}
-```
-
-`remaining_seconds` convention:
-
-| Value           | Meaning                                                    |
-|-----------------|------------------------------------------------------------|
-| `null`          | indefinite affect (no `duration` in data table)            |
-| `> 0`           | active countdown (seconds remaining)                       |
-| `<= 0`          | overrun — expected drop has not arrived yet                |
-
-Negative values are **not clamped** in `status_state.lua`. They signal that
-the affect has a configured drop string, its `expires_at` has passed, and the
-tick is holding the entry until the drop fires (or the 2.5× safety net prunes
-it). See [docs/affects.md](affects.md) for the overrun lifecycle.
-
-### Rendering
-
-`status_pane.py` renders the affect block as a two-column grid. One
-`Affected by:` header row is always emitted, followed by `BLOCK_ROWS` affect
-rows:
-
-```
-BLOCK_ROWS = max(4, ceil(N / 2))
-```
-
-where N is the current affect count. Affects fill top-to-bottom, left cell
-then right cell, in sort order. Empty cells render as spaces.
-
-**Cell widths** — the affect block uses the same lw + 1 + rw formula as paired
-rows. Both cells share the separator space, so `cell_w` varies with width:
-
-- Left cell width  = `lw = W // 2`
-- Right cell width = `rw = W - 1 - lw`
-- `MAX_NAME = cell_w - 4` (name + min-pad(1) + "99m"(3) must fit in `cell_w`)
-
-At W=29: lw=rw=14, MAX_NAME=10. At W=33: lw=rw=16, MAX_NAME=12.
-
-**Cell format — active countdown** (`remaining_seconds > 0`):
-
-```
-<name><padding><suffix>
-```
-
-- `suffix`: `"Xm"` using ceiling division — 1–59 s shows `1m`.
-- `padding` = `cell_w − len(name) − len(suffix)`, minimum 1 space. Suffix is right-aligned at the cell edge.
-- Name is right-chopped (no ellipsis) to `max(0, cell_w - 1 - len(suffix))` if needed.
-- Total = exactly `cell_w` visible chars.
-
-**Cell format — overrun** (`remaining_seconds <= 0`):
-
-- Same layout as countdown, but `suffix` is the literal `"!"` (1 char).
-- Suffix and name share the same affect-type colour (no new constant).
-- `MAX_NAME = cell_w - 4` is unchanged, so name resolution is identical.
-
-**Cell format — indefinite affect** (`remaining_seconds` is null):
-
-- Name fills `cell_w`, padded/truncated; no suffix, no separator space.
-
-**Truncation** — when a value or affect name does not fit, it is right-chopped
-without an ellipsis indicator. The affect duration suffix (`Xm`) is always
-preserved; the name is sacrificed first.
-
-**Reference rendering** at W=33 (`bless` 7m + `armour` 18m, both `spell`):
-
-```
-bless           7m armour          18m
-^^^^^^^^^^^^^^^^   ^^^^^^^^^^^^^^^^
-    lw=16       ↑      rw=16
-            separator
-```
-
-Left cell: `bless`(5) + 9 padding + `7m`(2) = 16. Separator: 1. Right cell: `armour`(6) + 7 padding + `18m`(3) = 16. Total 33.
-
-**Reference rendering** at W=29 (`comfortable` 5m + `armour` 5m):
-
-```
-comfortab.  5m armour      5m
-^^^^^^^^^^^^^^ ^^^^^^^^^^^^^^
-    lw=14    ↑    rw=14
-          separator
-```
-
-Left cell: `comfortab.`(10) + 2 padding + `5m`(2) = 14. (`comfortable` is 11 chars, exceeds MAX_NAME=10, so _resolve_affect_name truncates to 9 chars + `.` → `comfortab.`). Right cell: `armour`(6) + 6 padding + `5m`(2) = 14. Total 29.
-
-**Name resolution** (applied once using `MAX_NAME = cell_w - 4`):
-
-1. If name is in `_AFFECT_SHORTNAMES` → use shortname as-is (further chop in `_affect_cell` if needed).
-2. Else if `len(name) > cell_w - 4` → truncate to `cell_w - 5` chars + `"."`.
-3. Else use name as-is.
-
-**Shortname mapping:**
-
-| Full name                              | Shortname       |
-|----------------------------------------|-----------------|
-| `breath of briskness`                  | `briskness`     |
-| `detect magic`                         | `det. magic`    |
-| `detect evil`                          | `det. evil`     |
-| `night vision`                         | `night vis.`    |
-| `sense life`                           | `sense life`    |
-| `Blood of Sauron`                      | `BoS`           |
-| `a pitch-black robe (pale tones)`      | `pitch robe`    |
-| `a pure white robe (pale tones)`       | `white robe`    |
-| `heightened senses`                    | `h. senses`     |
-| `heightened senses (faded)`            | `h. senses-`    |
-| `dark aura`                            | `dark aura`     |
-| `dark aura (faded)`                    | `dark aura-`    |
-| `spectral health`                      | `spec.health`   |
-| `very comfortable`                     | `v. comfort.`   |
-| `shadow-link`                          | `shadow-link`   |
-
-**Colour:** each cell is coloured independently by its affect's `type`:
-
-  | `type`    | Constant          | Hex      |
-  |-----------|-------------------|----------|
-  | `spell`   | `C_AFFECT_SPELL`  | #7AA9D6  |
-  | `buff`    | `C_AFFECT_BUFF`   | #8FBC8F  |
-  | `debuff`  | `C_AFFECT_DEBUFF` | #C97070  |
-  | (unknown) | `C_VALUE`         | fallback |
-
-Empty cells use `C_RESET`. Each row ends with `C_RESET`.
-
-### Sort order
-
-Category order: **buff → spell → debuff → unknown**, alphabetical within each
-category (case-insensitive). Unknown types sort after debuffs. Sort is applied
-in `lua/core/status_state.lua` before serialisation; the renderer uses the
-order as-is.
-
-### Dynamic height
-
-```
-status_height = STATIC_ROWS + 1 + max(4, ceil(N / 2))
-```
-
-- `STATIC_ROWS`: count of always-rendered body rows (Name/Lv, SessXP/TP,
-  Mood/Alert, Pos/Sneak, Climb/Swim, Time) — currently `6`. Lives in
-  `lua/core/status_state.lua`; bump whenever a static body row is added or
-  removed in `bridge/status_pane.py`.
-- `+ 1`: the always-rendered `Affected by:` header row.
-- `max(4, …)`: height is stable for N ≤ 8 (minimum 4 affect rows = height
-  14). For N > 8, height grows by one row per two additional affects.
-
-Dynamic height means Lua calls `tmux resize-pane -y N -t status` directly
-when `state.char.affects` length changes. The call is gated on the right column
-having more than one pane: when status is the only pane in the column, resizing
-it would move the outer boundary and push the input row up, so the resize is
-skipped — status fills the entire column anyway in that state. No
-`layout.conf` write, no `apply_layout.sh` round-trip.
+Affect rendering has moved to [`docs/buffs-pane.md`](buffs-pane.md).
 
 ## Extension points (phases 3–4)
 

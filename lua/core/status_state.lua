@@ -47,28 +47,6 @@ local function serialize()
     local swim_val = "off"
     if c.swim then swim_val = "on" end
 
-    local now = os.time()
-    local list = {}
-    for _, a in ipairs(state.char.affects or {}) do
-        local remaining
-        if a.expires_at then
-            remaining = a.expires_at - now
-            -- negative values are valid: they signal overrun (drop pending)
-        end
-        list[#list + 1] = {
-            name              = a.name,
-            type              = a.type,
-            remaining_seconds = remaining,
-        }
-    end
-    local TYPE_ORDER = { buff = 0, spell = 1, debuff = 2 }
-    table.sort(list, function(x, y)
-        local xo = TYPE_ORDER[x.type] or 3
-        local yo = TYPE_ORDER[y.type] or 3
-        if xo ~= yo then return xo < yo end
-        return (x.name or ""):lower() < (y.name or ""):lower()
-    end)
-
     local nt = state.world.clock and state.world.clock.next_transition() or nil
     local payload = {
         character      = c.name,
@@ -86,7 +64,6 @@ local function serialize()
         game_time      = state.world.clock and state.world.clock.format("panel_time") or nil,
         time_period    = nt and nt.period or nil,
         time_remaining = nt and nt.remaining or nil,
-        affects        = list,
     }
 
     local encoded = json.encode(payload)
@@ -99,8 +76,7 @@ local function serialize()
     f:close()
     os.rename(TMP_PATH, STATE_PATH)
 
-    local n = #list
-    local new_height = STATIC_ROWS + 1 + math.max(4, math.ceil(n / 2))
+    local new_height = STATIC_ROWS
     if new_height ~= _last_height then
         local conf_lines = {}
         local found = false
@@ -158,7 +134,6 @@ state.char.reset = function()
     serialize()
 end
 
-events.subscribe("clock_changed",   function() serialize() end)
-events.subscribe("affects_changed", function() serialize() end)
+events.subscribe("clock_changed", function() serialize() end)
 
 dbg("[STATUS_STATE] loaded")
