@@ -171,16 +171,16 @@ draw_menu_item() {
 }
 
 # ---------------------------------------------------------------------------
-# draw_layout_mockup <show_ui> <show_dev> <show_inp> [show_desc=1] [show_dividers=1] [show_status=0] [show_comm=0]
+# draw_layout_mockup <show_ui> <show_dev> <show_inp> [show_desc=1] [show_dividers=1] [show_status=0] [show_comm=0] [show_buffs=0]
 # Prints a small ASCII wireframe of the tmux cockpit layout, centered.
 # Right column inner width = 6, left column inner width = 15. Total = 24 wide.
-# Right-column panes are stacked top-to-bottom: status → comm → ui → dev.
+# Right-column panes are stacked top-to-bottom: status → buffs → comm → ui → dev.
 # When show_dividers=0, box-drawing characters are replaced with spaces;
 # labels and dimensions stay identical so the mockup doesn't jump on toggle.
 # Followed by a description block when show_desc=1.
 # ---------------------------------------------------------------------------
 draw_layout_mockup() {
-    local show_ui="${1:-1}" show_dev="${2:-0}" show_inp="${3:-1}" show_desc="${4:-1}" show_dividers="${5:-1}" show_status="${6:-0}" show_comm="${7:-0}"
+    local show_ui="${1:-1}" show_dev="${2:-0}" show_inp="${3:-1}" show_desc="${4:-1}" show_dividers="${5:-1}" show_status="${6:-0}" show_comm="${7:-0}" show_buffs="${8:-0}"
 
     local cols; cols=$(term_cols)
     local indent=$(( (cols - 24) / 2 ))
@@ -190,6 +190,7 @@ draw_layout_mockup() {
     # Build right-column pane list in top-to-bottom order
     local -a _rc_labels=()
     [ "$show_status" -eq 1 ] && _rc_labels+=(" CHAR ")
+    [ "$show_buffs"  -eq 1 ] && _rc_labels+=(" BUFFS")
     [ "$show_comm"   -eq 1 ] && _rc_labels+=(" COMM ")
     [ "$show_ui"     -eq 1 ] && _rc_labels+=("  UI  ")
     [ "$show_dev"    -eq 1 ] && _rc_labels+=(" DEV  ")

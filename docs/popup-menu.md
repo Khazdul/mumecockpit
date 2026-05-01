@@ -29,14 +29,14 @@ State is re-probed from the files on every render — never cached.
 
 ## Options submenu
 
-Five toggles (Character pane / Comm pane / UI / Dev / Pane dividers) + Back.
+Six toggles (Character pane / Buffs pane / Comm pane / UI / Dev / Pane dividers) + Back.
 State is re-probed from tmux on every render — never cached. Toggling calls
 `toggle_pane.sh --persist` directly; toggles do **not** route through tt++
 so no `cp -X` lines appear in the game pane. The popup submenu is therefore
 the persistent-toggle entry point; `cp` aliases remain runtime-only.
 
 The input-pane menu bar (CHAR / BUFFS / COM / UI buttons in the bottom row)
-is a sibling surface for the same three pane toggles. Both surfaces write
+is a sibling surface for the same four pane toggles. Both surfaces write
 `startup.conf` via `toggle_pane.sh --persist`; each reflects changes made by
 the other within ≤ 250 ms.
 

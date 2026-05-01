@@ -170,17 +170,18 @@ _render_main() {
 
 _options_submenu() {
     local _osel=0
-    local _OCOUNT=6
+    local _OCOUNT=7
     local _ODIRTY=1
-    local _targets=(status comm ui dev headers)
+    local _targets=(status buffs comm ui dev headers)
 
     while true; do
         if [ "$_ODIRTY" -eq 1 ]; then
             _ODIRTY=0
             local cols; cols=$(term_cols)
 
-            local _chk_sts="[ ]" _chk_comm="[ ]" _chk_ui="[ ]" _chk_dev="[ ]" _chk_hdr="[ ]"
+            local _chk_sts="[ ]" _chk_buf="[ ]" _chk_comm="[ ]" _chk_ui="[ ]" _chk_dev="[ ]" _chk_hdr="[ ]"
             tmux list-panes -t mume:cockpit -F '#{pane_title}' 2>/dev/null | grep -q '^status$' && _chk_sts="[x]"
+            tmux list-panes -t mume:cockpit -F '#{pane_title}' 2>/dev/null | grep -q '^buffs$'  && _chk_buf="[x]"
             tmux list-panes -t mume:cockpit -F '#{pane_title}' 2>/dev/null | grep -q '^comm$'   && _chk_comm="[x]"
             tmux list-panes -t mume:cockpit -F '#{pane_title}' 2>/dev/null | grep -q '^ui$'     && _chk_ui="[x]"
             tmux list-panes -t mume:cockpit -F '#{pane_title}' 2>/dev/null | grep -q '^dev$'    && _chk_dev="[x]"
@@ -188,6 +189,7 @@ _options_submenu() {
 
             local _olabels=(
                 "$_chk_sts Character pane"
+                "$_chk_buf Buffs pane"
                 "$_chk_comm Comm pane"
                 "$_chk_ui UI pane"
                 "$_chk_dev Dev pane"
@@ -231,10 +233,10 @@ _options_submenu() {
             ESC)        return ;;
             ENTER|SPACE)
                 case "$_osel" in
-                    0|1|2|3|4)
+                    0|1|2|3|4|5)
                         bash "$HOME/MUME/bridge/toggle_pane.sh" "${_targets[$_osel]}" --persist
                         ;;
-                    5) return ;;
+                    6) return ;;
                 esac
                 ;;
         esac

@@ -30,10 +30,12 @@ vertical order.
 
 ## Toggle
 
-| Method            | Mechanism                                  |
-|-------------------|--------------------------------------------|
-| `cp -b`           | `toggle_pane.sh buffs` (runtime only)      |
-| BUFFS button      | `toggle_pane.sh buffs --persist`           |
+| Method                  | Mechanism                                        |
+|-------------------------|--------------------------------------------------|
+| `cp -b`                 | `toggle_pane.sh buffs` (runtime only)            |
+| BUFFS button            | `toggle_pane.sh buffs --persist`                 |
+| Launcher Options        | `_save_conf` → `startup.conf show_buffs`         |
+| In-game popup → Options | `toggle_pane.sh buffs --persist`                 |
 
 Persistence key: `show_buffs` in `bridge/startup.conf`. Fresh-install
 default is `0` (pane closed). Existing installs without the key fall

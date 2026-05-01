@@ -42,6 +42,7 @@ if [ ! -f "$CONF" ]; then
     printf '# Phase 1 cosmetic options — launcher display only\n'  > "$CONF"
     printf 'connection_mode=mmapper\n'                             >> "$CONF"
     printf 'show_status=1\n'                                       >> "$CONF"
+    printf 'show_buffs=1\n'                                        >> "$CONF"
     printf 'show_comm=1\n'                                         >> "$CONF"
     printf 'show_ui=1\n'                                           >> "$CONF"
     printf 'show_dev=0\n'                                          >> "$CONF"
@@ -55,6 +56,7 @@ connection_mode="${connection_mode:-mmapper}"
 show_ui="${show_ui:-1}"
 show_dev="${show_dev:-0}"
 show_status="${show_status:-0}"
+show_buffs="${show_buffs:-1}"
 show_comm="${show_comm:-0}"
 show_pane_dividers="${show_pane_dividers:-1}"
 profile="${profile:-default}"
@@ -66,6 +68,7 @@ _save_conf() {
     printf '# Phase 1 cosmetic options — launcher display only\n'  > "$CONF"
     printf 'connection_mode=%s\n'    "$connection_mode"            >> "$CONF"
     printf 'show_status=%s\n'        "$show_status"                >> "$CONF"
+    printf 'show_buffs=%s\n'         "$show_buffs"                 >> "$CONF"
     printf 'show_comm=%s\n'          "$show_comm"                  >> "$CONF"
     printf 'show_ui=%s\n'            "$show_ui"                    >> "$CONF"
     printf 'show_dev=%s\n'           "$show_dev"                   >> "$CONF"
@@ -226,13 +229,14 @@ _options_menu() {
     local _ui="$show_ui"
     local _dev="$show_dev"
     local _sts="$show_status"
+    local _buf="$show_buffs"
     local _comm="$show_comm"
     local _pdv="$show_pane_dividers"
     local _conn="$connection_mode"
 
-    # Selectable items: 0=Status 1=Comm 2=UI 3=Dev 4=PaneDividers 5=MMapper 6=Direct 7=Back
+    # Selectable items: 0=Status 1=Buffs 2=Comm 3=UI 4=Dev 5=PaneDividers 6=MMapper 7=Direct 8=Back
     local _osel=0
-    local _OCOUNT=8
+    local _OCOUNT=9
 
     _oitem() {
         local idx="$1" label="$2"
@@ -252,8 +256,9 @@ _options_menu() {
     _render_opts() {
         local cols; cols=$(term_cols)
         local rows; rows=$(term_lines)
-        local chk_sts="[ ]" chk_comm="[ ]" chk_ui="[ ]" chk_dev="[ ]" chk_pdv="[ ]"
+        local chk_sts="[ ]" chk_buf="[ ]" chk_comm="[ ]" chk_ui="[ ]" chk_dev="[ ]" chk_pdv="[ ]"
         [ "$_sts"  -eq 1 ] && chk_sts="[x]"
+        [ "$_buf"  -eq 1 ] && chk_buf="[x]"
         [ "$_comm" -eq 1 ] && chk_comm="[x]"
         [ "$_ui"   -eq 1 ] && chk_ui="[x]"
         [ "$_dev"  -eq 1 ] && chk_dev="[x]"
@@ -271,6 +276,7 @@ _options_menu() {
         local maxw=0 w
         local _opt_labels=(
             "$chk_sts Character pane"
+            "$chk_buf Buffs pane"
             "$chk_comm Comm pane"
             "$chk_ui UI pane"
             "$chk_dev Dev pane"
@@ -297,19 +303,20 @@ _options_menu() {
             printf "%${tpad}s${_MR_TITLE}%s${_MR_RESET}\n\n" "" "$title"
             [ "$show_headings" -eq 1 ] && _section_hdr "Panes"
             _oitem 0 "$chk_sts Character pane"
-            _oitem 1 "$chk_comm Comm pane"
-            _oitem 2 "$chk_ui UI pane"
-            _oitem 3 "$chk_dev Dev pane"
-            _oitem 4 "$chk_pdv Pane dividers"
+            _oitem 1 "$chk_buf Buffs pane"
+            _oitem 2 "$chk_comm Comm pane"
+            _oitem 3 "$chk_ui UI pane"
+            _oitem 4 "$chk_dev Dev pane"
+            _oitem 5 "$chk_pdv Pane dividers"
             printf '\n'
             [ "$show_headings" -eq 1 ] && _section_hdr "Connection"
-            _oitem 5 "$r_mm MMapper  (localhost:4242)"
-            _oitem 6 "$r_di Direct   (mume.org:4242)"
+            _oitem 6 "$r_mm MMapper  (localhost:4242)"
+            _oitem 7 "$r_di Direct   (mume.org:4242)"
             printf '\n'
-            _oitem 7 "    Back"
+            _oitem 8 "    Back"
             if [ "$show_mockup" -eq 1 ]; then
                 printf '\n'
-                draw_layout_mockup "$_ui" "$_dev" 1 "$show_desc" "$_pdv" "$_sts" "$_comm"
+                draw_layout_mockup "$_ui" "$_dev" 1 "$show_desc" "$_pdv" "$_sts" "$_comm" "$_buf"
             fi
             printf '\n'
             printf "%${fpad}s${_MR_HINT}%s${_MR_RESET}\n" "" "$footer"
@@ -332,19 +339,20 @@ _options_menu() {
             ENTER|SPACE)
                 case "$_osel" in
                     0) _sts=$(( 1 - _sts )) ;;
-                    1) _comm=$(( 1 - _comm )) ;;
-                    2) _ui=$(( 1 - _ui )) ;;
-                    3) _dev=$(( 1 - _dev )) ;;
-                    4) _pdv=$(( 1 - _pdv )) ;;
-                    5) _conn="mmapper" ;;
-                    6) _conn="direct" ;;
-                    7) show_ui="$_ui"; show_dev="$_dev"; show_status="$_sts"
-                       show_comm="$_comm"; show_pane_dividers="$_pdv"
+                    1) _buf=$(( 1 - _buf )) ;;
+                    2) _comm=$(( 1 - _comm )) ;;
+                    3) _ui=$(( 1 - _ui )) ;;
+                    4) _dev=$(( 1 - _dev )) ;;
+                    5) _pdv=$(( 1 - _pdv )) ;;
+                    6) _conn="mmapper" ;;
+                    7) _conn="direct" ;;
+                    8) show_ui="$_ui"; show_dev="$_dev"; show_status="$_sts"
+                       show_buffs="$_buf"; show_comm="$_comm"; show_pane_dividers="$_pdv"
                        connection_mode="$_conn"; _save_conf; return ;;
                 esac
                 ;;
             ESC) show_ui="$_ui"; show_dev="$_dev"; show_status="$_sts"
-                 show_comm="$_comm"; show_pane_dividers="$_pdv"
+                 show_buffs="$_buf"; show_comm="$_comm"; show_pane_dividers="$_pdv"
                  connection_mode="$_conn"; _save_conf; return ;;
         esac
     done
