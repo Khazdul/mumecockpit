@@ -292,11 +292,11 @@ _options_menu() {
         (( pad < 0 )) && pad=0
 
         # Responsive: drop optional sections as terminal shrinks.
-        # Thresholds: rows < 18 → headings, < 21 → mockup, < 31 → desc block.
+        # Thresholds: rows < 19 → headings, < 23 → mockup, < 32 → desc block.
         local show_headings=1 show_mockup=0 show_desc=0
-        [ "$rows" -lt 18 ] && show_headings=0
-        [ "$rows" -ge 21 ] && show_mockup=1
-        [ "$rows" -ge 31 ] && show_desc=1
+        [ "$rows" -lt 19 ] && show_headings=0
+        [ "$rows" -ge 23 ] && show_mockup=1
+        [ "$rows" -ge 32 ] && show_desc=1
 
         {
             printf '\n\n'
