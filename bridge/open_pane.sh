@@ -29,24 +29,25 @@ COLS=$(tmux display-message -p -t mume:cockpit '#{window_width}')
 LEFT=$(( COLS - ui_width - 1 ))
 
 # Check if any right pane already exists
-HAS_RIGHT=$(tmux list-panes -t mume:cockpit -F '#{pane_title}' | grep -E '^(ui|comm|dev|status)$')
+HAS_RIGHT=$(tmux list-panes -t mume:cockpit -F '#{pane_title}' | grep -E '^(ui|comm|dev|status|buffs)$')
 
 # Geometric helpers: pick right-column panes by vertical position.
 _right_pane_at_top() {
     tmux list-panes -t mume:cockpit \
         -F '#{pane_top} #{pane_index} #{pane_title}' \
-      | awk '$3=="ui" || $3=="comm" || $3=="dev" || $3=="status"' \
+      | awk '$3=="ui" || $3=="comm" || $3=="dev" || $3=="status" || $3=="buffs"' \
       | sort -n | head -1 | awk '{print $2}'
 }
 _right_pane_at_bottom() {
     tmux list-panes -t mume:cockpit \
         -F '#{pane_top} #{pane_index} #{pane_title}' \
-      | awk '$3=="ui" || $3=="comm" || $3=="dev" || $3=="status"' \
+      | awk '$3=="ui" || $3=="comm" || $3=="dev" || $3=="status" || $3=="buffs"' \
       | sort -rn | head -1 | awk '{print $2}'
 }
 
 # Pane commands
 STATUS_CMD="bash -c 'stty -isig 2>/dev/null; trap \"\" INT; while true; do python3 $MUME/bridge/status_pane.py; printf \"\\n[pane kept alive — use cp -c to close]\\n\"; sleep 0.2; done'"
+BUFFS_CMD="bash -c 'stty -isig 2>/dev/null; trap \"\" INT; while true; do python3 $MUME/bridge/buffs_pane.py; printf \"\\n[pane kept alive — use cp -b to close]\\n\"; sleep 0.2; done'"
 COMM_CMD="bash -c 'stty -isig 2>/dev/null; trap \"\" INT; while true; do python3 $MUME/bridge/comm_pane.py; printf \"\\n[pane kept alive — use cp -m to close]\\n\"; sleep 0.2; done'"
 
 if [ -n "$HAS_RIGHT" ]; then
@@ -63,14 +64,47 @@ if [ -n "$HAS_RIGHT" ]; then
             bash "$MUME/bridge/apply_layout.sh"
             ;;
 
+        buffs)
+            # buffs goes below status, above comm.
+            STATUS_INDEX=$(tmux list-panes -t mume:cockpit -F '#{pane_index} #{pane_title}' \
+              | awk '$2=="status" {print $1; exit}')
+            COMM_INDEX=$(tmux list-panes -t mume:cockpit -F '#{pane_index} #{pane_title}' \
+              | awk '$2=="comm" {print $1; exit}')
+            UI_INDEX=$(tmux list-panes -t mume:cockpit -F '#{pane_index} #{pane_title}' \
+              | awk '$2=="ui" {print $1; exit}')
+
+            if [ -n "$STATUS_INDEX" ]; then
+                # Split below status
+                NEW_INDEX=$(tmux split-window -v -t mume:cockpit.$STATUS_INDEX -P -F '#{pane_index}' "$BUFFS_CMD")
+            elif [ -n "$COMM_INDEX" ]; then
+                # No status — split above comm
+                NEW_INDEX=$(tmux split-window -v -b -t mume:cockpit.$COMM_INDEX -P -F '#{pane_index}' "$BUFFS_CMD")
+            elif [ -n "$UI_INDEX" ]; then
+                # No status or comm — split above ui
+                NEW_INDEX=$(tmux split-window -v -b -t mume:cockpit.$UI_INDEX -P -F '#{pane_index}' "$BUFFS_CMD")
+            else
+                # Only dev or empty — go at top
+                TOP_IDX=$(_right_pane_at_top)
+                NEW_INDEX=$(tmux split-window -v -b -t mume:cockpit.$TOP_IDX -P -F '#{pane_index}' "$BUFFS_CMD")
+            fi
+            tmux select-pane -t mume:cockpit.$NEW_INDEX -T "buffs"
+            tmux select-pane -t "$(resolve_focus_target)"
+            bash "$MUME/bridge/apply_layout.sh"
+            ;;
+
         comm)
-            # comm goes below status, above ui.
+            # comm goes below buffs (or status if buffs absent), above ui.
+            BUFFS_INDEX=$(tmux list-panes -t mume:cockpit -F '#{pane_index} #{pane_title}' \
+              | awk '$2=="buffs" {print $1; exit}')
             STATUS_INDEX=$(tmux list-panes -t mume:cockpit -F '#{pane_index} #{pane_title}' \
               | awk '$2=="status" {print $1; exit}')
             UI_INDEX=$(tmux list-panes -t mume:cockpit -F '#{pane_index} #{pane_title}' \
               | awk '$2=="ui" {print $1; exit}')
 
-            if [ -n "$STATUS_INDEX" ]; then
+            if [ -n "$BUFFS_INDEX" ]; then
+                # Split below buffs
+                NEW_INDEX=$(tmux split-window -v -t mume:cockpit.$BUFFS_INDEX -P -F '#{pane_index}' "$COMM_CMD")
+            elif [ -n "$STATUS_INDEX" ]; then
                 # Split below status
                 NEW_INDEX=$(tmux split-window -v -t mume:cockpit.$STATUS_INDEX -P -F '#{pane_index}' "$COMM_CMD")
             elif [ -n "$UI_INDEX" ]; then
@@ -136,6 +170,12 @@ else
         status)
             NEW_INDEX=$(tmux split-window -h -t mume:cockpit.0 -P -F '#{pane_index}' "$STATUS_CMD")
             tmux select-pane -t mume:cockpit.$NEW_INDEX -T "status"
+            tmux select-pane -t "$(resolve_focus_target)"
+            bash "$MUME/bridge/apply_layout.sh"
+            ;;
+        buffs)
+            NEW_INDEX=$(tmux split-window -h -t mume:cockpit.0 -P -F '#{pane_index}' "$BUFFS_CMD")
+            tmux select-pane -t mume:cockpit.$NEW_INDEX -T "buffs"
             tmux select-pane -t "$(resolve_focus_target)"
             bash "$MUME/bridge/apply_layout.sh"
             ;;

@@ -56,6 +56,7 @@ C_MOON_HEX = "#4a90e2"   # \x1b[38;2;74;144;226m
 _menu_time_period    = None
 _menu_time_remaining = None
 _menu_show_status    = False
+_menu_show_buffs     = False
 _menu_show_comm      = False
 _menu_show_ui        = False
 _menu_ui_width       = 50
@@ -507,6 +508,7 @@ def _make_btn_handler(pane):
 
 
 _BTN_STATUS = _make_btn_handler("status")
+_BTN_BUFFS  = _make_btn_handler("buffs")
 _BTN_COMM   = _make_btn_handler("comm")
 _BTN_UI     = _make_btn_handler("ui")
 
@@ -528,7 +530,7 @@ def _menu_text():
     """
     buttons = [
         ("CHAR",  _menu_show_status, _BTN_STATUS),
-        ("BUFFS", False,             None),
+        ("BUFFS", _menu_show_buffs,  _BTN_BUFFS),
         ("COM",   _menu_show_comm,   _BTN_COMM),
         ("UI",    _menu_show_ui,     _BTN_UI),
     ]
@@ -564,7 +566,7 @@ def _menu_text():
 
 async def _poll_menu(app):
     global _menu_time_period, _menu_time_remaining
-    global _menu_show_status, _menu_show_comm, _menu_show_ui, _menu_ui_width
+    global _menu_show_status, _menu_show_buffs, _menu_show_comm, _menu_show_ui, _menu_ui_width
     global _menu_status_mtime, _menu_conf_mtime, _menu_layout_mtime
 
     while True:
@@ -606,10 +608,12 @@ async def _poll_menu(app):
             _menu_conf_mtime = cmtime
             conf = _parse_startup_conf(STARTUP_CONF_PATH)
             ss = _conf_bool(conf, "show_status")
+            sb = _conf_bool(conf, "show_buffs")
             sc = _conf_bool(conf, "show_comm")
             su = _conf_bool(conf, "show_ui")
-            if ss != _menu_show_status or sc != _menu_show_comm or su != _menu_show_ui:
+            if ss != _menu_show_status or sb != _menu_show_buffs or sc != _menu_show_comm or su != _menu_show_ui:
                 _menu_show_status = ss
+                _menu_show_buffs  = sb
                 _menu_show_comm   = sc
                 _menu_show_ui     = su
                 changed = True

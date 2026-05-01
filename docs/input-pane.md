@@ -261,7 +261,7 @@ are rendered in the button's background colour so they blend visually.
 | Button | Pane target | On click |
 |--------|-------------|----------|
 | CHAR   | `status`    | `toggle_pane.sh status --persist` |
-| BUFFS  | —           | inert (no pane yet) |
+| BUFFS  | `buffs`     | `toggle_pane.sh buffs --persist`  |
 | COM    | `comm`      | `toggle_pane.sh comm --persist`   |
 | UI     | `ui`        | `toggle_pane.sh ui --persist`     |
 
@@ -271,7 +271,7 @@ forget). The button state updates within ≤ 250 ms via the polling path.
 ### Persistence source
 
 Button toggle state is read from `bridge/startup.conf` keys `show_status`,
-`show_comm`, and `show_ui`. The file is polled every 250 ms via mtime
+`show_buffs`, `show_comm`, and `show_ui`. The file is polled every 250 ms via mtime
 comparison; toggling via the popup Options menu (which also writes
 `startup.conf` via `toggle_pane.sh --persist`) is therefore reflected in the
 menu bar within one poll tick. The two surfaces are siblings — they share the

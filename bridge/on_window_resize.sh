@@ -24,7 +24,7 @@ fi
 MAIN_MIN=30
 
 HAS_RIGHT=$(tmux list-panes -t mume:cockpit -F '#{pane_title}' \
-    | grep -E '^(ui|comm|dev|status)$' | head -1)
+    | grep -E '^(ui|comm|dev|status|buffs)$' | head -1)
 
 HAS_STATUS=$(tmux list-panes -t mume:cockpit -F '#{pane_title}' \
     | grep '^status$')
@@ -41,7 +41,7 @@ if [ -n "$HAS_RIGHT" ] && [ "$AVAILABLE_RIGHT" -lt "$RIGHT_FLOOR" ]; then
     # Terminal too narrow: record open right panes and kill them.
     touch "$LOCK"
     tmux list-panes -t mume:cockpit -F '#{pane_title}' \
-        | grep -E '^(ui|comm|dev|status)$' > "$SENTINEL"
+        | grep -E '^(ui|comm|dev|status|buffs)$' > "$SENTINEL"
     while IFS= read -r pname; do
         PIDX=$(tmux list-panes -t mume:cockpit -F '#{pane_index} #{pane_title}' \
             | awk -v n="$pname" '$2==n {print $1; exit}')
@@ -77,7 +77,7 @@ elif [ -f "$SENTINEL" ]; then
         # Fall through to normal layout logic below.
         source "$LAYOUT_CONF"
         HAS_RIGHT=$(tmux list-panes -t mume:cockpit -F '#{pane_title}' \
-            | grep -E '^(ui|comm|dev|status)$' | head -1)
+            | grep -E '^(ui|comm|dev|status|buffs)$' | head -1)
         HAS_STATUS=$(tmux list-panes -t mume:cockpit -F '#{pane_title}' \
             | grep '^status$')
         if [ -n "$HAS_STATUS" ]; then

@@ -9,11 +9,13 @@ if [ -f "$CONF" ]; then
 fi
 : "${profile:=default}"
 : "${connection_mode:=mmapper}"
+: "${show_buffs:=0}"
 case "$connection_mode" in
     direct) host=mume.org ; ses_cmd=ssl ;;
     *)      host=localhost; ses_cmd=ses ;;
 esac
-echo "#var {_profile}  {$profile}"
-echo "#var {_host}     {$host}"
-echo "#var {_port}     {4242}"
-echo "#var {_ses_cmd}  {$ses_cmd}"
+echo "#var {_profile}   {$profile}"
+echo "#var {_host}      {$host}"
+echo "#var {_port}      {4242}"
+echo "#var {_ses_cmd}   {$ses_cmd}"
+echo "#var {show_buffs} {$show_buffs}"

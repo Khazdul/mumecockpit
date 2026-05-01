@@ -333,6 +333,7 @@ local function _register_cockpit_help()
         "   cp -u       toggle UI pane",
         "   cp -m       toggle comm pane",
         "   cp -c       toggle status pane",
+        "   cp -b       toggle buffs pane",
         "   cp -d       toggle dev pane",
         "   cp -h       toggle headers",
         "   cp -s       save profile to disk",

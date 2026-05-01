@@ -301,6 +301,7 @@ Unified window and system management via `cp` commands:
 | `cp`          | Show help                       |
 | `cp -u`       | Toggle UI pane                  |
 | `cp -m`       | Toggle comm pane                |
+| `cp -b`       | Toggle buffs pane               |
 | `cp -c`       | Toggle status pane              |
 | `cp -d`       | Toggle dev pane                 |
 | `cp -h`       | Toggle pane title headers       |

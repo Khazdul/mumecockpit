@@ -27,6 +27,7 @@ source "$CONF"
 SHOW_UI="${show_ui:-1}"
 SHOW_DEV="${show_dev:-0}"
 SHOW_STATUS="${show_status:-0}"
+SHOW_BUFFS="${show_buffs:-0}"
 SHOW_COMM="${show_comm:-0}"
 SHOW_DIVIDERS="${show_pane_dividers:-1}"
 
@@ -61,7 +62,7 @@ tmux set-option -t mume status off
 tmux set-option -t mume mouse on
 
 tmux set-option -t mume pane-border-format \
-  "#{?#{==:#{pane_title},status}, Character ,#{?#{==:#{pane_title},comm}, Communication ,#{?#{==:#{pane_title},ui}, UI ,#{?#{==:#{pane_title},dev}, Dev ,}}}}"
+  "#{?#{==:#{pane_title},status}, Character ,#{?#{==:#{pane_title},buffs}, Buffs ,#{?#{==:#{pane_title},comm}, Communication ,#{?#{==:#{pane_title},ui}, UI ,#{?#{==:#{pane_title},dev}, Dev ,}}}}}"
 if [ "$SHOW_DIVIDERS" -eq 1 ]; then
     tmux set-option -t mume pane-border-status top
     tmux set-option -t mume pane-border-style "fg=colour235"
@@ -165,6 +166,9 @@ sleep 0.2 && tmux select-pane -t mume:cockpit.0 -T "MUME" &
 # ---------------------------------------------------------------------------
 if [ "$SHOW_STATUS" -eq 1 ]; then
     bash "$HOME/MUME/bridge/open_pane.sh" status
+fi
+if [ "$SHOW_BUFFS" -eq 1 ]; then
+    bash "$HOME/MUME/bridge/open_pane.sh" buffs
 fi
 if [ "$SHOW_COMM" -eq 1 ]; then
     bash "$HOME/MUME/bridge/open_pane.sh" comm

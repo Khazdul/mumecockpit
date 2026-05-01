@@ -24,7 +24,7 @@ INPUT_IDX=$(_pane_index input)
 if [ -n "$STATUS_IDX" ]; then
     RIGHT_W=$(tmux list-panes -t mume:cockpit \
         -F '#{pane_title} #{pane_width}' \
-        | awk '$1=="ui" || $1=="comm" || $1=="dev" || $1=="status" {print $2; exit}')
+        | awk '$1=="ui" || $1=="comm" || $1=="dev" || $1=="status" || $1=="buffs" {print $2; exit}')
     if [ -n "$RIGHT_W" ] && [ "$RIGHT_W" -lt 29 ]; then
         COLS=$(tmux display-message -p -t mume:cockpit '#{window_width}')
         NEW_LEFT=$(( COLS - 29 - 1 ))
