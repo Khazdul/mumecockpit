@@ -61,6 +61,18 @@ tmux new-session -d -s mume -x "$TERM_COLS" -y "$TERM_LINES" -n cockpit \
 tmux set-option -t mume status off
 tmux set-option -t mume mouse on
 
+# Truecolor (24-bit RGB) passthrough.
+# Without this, tmux downsamples every 24-bit colour escape to the
+# 256-colour palette, collapsing many distinct dark colours onto the
+# same palette entry — most visibly affecting the status pane's XP/TP
+# bars, but a problem for any future panel using exact RGB values.
+# "*:RGB" advertises truecolor for whatever TERM the host terminal
+# exposes (alacritty, xterm-256color, tmux-256color, …) — no
+# per-terminal hardcoding.
+tmux set-option -g  default-terminal   "tmux-256color"
+tmux set-option -as terminal-overrides ",*:RGB"
+tmux set-option -as terminal-features  ",*:RGB"
+
 tmux set-option -t mume pane-border-format \
   "#{?#{==:#{pane_title},status}, Character ,#{?#{==:#{pane_title},buffs}, Buffs ,#{?#{==:#{pane_title},comm}, Communication ,#{?#{==:#{pane_title},ui}, UI ,#{?#{==:#{pane_title},dev}, Dev ,}}}}}"
 if [ "$SHOW_DIVIDERS" -eq 1 ]; then

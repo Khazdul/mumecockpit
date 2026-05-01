@@ -1,9 +1,13 @@
-# Character Panel
+# Character Status Pane
 
 The status pane is a right-column tmux pane inserted between `ui` and `dev`
 that displays a flicker-free, live character info board driven by GMCP data.
 Touch this file when changing the renderer, the state-file schema, the field
-layout, or any of the phase 2–4 extension points.
+layout, or layout integration.
+
+**Step 1 of a multi-step redesign.** This commit replaces the old gold-framed
+box with two progress-bar rows. Subsequent steps will add more rows (race/level,
+mood/sess-xp, position toggles, …).
 
 ## Architecture
 
@@ -24,11 +28,11 @@ GMCP payload ──► lua/core/char_state.lua ──► state.char.*
 
 ### State flow
 
-`lua/core/status_state.lua` loads after `char_state.lua` (alphabetical order
-within `lua/core/`). It wraps each of char_state's three handlers:
-`Char.Name`, `Char.StatusVars`, `Char.Vitals`. After the original handler
-runs (updating `state.char.*`), the wrapper serialises the projected view and
-writes it atomically:
+`lua/core/status_state.lua` loads after `char_state.lua` and `level_progress.lua`
+(alphabetical order within `lua/core/`). It wraps each of char_state's three
+handlers: `Char.Name`, `Char.StatusVars`, `Char.Vitals`. After the original
+handler runs (updating `state.char.*`), the wrapper serialises the projected
+view and writes it atomically.
 
 ### Disconnect clear
 
@@ -38,37 +42,16 @@ it wipes every non-function key in `state.char` while keeping the table
 identity intact so cached references elsewhere stay valid. The `status_state.lua`
 wrapper around `state.char.reset` then calls `serialize()`, producing a single
 atomic write to `bridge/status.state` with all character fields null. The
-renderer displays `—` for null values. Pane height stays at `STATIC_ROWS = 6`
-within one poll tick (≤ 50 ms).
-
-`mark_mume_disconnected()` is idempotent: a duplicate signal finds
-`bridge/session.state` already absent and returns before reaching the reset
-call, so no double-clear occurs. `Time:` retains its last value — `state.world`
-(the clock) is separate state and is out of scope for the disconnect clear.
-
-1. `io.open(bridge/status.state.tmp, "w")` → write JSON
-2. `os.rename(tmp, bridge/status.state)` → atomic replace
-
-The Python reader never sees a partial file.
+renderer displays `—` for null name and empty bars for null progress. Pane
+height stays at `STATIC_ROWS = 2` within one poll tick (≤ 50 ms).
 
 ### cp -r partial blank
 
-After `cp -r` mid-session, **Name** and **Lv** show `—` and **Sess XP** /
-**Sess TP** show `0` until the next full reconnect. Other fields (XP, TP,
-mood, alertness, sneak, climb, swim, position) repopulate within seconds.
-
-`cp -r` restarts the Lua brain. `state.char` is re-initialised empty.
-`Char.Vitals` ticks on a steady cadence, so it fires within seconds and
-triggers `serialize()` via the existing wrap in `status_state.lua` — writing
-a partial snapshot to `bridge/status.state`. `Char.Name` and
-`Char.StatusVars` are sticky modules: MUME emits them at login and does not
-re-emit on a TCP connection that stays open across the reload, so
-`state.char.name` and `state.char.level` remain nil for the remainder of the
-session.
-
-Same root cause as the "cp -r clears uptime" limitation described in
-[docs/session-lifecycle.md](session-lifecycle.md): Lua state is process-local
-and one-shot GMCP modules are not re-emitted over an existing connection.
+After `cp -r` mid-session, **Name** shows `—` and progress bars show empty
+until the next full reconnect. Other fields repopulate within seconds (next
+`Char.Vitals` tick), but `xp_progress`/`tp_progress` depend on level (from
+`Char.StatusVars`) which is a sticky module not re-emitted over an existing
+connection.
 
 **Status:** Accepted. Cosmetic effect under a secondary developer workflow.
 Full reconnect restores all fields.
@@ -106,8 +89,10 @@ JSON written by `lua/core/status_state.lua`. Gitignored.
 {
   "character": "Aragorn",
   "level": 50,
-  "xp": 232200,
-  "tp": 3424,
+  "xp": 34000000,
+  "tp": 122000,
+  "xp_progress": 0.42,
+  "tp_progress": 0.71,
   "session_xp": 5400,
   "session_tp": 0,
   "mood": "wimpy",
@@ -122,30 +107,36 @@ JSON written by `lua/core/status_state.lua`. Gitignored.
 }
 ```
 
-`session_xp` and `session_tp` are populated by `lua/core/sess_kills.lua`
-(phase 4 — implemented). `game_time` is populated by the `clock_changed`
-subscription in `lua/core/status_state.lua` (phase 3 — implemented). The
-renderer displays `—` when null (bootstrap window before first Vitals tick).
+`xp_progress` and `tp_progress` are computed by `lua/core/level_progress.lua`
+from cumulative threshold tables (levels 1–100). Both are `null` during the
+bootstrap window (before `Char.Vitals` and `Char.StatusVars` have both
+arrived). `session_xp` / `session_tp` are populated by `lua/core/sess_kills.lua`.
+`game_time` is populated via the `clock_changed` subscription. All non-progress
+fields are retained in the payload for use by future rows.
+
+`affects` was removed from the payload by ADR 0032 (no longer serialised).
 
 ### Field mapping from GMCP
 
-| State field    | GMCP source                  | Notes                              |
-|----------------|------------------------------|------------------------------------|
-| `character`    | `Char.Name` → `state.char.name`    | kebab→snake by char_state          |
-| `level`        | `Char.StatusVars` → `state.char.level` |                               |
-| `xp`           | `Char.Vitals` → `state.char.xp`   |                                    |
-| `tp`           | `Char.Vitals` → `state.char.tp`   |                                    |
-| `mood`         | `Char.Vitals` → `state.char.mood` |                                    |
-| `alertness`    | `Char.Vitals` → `state.char.alertness` |                               |
-| `sneak`        | `Char.Vitals` → `state.char.sneak` | null→"off", "s"/"S"→"on"         |
-| `position`     | `Char.Vitals` → `state.char.position` |                               |
-| `climb`        | `Char.Vitals` → `state.char.climb` | null→"off", "c"/"C"→"on"         |
-| `swim`         | `Char.Vitals` → `state.char.swim`  | bool→"on"/"off"                  |
-| `session_xp`   | `lua/core/sess_kills.lua` → `state.session.session_xp` | null during bootstrap window; resets to 0 on `cp -r` (rebaselines on next Vitals tick — expected behaviour, not a bug) |
-| `session_tp`   | `lua/core/sess_kills.lua` → `state.session.session_tp` | null during bootstrap window; resets to 0 on `cp -r` (rebaselines on next Vitals tick — expected behaviour, not a bug) |
-| `game_time`      | `lua/core/clock.lua` → `state.world.clock.format("panel_time")` | null when precision is UNSET; `"?"` string when clock loaded but unsynced; time-only at HOUR/MINUTE, date at DAY |
-| `time_period`    | `lua/core/clock.lua` → `state.world.clock.next_transition()` | `"day"` or `"night"` (current period); null when precision < HOUR |
-| `time_remaining` | `lua/core/clock.lua` → `state.world.clock.next_transition()` | pre-formatted countdown string (`"H:MM"` or `"~N"`); null when precision < HOUR |
+| State field      | GMCP source                                            | Notes                                        |
+|------------------|--------------------------------------------------------|----------------------------------------------|
+| `character`      | `Char.Name` → `state.char.name`                        |                                              |
+| `level`          | `Char.StatusVars` → `state.char.level`                 |                                              |
+| `xp`             | `Char.Vitals` → `state.char.xp`                        |                                              |
+| `tp`             | `Char.Vitals` → `state.char.tp`                        |                                              |
+| `xp_progress`    | computed by `level_progress.compute_xp_progress`       | `null` until level + xp both known           |
+| `tp_progress`    | computed by `level_progress.compute_tp_progress`       | `null` until level + tp + race all known; troll scales thresholds ×0.1 |
+| `mood`           | `Char.Vitals` → `state.char.mood`                      |                                              |
+| `alertness`      | `Char.Vitals` → `state.char.alertness`                 |                                              |
+| `sneak`          | `Char.Vitals` → `state.char.sneak`                     | null→"off", "s"/"S"→"on"                    |
+| `position`       | `Char.Vitals` → `state.char.position`                  |                                              |
+| `climb`          | `Char.Vitals` → `state.char.climb`                     | null→"off", "c"/"C"→"on"                    |
+| `swim`           | `Char.Vitals` → `state.char.swim`                      | bool→"on"/"off"                              |
+| `session_xp`     | `lua/core/sess_kills.lua` → `state.session.session_xp` |                                              |
+| `session_tp`     | `lua/core/sess_kills.lua` → `state.session.session_tp` |                                              |
+| `game_time`      | `lua/core/clock.lua` → `state.world.clock.format("panel_time")` |                                 |
+| `time_period`    | `lua/core/clock.lua` → `state.world.clock.next_transition()` |                                   |
+| `time_remaining` | `lua/core/clock.lua` → `state.world.clock.next_transition()` |                                   |
 
 ## Colour scheme
 
@@ -153,11 +144,12 @@ Constants defined at the top of `bridge/status_pane.py`:
 
 | Constant  | Escape                   | Role                                              |
 |-----------|--------------------------|---------------------------------------------------|
-| `C_LABEL` | `\x1b[38;2;154;168;183m` | #9AA8B7 steel-blue — labels                      |
-| `C_VALUE` | `\x1b[1;97m`             | Bold bright white — values                        |
 | `C_RESET` | `\x1b[0m`                | Reset all                                         |
-| `C_SUN`   | `\x1b[38;2;255;176;0m`   | #FFB000 intense amber gold — ☼ sun icon           |
-| `C_MOON`  | `\x1b[38;2;74;144;226m`  | #4A90E2 vivid sky blue — ☾ moon icon              |
+| `C_NAME`  | `\x1b[38;2;192;192;192m` | Row 1 text foreground (name + padding spaces)     |
+| `C_XP_BG` | `\x1b[48;2;0;30;40m`    | XP bar background (RGB 0,30,40)                   |
+| `C_BG_RST`| `\x1b[49m`               | Reset background only, keep foreground            |
+| `C_TP_FG` | `\x1b[38;2;0;40;50m`    | TP bar `▀` foreground (RGB 0,40,50)               |
+
 
 ## Identity
 
@@ -168,88 +160,57 @@ rendered inside the pane content.
 
 ## Field layout
 
-All rows use a uniform **lw + 1 + rw** split formula derived from the active
-pane width W:
+`W = shutil.get_terminal_size().columns` (minimum 29, enforced upstream).
 
-```
-lw = W // 2
-rw = W - 1 - lw
-separator = 1 space character between cells
-total = lw + 1 + rw = W
-```
+### Row 1 — character name with XP-progress background
 
-Examples:
+- Full-width string: `state.char.name` (or `—` if null) centered in W columns
+  (truncated to W if longer, space-padded otherwise).
+- Foreground: `C_NAME` (RGB 192,192,192) everywhere on the row.
+- Background: `C_XP_BG` (RGB 0,30,40) covers the leftmost
+  `floor(W × xp_progress)` columns; remaining columns use the terminal default.
+- Boundary trick: `<C_NAME><C_XP_BG><filled><C_BG_RST><unfilled><C_RESET>`.
+  The background resets mid-line without touching the foreground.
 
-| W  | lw | rw | Right label starts at col |
-|----|----|----|---------------------------|
-| 29 | 14 | 14 | 16                        |
-| 30 | 15 | 14 | 17                        |
-| 31 | 15 | 15 | 17                        |
-| 32 | 16 | 15 | 18                        |
-| 33 | 16 | 16 | 18                        |
+### Row 2 — TP-progress thin bar
 
-Paired rows (two fields side by side) and single rows:
+- Leftmost `floor(W × tp_progress)` columns: `▀` (U+2580), foreground `C_TP_FG`
+  (RGB 0,40,50), no background.
+- Remaining columns: space characters, no colour.
 
-```
-Name: <name>         Lv: <level>
-XP: <xp>             TP: <tp>
-Sess XP: <sess_xp>   Sess TP: <sess_tp>
-Mood: <mood>         Alert: <alertness>
-Pos: <position>      Sneak: <sneak>
-Climb: <climb>       Swim: <swim>
-Time: <game_time>                         ← UNSET / DAY: single full-width row
-Time: <H:MM AM/PM>  ☾ in <H:MM>          ← MINUTE (day→night example)
-Time: <~H AM/PM>    ☼ in <~N>            ← HOUR   (night→day example)
-```
+### Bootstrap behaviour
 
-At HOUR/MINUTE precision the Time row splits using the same lw + 1 + rw formula:
-left half = label + time-only value (`C_VALUE`); right half = icon in `C_SUN`
-(☼, intense amber) or `C_MOON` (☾, vivid sky blue) + countdown in `C_VALUE`
-— e.g. `☾ 4:20` or `☼ ~3`. At DAY or UNSET precision `time_period` /
-`time_remaining` are null and the single full-width `_row("Time:", ...)` fallback
-is used.
+- `xp_progress` / `tp_progress` is `null` → bar renders empty (no fill).
+- `character` is `null` → `—` centered on row 1.
 
-Labels in `C_LABEL`, values in `C_VALUE`. Numeric values (`xp`, `tp`)
-formatted with comma separators (232,200 rather than 232200).
+### Troll TP scaling
+
+`lua/core/level_progress.lua` applies a ×0.1 multiplier to all TP thresholds
+when `state.char.race` lowercases to `"troll"`. Sanity check: at level 5 with
+100 TP, troll bar is full (100 / (1000 × 0.1) = 1.0); non-troll bar is 10 %.
 
 ## Layout integration
 
 ### Pane position
 
-Right column (top to bottom): `status` → `ui` → `dev`. When a subset of
-right panes is open, ordering is preserved — status stays at the top of the
-right column whenever it exists; ui sits below status (or at the top if status
-is absent); dev is always at the bottom.
+Right column (top to bottom): `status` → `ui` → `dev`. Status stays at the top
+of the right column whenever it exists.
 
 ### Pane height
 
-Right-column pane heights are managed by tmux directly. Every pane in the right
-column is freely resizable by the user, with no snap-back and no persistence
-across sessions. tmux assigns a default share of the column height on pane
-creation; the user can drag any internal border without interference.
+`status_height = 2` in `bridge/layout.conf`. `lua/core/status_state.lua`
+sets `STATIC_ROWS = 2` and rewrites `layout.conf` + calls `apply_layout.sh`
+whenever `STATIC_ROWS` changes, so adding a new row in `_build_frame` is a
+two-place update (Python + Lua constant).
 
 ### Width constraint
 
-`bridge/on_window_resize.sh` enforces a global constraint:
+`bridge/on_window_resize.sh` enforces:
 
 - `MAIN_MIN = 30` — main/tt++ pane floor
 - `RIGHT_MIN = 29` — right column floor when status is open
 
-When the terminal is wide enough for both floors, right column is clamped to
-at least `RIGHT_MIN`. When the terminal is narrowed so main would fall below
-30, main wins and the right column shrinks below 29. Manual border drag is
-clamped to ≥ 29 in `bridge/on_pane_resize.sh`.
-
-`bridge/apply_layout.sh` additionally enforces the 29-col floor whenever status
-is open: if the right column is narrower than 29 when `apply_layout.sh` runs
-(e.g., after `cp -c` opens status into a column that was previously dragged
-narrow), it widens the column automatically provided main can stay ≥ 30 cols.
-
-### Height
-
-Right-column pane heights are tmux-managed. `apply_layout.sh` does not
-set or restore any right-column height; it only pins the input row to 1 row
-and enforces the 29-col width floor when status is open.
+Manual border drag is clamped to ≥ 29 in `bridge/on_pane_resize.sh`.
 
 ## Toggle
 
@@ -260,64 +221,19 @@ and enforces the 29-col width floor when status is open.
 | Launcher Options → Character pane | `_save_conf` → `startup.conf show_status`       |
 
 Persistence key: `show_status` in `bridge/startup.conf`. Fresh-install default
-is `1` (status pane on). Existing `startup.conf` files that lack `show_status`
-fall through to the runtime `${show_status:-0}` guard — existing installs see
-no change.
+is `1` (status pane on).
 
-Affect rendering has moved to [`docs/buffs-pane.md`](buffs-pane.md).
+## Future steps
 
-## Extension points (phases 3–4)
+Subsequent commits will add more rows below the two progress-bar rows:
 
-### Phase 3 — Game time (implemented)
+- Race / level
+- Mood / session XP
+- Position / sneak toggles
+- Game time (clock data already in the payload)
 
-Clock module `lua/core/clock.lua` and the status-pane wiring are both active.
-
-`lua/core/status_state.lua` populates `game_time` in `serialize()`:
-
-```lua
-local nt = state.world.clock and state.world.clock.next_transition() or nil
--- in payload:
-game_time      = state.world.clock and state.world.clock.format("panel_time") or nil,
-time_period    = nt and nt.period or nil,
-time_remaining = nt and nt.remaining or nil,
-```
-
-It also subscribes to the `clock_changed` event emitted by `clock.lua` after
-every sync and on each minute rollover:
-
-```lua
-events.subscribe("clock_changed", function() serialize() end)
-```
-
-This means the panel updates immediately on a sync — not on the next
-`Char.Vitals` tick.
-
-**Consumer contract:** `state.world.clock.format("panel_time")` returns:
-- `"?"` when precision is UNSET (no sync yet) — renderer shows `?`
-- `"Solmath 26, 2973"` (DAY precision — date known, hour unknown)
-- `"~8 AM"` (HOUR precision — time only, no date)
-- `"8:00 AM"` (MINUTE precision — time only, no date)
-
-`state.world.clock.next_transition()` returns nil at UNSET/DAY; at HOUR/MINUTE
-it returns `{period, remaining}` driving the right-half countdown column.
-
-The `"compact"` format (`"8:00, Solmath 26"`, lowercase am/pm, comma separator)
-remains available for other consumers; the panel no longer uses it.
-
-See [docs/clock.md](clock.md) for full API and sync source details.
-
-### Phase 4 — Session XP/TP deltas (implemented)
-
-Implemented in `lua/core/sess_kills.lua`. On first `Char.Vitals` after
-connect, the current XP/TP is snapshotted as the baseline. Each subsequent
-positive XP delta is attributed evenly across the kills queued via
-`mob_death` events since the previous tick, and a `▶ KILL: <name>, <xp> xp.`
-line is emitted to the UI pane per attributed kill. `state.session.kills` is
-an append-only list of `{name, xp}` for the session.
-
-`cp -r` resets the baseline: Lua state is wiped on reload, so the next
-Vitals tick rebaselines from the current XP and `Sess XP` starts fresh from 0.
-This is expected behaviour, not a bug.
+`STATIC_ROWS` in `status_state.lua` and `_build_frame` in `status_pane.py` are
+the two places to update for each new row.
 
 ---
 Back to [architecture.md](../architecture.md).

@@ -14,10 +14,8 @@ local STATE_PATH  = os.getenv("HOME") .. "/MUME/bridge/status.state"
 local TMP_PATH    = STATE_PATH .. ".tmp"
 local LAYOUT_PATH = os.getenv("HOME") .. "/MUME/bridge/layout.conf"
 
--- 6 fixed body rows (Name/Lv, SessXP/TP, Mood/Alert, Pos/Sneak,
--- Climb/Swim, Time). Bump when a static row is added/removed in
--- bridge/status_pane.py.
-local STATIC_ROWS = 6
+-- 2 rows (XP/name bar + TP bar). Bump when rows are added in bridge/status_pane.py.
+local STATIC_ROWS = 2
 
 local _last_height = nil
 
@@ -53,6 +51,8 @@ local function serialize()
         level          = c.level,
         xp             = c.xp,
         tp             = c.tp,
+        xp_progress    = level_progress.compute_xp_progress(c.level, c.xp),
+        tp_progress    = level_progress.compute_tp_progress(c.level, c.tp, c.race),
         session_xp     = state.session and state.session.session_xp or nil,
         session_tp     = state.session and state.session.session_tp or nil,
         mood           = c.mood,

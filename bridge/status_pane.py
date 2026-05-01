@@ -7,6 +7,7 @@
 # Minimum useful width: 29 columns (enforced by the bridge, not here).
 
 import json
+import math
 import os
 import shutil
 import signal
@@ -20,12 +21,11 @@ MIN_WIDTH  = 29     # bridge enforces this floor; renderer trusts the pane size
 # ---------------------------------------------------------------------------
 # Colour constants (24-bit truecolor)
 # ---------------------------------------------------------------------------
-C_LABEL  = "\x1b[38;2;154;168;183m"    # #9AA8B7 steel-blue — labels
-C_VALUE  = "\x1b[1;97m"                # bold bright white — values
 C_RESET  = "\x1b[0m"
-
-C_SUN  = "\x1b[38;2;255;176;0m"     # #FFB000 intense amber gold
-C_MOON = "\x1b[38;2;74;144;226m"    # #4A90E2 vivid sky blue
+C_NAME   = "\x1b[38;2;192;192;192m"   # row 1 text (fg only)
+C_XP_BG  = "\x1b[48;2;0;30;40m"     # XP bar background
+C_BG_RST = "\x1b[49m"                 # reset background only (keep fg)
+C_TP_FG  = "\x1b[38;2;0;40;50m"      # TP bar ▀ foreground
 
 # ---------------------------------------------------------------------------
 # Renderer state
@@ -46,119 +46,29 @@ def _restore_cursor():
 
 
 # ---------------------------------------------------------------------------
-# Layout helpers
-# ---------------------------------------------------------------------------
-def _row(label, value, width):
-    """Single row: label left, value left (one space after label), truncated to width."""
-    lbl = str(label)
-    val = str(value) if value is not None else "—"
-    if len(lbl) + 1 + len(val) > width:
-        val = val[:max(0, width - len(lbl) - 1)]
-    return C_LABEL + lbl + C_RESET + " " + C_VALUE + val + C_RESET
-
-
-def _pair(l1, v1, l2, v2, width):
-    """
-    Paired row: l1:v1 on the left half, l2:v2 on the right half.
-    lw = width//2, rw = width - 1 - lw, separator = 1 space.
-    Total visible = lw + 1 + rw = width.
-    """
-    lw = width // 2
-    rw = width - 1 - lw
-
-    def _half(label, value, w):
-        lbl = str(label)
-        val = str(value) if value is not None else "—"
-        visible = len(lbl) + 1 + len(val)
-        if visible > w:
-            available = w - len(lbl) - 1
-            val = val[:max(0, available)]
-        trailing = w - len(lbl) - 1 - len(val)
-        return C_LABEL + lbl + C_RESET + " " + C_VALUE + val + C_RESET + " " * max(0, trailing)
-
-    return _half(l1, v1, lw) + " " + _half(l2, v2, rw)
-
-
-def _time_row(time_str, period, remaining, width):
-    """Time row: single full-width at DAY/UNSET; two-column at HOUR/MINUTE."""
-    if period is None or remaining is None:
-        return _row("Time:", time_str, width)
-    lw = width // 2
-    rw = width - 1 - lw
-
-    label = "Time:"
-    val = str(time_str) if time_str is not None else "—"
-    if len(label) + 1 + len(val) > lw:
-        val = val[:max(0, lw - len(label) - 1)]
-    trailing_left = max(0, lw - len(label) - 1 - len(val))
-    left = C_LABEL + label + C_RESET + " " + C_VALUE + val + C_RESET + " " * trailing_left
-
-    icon   = "☼" if period == "day" else "☾"
-    colour = C_SUN if period == "day" else C_MOON
-    rem    = str(remaining)
-    if len(rem) > rw - 2:
-        rem = rem[:rw - 2]
-    trailing_right = max(0, rw - 2 - len(rem))   # 1=icon, 1=sp
-    right = colour + icon + C_RESET + " " + C_VALUE + rem + C_RESET + " " * trailing_right
-
-    return left + " " + right
-
-
-
-def _fmt_num(n):
-    """Format integer with comma thousands separator."""
-    if n is None:
-        return "—"
-    try:
-        return "{:,}".format(int(n))
-    except (TypeError, ValueError):
-        return str(n)
-
-
-# ---------------------------------------------------------------------------
 # Frame builder
 # ---------------------------------------------------------------------------
 def _build_frame(data):
     """Return list of lines (no newlines), each exactly `width` visible chars."""
     width = shutil.get_terminal_size().columns
-    lw    = width // 2
-    rw    = width - 1 - lw
-
     c = data or {}
-    lines = []
 
-    name  = c.get("character") or "—"
-    level = c.get("level")
-    lines.append(_pair("Name:", name, "Lv:", level if level is not None else "—", width))
+    # Row 1: centered name with left-anchored XP-progress background
+    name = c.get("character") or "—"
+    name = name.capitalize()
+    if len(name) > width:
+        name = name[:width]
+    padded   = name.center(width)
+    xp_prog  = c.get("xp_progress") or 0.0
+    fill     = int(math.floor(width * xp_prog))
+    row1 = C_NAME + C_XP_BG + padded[:fill] + C_BG_RST + padded[fill:] + C_RESET
 
-    sess_xp = c.get("session_xp")
-    sess_tp = c.get("session_tp")
-    lines.append(_pair("Sess XP:", _fmt_num(sess_xp) if sess_xp is not None else "—",
-                        "Sess TP:", _fmt_num(sess_tp) if sess_tp is not None else "—", width))
+    # Row 2: TP-progress ▀ thin bar
+    tp_prog = c.get("tp_progress") or 0.0
+    tp_fill = int(math.floor(width * tp_prog))
+    row2 = C_TP_FG + "▀" * tp_fill + C_RESET + " " * (width - tp_fill)
 
-    mood      = c.get("mood")      or "—"
-    alertness = c.get("alertness") or "—"
-    lines.append(_pair("Mood:", mood, "Alert:", alertness, width))
-
-    position = c.get("position") or "—"
-    sneak    = c.get("sneak")    or "off"
-    lines.append(_pair("Pos:", position, "Sneak:", sneak, width))
-
-    climb = c.get("climb") or "off"
-    swim  = c.get("swim")  or "off"
-    lines.append(_pair("Climb:", climb, "Swim:", swim, width))
-
-    game_time      = c.get("game_time")
-    time_period    = c.get("time_period")
-    time_remaining = c.get("time_remaining")
-    lines.append(_time_row(
-        game_time if game_time is not None else "—",
-        time_period,
-        time_remaining,
-        width,
-    ))
-
-    return lines
+    return [row1, row2]
 
 
 # ---------------------------------------------------------------------------

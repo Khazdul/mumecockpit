@@ -253,8 +253,8 @@ are rendered in the button's background colour so they blend visually.
 
 | State | Background | Foreground |
 |-------|------------|------------|
-| ON  | `#006464` (0,100,100) | `#d8d8d8` |
-| OFF | `#003232` (0,50,50)   | `#bfbfbf` |
+| ON  | `#025570` (2,85,112) | `#d8d8d8` |
+| OFF | `#001E28` (0,30,40)   | `#bfbfbf` |
 
 ### Click semantics
 

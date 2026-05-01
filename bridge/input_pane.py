@@ -43,10 +43,10 @@ MAIN_MIN                = 30   # main/tt++ pane floor
 RIGHT_FLOOR_WITH_STATUS = 29   # right column floor when status pane is open
 
 # Button colours — toggle-state indicator
-BTN_BG_ON  = "#006464"   # rgb(0,100,100) — ON state background
-BTN_BG_OFF = "#003232"   # rgb(0,50,50)   — OFF state background
-BTN_FG_ON  = "#d8d8d8"   # ON text — light grey, slightly brighter
-BTN_FG_OFF = "#bfbfbf"   # OFF text — light grey
+BTN_BG_ON  = "#025570"   # rgb(2,85,112) — ON state background
+BTN_BG_OFF = "#001E28"   # rgb(0,30,40)   — OFF state background
+BTN_FG_ON  = "#C0C0C0"   # ON text — rgb(192,192,192)
+BTN_FG_OFF = "#808080"   # OFF text — rgb(128,128,128)
 
 # Sun/Moon colours — source of truth: bridge/status_pane.py C_SUN / C_MOON
 C_SUN_HEX  = "#ffb000"   # \x1b[38;2;255;176;0m
