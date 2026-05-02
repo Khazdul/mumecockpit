@@ -1,9 +1,9 @@
 # Affect Tracker
 
 Tracks active affects per character, learns observed durations from the last
-3 sessions, and persists per character to disk. Phase A: data layer and event
-bus only — no UI rendering. Phase B will render the affect list in the buffs
-pane (`bridge/buffs_pane.py`); see [`docs/buffs-pane.md`](buffs-pane.md).
+3 sessions, and persists per character to disk. Phase A (data layer) and
+Phase B (buffs pane renderer) are both complete. See
+[`docs/buffs-pane.md`](buffs-pane.md) for the rendering spec.
 
 ## Data flow
 

@@ -329,7 +329,7 @@ here — it's described in the relevant `docs/*.md` and visible in the
 - [ ] Live-server connection and real-server trigger mapping
 - [ ] Spell timer system
 - [x] Affect tracker (data layer complete)
-- [ ] Buffs pane renderer (scaffold done; `bridge/buffs_pane.py` renderer pending)
+- [x] Buffs pane renderer (`bridge/buffs_pane.py` + `lua/core/buffs_state.lua`)
 - [ ] Tells history UI
 - [ ] PvP keybinds finalized
 - [x] Self-update flow validated end-to-end (v0.2.1–v0.2.6, 2026-04-28)
