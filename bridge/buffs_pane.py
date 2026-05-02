@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 # bridge/buffs_pane.py — affect grid renderer for the buffs pane.
-# 4-per-row coloured grid: untimed group first (alphabetical by name),
-# then timed group by expires_at descending (alphabetical tie-break).
-# Overflow indicator on last row when not all rows fit.
+# 4-per-row coloured grid grouped by type: spells (blue), buffs (green),
+# debuffs (red). Within each group: untimed first (alphabetical), then timed
+# by expires_at descending (alphabetical tie-break). Empty groups produce no
+# rows. Overflow indicator on last row when total rows exceed pane height.
 
 try:
     from prompt_toolkit import Application
@@ -24,6 +25,7 @@ import math
 import os
 import signal
 import sys
+import time
 
 BUFFS_STATE_PATH = os.environ.get(
     "BUFFS_STATE_PATH",
@@ -31,12 +33,30 @@ BUFFS_STATE_PATH = os.environ.get(
 )
 POLL_MS = 0.1
 
-C_CELL_BG   = "bg:#66b2ff"
-C_CELL_FG   = "fg:#000000"
-C_SEP       = "fg:#66b2ff bg:#000000"
-C_INDICATOR = "fg:#d4a04e italic"
+# Spells — blue
+C_SPELL_FILL_BG = "bg:#66b2ff"
+C_SPELL_SEP_FG  = "fg:#66b2ff"
 
-C_CELL = C_CELL_FG + " " + C_CELL_BG
+# Buffs — green
+C_BUFF_FILL_BG  = "bg:#00d900"
+C_BUFF_SEP_FG   = "fg:#00d900"
+
+# Debuffs — red
+C_DEBUFF_FILL_BG = "bg:#d90000"
+C_DEBUFF_SEP_FG  = "fg:#d90000"
+
+C_CELL_FG       = "fg:#000000"
+C_INDICATOR     = "fg:#d4a04e italic"
+C_NAME_DEPLETED = "fg:#1e1e1e bg:#000000"
+C_SEP_DEPLETED  = "fg:#000000 bg:#000000"
+C_NAME_HIDDEN   = "fg:#000000 bg:#000000"
+
+# Each palette tuple: (filled_cell_style, filled_sep_style)
+_PALETTES = {
+    "spell":  (C_CELL_FG + " " + C_SPELL_FILL_BG,  C_SPELL_SEP_FG  + " bg:#000000"),
+    "buff":   (C_CELL_FG + " " + C_BUFF_FILL_BG,   C_BUFF_SEP_FG   + " bg:#000000"),
+    "debuff": (C_CELL_FG + " " + C_DEBUFF_FILL_BG,  C_DEBUFF_SEP_FG + " bg:#000000"),
+}
 
 _affects    = []
 _last_mtime = None
@@ -70,53 +90,116 @@ def _cell_widths(W):
     return [base + 1] * rem + [base] * (4 - rem)
 
 
+def _split_groups():
+    spells  = sorted([e for e in _affects if e.get("type") == "spell"],  key=_sort_key)
+    debuffs = sorted([e for e in _affects if e.get("type") == "debuff"], key=_sort_key)
+    buffs   = sorted(
+        [e for e in _affects if e.get("type") not in ("spell", "debuff")],
+        key=_sort_key,
+    )
+    return spells, buffs, debuffs
+
+
+def _total_rows(spells, buffs, debuffs):
+    return (
+        (math.ceil(len(spells)  / 4) if spells  else 0) +
+        (math.ceil(len(buffs)   / 4) if buffs   else 0) +
+        (math.ceil(len(debuffs) / 4) if debuffs else 0)
+    )
+
+
 def _is_overflow():
-    n = len(_affects)
-    if n == 0:
+    if not _affects:
         return False
-    H           = max(1, _term_rows())
-    total_rows  = math.ceil(n / 4)
-    return total_rows > H
+    H = max(1, _term_rows())
+    return _total_rows(*_split_groups()) > H
+
+
+def _cell_frags(entry, cell_w, palette):
+    filled_style, sep_style = palette
+    now               = time.time()
+    expires_at        = entry.get("expires_at")
+    expected_duration = entry.get("expected_duration")
+    name              = entry.get("name", "")
+    label             = name.upper()[: cell_w - 1].ljust(cell_w - 1)
+
+    if expected_duration is None or expires_at is None:
+        filled = cell_w
+    else:
+        remaining = expires_at - now
+        pct       = max(0.0, min(1.0, remaining / expected_duration))
+        filled    = int(pct * cell_w + 0.5)
+
+    blinking = False
+    if expected_duration is not None and expires_at is not None:
+        remaining = expires_at - now
+        blinking  = filled == 0 and remaining <= 30
+
+    visible = int(now) % 2 == 0
+
+    frags = []
+    for i in range(cell_w - 1):
+        ch = label[i]
+        if i < filled:
+            frags.append((filled_style, ch))
+        elif blinking:
+            frags.append((C_NAME_DEPLETED if visible else C_NAME_HIDDEN, ch))
+        else:
+            frags.append((C_NAME_DEPLETED, ch))
+
+    if filled >= cell_w:
+        frags.append((sep_style, "▌"))
+    else:
+        frags.append((C_SEP_DEPLETED, "▌"))
+
+    return frags
 
 
 def _grid_text():
-    sorted_affects = sorted(_affects, key=_sort_key)
-    n              = len(sorted_affects)
-    W              = max(4, _term_cols())
-    H              = max(1, _term_rows())
-    widths         = _cell_widths(W)
+    spells, buffs, debuffs = _split_groups()
+    W      = max(4, _term_cols())
+    H      = max(1, _term_rows())
+    widths = _cell_widths(W)
 
-    total_rows   = math.ceil(n / 4) if n > 0 else 0
-    overflow     = total_rows > H
-    visible_rows = (H - 1) if overflow else total_rows
+    total        = _total_rows(spells, buffs, debuffs)
+    overflow     = total > H
+    visible_rows = (H - 1) if overflow else total
 
-    frags = []
-    for row in range(visible_rows):
-        if row > 0:
-            frags.append(("", "\n"))
-        for col in range(4):
-            idx = row * 4 + col
-            if idx >= n:
+    frags        = []
+    rows_emitted = 0
+
+    for group, palette in (
+        (spells,  _PALETTES["spell"]),
+        (buffs,   _PALETTES["buff"]),
+        (debuffs, _PALETTES["debuff"]),
+    ):
+        if not group:
+            continue
+        n = len(group)
+        group_rows = math.ceil(n / 4)
+        for row in range(group_rows):
+            if rows_emitted >= visible_rows:
                 break
-            entry  = sorted_affects[idx]
-            name   = entry.get("name", "")
-            cell_w = widths[col]
-            label  = name.upper()[: cell_w - 1].ljust(cell_w - 1)
-            frags.append((C_CELL, label))
-            frags.append((C_SEP, "▌"))
+            if rows_emitted > 0:
+                frags.append(("", "\n"))
+            for col in range(4):
+                idx = row * 4 + col
+                if idx >= n:
+                    break
+                frags.extend(_cell_frags(group[idx], widths[col], palette))
+            rows_emitted += 1
 
     return frags
 
 
 def _indicator_text():
-    n = len(_affects)
-    if n == 0:
+    if not _affects:
         return []
-    H          = max(1, _term_rows())
-    total_rows = math.ceil(n / 4)
-    if total_rows <= H:
+    H = max(1, _term_rows())
+    total = _total_rows(*_split_groups())
+    if total <= H:
         return []
-    hidden = total_rows - (H - 1)
+    hidden = total - (H - 1)
     return [(C_INDICATOR, f"↓ {hidden} more rows")]
 
 

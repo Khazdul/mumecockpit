@@ -13,9 +13,10 @@ local function serialize()
     local out = {}
     for _, e in ipairs(affects) do
         out[#out + 1] = {
-            name       = e.name,
-            type       = e.type or json.null,
-            expires_at = e.expires_at or json.null,
+            name              = e.name,
+            type              = e.type or json.null,
+            expires_at        = e.expires_at or json.null,
+            expected_duration = e.expected_duration or json.null,
         }
     end
     local ok, encoded = pcall(json.encode, out)
