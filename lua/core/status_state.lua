@@ -14,8 +14,8 @@ local STATE_PATH  = os.getenv("HOME") .. "/MUME/bridge/status.state"
 local TMP_PATH    = STATE_PATH .. ".tmp"
 local LAYOUT_PATH = os.getenv("HOME") .. "/MUME/bridge/layout.conf"
 
--- 2 rows (XP/name bar + TP bar). Bump when rows are added in bridge/status_pane.py.
-local STATIC_ROWS = 2
+-- 6 rows (2 progress-bar rows + 4 data rows). Bump when rows are added in bridge/status_pane.py.
+local STATIC_ROWS = 6
 
 local _last_height = nil
 
@@ -48,7 +48,9 @@ local function serialize()
     local nt = state.world.clock and state.world.clock.next_transition() or nil
     local payload = {
         character      = c.name,
+        race           = c.race,
         level          = c.level,
+        wimpy          = c.wimpy,
         xp             = c.xp,
         tp             = c.tp,
         xp_progress    = level_progress.compute_xp_progress(c.level, c.xp),

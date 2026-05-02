@@ -26,6 +26,8 @@ C_NAME   = "\x1b[38;2;192;192;192m"   # row 1 text (fg only)
 C_XP_BG  = "\x1b[48;2;0;30;40m"     # XP bar background
 C_BG_RST = "\x1b[49m"                 # reset background only (keep fg)
 C_TP_FG  = "\x1b[38;2;0;40;50m"      # TP bar ▀ foreground
+C_LABEL  = "\x1b[38;2;128;128;128m"   # data row label foreground
+C_VALUE  = "\x1b[38;2;192;192;192m"   # data row value foreground
 
 # ---------------------------------------------------------------------------
 # Renderer state
@@ -43,6 +45,56 @@ def _mark_dirty(signum, frame):
 def _restore_cursor():
     sys.stdout.write("\x1b[?25h")
     sys.stdout.flush()
+
+
+# ---------------------------------------------------------------------------
+# Data-row helpers
+# ---------------------------------------------------------------------------
+def _col_widths(W):
+    base  = (W - 1) // 4
+    extra = (W - 1) %  4
+    return [base + (1 if i < extra else 0) for i in range(4)]
+
+
+def _trunc_label(full, w):
+    if len(full) <= w:
+        return full.ljust(w)
+    return (full[:-1][:max(w - 1, 0)] + ":").ljust(w)
+
+
+def _trunc_value(value, w):
+    s = (value or "").lower()
+    return s[:w].ljust(w)
+
+
+def _fmt_sess(n):
+    if n is None: return ""
+    if n < 1000:  return str(int(n))
+    return "{:.1f}k".format(n / 1000.0)
+
+
+def _build_data_rows(c, W):
+    c1, c2, c3, c4 = _col_widths(W)
+
+    def row(l1, v1, l2, v2):
+        return (
+            C_LABEL + _trunc_label(l1, c1) +
+            C_VALUE + _trunc_value(v1, c2) +
+            C_RESET + " " +
+            C_LABEL + _trunc_label(l2, c3) +
+            C_VALUE + _trunc_value(v2, c4) +
+            C_RESET
+        )
+
+    level_val = str(int(c["level"])) if c.get("level") is not None else ""
+    wimpy_val = str(int(c["wimpy"])) if c.get("wimpy") is not None else ""
+
+    return [
+        row("RACE:",      c.get("race"),      "LEVEL:",  level_val),
+        row("MOOD:",      c.get("mood"),      "SES-XP:", _fmt_sess(c.get("session_xp"))),
+        row("ALERTNESS:", c.get("alertness"), "SES-TP:", _fmt_sess(c.get("session_tp"))),
+        row("POSITION:",  c.get("position"),  "WIMPY:",  wimpy_val),
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -68,7 +120,7 @@ def _build_frame(data):
     tp_fill = int(math.floor(width * tp_prog))
     row2 = C_TP_FG + "▀" * tp_fill + C_RESET + " " * (width - tp_fill)
 
-    return [row1, row2]
+    return [row1, row2] + _build_data_rows(c, width)
 
 
 # ---------------------------------------------------------------------------

@@ -5,9 +5,9 @@ that displays a flicker-free, live character info board driven by GMCP data.
 Touch this file when changing the renderer, the state-file schema, the field
 layout, or layout integration.
 
-**Step 1 of a multi-step redesign.** This commit replaces the old gold-framed
-box with two progress-bar rows. Subsequent steps will add more rows (race/level,
-mood/sess-xp, position toggles, …).
+**Step 2 of a multi-step redesign.** Step 1 replaced the old gold-framed box
+with two progress-bar rows. Step 2 adds four data rows below them (race/level,
+mood/sess-xp, alertness/sess-tp, position/wimpy).
 
 ## Architecture
 
@@ -42,8 +42,9 @@ it wipes every non-function key in `state.char` while keeping the table
 identity intact so cached references elsewhere stay valid. The `status_state.lua`
 wrapper around `state.char.reset` then calls `serialize()`, producing a single
 atomic write to `bridge/status.state` with all character fields null. The
-renderer displays `—` for null name and empty bars for null progress. Pane
-height stays at `STATIC_ROWS = 2` within one poll tick (≤ 50 ms).
+renderer displays `—` for null name and empty bars for null progress. Data rows
+render as label-only (empty value cells). Pane height stays at `STATIC_ROWS = 6`
+within one poll tick (≤ 50 ms).
 
 ### cp -r partial blank
 
@@ -88,7 +89,9 @@ JSON written by `lua/core/status_state.lua`. Gitignored.
 ```json
 {
   "character": "Aragorn",
+  "race": "Man",
   "level": 50,
+  "wimpy": 100,
   "xp": 34000000,
   "tp": 122000,
   "xp_progress": 0.42,
@@ -121,7 +124,9 @@ fields are retained in the payload for use by future rows.
 | State field      | GMCP source                                            | Notes                                        |
 |------------------|--------------------------------------------------------|----------------------------------------------|
 | `character`      | `Char.Name` → `state.char.name`                        |                                              |
+| `race`           | `Char.StatusVars` → `state.char.race`                  |                                              |
 | `level`          | `Char.StatusVars` → `state.char.level`                 |                                              |
+| `wimpy`          | `Char.Vitals` → `state.char.wimpy`                     | integer; null until first Vitals tick        |
 | `xp`             | `Char.Vitals` → `state.char.xp`                        |                                              |
 | `tp`             | `Char.Vitals` → `state.char.tp`                        |                                              |
 | `xp_progress`    | computed by `level_progress.compute_xp_progress`       | `null` until level + xp both known           |
@@ -149,6 +154,8 @@ Constants defined at the top of `bridge/status_pane.py`:
 | `C_XP_BG` | `\x1b[48;2;0;30;40m`    | XP bar background (RGB 0,30,40)                   |
 | `C_BG_RST`| `\x1b[49m`               | Reset background only, keep foreground            |
 | `C_TP_FG` | `\x1b[38;2;0;40;50m`    | TP bar `▀` foreground (RGB 0,40,50)               |
+| `C_LABEL` | `\x1b[38;2;128;128;128m` | Data row label foreground (RGB 128,128,128)       |
+| `C_VALUE` | `\x1b[38;2;192;192;192m` | Data row value foreground (RGB 192,192,192)       |
 
 
 ## Identity
@@ -178,10 +185,40 @@ rendered inside the pane content.
   (RGB 0,40,50), no background.
 - Remaining columns: space characters, no colour.
 
+### Rows 3–6 — four data rows (4-column layout)
+
+`W = pane width`. Four columns sized by `_col_widths(W)`:
+
+```python
+base  = (W - 1) // 4
+extra = (W - 1) %  4
+cols  = [base + (1 if i < extra else 0) for i in range(4)]
+```
+
+A single-char spacer (no SGR) separates column 2 and column 3. Every row is
+exactly W visible characters; no trailing padding ever needed.
+
+| Row | Col 1 (label) | Col 2 (value)            | Col 3 (label) | Col 4 (value)              |
+|-----|---------------|--------------------------|---------------|----------------------------|
+| 3   | `RACE:`       | `race`                   | `LEVEL:`      | `level` (bare int)         |
+| 4   | `MOOD:`       | `mood`                   | `SES-XP:`     | `session_xp` (fmt_sess)    |
+| 5   | `ALERTNESS:`  | `alertness`              | `SES-TP:`     | `session_tp` (fmt_sess)    |
+| 6   | `POSITION:`   | `position`               | `WIMPY:`      | `wimpy` (bare int)         |
+
+Labels are truncated preserving the trailing colon; values are lowercased and
+sliced. Null/missing values render as empty string (label + col-width spaces).
+`session_xp`/`session_tp` are formatted as `"1.2k"` above 999 and bare integers
+below. `level` and `wimpy` are bare integers.
+
+Label foreground: `C_LABEL` (RGB 128,128,128). Value foreground: `C_VALUE`
+(RGB 192,192,192). `C_RESET` between each value and the next label; spacer has
+no SGR.
+
 ### Bootstrap behaviour
 
 - `xp_progress` / `tp_progress` is `null` → bar renders empty (no fill).
 - `character` is `null` → `—` centered on row 1.
+- Any data-row value is `null` → empty string; only label text is shown.
 
 ### Troll TP scaling
 
@@ -198,10 +235,11 @@ of the right column whenever it exists.
 
 ### Pane height
 
-`status_height = 2` in `bridge/layout.conf`. `lua/core/status_state.lua`
-sets `STATIC_ROWS = 2` and rewrites `layout.conf` + calls `apply_layout.sh`
+`status_height = 6` in `bridge/layout.conf`. `lua/core/status_state.lua`
+sets `STATIC_ROWS = 6` and rewrites `layout.conf` + calls `apply_layout.sh`
 whenever `STATIC_ROWS` changes, so adding a new row in `_build_frame` is a
-two-place update (Python + Lua constant).
+two-place update (Python + Lua constant). Current breakdown: 2 progress-bar
+rows + 4 data rows = 6 total.
 
 ### Width constraint
 
@@ -225,15 +263,9 @@ is `1` (status pane on).
 
 ## Future steps
 
-Subsequent commits will add more rows below the two progress-bar rows:
-
-- Race / level
-- Mood / session XP
-- Position / sneak toggles
-- Game time (clock data already in the payload)
-
-`STATIC_ROWS` in `status_state.lua` and `_build_frame` in `status_pane.py` are
-the two places to update for each new row.
+Subsequent commits may add further rows (game time, sneak/climb/swim toggles,
+…). `STATIC_ROWS` in `status_state.lua` and `_build_frame` in `status_pane.py`
+are the two places to update for each new row.
 
 ---
 Back to [architecture.md](../architecture.md).
