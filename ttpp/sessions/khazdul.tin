@@ -1161,7 +1161,7 @@
 #VARIABLE {character} {}
 #VARIABLE {class} {caster}
 #VARIABLE {mees} {}
-#VARIABLE {ring} {golden-ruby-ring}
+#VARIABLE {ring} {copperring}
 #VARIABLE {sd1} {exit}
 #VARIABLE {sd2} {}
 #VARIABLE {sd3} {}
