@@ -14,8 +14,8 @@ local STATE_PATH  = os.getenv("HOME") .. "/MUME/bridge/status.state"
 local TMP_PATH    = STATE_PATH .. ".tmp"
 local LAYOUT_PATH = os.getenv("HOME") .. "/MUME/bridge/layout.conf"
 
--- 6 rows (2 progress-bar rows + 4 data rows). Bump when rows are added in bridge/status_pane.py.
-local STATIC_ROWS = 6
+-- 11 rows (2 progress-bar rows + 4 data rows + 1 blank + 4 toggle rows). Bump when rows are added in bridge/status_pane.py.
+local STATIC_ROWS = 11
 
 local _last_height = nil
 
@@ -41,6 +41,12 @@ local function serialize()
         climb_val = "on"
     end
 
+    -- ride: null|false|json.null → off, anything else → on
+    local ride_val = "off"
+    if c.ride and c.ride ~= json.null then
+        ride_val = "on"
+    end
+
     -- swim: bool → on/off
     local swim_val = "off"
     if c.swim then swim_val = "on" end
@@ -60,6 +66,7 @@ local function serialize()
         mood           = c.mood,
         alertness      = c.alertness,
         sneak          = sneak_val,
+        ride           = ride_val,
         position       = c.position,
         climb          = climb_val,
         swim           = swim_val,

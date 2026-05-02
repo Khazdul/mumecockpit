@@ -5,9 +5,10 @@ that displays a flicker-free, live character info board driven by GMCP data.
 Touch this file when changing the renderer, the state-file schema, the field
 layout, or layout integration.
 
-**Step 2 of a multi-step redesign.** Step 1 replaced the old gold-framed box
+**Step 3 of a multi-step redesign.** Step 1 replaced the old gold-framed box
 with two progress-bar rows. Step 2 adds four data rows below them (race/level,
-mood/sess-xp, alertness/sess-tp, position/wimpy).
+mood/sess-xp, alertness/sess-tp, position/wimpy). Step 3 adds a blank separator
+row and four toggle-box cells (sneak/ride/climb/swim) below the data block.
 
 ## Architecture
 
@@ -101,6 +102,7 @@ JSON written by `lua/core/status_state.lua`. Gitignored.
   "mood": "wimpy",
   "alertness": "normal",
   "sneak": "off",
+  "ride":  "off",
   "position": "standing",
   "climb": "off",
   "swim": "off",
@@ -134,6 +136,7 @@ fields are retained in the payload for use by future rows.
 | `mood`           | `Char.Vitals` → `state.char.mood`                      |                                              |
 | `alertness`      | `Char.Vitals` → `state.char.alertness`                 |                                              |
 | `sneak`          | `Char.Vitals` → `state.char.sneak`                     | null→"off", "s"/"S"→"on"                    |
+| `ride`           | `Char.Vitals` → `state.char.ride`                      | null/false/json.null→"off", else→"on"        |
 | `position`       | `Char.Vitals` → `state.char.position`                  |                                              |
 | `climb`          | `Char.Vitals` → `state.char.climb`                     | null→"off", "c"/"C"→"on"                    |
 | `swim`           | `Char.Vitals` → `state.char.swim`                      | bool→"on"/"off"                              |
@@ -154,8 +157,16 @@ Constants defined at the top of `bridge/status_pane.py`:
 | `C_XP_BG` | `\x1b[48;2;0;30;40m`    | XP bar background (RGB 0,30,40)                   |
 | `C_BG_RST`| `\x1b[49m`               | Reset background only, keep foreground            |
 | `C_TP_FG` | `\x1b[38;2;0;40;50m`    | TP bar `▀` foreground (RGB 0,40,50)               |
-| `C_LABEL` | `\x1b[38;2;128;128;128m` | Data row label foreground (RGB 128,128,128)       |
-| `C_VALUE` | `\x1b[38;2;192;192;192m` | Data row value foreground (RGB 192,192,192)       |
+| `C_LABEL`         | `\x1b[38;2;128;128;128m`    | Data row label foreground (RGB 128,128,128)          |
+| `C_VALUE`         | `\x1b[38;2;192;192;192m`    | Data row value foreground (RGB 192,192,192)          |
+| `C_TOG_OFF_BG`    | `\x1b[48;2;0;30;40m`        | Toggle box background — off state (RGB 0,30,40)       |
+| `C_TOG_OFF_LABEL` | `\x1b[38;2;128;128;128m`    | Toggle label foreground — off state (RGB 128,128,128) |
+| `C_TOG_OFF_FILL`  | `\x1b[38;2;0;30;40m`        | Toggle █ foreground — off state (RGB 0,30,40)         |
+| `C_TOG_OFF_ICON`  | `\x1b[38;2;0;0;0m`          | Toggle ● foreground — off state (RGB 0,0,0 black)     |
+| `C_TOG_ON_BG`     | `\x1b[48;2;2;82;112m`       | Toggle box background — on state (RGB 2,82,112)       |
+| `C_TOG_ON_LABEL`  | `\x1b[38;2;222;222;222m`    | Toggle label foreground — on state (RGB 222,222,222)  |
+| `C_TOG_ON_FILL`   | `\x1b[38;2;2;82;112m`       | Toggle █ foreground — on state (RGB 2,82,112)         |
+| `C_TOG_ON_ICON`   | `\x1b[38;2;255;255;255m`    | Toggle ● foreground — on state (RGB 255,255,255 white)|
 
 
 ## Identity
@@ -214,11 +225,40 @@ Label foreground: `C_LABEL` (RGB 128,128,128). Value foreground: `C_VALUE`
 (RGB 192,192,192). `C_RESET` between each value and the next label; spacer has
 no SGR.
 
+### Row 7 — blank separator
+
+Plain `" " * W` — no SGR.
+
+### Row 8–11 — four toggle-box cells (4-column layout)
+
+Same `_col_widths(W)` distribution and 1-char mid-spacer as the data rows. Each
+cell is laid out as `[icon][label][█-pad]`:
+
+- **icon**: `●` (U+25CF) in both states — on/off is signalled by colour only.
+- **label**: toggle name in uppercase (`SNEAK`, `RIDE`, `CLIMB`, `SWIM`).
+- **block-pad**: `col_w - 1 - len(label)` trailing `█` chars (min 0).
+
+The box background (`C_TOG_*_BG`) is set before the icon, so the icon sits on
+the same coloured rectangle as the label — the whole cell reads as one
+continuous coloured pill. `C_RESET` after the label resets the background before
+the `█` pad, which then paints itself solid via its foreground colour
+(`C_TOG_*_FILL`) against the terminal default.
+
+| Col | Toggle | Off colours                                                        | On colours                                                       |
+|-----|--------|--------------------------------------------------------------------|------------------------------------------------------------------|
+| 0   | SNEAK  | bg `C_TOG_OFF_BG`, icon `C_TOG_OFF_ICON` (black), label `C_TOG_OFF_LABEL`, pad `C_TOG_OFF_FILL` | bg `C_TOG_ON_BG`, icon `C_TOG_ON_ICON` (white), label `C_TOG_ON_LABEL`, pad `C_TOG_ON_FILL` |
+| 1   | RIDE   | same                                                               | same                                                             |
+| 2   | CLIMB  | same                                                               | same                                                             |
+| 3   | SWIM   | same                                                               | same                                                             |
+
+Missing or `"off"` value → cell renders in off state. `"on"` → on state.
+
 ### Bootstrap behaviour
 
 - `xp_progress` / `tp_progress` is `null` → bar renders empty (no fill).
 - `character` is `null` → `—` centered on row 1.
 - Any data-row value is `null` → empty string; only label text is shown.
+- Any toggle field missing or `null` → rendered as off (no garbled text).
 
 ### Troll TP scaling
 
@@ -235,11 +275,11 @@ of the right column whenever it exists.
 
 ### Pane height
 
-`status_height = 6` in `bridge/layout.conf`. `lua/core/status_state.lua`
-sets `STATIC_ROWS = 6` and rewrites `layout.conf` + calls `apply_layout.sh`
+`status_height = 11` in `bridge/layout.conf`. `lua/core/status_state.lua`
+sets `STATIC_ROWS = 11` and rewrites `layout.conf` + calls `apply_layout.sh`
 whenever `STATIC_ROWS` changes, so adding a new row in `_build_frame` is a
 two-place update (Python + Lua constant). Current breakdown: 2 progress-bar
-rows + 4 data rows = 6 total.
+rows + 4 data rows + 1 blank separator + 4 toggle rows = 11 total.
 
 ### Width constraint
 
@@ -263,9 +303,9 @@ is `1` (status pane on).
 
 ## Future steps
 
-Subsequent commits may add further rows (game time, sneak/climb/swim toggles,
-…). `STATIC_ROWS` in `status_state.lua` and `_build_frame` in `status_pane.py`
-are the two places to update for each new row.
+Subsequent commits may add further rows (game time, …). `STATIC_ROWS` in
+`status_state.lua` and `_build_frame` in `status_pane.py` are the two places to
+update for each new row.
 
 ---
 Back to [architecture.md](../architecture.md).
