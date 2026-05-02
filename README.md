@@ -84,8 +84,9 @@ graphical companion app — install it and the cockpit routes through it.
 ## Status
 
 Early but stable. The cockpit is in active development for a single
-player's daily use; a few features are still on the way — GMCP
-disconnect flow, spell timers, PvP keybind defaults, tells history UI.
+player's daily use. Upcoming: session progress tracker, gameplay layout
+presets, and a Getting Started page in the launcher. PvP keybind defaults
+are still pending.
 See "Current Work" in [`architecture.md`](architecture.md).
 
 Bug reports and feature requests welcome on

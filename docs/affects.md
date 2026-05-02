@@ -1,8 +1,8 @@
 # Affect Tracker
 
 Tracks active affects per character, learns observed durations from the last
-3 sessions, and persists per character to disk. Phase A (data layer) and
-Phase B (buffs pane renderer) are both complete. See
+3 sessions, and persists per character to disk. This document covers the
+data layer and event bus; rendering is handled by the buffs pane — see
 [`docs/buffs-pane.md`](buffs-pane.md) for the rendering spec.
 
 ## Data flow

@@ -1,8 +1,10 @@
 # Buffs Pane
 
-Visualises `state.char.affects` — the active affect list maintained by
-`lua/core/affects.lua`. Touch this file when changing the renderer, the
-pane position, or the toggle wiring.
+A `prompt_toolkit` full-screen application that renders `state.char.affects`
+as a colour-coded affect grid grouped by type (spells, buffs, debuffs), with
+bar-drain animation, blink alerts for expiring affects, and row-based scroll.
+Touch this file when changing the renderer, the pane position, or the toggle
+wiring.
 
 ## Architecture
 
@@ -30,84 +32,149 @@ Bare JSON array, one entry per active affect:
 
 ```json
 [
-  {"name": "armour",  "type": "protection", "expires_at": 1714001800},
-  {"name": "hunger",  "type": null,         "expires_at": null}
+  {"name": "armour",  "type": "spell",  "expires_at": 1714001800, "expected_duration": 1800},
+  {"name": "hunger",  "type": null,     "expires_at": null,       "expected_duration": null}
 ]
 ```
 
-`expires_at` is `null` for indefinite affects (no `duration` in
-`affects_data.lua`). `type` mirrors the data-table value and may also be
-`null` if absent from the data table.
+`expires_at` and `expected_duration` are both `null` for indefinite affects
+(no `duration` field in the data table). `type` mirrors the data-table value
+and may also be `null` if absent from the data table.
 
 ## Rendering
 
-`bridge/buffs_pane.py` is a prompt_toolkit full-screen Application.
+`bridge/buffs_pane.py` is a `prompt_toolkit` full-screen `Application`.
 
-### Sort order
+### Grouping
 
-1. **Group A** — `expires_at` is `null` (untimed). Sorted alphabetically by
-   name (case-insensitive). Rendered first.
-2. **Group B** — `expires_at` is set (timed). Sorted by `expires_at`
-   descending (most time remaining first); alphabetical by name as tie-break.
+Affects are partitioned into three groups rendered top-to-bottom with no blank
+rows between them. Empty groups produce no rows.
+
+| Group   | Condition                                             |
+|---------|-------------------------------------------------------|
+| Spells  | `type == "spell"`                                     |
+| Buffs   | `type` is neither `"spell"` nor `"debuff"`            |
+| Debuffs | `type == "debuff"`                                    |
+
+Each group lays out 4 affects per row.
+
+### Sort within a group
+
+Each group is independently sorted by the same key:
+
+1. **Untimed** (`expires_at` is `null`) — alphabetically by name,
+   case-insensitive. Rendered first.
+2. **Timed** (`expires_at` is set) — by `expires_at` descending (most time
+   remaining first); alphabetical by name as tie-break.
 
 ### Grid layout
 
-Terminal width `W = _term_cols()`, height `H = _term_rows()`, 4 cells per
-row.
+Terminal width `W = _term_cols()`, height `H = _term_rows()`, 4 cells per row.
 
 Cell width distribution (left to right):
 
 ```
-base = W // 4
-rem  = W % 4
-widths = [base+1] * rem + [base] * (4 - rem)
+base   = W // 4
+rem    = W % 4
+widths = [base + 1] * rem + [base] * (4 - rem)
 ```
 
-Each cell occupies `cell_w` columns: `(cell_w - 1)` chars of
-`NAME.ljust(cell_w - 1)` followed by `▌`. The separator `▌` uses style
-`C_SEP`; the name content uses `C_CELL`.
+Each cell occupies `cell_w` columns: `(cell_w - 1)` characters of
+`NAME.upper()[:cell_w-1].ljust(cell_w-1)` followed by the `▌` separator.
+Empty slots on a partial last row are omitted — the row ends after the last
+populated cell's separator.
 
-Empty cells on a partial last row (when `n % 4 != 0`) are omitted — the
-coloured row ends after the last populated cell's `▌`.
+### Per-group palette
 
-### Colour constants
+| Group   | Filled cell BG | Cell FG   | Separator FG | Separator BG |
+|---------|----------------|-----------|--------------|--------------|
+| Spells  | `#66b2ff`      | `#000000` | `#66b2ff`    | `#000000`    |
+| Buffs   | `#00d900`      | `#000000` | `#00d900`    | `#000000`    |
+| Debuffs | `#d90000`      | `#000000` | `#d90000`    | `#000000`    |
 
-```python
-C_CELL_BG   = "bg:#66b2ff"   # cell background
-C_CELL_FG   = "fg:#000000"   # cell foreground
-C_SEP       = "fg:#66b2ff bg:#000000"  # ▌ separator
-C_INDICATOR = "fg:#d4a04e italic"      # overflow indicator
-```
+Overflow indicator style: `fg:#d4a04e italic`.
 
-### Overflow
-
-```
-total_rows = ceil(n / 4)
-```
-
-- If `total_rows <= H`: render all rows, no indicator.
-- If `total_rows > H`: render `H − 1` rows, show indicator on the last row.
-
-Indicator text: `↓ {hidden} more rows` where
-`hidden = total_rows − (H − 1)`. Style: `C_INDICATOR`. No click handler.
-
-### Polling
-
-- mtime poll on `bridge/buffs.state` every 100 ms; reload and invalidate on
-  change.
-- Unconditional 1 Hz invalidate tick — keeps sort order current as
-  `expires_at` values move relative to each other.
-
-### Layout container
+### Bar fill
 
 ```
-HSplit([
-    Window(grid_control),
-    ConditionalContainer(Window(indicator_control, height=1), filter=overflow),
-])
+pct    = max(0, min(1, remaining / expected_duration))
+filled = int(pct * cell_w + 0.5)   # round-half-up; do NOT use Python round()
 ```
 
-No header, no border, no padding. Cursor hidden.
+Python's `round()` uses banker's rounding (round-half-to-even), which produces
+inconsistent bar widths at the 50 % boundary. `int(x + 0.5)` is always
+round-half-up.
+
+For indefinite affects (`expected_duration` or `expires_at` is `null`):
+`filled = cell_w` (full bar, no drain).
+
+### Separator rule
+
+The `▌` separator renders in the **group colour** only when `filled >= cell_w`.
+Otherwise it renders as `fg:#000000 bg:#000000` (black on black — invisible by
+design). Adjacent depleted cells therefore merge visually.
+
+### Depleted name colour
+
+When `filled < cell_w` the name characters render as `fg:#1e1e1e bg:#000000`
+(near-black on black), unless the cell is blinking — see below.
+
+## Blink
+
+An affect blinks when both conditions hold:
+
+- `filled == 0` — bar is fully drained.
+- `remaining <= 30` — fewer than 30 seconds until `expires_at`.
+
+Blink continues past the predicted expiry (`remaining` goes negative) until
+`affect_down` fires. Indefinite affects never blink.
+
+**Phase:** `int(time.time()) % 2 == 0` → visible (`fg:#1e1e1e`); `== 1` →
+hidden (`fg:#000000 bg:#000000`). Both halves are equal length because the
+blink tick wakes just after each wall-clock second boundary (see Polling
+below).
+
+## Scroll
+
+`_scroll_offset` is the number of newer rows hidden below the visible window.
+`0` means live-follow (sticky bottom); `N > 0` means `N` rows are scrolled
+off the bottom.
+
+Mouse-wheel up/down on the grid (`ListControl`) increments/decrements
+`_scroll_offset`. The visible slice is calculated as:
+
+```
+visible_capacity = H - (1 if _scroll_offset > 0 else 0)
+max_offset       = max(0, total - visible_capacity)
+_scroll_offset   = max(0, min(_scroll_offset, max_offset))
+anchor_idx       = total - 1 - _scroll_offset
+start_idx        = max(0, anchor_idx - (visible_capacity - 1))
+```
+
+**Sticky bottom on new rows:** when `_scroll_offset > 0` and a state reload
+adds `delta` new rows, `_scroll_offset` is increased by `delta` (clamped to
+`max_offset`) so the previously-visible rows stay in view rather than
+shifting up.
+
+### Indicator variants
+
+| Condition                                | Text               | Clickable                               |
+|------------------------------------------|--------------------|-----------------------------------------|
+| `_scroll_offset > 0`                     | `↓ N newer rows`   | Yes — resets offset to 0 (live bottom) |
+| `_scroll_offset == 0` and `total > H`    | `↓ N more rows`    | No — informational only                |
+
+The indicator occupies a dedicated 1-row `ConditionalContainer` below the grid
+window, hidden when neither condition holds.
+
+## Polling and redraw cadence
+
+- **State poll:** `os.stat(bridge/buffs.state).st_mtime` checked every 100 ms.
+  On mtime change: reload JSON, recalculate scroll offset, call
+  `app.invalidate()`.
+- **Blink tick:** `asyncio` task that sleeps `1.0 - frac + 0.01` seconds,
+  waking just after the wall-clock second boundary. Calls `app.invalidate()`
+  each cycle so blink phase transitions are synchronised to wall-clock seconds
+  and both halves remain equal length.
 
 ## Position
 
@@ -131,9 +198,9 @@ vertical order.
 | Launcher Options        | `_save_conf` → `startup.conf show_buffs`         |
 | In-game popup → Options | `toggle_pane.sh buffs --persist`                 |
 
-Persistence key: `show_buffs` in `bridge/startup.conf`. Fresh-install
-default is `0` (pane closed). Existing installs without the key fall
-through to the `${show_buffs:-0}` runtime guard — no change on upgrade.
+Persistence key: `show_buffs` in `bridge/startup.conf`. Fresh-install default
+is `0` (pane closed). Existing installs without the key fall through to the
+`${show_buffs:-0}` runtime guard — no change on upgrade.
 
 The BUFFS button in the input-pane menu bar reflects the current pane state
 (ON / OFF colour). Button state is polled from `startup.conf` every 250 ms
@@ -152,6 +219,23 @@ regardless of whether the buffs pane is open. The data layer is independent
 of the visualisation layer.
 
 See [`docs/affects.md`](affects.md) for the full data-layer specification.
+
+## Staleness checklist
+
+Items spotted during the 2026-05-03 docs refresh that were not fixed in this
+pass. Delete entries as they are resolved.
+
+- `docs/status-pane.md` §"Layout integration / Pane position" says
+  `status` → `ui` → `dev`; should include `buffs` and `comm` in between
+  now that both panes exist.
+- `docs/status-pane.md` §"Future steps" mentions adding a game-time row as a
+  future task; `game_time` / `time_period` / `time_remaining` are already in
+  the `status.state` schema and rendered.
+- `docs/status-pane.md` opening "Step 3 of a multi-step redesign…" banner is
+  historical — all three steps are complete. Consider replacing with a plain
+  description.
+- `docs/launcher.md` §Profile-page table contains "(Phase 2)" parenthetical
+  referring to a completed launch phase; the note can be dropped.
 
 ---
 Back to [architecture.md](../architecture.md).

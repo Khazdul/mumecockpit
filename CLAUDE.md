@@ -17,15 +17,22 @@ with a scripting brain on top.
   involved; do not rely on memory for tt++ behaviour.
 - `docs/ui-messaging.md` — UI helpers and style rules.
 - `docs/gmcp.md` — GMCP modules, schemas, negotiation.
+- `docs/events.md` — event bus API and catalogue.
 - `docs/ipc.md` — tt++ ↔ Lua IPC patterns.
 - `docs/session-lifecycle.md` — SESSION events, game session tracking.
 - `docs/input-pane.md` — Enter semantics, recall, history, key forwarding.
+- `docs/status-pane.md` — character status pane: renderer, schema, field layout.
+- `docs/buffs-pane.md` — buffs pane: renderer, grouping, palette, blink, scroll.
+- `docs/comm-pane.md` — comm pane: renderer, comm.state schema, filter persistence.
+- `docs/clock.md` — game clock: sync sources, state schema, degradation rules.
+- `docs/affects.md` — affect tracker: data flow, schemas, persistence, tick lifecycle.
 - `docs/launcher.md` — pre-tmux menu rendering and flow.
 - `docs/popup-menu.md` — in-game ESC popup (ingame_menu.sh).
 - `docs/bridge-services.md` — ping monitor, version check, self-update.
+- `docs/tmux-bindings.md` — tmux root-table bindings, mouse model, clipboard.
+- `docs/release-process.md` — release runbook: version bump, tagging, GitHub release.
+- `docs/install-bootstrap.md` — cross-platform install and bootstrap plan.
 - `docs/decisions/` — Architecture Decision Records (append-only).
-
-(Files under docs/ are created by a later task; not all exist yet.)
 
 ## Rules of thumb
 

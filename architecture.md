@@ -25,10 +25,13 @@ tracking, and UI feedback.
 ├── ttpp/
 │   ├── main.tin          # tt++ entry point — auto-loads all of core/
 │   ├── core/             # System modules (.tin files), auto-loaded
-│   │                     #   config.tin  — reads startup.conf → _profile/_host/_port/_ses_cmd
-│   │                     #   gmcp.tin    — GMCP telnet negotiation and Lua dispatch
-│   │                     #   system.tin  — connection aliases, cp commands, session events
-│   │                     #   welcome.tin — clean boot banner + auto-connect
+│   │                     #   affects.tin    — affect trigger registration (per session, cp -r)
+│   │                     #   clock.tin      — 4 Hz clock ticker + game-time sync actions
+│   │                     #   config.tin     — reads startup.conf → _profile/_host/_port/_ses_cmd
+│   │                     #   gmcp.tin       — GMCP telnet negotiation and Lua dispatch
+│   │                     #   mud_events.tin — core MUD triggers → Lua event bus (priority 3)
+│   │                     #   system.tin     — connection aliases, cp commands, session events
+│   │                     #   welcome.tin    — clean boot banner + auto-connect
 │   └── sessions/         # Per-profile personal settings (.tin files)
 │
 ├── lua/
@@ -36,10 +39,13 @@ tracking, and UI feedback.
 │   ├── lib/              # Bundled Lua libraries (on package.path)
 │   │                     #   dkjson.lua  — pure-Lua JSON parser (MIT, David Kolf)
 │   ├── core/             # Always-on GMCP collectors — no alias, no register_script
-│   │                     #   comm_log.lua   — Comm.Channel.Text/List → state.comm history/channels
-│   │                     #   comm_state.lua — wraps comm_log handlers; serialises history and
-│   │                     #                   channels to bridge/comm.state; reads bridge/comm.state
-│   │                     #                   at load to survive cp -r
+│   │                     #   affects.lua     — affect tracker; state.char.affects; affect events
+│   │                     #   buffs_state.lua — serialises state.char.affects → bridge/buffs.state
+│   │                     #   comm_log.lua    — Comm.Channel.Text/List → state.comm history/channels
+│   │                     #   comm_state.lua  — wraps comm_log handlers; serialises history and
+│   │                     #                    channels to bridge/comm.state; reads bridge/comm.state
+│   │                     #                    at load to survive cp -r
+│   │                     #   (see CLAUDE.md and per-area docs/*.md for exhaustive listing)
 │   └── scripts/          # Opt-in automation modules — must call register_script(meta)
 │
 ├── bridge/
@@ -50,6 +56,9 @@ tracking, and UI feedback.
 │   │                         #   (called by cp aliases and in-game popup)
 │   ├── version_check.sh      # Queries GitHub for latest tag; updates
 │   │                         #   bridge/version.cache with 6h TTL
+│   ├── check_release.sh      # Pre-tag sanity check — verifies VERSION matches intended tag
+│   ├── update.sh             # Safe self-update runner (fetch, unpack, install)
+│   ├── apply_layout.sh       # Re-applies saved layout after resize or pane toggle
 │   ├── read_config.sh        # Emits tt++ #var assignments from startup.conf
 │   ├── quotes.txt            # Tolkien quotes shown on main menu (pipe-sep format)
 │   ├── about.txt             # About page body text
@@ -57,6 +66,7 @@ tracking, and UI feedback.
 │   ├── open_pane.sh          # Opens/manages tmux panes dynamically
 │   ├── input_pane.py         # Input pane — prompt_toolkit CLI, forwards to TT++, right-aligned menu bar (CHAR/BUFFS/COM/UI + clock)
 │   ├── comm_pane.py          # Comm pane — clickable channel-filter header + scrollable history
+│   ├── buffs_pane.py         # Buffs pane — prompt_toolkit affect grid (grouped, bar drain, blink)
 │   ├── status_pane.py        # Status pane — flicker-free ANSI renderer, polls status.state
 │   ├── focus_input.sh        # Resolves input pane index at click time (MouseUp1Pane target)
 │   ├── on_window_resize.sh   # Fired on terminal resize — re-applies stored layout
@@ -72,6 +82,7 @@ tracking, and UI feedback.
 │   ├── comm.state            # Comm history + channel projection (gitignored)
 │   ├── comm_filters.conf     # Persisted channel filter overrides, sparse map (gitignored)
 │   ├── status.state          # Character status JSON written by status_state.lua (gitignored)
+│   ├── buffs.state           # Affect grid snapshot written by buffs_state.lua (gitignored)
 │   ├── version.cache         # Cached latest-release tag (gitignored)
 │   └── startup.conf          # Persisted startup-menu state (gitignored)
 │
@@ -320,32 +331,31 @@ implementations, `cp -s` internals, and toggle-pane persistence details.
 
 ## Current Work
 
-Active work and pending features. Completed infrastructure is not listed
-here — it's described in the relevant `docs/*.md` and visible in the
-"See also" block at the bottom.
+Planned features — details deferred to design conversations when work begins.
 
-- [ ] GMCP disconnect flow (Core.Goodbye + SESSION DISCONNECTED →
-      popup with mode-aware reconnect)
-- [ ] Live-server connection and real-server trigger mapping
-- [ ] Spell timer system
-- [x] Affect tracker (data layer complete)
-- [x] Buffs pane renderer (`bridge/buffs_pane.py` + `lua/core/buffs_state.lua`)
-- [ ] Tells history UI
-- [ ] PvP keybinds finalized
-- [x] Self-update flow validated end-to-end (v0.2.1–v0.2.6, 2026-04-28)
+**Session progress tracker**
+Captures per-session telemetry: profile, start/end time, duration, unique
+kills with XP per kill, PKs, possibly quest achievements, deaths, and
+party members. Auto-enables session logging on start. Surfaces a session
+summary in the in-game popup at quit and reload, with optional mid-session
+statistics. Adds a "History" submenu in the launcher listing prior
+sessions and opening per-session detail popups.
+Phase 1: capture and persist per-session data files.
+Phase 2: visualisation in launcher and popup.
 
-## Parked
+**Gameplay layout presets in the launcher**
+A new "Gameplay layout" launcher submenu with three presets: Classic
+(minimalist baseline), PK with subs (loads PvP-tuned highlights and
+substitutions as core settings), Roleplay (long descriptions, themed
+colouring). Each preset has an inline preview area showing the resulting
+look — provisional layout: Back / Classic / PK / Roleplay tabs across
+the top with a preview pane below.
 
-Deferred until there's a concrete use case:
-
-- Periodic profile auto-save for ungraceful-exit coverage
-  (terminal close, kill, crash) — see
-  [docs/session-lifecycle.md](docs/session-lifecycle.md).
-- Reset-layout-to-defaults option in launcher Options
-- Live script dashboard (IDLE / RUNNING / FIRING tags)
-- Stop-all-scripts emergency button
-- Pane dimming for inactive panes
-- MMapper auto-detection (probe `localhost:4242` from WSL, default `connection_mode` accordingly) — see `docs/install-bootstrap.md`.
+**Getting Started page in the launcher**
+First-time-user landing content: which docs/pages to read first,
+a short narrative on getting started with MUME, and worked examples
+of basic tt++ customisation (#alias for targeting, doors, spells;
+#macro and #highlight basics; simple #action / #sub patterns).
 
 ## See also
 
