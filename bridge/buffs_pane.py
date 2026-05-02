@@ -3,7 +3,7 @@
 # 4-per-row coloured grid grouped by type: spells (blue), buffs (green),
 # debuffs (red). Within each group: untimed first (alphabetical), then timed
 # by expires_at descending (alphabetical tie-break). Empty groups produce no
-# rows. Overflow indicator on last row when total rows exceed pane height.
+# rows. Row-based scroll via mouse wheel; sticky-bottom; overflow indicator.
 
 try:
     from prompt_toolkit import Application
@@ -12,6 +12,7 @@ try:
     from prompt_toolkit.layout import Layout
     from prompt_toolkit.layout.containers import ConditionalContainer, HSplit, Window
     from prompt_toolkit.layout.controls import FormattedTextControl
+    from prompt_toolkit.mouse_events import MouseEventType
     from prompt_toolkit.output import ColorDepth
 except ImportError:
     print("Error: prompt_toolkit is not installed.")
@@ -58,9 +59,10 @@ _PALETTES = {
     "debuff": (C_CELL_FG + " " + C_DEBUFF_FILL_BG,  C_DEBUFF_SEP_FG + " bg:#000000"),
 }
 
-_affects    = []
-_last_mtime = None
-_app        = None
+_affects       = []
+_last_mtime    = None
+_app           = None
+_scroll_offset = 0   # 0 = bottom (live-follow); N = N newer rows hidden
 
 
 def _term_rows():
@@ -108,13 +110,6 @@ def _total_rows(spells, buffs, debuffs):
     )
 
 
-def _is_overflow():
-    if not _affects:
-        return False
-    H = max(1, _term_rows())
-    return _total_rows(*_split_groups()) > H
-
-
 def _cell_frags(entry, cell_w, palette):
     filled_style, sep_style = palette
     now               = time.time()
@@ -155,19 +150,13 @@ def _cell_frags(entry, cell_w, palette):
     return frags
 
 
-def _grid_text():
+def _build_all_rows():
+    """Return every grid row as a list of fragment-lists (one per row)."""
     spells, buffs, debuffs = _split_groups()
     W      = max(4, _term_cols())
-    H      = max(1, _term_rows())
     widths = _cell_widths(W)
 
-    total        = _total_rows(spells, buffs, debuffs)
-    overflow     = total > H
-    visible_rows = (H - 1) if overflow else total
-
-    frags        = []
-    rows_emitted = 0
-
+    all_rows = []
     for group, palette in (
         (spells,  _PALETTES["spell"]),
         (buffs,   _PALETTES["buff"]),
@@ -176,31 +165,93 @@ def _grid_text():
         if not group:
             continue
         n = len(group)
-        group_rows = math.ceil(n / 4)
-        for row in range(group_rows):
-            if rows_emitted >= visible_rows:
-                break
-            if rows_emitted > 0:
-                frags.append(("", "\n"))
+        for row in range(math.ceil(n / 4)):
+            row_frags = []
             for col in range(4):
                 idx = row * 4 + col
                 if idx >= n:
                     break
-                frags.extend(_cell_frags(group[idx], widths[col], palette))
-            rows_emitted += 1
+                row_frags.extend(_cell_frags(group[idx], widths[col], palette))
+            all_rows.append(row_frags)
+
+    return all_rows
+
+
+def _grid_text():
+    global _scroll_offset
+
+    H        = max(1, _term_rows())
+    all_rows = _build_all_rows()
+    total    = len(all_rows)
+
+    if total == 0:
+        return []
+
+    visible_capacity = max(1, H - (1 if _scroll_offset > 0 else 0))
+    max_offset       = max(0, total - visible_capacity)
+    _scroll_offset   = max(0, min(_scroll_offset, max_offset))
+
+    anchor_idx = total - 1 - _scroll_offset
+    start_idx  = max(0, anchor_idx - (visible_capacity - 1))
+    visible    = all_rows[start_idx : anchor_idx + 1]
+
+    frags = []
+    for i, row_frags in enumerate(visible):
+        if i > 0:
+            frags.append(("", "\n"))
+        frags.extend(row_frags)
 
     return frags
 
 
 def _indicator_text():
-    if not _affects:
-        return []
-    H = max(1, _term_rows())
+    H     = max(1, _term_rows())
     total = _total_rows(*_split_groups())
-    if total <= H:
-        return []
-    hidden = total - (H - 1)
-    return [(C_INDICATOR, f"↓ {hidden} more rows")]
+
+    if _scroll_offset > 0:
+        def _handler(mouse_event):
+            global _scroll_offset
+            if mouse_event.event_type == MouseEventType.MOUSE_DOWN:
+                _scroll_offset = 0
+                if _app:
+                    _app.invalidate()
+        return [(C_INDICATOR, f"↓ {_scroll_offset} newer rows", _handler)]
+
+    if total > H:
+        hidden = total - (H - 1)
+        return [(C_INDICATOR, f"↓ {hidden} more rows")]
+
+    return []
+
+
+class ListControl(FormattedTextControl):
+    def mouse_handler(self, mouse_event):
+        global _scroll_offset
+        if mouse_event.event_type == MouseEventType.SCROLL_UP:
+            spells, buffs, debuffs = _split_groups()
+            total            = _total_rows(spells, buffs, debuffs)
+            H                = max(1, _term_rows())
+            visible_capacity = max(1, H - (1 if _scroll_offset > 0 else 0))
+            max_offset       = max(0, total - visible_capacity)
+            _scroll_offset   = min(_scroll_offset + 1, max_offset)
+            if _app:
+                _app.invalidate()
+            return None
+        if mouse_event.event_type == MouseEventType.SCROLL_DOWN:
+            if _scroll_offset > 0:
+                _scroll_offset -= 1
+            if _app:
+                _app.invalidate()
+            return None
+        return super().mouse_handler(mouse_event)
+
+
+def _anchor_bottom(window):
+    """Pin list content to the bottom of the window (clip-top for overflow)."""
+    info = window.render_info
+    if info is None:
+        return 0
+    return max(0, info.content_height - info.window_height)
 
 
 def _restore_cursor():
@@ -209,7 +260,7 @@ def _restore_cursor():
 
 
 async def _poll_state(app):
-    global _affects, _last_mtime
+    global _affects, _last_mtime, _scroll_offset
 
     while True:
         try:
@@ -223,10 +274,20 @@ async def _poll_state(app):
                 try:
                     with open(BUFFS_STATE_PATH, "r") as fh:
                         loaded = json.load(fh)
-                    if isinstance(loaded, list):
-                        _affects = loaded
+                    new_affects = loaded if isinstance(loaded, list) else []
+
+                    if _scroll_offset > 0:
+                        old_total = _total_rows(*_split_groups())
+                        _affects  = new_affects
+                        new_total = _total_rows(*_split_groups())
+                        delta = new_total - old_total
+                        if delta > 0:
+                            H                = max(1, _term_rows())
+                            visible_capacity = max(1, H - 1)
+                            max_offset       = max(0, new_total - visible_capacity)
+                            _scroll_offset   = min(_scroll_offset + delta, max_offset)
                     else:
-                        _affects = []
+                        _affects = new_affects
                 except Exception:
                     pass
             else:
@@ -237,9 +298,10 @@ async def _poll_state(app):
 
 
 async def _tick(app):
-    """Unconditional 1 Hz redraw — keeps sort order fresh as expires_at values move."""
+    """Invalidate just after each wall-clock second boundary so blink halves stay equal."""
     while True:
-        await asyncio.sleep(1.0)
+        now = time.time()
+        await asyncio.sleep(1.0 - (now - int(now)) + 0.01)
         app.invalidate()
 
 
@@ -260,7 +322,8 @@ def main():
     atexit.register(_restore_cursor)
 
     grid_window = Window(
-        content=FormattedTextControl(text=_grid_text, focusable=False),
+        content=ListControl(text=_grid_text, focusable=False),
+        get_vertical_scroll=_anchor_bottom,
     )
 
     indicator_container = ConditionalContainer(
@@ -269,7 +332,7 @@ def main():
             height=1,
             dont_extend_height=True,
         ),
-        filter=Condition(_is_overflow),
+        filter=Condition(lambda: _scroll_offset > 0 or _total_rows(*_split_groups()) > _term_rows()),
     )
 
     root   = HSplit([grid_window, indicator_container])
@@ -279,7 +342,7 @@ def main():
         layout=layout,
         key_bindings=kb,
         full_screen=True,
-        mouse_support=False,
+        mouse_support=True,
         color_depth=ColorDepth.DEPTH_24_BIT,
     )
     _app = app
