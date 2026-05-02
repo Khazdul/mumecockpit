@@ -7,8 +7,8 @@ layout, or layout integration.
 
 **Step 3 of a multi-step redesign.** Step 1 replaced the old gold-framed box
 with two progress-bar rows. Step 2 adds four data rows below them (race/level,
-mood/sess-xp, alertness/sess-tp, position/wimpy). Step 3 adds a blank separator
-row and four toggle-box cells (sneak/ride/climb/swim) below the data block.
+mood/sess-xp, alertness/sess-tp, position/wimpy). Step 3 adds four toggle-box
+cells (sneak/ride/climb/swim) directly below the data block.
 
 ## Architecture
 
@@ -44,7 +44,7 @@ identity intact so cached references elsewhere stay valid. The `status_state.lua
 wrapper around `state.char.reset` then calls `serialize()`, producing a single
 atomic write to `bridge/status.state` with all character fields null. The
 renderer displays `—` for null name and empty bars for null progress. Data rows
-render as label-only (empty value cells). Pane height stays at `STATIC_ROWS = 6`
+render as label-only (empty value cells). Pane height stays at `STATIC_ROWS = 11`
 within one poll tick (≤ 50 ms).
 
 ### cp -r partial blank
@@ -159,14 +159,12 @@ Constants defined at the top of `bridge/status_pane.py`:
 | `C_TP_FG` | `\x1b[38;2;0;40;50m`    | TP bar `▀` foreground (RGB 0,40,50)               |
 | `C_LABEL`         | `\x1b[38;2;128;128;128m`    | Data row label foreground (RGB 128,128,128)          |
 | `C_VALUE`         | `\x1b[38;2;192;192;192m`    | Data row value foreground (RGB 192,192,192)          |
-| `C_TOG_OFF_BG`    | `\x1b[48;2;0;30;40m`        | Toggle box background — off state (RGB 0,30,40)       |
-| `C_TOG_OFF_LABEL` | `\x1b[38;2;128;128;128m`    | Toggle label foreground — off state (RGB 128,128,128) |
-| `C_TOG_OFF_FILL`  | `\x1b[38;2;0;30;40m`        | Toggle █ foreground — off state (RGB 0,30,40)         |
-| `C_TOG_OFF_ICON`  | `\x1b[38;2;0;0;0m`          | Toggle ● foreground — off state (RGB 0,0,0 black)     |
-| `C_TOG_ON_BG`     | `\x1b[48;2;2;82;112m`       | Toggle box background — on state (RGB 2,82,112)       |
-| `C_TOG_ON_LABEL`  | `\x1b[38;2;222;222;222m`    | Toggle label foreground — on state (RGB 222,222,222)  |
-| `C_TOG_ON_FILL`   | `\x1b[38;2;2;82;112m`       | Toggle █ foreground — on state (RGB 2,82,112)         |
-| `C_TOG_ON_ICON`   | `\x1b[38;2;255;255;255m`    | Toggle ● foreground — on state (RGB 255,255,255 white)|
+| `C_TOG_OFF_BG`    | `\x1b[48;2;0;0;0m`          | Toggle box background — off state (RGB 0,0,0 black)          |
+| `C_TOG_OFF_LABEL` | `\x1b[38;2;25;25;25m`       | Toggle label foreground — off state (RGB 25,25,25)           |
+| `C_TOG_OFF_FILL`  | `\x1b[38;2;0;0;0m`          | Toggle █ foreground — off state (RGB 0,0,0 black)            |
+| `C_TOG_ON_BG`     | `\x1b[48;2;0;0;0m`          | Toggle box background — on state (RGB 0,0,0 black)           |
+| `C_TOG_ON_LABEL`  | `\x1b[38;2;192;192;192m`    | Toggle label foreground — on state (RGB 192,192,192)         |
+| `C_TOG_ON_FILL`   | `\x1b[38;2;0;0;0m`          | Toggle █ foreground — on state (RGB 0,0,0 black)             |
 
 
 ## Identity
@@ -196,7 +194,33 @@ rendered inside the pane content.
   (RGB 0,40,50), no background.
 - Remaining columns: space characters, no colour.
 
-### Rows 3–6 — four data rows (4-column layout)
+### Row 3 — four toggle-box cells (4-column layout)
+
+Same `_col_widths(W)` distribution and 1-char mid-spacer as the data rows. Each
+cell is laid out as `[icon][label][█-pad]`:
+
+- **label**: toggle name in uppercase (`SNEAK`, `RIDE`, `CLIMB`, `SWIM`).
+- **block-pad**: `col_w - len(label)` trailing `█` chars (min 0).
+
+Both states share a black background (`C_TOG_*_BG = RGB 0,0,0`). The `█` pad
+is also black, so it blends with the terminal background. State is communicated
+entirely through label colour: off uses a near-invisible dark label
+(`RGB 25,25,25`); on uses a light label (`RGB 192,192,192`).
+
+| Col | Toggle | Off colours                                                             | On colours                                                            |
+|-----|--------|-------------------------------------------------------------------------|-----------------------------------------------------------------------|
+| 0   | SNEAK  | label `C_TOG_OFF_LABEL` (dark grey)                                     | label `C_TOG_ON_LABEL` (light)                                        |
+| 1   | RIDE   | same                                                                    | same                                                                  |
+| 2   | CLIMB  | same                                                                    | same                                                                  |
+| 3   | SWIM   | same                                                                    | same                                                                  |
+
+Missing or `"off"` value → cell renders in off state. `"on"` → on state.
+
+### Row 4 — blank separator
+
+Plain `" " * W` — no SGR.
+
+### Rows 5–8 — four data rows (4-column layout)
 
 `W = pane width`. Four columns sized by `_col_widths(W)`:
 
@@ -211,10 +235,10 @@ exactly W visible characters; no trailing padding ever needed.
 
 | Row | Col 1 (label) | Col 2 (value)            | Col 3 (label) | Col 4 (value)              |
 |-----|---------------|--------------------------|---------------|----------------------------|
-| 3   | `RACE:`       | `race`                   | `LEVEL:`      | `level` (bare int)         |
-| 4   | `MOOD:`       | `mood`                   | `SES-XP:`     | `session_xp` (fmt_sess)    |
-| 5   | `ALERTNESS:`  | `alertness`              | `SES-TP:`     | `session_tp` (fmt_sess)    |
-| 6   | `POSITION:`   | `position`               | `WIMPY:`      | `wimpy` (bare int)         |
+| 5   | `RACE:`       | `race`                   | `LEVEL:`      | `level` (bare int)         |
+| 6   | `MOOD:`       | `mood`                   | `SES-XP:`     | `session_xp` (fmt_sess)    |
+| 7   | `ALERTNESS:`  | `alertness`              | `SES-TP:`     | `session_tp` (fmt_sess)    |
+| 8   | `POSITION:`   | `position`               | `WIMPY:`      | `wimpy` (bare int)         |
 
 Labels are truncated preserving the trailing colon; values are lowercased and
 sliced. Null/missing values render as empty string (label + col-width spaces).
@@ -224,34 +248,6 @@ below. `level` and `wimpy` are bare integers.
 Label foreground: `C_LABEL` (RGB 128,128,128). Value foreground: `C_VALUE`
 (RGB 192,192,192). `C_RESET` between each value and the next label; spacer has
 no SGR.
-
-### Row 7 — blank separator
-
-Plain `" " * W` — no SGR.
-
-### Row 8–11 — four toggle-box cells (4-column layout)
-
-Same `_col_widths(W)` distribution and 1-char mid-spacer as the data rows. Each
-cell is laid out as `[icon][label][█-pad]`:
-
-- **icon**: `●` (U+25CF) in both states — on/off is signalled by colour only.
-- **label**: toggle name in uppercase (`SNEAK`, `RIDE`, `CLIMB`, `SWIM`).
-- **block-pad**: `col_w - 1 - len(label)` trailing `█` chars (min 0).
-
-The box background (`C_TOG_*_BG`) is set before the icon, so the icon sits on
-the same coloured rectangle as the label — the whole cell reads as one
-continuous coloured pill. `C_RESET` after the label resets the background before
-the `█` pad, which then paints itself solid via its foreground colour
-(`C_TOG_*_FILL`) against the terminal default.
-
-| Col | Toggle | Off colours                                                        | On colours                                                       |
-|-----|--------|--------------------------------------------------------------------|------------------------------------------------------------------|
-| 0   | SNEAK  | bg `C_TOG_OFF_BG`, icon `C_TOG_OFF_ICON` (black), label `C_TOG_OFF_LABEL`, pad `C_TOG_OFF_FILL` | bg `C_TOG_ON_BG`, icon `C_TOG_ON_ICON` (white), label `C_TOG_ON_LABEL`, pad `C_TOG_ON_FILL` |
-| 1   | RIDE   | same                                                               | same                                                             |
-| 2   | CLIMB  | same                                                               | same                                                             |
-| 3   | SWIM   | same                                                               | same                                                             |
-
-Missing or `"off"` value → cell renders in off state. `"on"` → on state.
 
 ### Bootstrap behaviour
 
@@ -279,7 +275,7 @@ of the right column whenever it exists.
 sets `STATIC_ROWS = 11` and rewrites `layout.conf` + calls `apply_layout.sh`
 whenever `STATIC_ROWS` changes, so adding a new row in `_build_frame` is a
 two-place update (Python + Lua constant). Current breakdown: 2 progress-bar
-rows + 4 data rows + 1 blank separator + 4 toggle rows = 11 total.
+rows + 1 toggle row + 1 blank separator + 4 data rows = 11 total.
 
 ### Width constraint
 

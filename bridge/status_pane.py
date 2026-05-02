@@ -29,15 +29,13 @@ C_TP_FG  = "\x1b[38;2;0;40;50m"      # TP bar ▀ foreground
 C_LABEL  = "\x1b[38;2;128;128;128m"   # data row label foreground
 C_VALUE  = "\x1b[38;2;192;192;192m"   # data row value foreground
 
-C_TOG_OFF_BG    = "\x1b[48;2;0;30;40m"      # box bg (off)
-C_TOG_OFF_LABEL = "\x1b[38;2;128;128;128m"  # label fg (off)
-C_TOG_OFF_FILL  = "\x1b[38;2;0;30;40m"      # █ fg (off)
-C_TOG_OFF_ICON  = "\x1b[38;2;0;0;0m"        # ● fg (off) — black
+C_TOG_OFF_BG    = "\x1b[48;2;0;0;0m"        # box bg (off)
+C_TOG_OFF_LABEL = "\x1b[38;2;25;25;25m"    # label fg (off)
+C_TOG_OFF_FILL  = "\x1b[38;2;0;0;0m"        # █ fg (off)
 
-C_TOG_ON_BG     = "\x1b[48;2;2;82;112m"     # box bg (on)
-C_TOG_ON_LABEL  = "\x1b[38;2;222;222;222m"  # label fg (on)
-C_TOG_ON_FILL   = "\x1b[38;2;2;82;112m"     # █ fg (on)
-C_TOG_ON_ICON   = "\x1b[38;2;255;255;255m"  # ● fg (on) — white
+C_TOG_ON_BG     = "\x1b[48;2;0;0;0m"       # box bg (on)
+C_TOG_ON_LABEL  = "\x1b[38;2;192;192;192m"  # label fg (on)
+C_TOG_ON_FILL   = "\x1b[38;2;0;0;0m"        # █ fg (on)
 
 # ---------------------------------------------------------------------------
 # Renderer state
@@ -88,20 +86,17 @@ def _is_on(v):
 
 
 def _render_toggle(label, col_w, on):
-    icon      = "●"
-    label_eff = label[: max(col_w - 1, 0)]
-    pad       = "█" * max(col_w - 1 - len(label_eff), 0)
+    label_eff = label[: max(col_w, 0)]
+    pad       = "█" * max(col_w - len(label_eff), 0)
     if on:
         return (
-            C_TOG_ON_BG  + C_TOG_ON_ICON  + icon +
-                           C_TOG_ON_LABEL + label_eff +
+            C_TOG_ON_BG  + C_TOG_ON_LABEL  + label_eff +
             C_RESET +
             C_TOG_ON_FILL  + pad +
             C_RESET
         )
     return (
-        C_TOG_OFF_BG + C_TOG_OFF_ICON  + icon +
-                       C_TOG_OFF_LABEL + label_eff +
+        C_TOG_OFF_BG + C_TOG_OFF_LABEL + label_eff +
         C_RESET +
         C_TOG_OFF_FILL + pad +
         C_RESET
@@ -167,7 +162,7 @@ def _build_frame(data):
     row2 = C_TP_FG + "▀" * tp_fill + C_RESET + " " * (width - tp_fill)
 
     blank = " " * width
-    return [row1, row2] + _build_data_rows(c, width) + [blank, _build_toggles_row(c, width)]
+    return [row1, row2, _build_toggles_row(c, width), blank] + _build_data_rows(c, width)
 
 
 # ---------------------------------------------------------------------------
