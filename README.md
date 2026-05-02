@@ -84,10 +84,8 @@ graphical companion app — install it and the cockpit routes through it.
 ## Status
 
 Early but stable. The cockpit is in active development for a single
-player's daily use. Upcoming: session progress tracker, gameplay layout
-presets, and a Getting Started page in the launcher. PvP keybind defaults
-are still pending.
-See "Current Work" in [`architecture.md`](architecture.md).
+player's daily use. See "Current Work" in
+[`architecture.md`](architecture.md).
 
 Bug reports and feature requests welcome on
 [GitHub Issues](https://github.com/Khazdul/mumecockpit/issues).
