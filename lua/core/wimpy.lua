@@ -8,13 +8,14 @@ events.subscribe("wimpy_changed", function(raw)
     if not n then
         dbg("[WIMPY] parse fail: " .. tostring(raw))
         return
-    end
+    end    
+    
     state.char.wimpy = n
-    if n == 0 then
-        script_ui("WIMPY", "Removed.")
-    else
-        script_ui("WIMPY", "Set to " .. ui_var(n) .. ".")
-    end
+--    if n == 0 then
+--        script_ui("WIMPY", "Removed.")
+--    else
+--        script_ui("WIMPY", "Set to " .. ui_var(n) .. ".")
+--    end
 end)
 
 dbg("[WIMPY] loaded")
