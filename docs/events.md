@@ -58,6 +58,7 @@ event flow. Same pattern as `gmcp.trace`.
 | `affect_refresh` | affect name string | `ttpp/core/affects.tin` `#action` |
 | `affect_down` | affect name string | `ttpp/core/affects.tin` `#action` |
 | `affects_changed` | (none) | `lua/core/affects.lua` — emitted on every state mutation and every tick |
+| `wimpy_changed` | numeric string (`"0"`..`"N"`) | `ttpp/core/mud_events.tin` |
 
 ### `mob_death`
 
@@ -167,6 +168,24 @@ Subscribers should read `state.char.affects` directly for the new state.
 **Subscribers:** `lua/core/status_state.lua` — calls `serialize()` to update
 `bridge/status.state` and rewrite `status_height` in `bridge/layout.conf`
 when the affect count changes.
+
+### `wimpy_changed`
+
+Emitted by two patterns in `ttpp/core/mud_events.tin`. Payload is always a
+numeric string — `"0"` when wimpy is disabled, `"N"` (the integer threshold)
+when set.
+
+| Pattern | Payload |
+|---------|---------|
+| `^Wimpy removed.$` | `"0"` |
+| `^Wimpy set to: %1$` | captured digit string |
+
+The Lua subscriber parses the string to a number and stores it in
+`state.char.wimpy` (including `0` for disabled — the future character-pane
+renderer distinguishes `0` from absent).
+
+**Subscribers:** `lua/core/wimpy.lua` — updates `state.char.wimpy`, emits
+`script_ui("WIMPY", ...)`.
 
 ## Adding a new event
 
