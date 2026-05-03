@@ -1,58 +1,68 @@
-# Character Status pane renderer.
-#
-# Polls bridge/status.state (JSON) every 50 ms via mtime comparison.
-# Redraws in-place using ANSI sequences — no ESC[2J, no flicker.
-# Width is read from the live pane size (shutil.get_terminal_size) on every
-# render; SIGWINCH sets a dirty flag so the next poll tick redraws.
-# Minimum useful width: 29 columns (enforced by the bridge, not here).
+#!/usr/bin/env python3
+# bridge/status_pane.py — character status pane renderer.
+# prompt_toolkit Application; polls bridge/status.state every 50 ms.
+# Anchor-top: top rows always visible; overflow indicator when clipped.
 
+try:
+    from prompt_toolkit import Application
+    from prompt_toolkit.filters import Condition
+    from prompt_toolkit.formatted_text import ANSI, to_formatted_text
+    from prompt_toolkit.key_binding import KeyBindings
+    from prompt_toolkit.layout import Layout
+    from prompt_toolkit.layout.containers import ConditionalContainer, HSplit, Window
+    from prompt_toolkit.layout.controls import FormattedTextControl
+    from prompt_toolkit.output import ColorDepth
+except ImportError:
+    print("Error: prompt_toolkit is not installed.")
+    print("Run: pip install prompt_toolkit --break-system-packages")
+    exit(1)
+
+import asyncio
+import atexit
 import json
 import math
 import os
 import shutil
 import signal
 import sys
-import time
 
 STATE_PATH = os.path.join(os.environ["HOME"], "MUME", "bridge", "status.state")
-POLL_MS    = 0.05   # seconds between mtime checks
-MIN_WIDTH  = 29     # bridge enforces this floor; renderer trusts the pane size
+POLL_MS    = 0.05
 
 # ---------------------------------------------------------------------------
-# Colour constants (24-bit truecolor)
+# Colour constants (24-bit truecolor ANSI — consumed by _build_frame)
 # ---------------------------------------------------------------------------
 C_RESET  = "\x1b[0m"
 C_NAME   = "\x1b[38;2;192;192;192m"   # row 1 text (fg only)
-C_XP_BG  = "\x1b[48;2;0;30;40m"     # XP bar background
-C_BG_RST = "\x1b[49m"                 # reset background only (keep fg)
-C_TP_FG  = "\x1b[38;2;0;40;50m"      # TP bar ▀ foreground
+C_XP_BG  = "\x1b[48;2;0;30;40m"       # XP bar background
+C_BG_RST = "\x1b[49m"                  # reset background only (keep fg)
+C_TP_FG  = "\x1b[38;2;0;40;50m"       # TP bar ▀ foreground
 C_LABEL  = "\x1b[38;2;128;128;128m"   # data row label foreground
 C_VALUE  = "\x1b[38;2;192;192;192m"   # data row value foreground
 
-C_TOG_OFF_BG    = "\x1b[48;2;0;0;0m"        # box bg (off)
-C_TOG_OFF_LABEL = "\x1b[38;2;25;25;25m"    # label fg (off)
-C_TOG_OFF_FILL  = "\x1b[38;2;0;0;0m"        # █ fg (off)
+C_TOG_OFF_BG    = "\x1b[48;2;0;0;0m"
+C_TOG_OFF_LABEL = "\x1b[38;2;25;25;25m"
+C_TOG_OFF_FILL  = "\x1b[38;2;0;0;0m"
 
-C_TOG_ON_BG     = "\x1b[48;2;0;0;0m"       # box bg (on)
-C_TOG_ON_LABEL  = "\x1b[38;2;192;192;192m"  # label fg (on)
-C_TOG_ON_FILL   = "\x1b[38;2;0;0;0m"        # █ fg (on)
+C_TOG_ON_BG     = "\x1b[48;2;0;0;0m"
+C_TOG_ON_LABEL  = "\x1b[38;2;192;192;192m"
+C_TOG_ON_FILL   = "\x1b[38;2;0;0;0m"
+
+C_INDICATOR = "fg:#d4a04e italic"   # overflow indicator style
 
 # ---------------------------------------------------------------------------
 # Renderer state
 # ---------------------------------------------------------------------------
 _last_mtime = None
 _last_data  = None
-_dirty      = True   # True = force redraw even without mtime change
+_app        = None
 
 
-def _mark_dirty(signum, frame):
-    global _dirty
-    _dirty = True
-
-
-def _restore_cursor():
-    sys.stdout.write("\x1b[?25h")
-    sys.stdout.flush()
+def _term_rows():
+    try:
+        return os.get_terminal_size().lines
+    except OSError:
+        return 24
 
 
 # ---------------------------------------------------------------------------
@@ -138,63 +148,54 @@ def _build_data_rows(c, W):
     ]
 
 
-# ---------------------------------------------------------------------------
-# Frame builder
-# ---------------------------------------------------------------------------
 def _build_frame(data):
-    """Return list of lines (no newlines), each exactly `width` visible chars."""
+    """Return list of ANSI strings, one per row (no \\e[K/\\e[J/\\e[H)."""
     width = shutil.get_terminal_size().columns
     c = data or {}
 
-    # Row 1: centered name with left-anchored XP-progress background
     name = c.get("character") or "—"
     name = name.capitalize()
     if len(name) > width:
         name = name[:width]
-    padded   = name.center(width)
-    xp_prog  = c.get("xp_progress") or 0.0
-    fill     = int(math.floor(width * xp_prog))
-    row1 = C_NAME + C_XP_BG + padded[:fill] + C_BG_RST + padded[fill:] + C_RESET
+    padded  = name.center(width)
+    xp_prog = c.get("xp_progress") or 0.0
+    fill    = int(math.floor(width * xp_prog))
+    row1    = C_NAME + C_XP_BG + padded[:fill] + C_BG_RST + padded[fill:] + C_RESET
 
-    # Row 2: TP-progress ▀ thin bar
     tp_prog = c.get("tp_progress") or 0.0
     tp_fill = int(math.floor(width * tp_prog))
-    row2 = C_TP_FG + "▀" * tp_fill + C_RESET + " " * (width - tp_fill)
+    row2    = C_TP_FG + "▀" * tp_fill + C_RESET + " " * (width - tp_fill)
 
     blank = " " * width
     return [row1, row2, _build_toggles_row(c, width), blank] + _build_data_rows(c, width)
 
 
 # ---------------------------------------------------------------------------
-# Render one frame to stdout
+# prompt_toolkit text providers
 # ---------------------------------------------------------------------------
-def _render(lines):
-    out = ["\x1b[H"]
-    n = len(lines)
-    for i, ln in enumerate(lines):
-        out.append(ln)
-        out.append("\x1b[K")
-        if i < n - 1:
-            out.append("\n")
-    out.append("\x1b[J")
-    sys.stdout.write("".join(out))
+def _status_text():
+    frags = []
+    for i, row_ansi in enumerate(_build_frame(_last_data)):
+        if i > 0:
+            frags.append(("", "\n"))
+        frags.extend(to_formatted_text(ANSI(row_ansi)))
+    return frags
+
+
+def _indicator_text():
+    total = len(_build_frame(_last_data))
+    H     = _term_rows()
+    n     = total - (H - 1)
+    return [(C_INDICATOR, f"↓ {n} more rows")]
+
+
+def _restore_cursor():
+    sys.stdout.write("\x1b[?25h")
     sys.stdout.flush()
 
 
-# ---------------------------------------------------------------------------
-# Main loop
-# ---------------------------------------------------------------------------
-def main():
-    global _last_mtime, _last_data, _dirty
-
-    # Hide cursor; restore on SIGTERM/SIGINT
-    sys.stdout.write("\x1b[?25l")
-    sys.stdout.flush()
-
-    signal.signal(signal.SIGTERM, lambda s, f: (_restore_cursor(), sys.exit(0)))
-    signal.signal(signal.SIGWINCH, _mark_dirty)
-    # Ctrl+C in pane: stty -isig handles it; belt-and-suspenders ignore here.
-    signal.signal(signal.SIGINT, signal.SIG_IGN)
+async def _poll_state(app):
+    global _last_mtime, _last_data
 
     while True:
         try:
@@ -202,22 +203,76 @@ def main():
         except OSError:
             mtime = None
 
-        changed = mtime != _last_mtime
-        if changed:
+        if mtime != _last_mtime:
             _last_mtime = mtime
             if mtime is not None:
                 try:
                     with open(STATE_PATH, "r") as fh:
                         _last_data = json.load(fh)
                 except Exception:
-                    pass  # keep last good state; silent recovery
+                    pass
+            app.invalidate()
 
-        if changed or _dirty:
-            _dirty = False
-            lines = _build_frame(_last_data)
-            _render(lines)
+        await asyncio.sleep(POLL_MS)
 
-        time.sleep(POLL_MS)
+
+kb = KeyBindings()
+
+
+@kb.add("q")
+@kb.add("c-c")
+def _quit(event):
+    event.app.exit()
+
+
+def main():
+    global _app
+
+    sys.stdout.write("\x1b[?25l")
+    sys.stdout.flush()
+    atexit.register(_restore_cursor)
+
+    rows_window = Window(
+        content=FormattedTextControl(_status_text, focusable=False),
+        wrap_lines=False,
+    )
+
+    indicator_container = ConditionalContainer(
+        content=Window(
+            content=FormattedTextControl(_indicator_text, focusable=False),
+            height=1,
+            dont_extend_height=True,
+        ),
+        filter=Condition(lambda: len(_build_frame(_last_data)) > _term_rows()),
+    )
+
+    root   = HSplit([rows_window, indicator_container])
+    layout = Layout(root)
+
+    app = Application(
+        layout=layout,
+        key_bindings=kb,
+        full_screen=True,
+        mouse_support=True,
+        color_depth=ColorDepth.DEPTH_24_BIT,
+    )
+    _app = app
+
+    signal.signal(signal.SIGTERM, lambda s, f: (_restore_cursor(), sys.exit(0)))
+    signal.signal(signal.SIGINT,  signal.SIG_IGN)
+
+    async def _run():
+        poll_task = asyncio.ensure_future(_poll_state(app))
+        try:
+            await app.run_async()
+        finally:
+            poll_task.cancel()
+            try:
+                await poll_task
+            except asyncio.CancelledError:
+                pass
+
+    asyncio.run(_run())
 
 
 if __name__ == "__main__":

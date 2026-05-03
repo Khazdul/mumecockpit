@@ -23,8 +23,9 @@ GMCP payload ──► lua/core/char_state.lua ──► state.char.*
                                                    │
                                        mtime change │  50 ms poll
                                                    ▼
-                          bridge/status_pane.py (tail-like loop)
-                          redraws in-place via ANSI (no \e[2J)
+                          bridge/status_pane.py (prompt_toolkit
+                          Application; asyncio mtime poll task;
+                          anchor-top; overflow indicator)
 ```
 
 ### State flow
@@ -60,28 +61,41 @@ Full reconnect restores all fields.
 
 ### Polling
 
-`bridge/status_pane.py` polls `bridge/status.state` every 50 ms using
-`os.stat().st_mtime`. On mtime change it re-reads and re-renders. SIGWINCH
-sets a dirty flag; the next poll tick redraws even without mtime change.
+`bridge/status_pane.py` polls `bridge/status.state` every 50 ms via an asyncio
+task. On mtime change the task re-reads the file and calls `app.invalidate()`.
+SIGWINCH is handled automatically by prompt_toolkit; no dirty flag is needed.
 
 ### Rendering
 
-Same flicker-free rules as `bridge/launcher.sh` (see `docs/launcher.md`):
+`bridge/status_pane.py` is a `prompt_toolkit` full-screen `Application`
+(`mouse_support=True`, `full_screen=True`, `color_depth=ColorDepth.DEPTH_24_BIT`).
 
-- Cursor home (`\e[H`) at start of each redraw.
-- Each line followed by `\e[K` (clear to EOL).
-- `\e[J` at end (clear below last line).
-- Never `\e[2J`.
-- No trailing newline on last line.
-- Cursor hidden (`\e[?25l`) on start; restored on SIGTERM and normal exit.
+Row helpers (`_build_frame`, `_build_toggles_row`, `_build_data_rows`, etc.)
+still emit complete ANSI strings per row. Each string is wrapped with `ANSI(...)`
+and converted to fragments via `to_formatted_text(...)`. Rows are concatenated
+with `("", "\n")` separators in a `FormattedTextControl` inside a
+`Window(wrap_lines=False)`.
+
+Anchor-top: the rows window has no scroll. Top rows are always at row 0; excess
+rows are clipped at the bottom by the window boundary. Mouse wheel and clicks in
+the pane do nothing.
+
+### Overflow indicator
+
+A 1-row `ConditionalContainer` sits below the rows window. It is visible when
+`total_rows > pane_height`. When visible:
+
+- Text: `↓ N more rows` where `N = total_rows − (pane_height − 1)`.
+- Style: `fg:#d4a04e italic` (local constant `C_INDICATOR`).
+- Not clickable.
 
 ### Width
 
 The renderer reads its width from the live pane size on every frame via
-`shutil.get_terminal_size().columns`. SIGWINCH sets a dirty flag so the next
-poll tick redraws at the new width without a restart. The bridge layer enforces
-a minimum of **29 columns** (`RIGHT_MIN` in `on_window_resize.sh` and
-`apply_layout.sh`); the renderer itself trusts the reported size.
+`shutil.get_terminal_size().columns`. SIGWINCH triggers a prompt_toolkit
+re-render so the new width is applied immediately without a restart. The bridge
+layer enforces a minimum of **29 columns** (`RIGHT_MIN` in `on_window_resize.sh`
+and `apply_layout.sh`); the renderer itself trusts the reported size.
 
 ## State-file schema (`bridge/status.state`)
 
