@@ -456,12 +456,13 @@ def setup_mouse_binding():
         f"send-keys -X copy-pipe-and-cancel ; run-shell {focus}",
     ])
 
-    # Drag-end in a root-table pane (prompt_toolkit panes: comm, buffs)
-    # or any drag whose release didn't traverse copy-mode. --sweep cancels
-    # copy-mode on any other non-input pane left stuck by an outside release.
+    # Drag-end fires on the release pane, not the drag-start pane. A drag
+    # that starts in main/char/ui/dev and releases on input is not in copy-mode
+    # at release time, so the copy-mode binding does not fire. Drop the gate:
+    # any drag-end on input originated elsewhere and warrants sweep.
     subprocess.run([
         "tmux", "bind-key", "-n", "MouseDragEnd1Pane",
-        "if-shell", not_input, f"run-shell '{focus} --sweep'",
+        f"run-shell '{focus} --sweep'",
     ])
 
 

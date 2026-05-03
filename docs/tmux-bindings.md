@@ -26,7 +26,7 @@ from unexpected clicks) are disabled or overridden.
 | `MouseDragEnd1Border` | Resize panes (`on_pane_resize.sh`), then sweep + refocus input (`focus_input.sh --sweep`) | `bridge/tmux_start.sh` |
 | `MouseUp1Pane` | Refocus input pane (`focus_input.sh`), gated on `pane_title != input` | `bridge/input_pane.py` |
 | `MouseDragEnd1Pane` (copy-mode table) | Copy selection + refocus input (`focus_input.sh`) | `bridge/input_pane.py` |
-| `MouseDragEnd1Pane` (root table) | Sweep stuck copy-mode panes + refocus input (`focus_input.sh --sweep`), gated on `pane_title != input` | `bridge/input_pane.py` |
+| `MouseDragEnd1Pane` (root table) | Sweep stuck copy-mode panes + refocus input (`focus_input.sh --sweep`) | `bridge/input_pane.py` |
 | `MouseDragEnd1Status` | Sweep + refocus input (`focus_input.sh --sweep`) | `bridge/tmux_start.sh` |
 | `MouseDragEnd1StatusLeft` | Sweep + refocus input (`focus_input.sh --sweep`) | `bridge/tmux_start.sh` |
 | `MouseDragEnd1StatusRight` | Sweep + refocus input (`focus_input.sh --sweep`) | `bridge/tmux_start.sh` |
@@ -78,7 +78,7 @@ The fix is `focus_input.sh --sweep`, which iterates all panes in `mume:cockpit` 
 
 **Invariant:** after any drag-end, the input pane has tmux focus and no other pane is stuck in copy-mode with a stale selection.
 
-**Deliberate asymmetry:** `MouseUp1Pane` (plain click) does **not** use `--sweep`. Sweeping on click would cancel an in-progress scrollback session if the user clicks another pane while browsing history in the main pane. The sweep is restricted to drag-end events only.
+**Deliberate asymmetry:** `MouseUp1Pane` (plain click) does **not** use `--sweep`. Sweeping on click would cancel an in-progress scrollback session if the user clicks another pane while browsing history in the main pane. The sweep is restricted to drag-end events only. Within drag-end, `MouseUp1Pane` keeps its `pane_title != input` gate (a click on input is a local typing action) while `MouseDragEnd1Pane` (root table) has no gate — drag-end on the input pane necessarily originated in another pane and always warrants sweep.
 
 ## Page Up / Page Down from the input pane
 

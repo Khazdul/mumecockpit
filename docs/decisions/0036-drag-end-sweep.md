@@ -75,3 +75,7 @@ pane while browsing scrollback — a clear regression.
 - `docs/input-pane.md` — `setup_mouse_binding()` lifecycle.
 - ADR 0024 — why mouse bindings can be registered once for the lifetime of the session.
 - ADR 0025 — copy-mode-as-canonical-scrollback model that sweep semantics compose with.
+
+## Update 2026-05-03
+
+The `pane_title != input` gate was removed from the root-table `MouseDragEnd1Pane` binding. The gate was incorrect: drag-end fires on the **release** pane, not the drag-start pane. When a drag starts in main, char, ui, or dev (entering copy-mode) and is released on the input pane, the release pane is input — not in copy-mode — so the copy-mode binding does not fire. The root binding's gate then suppressed sweep, leaving the drag-source stuck in copy-mode with a stale selection. Sweep is always the correct response: drag-end on input necessarily originated in another pane. `MouseUp1Pane` retains its gate — a plain click on input is a local typing action and must not trigger tmux logic.
