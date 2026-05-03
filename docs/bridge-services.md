@@ -233,6 +233,7 @@ State is stored in `bridge/layout.conf` (gitignored, recreated on first startup)
 ## Gitignored runtime files
 
 ```
+bridge/buffs.state
 bridge/layout.conf
 bridge/session.state
 bridge/status.state

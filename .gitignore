@@ -16,6 +16,7 @@ logs/cmd_*.tin
 *.tmp
 
 bridge/dev/*.conf
+bridge/buffs.state
 bridge/clock.state
 bridge/comm.state
 bridge/comm_filters.conf
