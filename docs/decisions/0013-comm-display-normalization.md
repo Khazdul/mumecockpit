@@ -204,3 +204,45 @@ and the per-profile JSONL archive must remain a faithful record of what the serv
 sent. Stripping at any earlier stage would lose the original name, breaking
 re-renderability and diff-ability of archive entries. The renderer is the only
 place that owns the view; it is the correct and only place for this normalization.
+
+---
+
+## 2026-05-04 update — Timestamp visibility tied to scroll state
+
+**Rule:** When `_scroll_offset == 0` (live view), the `HH:MM` / `DD/MM` timestamp
+prefix is suppressed on every row. When `_scroll_offset > 0` (scrolled-back view),
+every visible row carries the timestamp in `C_TIME` style.
+
+**Why here:** The comm pane is typically narrow (25–40 columns). In the live view
+the user is watching new messages arrive in real time and does not need per-message
+time context — the session is happening now. Suppressing the timestamp frees 6
+characters of horizontal space, allowing longer messages to fit on fewer rows (e.g.
+a 29-column pane gains about one extra word per line). The scrolled-back view is
+used for review — the user is reading history and wants to know when each message
+was sent. Showing the timestamp there is the right trade-off.
+
+**Why `_scroll_offset` is the gate:** `_scroll_offset == 0` is already the
+authoritative signal for "live view". Deriving `with_time` directly from it keeps
+the coupling explicit and avoids a separate flag that could drift out of sync.
+
+**Why uniform per render pass:** `with_time = (_scroll_offset > 0)` is computed
+once in `_list_text` and once in the max_offset walk, then passed unchanged to
+every `_row_count` and `_entry_to_rows` call in that pass. This guarantees that
+layout measurement and rendering always agree on whether a row carries a timestamp.
+A per-entry decision (e.g. based on timestamp age relative to the view cutoff)
+would let layout and render diverge for entries near the top or bottom of the
+visible window, producing clipping or blank rows.
+
+**Accepted one-tick reflow:** The very first scroll-up tick transitions
+`with_time` from `False` to `True`. Rows that were wider without a timestamp now
+carry a 6-character prefix and may reflow to one extra line. This is a single
+visual jump on the first wheel tick. Compensating for it would require measuring
+both layouts simultaneously or delaying the toggle, which adds complexity for
+marginal benefit. The reflow is accepted.
+
+**`with_time` threads through `_entry_to_rows` and `_row_count`:** Both functions
+accept `with_time` as an explicit parameter and forward it to the render helpers
+(`_render_quoted_row`, `_render_action_row`). This is the convergence point
+established by the renderer-owns-wrapping ADR (see decisions directory): every
+callsite that measures row counts uses the exact same layout that the renderer
+will produce for those same entries. There is no separate measurement path.

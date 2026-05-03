@@ -271,23 +271,30 @@ lost.
 ### List
 
 The list `Window` has `wrap_lines=False`. The renderer owns line wrapping via
-`_entry_to_rows(entry, cols, channels)`, which is the single authority for how
-an entry is laid out. `_entry_to_rows` builds the flat fragment list with
-`_render_quoted_row` or `_render_action_row`, then passes it through
-`_wrap_fragments(fragments, cols)` to produce a list of display rows. Each row
-is a list of `(style, text)` fragments. `_list_text` joins rows within an entry
-with `"\n"` and entries with `"\n"` before feeding the fragment stream to the
-`Window`. prompt_toolkit never wraps — every `\n` in the stream is exactly one
-display row.
+`_entry_to_rows(entry, cols, channels, with_time)`, which is the single authority
+for how an entry is laid out. `_entry_to_rows` builds the flat fragment list with
+`_render_quoted_row` or `_render_action_row` (each receiving `with_time`), then
+passes it through `_wrap_fragments(fragments, cols)` to produce a list of display
+rows. Each row is a list of `(style, text)` fragments. `_list_text` joins rows
+within an entry with `"\n"` and entries with `"\n"` before feeding the fragment
+stream to the `Window`. prompt_toolkit never wraps — every `\n` in the stream is
+exactly one display row.
 
 `_row_count` delegates to `_entry_to_rows`:
 ```python
-def _row_count(entry, cols, channels):
-    return len(_entry_to_rows(entry, cols, channels))
+def _row_count(entry, cols, channels, with_time):
+    return len(_entry_to_rows(entry, cols, channels, with_time))
 ```
 This is the convergence point. Scroll math (backward-walk filling, max_offset
 computation, sticky-bottom) counts rows via `_row_count`, which reaches the same
 answer the renderer reaches. The two paths cannot diverge.
+
+`with_time` is the single flag controlling timestamp visibility. It is computed
+**once per render pass** as `with_time = (_scroll_offset > 0)` and passed
+unchanged to every `_row_count` and `_entry_to_rows` call in that pass. Computing
+it once ensures a single render never mixes timestamped and non-timestamped rows
+mid-list. The max_offset walk in the scroll-up handler always uses `with_time=True`
+because once any scroll has occurred every visible row carries a timestamp.
 
 **`_wrap_fragments` algorithm** — greedy word-boundary fill:
 - The fragment stream is tokenized into alternating whitespace and non-whitespace
@@ -314,12 +321,18 @@ top-anchor scroll.
 
 Row format depends on channel class (see **Display normalization** below):
 
-- **Quoted channels:** `HH:MM <Talker> <verb> [destination] '<message>'`
-- **Action channels:** `HH:MM <text>` (talker-prefix color split, no verb)
+- **Quoted channels (scrolled):** `HH:MM <Talker> <verb> [destination] '<message>'`
+- **Quoted channels (live):** `<Talker> <verb> [destination] '<message>'`
+- **Action channels (scrolled):** `HH:MM <text>` (talker-prefix color split, no verb)
+- **Action channels (live):** `<text>` (talker-prefix color split, no verb)
 
-| Field       | Style                                      | Notes                                                    |
-|-------------|--------------------------------------------|---------------------------------------------------------|
-| HH:MM       | `C_TIME` — `fg:#687685`                    | From `ts`; renders as DD/MM for messages older than 24 h |
+The `HH:MM` (or `DD/MM` for entries older than 24 h) prefix is present only in the
+scrolled-back view (`_scroll_offset > 0`). In the live view (`_scroll_offset == 0`)
+it is suppressed, giving message text more horizontal room.
+
+| Field       | Style                                      | Notes                                                                               |
+|-------------|--------------------------------------------|-------------------------------------------------------------------------------------|
+| HH:MM       | `C_TIME` — `fg:#687685`                    | From `ts`; DD/MM for entries older than 24 h; **shown only when `_scroll_offset > 0`** |
 | Talker      | `C_TALKER_YOU` or `C_TALKER_OTHER`         | `C_TALKER_YOU` (soft cyan) when `talker == "you"`; `C_TALKER_OTHER` (warm tan) otherwise; `" the <descriptor>"` suffix stripped; first char capitalized |
 | verb        | `CHANNEL_COLORS[channel]`                  | From `CHANNEL_VERBS` (self/other form); unknown → channel name |
 | destination | `C_TALKER_YOU` or `C_TALKER_OTHER`         | `C_TALKER_YOU` when `destination == "you"`; `C_TALKER_OTHER` otherwise; `" the <descriptor>"` suffix stripped when not `"you"`; present only when non-empty |
@@ -346,6 +359,17 @@ subclass that overrides `mouse_handler`. On `SCROLL_UP`/`SCROLL_DOWN` events
 not consumed by the base class, it adjusts `_scroll_offset` and calls
 `_app.invalidate()`. The previous `@kb.add("<scroll-up>")` / `<scroll-down>`
 key bindings were no-ops and have been removed.
+
+**Timestamp visibility** — `_scroll_offset` also gates the `HH:MM` (or `DD/MM`)
+timestamp prefix on every row. When `_scroll_offset == 0` timestamps are
+suppressed (live view prioritises message bandwidth on a narrow pane). When
+`_scroll_offset > 0` every visible row carries a timestamp in `C_TIME` style
+(scrolled-back view is for review and benefits from time context). The flag
+`with_time = (_scroll_offset > 0)` is computed once per render pass and is
+uniform across all rows — a partially scrolled view never mixes timestamped and
+non-timestamped rows. The very first scroll-up tick transitions from
+`with_time=False` to `with_time=True`; rows that were wider without timestamps
+may reflow to one extra row. This one-tick reflow is accepted.
 
 **Wrap-aware `max_offset`** — on each scroll-up tick the handler walks forward
 from `filtered[0]`, accumulating wrapped display rows via `_row_count`. The

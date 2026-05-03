@@ -204,8 +204,8 @@ def _ts_str(ts):
         return time.strftime("%d/%m", time.localtime(ts))
 
 
-def _render_quoted_row(entry, channels):
-    """Fragments for a quoted-channel row: time + Talker + verb + [dest] + 'message'."""
+def _render_quoted_row(entry, channels, with_time):
+    """Fragments for a quoted-channel row: [time +] Talker + verb + [dest] + 'message'."""
     frags       = []
     channel     = entry.get("channel", "")
     talker      = entry.get("talker", "")
@@ -240,7 +240,8 @@ def _render_quoted_row(entry, channels):
     else:
         open_q, msg_body, close_q = ("", text, "")
 
-    frags.append((C_TIME, _ts_str(entry.get("ts", 0)) + " "))
+    if with_time:
+        frags.append((C_TIME, _ts_str(entry.get("ts", 0)) + " "))
     frags.append((talker_style, display_talker + " "))
     frags.append((verb_style, _channel_verb(channel, talker) + " "))
 
@@ -272,13 +273,14 @@ def _render_quoted_row(entry, channels):
     return frags
 
 
-def _render_action_row(entry):
-    """Fragments for an action-channel row: time + text with talker-prefix color split."""
+def _render_action_row(entry, with_time):
+    """Fragments for an action-channel row: [time +] text with talker-prefix color split."""
     frags  = []
     talker = entry.get("talker", "")
     text   = entry.get("text", "")
 
-    frags.append((C_TIME, _ts_str(entry.get("ts", 0)) + " "))
+    if with_time:
+        frags.append((C_TIME, _ts_str(entry.get("ts", 0)) + " "))
 
     if text.startswith("You "):
         frags.append((C_TALKER_YOU, "You "))
@@ -527,18 +529,18 @@ def _wrap_fragments(fragments, cols):
     return rows
 
 
-def _entry_to_rows(entry, cols, channels):
+def _entry_to_rows(entry, cols, channels, with_time):
     """Render entry to a list of display rows (single layout authority)."""
     channel = entry.get("channel", "")
     if channel in ACTION_CHANNELS:
-        frags = _render_action_row(entry)
+        frags = _render_action_row(entry, with_time)
     else:
-        frags = _render_quoted_row(entry, channels)
+        frags = _render_quoted_row(entry, channels, with_time)
     return _wrap_fragments(frags, cols)
 
 
-def _row_count(entry, cols, channels):
-    return len(_entry_to_rows(entry, cols, channels))
+def _row_count(entry, cols, channels, with_time):
+    return len(_entry_to_rows(entry, cols, channels, with_time))
 
 
 def forward_toggle(name):
@@ -664,6 +666,7 @@ def _list_text():
     rows        = _term_rows()
     cols        = max(1, _term_cols())
     list_height = max(1, rows - 1 - (1 if _scroll_offset > 0 else 0))
+    with_time   = (_scroll_offset > 0)
     anchor_idx  = total - 1 - _scroll_offset
 
     # Walk backward from anchor accumulating wrapped display rows until the
@@ -672,7 +675,7 @@ def _list_text():
     accumulated = 0
     start       = anchor_idx
     for i in range(anchor_idx, -1, -1):
-        rc = _row_count(filtered[i], cols, channels)
+        rc = _row_count(filtered[i], cols, channels, with_time)
         if accumulated + rc > list_height and i < anchor_idx:
             break
         accumulated += rc
@@ -683,7 +686,7 @@ def _list_text():
     visible  = filtered[start:anchor_idx + 1]
     last_idx = len(visible) - 1
     for idx, entry in enumerate(visible):
-        entry_rows = _entry_to_rows(entry, cols, channels)
+        entry_rows = _entry_to_rows(entry, cols, channels, with_time)
         for row_idx, entry_row in enumerate(entry_rows):
             frags.extend(entry_row)
             if row_idx < len(entry_rows) - 1:
@@ -729,10 +732,11 @@ class ListControl(FormattedTextControl):
                     list_height = max(1, rows - 1 - (1 if _scroll_offset > 0 else 0))
                     # Wrap-aware max_offset: walk forward to find the oldest
                     # entry that pins at the top when fully scrolled up.
+                    # with_time=True: the scrolled view always carries timestamps.
                     running    = 0
                     max_offset = 0
                     for i, entry in enumerate(filtered):
-                        running += _row_count(entry, cols, channels)
+                        running += _row_count(entry, cols, channels, True)
                         if running >= list_height:
                             max_offset = total - 1 - i
                             break
