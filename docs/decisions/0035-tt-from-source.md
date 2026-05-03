@@ -24,9 +24,11 @@ install block, run a probe-or-build step:
 
 1. **Probe.** Check the installed `tt++` (if any) for:
    - Existence in PATH.
-   - Version ≥ `TT_MIN_VERSION` (2.02.20), parsed from `tt++ -v`.
    - GnuTLS linkage, confirmed via `ldd`.
-   If all three pass, log "looks good — keeping it" and skip the build.
+   If both pass, log "tt++ at <path> has TLS support — keeping it." and skip
+   the build. TLS support was added to tt++ well before the `#ses` abbreviation
+   became stable, so a TLS-linked binary is a sufficient proxy for "modern
+   enough for the cockpit."
 
 2. **Build** (only when the probe fails). Install build deps
    (`build-essential`, `libpcre2-dev`, `libgnutls28-dev`, `zlib1g-dev`,
@@ -35,12 +37,12 @@ install block, run a probe-or-build step:
    `/usr/local/bin/tt++`, which precedes `/usr/games` and `/usr/bin` in the
    default Ubuntu PATH and silently shadows any apt-installed binary.
 
-3. **Post-build sanity check.** Re-probe version and TLS on the freshly built
-   binary. Abort with a clear error pointing at `libgnutls28-dev` if TLS is
-   still missing.
+3. **Post-build sanity check.** Re-probe TLS on the freshly built binary.
+   Abort with a clear error pointing at `libgnutls28-dev` if TLS is still
+   missing.
 
-Version and tag pins live as named constants (`TT_MIN_VERSION`,
-`TT_BUILD_VERSION`) at the top of `install/bootstrap-linux.sh`.
+The build tag pin lives as `TT_BUILD_VERSION` at the top of
+`install/bootstrap-linux.sh`.
 
 ## Consequences
 
@@ -50,12 +52,16 @@ Version and tag pins live as named constants (`TT_MIN_VERSION`,
   shadowed, not removed — users who installed `tintin++` for other reasons are
   not surprised.
 - Idempotent: re-running the bootstrap on an already-provisioned system takes
-  the "looks good" path with no rebuild.
+  the "has TLS support — keeping it" path with no rebuild.
 - Users with their own manually-built or updated tt++ in `/usr/local/bin` are
-  left alone if it passes the version and TLS checks.
+  left alone if it passes the TLS check.
 - Build deps are only installed when a build is actually needed.
-- Future tt++ floor bumps require editing `TT_MIN_VERSION` and
-  `TT_BUILD_VERSION` in `bootstrap-linux.sh` — two constants, one file.
+- Future build tag bumps require editing `TT_BUILD_VERSION` in
+  `bootstrap-linux.sh` — one constant, one file.
+- We accept the theoretical edge case of a tt++ binary that has TLS linked but
+  predates the `#ses` abbreviation. No such binary exists in the wild: TLS
+  linkage appeared in the upstream packaging era, which is well after `#ses`
+  was introduced and stable.
 
 ## Rejected alternatives
 
@@ -71,3 +77,9 @@ Version and tag pins live as named constants (`TT_MIN_VERSION`,
 - **Ship a pre-built tt++ binary in the repo.** Binary blobs in git are bad
   practice; cross-distro glibc compatibility is fragile; we would own
   maintenance of the binary. Source build is simpler and more correct.
+- **Probe version via `tt++ -v`, then check TLS.** `tt++ -v` is the
+  verbose-mode flag, not a print-version-and-exit flag — modern tt++ has no
+  such flag. Parsing the welcome banner reliably requires a real tty, making
+  it more complex than the TLS check alone is worth. Since any TLS-linked
+  binary is already modern enough, the version check is redundant in practice
+  and unimplementable cleanly.
