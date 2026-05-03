@@ -30,6 +30,10 @@ fi
 # Install packages via Homebrew
 # ---------------------------------------------------------------------------
 
+# TODO (parked): probe-then-build for tt++, mirroring bootstrap-linux.sh.
+# brew's `tintin` formula is current on most installs but TLS support is not
+# guaranteed across upgrades. See `docs/install-bootstrap.md` open questions.
+
 # tintin is the formula name — no plus signs, unlike the Debian/Ubuntu package
 # name (tintin++). Do not "fix" this.
 brew install bash tmux lua tintin git python3

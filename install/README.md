@@ -95,9 +95,7 @@ curl -fsSL https://raw.githubusercontent.com/Khazdul/mumecockpit/main/install/bo
 ### What got installed
 
 - apt packages: tmux, lua5.4, git, python3-prompt-toolkit, python3-pyperclip
-- tt++ 2.02.61, built from source when the apt version is too old or lacks
-  TLS — adds ~1–2 minutes on first install; skipped on subsequent runs if a
-  good binary is already in place
+- tt++ at `/usr/local/bin/tt++` — built from source on first install if the system tt++ is missing or lacks TLS support
 - Alacritty (on native Linux only -- skipped on WSL since the Windows
   installer handles the terminal there)
 - The MUME Cockpit repo at `~/MUME`
@@ -146,6 +144,8 @@ Then clone the repo:
 git clone https://github.com/Khazdul/mumecockpit.git ~/MUME
 cd ~/MUME && ./start.sh
 ```
+
+Distro tintin packages may lack TLS support. If `#ssl` fails in direct mode, build from source — see `install/bootstrap-linux.sh` for the exact configure/make steps.
 
 For the full package list and rationale, see `docs/install-bootstrap.md`.
 
@@ -219,9 +219,10 @@ Homebrew packages (tmux, lua, tintin, etc.) can stay or be removed via
 ```
 rm -rf ~/MUME
 ```
-apt packages can stay or be removed via:
+apt packages and the source-built tt++ can be removed via:
 ```
-sudo apt remove tmux lua5.4 tintin++ python3-prompt-toolkit
+sudo rm -f /usr/local/bin/tt++
+sudo apt remove tmux lua5.4 python3-prompt-toolkit python3-pyperclip
 ```
 
 ---

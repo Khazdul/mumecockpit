@@ -322,6 +322,14 @@ the installer.
 2. **Retire `misc/`.** This doc absorbs `misc/WSL and Terminal
    settings`. Once the installer ships, delete the `misc/` directory
    to remove duplication.
+3. **macOS probe-port.** Apply the same TLS-probe-then-source-build
+   pattern to `bootstrap-macos.sh`. `brew`'s `tintin` formula is
+   generally current, but TLS support is not guaranteed across upgrades.
+   Approach mirrors the Linux fix: detect existing `tt++`, check for
+   gnutls/openssl linkage via `otool -L "$(command -v tt++)"`, skip if
+   present; otherwise build from source via brew's build-from-tap or a
+   manual clone. Lower priority since macOS is Tier 2 — see
+   [ADR 0020](decisions/0020-platform-support-policy.md).
 
 ## Rollout phases
 
