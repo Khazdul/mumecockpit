@@ -3,6 +3,8 @@
 **Status:** Superseded by 0037
 **Date:** 2026-05-03
 
+> Superseded by [0037 — Right-column prompt_toolkit convergence](0037-right-column-prompt-toolkit-convergence.md).
+
 ## Context
 
 The status pane (`bridge/status_pane.py`) is a flicker-free ANSI renderer:

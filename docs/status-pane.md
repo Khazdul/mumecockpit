@@ -1,7 +1,7 @@
 # Character Status Pane
 
-The status pane is a right-column tmux pane inserted between `ui` and `dev`
-that displays a flicker-free, live character info board driven by GMCP data.
+The status pane is a right-column tmux pane that displays a live character
+info board driven by GMCP data.
 Touch this file when changing the renderer, the state-file schema, the field
 layout, or layout integration.
 
