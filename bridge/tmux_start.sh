@@ -96,13 +96,13 @@ LEFT_WIDTH=$(( TERM_COLS - ui_width - 1 ))
 sed -i "s/^window_cols=.*/window_cols=$TERM_COLS/" "$LAYOUT_CONF"
 
 if [ "$SHOW_UI" -eq 1 ] && [ "$SHOW_DEV" -eq 1 ]; then
-    tmux split-window -h -t mume:cockpit.0 "bash -c 'stty -isig 2>/dev/null; trap "" INT; while true; do tail -f $HOME/MUME/logs/ui.log; printf \"\\n[pane kept alive — use cp -u to close]\\n\"; sleep 0.2; done'"
+    tmux split-window -h -t mume:cockpit.0 "bash -c 'stty -isig 2>/dev/null; trap "" INT; while true; do python3 $HOME/MUME/bridge/ui_pane.py; printf \"\\n[pane kept alive — use cp -u to close]\\n\"; sleep 0.2; done'"
     tmux select-pane -t mume:cockpit.1 -T "ui"
     tmux split-window -v -t mume:cockpit.1 "bash -c 'stty -isig 2>/dev/null; trap "" INT; while true; do tail -f $HOME/MUME/logs/debug.log; printf \"\\n[pane kept alive — use cp -d to close]\\n\"; sleep 0.2; done'"
     tmux select-pane -t mume:cockpit.2 -T "dev"
     tmux resize-pane -t mume:cockpit.0 -x "$LEFT_WIDTH"
 elif [ "$SHOW_UI" -eq 1 ]; then
-    tmux split-window -h -t mume:cockpit.0 "bash -c 'stty -isig 2>/dev/null; trap "" INT; while true; do tail -f $HOME/MUME/logs/ui.log; printf \"\\n[pane kept alive — use cp -u to close]\\n\"; sleep 0.2; done'"
+    tmux split-window -h -t mume:cockpit.0 "bash -c 'stty -isig 2>/dev/null; trap "" INT; while true; do python3 $HOME/MUME/bridge/ui_pane.py; printf \"\\n[pane kept alive — use cp -u to close]\\n\"; sleep 0.2; done'"
     tmux select-pane -t mume:cockpit.1 -T "ui"
     tmux resize-pane -t mume:cockpit.0 -x "$LEFT_WIDTH"
 elif [ "$SHOW_DEV" -eq 1 ]; then

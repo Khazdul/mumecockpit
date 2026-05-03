@@ -1,6 +1,6 @@
 # 0033 — Buffs pane uses prompt_toolkit, not the ANSI renderer
 
-**Status:** Accepted
+**Status:** Superseded by 0037
 **Date:** 2026-05-03
 
 ## Context

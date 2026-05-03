@@ -43,7 +43,8 @@ Renders in the UI pane as:
 
 `▶ SCRIPTNAME` is teal (`#26C6DA`), the message is bold bright white, and
 dynamic values are bold yellow via `ui_var()`. Colors use ANSI escape
-codes (not TT++ format) since the UI pane is a plain terminal (`tail -f`).
+codes (not TT++ format) since the UI pane renders `logs/ui.log` directly via
+`bridge/ui_pane.py` (`prompt_toolkit` ANSI fragment conversion).
 
 **Rules:**
 - Use `script_ui` for key state changes only: started, stopped, errors.

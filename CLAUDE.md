@@ -24,6 +24,7 @@ with a scripting brain on top.
 - `docs/status-pane.md` — character status pane: renderer, schema, field layout.
 - `docs/buffs-pane.md` — buffs pane: renderer, grouping, palette, blink, scroll.
 - `docs/comm-pane.md` — comm pane: renderer, comm.state schema, filter persistence.
+- `docs/ui-pane.md` — UI pane: renderer, scroll, log-tail mechanics.
 - `docs/clock.md` — game clock: sync sources, state schema, degradation rules.
 - `docs/affects.md` — affect tracker: data flow, schemas, persistence, tick lifecycle.
 - `docs/launcher.md` — pre-tmux menu rendering and flow.

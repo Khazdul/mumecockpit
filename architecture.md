@@ -67,7 +67,8 @@ tracking, and UI feedback.
 │   ├── input_pane.py         # Input pane — prompt_toolkit CLI, forwards to TT++, right-aligned menu bar (CHAR/BUFFS/COM/UI + clock)
 │   ├── comm_pane.py          # Comm pane — clickable channel-filter header + scrollable history
 │   ├── buffs_pane.py         # Buffs pane — prompt_toolkit affect grid (grouped, bar drain, blink)
-│   ├── status_pane.py        # Status pane — flicker-free ANSI renderer, polls status.state
+│   ├── status_pane.py        # Status pane — prompt_toolkit Application, polls status.state
+│   ├── ui_pane.py            # UI pane — prompt_toolkit Application, tails logs/ui.log
 │   ├── focus_input.sh        # Resolves input pane index at click time (MouseUp1Pane target)
 │   ├── on_window_resize.sh   # Fired on terminal resize — re-applies stored layout
 │   ├── on_pane_resize.sh     # Fired on border drag — saves new layout values
@@ -124,7 +125,7 @@ tracking, and UI feedback.
 │  pane 1 (top-right): status — status_pane.py  │
 │  pane 1b (right):    buffs — buffs_pane.py    │
 │  pane 1c (right):    comm — comm_pane.py      │
-│  pane 1d (right):    ui  — tail ui.log        │
+│  pane 1d (right):    ui  — ui_pane.py         │
 │  pane 2 (right):     dev — tail debug.log     │
 │  pane 0b (full-width bottom):             │
 │                      input — prompt_toolkit│
