@@ -27,7 +27,6 @@ except ImportError:
 import atexit
 import asyncio
 import json
-import math
 import os
 import re
 import signal
@@ -336,16 +335,210 @@ def _term_cols():
         return 80
 
 
-def _row_count(entry, cols, channels):
-    """Approximate wrapped display row count for entry given terminal column count."""
+# ---------------------------------------------------------------------------
+# Fragment-aware word-wrap helpers
+# ---------------------------------------------------------------------------
+
+def _visual_len(text):
+    """Visible character count of text (ANSI SGR sequences are zero-width)."""
+    return len(_SGR_RE.sub("", text))
+
+
+def _split_at_visual(text, n):
+    """Split text at n visible characters; return (head, tail).
+    head contains exactly min(n, visible_len) visible chars."""
+    count = 0
+    i = 0
+    while i < len(text):
+        if count >= n:
+            break
+        m = _SGR_RE.match(text, i)
+        if m:
+            i = m.end()
+        else:
+            count += 1
+            i += 1
+    return text[:i], text[i:]
+
+
+def _tokenize_fragments(fragments):
+    """Split (style, text) fragments into (is_ws, frags) tokens.
+
+    A token is a maximal run of whitespace-only or non-whitespace visible
+    characters, spanning fragment boundaries while preserving per-character
+    style. ANSI SGR sequences are zero-width and attached to the preceding
+    visible-char accumulator."""
+    tokens    = []
+    cur_ws    = None
+    cur_parts = []
+    cur_style = None
+    cur_buf   = ""
+
+    def _flush_buf():
+        nonlocal cur_buf
+        if cur_buf:
+            cur_parts.append((cur_style, cur_buf))
+            cur_buf = ""
+
+    def _flush_tok():
+        nonlocal cur_ws, cur_parts, cur_style, cur_buf
+        _flush_buf()
+        if cur_parts:
+            tokens.append((bool(cur_ws), cur_parts))
+        cur_ws    = None
+        cur_parts = []
+        cur_style = None
+
+    for style, text in fragments:
+        i = 0
+        while i < len(text):
+            m = _SGR_RE.match(text, i)
+            if m:
+                if cur_style is None:
+                    cur_style = style
+                elif cur_style != style:
+                    _flush_buf()
+                    cur_style = style
+                cur_buf += m.group()
+                i = m.end()
+            else:
+                ch = text[i]
+                ws = ch in " \t"
+                if cur_ws is None:
+                    cur_ws = ws
+                    if cur_style is None:
+                        cur_style = style
+                elif ws != cur_ws:
+                    _flush_tok()
+                    cur_ws    = ws
+                    cur_style = style
+                elif cur_style != style:
+                    _flush_buf()
+                    cur_style = style
+                cur_buf += ch
+                i += 1
+
+    _flush_tok()
+    return tokens
+
+
+def _wrap_fragments(fragments, cols):
+    """Word-wrap a list of (style, text) fragments into a list of display rows.
+
+    Each row is itself a list of (style, text) fragments. Returns at least
+    one row even when fragments is empty (the empty list).
+
+    Greedy line filling with word-boundary breaks. Tokens wider than cols
+    fall back to a hard char-break at exactly cols visible chars. Leading
+    whitespace on continuation rows is never emitted (R4)."""
+    if not fragments:
+        return [[]]
+
+    tokens = _tokenize_fragments(fragments)
+
+    rows          = []
+    row           = []
+    row_w         = 0
+    pend_ws_frags = []
+    pend_ws_w     = 0
+
+    def _place(frags, w):
+        nonlocal row, row_w
+        row.extend(frags)
+        row_w += w
+
+    def _hard_place(frags):
+        nonlocal row, row_w
+        remaining = list(frags)
+        while remaining:
+            space     = cols - row_w
+            chunk     = []
+            taken     = 0
+            leftovers = []
+            broke     = False
+
+            for idx, (sty, txt) in enumerate(remaining):
+                tw = _visual_len(txt)
+                if taken + tw <= space:
+                    chunk.append((sty, txt))
+                    taken += tw
+                else:
+                    need = space - taken
+                    if need > 0:
+                        h, t = _split_at_visual(txt, need)
+                        if h:
+                            chunk.append((sty, h))
+                            taken += _visual_len(h)
+                        leftovers = ([(sty, t)] if t else []) + remaining[idx + 1:]
+                    else:
+                        leftovers = remaining[idx:]
+                    broke = True
+                    break
+
+            if not broke:
+                leftovers = []
+
+            if taken == 0:
+                # No visible progress (zero-width content); dump and exit.
+                row.extend(remaining)
+                break
+
+            row.extend(chunk)
+            row_w += taken
+            remaining = leftovers
+
+            if remaining:
+                rows.append(row)
+                row   = []
+                row_w = 0
+
+    for is_ws, frags in tokens:
+        w = sum(_visual_len(t) for _, t in frags)
+
+        if is_ws:
+            pend_ws_frags = frags
+            pend_ws_w     = w
+            continue
+
+        ws_w    = pend_ws_w    if (pend_ws_frags and row_w > 0) else 0
+        ws_frags = pend_ws_frags if (pend_ws_frags and row_w > 0) else []
+
+        if row_w + ws_w + w <= cols:
+            _place(ws_frags, ws_w)
+            _place(frags, w)
+        elif row_w > 0:
+            rows.append(row)
+            row   = []
+            row_w = 0
+            if w <= cols:
+                _place(frags, w)
+            else:
+                _hard_place(frags)
+        else:
+            _hard_place(frags)
+
+        pend_ws_frags = []
+        pend_ws_w     = 0
+
+    if row:
+        rows.append(row)
+    if not rows:
+        rows.append([])
+    return rows
+
+
+def _entry_to_rows(entry, cols, channels):
+    """Render entry to a list of display rows (single layout authority)."""
     channel = entry.get("channel", "")
     if channel in ACTION_CHANNELS:
         frags = _render_action_row(entry)
     else:
         frags = _render_quoted_row(entry, channels)
-    text     = "".join(f[1] for f in frags)
-    stripped = _SGR_RE.sub("", text)
-    return max(1, math.ceil(len(stripped) / cols))
+    return _wrap_fragments(frags, cols)
+
+
+def _row_count(entry, cols, channels):
+    return len(_entry_to_rows(entry, cols, channels))
 
 
 def forward_toggle(name):
@@ -490,12 +683,11 @@ def _list_text():
     visible  = filtered[start:anchor_idx + 1]
     last_idx = len(visible) - 1
     for idx, entry in enumerate(visible):
-        channel = entry.get("channel", "")
-        if channel in ACTION_CHANNELS:
-            row_frags = _render_action_row(entry)
-        else:
-            row_frags = _render_quoted_row(entry, channels)
-        frags.extend(row_frags)
+        entry_rows = _entry_to_rows(entry, cols, channels)
+        for row_idx, entry_row in enumerate(entry_rows):
+            frags.extend(entry_row)
+            if row_idx < len(entry_rows) - 1:
+                frags.append(("", "\n"))
         if idx < last_idx:
             frags.append(("", "\n"))
 
@@ -646,7 +838,7 @@ def main():
 
     list_window = Window(
         content=ListControl(text=_list_text, focusable=False),
-        wrap_lines=True,
+        wrap_lines=False,
         get_vertical_scroll=_anchor_bottom,
     )
 

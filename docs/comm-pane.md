@@ -227,8 +227,8 @@ mouse_support=True)`.
 fixed at 1. List fills remaining rows. `indicator_container` is a
 `ConditionalContainer` keyed off `_scroll_offset > 0` — it occupies 1 row
 below the list only when there are hidden newer messages, and disappears
-completely otherwise. Because the indicator lives in its own `Window`, list
-`wrap_lines=True` can never clip it.
+completely otherwise. Because the indicator lives in its own `Window`, it is
+never clipped by list content.
 
 ### Header
 
@@ -270,8 +270,39 @@ lost.
 
 ### List
 
-The list `Window` has `wrap_lines=True` so long messages soft-wrap rather than
-truncating. `_list_text()` uses a wrap-aware bottom-up selection: given
+The list `Window` has `wrap_lines=False`. The renderer owns line wrapping via
+`_entry_to_rows(entry, cols, channels)`, which is the single authority for how
+an entry is laid out. `_entry_to_rows` builds the flat fragment list with
+`_render_quoted_row` or `_render_action_row`, then passes it through
+`_wrap_fragments(fragments, cols)` to produce a list of display rows. Each row
+is a list of `(style, text)` fragments. `_list_text` joins rows within an entry
+with `"\n"` and entries with `"\n"` before feeding the fragment stream to the
+`Window`. prompt_toolkit never wraps — every `\n` in the stream is exactly one
+display row.
+
+`_row_count` delegates to `_entry_to_rows`:
+```python
+def _row_count(entry, cols, channels):
+    return len(_entry_to_rows(entry, cols, channels))
+```
+This is the convergence point. Scroll math (backward-walk filling, max_offset
+computation, sticky-bottom) counts rows via `_row_count`, which reaches the same
+answer the renderer reaches. The two paths cannot diverge.
+
+**`_wrap_fragments` algorithm** — greedy word-boundary fill:
+- The fragment stream is tokenized into alternating whitespace and non-whitespace
+  tokens, spanning fragment boundaries while preserving per-character style. ANSI
+  SGR sequences are zero-width and attached to the preceding visible-char run.
+- Each non-whitespace token is placed on the current line when it fits (with its
+  preceding whitespace if the line is non-empty). When it does not fit and the
+  line is non-empty, pending whitespace is dropped and a new line is started.
+- **R4** — continuation rows never begin with a whitespace fragment; the pending
+  whitespace before the wrapped token is always dropped on wrap.
+- **Long-word fallback** — a single token wider than `cols` is hard-broken at
+  exactly `cols` visible characters per row. This is the only option when no
+  whitespace break point exists. Fragment styles survive the break.
+
+`_list_text()` uses a wrap-aware bottom-up selection: given
 `anchor_idx = total - 1 - _scroll_offset`, it walks backward from the anchor
 accumulating wrapped display rows (via `_row_count`) until the window is filled
 or index 0 is reached. The anchor entry is always included even when it alone
@@ -333,8 +364,8 @@ When `_scroll_offset > 0`, a dedicated indicator row appears **below** the list
 
 in `C_INDICATOR` style (amber, italic — reads as system meta-information, not
 chat content). It is rendered by `_indicator_text()` inside its own
-`ConditionalContainer / Window`, so list `wrap_lines=True` can never push it
-off the bottom. Clicking it (`MOUSE_DOWN`) resets offset to 0.
+`ConditionalContainer / Window`, so it is always visible below the list.
+Clicking it (`MOUSE_DOWN`) resets offset to 0.
 
 ### Colour palette
 
