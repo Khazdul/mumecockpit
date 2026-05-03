@@ -108,7 +108,8 @@ JSON written by `lua/core/status_state.lua`. Gitignored.
   "swim": "off",
   "game_time": null,
   "time_period": null,
-  "time_remaining": null
+  "time_transition_at": null,
+  "time_precision": null
 }
 ```
 
@@ -142,9 +143,10 @@ fields are retained in the payload for use by future rows.
 | `swim`           | `Char.Vitals` → `state.char.swim`                      | bool→"on"/"off"                              |
 | `session_xp`     | `lua/core/sess_kills.lua` → `state.session.session_xp` |                                              |
 | `session_tp`     | `lua/core/sess_kills.lua` → `state.session.session_tp` |                                              |
-| `game_time`      | `lua/core/clock.lua` → `state.world.clock.format("panel_time")` |                                 |
-| `time_period`    | `lua/core/clock.lua` → `state.world.clock.next_transition()` |                                   |
-| `time_remaining` | `lua/core/clock.lua` → `state.world.clock.next_transition()` |                                   |
+| `game_time`          | `lua/core/clock.lua` → `state.world.clock.format("panel_time")` |                                 |
+| `time_period`        | `lua/core/clock.lua` → `state.world.clock.next_transition()` |                                   |
+| `time_transition_at` | `lua/core/clock.lua` → `state.world.clock.next_transition()` | unix epoch int; consumed by input-pane renderer |
+| `time_precision`     | `lua/core/clock.lua` → `state.world.clock.next_transition()` | `"MINUTE"`/`"HOUR"`; consumed by input-pane renderer |
 
 ## Colour scheme
 

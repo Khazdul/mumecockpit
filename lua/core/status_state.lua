@@ -71,8 +71,9 @@ local function serialize()
         climb          = climb_val,
         swim           = swim_val,
         game_time      = state.world.clock and state.world.clock.format("panel_time") or nil,
-        time_period    = nt and nt.period or nil,
-        time_remaining = nt and nt.remaining or nil,
+        time_period        = nt and nt.period    or nil,
+        time_transition_at = nt and nt.at        or nil,
+        time_precision     = nt and nt.precision or nil,
     }
 
     local encoded = json.encode(payload)

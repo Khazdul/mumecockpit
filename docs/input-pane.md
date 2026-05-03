@@ -279,26 +279,41 @@ same persistence file with no other synchronisation needed.
 
 ### Clock
 
-The clock segment (rightmost 6 columns) renders the time remaining in the
-current day/night period, sourced from `bridge/status.state`:
+The clock segment (rightmost 6 columns) renders the time remaining until the
+next day/night transition, sourced from `bridge/status.state`:
 
 | Field | Key in `status.state` |
 |-------|----------------------|
 | Period | `time_period` — `"day"` or `"night"` |
-| Remaining | `time_remaining` — displayed verbatim |
+| Transition target | `time_transition_at` — unix epoch integer (or null) |
+| Precision | `time_precision` — `"MINUTE"` or `"HOUR"` (or null) |
 
-Format: `<time_remaining><icon>`, with the icon pinned to the rightmost column
-and `time_remaining` left-aligned in the preceding 5 columns, right-padded with
-spaces. E.g. `4:33 ☼` (day, 4-char time) or `15:21☼` (day, 5-char time).
-Time text is bold white. The sun icon (☼) is rendered in `#ffb000`; the moon
-icon (☾) in `#4a90e2` — matching the status pane's Time row colours.
+The renderer computes `remaining = max(0, time_transition_at - time.time())`
+locally and formats per precision:
 
-When `time_period` or `time_remaining` is null (precision below HOUR), or
-when `status.state` is missing or unreadable, the clock area renders as six
-blank spaces. No partial value or lone icon is shown.
+| `time_precision` | Format | Example |
+|------------------|--------|---------|
+| `"MINUTE"` | `total_min:sec` → `"H:MM"` | `"4:33"`, `"0:05"` |
+| `"HOUR"` | `"~N"` (N = max(1, ceil(remaining/60))) | `"~3"` |
 
-`status.state`, `startup.conf`, and `layout.conf` are polled by a single
-asyncio task (250 ms interval, mtime-based, mirrors `comm_pane.py`).
+Format: `<text><icon>`, with the icon pinned to the rightmost column and
+`text` left-aligned in the preceding 5 columns, right-padded with spaces.
+E.g. `4:33 ☼` or `15:21☼`. Time text is bold white. The sun icon (☼) is
+rendered in `#ffb000`; the moon icon (☾) in `#4a90e2` — matching the status
+pane's Time row colours.
+
+When any of `time_period`, `time_transition_at`, or `time_precision` is null
+(precision below HOUR), or when `status.state` is missing or unreadable, the
+clock area renders as six blank spaces. No partial value or lone icon is shown.
+
+The renderer runs two asyncio tasks for clock updates:
+
+- **`_poll_menu`** (250 ms mtime-based) — picks up changes to `time_transition_at`
+  (rare: only on day/night flips or precision upgrades) and all other menu fields.
+- **`_clock_tick`** (boundary-aligned 1 Hz) — wakes just after each wall-clock
+  second boundary and calls `app.invalidate()`, so the countdown decrements at
+  uniform cadence regardless of file-poll phase. Same pattern as the buffs blink
+  tick in `bridge/buffs_pane.py` (see [docs/buffs-pane.md](buffs-pane.md)).
 
 ### Visibility
 

@@ -114,9 +114,13 @@ Returns nil when precision is `"UNSET"` or `"DAY"` (hour unknown). Otherwise ret
 ```lua
 {
     period    = "day" | "night",   -- the CURRENT period
-    remaining = "<formatted>",     -- pre-formatted countdown to the next transition
+    at        = <unix epoch int>,  -- os.time() + until_minutes (MUME minute = real second)
+    precision = "MINUTE" | "HOUR",
 }
 ```
+
+Consumers compute `remaining = at - time.time()` locally and format per precision.
+Formatting is the consumer's responsibility, not this function's.
 
 **Period rule** (matches MMapper visual):
 
@@ -127,12 +131,12 @@ night = everything else
 
 Dawn/dusk edge hours collapse into night, so the rule is binary.
 
-**`remaining` format:**
+**Consumer formatting reference:**
 
-| Precision | Format | Example |
-|-----------|--------|---------|
-| MINUTE    | `"H:MM"` | `"6:20"`, `"0:45"` |
-| HOUR      | `"~N"` (N = ceil(until/60), min 1) | `"~3"` |
+| `precision` | Formula | Example output |
+|-------------|---------|----------------|
+| `"MINUTE"`  | `total_min = remaining // 60; sec = remaining % 60` → `"H:MM"` | `"6:20"`, `"0:45"` |
+| `"HOUR"`    | `rem_min = max(1, ceil(remaining / 60))` → `"~N"` | `"~3"` |
 
 **Computing until-minutes** (MUME minutes = real seconds):
 

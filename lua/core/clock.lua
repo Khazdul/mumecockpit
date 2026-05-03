@@ -340,14 +340,12 @@ function C.next_transition()
     end
     if until_minutes < 1 then until_minutes = 1 end
 
-    local remaining
-    if C.precision >= P.MINUTE then
-        remaining = string.format("%d:%02d",
-            math.floor(until_minutes / 60), until_minutes % 60)
-    else
-        remaining = string.format("~%d", math.max(1, math.ceil(until_minutes / 60)))
-    end
-    return { period = period, remaining = remaining }
+    local precision = C.precision >= P.MINUTE and "MINUTE" or "HOUR"
+    return {
+        period    = period,
+        at        = os.time() + until_minutes,   -- MUME minute = real second
+        precision = precision,
+    }
 end
 
 function C.tick()

@@ -21,11 +21,13 @@ import atexit
 import asyncio
 import base64
 import json
+import math
 import os
 import signal
 import string
 import subprocess
 import sys
+import time
 
 TMUX_TARGET = "mume:cockpit.0"
 _PRINTABLE  = [c for c in string.printable if c.isprintable()]
@@ -53,8 +55,9 @@ C_SUN_HEX  = "#ffb000"   # \x1b[38;2;255;176;0m
 C_MOON_HEX = "#4a90e2"   # \x1b[38;2;74;144;226m
 
 # Menu state — updated by _poll_menu asyncio task
-_menu_time_period    = None
-_menu_time_remaining = None
+_menu_time_period        = None
+_menu_time_transition_at = None   # float (unix epoch) or None
+_menu_time_precision     = None   # "MINUTE"/"HOUR"/None
 _menu_show_status    = False
 _menu_show_buffs     = False
 _menu_show_comm      = False
@@ -549,11 +552,23 @@ def _menu_text():
             frags.append((btn_style, label))
         frags.append((edge_style, trail))
     frags.append(("", " "))
-    if _menu_time_period is not None and _menu_time_remaining is not None:
+    if (_menu_time_period is not None
+            and _menu_time_transition_at is not None
+            and _menu_time_precision is not None):
         icon       = "☼" if _menu_time_period == "day" else "☾"
         icon_style = f"fg:{C_SUN_HEX}" if _menu_time_period == "day" else f"fg:{C_MOON_HEX}"
-        rem        = str(_menu_time_remaining)[:5]
-        frags.append(("bold fg:#ffffff", f"{rem:<5}"))
+        remaining  = max(0.0, _menu_time_transition_at - time.time())
+        if _menu_time_precision == "MINUTE":
+            total_min = int(remaining // 60)
+            sec       = int(remaining % 60)
+            text      = f"{total_min}:{sec:02d}"
+        elif _menu_time_precision == "HOUR":
+            rem_min = max(1, math.ceil(remaining / 60))
+            text    = f"~{rem_min}"
+        else:
+            text = ""
+        text = text[:5]
+        frags.append(("bold fg:#ffffff", f"{text:<5}"))
         frags.append((icon_style, icon))
     else:
         frags.append(("", "      "))  # 6 blank spaces — same slot as time+icon
@@ -564,15 +579,25 @@ def _menu_text():
 # Menu state polling (250 ms asyncio task)
 # ---------------------------------------------------------------------------
 
+async def _clock_tick(app):
+    """Invalidate just after each wall-clock second boundary so the clock countdown
+    updates at uniform real-second cadence regardless of file-poll phase."""
+    while True:
+        now = time.time()
+        sleep_s = 1.0 - (now - int(now))
+        await asyncio.sleep(sleep_s + 0.01)
+        app.invalidate()
+
+
 async def _poll_menu(app):
-    global _menu_time_period, _menu_time_remaining
+    global _menu_time_period, _menu_time_transition_at, _menu_time_precision
     global _menu_show_status, _menu_show_buffs, _menu_show_comm, _menu_show_ui, _menu_ui_width
     global _menu_status_mtime, _menu_conf_mtime, _menu_layout_mtime
 
     while True:
         changed = False
 
-        # status.state — time_period and time_remaining
+        # status.state — time_period, time_transition_at, time_precision
         try:
             smtime = os.stat(STATUS_STATE_PATH).st_mtime
         except OSError:
@@ -585,17 +610,20 @@ async def _poll_menu(app):
                     with open(STATUS_STATE_PATH) as fh:
                         data = json.load(fh)
                     tp = data.get("time_period")
-                    tr = data.get("time_remaining")
-                    if tp != _menu_time_period or tr != _menu_time_remaining:
-                        _menu_time_period    = tp
-                        _menu_time_remaining = tr
+                    ta = data.get("time_transition_at")
+                    pr = data.get("time_precision")
+                    if tp != _menu_time_period or ta != _menu_time_transition_at or pr != _menu_time_precision:
+                        _menu_time_period        = tp
+                        _menu_time_transition_at = ta
+                        _menu_time_precision     = pr
                         changed = True
                 except Exception:
                     pass  # keep last good state; silent recovery
             else:
-                if _menu_time_period is not None or _menu_time_remaining is not None:
-                    _menu_time_period    = None
-                    _menu_time_remaining = None
+                if _menu_time_period is not None or _menu_time_transition_at is not None:
+                    _menu_time_period        = None
+                    _menu_time_transition_at = None
+                    _menu_time_precision     = None
                     changed = True
 
         # startup.conf — show_status, show_comm, show_ui
@@ -696,15 +724,17 @@ def main():
     )
 
     async def _run():
-        task = asyncio.ensure_future(_poll_menu(app))
+        poll_task  = asyncio.ensure_future(_poll_menu(app))
+        clock_task = asyncio.ensure_future(_clock_tick(app))
         try:
             await app.run_async()
         finally:
-            task.cancel()
-            try:
-                await task
-            except asyncio.CancelledError:
-                pass
+            for t in (poll_task, clock_task):
+                t.cancel()
+                try:
+                    await t
+                except asyncio.CancelledError:
+                    pass
 
     try:
         asyncio.run(_run())
