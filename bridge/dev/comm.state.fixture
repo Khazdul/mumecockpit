@@ -259,6 +259,14 @@
       "talker_type": null,
       "destination": null,
       "text": "A dwarven sergeant bows for you."
+    },
+    {
+      "ts": 1777200750,
+      "channel": "socials",
+      "talker": "Vit the innkeeper",
+      "talker_type": "npc",
+      "destination": null,
+      "text": "\u001b[1mVit the innkeeper\u001b[0m bows before you."
     }
   ]
 }

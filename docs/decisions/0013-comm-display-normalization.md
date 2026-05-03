@@ -246,3 +246,37 @@ accept `with_time` as an explicit parameter and forward it to the render helpers
 established by the renderer-owns-wrapping ADR (see decisions directory): every
 callsite that measures row counts uses the exact same layout that the renderer
 will produce for those same entries. There is no separate measurement path.
+
+---
+
+## 2026-05-04 update — ANSI-aware talker-prefix matching on action channels
+
+**Symptom:** A payload whose `text` begins with an ANSI SGR sequence failed both
+branch a and branch b prefix checks in `_render_action_row`. For example:
+
+```json
+{"channel": "socials", "talker": "Vit the innkeeper",
+ "text": "\x1b[1mVit the innkeeper\x1b[0m bows before you."}
+```
+
+Both `text.startswith("You ")` and `text.lower().startswith(talker.lower() + " ")`
+operated on raw bytes, so the leading `\x1b[1m` caused both to fail. The message
+fell through to the fallback branch (branch c), which prepended `"Vit "` from the
+`talker` field and then rendered `text` verbatim — doubling the talker as
+`"Vit Vit the innkeeper bows before you."`.
+
+**Fix:** A new module-level helper `_match_visible_prefix(text, prefix)` walks
+`text` byte by byte, skipping ANSI SGR sequences (using the existing `_SGR_RE`
+pattern) when computing the prefix match. It returns `(matched_visible,
+body_byte_offset)` on success — `matched_visible` is the original-cased visible
+characters consumed (no ANSI bytes), and `body_byte_offset` is the byte index in
+`text` where the body begins. Returns `None` on any mismatch.
+
+Both branch a (`"You "`) and branch b (`talker + " "`) in `_render_action_row` now
+use `_match_visible_prefix` instead of `str.startswith`. The body slice
+`text[body_start:]` is taken from the original `text` bytes, so embedded ANSI runs
+inside the message body keep rendering through `ANSI()` unchanged.
+
+**Not changed:** Branch c (fallback), quoted-channel rendering, and all other
+callers are unaffected. Raw data in `state.comm.history`, `bridge/comm.state`, and
+the JSONL archive is preserved verbatim as before.

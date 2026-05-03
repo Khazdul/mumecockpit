@@ -473,19 +473,28 @@ Unknown channels fall back to the channel name as both forms.
 
 No channel verb and no separately-rendered talker fragment. `text` from the GMCP
 payload is rendered verbatim with a talker-prefix color split. Detection runs in
-priority order:
+priority order via `_match_visible_prefix(text, prefix)`, which walks `text`
+skipping ANSI SGR sequences and matches the prefix against the visible characters
+(case-insensitive). This means a text that begins with ANSI-wrapped characters
+(e.g. a bold-wrapped talker name) is matched correctly.
 
-1. If `text.startswith("You ")`: render as self — `"You "` in `C_TALKER_YOU`,
-   remainder in `C_MESSAGE_SELF`. The `talker` field is ignored; MUME may set it
-   to the character name for own socials rather than `"you"`.
-2. Else if `talker` is non-empty and `text.lower().startswith(talker.lower() + " ")`:
-   render as other — slice the matching prefix from `text` (preserving `text`'s
-   original casing, case-insensitive match), apply `_strip_descriptor` to it, then
-   emit in `C_TALKER_OTHER`; remainder (`text[len(talker)+1:]`) in `C_MESSAGE_OTHER`.
-   Covers multi-word talker names and talker/text case mismatches
-   (e.g. `talker="a dwarven sergeant"`, `text="A dwarven sergeant …"`). Example:
-   `talker="Vit the innkeeper"`, `text="Vit the innkeeper bows respectfully."` →
-   displays `"Vit "` in talker color, `"bows respectfully."` in message color.
+1. If the visible characters of `text` start with `"You "` (branch a): render as
+   self — `"You "` in `C_TALKER_YOU`, `text[body_start:]` in `C_MESSAGE_SELF`.
+   `body_start` is the byte offset returned by `_match_visible_prefix`; the body
+   slice preserves any ANSI runs that follow. The `talker` field is ignored; MUME
+   may set it to the character name for own socials rather than `"you"`.
+2. Else if `talker` is non-empty and the visible characters of `text` start with
+   `talker + " "` (branch b, case-insensitive): render as other — `matched_visible`
+   (the original-cased visible chars consumed, including the trailing space) has
+   `_strip_descriptor` applied after stripping the trailing space, then `" "` is
+   appended, and the result is emitted in `C_TALKER_OTHER`; `text[body_start:]` in
+   `C_MESSAGE_OTHER`. Covers multi-word talker names, talker/text case mismatches
+   (e.g. `talker="a dwarven sergeant"`, `text="A dwarven sergeant …"`), and
+   ANSI-wrapped talker names in `text`. The body slice `text[body_start:]` is taken
+   from the original `text` bytes, so any embedded ANSI runs inside the message
+   body keep rendering through `ANSI()` unchanged. Example:
+   `talker="Vit the innkeeper"`, `text="\x1b[1mVit the innkeeper\x1b[0m bows before you."` →
+   displays `"Vit "` in talker color, `"bows before you."` in message color.
 3. Else (malformed — talker not at start of `text`): prepend `<Talker> ` in
    talker color (`"you"` → `"You"`), then render `text` verbatim in message
    color.

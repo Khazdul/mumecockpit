@@ -179,6 +179,33 @@ def _strip_descriptor(name):
     return name
 
 
+def _match_visible_prefix(text, prefix):
+    """Walk text, skipping ANSI SGR sequences, and try to consume a
+    case-insensitive match for prefix from the visible characters.
+    Returns (matched_visible, body_byte_offset) on success — where
+    matched_visible is the matched run with the original casing from text
+    (visible chars only, no ANSI bytes), and body_byte_offset is the byte
+    index in text where the body begins. Returns None on mismatch."""
+    pi = 0
+    ti = 0
+    matched_visible = ""
+
+    while pi < len(prefix):
+        if ti >= len(text):
+            return None
+        m = _SGR_RE.match(text, ti)
+        if m:
+            ti = m.end()
+            continue
+        if text[ti].lower() != prefix[pi].lower():
+            return None
+        matched_visible += text[ti]
+        ti += 1
+        pi += 1
+
+    return (matched_visible, ti)
+
+
 def _channel_label(name):
     return CHANNEL_LABELS.get(name, name[:2].capitalize())
 
@@ -282,41 +309,45 @@ def _render_action_row(entry, with_time):
     if with_time:
         frags.append((C_TIME, _ts_str(entry.get("ts", 0)) + " "))
 
-    if text.startswith("You "):
+    result = _match_visible_prefix(text, "You ")
+    if result is not None:
+        _, body_start = result
         frags.append((C_TALKER_YOU, "You "))
-        rest = text[4:]
+        rest = text[body_start:]
         try:
             ansi_frags = to_formatted_text(ANSI(rest))
             frags.extend((C_MESSAGE_SELF if s == "" else s, t) for s, t in ansi_frags)
         except Exception:
             frags.append((C_MESSAGE_SELF, rest))
-    elif talker and text.lower().startswith(talker.lower() + " "):
-        prefix_len = len(talker) + 1
-        display_prefix = _strip_descriptor(text[:len(talker)]) + " "
-        frags.append((C_TALKER_OTHER, display_prefix))
-        rest = text[prefix_len:]
-        try:
-            ansi_frags = to_formatted_text(ANSI(rest))
-            frags.extend((C_MESSAGE_OTHER if s == "" else s, t) for s, t in ansi_frags)
-        except Exception:
-            frags.append((C_MESSAGE_OTHER, rest))
     else:
-        if talker == "you":
-            display_talker = "You"
-        elif talker:
-            stripped = _strip_descriptor(talker)
-            display_talker = stripped[0].upper() + stripped[1:]
+        result = _match_visible_prefix(text, talker + " ") if talker else None
+        if result is not None:
+            matched_visible, body_start = result
+            display_talker = _strip_descriptor(matched_visible.rstrip()) + " "
+            frags.append((C_TALKER_OTHER, display_talker))
+            rest = text[body_start:]
+            try:
+                ansi_frags = to_formatted_text(ANSI(rest))
+                frags.extend((C_MESSAGE_OTHER if s == "" else s, t) for s, t in ansi_frags)
+            except Exception:
+                frags.append((C_MESSAGE_OTHER, rest))
         else:
-            display_talker = ""
-        talker_style = C_TALKER_YOU if talker == "you" else C_TALKER_OTHER
-        msg_style    = C_MESSAGE_SELF if talker == "you" else C_MESSAGE_OTHER
-        if display_talker:
-            frags.append((talker_style, display_talker + " "))
-        try:
-            ansi_frags = to_formatted_text(ANSI(text))
-            frags.extend((msg_style if s == "" else s, t) for s, t in ansi_frags)
-        except Exception:
-            frags.append((msg_style, text))
+            if talker == "you":
+                display_talker = "You"
+            elif talker:
+                stripped = _strip_descriptor(talker)
+                display_talker = stripped[0].upper() + stripped[1:]
+            else:
+                display_talker = ""
+            talker_style = C_TALKER_YOU if talker == "you" else C_TALKER_OTHER
+            msg_style    = C_MESSAGE_SELF if talker == "you" else C_MESSAGE_OTHER
+            if display_talker:
+                frags.append((talker_style, display_talker + " "))
+            try:
+                ansi_frags = to_formatted_text(ANSI(text))
+                frags.extend((msg_style if s == "" else s, t) for s, t in ansi_frags)
+            except Exception:
+                frags.append((msg_style, text))
 
     return frags
 
