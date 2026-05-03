@@ -5,7 +5,6 @@ trap 'echo "Error on line $LINENO. Check the output above for details." >&2' ERR
 
 REPO_URL="https://github.com/Khazdul/mumecockpit.git"
 
-TT_MIN_VERSION="2.02.20"
 TT_BUILD_VERSION="2.02.61"
 
 # Privilege wrapper: prepend sudo when not running as root
@@ -88,21 +87,12 @@ tt_build_reason=""
 
 if ! tt_path="$(command -v tt++ 2>/dev/null)"; then
     tt_needs_build=1
-    tt_build_reason="not installed"
+    tt_build_reason="tt++ not installed"
+elif ! ldd "$tt_path" 2>/dev/null | grep -qiE 'gnutls|libssl'; then
+    tt_needs_build=1
+    tt_build_reason="tt++ at $tt_path lacks TLS support"
 else
-    tt_ver="$(tt++ -v 2>&1 | grep -oE 'TINTIN\+\+ +[0-9]+\.[0-9]+\.[0-9]+' | head -1 | awk '{print $2}')" || tt_ver=""
-    if [ -z "$tt_ver" ]; then
-        tt_needs_build=1
-        tt_build_reason="version unparseable"
-    elif ! dpkg --compare-versions "$tt_ver" ge "$TT_MIN_VERSION" 2>/dev/null; then
-        tt_needs_build=1
-        tt_build_reason="version $tt_ver < $TT_MIN_VERSION"
-    elif ! ldd "$tt_path" 2>/dev/null | grep -qiE 'ssl|gnutls'; then
-        tt_needs_build=1
-        tt_build_reason="no TLS support linked"
-    else
-        echo "tt++ $tt_ver at $tt_path looks good — keeping it."
-    fi
+    echo "tt++ at $tt_path has TLS support — keeping it."
 fi
 
 if [ "$tt_needs_build" -eq 1 ]; then
@@ -126,12 +116,11 @@ if [ "$tt_needs_build" -eq 1 ]; then
         echo "Error: tt++ not found after build." >&2
         exit 1
     }
-    tt_new_ver="$(tt++ -v 2>&1 | grep -oE 'TINTIN\+\+ +[0-9]+\.[0-9]+\.[0-9]+' | head -1 | awk '{print $2}')" || tt_new_ver=""
-    if ! ldd "$tt_new_path" 2>/dev/null | grep -qiE 'ssl|gnutls'; then
-        echo "Error: tt++ $tt_new_ver built without TLS. Ensure libgnutls28-dev is installed and re-run." >&2
+    if ! ldd "$tt_new_path" 2>/dev/null | grep -qiE 'gnutls|libssl'; then
+        echo "Error: tt++ built without TLS. Ensure libgnutls28-dev is installed and re-run." >&2
         exit 1
     fi
-    echo "tt++ $tt_new_ver built and installed at $tt_new_path (TLS confirmed)."
+    echo "tt++ built and installed at $tt_new_path (TLS confirmed)."
 fi
 
 # ---------------------------------------------------------------------------
