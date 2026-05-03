@@ -482,11 +482,11 @@ border persists the new value to `layout.conf` via `on_pane_resize.sh`.
 The status↔comm border drag persists `status_height`. The ui↔dev border
 persists `ui_height`.
 
-### Width floor
+### Width
 
-The 29-column `RIGHT_MIN` floor in `on_window_resize.sh` and `apply_layout.sh`
-is driven by the `status` pane's minimum render width. The comm pane has no
-fixed column requirement — it adapts to available width.
+The right column has no minimum width. `ui_width` from `bridge/layout.conf`
+is the sole authority (ADR 0038). The comm pane adapts to whatever width the
+column provides.
 
 ## Toggle
 

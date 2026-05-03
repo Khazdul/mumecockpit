@@ -323,14 +323,11 @@ The menu is visible iff:
 
 ```
 available_right = window_cols - MAIN_MIN - 1
-floor           = 29            if show_status is set
-                  ui_width      otherwise
-visible         = available_right >= floor
+visible         = available_right >= ui_width
 ```
 
 Where:
 - `MAIN_MIN = 30` — main/tt++ pane floor (duplicated from `on_window_resize.sh`)
-- `show_status` — read from `bridge/startup.conf`; treated as false if missing
 - `ui_width` — read from `bridge/layout.conf`; fallback 50 if missing
 - `window_cols` — read live via `os.get_terminal_size().columns`
 
@@ -338,12 +335,9 @@ The `ConditionalContainer` filter evaluates on every redraw. prompt_toolkit
 handles `SIGWINCH` internally and triggers redraws on terminal resize, so no
 explicit signal handler is needed for visibility evaluation.
 
-Toggling `show_status` (via popup Options or the CHAR button) while the
-terminal is held between 29 and `ui_width` columns flips the menu's visibility
-on the next poll tick (≤ 250 ms).
-
 See [ADR 0031](decisions/0031-input-menu-width-threshold.md) for the
-formula-duplication trade-off.
+formula-duplication trade-off and [ADR 0038](decisions/0038-drop-right-column-width-floor.md)
+for why the status-branch threshold was removed.
 
 ---
 Back to [architecture.md](../architecture.md).

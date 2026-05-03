@@ -94,8 +94,8 @@ A 1-row `ConditionalContainer` sits below the rows window. It is visible when
 The renderer reads its width from the live pane size on every frame via
 `shutil.get_terminal_size().columns`. SIGWINCH triggers a prompt_toolkit
 re-render so the new width is applied immediately without a restart. The bridge
-layer enforces a minimum of **29 columns** (`RIGHT_MIN` in `on_window_resize.sh`
-and `apply_layout.sh`); the renderer itself trusts the reported size.
+layer imposes no minimum width on the right column (ADR 0038); the renderer
+trusts the reported size and adapts fully (ADR 0023).
 
 ## State-file schema (`bridge/status.state`)
 
@@ -192,7 +192,7 @@ rendered inside the pane content.
 
 ## Field layout
 
-`W = shutil.get_terminal_size().columns` (minimum 29, enforced upstream).
+`W = shutil.get_terminal_size().columns` (adaptive; no upstream minimum enforced).
 
 ### Row 1 — character name with XP-progress background
 
@@ -295,12 +295,10 @@ rows + 1 toggle row + 1 blank separator + 4 data rows = 11 total.
 
 ### Width constraint
 
-`bridge/on_window_resize.sh` enforces:
-
-- `MAIN_MIN = 30` — main/tt++ pane floor
-- `RIGHT_MIN = 29` — right column floor when status is open
-
-Manual border drag is clamped to ≥ 29 in `bridge/on_pane_resize.sh`.
+`bridge/on_window_resize.sh` enforces `MAIN_MIN = 30` (main/tt++ pane floor).
+The right column has no minimum width enforced by the status pane — `ui_width`
+from `bridge/layout.conf` is the sole authority (ADR 0038). The renderer is
+adaptive and accepts any width (ADR 0023).
 
 ## Toggle
 

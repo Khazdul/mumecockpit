@@ -20,19 +20,12 @@ fi
 
 # Global width-priority constraint:
 #   MAIN_MIN    = 30 — main/tt++ pane floor (always)
-#   RIGHT_FLOOR = 29 when status is open; ui_width otherwise
+#   RIGHT_FLOOR = ui_width (sole authority — see ADR 0038)
 MAIN_MIN=30
+RIGHT_FLOOR=$ui_width
 
 HAS_RIGHT=$(tmux list-panes -t mume:cockpit -F '#{pane_title}' \
     | grep -E '^(ui|comm|dev|status|buffs)$' | head -1)
-
-HAS_STATUS=$(tmux list-panes -t mume:cockpit -F '#{pane_title}' \
-    | grep '^status$')
-if [ -n "$HAS_STATUS" ]; then
-    RIGHT_FLOOR=29
-else
-    RIGHT_FLOOR=$ui_width
-fi
 
 AVAILABLE_RIGHT=$(( COLS - MAIN_MIN - 1 ))
 
@@ -56,12 +49,8 @@ if [ -n "$HAS_RIGHT" ] && [ "$AVAILABLE_RIGHT" -lt "$RIGHT_FLOOR" ]; then
     rm -f "$LOCK"
     exit 0
 elif [ -f "$SENTINEL" ]; then
-    # Panes are collapsed — derive restore floor from sentinel.
-    if grep -q '^status$' "$SENTINEL"; then
-        RESTORE_FLOOR=29
-    else
-        RESTORE_FLOOR=$ui_width
-    fi
+    # Panes are collapsed — restore floor is always ui_width (ADR 0038).
+    RESTORE_FLOOR=$ui_width
     if [ "$AVAILABLE_RIGHT" -ge "$RESTORE_FLOOR" ]; then
         # Terminal widened back: restore previously-collapsed panes.
         touch "$LOCK"
@@ -76,15 +65,9 @@ elif [ -f "$SENTINEL" ]; then
         rm -f "$LOCK"
         # Fall through to normal layout logic below.
         source "$LAYOUT_CONF"
+        RIGHT_FLOOR=$ui_width
         HAS_RIGHT=$(tmux list-panes -t mume:cockpit -F '#{pane_title}' \
             | grep -E '^(ui|comm|dev|status|buffs)$' | head -1)
-        HAS_STATUS=$(tmux list-panes -t mume:cockpit -F '#{pane_title}' \
-            | grep '^status$')
-        if [ -n "$HAS_STATUS" ]; then
-            RIGHT_FLOOR=29
-        else
-            RIGHT_FLOOR=$ui_width
-        fi
     fi
 fi
 

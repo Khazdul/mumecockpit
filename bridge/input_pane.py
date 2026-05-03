@@ -39,10 +39,9 @@ LAYOUT_CONF_PATH  = os.path.join(BRIDGE_DIR, "layout.conf")
 MENU_POLL_MS      = 0.25
 MENU_WIDTH        = 29
 
-# Layout constants duplicated from bridge/on_window_resize.sh and
-# bridge/apply_layout.sh. Keep in sync; see ADR 0031.
-MAIN_MIN                = 30   # main/tt++ pane floor
-RIGHT_FLOOR_WITH_STATUS = 29   # right column floor when status pane is open
+# Layout constants duplicated from bridge/on_window_resize.sh.
+# Keep in sync; see ADR 0031 and ADR 0038.
+MAIN_MIN = 30   # main/tt++ pane floor
 
 # Button colours — toggle-state indicator
 BTN_BG_ON  = "#025570"   # rgb(2,85,112) — ON state background
@@ -530,8 +529,7 @@ def _menu_visible():
         cols = os.get_terminal_size().columns
     except OSError:
         return True
-    floor = RIGHT_FLOOR_WITH_STATUS if _menu_show_status else _menu_ui_width
-    return (cols - MAIN_MIN - 1) >= floor
+    return (cols - MAIN_MIN - 1) >= _menu_ui_width
 
 
 def _menu_text():
