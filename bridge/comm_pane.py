@@ -166,6 +166,20 @@ def _get_filtered(state):
     return [e for e in history if _filters.get(e.get("channel", ""), True)]
 
 
+def _strip_descriptor(name):
+    """Return name with ' the <descriptor>' suffix stripped.
+    'Takhr the orkish warden' -> 'Takhr'.
+    Returns name unchanged when there is no ' the ' inside it,
+    when name starts with 'the ' (article-prefix mob, no proper
+    name to keep), or when name is empty/None."""
+    if not name:
+        return name
+    idx = name.find(' the ')
+    if idx > 0:
+        return name[:idx]
+    return name
+
+
 def _channel_label(name):
     return CHANNEL_LABELS.get(name, name[:2].capitalize())
 
@@ -205,7 +219,8 @@ def _render_quoted_row(entry, channels):
     if talker == "you":
         display_talker = "You"
     elif talker:
-        display_talker = talker[0].upper() + talker[1:]
+        stripped = _strip_descriptor(talker)
+        display_talker = stripped[0].upper() + stripped[1:]
     else:
         display_talker = talker
 
@@ -234,7 +249,11 @@ def _render_quoted_row(entry, channels):
         prep = DESTINATION_PREPOSITIONS.get(channel)
         if prep:
             frags.append((verb_style, prep + " "))
-        display_dest = "you" if destination == "you" else destination[0].upper() + destination[1:]
+        if destination == "you":
+            display_dest = "you"
+        else:
+            stripped_dest = _strip_descriptor(destination)
+            display_dest = stripped_dest[0].upper() + stripped_dest[1:]
         dest_style = C_TALKER_YOU if destination == "you" else C_TALKER_OTHER
         frags.append((dest_style, display_dest + " "))
 
@@ -271,9 +290,10 @@ def _render_action_row(entry):
         except Exception:
             frags.append((C_MESSAGE_SELF, rest))
     elif talker and text.lower().startswith(talker.lower() + " "):
-        prefix = text[:len(talker) + 1]
-        frags.append((C_TALKER_OTHER, prefix))
-        rest = text[len(prefix):]
+        prefix_len = len(talker) + 1
+        display_prefix = _strip_descriptor(text[:len(talker)]) + " "
+        frags.append((C_TALKER_OTHER, display_prefix))
+        rest = text[prefix_len:]
         try:
             ansi_frags = to_formatted_text(ANSI(rest))
             frags.extend((C_MESSAGE_OTHER if s == "" else s, t) for s, t in ansi_frags)
@@ -283,7 +303,8 @@ def _render_action_row(entry):
         if talker == "you":
             display_talker = "You"
         elif talker:
-            display_talker = talker[0].upper() + talker[1:]
+            stripped = _strip_descriptor(talker)
+            display_talker = stripped[0].upper() + stripped[1:]
         else:
             display_talker = ""
         talker_style = C_TALKER_YOU if talker == "you" else C_TALKER_OTHER

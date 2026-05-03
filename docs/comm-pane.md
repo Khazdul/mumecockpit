@@ -289,9 +289,9 @@ Row format depends on channel class (see **Display normalization** below):
 | Field       | Style                                      | Notes                                                    |
 |-------------|--------------------------------------------|---------------------------------------------------------|
 | HH:MM       | `C_TIME` — `fg:#687685`                    | From `ts`; renders as DD/MM for messages older than 24 h |
-| Talker      | `C_TALKER_YOU` or `C_TALKER_OTHER`         | `C_TALKER_YOU` (soft cyan) when `talker == "you"`; `C_TALKER_OTHER` (warm tan) otherwise; first char capitalized |
+| Talker      | `C_TALKER_YOU` or `C_TALKER_OTHER`         | `C_TALKER_YOU` (soft cyan) when `talker == "you"`; `C_TALKER_OTHER` (warm tan) otherwise; `" the <descriptor>"` suffix stripped; first char capitalized |
 | verb        | `CHANNEL_COLORS[channel]`                  | From `CHANNEL_VERBS` (self/other form); unknown → channel name |
-| destination | `C_TALKER_YOU` or `C_TALKER_OTHER`         | `C_TALKER_YOU` when `destination == "you"`; `C_TALKER_OTHER` otherwise; present only when non-empty |
+| destination | `C_TALKER_YOU` or `C_TALKER_OTHER`         | `C_TALKER_YOU` when `destination == "you"`; `C_TALKER_OTHER` otherwise; `" the <descriptor>"` suffix stripped when not `"you"`; present only when non-empty |
 | message     | `C_MESSAGE_SELF` or `C_MESSAGE_OTHER`      | Extracted from `text` (see Display normalization); ANSI preserved |
 
 Talker-type (`ally`/`enemy`/`neutral`/`npc`) coloring has been removed. Talker
@@ -402,7 +402,7 @@ Unknown channels fall back to the channel name as both forms.
   has an entry, the preposition is inserted as a separate fragment in `verb_style`
   before the destination fragment. Channels with no entry take the destination as
   a direct object (no preposition). Examples:
-  - `You whisper to Dori the armourer 'hej'` (preposition inserted)
+  - `You whisper to Dori 'hej'` (preposition inserted; `"Dori the armourer"` → `"Dori"`)
   - `You tell Ibuki 'come to the inn'` (no preposition — tells not in table)
 - **Destination** — when `destination` is present (or filled by the fallback),
   it is inserted between verb (and preposition, if any) and message in
@@ -425,9 +425,12 @@ priority order:
    to the character name for own socials rather than `"you"`.
 2. Else if `talker` is non-empty and `text.lower().startswith(talker.lower() + " ")`:
    render as other — slice the matching prefix from `text` (preserving `text`'s
-   original casing, case-insensitive match) in `C_TALKER_OTHER`, remainder in
-   `C_MESSAGE_OTHER`. Covers multi-word talker names and talker/text case
-   mismatches (e.g. `talker="a dwarven sergeant"`, `text="A dwarven sergeant …"`).
+   original casing, case-insensitive match), apply `_strip_descriptor` to it, then
+   emit in `C_TALKER_OTHER`; remainder (`text[len(talker)+1:]`) in `C_MESSAGE_OTHER`.
+   Covers multi-word talker names and talker/text case mismatches
+   (e.g. `talker="a dwarven sergeant"`, `text="A dwarven sergeant …"`). Example:
+   `talker="Vit the innkeeper"`, `text="Vit the innkeeper bows respectfully."` →
+   displays `"Vit "` in talker color, `"bows respectfully."` in message color.
 3. Else (malformed — talker not at start of `text`): prepend `<Talker> ` in
    talker color (`"you"` → `"You"`), then render `text` verbatim in message
    color.
@@ -440,9 +443,10 @@ Embedded ANSI in the message portion is preserved via
 `prompt_toolkit.formatted_text.ANSI()`. The configured `C_MESSAGE_*` color is
 applied as the default for plain (non-ANSI-styled) text.
 
-**Talker capitalization** — first character of `talker` is uppercased; internal
-case is preserved (e.g. `"Vit the innkeeper"` stays `"Vit the innkeeper"`).
-`"you"` → `"You"`.
+**Talker capitalization** — `" the <descriptor>"` is stripped from the talker
+before capitalization (`"Vit the innkeeper"` → `"Vit"`). Article-prefix mobs
+(`"a dwarven sergeant"`, `"the gate guard"`) are unchanged — `' the '` at index 0
+signals no proper name to keep. `"you"` → `"You"`.
 
 ### Dev fixture
 

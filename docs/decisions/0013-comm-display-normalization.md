@@ -165,3 +165,42 @@ extended to also render an optional `destination` field between verb and message
 predictably fixable at the Lua layer without mutating stored history. Normalizing
 in the renderer keeps raw data pristine while correcting display artifacts at the
 only place that owns the view.
+
+---
+
+## 2026-05-04 update — Strip `" the <descriptor>"` suffix from NPC names
+
+**Problem:** MUME mob names include a descriptor suffix
+(`"Vit the innkeeper"`, `"Takhr the orkish warden"`, `"Gibur the gate guard"`).
+These suffixes clutter displayed names: `"Vit the innkeeper narrates '...'"` vs
+the intended `"Vit narrates '...'"`. The descriptor is purely a MUME world-flavor
+annotation; the proper name alone is sufficient for identification in the pane.
+
+**Change:** A new module-level helper `_strip_descriptor(name)` is added to
+`bridge/comm_pane.py`. It finds the first occurrence of `' the '` (with a leading
+space) in `name`. If the match is at index > 0, it returns `name[:idx]`; otherwise
+it returns `name` unchanged.
+
+The helper is applied at render time in three places:
+
+- **`_render_quoted_row` — talker:** `_strip_descriptor(talker)` before
+  uppercasing the first character. The `"you"` branch is unaffected.
+- **`_render_quoted_row` — destination:** `_strip_descriptor(destination)` before
+  uppercasing the first character. The `destination == "you"` branch is unaffected.
+- **`_render_action_row` — branch b (talker prefix in `text`):** `prefix_len` is
+  computed from the original `talker` length so the correct slice of `text` is
+  consumed. `display_prefix` is derived by calling `_strip_descriptor` on
+  `text[:len(talker)]` (original casing from `text`) and appending a single space.
+  Branch c (fallback) also applies `_strip_descriptor` before uppercasing.
+
+**Article-prefix mob exclusion:** Names that start with `"the "` (e.g.
+`"the gate guard"`) contain `' the '` at index 0, which the helper treats as
+"no proper name to keep" and returns unchanged. Names like `"a dwarven sergeant"`
+contain no `' the '` at all and are also unchanged. This ensures article-prefix
+mobs are never partially stripped.
+
+**Why the renderer, not Lua:** Raw data in `state.comm.history`, `bridge/comm.state`,
+and the per-profile JSONL archive must remain a faithful record of what the server
+sent. Stripping at any earlier stage would lose the original name, breaking
+re-renderability and diff-ability of archive entries. The renderer is the only
+place that owns the view; it is the correct and only place for this normalization.
