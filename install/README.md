@@ -94,7 +94,10 @@ curl -fsSL https://raw.githubusercontent.com/Khazdul/mumecockpit/main/install/bo
 
 ### What got installed
 
-- apt packages: tmux, lua5.4, tintin++, git, python3-prompt-toolkit, python3-pyperclip
+- apt packages: tmux, lua5.4, git, python3-prompt-toolkit, python3-pyperclip
+- tt++ 2.02.61, built from source when the apt version is too old or lacks
+  TLS — adds ~1–2 minutes on first install; skipped on subsequent runs if a
+  good binary is already in place
 - Alacritty (on native Linux only -- skipped on WSL since the Windows
   installer handles the terminal there)
 - The MUME Cockpit repo at `~/MUME`
@@ -115,10 +118,27 @@ packages manually and clone the repo:
 |----------------------|----------------------|----------------------|
 | tmux                 | tmux                 | tmux                 |
 | lua5.4               | lua                  | lua                  |
-| tintin++             | tintin               | tintin (AUR)         |
 | git                  | git                  | git                  |
 | python3-prompt-toolkit | python3-prompt-toolkit | python-prompt-toolkit |
 | python3-pyperclip    | python3-pyperclip    | python-pyperclip     |
+
+For tt++, build from source (the distro packages are often too old or lack
+TLS). Build dependencies:
+
+| Dep (apt)            | Fedora (dnf)         | Arch (pacman)        |
+|----------------------|----------------------|----------------------|
+| build-essential      | gcc make             | base-devel           |
+| libpcre2-dev         | pcre2-devel          | pcre2                |
+| libgnutls28-dev      | gnutls-devel         | gnutls               |
+| zlib1g-dev           | zlib-devel           | zlib                 |
+| pkg-config           | pkgconf              | pkgconf              |
+
+Then build and install:
+
+```
+git clone --depth 1 --branch 2.02.61 https://github.com/scandum/tintin
+cd tintin/src && ./configure && make && sudo make install
+```
 
 Then clone the repo:
 

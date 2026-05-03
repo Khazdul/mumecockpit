@@ -125,14 +125,20 @@ refocus-on-copy-mode-exit) both require 3.2+. Ubuntu 22.04 ships 3.2a; Ubuntu
 24.04 ships 3.4; macOS Homebrew currently ships 3.5+. All current bootstrap
 targets satisfy this floor.
 
-Debian/Ubuntu family, the macOS flow with `apt`:
+Debian/Ubuntu family — automated via `bootstrap-linux.sh`:
 
-```bash
-sudo apt install -y tmux lua5.4 python3 python3-prompt-toolkit \
-                    git tintin++
-git clone https://github.com/<user>/MUME.git ~/MUME
-chmod +x ~/MUME/start.sh
-```
+1. `apt-get install -y tmux lua5.4 python3 python3-prompt-toolkit python3-pyperclip git`
+2. **Probe-or-build tt++.** The script checks the installed `tt++` (if any)
+   for version ≥ 2.02.20 and GnuTLS linkage. If either check fails (or no
+   binary exists), it installs build deps and compiles tag 2.02.61 from
+   source, landing the binary at `/usr/local/bin/tt++`. Re-running the
+   bootstrap on an already-provisioned machine takes the "looks good —
+   keeping it" path with no rebuild. See [ADR 0035](decisions/0035-tt-from-source.md).
+3. Clone or update the repo to `~/MUME`.
+
+The source-build step adds ~1–2 minutes on first install. The build deps
+(`build-essential`, `libpcre2-dev`, `libgnutls28-dev`, `zlib1g-dev`,
+`pkg-config`) are only installed when a build is needed.
 
 Other distros (Fedora, Arch, …) get a documented manual recipe; automating all
 package managers is not a good use of time given the user base.
@@ -268,9 +274,10 @@ the installer.
   covers this cleanly.
 - **`winget` not available on policy-managed machines.** MSI fallback
   handles this case automatically.
-- **tt++ apt version may be stale.** If Ubuntu 24.04's `tintin++`
-  package is too old for our needs, we fall back to source build —
-  adds `libpcre2-dev` and a few minutes of compile time.
+- **tt++ apt version is stale and lacks TLS.** Handled: the bootstrap
+  probes the installed binary for version ≥ 2.02.20 and GnuTLS linkage,
+  then builds from source (tag 2.02.61) when either check fails. See
+  [ADR 0035](decisions/0035-tt-from-source.md).
 - **`pip install --break-system-packages`.** Required on Ubuntu 23.04+
   (PEP 668). Harmless on older releases; the flag can stay unconditional.
 - **Running as root inside WSL.** Fine for the cockpit (no sudo paths,
@@ -309,16 +316,10 @@ the installer.
 
 ## Open questions
 
-1. **Packaged tt++ version.** Is `tintin++` in Ubuntu 24.04's apt
-   recent enough for our needs? If yes, the bootstrap stays short. If no,
-   we add a source-build path and bring in `build-essential` +
-   `libpcre2-dev`. Decided: shipping apt-only first and validating
-   against real cockpit usage in WSL. Source-build fallback is parked
-   until a missing feature actually surfaces.
-2. **MMapper detection.** Detect MMapper's presence on the Windows
+1. **MMapper detection.** Detect MMapper's presence on the Windows
    host from WSL (probe `localhost:4242` during the bootstrap) and default
    `connection_mode` accordingly? Low effort, high user value.
-3. **Retire `misc/`.** This doc absorbs `misc/WSL and Terminal
+2. **Retire `misc/`.** This doc absorbs `misc/WSL and Terminal
    settings`. Once the installer ships, delete the `misc/` directory
    to remove duplication.
 
