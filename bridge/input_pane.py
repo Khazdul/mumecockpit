@@ -456,6 +456,14 @@ def setup_mouse_binding():
         f"send-keys -X copy-pipe-and-cancel ; run-shell {focus}",
     ])
 
+    # Drag-end in a root-table pane (prompt_toolkit panes: comm, buffs)
+    # or any drag whose release didn't traverse copy-mode. --sweep cancels
+    # copy-mode on any other non-input pane left stuck by an outside release.
+    subprocess.run([
+        "tmux", "bind-key", "-n", "MouseDragEnd1Pane",
+        "if-shell", not_input, f"run-shell '{focus} --sweep'",
+    ])
+
 
 def _restore_keypad():
     sys.stdout.write('\033>')

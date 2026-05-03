@@ -23,9 +23,13 @@ from unexpected clicks) are disabled or overridden.
 | Event | Action | Set in |
 |-------|--------|--------|
 | `Escape` | Open in-game popup (`ingame_menu.sh`) | `bridge/tmux_start.sh` |
-| `MouseDragEnd1Border` | Resize panes (`on_pane_resize.sh`) | `bridge/tmux_start.sh` |
+| `MouseDragEnd1Border` | Resize panes (`on_pane_resize.sh`), then sweep + refocus input (`focus_input.sh --sweep`) | `bridge/tmux_start.sh` |
 | `MouseUp1Pane` | Refocus input pane (`focus_input.sh`), gated on `pane_title != input` | `bridge/input_pane.py` |
-| `MouseDragEnd1Pane` | Copy selection + refocus input pane, gated on `pane_title != input` | `bridge/input_pane.py` |
+| `MouseDragEnd1Pane` (copy-mode table) | Copy selection + refocus input (`focus_input.sh`) | `bridge/input_pane.py` |
+| `MouseDragEnd1Pane` (root table) | Sweep stuck copy-mode panes + refocus input (`focus_input.sh --sweep`), gated on `pane_title != input` | `bridge/input_pane.py` |
+| `MouseDragEnd1Status` | Sweep + refocus input (`focus_input.sh --sweep`) | `bridge/tmux_start.sh` |
+| `MouseDragEnd1StatusLeft` | Sweep + refocus input (`focus_input.sh --sweep`) | `bridge/tmux_start.sh` |
+| `MouseDragEnd1StatusRight` | Sweep + refocus input (`focus_input.sh --sweep`) | `bridge/tmux_start.sh` |
 | `WheelUpPane` | Stock copy-mode entry; no-op in the cockpit status pane | `bridge/tmux_start.sh` |
 | `WheelDownPane` | Pass-through in copy-mode; no-op in the cockpit status pane | `bridge/tmux_start.sh` |
 
@@ -63,6 +67,18 @@ cockpit session. The pane no longer closes during normal use.
   path), the `pane-mode-changed` hook fires and returns focus to the input pane.
 - **Scroll wheel in cockpit status pane:** no-op — the status pane has no meaningful
   scrollback, and letting the wheel enter copy-mode there is confusing.
+
+### Drag-end surface matrix
+
+tmux fires drag-end on the **release** surface, not the drag-start surface. This creates a matrix problem: a drag that starts in the main pane (entering copy-mode) can release on a different pane, a border, or the status bar. The originating pane is left in copy-mode with an active selection, and tmux focus does not return to the input pane.
+
+Independently, prompt_toolkit panes (comm, buffs) have `mouse_support=True` and forward mouse events via `send-keys -M`. They never enter tmux copy-mode, so the copy-mode `MouseDragEnd1Pane` binding never fires for drags that start and end inside them.
+
+The fix is `focus_input.sh --sweep`, which iterates all panes in `mume:cockpit` and calls `copy-pipe-and-cancel` on every non-input pane where `pane_in_mode == 1`. `copy-pipe-and-cancel` preserves the selection (copies via OSC 52) and exits copy-mode. Every drag-end surface — other panes (root table), borders, and status bar — runs `--sweep` before refocusing the input pane.
+
+**Invariant:** after any drag-end, the input pane has tmux focus and no other pane is stuck in copy-mode with a stale selection.
+
+**Deliberate asymmetry:** `MouseUp1Pane` (plain click) does **not** use `--sweep`. Sweeping on click would cancel an in-progress scrollback session if the user clicks another pane while browsing history in the main pane. The sweep is restricted to drag-end events only.
 
 ## Page Up / Page Down from the input pane
 

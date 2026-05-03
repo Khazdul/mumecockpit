@@ -117,7 +117,10 @@ fi
 tmux set-hook -t mume window-resized \
     "run-shell 'bash $HOME/MUME/bridge/on_window_resize.sh'"
 tmux bind-key -n MouseDragEnd1Border \
-    "run-shell 'bash $HOME/MUME/bridge/on_pane_resize.sh'"
+    "run-shell '$HOME/MUME/bridge/on_pane_resize.sh' ; run-shell '$HOME/MUME/bridge/focus_input.sh --sweep'"
+tmux bind-key -n MouseDragEnd1Status      "run-shell '$HOME/MUME/bridge/focus_input.sh --sweep'"
+tmux bind-key -n MouseDragEnd1StatusLeft  "run-shell '$HOME/MUME/bridge/focus_input.sh --sweep'"
+tmux bind-key -n MouseDragEnd1StatusRight "run-shell '$HOME/MUME/bridge/focus_input.sh --sweep'"
 
 # Fast escape disambiguation so ESC feels instant.
 tmux set-option -s escape-time 10
