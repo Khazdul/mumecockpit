@@ -5,6 +5,9 @@ trap 'echo "Error on line $LINENO. Check the output above for details." >&2' ERR
 
 REPO_URL="https://github.com/Khazdul/mumecockpit.git"
 
+TT_MIN_VERSION="2.02.20"
+TT_BUILD_VERSION="2.02.61"
+
 # Privilege wrapper: prepend sudo when not running as root
 if [ "$(id -u)" -eq 0 ]; then
     RUN=""
@@ -66,9 +69,7 @@ REPO_DIR="$TARGET_HOME/MUME"
 # Install packages
 # ---------------------------------------------------------------------------
 
-# tintin++ is the correct apt package name — the plus signs are part of the
-# package name; do not "fix" them to tintin or tintin-plus.
-PACKAGES="tmux lua5.4 python3 python3-prompt-toolkit python3-pyperclip git tintin++"
+PACKAGES="tmux lua5.4 python3 python3-prompt-toolkit python3-pyperclip git"
 
 if [ "$IS_WSL" -eq 0 ]; then
     PACKAGES="$PACKAGES alacritty"
@@ -77,6 +78,61 @@ fi
 $RUN apt-get update
 # shellcheck disable=SC2086  # word-splitting of $PACKAGES is intentional
 $RUN apt-get install -y $PACKAGES
+
+# ---------------------------------------------------------------------------
+# Provision tt++ (probe existing binary; build from source when needed)
+# ---------------------------------------------------------------------------
+
+tt_needs_build=0
+tt_build_reason=""
+
+if ! tt_path="$(command -v tt++ 2>/dev/null)"; then
+    tt_needs_build=1
+    tt_build_reason="not installed"
+else
+    tt_ver="$(tt++ -v 2>&1 | grep -oE 'TINTIN\+\+ +[0-9]+\.[0-9]+\.[0-9]+' | head -1 | awk '{print $2}')" || tt_ver=""
+    if [ -z "$tt_ver" ]; then
+        tt_needs_build=1
+        tt_build_reason="version unparseable"
+    elif ! dpkg --compare-versions "$tt_ver" ge "$TT_MIN_VERSION" 2>/dev/null; then
+        tt_needs_build=1
+        tt_build_reason="version $tt_ver < $TT_MIN_VERSION"
+    elif ! ldd "$tt_path" 2>/dev/null | grep -qiE 'ssl|gnutls'; then
+        tt_needs_build=1
+        tt_build_reason="no TLS support linked"
+    else
+        echo "tt++ $tt_ver at $tt_path looks good — keeping it."
+    fi
+fi
+
+if [ "$tt_needs_build" -eq 1 ]; then
+    echo "tt++: $tt_build_reason — building from source (tag $TT_BUILD_VERSION)."
+    $RUN apt-get install -y build-essential libpcre2-dev libgnutls28-dev zlib1g-dev pkg-config
+
+    tt_tmpdir="$(mktemp -d)"
+    trap 'rm -rf "$tt_tmpdir"' EXIT
+
+    git clone --depth 1 --branch "$TT_BUILD_VERSION" \
+        https://github.com/scandum/tintin "$tt_tmpdir/tintin"
+    (
+        cd "$tt_tmpdir/tintin/src"
+        ./configure
+        make
+    )
+    $RUN make -C "$tt_tmpdir/tintin/src" install
+    hash -r
+
+    tt_new_path="$(command -v tt++ 2>/dev/null)" || {
+        echo "Error: tt++ not found after build." >&2
+        exit 1
+    }
+    tt_new_ver="$(tt++ -v 2>&1 | grep -oE 'TINTIN\+\+ +[0-9]+\.[0-9]+\.[0-9]+' | head -1 | awk '{print $2}')" || tt_new_ver=""
+    if ! ldd "$tt_new_path" 2>/dev/null | grep -qiE 'ssl|gnutls'; then
+        echo "Error: tt++ $tt_new_ver built without TLS. Ensure libgnutls28-dev is installed and re-run." >&2
+        exit 1
+    fi
+    echo "tt++ $tt_new_ver built and installed at $tt_new_path (TLS confirmed)."
+fi
 
 # ---------------------------------------------------------------------------
 # Clone or update the cockpit repo
