@@ -304,7 +304,7 @@ adaptive and accepts any width (ADR 0023).
 
 | Method                            | Mechanism                                       |
 |-----------------------------------|-------------------------------------------------|
-| `cp -c`                           | `toggle_pane.sh status` (runtime only)          |
+| `cp -c`                           | `toggle_pane.sh status --persist`               |
 | In-game popup → Options           | `toggle_pane.sh status --persist`               |
 | Launcher Options → Character pane | `_save_conf` → `startup.conf show_status`       |
 

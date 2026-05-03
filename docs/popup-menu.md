@@ -32,19 +32,17 @@ State is re-probed from the files on every render — never cached.
 Six toggles (Character pane / Buffs pane / Comm pane / UI / Dev / Pane dividers) + Back.
 State is re-probed from tmux on every render — never cached. Toggling calls
 `toggle_pane.sh --persist` directly; toggles do **not** route through tt++
-so no `cp -X` lines appear in the game pane. The popup submenu is therefore
-the persistent-toggle entry point; `cp` aliases remain runtime-only.
+so no `cp -X` lines appear in the game pane.
 
 The input-pane menu bar (CHAR / BUFFS / COM / UI buttons in the bottom row)
 is a sibling surface for the same four pane toggles. Both surfaces write
 `startup.conf` via `toggle_pane.sh --persist`; each reflects changes made by
 the other within ≤ 250 ms.
 
-`cp -u`, `cp -d`, and `cp -h` are thin wrappers around
-`bridge/toggle_pane.sh`. Each alias passes its target (`ui`, `dev`,
-or `headers`) to the script via `#system`. The script also accepts an
-optional `--persist` flag; the `cp` aliases invoke it without `--persist`,
-so they remain runtime-only and never modify `startup.conf`.
+`cp -u`, `cp -d`, `cp -m`, `cp -c`, `cp -b`, and `cp -h` are thin wrappers
+around `bridge/toggle_pane.sh`, each passing `--persist`. All toggle paths —
+popup, launcher Options, input-pane menu buttons, and `cp -X` aliases — are
+equivalent and write to `startup.conf`.
 
 ## Scripts submenu
 

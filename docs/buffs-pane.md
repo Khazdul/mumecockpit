@@ -195,7 +195,7 @@ vertical order.
 
 | Method                  | Mechanism                                        |
 |-------------------------|--------------------------------------------------|
-| `cp -b`                 | `toggle_pane.sh buffs` (runtime only)            |
+| `cp -b`                 | `toggle_pane.sh buffs --persist`                 |
 | BUFFS button            | `toggle_pane.sh buffs --persist`                 |
 | Launcher Options        | `_save_conf` → `startup.conf show_buffs`         |
 | In-game popup → Options | `toggle_pane.sh buffs --persist`                 |

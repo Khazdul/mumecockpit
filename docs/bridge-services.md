@@ -199,10 +199,10 @@ SCRIPT:autobow
 | `show_ui`         | `1`        | Whether to open the UI pane              |
 | `show_dev`        | `0`        | Whether to open the dev pane             |
 | `show_status`     | `0`        | Whether to open the status pane          |
-| `show_pane_dividers` | `1`     | Whether tmux pane borders and the pane-border-status bar are visible at startup. `cp -h` toggles this at runtime without writing back to conf. `bridge/toggle_pane.sh headers --persist` is the mechanism for persistent toggles from the in-game popup. |
+| `show_pane_dividers` | `1`     | Whether tmux pane borders and the pane-border-status bar are visible at startup. `cp -h` persists the new state via `toggle_pane.sh headers --persist`. |
 | `profile`         | `default`  | Which file in `ttpp/sessions/` to load; also the tt++ session name |
 
-Toggle panes at runtime with `cp -u`, `cp -d`, `cp -h`.
+Toggle panes (with persistence) via `cp -u`, `cp -d`, `cp -m`, `cp -c`, `cp -b`, `cp -h`.
 
 `profile` and `connection_mode` are read by `ttpp/core/config.tin` at tt++
 startup via `bridge/read_config.sh`, which materialises the `_profile`,

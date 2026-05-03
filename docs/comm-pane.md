@@ -492,7 +492,7 @@ column provides.
 
 | Method                            | Mechanism                                       |
 |-----------------------------------|-------------------------------------------------|
-| `cp -m`                           | `toggle_pane.sh comm` (runtime only)            |
+| `cp -m`                           | `toggle_pane.sh comm --persist`                 |
 | In-game popup → Options           | `toggle_pane.sh comm --persist`                 |
 | Launcher Options → Comm pane      | `_save_conf` → `startup.conf show_comm`         |
 

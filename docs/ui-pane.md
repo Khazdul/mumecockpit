@@ -130,7 +130,7 @@ this to the label ` UI ` when headers are on.
 
 | Method                            | Mechanism                                       |
 |-----------------------------------|-------------------------------------------------|
-| `cp -u`                           | `toggle_pane.sh ui` (runtime only)              |
+| `cp -u`                           | `toggle_pane.sh ui --persist`                   |
 | In-game popup → Options           | `toggle_pane.sh ui --persist`                   |
 | Launcher Options → UI pane        | `_save_conf` → `startup.conf show_ui`           |
 
