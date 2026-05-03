@@ -136,32 +136,34 @@ below).
 
 ## Scroll
 
-`_scroll_offset` is the number of newer rows hidden below the visible window.
-`0` means live-follow (sticky bottom); `N > 0` means `N` rows are scrolled
-off the bottom.
+`_scroll_offset` is the index of the first visible row. `0` means the top row
+is at the top of the pane; `N > 0` means `N` rows are hidden above.
 
-Mouse-wheel up/down on the grid (`ListControl`) increments/decrements
+Mouse-wheel down/up on the grid (`ListControl`) increments/decrements
 `_scroll_offset`. The visible slice is calculated as:
 
 ```
-visible_capacity = H - (1 if _scroll_offset > 0 else 0)
-max_offset       = max(0, total - visible_capacity)
-_scroll_offset   = max(0, min(_scroll_offset, max_offset))
-anchor_idx       = total - 1 - _scroll_offset
-start_idx        = max(0, anchor_idx - (visible_capacity - 1))
+list_height    = H - (1 if (_scroll_offset > 0 or total > H) else 0)
+max_offset     = max(0, total - list_height)
+_scroll_offset = max(0, min(_scroll_offset, max_offset))
+start_idx      = _scroll_offset
+end_idx        = min(total, start_idx + list_height)
+visible        = all_rows[start_idx:end_idx]
 ```
 
-**Sticky bottom on new rows:** when `_scroll_offset > 0` and a state reload
-adds `delta` new rows, `_scroll_offset` is increased by `delta` (clamped to
-`max_offset`) so the previously-visible rows stay in view rather than
-shifting up.
+New affects arriving while `_scroll_offset == 0` extend the bottom of the list
+without shifting the visible window. New affects arriving while scrolled leave
+the visible content unchanged — the renderer clamps `_scroll_offset` each frame.
 
 ### Indicator variants
 
-| Condition                                | Text               | Clickable                               |
-|------------------------------------------|--------------------|-----------------------------------------|
-| `_scroll_offset > 0`                     | `↓ N newer rows`   | Yes — resets offset to 0 (live bottom) |
-| `_scroll_offset == 0` and `total > H`    | `↓ N more rows`    | No — informational only                |
+| Condition                             | Text             | Clickable                      |
+|---------------------------------------|------------------|--------------------------------|
+| `_scroll_offset > 0`                  | `↑ N rows above` | Yes — resets offset to 0 (top) |
+| `_scroll_offset == 0` and `total > H` | `↓ N more rows`  | No — informational only        |
+
+N for `↑ N rows above` is `_scroll_offset`. N for `↓ N more rows` is
+`total - (H - 1)`.
 
 The indicator occupies a dedicated 1-row `ConditionalContainer` below the grid
 window, hidden when neither condition holds.
@@ -169,8 +171,8 @@ window, hidden when neither condition holds.
 ## Polling and redraw cadence
 
 - **State poll:** `os.stat(bridge/buffs.state).st_mtime` checked every 100 ms.
-  On mtime change: reload JSON, recalculate scroll offset, call
-  `app.invalidate()`.
+  On mtime change: reload JSON, call `app.invalidate()`. The renderer clamps
+  `_scroll_offset` on the next frame.
 - **Blink tick:** `asyncio` task that sleeps `1.0 - frac + 0.01` seconds,
   waking just after the wall-clock second boundary. Calls `app.invalidate()`
   each cycle so blink phase transitions are synchronised to wall-clock seconds

@@ -3,7 +3,7 @@
 # 4-per-row coloured grid grouped by type: spells (blue), buffs (green),
 # debuffs (red). Within each group: untimed first (alphabetical), then timed
 # by expires_at descending (alphabetical tie-break). Empty groups produce no
-# rows. Row-based scroll via mouse wheel; sticky-bottom; overflow indicator.
+# rows. Row-based scroll via mouse wheel; anchor-top; bidirectional overflow indicator.
 
 try:
     from prompt_toolkit import Application
@@ -62,7 +62,7 @@ _PALETTES = {
 _affects       = []
 _last_mtime    = None
 _app           = None
-_scroll_offset = 0   # 0 = bottom (live-follow); N = N newer rows hidden
+_scroll_offset = 0   # 0 = top (first row at top of pane); N = N rows hidden above
 
 
 def _term_rows():
@@ -187,13 +187,12 @@ def _grid_text():
     if total == 0:
         return []
 
-    visible_capacity = max(1, H - (1 if _scroll_offset > 0 else 0))
-    max_offset       = max(0, total - visible_capacity)
-    _scroll_offset   = max(0, min(_scroll_offset, max_offset))
-
-    anchor_idx = total - 1 - _scroll_offset
-    start_idx  = max(0, anchor_idx - (visible_capacity - 1))
-    visible    = all_rows[start_idx : anchor_idx + 1]
+    list_height    = H - (1 if (_scroll_offset > 0 or total > H) else 0)
+    max_offset     = max(0, total - list_height)
+    _scroll_offset = max(0, min(_scroll_offset, max_offset))
+    start_idx      = _scroll_offset
+    end_idx        = min(total, start_idx + list_height)
+    visible        = all_rows[start_idx:end_idx]
 
     frags = []
     for i, row_frags in enumerate(visible):
@@ -215,7 +214,7 @@ def _indicator_text():
                 _scroll_offset = 0
                 if _app:
                     _app.invalidate()
-        return [(C_INDICATOR, f"↓ {_scroll_offset} newer rows", _handler)]
+        return [(C_INDICATOR, f"↑ {_scroll_offset} rows above", _handler)]
 
     if total > H:
         hidden = total - (H - 1)
@@ -227,17 +226,17 @@ def _indicator_text():
 class ListControl(FormattedTextControl):
     def mouse_handler(self, mouse_event):
         global _scroll_offset
-        if mouse_event.event_type == MouseEventType.SCROLL_UP:
+        if mouse_event.event_type == MouseEventType.SCROLL_DOWN:
             spells, buffs, debuffs = _split_groups()
-            total            = _total_rows(spells, buffs, debuffs)
-            H                = max(1, _term_rows())
-            visible_capacity = max(1, H - (1 if _scroll_offset > 0 else 0))
-            max_offset       = max(0, total - visible_capacity)
-            _scroll_offset   = min(_scroll_offset + 1, max_offset)
+            total          = _total_rows(spells, buffs, debuffs)
+            H              = max(1, _term_rows())
+            list_height    = H - (1 if (_scroll_offset > 0 or total > H) else 0)
+            max_offset     = max(0, total - list_height)
+            _scroll_offset = min(_scroll_offset + 1, max_offset)
             if _app:
                 _app.invalidate()
             return None
-        if mouse_event.event_type == MouseEventType.SCROLL_DOWN:
+        if mouse_event.event_type == MouseEventType.SCROLL_UP:
             if _scroll_offset > 0:
                 _scroll_offset -= 1
             if _app:
@@ -246,21 +245,13 @@ class ListControl(FormattedTextControl):
         return super().mouse_handler(mouse_event)
 
 
-def _anchor_bottom(window):
-    """Pin list content to the bottom of the window (clip-top for overflow)."""
-    info = window.render_info
-    if info is None:
-        return 0
-    return max(0, info.content_height - info.window_height)
-
-
 def _restore_cursor():
     sys.stdout.write("\x1b[?25h")
     sys.stdout.flush()
 
 
 async def _poll_state(app):
-    global _affects, _last_mtime, _scroll_offset
+    global _affects, _last_mtime
 
     while True:
         try:
@@ -274,20 +265,7 @@ async def _poll_state(app):
                 try:
                     with open(BUFFS_STATE_PATH, "r") as fh:
                         loaded = json.load(fh)
-                    new_affects = loaded if isinstance(loaded, list) else []
-
-                    if _scroll_offset > 0:
-                        old_total = _total_rows(*_split_groups())
-                        _affects  = new_affects
-                        new_total = _total_rows(*_split_groups())
-                        delta = new_total - old_total
-                        if delta > 0:
-                            H                = max(1, _term_rows())
-                            visible_capacity = max(1, H - 1)
-                            max_offset       = max(0, new_total - visible_capacity)
-                            _scroll_offset   = min(_scroll_offset + delta, max_offset)
-                    else:
-                        _affects = new_affects
+                    _affects = loaded if isinstance(loaded, list) else []
                 except Exception:
                     pass
             else:
@@ -323,7 +301,6 @@ def main():
 
     grid_window = Window(
         content=ListControl(text=_grid_text, focusable=False),
-        get_vertical_scroll=_anchor_bottom,
     )
 
     indicator_container = ConditionalContainer(
