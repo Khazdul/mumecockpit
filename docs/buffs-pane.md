@@ -86,11 +86,11 @@ populated cell's separator.
 
 ### Per-group palette
 
-| Group   | Filled cell BG | Cell FG   | Separator FG | Separator BG |
-|---------|----------------|-----------|--------------|--------------|
-| Spells  | `#66b2ff`      | `#000000` | `#66b2ff`    | `#000000`    |
-| Buffs   | `#00d900`      | `#000000` | `#00d900`    | `#000000`    |
-| Debuffs | `#d90000`      | `#000000` | `#d90000`    | `#000000`    |
+| Group   | Filled cell BG | Cell FG   | Separator FG |
+|---------|----------------|-----------|--------------|
+| Spells  | `#66b2ff`      | `#000000` | `#66b2ff`    |
+| Buffs   | `#00d900`      | `#000000` | `#00d900`    |
+| Debuffs | `#d90000`      | `#000000` | `#d90000`    |
 
 Overflow indicator style: `fg:#d4a04e italic`.
 
@@ -110,14 +110,15 @@ For indefinite affects (`expected_duration` or `expires_at` is `null`):
 
 ### Separator rule
 
-The `▌` separator renders in the **group colour** only when `filled >= cell_w`.
-Otherwise it renders as `fg:#000000 bg:#000000` (black on black — invisible by
-design). Adjacent depleted cells therefore merge visually.
+The `▌` separator renders in the **group colour** (no background) only when
+`filled >= cell_w`. Otherwise it renders as an unstyled space, so it is
+invisible regardless of terminal theme. Adjacent depleted cells therefore merge
+visually on any background.
 
 ### Depleted name colour
 
-When `filled < cell_w` the name characters render as `fg:#1e1e1e bg:#000000`
-(near-black on black), unless the cell is blinking — see below.
+When `filled < cell_w` the name characters render as `fg:#666666` (mid-grey on
+terminal background), unless the cell is blinking — see below.
 
 ## Blink
 
@@ -129,10 +130,10 @@ An affect blinks when both conditions hold:
 Blink continues past the predicted expiry (`remaining` goes negative) until
 `affect_down` fires. Indefinite affects never blink.
 
-**Phase:** `int(time.time()) % 2 == 0` → visible (`fg:#1e1e1e`); `== 1` →
-hidden (`fg:#000000 bg:#000000`). Both halves are equal length because the
-blink tick wakes just after each wall-clock second boundary (see Polling
-below).
+**Phase:** `int(time.time()) % 2 == 0` → visible (`fg:#666666`); `== 1` →
+hidden (unstyled space — invisible on any background). Both halves are equal
+length because the blink tick wakes just after each wall-clock second boundary
+(see Polling below).
 
 ## Scroll
 

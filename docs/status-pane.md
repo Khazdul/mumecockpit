@@ -175,12 +175,8 @@ Constants defined at the top of `bridge/status_pane.py`:
 | `C_TP_FG` | `\x1b[38;2;0;40;50m`    | TP bar `▀` foreground (RGB 0,40,50)               |
 | `C_LABEL`         | `\x1b[38;2;128;128;128m`    | Data row label foreground (RGB 128,128,128)          |
 | `C_VALUE`         | `\x1b[38;2;192;192;192m`    | Data row value foreground (RGB 192,192,192)          |
-| `C_TOG_OFF_BG`    | `\x1b[48;2;0;0;0m`          | Toggle box background — off state (RGB 0,0,0 black)          |
-| `C_TOG_OFF_LABEL` | `\x1b[38;2;25;25;25m`       | Toggle label foreground — off state (RGB 25,25,25)           |
-| `C_TOG_OFF_FILL`  | `\x1b[38;2;0;0;0m`          | Toggle █ foreground — off state (RGB 0,0,0 black)            |
-| `C_TOG_ON_BG`     | `\x1b[48;2;0;0;0m`          | Toggle box background — on state (RGB 0,0,0 black)           |
-| `C_TOG_ON_LABEL`  | `\x1b[38;2;192;192;192m`    | Toggle label foreground — on state (RGB 192,192,192)         |
-| `C_TOG_ON_FILL`   | `\x1b[38;2;0;0;0m`          | Toggle █ foreground — on state (RGB 0,0,0 black)             |
+| `C_TOG_OFF_LABEL` | `\x1b[38;2;102;102;102m`    | Toggle label foreground — off state (RGB 102,102,102 mid-grey) |
+| `C_TOG_ON_LABEL`  | `\x1b[38;2;192;192;192m`    | Toggle label foreground — on state (RGB 192,192,192)           |
 
 
 ## Identity
@@ -213,22 +209,21 @@ rendered inside the pane content.
 ### Row 3 — four toggle-box cells (4-column layout)
 
 Same `_col_widths(W)` distribution and 1-char mid-spacer as the data rows. Each
-cell is laid out as `[icon][label][█-pad]`:
+cell is laid out as `[label][space-pad]`:
 
 - **label**: toggle name in uppercase (`SNEAK`, `RIDE`, `CLIMB`, `SWIM`).
-- **block-pad**: `col_w - len(label)` trailing `█` chars (min 0).
+- **space-pad**: `col_w - len(label)` trailing space chars (min 0), unstyled.
 
-Both states share a black background (`C_TOG_*_BG = RGB 0,0,0`). The `█` pad
-is also black, so it blends with the terminal background. State is communicated
-entirely through label colour: off uses a near-invisible dark label
-(`RGB 25,25,25`); on uses a light label (`RGB 192,192,192`).
+No background is set; the terminal background shows through. State is
+communicated entirely through label colour: off uses a mid-grey label
+(`RGB 102,102,102`); on uses a light label (`RGB 192,192,192`).
 
-| Col | Toggle | Off colours                                                             | On colours                                                            |
-|-----|--------|-------------------------------------------------------------------------|-----------------------------------------------------------------------|
-| 0   | SNEAK  | label `C_TOG_OFF_LABEL` (dark grey)                                     | label `C_TOG_ON_LABEL` (light)                                        |
-| 1   | RIDE   | same                                                                    | same                                                                  |
-| 2   | CLIMB  | same                                                                    | same                                                                  |
-| 3   | SWIM   | same                                                                    | same                                                                  |
+| Col | Toggle | Off colours                          | On colours                          |
+|-----|--------|--------------------------------------|-------------------------------------|
+| 0   | SNEAK  | label `C_TOG_OFF_LABEL` (`#666666`)  | label `C_TOG_ON_LABEL` (`#C0C0C0`) |
+| 1   | RIDE   | same                                 | same                                |
+| 2   | CLIMB  | same                                 | same                                |
+| 3   | SWIM   | same                                 | same                                |
 
 Missing or `"off"` value → cell renders in off state. `"on"` → on state.
 

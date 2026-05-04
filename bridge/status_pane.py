@@ -40,13 +40,8 @@ C_TP_FG  = "\x1b[38;2;0;40;50m"       # TP bar ▀ foreground
 C_LABEL  = "\x1b[38;2;128;128;128m"   # data row label foreground
 C_VALUE  = "\x1b[38;2;192;192;192m"   # data row value foreground
 
-C_TOG_OFF_BG    = "\x1b[48;2;0;0;0m"
-C_TOG_OFF_LABEL = "\x1b[38;2;25;25;25m"
-C_TOG_OFF_FILL  = "\x1b[38;2;0;0;0m"
-
-C_TOG_ON_BG     = "\x1b[48;2;0;0;0m"
+C_TOG_OFF_LABEL = "\x1b[38;2;102;102;102m"
 C_TOG_ON_LABEL  = "\x1b[38;2;192;192;192m"
-C_TOG_ON_FILL   = "\x1b[38;2;0;0;0m"
 
 C_INDICATOR = "fg:#d4a04e italic"   # overflow indicator style
 
@@ -97,20 +92,10 @@ def _is_on(v):
 
 def _render_toggle(label, col_w, on):
     label_eff = label[: max(col_w, 0)]
-    pad       = "█" * max(col_w - len(label_eff), 0)
+    pad       = " " * max(col_w - len(label_eff), 0)
     if on:
-        return (
-            C_TOG_ON_BG  + C_TOG_ON_LABEL  + label_eff +
-            C_RESET +
-            C_TOG_ON_FILL  + pad +
-            C_RESET
-        )
-    return (
-        C_TOG_OFF_BG + C_TOG_OFF_LABEL + label_eff +
-        C_RESET +
-        C_TOG_OFF_FILL + pad +
-        C_RESET
-    )
+        return C_TOG_ON_LABEL  + label_eff + C_RESET + pad
+    return     C_TOG_OFF_LABEL + label_eff + C_RESET + pad
 
 
 def _build_toggles_row(c, W):

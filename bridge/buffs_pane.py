@@ -48,15 +48,13 @@ C_DEBUFF_SEP_FG  = "fg:#d90000"
 
 C_CELL_FG       = "fg:#000000"
 C_INDICATOR     = "fg:#d4a04e italic"
-C_NAME_DEPLETED = "fg:#1e1e1e bg:#000000"
-C_SEP_DEPLETED  = "fg:#000000 bg:#000000"
-C_NAME_HIDDEN   = "fg:#000000 bg:#000000"
+C_NAME_DEPLETED = "fg:#666666"
 
 # Each palette tuple: (filled_cell_style, filled_sep_style)
 _PALETTES = {
-    "spell":  (C_CELL_FG + " " + C_SPELL_FILL_BG,  C_SPELL_SEP_FG  + " bg:#000000"),
-    "buff":   (C_CELL_FG + " " + C_BUFF_FILL_BG,   C_BUFF_SEP_FG   + " bg:#000000"),
-    "debuff": (C_CELL_FG + " " + C_DEBUFF_FILL_BG,  C_DEBUFF_SEP_FG + " bg:#000000"),
+    "spell":  (C_CELL_FG + " " + C_SPELL_FILL_BG,  C_SPELL_SEP_FG),
+    "buff":   (C_CELL_FG + " " + C_BUFF_FILL_BG,   C_BUFF_SEP_FG),
+    "debuff": (C_CELL_FG + " " + C_DEBUFF_FILL_BG,  C_DEBUFF_SEP_FG),
 }
 
 _affects       = []
@@ -137,15 +135,15 @@ def _cell_frags(entry, cell_w, palette):
         ch = label[i]
         if i < filled:
             frags.append((filled_style, ch))
-        elif blinking:
-            frags.append((C_NAME_DEPLETED if visible else C_NAME_HIDDEN, ch))
+        elif blinking and not visible:
+            frags.append(("", " "))
         else:
             frags.append((C_NAME_DEPLETED, ch))
 
     if filled >= cell_w:
         frags.append((sep_style, "▌"))
     else:
-        frags.append((C_SEP_DEPLETED, "▌"))
+        frags.append(("", " "))
 
     return frags
 
