@@ -1,0 +1,16 @@
+#nop ===== Default numpad keybindings =====
+#nop Requires NumLock on and keypad application mode (set by input pane).
+#nop Edit freely; auto-save (SESSION DEACTIVATED) preserves changes back to
+#nop this file on session exit.
+
+#macro {\eOp} {flee}
+#macro {\eOr} {south}
+#macro {\eOs} {down}
+#macro {\eOt} {west}
+#macro {\eOu} {exits}
+#macro {\eOv} {east}
+#macro {\eOx} {north}
+#macro {\eOy} {up}
+
+#macro {\eOk} {open exit}
+#macro {\eOm} {close exit}

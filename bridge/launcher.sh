@@ -447,10 +447,13 @@ _create_profile_flow() {
         case "$LAST_KEY" in
             ESC) _DIRTY=1; return ;;
             'b'|'B')
-                printf '#nop %s.tin — MUME Cockpit profile\n' "$new_name" \
-                    > "ttpp/sessions/${new_name}.tin"
-                printf '#nop Loaded when this profile is selected in the startup menu.\n' \
-                    >> "ttpp/sessions/${new_name}.tin"
+                if [ -f bridge/templates/blank_profile.tin ]; then
+                    cp bridge/templates/blank_profile.tin "ttpp/sessions/${new_name}.tin"
+                else
+                    # Defensive fallback — template should always be present in a working install.
+                    printf '#nop %s.tin — MUME Cockpit profile\n' "$new_name" \
+                        > "ttpp/sessions/${new_name}.tin"
+                fi
                 profile="$new_name"; _save_conf
                 _DIRTY=1; return
                 ;;
