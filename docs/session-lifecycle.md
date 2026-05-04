@@ -145,6 +145,15 @@ of the same name on SESSION CONNECTED, and the class is kept open for
 the duration of the session so that any aliases, variables, or other
 settings added at runtime are captured automatically.
 
+**New-profile origin.** `bridge/templates/blank_profile.tin` is the single
+source of truth for the content of any new profile. `start.sh` seeds
+`ttpp/sessions/default.tin` from this template on fresh installs (idempotent
+— a no-op when the file already exists). The launcher's "Create blank profile"
+flow `cp`s from the same template. The shipped template includes default numpad
+`#macro` registrations so that `#class {<profile>} {write}` on session
+deactivation never produces an empty file (which tt++ would reject on the next
+`#read`). See ADR 0042.
+
 **Profile file format:** Profile files are stored bare — no
 `#class {name} {open}` / `{close}` wrapping is required or expected. The
 cockpit handles class assignment externally. Legacy MUME settings files can

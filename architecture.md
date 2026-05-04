@@ -33,6 +33,8 @@ tracking, and UI feedback.
 │   │                     #   system.tin     — connection aliases, cp commands, session events
 │   │                     #   welcome.tin    — clean boot banner + auto-connect
 │   └── sessions/         # Per-profile personal settings (.tin files)
+│                         #   default.tin is runtime-seeded from
+│                         #   bridge/templates/blank_profile.tin (ADR 0042)
 │
 ├── lua/
 │   ├── brain.lua         # Lua brain — infrastructure, event loop, auto-loads core/ then scripts/
@@ -52,6 +54,10 @@ tracking, and UI feedback.
 │   ├── launcher.sh           # Pre-tmux startup menu (DOS-style, pure bash)
 │   ├── menu_render.sh        # Render/input helpers sourced by launcher.sh
 │   ├── tmux_start.sh         # tmux session creation (extracted from start.sh)
+│   ├── templates/            # New-profile content templates
+│   │                         #   blank_profile.tin — seeded into
+│   │                         #   ttpp/sessions/default.tin and used by
+│   │                         #   the launcher's "Create blank profile"
 │   ├── toggle_pane.sh        # Toggle ui/dev/comm/status panes and pane headers
 │   │                         #   (called by cp aliases and in-game popup)
 │   ├── version_check.sh      # Queries GitHub for latest tag; updates
