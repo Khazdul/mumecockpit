@@ -29,6 +29,8 @@ chmod +x bridge/open_pane.sh
 chmod +x bridge/focus_input.sh
 chmod +x bridge/launcher.sh
 chmod +x bridge/tmux_start.sh
+chmod +x bridge/build_initial_layout.sh
+chmod +x bridge/wait_for_layout.sh
 [ -f bridge/ingame_menu.sh ] && chmod +x bridge/ingame_menu.sh
 
 # ---------------------------------------------------------------------------

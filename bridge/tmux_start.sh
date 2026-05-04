@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 # bridge/tmux_start.sh — creates and attaches to the MUME tmux cockpit session.
-# Reads show_ui / show_dev / show_status / show_comm from bridge/startup.conf.
+# Session options, hooks, and keybinds are configured here; pane layout is built
+# post-attach by build_initial_layout.sh via a one-shot client-attached hook.
 # Called by start.sh (--no-menu / -d / -u) or bridge/launcher.sh ("New session").
 
 cd "$(dirname "$0")/.."
 
-# Clear any stale sentinel left by a crash before doing anything else.
-# The sentinel is set by ingame_menu.sh just before firing cp -e; if tmux
-# died uncleanly the file may linger and mis-route the next cold start.
+# Clear any stale sentinels left by a crash before doing anything else.
 rm -f bridge/.return_to_menu
 rm -f bridge/.popup_open
+rm -f bridge/.layout_ready
 
 CONF="bridge/startup.conf"
 
@@ -18,18 +18,6 @@ if [ ! -f "$CONF" ]; then
     printf 'connection_mode=mmapper\nshow_status=1\nshow_comm=1\nshow_ui=1\nshow_dev=0\nshow_pane_dividers=1\nprofile=default\n' > "$CONF"
 fi
 source "$CONF"
-
-# start.sh may export override variables for backwards-compat -d / -u flags.
-# These apply for this run only and are never written back to startup.conf.
-[ -n "$_OVERRIDE_SHOW_UI"  ] && show_ui="$_OVERRIDE_SHOW_UI"
-[ -n "$_OVERRIDE_SHOW_DEV" ] && show_dev="$_OVERRIDE_SHOW_DEV"
-
-SHOW_UI="${show_ui:-1}"
-SHOW_DEV="${show_dev:-0}"
-SHOW_STATUS="${show_status:-0}"
-SHOW_BUFFS="${show_buffs:-0}"
-SHOW_COMM="${show_comm:-0}"
-SHOW_DIVIDERS="${show_pane_dividers:-1}"
 
 # ---------------------------------------------------------------------------
 # 1. Dirs, permissions, log reset
@@ -41,6 +29,8 @@ chmod +x bridge/open_pane.sh
 chmod +x bridge/focus_input.sh
 chmod +x bridge/toggle_pane.sh
 chmod +x bridge/read_version.sh
+chmod +x bridge/build_initial_layout.sh
+chmod +x bridge/wait_for_layout.sh
 
 touch logs/debug.log logs/ui.log
 > logs/debug.log
@@ -51,13 +41,8 @@ touch logs/debug.log logs/ui.log
 # ---------------------------------------------------------------------------
 tmux kill-session -t mume 2>/dev/null || true
 
-read -r TERM_LINES TERM_COLS < <(stty size </dev/tty 2>/dev/null || echo "24 80")
-
-# Delay tt++ launch until the pane setup below (split-window, resize-pane)
-# has completed. Otherwise tt++/Lua emit startup output while tail -f
-# is still reflowing, and the first lines are lost into tmux scrollback.
-tmux new-session -d -s mume -x "$TERM_COLS" -y "$TERM_LINES" -n cockpit \
-    "sleep 0.3 && cd $HOME/MUME && exec tt++ -G ttpp/main.tin"
+tmux new-session -d -s mume -n cockpit \
+    "bash $HOME/MUME/bridge/wait_for_layout.sh"
 tmux set-option -t mume status off
 tmux set-option -t mume mouse on
 
@@ -75,44 +60,9 @@ tmux set-option -as terminal-features  ",*:RGB"
 
 tmux set-option -t mume pane-border-format \
   "#{?#{==:#{pane_title},status}, Character ,#{?#{==:#{pane_title},buffs}, Buffs ,#{?#{==:#{pane_title},comm}, Communication ,#{?#{==:#{pane_title},ui}, UI ,#{?#{==:#{pane_title},dev}, Dev ,}}}}}"
-if [ "$SHOW_DIVIDERS" -eq 1 ]; then
-    tmux set-option -t mume pane-border-status top
-    tmux set-option -t mume pane-border-style "fg=colour235"
-    tmux set-option -t mume pane-active-border-style "fg=colour235"
-else
-    tmux set-option -t mume pane-border-status off
-    tmux set-option -t mume pane-border-style "fg=black"
-    tmux set-option -t mume pane-active-border-style "fg=black"
-fi
 
 # ---------------------------------------------------------------------------
-# 3. Build layout
-# ---------------------------------------------------------------------------
-LAYOUT_CONF="bridge/layout.conf"
-[ -f "$LAYOUT_CONF" ] || printf "ui_width=33\nwindow_cols=0\n" > "$LAYOUT_CONF"
-grep -q "^window_cols=" "$LAYOUT_CONF" || echo "window_cols=0" >> "$LAYOUT_CONF"
-source "$LAYOUT_CONF"
-LEFT_WIDTH=$(( TERM_COLS - ui_width - 1 ))
-sed -i "s/^window_cols=.*/window_cols=$TERM_COLS/" "$LAYOUT_CONF"
-
-if [ "$SHOW_UI" -eq 1 ] && [ "$SHOW_DEV" -eq 1 ]; then
-    tmux split-window -h -t mume:cockpit.0 "bash -c 'stty -isig 2>/dev/null; trap "" INT; while true; do python3 $HOME/MUME/bridge/ui_pane.py; printf \"\\n[pane kept alive — use cp -u to close]\\n\"; sleep 0.2; done'"
-    tmux select-pane -t mume:cockpit.1 -T "ui"
-    tmux split-window -v -t mume:cockpit.1 "bash -c 'stty -isig 2>/dev/null; trap "" INT; while true; do tail -f $HOME/MUME/logs/debug.log; printf \"\\n[pane kept alive — use cp -d to close]\\n\"; sleep 0.2; done'"
-    tmux select-pane -t mume:cockpit.2 -T "dev"
-    tmux resize-pane -t mume:cockpit.0 -x "$LEFT_WIDTH"
-elif [ "$SHOW_UI" -eq 1 ]; then
-    tmux split-window -h -t mume:cockpit.0 "bash -c 'stty -isig 2>/dev/null; trap "" INT; while true; do python3 $HOME/MUME/bridge/ui_pane.py; printf \"\\n[pane kept alive — use cp -u to close]\\n\"; sleep 0.2; done'"
-    tmux select-pane -t mume:cockpit.1 -T "ui"
-    tmux resize-pane -t mume:cockpit.0 -x "$LEFT_WIDTH"
-elif [ "$SHOW_DEV" -eq 1 ]; then
-    tmux split-window -h -t mume:cockpit.0 "bash -c 'stty -isig 2>/dev/null; trap "" INT; while true; do tail -f $HOME/MUME/logs/debug.log; printf \"\\n[pane kept alive — use cp -d to close]\\n\"; sleep 0.2; done'"
-    tmux select-pane -t mume:cockpit.1 -T "dev"
-    tmux resize-pane -t mume:cockpit.0 -x "$LEFT_WIDTH"
-fi
-
-# ---------------------------------------------------------------------------
-# 4. Register layout hooks
+# 3. Register layout hooks
 # ---------------------------------------------------------------------------
 tmux set-hook -t mume window-resized \
     "run-shell 'bash $HOME/MUME/bridge/on_window_resize.sh'"
@@ -171,37 +121,16 @@ bash "$HOME/MUME/bridge/ping_monitor.sh" \
 disown
 
 # ---------------------------------------------------------------------------
-# 5. TT++ started directly in pane 0 (via new-session above) — no send-keys.
+# 4. Label pane 0; register one-shot layout hook; attach.
 # ---------------------------------------------------------------------------
 tmux select-pane -t mume:cockpit.0 -T "MUME"
 sleep 0.2 && tmux select-pane -t mume:cockpit.0 -T "MUME" &
 
-# ---------------------------------------------------------------------------
-# 6. Open right-column panes (top to bottom: status → comm → ui → dev)
-# ---------------------------------------------------------------------------
-if [ "$SHOW_STATUS" -eq 1 ]; then
-    bash "$HOME/MUME/bridge/open_pane.sh" status
-fi
-if [ "$SHOW_BUFFS" -eq 1 ]; then
-    bash "$HOME/MUME/bridge/open_pane.sh" buffs
-fi
-if [ "$SHOW_COMM" -eq 1 ]; then
-    bash "$HOME/MUME/bridge/open_pane.sh" comm
-fi
-bash bridge/apply_layout.sh
-
-# ---------------------------------------------------------------------------
-# 7. Open input pane
-# ---------------------------------------------------------------------------
-bash "$HOME/MUME/bridge/open_pane.sh" input
-
-# ---------------------------------------------------------------------------
-# 8. Focus input pane
-# ---------------------------------------------------------------------------
-INPUT_INDEX=$(tmux list-panes -t mume:cockpit \
-    -F '#{pane_index} #{pane_title}' \
-    | awk '/^[0-9]+ input$/{print $1}')
-tmux select-pane -t mume:cockpit.$INPUT_INDEX
+# build_initial_layout.sh fires on first client-attached, reads the true
+# terminal width from tmux, splits panes, and touches .layout_ready so
+# wait_for_layout.sh unblocks and hands off to tt++.
+tmux set-hook -t mume client-attached \
+    "run-shell 'bash $HOME/MUME/bridge/build_initial_layout.sh'"
 
 tmux attach -t mume
 

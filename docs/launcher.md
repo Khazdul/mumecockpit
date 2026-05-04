@@ -99,7 +99,7 @@ column alignment.
   The launcher → tmux_start handoff itself is exec'd, so there is no
   intermediate bash flash between menu and cockpit.
 
-**Pane-setup barrier.** `bridge/tmux_start.sh` prefixes the tt++ launch command with `sleep 0.3 &&` so that `tmux split-window` and `tmux resize-pane` complete before tt++/Lua begin writing to `ui.log` / `debug.log`. Without the barrier, `tail -f` in the UI/DEV panes reflows mid-output and the first emitted lines are swallowed into scrollback.
+**Post-attach layout build.** `bridge/tmux_start.sh` registers a one-shot `client-attached` hook that fires `bridge/build_initial_layout.sh` the moment the first client attaches. `build_initial_layout.sh` reads the true terminal width via `tmux display-message -p '#{window_width}'` (authoritative only after attach) and runs all `split-window` / `resize-pane` / `open_pane.sh` calls. When finished it touches `bridge/.layout_ready` and disarms itself with `tmux set-hook -u client-attached`. Meanwhile pane 0 runs `bridge/wait_for_layout.sh`, which polls `.layout_ready` in a tight loop (50 ms intervals, 2 s timeout) and then execs `tt++`. This sentinel-based handshake replaces the old `sleep 0.3 &&` barrier: tt++ starts only after the layout is in place, so the first lines of tt++/Lua output are never lost into scrollback. See ADR 0041 for the full rationale.
 
 **Ctrl+C hardening (ui/dev panes).** Focusing a UI or DEV pane and pressing Ctrl+C would send SIGINT to the `tail -f` foreground process, kill it, and close the pane — breaking the layout for inexperienced users. Both panes are now launched with a hardened wrapper:
 

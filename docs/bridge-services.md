@@ -221,6 +221,7 @@ State is stored in `bridge/layout.conf` (gitignored, recreated on first startup)
 | `window_cols`   | 0       | Last known terminal width — distinguishes WINCH from border drag. |
 
 ### Behaviour
+- **Initial build** — `build_initial_layout.sh` is fired by a one-shot `client-attached` hook registered in `tmux_start.sh`. It reads the true terminal width from tmux (authoritative only post-attach), runs all `split-window` / `resize-pane` / `open_pane.sh` calls, and touches `bridge/.layout_ready` to release `wait_for_layout.sh` so tt++ can start. The hook is then disarmed; subsequent attaches skip the build via an idempotency guard (pane-count check). See ADR 0041.
 - **Right-column heights** — Right-column pane heights are tmux-managed and freely resizable. `apply_layout.sh` does not set or restore any right-column height; it only pins the input row to 1 row.
 - **Terminal resize** — `window-resized` hook fires `on_window_resize.sh`, which re-applies `ui_width` (main pane width) and then calls `apply_layout.sh` to re-pin the input row.
 - **Border drag** — `MouseDragEnd1Border` binding fires `on_pane_resize.sh`, which saves the new `ui_width` to `layout.conf`. Vertical (height) drags are not detected and write nothing to `layout.conf`. `apply_layout.sh` is called afterward to re-pin the input row.
@@ -234,6 +235,7 @@ State is stored in `bridge/layout.conf` (gitignored, recreated on first startup)
 ```
 bridge/buffs.state
 bridge/layout.conf
+bridge/.layout_ready
 bridge/session.state
 bridge/status.state
 bridge/version.cache
