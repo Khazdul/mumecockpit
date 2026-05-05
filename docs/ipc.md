@@ -58,6 +58,16 @@ Event format: `TYPE:arg1:arg2:...`
 Event types are defined as features are built. Each type maps to a handler
 registered by the relevant script. Unknown types are logged to dev.
 
+`USER_INPUT` and `EMPTY_INPUT` are the two IPC event types used by the stored-
+spell detection paths. Both follow Pattern 1: `stored_spells.lua` registers
+`#event {SENT OUTPUT} {#if {"%0" != ""} {#lua {USER_INPUT:%0}}}` and
+`#event {RECEIVED INPUT} {#if {"%0" == ""} {#lua {EMPTY_INPUT}}}` in
+GAME_SESSION via `session_cmd()`. `brain.lua`'s `USER_INPUT` handler rejoins
+the IPC parts with `":"` before emitting `user_input`, because raw player input
+may itself contain `":"`. `EMPTY_INPUT` carries no payload — the empty-`%0`
+guard in the tt++ rule makes the handler unconditional. See the `SENT OUTPUT`
+caveat above for why session-scoping is mandatory.
+
 **Pattern 2 — Script-owned aliases and triggers**
 
 Scripts register their own aliases and triggers directly via `tintin_cmd()` at

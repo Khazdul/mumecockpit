@@ -68,6 +68,7 @@ event flow. Same pattern as `gmcp.trace`.
 | `store_recalled` | (none) | `ttpp/core/stored_spells.tin` `#action` |
 | `store_decayed` | (none) | `ttpp/core/stored_spells.tin` `#action` |
 | `stored_spells_untracked` | (none) | `ttpp/core/stored_spells.tin` `#action` |
+| `stored_spells_changed` | (none) | `lua/core/stored_spells.lua` — emitted on every state mutation and on `_load_active()` restore |
 
 ### `mob_death`
 
@@ -176,7 +177,8 @@ Subscribers should read `state.char.affects` directly for the new state.
 
 **Subscribers:** `lua/core/status_state.lua` — calls `serialize()` to update
 `bridge/status.state` and rewrite `status_height` in `bridge/layout.conf`
-when the affect count changes.
+when the affect count changes. `lua/core/buffs_state.lua` — calls `serialize()`
+to update `bridge/buffs.state` (affects and stored spells written together).
 
 ### `wimpy_changed`
 
@@ -310,6 +312,20 @@ making individual tracking impossible.
 `expires_at = nil` on every entry in `state.char.stored_spells`, persists the
 active list, and calls `ui_warn("STORE: lost track of stored spells.")`. No-op
 (no UI) when the list is already empty.
+
+### `stored_spells_changed`
+
+Emitted by `lua/core/stored_spells.lua` with no payload whenever
+`state.char.stored_spells` is mutated — at the end of each `store_succeeded`,
+`store_recalled`, `store_decayed`, and `stored_spells_untracked` handler, and
+inside `_load_active()` after restoring persisted entries on `Char.Name`.
+
+Subscribers should read `state.char.stored_spells` directly for the new state.
+
+**Subscribers:** `lua/core/buffs_state.lua` — calls `serialize()` to write the
+updated `stored_spells` array (alongside `affects`) to `bridge/buffs.state`
+atomically, giving the buffs-pane renderer a fresh snapshot within one poll
+tick.
 
 ## Adding a new event
 
