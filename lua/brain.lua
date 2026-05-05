@@ -376,6 +376,10 @@ handlers["USER_INPUT"] = function(parts)
     events.emit("user_input", raw)
 end
 
+handlers["EMPTY_INPUT"] = function(_)
+    events.emit("user_input_empty")
+end
+
 -- -----------------------------
 -- EXPOSED FUNCTIONS (called via #lua from tt++)
 -- -----------------------------

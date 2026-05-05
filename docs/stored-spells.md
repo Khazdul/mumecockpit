@@ -259,6 +259,10 @@ Multiple failure patterns (out of mana, backfire, etc.) each emit
 drains FIFO — if two store attempts were pending, the first failure consumes the
 first queued spell.
 
+An empty line sent to MUME (just Enter) aborts the oldest pending cast attempt.
+Detected via RECEIVED INPUT in GAME_SESSION; reuses the `store_attempt_failed`
+path.
+
 ## Default duration
 
 When no observed samples exist for a spell, `expected_duration` defaults to

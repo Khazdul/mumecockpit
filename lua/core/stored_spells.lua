@@ -205,6 +205,13 @@ events.subscribe("store_attempt_failed", function()
     table.remove(_pending_attempts, 1)
 end)
 
+events.subscribe("user_input_empty", function()
+    if #_pending_attempts > 0 then
+        dbg("[STORED_SPELLS] aborted: empty input")
+        events.emit("store_attempt_failed")
+    end
+end)
+
 events.subscribe("store_succeeded", function()
     if #_pending_attempts == 0 then
         dbg("[STORED_SPELLS] stored: queue empty (out of sync)")
@@ -339,6 +346,12 @@ function _register_stored_spells_actions()
     -- recursion that floods tt++ within seconds. Scoping to GAME_SESSION
     -- restricts the event to MUD-bound bytes.
     session_cmd([[#event {SENT OUTPUT} {#if {"%0" != ""} {#lua {USER_INPUT:%0}}}]])
+
+    -- Empty-input abort detection. RECEIVED INPUT fires only on actual
+    -- user input (unlike SENT OUTPUT, which also fires on tt++ IAC/GMCP
+    -- flushes), so an empty %0 here is unambiguously "user pressed Enter
+    -- on an empty line" — which MUME interprets as a cast abort.
+    session_cmd([[#event {RECEIVED INPUT} {#if {"%0" == ""} {#lua {EMPTY_INPUT}}}]])
 
     local failure_patterns = {
         "^Alas, not enough mana flows through you...$",

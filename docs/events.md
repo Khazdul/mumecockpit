@@ -60,6 +60,7 @@ event flow. Same pattern as `gmcp.trace`.
 | `affects_changed` | (none) | `lua/core/affects.lua` — emitted on every state mutation and every tick |
 | `wimpy_changed` | numeric string (`"0"`..`"N"`) | `ttpp/core/mud_events.tin` |
 | `user_input` | raw sent-line string | `lua/brain.lua` `handlers["USER_INPUT"]` |
+| `user_input_empty` | (none) | RECEIVED INPUT with empty `%0` in GAME_SESSION; `lua/brain.lua` `handlers["EMPTY_INPUT"]` |
 | `store_attempt_started` | spell full name string | `lua/core/stored_spells.lua` — `user_input` subscriber |
 | `store_attempt_failed` | (none) | `ttpp/core/stored_spells.tin` `#action` (via `_register_stored_spells_actions`) |
 | `store_succeeded` | (none) | `ttpp/core/stored_spells.tin` `#action` |
@@ -207,6 +208,20 @@ feeds the IPC path; the handler in `brain.lua` bridges it to the Lua event bus.
 **Subscribers:** `lua/core/stored_spells.lua` — parses outgoing `cast 'store' X`
 and `cast 'spell'` commands to drive the stored-spell FIFO queue and
 `_last_cast_intent`.
+
+### `user_input_empty`
+
+Emitted by `brain.lua`'s `handlers["EMPTY_INPUT"]` when GAME_SESSION receives a
+RECEIVED INPUT event with an empty `%0`. RECEIVED INPUT fires only on actual user
+keystrokes — unlike SENT OUTPUT, which also fires on tt++ IAC/GMCP flushes —
+so an empty `%0` here is unambiguously "user pressed Enter on an empty line",
+which MUME interprets as a cast abort.
+
+No payload.
+
+**Subscribers:** `lua/core/stored_spells.lua` — if `_pending_attempts` is
+non-empty, logs the abort and funnels into `store_attempt_failed` to pop the
+oldest queued attempt. Silent no-op when the queue is empty.
 
 ### `store_attempt_started`
 
