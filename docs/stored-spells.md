@@ -114,11 +114,26 @@ Examples:
 The tt++ event `SENT OUTPUT` fires on every line the user sends. The IPC path
 is:
 
-1. `#event {SENT OUTPUT} {#lua {USER_INPUT:%0}}` in `ttpp/core/system.tin`.
+1. `#event {SENT OUTPUT} {#if {"%0" != ""} {#lua {USER_INPUT:%0}}}` registered
+   in GAME_SESSION by `_register_stored_spells_actions()` (see `docs/ipc.md`
+   for why top-level registration recurses).
 2. `brain.lua` `handlers["USER_INPUT"]` rejoins the parts and emits `user_input`.
-3. `stored_spells.lua` subscriber matches with two Lua patterns (first wins):
-   - `^c%w+%s+%w+%s+'([^']+)'%s*(.*)$` — cast with speed modifier
-   - `^c%w+%s+'([^']+)'%s*(.*)$` — cast without speed modifier
+3. `stored_spells.lua` subscriber matches in two stages (first match wins):
+
+### Top-level command shortcuts
+
+MUME accepts `sto X`, `stor X`, and `store X` as server-side shortcuts that
+expand to `cast 'store' X`. The snooper recognises these directly so they
+queue an attempt without requiring the full `cast '...'` syntax. Prefixes are
+tested longest-first (`store` before `stor` before `sto`) to avoid ambiguity.
+If the target resolves, `store_attempt_started` is emitted via the normal path.
+
+### `cast '...'` syntax
+
+If no top-level shortcut matched, two Lua patterns are tried in order:
+
+- `^c%w+%s+%w+%s+'([^']+)'%s*(.*)$` — cast with speed modifier
+- `^c%w+%s+'([^']+)'%s*(.*)$` — cast without speed modifier
 
 If neither pattern matches, the line is ignored.
 

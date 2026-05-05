@@ -380,6 +380,7 @@ end
 -- EXPOSED FUNCTIONS (called via #lua from tt++)
 -- -----------------------------
 function handle_event(ses, line)
+    if line == "" then return end
     -- Direct Lua call: functionname(args)
     if line:match("^[%w_][%w_%.]*%(") then
         local fn, err = load(line)

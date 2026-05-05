@@ -147,6 +147,21 @@ end
 -- ---------------------------------------------------------------------------
 
 events.subscribe("user_input", function(raw)
+    -- MUME top-level store shortcuts: sto / stor / store <target>.
+    -- Try longest prefix first to avoid mis-binding on substrings.
+    for _, prefix in ipairs({ "store", "stor", "sto" }) do
+        local target_text = raw:match("^" .. prefix .. "%s+(%S.*)$")
+        if target_text then
+            local target_full = _resolve_spell(target_text)
+            if target_full then
+                events.emit("store_attempt_started", target_full)
+            else
+                dbg("[STORED_SPELLS] attempt: unresolved target '" .. target_text .. "' (top-level)")
+            end
+            return
+        end
+    end
+
     local spell_text, tail
     spell_text, tail = raw:match("^c%w+%s+%w+%s+'([^']+)'%s*(.*)$")
     if not spell_text then
@@ -323,7 +338,7 @@ function _register_stored_spells_actions()
     -- subprocess stdin (every #lua {...} call), creating a self-amplifying
     -- recursion that floods tt++ within seconds. Scoping to GAME_SESSION
     -- restricts the event to MUD-bound bytes.
-    session_cmd("#event {SENT OUTPUT} {#lua {USER_INPUT:%0}}")
+    session_cmd([[#event {SENT OUTPUT} {#if {"%0" != ""} {#lua {USER_INPUT:%0}}}]])
 
     local failure_patterns = {
         "^Alas, not enough mana flows through you...$",
