@@ -59,6 +59,13 @@ event flow. Same pattern as `gmcp.trace`.
 | `affect_down` | affect name string | `ttpp/core/affects.tin` `#action` |
 | `affects_changed` | (none) | `lua/core/affects.lua` — emitted on every state mutation and every tick |
 | `wimpy_changed` | numeric string (`"0"`..`"N"`) | `ttpp/core/mud_events.tin` |
+| `user_input` | raw sent-line string | `lua/brain.lua` `handlers["USER_INPUT"]` |
+| `store_attempt_started` | spell full name string | `lua/core/stored_spells.lua` — `user_input` subscriber |
+| `store_attempt_failed` | (none) | `ttpp/core/stored_spells.tin` `#action` (via `_register_stored_spells_actions`) |
+| `store_succeeded` | (none) | `ttpp/core/stored_spells.tin` `#action` |
+| `store_recalled` | (none) | `ttpp/core/stored_spells.tin` `#action` |
+| `store_decayed` | (none) | `ttpp/core/stored_spells.tin` `#action` |
+| `stored_spells_untracked` | (none) | `ttpp/core/stored_spells.tin` `#action` |
 
 ### `mob_death`
 
@@ -186,6 +193,87 @@ renderer distinguishes `0` from absent).
 
 **Subscribers:** `lua/core/wimpy.lua` — updates `state.char.wimpy`, emits
 `script_ui("WIMPY", ...)`.
+
+### `user_input`
+
+Emitted by `brain.lua`'s `handlers["USER_INPUT"]` on every line the user sends
+to the MUD. The payload is the full raw sent-line string, reconstructed by
+joining the IPC parts with `":"` (necessary because raw input may itself contain
+`:`).
+
+Source: `#event {SENT OUTPUT} {#lua {USER_INPUT:%0}}` in `ttpp/core/system.tin`
+feeds the IPC path; the handler in `brain.lua` bridges it to the Lua event bus.
+
+**Subscribers:** `lua/core/stored_spells.lua` — parses outgoing `cast 'store' X`
+and `cast 'spell'` commands to drive the stored-spell FIFO queue and
+`_last_cast_intent`.
+
+### `store_attempt_started`
+
+Emitted by `lua/core/stored_spells.lua`'s `user_input` subscriber when an
+outgoing `cast 'store' <spell>` command is successfully resolved. Payload is the
+full spell name (e.g. `"fireball"`).
+
+**Subscribers:** `lua/core/stored_spells.lua` — appends the spell name to the
+`_pending_attempts` FIFO queue and logs `[STORED_SPELLS] attempt: <name>`.
+
+### `store_attempt_failed`
+
+Emitted by one of the twelve failure-pattern `#action` triggers registered by
+`_register_stored_spells_actions()`. No payload.
+
+Failure patterns include: not enough mana, backfire, nothing happens, fear,
+relaxed, concentration lost, flee, mind full, general failure, unknown spell,
+and invalid speed argument.
+
+**Subscribers:** `lua/core/stored_spells.lua` — pops the front of
+`_pending_attempts`. If the queue is already empty, logs
+`[STORED_SPELLS] fail: queue empty (out of sync)` and takes no further action.
+
+### `store_succeeded`
+
+Emitted when the game sends `"You stored it."` No payload.
+
+**Subscribers:** `lua/core/stored_spells.lua` — pops the front of
+`_pending_attempts`, computes `expected_duration` (mean of up to 3 prior samples,
+defaulting to 5400 s), appends a new entry to `state.char.stored_spells`,
+persists the active list, and emits a `script_ui("STORE", ...)` line.
+
+### `store_recalled`
+
+Emitted when the game sends `"You quickly recall your stored spell..."` No
+payload.
+
+**Subscribers:** `lua/core/stored_spells.lua` — finds the entry in
+`state.char.stored_spells` with the highest `started_at` whose `name` matches
+`_last_cast_intent`. If found, removes the entry, persists the active list, and
+emits a `script_ui("STORE", ...)` line. `_last_cast_intent` is NOT cleared so
+that successive recalls of the same spell resolve correctly.
+
+### `store_decayed`
+
+Emitted when the game sends `"Your mind feels empty for a while."` No payload.
+
+**Subscribers:** `lua/core/stored_spells.lua` — finds the oldest entry in
+`state.char.stored_spells` (lowest `started_at`). If `tracked == true`, records
+the observed duration to the ring-buffer in `state.char.stored_spell_times`
+(FIFO, capped at 3 samples) and persists the times file. Removes the entry and
+persists the active list. Emits a `script_ui("STORE", ...)` line noting the
+observed duration or `(untracked)` depending on the `tracked` flag.
+
+### `stored_spells_untracked`
+
+Emitted by either of two patterns: `"You blast the area with magical energies."`
+(self-cast) or `"%1 blasts the area with magical energies."` (other entity).
+No payload.
+
+A magic-blast consumes all currently stored spells in an indeterminate order,
+making individual tracking impossible.
+
+**Subscribers:** `lua/core/stored_spells.lua` — sets `tracked = false` and
+`expires_at = nil` on every entry in `state.char.stored_spells`, persists the
+active list, and calls `ui_warn("STORE: lost track of stored spells.")`. No-op
+(no UI) when the list is already empty.
 
 ## Adding a new event
 

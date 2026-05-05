@@ -381,5 +381,6 @@ of basic tt++ customisation (#alias for targeting, doors, spells;
 - [docs/status-pane.md](docs/status-pane.md) — Character Status pane: renderer, state-file schema, field layout, colour scheme, layout integration, phase 2–4 extension points. Touched when changing the status pane.
 - [docs/clock.md](docs/clock.md) — Game clock: sync sources, state schema, persistence, seed handling, degradation rules. Touched when changing clock sync or consuming game time.
 - [docs/affects.md](docs/affects.md) — Affect tracker: data flow, state schemas, persistence, pattern-conversion rules, tick lifecycle. Touched when changing affect tracking or adding new affect entries.
+- [docs/stored-spells.md](docs/stored-spells.md) — Stored spells tracker: data flow, state schemas, spell-name resolver, persistence, SENT OUTPUT snooping, event lifecycle. Touched when changing stored-spell tracking or the spells data table.
 - [docs/buffs-pane.md](docs/buffs-pane.md) — Buffs pane: renderer, layout integration, overflow policy. Touched when building or changing the buffs pane renderer.
 - [docs/install-bootstrap.md](docs/install-bootstrap.md) — Cross-platform install and bootstrap plan. Touched when scheduling installer work or when a platform constraint (WSL, Alacritty, package versions) changes.

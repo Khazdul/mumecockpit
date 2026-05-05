@@ -1,0 +1,9 @@
+#nop ===== STORED SPELLS =====
+#nop Trigger registration alias for the stored spells tracker.
+#nop Called from SESSION CONNECTED and the cp -r reload chain in system.tin.
+#nop The alias delegates to Lua which registers one #action per game pattern
+#nop in the game session.
+
+#alias {_register_stored_spells_actions} {
+    #lua {_register_stored_spells_actions()}
+}

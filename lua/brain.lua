@@ -366,6 +366,12 @@ end
 -- -----------------------------
 local handlers = {}
 
+-- USER_INPUT: raw SENT OUTPUT forwarded by ttpp/core/system.tin.
+-- Parts are rejoined with ":" because raw input may itself contain ":".
+handlers["USER_INPUT"] = function(parts)
+    events.emit("user_input", table.concat(parts, ":"))
+end
+
 -- -----------------------------
 -- EXPOSED FUNCTIONS (called via #lua from tt++)
 -- -----------------------------

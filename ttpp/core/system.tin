@@ -110,6 +110,7 @@
         _register_mud_events $game_session;
         _register_clock_actions $game_session;
         _register_affect_actions;
+        _register_stored_spells_actions;
         #$game_session #class {$game_session} {open}
     };
     #showme {[COCKPIT] Full reload complete};
@@ -143,6 +144,8 @@
 
 #nop ===== EVENTS / TRIGGERS =====
 
+#event {SENT OUTPUT} {#lua {USER_INPUT:%0}}
+
 #nop ===== SESSION EVENTS =====
 
 #event {SESSION CONNECTED} {
@@ -162,6 +165,7 @@
             _register_mud_events %0;
             _register_clock_actions %0;
             _register_affect_actions;
+            _register_stored_spells_actions;
             #%0 #class {%0} {open}
         }
     }
