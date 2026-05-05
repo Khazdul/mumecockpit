@@ -4,7 +4,7 @@ return {
         ["ventriloquate"]       = { shortest = "ventr"    },
         ["detect invisibility"] = { shortest = "detect i" },
         ["detect magic"]        = { shortest = "detect m" },
-        ["armour"]              = { shortest = "armou"    },
+        ["armour"]              = { shortest = "arm"    },
         ["chill touch"]         = { shortest = "chill"    },
         ["create light"]        = { shortest = "creat"    },
         ["locate magic"]        = { shortest = "locate m" },
