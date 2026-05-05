@@ -1161,11 +1161,11 @@
 #VARIABLE {character} {}
 #VARIABLE {class} {caster}
 #VARIABLE {mees} {}
-#VARIABLE {ring} {copperring}
+#VARIABLE {ring} {rubyring}
 #VARIABLE {sd1} {exit}
 #VARIABLE {sd2} {}
 #VARIABLE {sd3} {}
-#VARIABLE {spell} {'blindness'}
+#VARIABLE {spell} {'charm'}
 #VARIABLE {ss} {normal}
-#VARIABLE {target} {chieftain}
+#VARIABLE {target} {*orc*}
 
