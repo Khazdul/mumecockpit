@@ -9,37 +9,48 @@ wiring.
 ## Architecture
 
 ```
-lua/core/affects.lua ──► state.char.affects
-                                │
-                    affects_changed event
-                                │
-                                ▼
-                    lua/core/buffs_state.lua ──► bridge/buffs.state (JSON)
-                                                        │
-                                                 mtime poll (100 ms)
-                                                        │
-                                                        ▼
-                                            bridge/buffs_pane.py
+lua/core/affects.lua ──► state.char.affects ──────────────────────┐
+                                │                                  │
+                    affects_changed event                          │
+                                │                                  ▼
+lua/core/stored_spells.lua ──► state.char.stored_spells    lua/core/buffs_state.lua ──► bridge/buffs.state (JSON)
+                                │                                  ▲           │
+                    stored_spells_changed event ───────────────────┘    mtime poll (100 ms)
+                                                                                │
+                                                                                ▼
+                                                                    bridge/buffs_pane.py
 ```
 
-`buffs_state.lua` serialises `state.char.affects` to `bridge/buffs.state`
-on every `affects_changed` event, on character reset (disconnect), and on
+`buffs_state.lua` serialises both `state.char.affects` and
+`state.char.stored_spells` to `bridge/buffs.state` on every `affects_changed`
+or `stored_spells_changed` event, on character reset (disconnect), and on
 login. `buffs_pane.py` polls that file and renders the grid.
 
 ## State file schema (`bridge/buffs.state`)
 
-Bare JSON array, one entry per active affect:
+JSON object with two arrays:
 
 ```json
-[
-  {"name": "armour",  "type": "spell",  "expires_at": 1714001800, "expected_duration": 1800},
-  {"name": "hunger",  "type": null,     "expires_at": null,       "expected_duration": null}
-]
+{
+  "affects": [
+    {"name": "armour", "type": "spell",  "expires_at": 1714001800, "expected_duration": 1800},
+    {"name": "hunger", "type": null,     "expires_at": null,       "expected_duration": null}
+  ],
+  "stored_spells": [
+    {"name": "earthquake", "expires_at": 1714005400, "expected_duration": 5400, "tracked": true},
+    {"name": "fireball",   "expires_at": null,        "expected_duration": null,  "tracked": false}
+  ]
+}
 ```
 
 `expires_at` and `expected_duration` are both `null` for indefinite affects
-(no `duration` field in the data table). `type` mirrors the data-table value
-and may also be `null` if absent from the data table.
+(no `duration` field in the data table) and for untracked stored spells
+(post magic-blast). `type` mirrors the data-table value and may also be
+`null` if absent from the data table.
+
+**Legacy fallback:** if the loaded value is a bare JSON array (pre-migration
+state file), the renderer treats it as `{ "affects": loaded, "stored_spells": [] }`
+and shows only affects — no crash, no Stored group.
 
 ## Rendering
 
@@ -47,25 +58,34 @@ and may also be `null` if absent from the data table.
 
 ### Grouping
 
-Affects are partitioned into three groups rendered top-to-bottom with no blank
-rows between them. Empty groups produce no rows.
+Groups are rendered top-to-bottom with no blank rows between them. Empty
+groups produce no rows.
 
-| Group   | Condition                                             |
-|---------|-------------------------------------------------------|
-| Spells  | `type == "spell"`                                     |
-| Buffs   | `type` is neither `"spell"` nor `"debuff"`            |
-| Debuffs | `type == "debuff"`                                    |
+| Group   | Source          | Condition                                          |
+|---------|-----------------|----------------------------------------------------|
+| Spells  | `affects`       | `type == "spell"`                                  |
+| Buffs   | `affects`       | `type` is neither `"spell"` nor `"debuff"`         |
+| Debuffs | `affects`       | `type == "debuff"`                                 |
+| Stored  | `stored_spells` | all entries (tracked and untracked)                |
 
-Each group lays out 4 affects per row.
+Each group lays out 4 entries per row.
 
 ### Sort within a group
 
-Each group is independently sorted by the same key:
+**Spells, Buffs, Debuffs** are each independently sorted by the same key:
 
 1. **Untimed** (`expires_at` is `null`) — alphabetically by name,
    case-insensitive. Rendered first.
 2. **Timed** (`expires_at` is set) — by `expires_at` descending (most time
    remaining first); alphabetical by name as tie-break.
+
+**Stored** uses an inverted convention — tracked entries carry real expiry
+data and are therefore rendered first; untracked entries represent degraded
+state (post magic-blast) and are rendered last:
+
+1. **Tracked** (`tracked == true`) — by `expires_at` descending (most time
+   remaining first); alphabetical by name as tie-break.
+2. **Untracked** (`tracked == false`) — alphabetical by name, case-insensitive.
 
 ### Grid layout
 
@@ -86,13 +106,32 @@ populated cell's separator.
 
 ### Per-group palette
 
-| Group   | Filled cell BG | Cell FG   | Separator FG |
-|---------|----------------|-----------|--------------|
-| Spells  | `#66b2ff`      | `#000000` | `#66b2ff`    |
-| Buffs   | `#00d900`      | `#000000` | `#00d900`    |
-| Debuffs | `#d90000`      | `#000000` | `#d90000`    |
+| Group          | Filled cell BG | Cell FG   | Separator FG |
+|----------------|----------------|-----------|--------------|
+| Spells         | `#66b2ff`      | `#000000` | `#66b2ff`    |
+| Buffs          | `#00d900`      | `#000000` | `#00d900`    |
+| Debuffs        | `#d90000`      | `#000000` | `#d90000`    |
+| Stored         | `#ff66ff`      | `#000000` | `#ff66ff`    |
+| Stored (untracked)¹ | `#cccccc` | `#000000` | `#cccccc`   |
+
+¹ See "Untracked stored cells" below.
 
 Overflow indicator style: `fg:#d4a04e italic`.
+
+### Untracked stored cells
+
+An entry is untracked when `tracked == false` (set by magic-blast). Untracked
+cells render differently from all other cells:
+
+- **Bar fill:** always full (`filled = cell_w`) — no drain calculation.
+- **Fill BG:** `#cccccc` (grey).
+- **Name FG:** `#000000` (black, legible on grey fill).
+- **Separator FG:** `#cccccc` (grey — blends with fill, invisible as separator).
+- **Blink:** never.
+
+The `tracked` field on the entry is the sole gate; `expires_at` and
+`expected_duration` are both `null` for untracked entries and are ignored by
+the renderer.
 
 ### Bar fill
 

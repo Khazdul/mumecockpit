@@ -140,6 +140,7 @@ local function _load_active(char_name)
         end
     end
     dbg("[STORED_SPELLS] restored " .. restored .. " (" .. expired .. " expired, " .. stale .. " stale)")
+    events.emit("stored_spells_changed")
 end
 
 -- ---------------------------------------------------------------------------
@@ -237,6 +238,7 @@ events.subscribe("store_succeeded", function()
     }
     state.char.stored_spells[#state.char.stored_spells + 1] = entry
     _save_active()
+    events.emit("stored_spells_changed")
     script_ui("STORE", "stored '" .. name .. "' (" .. _fmt_mmss(expected_duration) .. " remaining).")
     dbg("[STORED_SPELLS] stored: " .. name)
 end)
@@ -261,6 +263,7 @@ events.subscribe("store_recalled", function()
     end
     table.remove(state.char.stored_spells, best_idx)
     _save_active()
+    events.emit("stored_spells_changed")
     script_ui("STORE", "'" .. name .. "' recalled.")
     dbg("[STORED_SPELLS] recall: " .. name)
     -- _last_cast_intent is intentionally NOT cleared here
@@ -297,6 +300,7 @@ events.subscribe("store_decayed", function()
         script_ui("STORE", "'" .. name .. "' decayed (untracked).")
         dbg("[STORED_SPELLS] decay: " .. name .. " untracked")
     end
+    events.emit("stored_spells_changed")
 end)
 
 events.subscribe("stored_spells_untracked", function()
@@ -307,6 +311,7 @@ events.subscribe("stored_spells_untracked", function()
         e.expires_at = nil
     end
     _save_active()
+    events.emit("stored_spells_changed")
     ui_warn("STORE: lost track of stored spells.")
     dbg("[STORED_SPELLS] untracked: " .. count .. " entries")
 end)

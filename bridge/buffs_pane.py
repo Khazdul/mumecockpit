@@ -46,6 +46,12 @@ C_BUFF_SEP_FG   = "fg:#00d900"
 C_DEBUFF_FILL_BG = "bg:#d90000"
 C_DEBUFF_SEP_FG  = "fg:#d90000"
 
+# Stored — magenta; untracked variant grey
+C_STORED_FILL_BG         = "bg:#ff66ff"
+C_STORED_SEP_FG          = "fg:#ff66ff"
+C_STORED_UNTRACKED_BG    = "bg:#cccccc"
+C_STORED_UNTRACKED_FG    = "fg:#cccccc"
+
 C_CELL_FG       = "fg:#000000"
 C_INDICATOR     = "fg:#d4a04e italic"
 C_NAME_DEPLETED = "fg:#666666"
@@ -55,9 +61,11 @@ _PALETTES = {
     "spell":  (C_CELL_FG + " " + C_SPELL_FILL_BG,  C_SPELL_SEP_FG),
     "buff":   (C_CELL_FG + " " + C_BUFF_FILL_BG,   C_BUFF_SEP_FG),
     "debuff": (C_CELL_FG + " " + C_DEBUFF_FILL_BG,  C_DEBUFF_SEP_FG),
+    "stored": (C_CELL_FG + " " + C_STORED_FILL_BG,  C_STORED_SEP_FG),
 }
 
 _affects       = []
+_stored_spells = []
 _last_mtime    = None
 _app           = None
 _scroll_offset = 0   # 0 = top (first row at top of pane); N = N rows hidden above
@@ -97,14 +105,24 @@ def _split_groups():
         [e for e in _affects if e.get("type") not in ("spell", "debuff")],
         key=_sort_key,
     )
-    return spells, buffs, debuffs
+    tracked   = sorted(
+        [e for e in _stored_spells if e.get("tracked")],
+        key=lambda e: (-(e.get("expires_at") or 0), e.get("name", "").lower()),
+    )
+    untracked = sorted(
+        [e for e in _stored_spells if not e.get("tracked")],
+        key=lambda e: e.get("name", "").lower(),
+    )
+    stored = tracked + untracked
+    return spells, buffs, debuffs, stored
 
 
-def _total_rows(spells, buffs, debuffs):
+def _total_rows(spells, buffs, debuffs, stored):
     return (
         (math.ceil(len(spells)  / 4) if spells  else 0) +
         (math.ceil(len(buffs)   / 4) if buffs   else 0) +
-        (math.ceil(len(debuffs) / 4) if debuffs else 0)
+        (math.ceil(len(debuffs) / 4) if debuffs else 0) +
+        (math.ceil(len(stored)  / 4) if stored  else 0)
     )
 
 
@@ -148,9 +166,17 @@ def _cell_frags(entry, cell_w, palette):
     return frags
 
 
+def _untracked_cell_frags(entry, cell_w):
+    name  = entry.get("name", "")
+    label = name.upper()[:cell_w - 1].ljust(cell_w - 1)
+    frags = [("fg:#000000 bg:#cccccc", ch) for ch in label]
+    frags.append((C_STORED_UNTRACKED_FG, "▌"))
+    return frags
+
+
 def _build_all_rows():
     """Return every grid row as a list of fragment-lists (one per row)."""
-    spells, buffs, debuffs = _split_groups()
+    spells, buffs, debuffs, stored = _split_groups()
     W      = max(4, _term_cols())
     widths = _cell_widths(W)
 
@@ -170,6 +196,21 @@ def _build_all_rows():
                 if idx >= n:
                     break
                 row_frags.extend(_cell_frags(group[idx], widths[col], palette))
+            all_rows.append(row_frags)
+
+    if stored:
+        n = len(stored)
+        for row in range(math.ceil(n / 4)):
+            row_frags = []
+            for col in range(4):
+                idx = row * 4 + col
+                if idx >= n:
+                    break
+                entry = stored[idx]
+                if entry.get("tracked"):
+                    row_frags.extend(_cell_frags(entry, widths[col], _PALETTES["stored"]))
+                else:
+                    row_frags.extend(_untracked_cell_frags(entry, widths[col]))
             all_rows.append(row_frags)
 
     return all_rows
@@ -225,8 +266,8 @@ class ListControl(FormattedTextControl):
     def mouse_handler(self, mouse_event):
         global _scroll_offset
         if mouse_event.event_type == MouseEventType.SCROLL_DOWN:
-            spells, buffs, debuffs = _split_groups()
-            total          = _total_rows(spells, buffs, debuffs)
+            spells, buffs, debuffs, stored = _split_groups()
+            total          = _total_rows(spells, buffs, debuffs, stored)
             H              = max(1, _term_rows())
             list_height    = H - (1 if (_scroll_offset > 0 or total > H) else 0)
             max_offset     = max(0, total - list_height)
@@ -249,7 +290,7 @@ def _restore_cursor():
 
 
 async def _poll_state(app):
-    global _affects, _last_mtime
+    global _affects, _stored_spells, _last_mtime
 
     while True:
         try:
@@ -263,11 +304,17 @@ async def _poll_state(app):
                 try:
                     with open(BUFFS_STATE_PATH, "r") as fh:
                         loaded = json.load(fh)
-                    _affects = loaded if isinstance(loaded, list) else []
+                    if isinstance(loaded, list):
+                        _affects       = loaded
+                        _stored_spells = []
+                    else:
+                        _affects       = loaded.get("affects", [])
+                        _stored_spells = loaded.get("stored_spells", [])
                 except Exception:
                     pass
             else:
-                _affects = []
+                _affects       = []
+                _stored_spells = []
             app.invalidate()
 
         await asyncio.sleep(POLL_MS)

@@ -10,16 +10,29 @@ local TMP_PATH   = STATE_PATH .. ".tmp"
 
 local function serialize()
     local affects = state.char.affects or {}
-    local out = {}
+    local affects_out = {}
     for _, e in ipairs(affects) do
-        out[#out + 1] = {
+        affects_out[#affects_out + 1] = {
             name              = e.name,
             type              = e.type or json.null,
             expires_at        = e.expires_at or json.null,
             expected_duration = e.expected_duration or json.null,
         }
     end
-    local ok, encoded = pcall(json.encode, out)
+
+    local stored_spells = state.char.stored_spells or {}
+    local stored_out = {}
+    for _, e in ipairs(stored_spells) do
+        stored_out[#stored_out + 1] = {
+            name              = e.name,
+            expires_at        = e.tracked and e.expires_at or json.null,
+            expected_duration = e.tracked and e.expected_duration or json.null,
+            tracked           = e.tracked,
+        }
+    end
+
+    local payload = { affects = affects_out, stored_spells = stored_out }
+    local ok, encoded = pcall(json.encode, payload)
     if not ok then
         dbg("[BUFFS_STATE] encode failed: " .. tostring(encoded))
         return
@@ -34,8 +47,9 @@ local function serialize()
     os.rename(TMP_PATH, STATE_PATH)
 end
 
--- Fire on every affect change.
+-- Fire on every affect or stored-spell change.
 events.subscribe("affects_changed", serialize)
+events.subscribe("stored_spells_changed", serialize)
 
 -- Wrap state.char.reset so disconnect blanks the pane within one poll tick.
 local _orig_reset = state.char.reset
