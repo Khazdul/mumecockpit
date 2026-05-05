@@ -144,8 +144,6 @@
 
 #nop ===== EVENTS / TRIGGERS =====
 
-#event {SENT OUTPUT} {#lua {USER_INPUT:%0}}
-
 #nop ===== SESSION EVENTS =====
 
 #event {SESSION CONNECTED} {

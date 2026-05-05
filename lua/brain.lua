@@ -366,10 +366,14 @@ end
 -- -----------------------------
 local handlers = {}
 
--- USER_INPUT: raw SENT OUTPUT forwarded by ttpp/core/system.tin.
+-- USER_INPUT: raw SENT OUTPUT forwarded via session_cmd in stored_spells.lua.
 -- Parts are rejoined with ":" because raw input may itself contain ":".
+-- Guard against empty payload: IAC negotiation and similar fire SENT OUTPUT
+-- with empty %0 and must not reach the event bus.
 handlers["USER_INPUT"] = function(parts)
-    events.emit("user_input", table.concat(parts, ":"))
+    local raw = table.concat(parts, ":")
+    if raw == "" then return end
+    events.emit("user_input", raw)
 end
 
 -- -----------------------------

@@ -29,6 +29,14 @@ directly to brain.lua's stdin. `handle_event` then dispatches it.
 
 **Pattern 1 — Shared event dispatch** (for MUD server output)
 
+> **Caveat — `SENT OUTPUT` must be session-scoped.** A top-level
+> `#event {SENT OUTPUT}` fires in every session context, including the `lua`
+> `#run` session. Each `#lua {…}` call writes to the lua subprocess stdin,
+> which itself counts as a SENT OUTPUT in that session — registering the
+> event globally causes immediate self-amplifying recursion that floods tt++
+> within seconds of connect. Always register `SENT OUTPUT` via `session_cmd`
+> (targeting GAME_SESSION only) so that only MUD-bound bytes are captured.
+
 Permanent triggers in tt++ parse server output and send structured events to
 `brain.lua` via `handle_event`. Scripts register handlers into the shared
 `handlers` table at load time — no changes to `brain.lua` needed:

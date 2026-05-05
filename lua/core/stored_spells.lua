@@ -318,6 +318,13 @@ end
 function _register_stored_spells_actions()
     _install_hooks()
 
+    -- Register the SENT OUTPUT snooper in GAME_SESSION only. A top-level
+    -- #event {SENT OUTPUT} would also fire on writes to the lua #run
+    -- subprocess stdin (every #lua {...} call), creating a self-amplifying
+    -- recursion that floods tt++ within seconds. Scoping to GAME_SESSION
+    -- restricts the event to MUD-bound bytes.
+    session_cmd("#event {SENT OUTPUT} {#lua {USER_INPUT:%0}}")
+
     local failure_patterns = {
         "^Alas, not enough mana flows through you...$",
         "^Your spell backfired!$",
