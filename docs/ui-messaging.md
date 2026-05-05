@@ -179,6 +179,11 @@ ui_err("Failed to load script " .. ui_var("foo.lua") .. ".")
 The convention is semantic — `ui_var` marks "this is a dynamic value", not
 a specific style. If the style changes later, only one place needs updating.
 
+Spell names in script UI output follow the same convention: pass the spell name
+to `ui_var()` and omit surrounding quotes. Example:
+`script_ui("STORE", "stored " .. ui_var(name) .. ".")` renders as
+`▶ STORE: stored fireball.` with `fireball` in bold yellow.
+
 See "UI Message Style Rules" below for when to apply `ui_var()` and other
 cross-cutting rules.
 

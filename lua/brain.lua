@@ -454,11 +454,11 @@ gmcp    = {
     handlers = {},
     -- Keep in sync with Core.Supports.Set payload in ttpp/core/gmcp.tin.
     modules  = { "Char 1", "Comm.Channel 1", "Event 1", "Core 1" },
-    trace    = true,
+    trace    = false,
 }
 events  = {
     handlers   = {},
-    trace      = true,
+    trace      = false,
     trace_skip = { clock_changed = true },
 }
 
@@ -484,10 +484,14 @@ end
 function events.emit(name, ...)
     local t = events.handlers[name]
     if events.trace and not events.trace_skip[name] then
-        local args = {...}
-        local strs = {}
-        for _, v in ipairs(args) do strs[#strs+1] = tostring(v) end
-        dbg(string.format("[EVENTS] %s = %s", name, table.concat(strs, ", ")))
+        local n = select("#", ...)
+        if n == 0 then
+            dbg("[EVENTS] " .. name)
+        else
+            local parts = {}
+            for i = 1, n do parts[i] = tostring(select(i, ...)) end
+            dbg("[EVENTS] " .. name .. " = " .. table.concat(parts, ", "))
+        end
     end
     if not t then return end
     for _, fn in ipairs(t) do

@@ -332,14 +332,14 @@ MUME: "You stored it."
     → pop fireball from queue             _pending_attempts: []
     → append entry to stored_spells
     → persist active list
-    → script_ui("STORE", "stored 'fireball' (90:00 remaining).")
+    → script_ui("STORE", "stored " .. ui_var(name) .. ".")        -- ▶ STORE: stored fireball.
 
 MUME: "Your mind feels empty for a while."
   → store_decayed
     → find oldest entry by started_at
     → if tracked: record observed duration, persist times
     → remove entry, persist active list
-    → script_ui("STORE", "'fireball' decayed (89:58 — sample recorded).")
+    → script_ui("STORE", ui_var(name) .. " decayed (89:58 — sample recorded).")
 
 user sends: cast 'fireball' orc
   → user_input event
@@ -349,7 +349,7 @@ MUME: "You quickly recall your stored spell..."
   → store_recalled
     → find entry with highest started_at where name == "fireball"
     → remove entry, persist active list
-    → script_ui("STORE", "'fireball' recalled.")
+    → script_ui("STORE", ui_var(name) .. " recalled.")
 
 MUME: "You blast the area with magical energies."  (or "%1 blasts...")
   → stored_spells_untracked
