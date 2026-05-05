@@ -61,6 +61,7 @@ event flow. Same pattern as `gmcp.trace`.
 | `wimpy_changed` | numeric string (`"0"`..`"N"`) | `ttpp/core/mud_events.tin` |
 | `user_input` | raw sent-line string | `lua/brain.lua` `handlers["USER_INPUT"]` |
 | `user_input_empty` | (none) | RECEIVED INPUT with empty `%0` in GAME_SESSION; `lua/brain.lua` `handlers["EMPTY_INPUT"]` |
+| `user_cast` | spell text as captured from bracketed echo (un-resolved) | tt++ `#action` registered by `_register_stored_spells_actions` |
 | `store_attempt_started` | spell full name string | `lua/core/stored_spells.lua` — `user_input` subscriber |
 | `store_attempt_failed` | (none) | `ttpp/core/stored_spells.tin` `#action` (via `_register_stored_spells_actions`) |
 | `store_succeeded` | (none) | `ttpp/core/stored_spells.tin` `#action` |
@@ -222,6 +223,26 @@ No payload.
 **Subscribers:** `lua/core/stored_spells.lua` — if `_pending_attempts` is
 non-empty, logs the abort and funnels into `store_attempt_failed` to pop the
 oldest queued attempt. Silent no-op when the queue is empty.
+
+### `user_cast`
+
+Emitted by two `#action` triggers registered by `_register_stored_spells_actions()`
+in GAME_SESSION at priority 3. MUME echoes every cast attempt as a bracketed line
+regardless of whether the player typed full `cast '...'` syntax or a server-side
+alias (e.g. `arm`, `fireb`). The two forms caught are:
+
+    [cast 'armour']       — no speed prefix
+    [cast n 'armour']     — with speed prefix
+
+Payload is the spell text as captured from the echo (un-resolved). The `%1`/`%2`
+captures absorb `cast` and any speed word respectively; `%2`/`%3` is the bare
+spell name without quotes.
+
+**Subscribers:** `lua/core/stored_spells.lua` — runs the captured text through
+`_resolve_spell()` and, if it resolves to a non-`"store"` spell, updates
+`_last_cast_intent`. The `"store"` spell is filtered out because store-attempt
+tracking is driven by the SENT OUTPUT snooper, which also captures the target
+spell that the bracketed echo does not include.
 
 ### `store_attempt_started`
 

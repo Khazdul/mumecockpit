@@ -144,6 +144,23 @@ local function _load_active(char_name)
 end
 
 -- ---------------------------------------------------------------------------
+-- Event: user_cast — MUME bracketed echo (alias-coverage for _last_cast_intent)
+-- ---------------------------------------------------------------------------
+
+events.subscribe("user_cast", function(spell_text)
+    local full = _resolve_spell(spell_text)
+    if not full then
+        dbg("[STORED_SPELLS] echo: unresolved '" .. spell_text .. "'")
+        return
+    end
+    -- Skip store — store-attempts are populated by the SENT OUTPUT snooper,
+    -- which also sees the target spell that the bracketed echo omits.
+    if full == "store" then return end
+    _last_cast_intent = full
+    dbg("[STORED_SPELLS] echo intent: " .. full)
+end)
+
+-- ---------------------------------------------------------------------------
 -- Event: user_input — parse outgoing cast commands
 -- ---------------------------------------------------------------------------
 
@@ -381,6 +398,12 @@ function _register_stored_spells_actions()
     session_cmd('#action {^You quickly recall your stored spell...$} {#lua {events.emit("store_recalled")}} {3}')
     session_cmd('#action {^You blast the area with magical energies.$} {#lua {events.emit("stored_spells_untracked")}} {3}')
     session_cmd('#action {^%1 blasts the area with magical energies.$} {#lua {events.emit("stored_spells_untracked")}} {3}')
+
+    -- MUME echoes every cast as a bracketed line regardless of whether the
+    -- player typed full cast syntax or a server-side alias (e.g. arm, fireb).
+    -- Two forms: [cast 'spell']  and  [cast n 'spell']  (with speed prefix).
+    session_cmd([[#action {^[c%1 '%2'} {#lua {events.emit("user_cast", "%2")}} {3}]])
+    session_cmd([[#action {^[c%1 %2 '%3'} {#lua {events.emit("user_cast", "%3")}} {3}]])
 end
 
 dbg("[STORED_SPELLS] loaded")

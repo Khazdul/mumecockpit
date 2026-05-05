@@ -137,6 +137,31 @@ If no top-level shortcut matched, two Lua patterns are tried in order:
 
 If neither pattern matches, the line is ignored.
 
+## Cast detection and `_last_cast_intent`
+
+There are two parallel paths that update `_last_cast_intent`:
+
+**SENT OUTPUT snooper** (`user_input` event) catches direct `cast 'X'` syntax
+and the `sto`/`stor`/`store X` top-level shortcuts. It is the only path that
+sees the _target_ spell for store attempts, so store-attempt tracking
+(`_pending_attempts`) is driven exclusively from here.
+
+**MUME server echo** (`user_cast` event) catches every cast — including
+alias-expanded ones like `arm` → `[cast n 'armour']` — and updates
+`_last_cast_intent` from the bracketed echo line. This gives alias coverage
+without needing a per-spell table of top-level abbreviations. The patterns
+intentionally omit the closing `]` anchor so targeted casts
+(`[cast n 'fireball' orc]`) match identically to untargeted ones
+(`[cast n 'armour']`); the `^[c` start-anchor prevents false matches against
+mid-line bracket content. The `"store"` spell is filtered out on this path
+because the SENT OUTPUT snooper already handles it and also supplies the
+target spell.
+
+Both paths converge on the same slot. Direct `cast 'X'` commands hit both
+paths in quick succession (SENT OUTPUT fires first, then the game echoes the
+bracket line); the second write is idempotent — it resolves to the same full
+name and stores the same value.
+
 ## Runtime-only state
 
 `_pending_attempts` (FIFO queue of spell names) and `_last_cast_intent` (most
