@@ -58,8 +58,12 @@ with a scripting brain on top.
   `cp -<alias>`. Do not maintain duplicate lists elsewhere.
 - **Shared state lives in `state`.** `state.char`, `state.room`,
   `state.comm`, `state.core`, `state.world`. No other cross-script storage.
-- **GMCP handlers are pcall'd.** Subscribe via `gmcp.handlers["Module.Name"]`
-  and add the module to `gmcp.modules` AND `Core.Supports.Set` in
+- **One primary writer per GMCP module.** The file in `lua/core/` that owns
+  `state.*` for a module sets `gmcp.handlers["Module.Name"]` (pcall'd).
+  Everything else subscribes: `events.subscribe("gmcp_module_name", fn)`.
+  `gmcp.dispatch` always emits the event after the primary writer, so
+  `state.*` is already updated when any subscriber runs. To add a new
+  subscribed module, add it to `gmcp.modules` AND `Core.Supports.Set` in
   `ttpp/core/gmcp.tin` (two-place sync — flagged in `docs/gmcp.md`).
 
 ## Language

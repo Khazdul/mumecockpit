@@ -54,6 +54,7 @@ Active ADRs by area. Click through for context, alternatives, and consequences.
 - [ADR 0002](0002-lua-core-vs-scripts-split.md) — Lua core vs scripts split — always-on GMCP collectors live in `lua/core/`; opt-in automation modules live in `lua/scripts/`, auto-loaded core-first.
 - [ADR 0007](0007-event-bus.md) — Lua event bus for core MUD triggers — a central `events.subscribe`/`emit` bus in `brain.lua` owns all cross-cutting trigger patterns; scripts subscribe rather than registering duplicates.
 - [ADR 0043](0043-unified-character-event-marker.md) — Unified character-event marker as `char_ui` — `char_ui(category, name, verb)` is the single helper owning the `◆` prefix for all character-state lifecycle events.
+- [ADR 0046](0046-gmcp-dispatch-via-events.md) — GMCP dispatch via events bus — one primary writer per module owns `gmcp.handlers`; `gmcp.dispatch` always emits `gmcp_<module_snake>` after the primary writer; downstream effects subscribe instead of wrapping handlers.
 
 ### Sessions & profile persistence
 

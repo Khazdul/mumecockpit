@@ -49,8 +49,19 @@ event flow. Same pattern as `gmcp.trace`.
 
 | Event | Payload | Source |
 |-------|---------|--------|
+| `gmcp_char_name` | decoded body | `lua/brain.lua` `gmcp.dispatch` — emitted after `char_state.lua` primary writer |
+| `gmcp_char_status_vars` | decoded body | `lua/brain.lua` `gmcp.dispatch` — emitted after `char_state.lua` primary writer |
+| `gmcp_char_vitals` | decoded body | `lua/brain.lua` `gmcp.dispatch` — emitted after `char_state.lua` primary writer |
+| `gmcp_comm_channel_text` | decoded body | `lua/brain.lua` `gmcp.dispatch` — emitted after `comm_log.lua` primary writer |
+| `gmcp_comm_channel_list` | decoded body | `lua/brain.lua` `gmcp.dispatch` — emitted after `comm_log.lua` primary writer |
+| `gmcp_event_sun` | `{what = "rise"\|"set"\|"light"\|"dark"}` | `lua/brain.lua` `gmcp.dispatch` — emitted after `world_state.lua` primary writer |
+| `gmcp_event_darkness` | decoded body | `lua/brain.lua` `gmcp.dispatch` — emitted after `world_state.lua` primary writer |
+| `gmcp_event_moon` | decoded body | `lua/brain.lua` `gmcp.dispatch` — emitted after `world_state.lua` primary writer |
+| `gmcp_event_moved` | decoded body | `lua/brain.lua` `gmcp.dispatch` — emitted after `world_state.lua` primary writer |
+| `gmcp_core_goodbye` | decoded body | `lua/brain.lua` `gmcp.dispatch` — emitted after `core_state.lua` primary writer |
+| `gmcp_core_ping` | decoded body | `lua/brain.lua` `gmcp.dispatch` — emitted after `core_state.lua` primary writer |
+| `char_reset` | (none) | `lua/core/char_state.lua` `state.char.reset()` — emitted after wiping all non-function keys |
 | `mob_death` | mob name string, kind (`"living"` \| `"undead"`) | `ttpp/core/mud_events.tin` |
-| `event_sun` | `{what = "rise"\|"set"\|"light"\|"dark"}` | `lua/core/world_state.lua` (GMCP) |
 | `mume_time_line` | full matched line string | `ttpp/core/clock.tin` `#action` |
 | `room_clock_line` | full matched line string | `ttpp/core/clock.tin` `#action` |
 | `clock_changed` | (none) | `lua/core/clock.lua` — emitted on each successful sync and on minute rollover in `tick()` |
@@ -69,6 +80,53 @@ event flow. Same pattern as `gmcp.trace`.
 | `store_decayed` | (none) | `ttpp/core/stored_spells.tin` `#action` |
 | `stored_spells_untracked` | (none) | `ttpp/core/stored_spells.tin` `#action` |
 | `stored_spells_changed` | (none) | `lua/core/stored_spells.lua` — emitted on every state mutation and on `_load_active()` restore |
+
+### `gmcp_<module>` events
+
+`gmcp.dispatch` emits one event per incoming GMCP packet, always, whether or
+not a primary handler is registered. The event name is derived by
+`module_to_event`: camelCase boundaries become underscores, dots become
+underscores, everything lowercased, prefixed `gmcp_`. For example:
+`"Char.StatusVars"` → `"gmcp_char_status_vars"`.
+
+The invariant: **`state.*` is already updated** when any subscriber runs,
+because the primary writer (if set) runs inside `gmcp.dispatch` before the
+event is emitted.
+
+Subscriber order within an event equals registration order, which equals
+alphabetical load order within `lua/core/`. Scripts in `lua/scripts/` load
+after all core modules and subscribe last.
+
+Detailed subscriber lists for the high-traffic events:
+
+**`gmcp_char_name`** — `lua/core/affects.lua` (re-init affects, load
+persisted data), `lua/core/buffs_state.lua` (serialize), `lua/core/comm_store.lua`
+(init per-character archive), `lua/core/server_prefs.lua` (assert width),
+`lua/core/status_state.lua` (serialize), `lua/core/stored_spells.lua`
+(re-init stored spells, load persisted data).
+
+**`gmcp_char_vitals`** — `lua/core/run_state.lua` (update XP/TP baseline),
+`lua/core/status_state.lua` (serialize). Added to `events.trace_skip` to
+suppress log noise when tracing is on.
+
+**`gmcp_char_status_vars`** — `lua/core/status_state.lua` (serialize).
+
+**`gmcp_comm_channel_text`** — `lua/core/comm_state.lua` (serialize, runs
+first), `lua/core/comm_store.lua` (append to archive).
+
+**`gmcp_comm_channel_list`** — `lua/core/comm_state.lua` (serialize).
+
+**`gmcp_event_sun`** — see dedicated section below.
+
+### `char_reset`
+
+Emitted by `lua/core/char_state.lua`'s `state.char.reset()` immediately after
+wiping all non-function keys from `state.char`. No payload. Called from
+`mark_mume_disconnected()` in `lua/brain.lua`.
+
+**Subscribers:** `lua/core/affects.lua` (cancel the affects tick timer),
+`lua/core/buffs_state.lua` (serialize blank buffs.state),
+`lua/core/status_state.lua` (serialize blank status.state).
 
 ### `mob_death`
 
@@ -92,10 +150,10 @@ unaffected — Lua ignores extra positional args.
 `run_state` is the first core module to subscribe to its own bus — direct
 parallel to script subscribers, no special wiring needed.
 
-### `event_sun`
+### `gmcp_event_sun`
 
-Emitted by `lua/core/world_state.lua` inside the `Event.Sun` GMCP handler,
-immediately after storing `state.world.sun`. Body is the decoded GMCP object:
+Emitted by `lua/brain.lua` `gmcp.dispatch` immediately after `world_state.lua`'s
+primary writer stores `state.world.sun`. Body is the decoded GMCP object:
 `{what = "rise"|"set"|"light"|"dark"}`.
 
 **Subscribers:** `lua/core/clock.lua` — acts only on `"rise"` and `"set"`;
@@ -125,7 +183,7 @@ output. Payload is the full matched line string. Game text form:
 ### `clock_changed`
 
 Emitted by `lua/core/clock.lua` whenever the displayed clock value would
-change — after each successful sync (`event_sun`, `mume_time_line`,
+change — after each successful sync (`gmcp_event_sun`, `mume_time_line`,
 `room_clock_line`) and on minute rollover inside `tick()`. No payload;
 subscribers should read `state.world.clock.format(...)` for the new value.
 
@@ -331,14 +389,17 @@ tick.
 
 ## Adding a new event
 
-Events can come from two sources:
+Events can come from three sources:
 
 - **tt++ action** — add a `#action` line (at priority 3) inside a
   `_register_<module>_actions` alias in the relevant `ttpp/core/<module>.tin`,
   and call that alias from `SESSION CONNECTED` and `cp -r` in
   `ttpp/core/system.tin`. For project-wide events that have no owning module,
   use `ttpp/core/mud_events.tin` and the existing `_register_mud_events` alias.
-- **Lua GMCP handler** — call `events.emit(name, payload)` inside the handler.
+- **GMCP dispatch** — `gmcp.dispatch` automatically emits `gmcp_<module_snake>`
+  after every packet. Subscribing to the event is sufficient; no changes to
+  `gmcp.dispatch` or the primary handler are needed.
+- **Lua code** — call `events.emit(name, payload)` directly (e.g. `char_reset`).
 
 Then:
 1. Add an entry to the Catalogue table above.

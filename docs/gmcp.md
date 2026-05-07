@@ -60,7 +60,7 @@ pick from a known map without re-reading help files.
 | Message         | Direction | Body                           | Handler        |
 |-----------------|-----------|--------------------------------|----------------|
 | Char.Login      | → server  | `{name, password}`             | not sent       |
-| Char.Name       | ← server  | `{name, fullname}`             | lua/core/char_state.lua (also drives connection.state); wrapped by lua/core/status_state.lua (serialises to bridge) and lua/core/server_prefs.lua (locks server wrap width) |
+| Char.Name       | ← server  | `{name, fullname}`             | lua/core/char_state.lua (primary writer; also drives connection.state); downstream via `gmcp_char_name` event: status_state.lua, server_prefs.lua, buffs_state.lua, comm_store.lua, affects.lua, stored_spells.lua |
 | Char.StatusVars | ← server  | name/caption pairs (see below) | lua/core/char_state.lua |
 | Char.Vitals     | ← server  | flat object (see below)        | lua/core/char_state.lua |
 
@@ -170,20 +170,28 @@ Syntax: `#send {$IAC$SB${GMCP}Package.Name JSON $IAC$SE\}`
 
 ## Lua dispatch
 
-`gmcp.dispatch(module, payload)` in `brain.lua` strips the leading package-name token, parses the remainder as JSON via dkjson, and calls `gmcp.handlers[module]` with the decoded Lua value (or `nil` for empty bodies such as `Core.Goodbye`). Handlers run under `pcall` — a crashing handler logs to dev via `dbg()` but doesn't take down the brain.
+`gmcp.dispatch(module, payload)` in `brain.lua` strips the leading package-name token, parses the remainder as JSON via dkjson, calls the primary handler (if set) under `pcall`, then **always** emits a `gmcp_<module_snake>` event via the event bus. A crashing handler logs to dev via `dbg()` but doesn't prevent the event from being emitted.
+
+`module_to_event` converts the module name to the event name:
+`"Char.StatusVars"` → `"gmcp_char_status_vars"` (camelCase split, dots replaced by underscores, lowercased).
 
 ## Script integration pattern
 
-Scripts subscribe at load time:
+There is exactly one **primary writer** per GMCP module — the `lua/core/` file that owns `gmcp.handlers[module]` and writes into `state.*`. All other reactions subscribe to the corresponding event:
 
 ```lua
+-- Primary writer (one per module, in lua/core/):
 gmcp.handlers["Char.Vitals"] = function(body)
-    state.char.hp = body.hp
-    -- ...
+    -- merge body into state.char.*
 end
+
+-- Downstream subscriber (any file):
+events.subscribe("gmcp_char_vitals", function(body)
+    -- state.char.* is already updated when this runs
+end)
 ```
 
-Unknown modules log `GMCP no handler: <Module>` to dev and drop. Modules not listed in `gmcp.modules` will never fire regardless of handlers registered — the subscription list is the gate.
+Modules not listed in `gmcp.modules` will never fire regardless of handlers registered — the subscription list is the gate.
 
 ## Data collection (iteration 2a)
 

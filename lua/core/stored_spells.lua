@@ -2,9 +2,9 @@
 -- pending attempts in a FIFO queue, persists active stored spells and learned
 -- durations per character. No rendering — buffs pane integration follows.
 --
--- Load order: spells_data.lua loaded explicitly via dofile() below.
--- _install_hooks and _register_stored_spells_actions follow the same
--- lazy-registration pattern as affects.lua.
+-- spells_data.lua loaded explicitly via dofile() below.
+-- gmcp_char_name subscription registered at load time.
+-- _register_stored_spells_actions handles only tt++ #action registration.
 
 local json        = require("dkjson")
 local spells_data = dofile(os.getenv("HOME") .. "/MUME/lua/core/spells_data.lua")
@@ -390,33 +390,24 @@ events.subscribe("stored_spells_untracked", function()
 end)
 
 -- ---------------------------------------------------------------------------
--- Hook installation (called once per load cycle from _register_stored_spells_actions)
+-- Event subscriptions — registered at load time
 -- ---------------------------------------------------------------------------
 
-local _installed = false  -- reset to false on each cp -r (fresh module load)
-
-local function _install_hooks()
-    if _installed then return end
-    _installed = true
-
-    local _orig_name = gmcp.handlers["Char.Name"]
-    gmcp.handlers["Char.Name"] = function(body)
-        if _orig_name then _orig_name(body) end
-        state.char.stored_spells      = {}
-        state.char.stored_spell_times = {}
-        if state.char.name then
-            _load_times(state.char.name)
-            _load_active(state.char.name)
-        end
+-- Re-init stored-spells state and load persisted data on every new character login.
+events.subscribe("gmcp_char_name", function()
+    state.char.stored_spells      = {}
+    state.char.stored_spell_times = {}
+    if state.char.name then
+        _load_times(state.char.name)
+        _load_active(state.char.name)
     end
-end
+end)
 
 -- ---------------------------------------------------------------------------
 -- Trigger registration (global — called from ttpp/core/stored_spells.tin alias)
 -- ---------------------------------------------------------------------------
 
 function _register_stored_spells_actions()
-    _install_hooks()
 
     -- Register the SENT OUTPUT snooper in GAME_SESSION only. A top-level
     -- #event {SENT OUTPUT} would also fire on writes to the lua #run

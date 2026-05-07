@@ -1,6 +1,6 @@
 -- Passive game-time clock. Single-anchor model after MMapper:
 -- mume_start_epoch is the only persisted state; current time is computed on demand.
--- Three sync sources on the event bus: event_sun, mume_time_line, room_clock_line.
+-- Three sync sources on the event bus: gmcp_event_sun, mume_time_line, room_clock_line.
 -- Persists to data/shared/clock.state. Drives status-pane Phase 3.
 
 local CLOCK_STATE_PATH = os.getenv("HOME") .. "/MUME/data/shared/clock.state"
@@ -374,7 +374,7 @@ end
 -- Subscriptions
 -- ---------------------------------------------------------------------------
 
-events.subscribe("event_sun", function(body)
+events.subscribe("gmcp_event_sun", function(body)
     _apply_sun(body)
 end)
 

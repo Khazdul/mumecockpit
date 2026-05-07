@@ -31,23 +31,23 @@ GMCP payload ──► lua/core/char_state.lua ──► state.char.*
 
 ### State flow
 
-`lua/core/status_state.lua` loads after `char_state.lua` and `level_progress.lua`
-(alphabetical order within `lua/core/`). It wraps each of char_state's three
-handlers: `Char.Name`, `Char.StatusVars`, `Char.Vitals`. After the original
-handler runs (updating `state.char.*`), the wrapper serialises the projected
-view and writes it atomically.
+`lua/core/status_state.lua` subscribes to `gmcp_char_name`,
+`gmcp_char_status_vars`, `gmcp_char_vitals`, `char_reset`, and `clock_changed`
+on the event bus. `char_state.lua` is the primary writer for all three Char.*
+modules — `state.char.*` is fully updated before any subscriber runs. Each
+subscription calls `serialize()` and writes `bridge/status.state` atomically.
 
 ### Disconnect clear
 
 `mark_mume_disconnected()` in `lua/brain.lua` calls `state.char.reset()` after
 `state.run.reset()`. `state.char.reset()` is defined in `char_state.lua`;
 it wipes every non-function key in `state.char` while keeping the table
-identity intact so cached references elsewhere stay valid. The `status_state.lua`
-wrapper around `state.char.reset` then calls `serialize()`, producing a single
-atomic write to `bridge/status.state` with all character fields null. The
-renderer displays `—` for null name and empty bars for null progress. Data rows
-render as label-only (empty value cells). Pane height stays at `STATIC_ROWS = 11`
-within one poll tick (≤ 50 ms).
+identity intact so cached references elsewhere stay valid, then emits
+`char_reset`. `status_state.lua`'s `char_reset` subscriber calls `serialize()`,
+producing a single atomic write to `bridge/status.state` with all character
+fields null. The renderer displays `—` for null name and empty bars for null
+progress. Data rows render as label-only (empty value cells). Pane height stays
+at `STATIC_ROWS = 11` within one poll tick (≤ 50 ms).
 
 ### cp -r partial blank
 

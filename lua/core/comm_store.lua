@@ -1,10 +1,10 @@
 -- Per-character JSONL archive for state.comm.history.
 -- Loads after comm_state.lua (alphabetical: comm_log < comm_state < comm_store).
--- On Char.Name: migrates legacy profile archive if character name matches profile,
--- prunes entries older than 7 days, seeds state.comm.history from the archive,
--- and calls state.comm.serialize() so bridge/comm.state reflects the seeded
--- history before the pane's next 250 ms poll.
--- On each Comm.Channel.Text event: appends one JSON line to the archive.
+-- On gmcp_char_name: migrates legacy profile archive if character name matches
+-- profile, prunes entries older than 7 days, seeds state.comm.history from the
+-- archive, and calls state.comm.serialize() so bridge/comm.state reflects the
+-- seeded history before the pane's next 250 ms poll.
+-- On each gmcp_comm_channel_text event: appends one JSON line to the archive.
 
 local json = require("dkjson")
 
@@ -96,17 +96,14 @@ local function _init(char_name)
     dbg("[COMM_STORE] init: " .. char_name .. " (" .. #entries .. " entries)")
 end
 
--- Wrap Comm.Channel.Text to append each new message to the archive.
--- comm_state.lua's wrapper (which calls comm_log.lua then serialize) is _orig.
-local _orig = gmcp.handlers["Comm.Channel.Text"]
-
----@diagnostic disable-next-line: duplicate-set-field
-gmcp.handlers["Comm.Channel.Text"] = function(body)
-    if _orig then _orig(body) end
+-- Append each new message to the archive after comm_log.lua's primary writer
+-- and comm_state.lua's serialize() have already run (alphabetical subscription
+-- order: comm_state subscribes before comm_store).
+events.subscribe("gmcp_comm_channel_text", function()
     if not _archive_path then return end  -- Char.Name not yet received
     local entry = state.comm.history[#state.comm.history]
     if not entry then
-        dbg("[COMM_STORE] Comm.Channel.Text: no entry in history after handler")
+        dbg("[COMM_STORE] gmcp_comm_channel_text: no entry in history")
         return
     end
     local af = io.open(_archive_path, "a")
@@ -114,20 +111,16 @@ gmcp.handlers["Comm.Channel.Text"] = function(body)
         af:write(json.encode(entry) .. "\n")
         af:close()
     end
-end
+end)
 
--- Wrap Char.Name to initialize the per-character archive on login.
-local _orig_name = gmcp.handlers["Char.Name"]
-
----@diagnostic disable-next-line: duplicate-set-field
-gmcp.handlers["Char.Name"] = function(body)
-    if _orig_name then _orig_name(body) end
+-- Initialize the per-character archive on login.
+events.subscribe("gmcp_char_name", function()
     local name = state.char.name
     if name then
         _archive_path = nil
         _tmp_path     = nil
         _init(name)
     end
-end
+end)
 
 dbg("[COMM_STORE] loaded")

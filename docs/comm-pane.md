@@ -35,21 +35,30 @@ Comm.Channel.List ──► lua/core/comm_log.lua ──► state.comm.channels
                                           bridge/comm_filters.conf
 ```
 
-### Load order
+### Load order and event subscriptions
 
-`lua/core/comm_log.lua` registers the original `Comm.Channel.Text` and
-`Comm.Channel.List` handlers. `lua/core/comm_state.lua` loads immediately after
-(alphabetical: `comm_log` < `comm_state`) and wraps both handlers in the same
-wrap-and-call pattern as `status_state.lua`. `lua/core/comm_store.lua` loads
-last (alphabetical: `comm_state` < `comm_store`) and wraps `Comm.Channel.Text`
-a second time to append each new message to the per-profile archive.
+`lua/core/comm_log.lua` is the primary writer for `Comm.Channel.Text` and
+`Comm.Channel.List` — it owns `gmcp.handlers` for both and writes
+`state.comm.history` / `state.comm.channels`. After the primary writer runs,
+`gmcp.dispatch` emits `gmcp_comm_channel_text` or `gmcp_comm_channel_list`.
+
+`lua/core/comm_state.lua` (loads after `comm_log`, alphabetical) subscribes to
+both events and calls `serialize()` to write `bridge/comm.state`. It exposes
+`state.comm.serialize` so `comm_store.lua` can trigger a re-serialise after
+seeding history.
+
+`lua/core/comm_store.lua` (loads after `comm_state`, alphabetical) subscribes
+to `gmcp_comm_channel_text` to append each new message to the per-character
+JSONL archive. It also subscribes to `gmcp_char_name` to seed history from the
+archive on login. Subscription order ensures `comm_state`'s serialize runs
+before `comm_store`'s archive append.
 
 ### State flow
 
-After either wrapped handler runs, `serialize()` writes `bridge/comm.state`
-atomically (tmp + rename). `bridge/panes/comm_pane.py` polls via mtime every 250 ms
-and redraws on change. `SIGWINCH` is forwarded via signal handler; the app
-calls `invalidate()` to trigger a redraw.
+After the primary writer and subscribers run, `bridge/comm.state` is written
+atomically (tmp + rename). `bridge/panes/comm_pane.py` polls via mtime every
+250 ms and redraws on change. `SIGWINCH` is forwarded via signal handler; the
+app calls `invalidate()` to trigger a redraw.
 
 ### cp -r persistence
 

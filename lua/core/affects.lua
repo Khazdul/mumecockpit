@@ -2,12 +2,9 @@
 -- up to 3 observed samples, persists per character to data/characters/<name>/.
 -- No alias, no register_script — background collector only.
 --
--- Load order: affects.lua sorts before affects_data.lua and char_state.lua
--- alphabetically, so:
---   - affects_data.lua is loaded explicitly via dofile() below.
---   - Char.Name and state.char.reset hooks are installed lazily inside
---     _affects_register_triggers(), which runs after all modules are loaded
---     (called from SESSION CONNECTED and the cp -r reload chain).
+-- affects_data.lua is loaded explicitly via dofile() below.
+-- gmcp_char_name and char_reset subscriptions are registered at load time;
+-- _affects_register_triggers() only handles tt++ #action registration.
 
 local json        = require("dkjson")
 local affects_data = dofile(os.getenv("HOME") .. "/MUME/lua/core/affects_data.lua")
@@ -326,48 +323,32 @@ events.subscribe("affect_down", function(name)
 end)
 
 -- ---------------------------------------------------------------------------
--- Hook installation (called once per load cycle from _affects_register_triggers)
+-- Event subscriptions — registered at load time
 -- ---------------------------------------------------------------------------
 
-local _installed = false  -- reset to false on each cp -r (fresh module load)
-
-local function _install_hooks()
-    if _installed then return end
-    _installed = true
-
-    -- Wrap Char.Name: re-init state and load persisted affect_times from disk.
-    -- All other modules (char_state, status_state) have wrapped Char.Name before
-    -- SESSION CONNECTED fires, so our wrap sits outermost and runs last.
-    local _orig_name = gmcp.handlers["Char.Name"]
-    gmcp.handlers["Char.Name"] = function(body)
-        if _orig_name then _orig_name(body) end
-        state.char.affects      = {}
-        state.char.affect_times = {}
-        if state.char.name then
-            _load_times(state.char.name)
-            _load_active(state.char.name)
-        end
+-- Re-init affects state and load persisted data on every new character login.
+-- Alphabetical load order ensures this runs before buffs_state.lua's subscriber.
+events.subscribe("gmcp_char_name", function()
+    state.char.affects      = {}
+    state.char.affect_times = {}
+    if state.char.name then
+        _load_times(state.char.name)
+        _load_active(state.char.name)
     end
+end)
 
-    -- Wrap state.char.reset: cancel the tick when character state is wiped.
-    -- GAME_SESSION may already be nil when reset() is called via the fallback
-    -- SESSION DISCONNECTED path; session_cmd is a no-op in that case, but the
-    -- game session dying takes all its delays with it anyway.
-    local _orig_reset = state.char.reset
-    state.char.reset = function()
-        if _orig_reset then _orig_reset() end
-        if GAME_SESSION then
-            session_cmd("#undelay {affects_tick}")
-        end
+-- Cancel the tick timer when character state is wiped on disconnect.
+events.subscribe("char_reset", function()
+    if GAME_SESSION then
+        session_cmd("#undelay {affects_tick}")
     end
-end
+end)
 
 -- ---------------------------------------------------------------------------
 -- Trigger registration (global — called from ttpp/core/affects.tin alias)
 -- ---------------------------------------------------------------------------
 
 function _affects_register_triggers()
-    _install_hooks()
 
     -- Build pattern → [{name, ev}] map, collapsing shared trigger lines.
     local field_to_event = {

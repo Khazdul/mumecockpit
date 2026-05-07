@@ -1,5 +1,6 @@
--- Wraps Comm.Channel.Text and Comm.Channel.List handlers from comm_log.lua.
 -- Serialises history and channels to bridge/comm.state on every change.
+-- Subscribes to gmcp_comm_channel_text and gmcp_comm_channel_list (emitted by
+-- dispatch after comm_log.lua's primary writers have updated state.comm.*).
 -- Reads bridge/comm.state at load time to restore channels after cp -r,
 -- working around one-shot Comm.Channel.List on persistent connections.
 -- History seeding after cp -r is handled by comm_store.lua (loads after this
@@ -86,22 +87,8 @@ local function _load_state_file()
     end
 end
 
--- Wrap existing handlers: call original first, then serialize.
--- comm_log.lua loads before comm_state.lua (alphabetical order).
-local _orig_text = gmcp.handlers["Comm.Channel.Text"]
-local _orig_list = gmcp.handlers["Comm.Channel.List"]
-
----@diagnostic disable-next-line: duplicate-set-field
-gmcp.handlers["Comm.Channel.Text"] = function(body)
-    if _orig_text then _orig_text(body) end
-    serialize()
-end
-
----@diagnostic disable-next-line: duplicate-set-field
-gmcp.handlers["Comm.Channel.List"] = function(body)
-    if _orig_list then _orig_list(body) end
-    serialize()
-end
+events.subscribe("gmcp_comm_channel_text", function() serialize() end)
+events.subscribe("gmcp_comm_channel_list", function() serialize() end)
 
 -- Expose so comm_store.lua can trigger a re-serialise after seeding history.
 state.comm.serialize = serialize

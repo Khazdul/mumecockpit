@@ -174,7 +174,7 @@ only by the 24 h / 7 d degradation rule applied at brain startup in
 
 > **gts-ticker constraint:** tt++ does not fire tickers in the startup session (`gts`). The clock ticker is therefore registered per game session inside `_register_clock_actions`, not at file-load time. It is created on SESSION CONNECTED and destroyed on disconnect.
 
-### `event_sun` (emitted by `lua/core/world_state.lua`)
+### `gmcp_event_sun` (emitted by `gmcp.dispatch` after `lua/core/world_state.lua` primary writer)
 
 Body `{what = "rise"|"set"|"light"|"dark"}`. Only `"rise"` and `"set"` are
 used; `"light"` and `"dark"` indicate room sun-shielding (indoors / dense

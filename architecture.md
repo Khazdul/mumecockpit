@@ -225,8 +225,11 @@ deltas and the per-kill list. `state.world.clock` is owned by
 `lua/core/clock.lua` — see [docs/clock.md](docs/clock.md) for API.
 
 **`gmcp`** — GMCP subsystem: `gmcp.handlers`, `gmcp.modules`,
-`gmcp.dispatch`, `gmcp.trace`. See [docs/gmcp.md](docs/gmcp.md) for
-subscription, dispatch, and scripting patterns.
+`gmcp.dispatch`, `gmcp.trace`. Dispatch model: one primary writer per module
+owns `gmcp.handlers[module]` and writes `state.*`; `gmcp.dispatch` always
+emits `gmcp_<module_snake>` after the primary writer so downstream code uses
+`events.subscribe` instead of handler wraps. See [docs/gmcp.md](docs/gmcp.md)
+for subscription, dispatch, and scripting patterns.
 
 **`events`** — Lua event bus: `events.handlers`, `events.subscribe`,
 `events.unsubscribe`, `events.emit`, `events.trace`. See

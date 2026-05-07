@@ -32,6 +32,7 @@ function state.char.reset()
             state.char[k] = nil
         end
     end
+    events.emit("char_reset")
 end
 
 dbg("[CHAR_STATE] loaded")

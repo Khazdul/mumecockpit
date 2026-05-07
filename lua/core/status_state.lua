@@ -1,10 +1,7 @@
--- Serialises state.char.* to bridge/status.state (JSON) whenever any
--- Char.Name, Char.StatusVars, or Char.Vitals payload arrives.
---
--- Approach: wrap char_state's existing handlers from here (load order is
--- alphabetical, so char_state loads first). Each wrapper calls the original
--- handler then re-serialises. This keeps char_state.lua clean — no callback
--- list or modifications needed there.
+-- Serialises state.char.* to bridge/status.state (JSON) whenever
+-- Char.Name, Char.StatusVars, Char.Vitals, or char_reset fires.
+-- Subscribes to the gmcp_* events emitted by dispatch after the primary
+-- writers in char_state.lua have updated state.char.*.
 --
 -- Atomic write: status.state.tmp → os.rename → status.state so the Python
 -- reader never sees a partial file.
@@ -117,33 +114,10 @@ local function serialize()
     end
 end
 
--- Wrap handlers: call original first, then serialize.
-local _orig_name    = gmcp.handlers["Char.Name"]
-local _orig_vars    = gmcp.handlers["Char.StatusVars"]
-local _orig_vitals  = gmcp.handlers["Char.Vitals"]
-local _orig_reset   = state.char.reset
-
-gmcp.handlers["Char.Name"] = function(body)
-    if _orig_name then _orig_name(body) end
-    serialize()
-end
-
-gmcp.handlers["Char.StatusVars"] = function(body)
-    if _orig_vars then _orig_vars(body) end
-    serialize()
-end
-
-gmcp.handlers["Char.Vitals"] = function(body)
-    if _orig_vitals then _orig_vitals(body) end
-    serialize()
-end
-
----@diagnostic disable-next-line: duplicate-set-field
-state.char.reset = function()
-    if _orig_reset then _orig_reset() end
-    serialize()
-end
-
-events.subscribe("clock_changed", function() serialize() end)
+events.subscribe("gmcp_char_name",        function() serialize() end)
+events.subscribe("gmcp_char_status_vars", function() serialize() end)
+events.subscribe("gmcp_char_vitals",      function() serialize() end)
+events.subscribe("char_reset",            function() serialize() end)
+events.subscribe("clock_changed",         function() serialize() end)
 
 dbg("[STATUS_STATE] loaded")

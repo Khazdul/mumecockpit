@@ -1,5 +1,5 @@
 -- Run XP/TP tracker and kill announcer.
--- Wraps Char.Vitals for baseline + running totals only.
+-- Subscribes to gmcp_char_vitals for baseline + running totals only.
 -- Subscribes to mob_death; queues mob names and schedules a debounced fold
 -- (run_fold, 100ms) so multiple R.I.P. lines from one combat round
 -- batch into a single fold. Killing-blow XP is already in state.char.xp by
@@ -42,10 +42,7 @@ end
 
 state.run = M
 
-local _orig_vitals = gmcp.handlers["Char.Vitals"]
-
-gmcp.handlers["Char.Vitals"] = function(body)
-    if _orig_vitals then _orig_vitals(body) end
+events.subscribe("gmcp_char_vitals", function(body)
     if not body then return end
 
     if body.xp then
@@ -60,7 +57,7 @@ gmcp.handlers["Char.Vitals"] = function(body)
             M.xp            = 0
             M.pending_kills = {}
         else
-        M.xp = body.xp - M.xp_baseline
+            M.xp = body.xp - M.xp_baseline
         end
     end
     if body.tp then
@@ -77,9 +74,7 @@ gmcp.handlers["Char.Vitals"] = function(body)
             M.tp = body.tp - M.tp_baseline
         end
     end
-
-    return
-end
+end)
 
 local function schedule_fold()
     session_cmd(string.format(

@@ -1,6 +1,6 @@
--- Serialises state.char.affects to bridge/buffs.state (JSON) whenever
--- affects_changed fires. Installed on top of affects.lua's hooks so that
--- _load_active() results are in the file before the first render tick.
+-- Serialises state.char.affects and state.char.stored_spells to
+-- bridge/buffs.state (JSON) whenever affects_changed, stored_spells_changed,
+-- char_reset, or gmcp_char_name fires.
 --
 -- Atomic write: buffs.state.tmp → os.rename → buffs.state.
 
@@ -47,31 +47,13 @@ local function serialize()
     os.rename(TMP_PATH, STATE_PATH)
 end
 
--- Fire on every affect or stored-spell change.
-events.subscribe("affects_changed", serialize)
-events.subscribe("stored_spells_changed", serialize)
-
--- Wrap state.char.reset so disconnect blanks the pane within one poll tick.
-local _orig_reset = state.char.reset
----@diagnostic disable-next-line: duplicate-set-field
-state.char.reset = function()
-    if _orig_reset then _orig_reset() end
-    serialize()
-end
-
--- Wrap _affects_register_triggers so our Char.Name wrapper is installed
--- AFTER affects.lua's (which runs _load_active). This ensures serialize()
--- sees the final loaded state, including the empty-list case that emits no
--- affects_changed.
-local _orig_register = _affects_register_triggers
-function _affects_register_triggers()
-    _orig_register()
-    local _orig_name = gmcp.handlers["Char.Name"]
-    gmcp.handlers["Char.Name"] = function(body)
-        if _orig_name then _orig_name(body) end
-        serialize()
-    end
-end
+-- Fire on every affect or stored-spell change, reset, or new character name.
+-- affects.lua subscribes to gmcp_char_name before this file (alphabetical),
+-- so _load_active() results are in state.char.affects when our subscriber runs.
+events.subscribe("affects_changed",        serialize)
+events.subscribe("stored_spells_changed",  serialize)
+events.subscribe("char_reset",             function() serialize() end)
+events.subscribe("gmcp_char_name",         function() serialize() end)
 
 -- Initial write so the renderer has a file on first start.
 serialize()

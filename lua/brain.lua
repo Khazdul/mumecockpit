@@ -470,7 +470,7 @@ gmcp    = {
 events  = {
     handlers   = {},
     trace      = false,
-    trace_skip = { clock_changed = true },
+    trace_skip = { clock_changed = true, gmcp_char_vitals = true },
 }
 
 function events.subscribe(name, fn)
@@ -513,6 +513,14 @@ function events.emit(name, ...)
     end
 end
 
+-- "Char.StatusVars" -> "gmcp_char_status_vars"
+local function module_to_event(module)
+    return "gmcp_" .. module
+        :gsub("([a-z])([A-Z])", "%1_%2")
+        :gsub("%.", "_")
+        :lower()
+end
+
 function gmcp.dispatch(module, payload)
     payload = payload or ""
     local json = require("dkjson")
@@ -547,9 +555,9 @@ function gmcp.dispatch(module, payload)
             dbg("GMCP handler error [" .. module .. "]: "
                 .. tostring(err2))
         end
-    else
-        dbg("GMCP no handler: " .. module)
     end
+
+    events.emit(module_to_event(module), body)
 end
 
 -- -----------------------------
