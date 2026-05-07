@@ -80,6 +80,12 @@ function ui_err(msg)
     ui(string.format("%s✖ ERROR:%s %s%s%s", _C_ERR, _C_RESET, _C_TEXT, msg, _C_RESET))
 end
 
+-- store_ui(msg) — stored-spell event line for the UI pane.
+-- Format: ◆ STORE: message.
+function store_ui(msg)
+    ui(string.format("%s◆ STORE:%s %s%s%s", _C_SPELL, _C_RESET, _C_TEXT, msg, _C_RESET))
+end
+
 -- affect_ui(type, name, verb) — affect-event line for the UI pane.
 -- type: "spell" | "buff" | "debuff" — selects prefix colour and tag.
 -- name: affect name (rendered with ui_var for the dynamic-value style).
