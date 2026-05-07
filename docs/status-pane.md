@@ -5,10 +5,11 @@ info board driven by GMCP data.
 Touch this file when changing the renderer, the state-file schema, the field
 layout, or layout integration.
 
-**Step 3 of a multi-step redesign.** Step 1 replaced the old gold-framed box
-with two progress-bar rows. Step 2 adds four data rows below them (race/level,
-mood/sess-xp, alertness/sess-tp, position/wimpy). Step 3 adds four toggle-box
-cells (sneak/ride/climb/swim) directly below the data block.
+Two progress-bar rows (XP and TP), a row of four toggle-box cells
+(SNEAK / RIDE / CLIMB / SWIM), a blank separator, and four data rows (race/level,
+mood/session-xp, alertness/session-tp, position/wimpy) make up the eleven-row
+layout. Game time is shown in the input-pane menu bar, sourced from the same
+`status.state` payload.
 
 ## Architecture
 
@@ -277,7 +278,7 @@ when `state.char.race` lowercases to `"troll"`. Sanity check: at level 5 with
 
 ### Pane position
 
-Right column (top to bottom): `status` → `ui` → `dev`. Status stays at the top
+Right column (top to bottom): `status` → `buffs` → `comm` → `ui` → `dev`. Status stays at the top
 of the right column whenever it exists.
 
 ### Pane height
@@ -305,12 +306,6 @@ adaptive and accepts any width (ADR 0023).
 
 Persistence key: `show_status` in `bridge/startup.conf`. Fresh-install default
 is `1` (status pane on).
-
-## Future steps
-
-Subsequent commits may add further rows (game time, …). `STATIC_ROWS` in
-`status_state.lua` and `_build_frame` in `status_pane.py` are the two places to
-update for each new row.
 
 ---
 Back to [architecture.md](../architecture.md).

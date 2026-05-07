@@ -40,14 +40,12 @@ tracking, and UI feedback.
 │   ├── brain.lua         # Lua brain — infrastructure, event loop, auto-loads core/ then scripts/
 │   ├── lib/              # Bundled Lua libraries (on package.path)
 │   │                     #   dkjson.lua  — pure-Lua JSON parser (MIT, David Kolf)
-│   ├── core/             # Always-on GMCP collectors — no alias, no register_script
-│   │                     #   affects.lua     — affect tracker; state.char.affects; affect events
-│   │                     #   buffs_state.lua — serialises state.char.affects → bridge/buffs.state
-│   │                     #   comm_log.lua    — Comm.Channel.Text/List → state.comm history/channels
-│   │                     #   comm_state.lua  — wraps comm_log handlers; serialises history and
-│   │                     #                    channels to bridge/comm.state; reads bridge/comm.state
-│   │                     #                    at load to survive cp -r
-│   │                     #   (see CLAUDE.md and per-area docs/*.md for exhaustive listing)
+│   ├── core/             # Always-on GMCP collectors and serializers — no alias,
+│   │                     # no register_script. Examples:
+│   │                     #   char_state.lua    — Char.* → state.char.*
+│   │                     #   comm_log.lua      — Comm.Channel.* → state.comm.*
+│   │                     #   status_state.lua  — state.char → bridge/status.state
+│   │                     # See CLAUDE.md and per-area docs/*.md for the full list.
 │   └── scripts/          # Opt-in automation modules — must call register_script(meta)
 │
 ├── bridge/
@@ -58,7 +56,7 @@ tracking, and UI feedback.
 │   │                         #   blank_profile.tin — seeded into
 │   │                         #   ttpp/sessions/default.tin and used by
 │   │                         #   the launcher's "Create blank profile"
-│   ├── toggle_pane.sh        # Toggle ui/dev/comm/status panes and pane headers
+│   ├── toggle_pane.sh        # Toggle ui / dev / comm / status / buffs panes and pane headers
 │   │                         #   (called by cp aliases and in-game popup)
 │   ├── version_check.sh      # Queries GitHub for latest tag; updates
 │   │                         #   bridge/version.cache with 6h TTL
@@ -266,9 +264,14 @@ reduce noise.
 tt++ via `#lua` must live here. Private helpers remain in file-local `local`
 scope.
 
-**`state.*`** — reserved for shared game/world data. `state.char`,
-`state.room`, and `state.comm` are empty tables in this iteration; populated
-when GMCP lands.
+**`state.*`** — shared game and world data. Each sub-namespace has a defined owner:
+
+- `state.char` — populated by `lua/core/char_state.lua` from `Char.Name` / `StatusVars` / `Vitals`; extended by `lua/core/affects.lua` (`affects`, `affect_times`) and `lua/core/stored_spells.lua` (`stored_spells`, `stored_spell_times`); `wimpy` field set by `lua/core/wimpy.lua`. Reset function defined by `char_state.lua`.
+- `state.room` — currently unused; reserved.
+- `state.comm` — owned by `lua/core/comm_log.lua` (`history`, `channels`, `max_size`). `lua/core/comm_state.lua` adds the `serialize()` entry point.
+- `state.world` — owned by `lua/core/world_state.lua` (`sun`, `moon`, `moved`, `darkness`) and `lua/core/clock.lua` (`state.world.clock`).
+- `state.session` — owned by `lua/core/sess_kills.lua`; tracks per-session XP/TP deltas, kill list, baselines.
+- `state.core` — owned by `lua/core/core_state.lua`; `Core.Goodbye` / `Core.Ping`.
 
 **Private state** continues to live in `local` file-scope tables (e.g. `local as`
 in autostab, `local ab` in autobow).
@@ -338,31 +341,7 @@ implementations, `cp -s` internals, and toggle-pane persistence details.
 
 ## Current Work
 
-Planned features — details deferred to design conversations when work begins.
-
-**Session progress tracker**
-Captures per-session telemetry: profile, start/end time, duration, unique
-kills with XP per kill, PKs, possibly quest achievements, deaths, and
-party members. Auto-enables session logging on start. Surfaces a session
-summary in the in-game popup at quit and reload, with optional mid-session
-statistics. Adds a "History" submenu in the launcher listing prior
-sessions and opening per-session detail popups.
-Phase 1: capture and persist per-session data files.
-Phase 2: visualisation in launcher and popup.
-
-**Gameplay layout presets in the launcher**
-A new "Gameplay layout" launcher submenu with three presets: Classic
-(minimalist baseline), PK with subs (loads PvP-tuned highlights and
-substitutions as core settings), Roleplay (long descriptions, themed
-colouring). Each preset has an inline preview area showing the resulting
-look — provisional layout: Back / Classic / PK / Roleplay tabs across
-the top with a preview pane below.
-
-**Getting Started page in the launcher**
-First-time-user landing content: which docs/pages to read first,
-a short narrative on getting started with MUME, and worked examples
-of basic tt++ customisation (#alias for targeting, doors, spells;
-#macro and #highlight basics; simple #action / #sub patterns).
+See the project board on GitHub for active work and parked ideas.
 
 ## See also
 
@@ -372,15 +351,16 @@ of basic tt++ customisation (#alias for targeting, doors, spells;
 - [docs/ipc.md](docs/ipc.md) — tt++ ↔ Lua IPC contract, relay actions, startup ordering. Touched when changing how tt++ and Lua communicate.
 - [docs/session-lifecycle.md](docs/session-lifecycle.md) — Session connect/disconnect, session.state, cp -r, settings persistence. Touched when changing session handling or startup flow.
 - [docs/input-pane.md](docs/input-pane.md) — Input pane key forwarding, Enter semantics, history navigation, menu bar (clickable pane toggles + clock). Touched when changing input behaviour, forwarded keys, or the menu bar.
-- [docs/tmux-bindings.md](docs/tmux-bindings.md) — tmux root-table bindings, disabled defaults, mouse interaction model, clipboard portability. Touched when changing any tmux binding or mouse behaviour.
+- [docs/tmux-bindings.md](docs/tmux-bindings.md) — tmux root-table bindings, mouse model, clipboard. Touched when changing tmux key bindings or mouse behaviour.
 - [docs/launcher.md](docs/launcher.md) — Pre-tmux startup menu, rendering conventions, exec-chain. Touched when changing launcher pages or startup options.
 - [docs/popup-menu.md](docs/popup-menu.md) — In-game ESC popup: submenus, status header, save-profile flow. Touched when changing the in-game overlay.
 - [docs/bridge-services.md](docs/bridge-services.md) — Ping monitor, version check, self-update, layout and config file formats. Touched when changing background services or persisted config.
-- [docs/release-process.md](docs/release-process.md) — Step-by-step release runbook: version bump, pre-tag check, tagging, GitHub release, and recovery procedure. Touched when shipping a release.
+- [docs/release-process.md](docs/release-process.md) — Release runbook: version bump, tagging, GitHub release. Touched when changing the release process.
 - [docs/comm-pane.md](docs/comm-pane.md) — Communication pane: renderer, comm.state schema, filter persistence, scroll semantics, label-collision policy. Touched when changing the comm pane.
-- [docs/status-pane.md](docs/status-pane.md) — Character Status pane: renderer, state-file schema, field layout, colour scheme, layout integration, phase 2–4 extension points. Touched when changing the status pane.
+- [docs/status-pane.md](docs/status-pane.md) — Character status pane: renderer, state-file schema, field layout, colour scheme, layout integration. Touched when changing the status pane.
 - [docs/clock.md](docs/clock.md) — Game clock: sync sources, state schema, persistence, seed handling, degradation rules. Touched when changing clock sync or consuming game time.
 - [docs/affects.md](docs/affects.md) — Affect tracker: data flow, state schemas, persistence, pattern-conversion rules, tick lifecycle. Touched when changing affect tracking or adding new affect entries.
-- [docs/stored-spells.md](docs/stored-spells.md) — Stored spells tracker: data flow, state schemas, spell-name resolver, persistence, SENT OUTPUT snooping, event lifecycle. Touched when changing stored-spell tracking or the spells data table.
-- [docs/buffs-pane.md](docs/buffs-pane.md) — Buffs pane: renderer, layout integration, overflow policy. Touched when building or changing the buffs pane renderer.
+- [docs/stored-spells.md](docs/stored-spells.md) — Stored spells tracker: data flow, schemas, spell-name resolver, persistence, SENT OUTPUT snooping. Touched when changing stored-spell tracking or the spells data table.
+- [docs/buffs-pane.md](docs/buffs-pane.md) — Buffs pane: renderer, scroll, blink, layout integration. Touched when changing the buffs pane renderer or the buffs.state schema.
+- [docs/ui-pane.md](docs/ui-pane.md) — UI pane: renderer, scroll, log-tail mechanics. Touched when changing the UI pane.
 - [docs/install-bootstrap.md](docs/install-bootstrap.md) — Cross-platform install and bootstrap plan. Touched when scheduling installer work or when a platform constraint (WSL, Alacritty, package versions) changes.

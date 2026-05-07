@@ -262,22 +262,5 @@ of the visualisation layer.
 
 See [`docs/affects.md`](affects.md) for the full data-layer specification.
 
-## Staleness checklist
-
-Items spotted during the 2026-05-03 docs refresh that were not fixed in this
-pass. Delete entries as they are resolved.
-
-- `docs/status-pane.md` §"Layout integration / Pane position" says
-  `status` → `ui` → `dev`; should include `buffs` and `comm` in between
-  now that both panes exist.
-- `docs/status-pane.md` §"Future steps" mentions adding a game-time row as a
-  future task; `game_time` / `time_period` / `time_remaining` are already in
-  the `status.state` schema and rendered.
-- `docs/status-pane.md` opening "Step 3 of a multi-step redesign…" banner is
-  historical — all three steps are complete. Consider replacing with a plain
-  description.
-- `docs/launcher.md` §Profile-page table contains "(Phase 2)" parenthetical
-  referring to a completed launch phase; the note can be dropped.
-
 ---
 Back to [architecture.md](../architecture.md).
