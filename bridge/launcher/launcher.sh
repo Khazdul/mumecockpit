@@ -5,8 +5,20 @@
 
 cd "$(dirname "$0")/../.."
 
-CONF="bridge/startup.conf"
+CONF="bridge/runtime/startup.conf"
 RENDER="bridge/launcher/menu_render.sh"
+
+# ---------------------------------------------------------------------------
+# One-shot migration: v0.6.x runtime files at bridge/ root → bridge/runtime/
+# ---------------------------------------------------------------------------
+if [ ! -d bridge/runtime ]; then
+    mkdir -p bridge/runtime
+    for f in bridge/*.state bridge/*.cache bridge/*.conf bridge/.[a-zA-Z]*; do
+        [ -e "$f" ] || continue
+        mv "$f" bridge/runtime/ 2>/dev/null || true
+    done
+    [ -d bridge/.update_preserve ] && mv bridge/.update_preserve bridge/runtime/
+fi
 
 # ---------------------------------------------------------------------------
 # Bootstrap
@@ -88,7 +100,7 @@ fi
 _COCKPIT_VERSION="0.1.0"
 [ -f "VERSION" ] && _COCKPIT_VERSION=$(tr -d '[:space:]' < VERSION 2>/dev/null || echo "0.1.0")
 
-# Kick off background version check — populates bridge/version.cache for About page.
+# Kick off background version check — populates bridge/runtime/version.cache for About page.
 bash "$HOME/MUME/bridge/services/version_check.sh" >/dev/null 2>&1 &
 disown
 
@@ -101,11 +113,11 @@ _strip_v() {
 }
 
 _update_available() {
-    [ -f bridge/version.cache ] || return 1
+    [ -f bridge/runtime/version.cache ] || return 1
     local latest=""
     while IFS='=' read -r k v; do
         [ "$k" = "latest" ] && latest="$v"
-    done < bridge/version.cache
+    done < bridge/runtime/version.cache
     [ -z "$latest" ] && return 1
     local a b
     a=$(_strip_v "$latest")
@@ -741,11 +753,11 @@ _about_page() {
         # Build version string for title row (raw widths, no ANSI)
         local _vcur="$_COCKPIT_VERSION"
         local _vraw="$_vcur" _vupd=""
-        if [ -f "bridge/version.cache" ]; then
+        if [ -f "bridge/runtime/version.cache" ]; then
             local _vlatest=""
             while IFS='=' read -r k v; do
                 [ "$k" = "latest" ] && _vlatest="$v"
-            done < "bridge/version.cache"
+            done < "bridge/runtime/version.cache"
             if [ -n "$_vlatest" ] && [ "$(_strip_v "$_vlatest")" != "$(_strip_v "$_vcur")" ]; then
                 _vraw="${_vcur}  ·  Update available: ${_vlatest}"
                 _vupd="$_vlatest"
@@ -841,7 +853,7 @@ _about_page() {
 }
 
 # ---------------------------------------------------------------------------
-# Scripts page — reads bridge/scripts.cache written by brain.lua
+# Scripts page — reads bridge/runtime/scripts.cache written by brain.lua
 # ---------------------------------------------------------------------------
 _scripts_page() {
     local -a _slines=()
@@ -850,7 +862,7 @@ _scripts_page() {
     _load_scripts_lines() {
         _slines=()
         _sin_script=0
-        if [ ! -f "bridge/scripts.cache" ] || [ ! -s "bridge/scripts.cache" ]; then
+        if [ ! -f "bridge/runtime/scripts.cache" ] || [ ! -s "bridge/runtime/scripts.cache" ]; then
             _slines=("M:No scripts cached yet — start the client once to populate.")
             return
         fi
@@ -864,7 +876,7 @@ _scripts_page() {
                 SUMMARY:*) _slines+=("S:${line#SUMMARY:}") ;;
                 HELP:*)    _slines+=("H:${line#HELP:}")    ;;
             esac
-        done < "bridge/scripts.cache"
+        done < "bridge/runtime/scripts.cache"
     }
 
     _load_scripts_lines
@@ -1012,11 +1024,11 @@ check_min_size
 # Cache-mtime poll — detects version.cache appearing/changing mid-session
 # ---------------------------------------------------------------------------
 _CACHE_MTIME=""
-[ -f bridge/version.cache ] && _CACHE_MTIME=$(file_mtime bridge/version.cache)
+[ -f bridge/runtime/version.cache ] && _CACHE_MTIME=$(file_mtime bridge/runtime/version.cache)
 
 _check_cache_change() {
     local current_mtime=""
-    [ -f bridge/version.cache ] && current_mtime=$(file_mtime bridge/version.cache)
+    [ -f bridge/runtime/version.cache ] && current_mtime=$(file_mtime bridge/runtime/version.cache)
     if [ "$current_mtime" != "$_CACHE_MTIME" ]; then
         _CACHE_MTIME="$current_mtime"
         local prev_name="${_ITEMS[$_SEL]:-}"

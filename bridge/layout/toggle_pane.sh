@@ -3,13 +3,13 @@
 # Usage: toggle_pane.sh <target> [--persist]
 # Targets: ui, dev, comm, status, headers
 # Called by cp -u/-d/-m/-c/-h aliases in system.tin.
-# With --persist, writes the new state to bridge/startup.conf (used by the in-game popup).
+# With --persist, writes the new state to bridge/runtime/startup.conf (used by the in-game popup).
 
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BRIDGE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-CONF="$BRIDGE_DIR/startup.conf"
+CONF="$BRIDGE_DIR/runtime/startup.conf"
 TARGET="${1:-}"
 PERSIST=0
 

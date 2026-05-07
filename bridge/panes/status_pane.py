@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # bridge/panes/status_pane.py — character status pane renderer.
-# prompt_toolkit Application; polls bridge/status.state every 50 ms.
+# prompt_toolkit Application; polls bridge/runtime/status.state every 50 ms.
 # Anchor-top: top rows always visible; overflow indicator when clipped.
 
 try:
@@ -26,7 +26,7 @@ import shutil
 import signal
 import sys
 
-STATE_PATH = os.path.join(os.environ["HOME"], "MUME", "bridge", "status.state")
+STATE_PATH = os.path.join(os.environ["HOME"], "MUME", "bridge", "runtime", "status.state")
 POLL_MS    = 0.05
 
 # ---------------------------------------------------------------------------

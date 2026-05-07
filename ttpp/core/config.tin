@@ -1,5 +1,5 @@
 #nop ===== CONFIG =====
-#nop Reads bridge/startup.conf at startup and materialises three variables:
+#nop Reads bridge/runtime/startup.conf at startup and materialises three variables:
 #nop   _profile — session name to connect as (e.g. default, testchar)
 #nop   _host    — connection host (localhost for mmapper, mume.org for direct)
 #nop   _port    — connection port (always 4242)

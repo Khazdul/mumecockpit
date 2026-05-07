@@ -6,12 +6,24 @@
 
 cd "$(dirname "$0")/../.."
 
-# Clear any stale sentinels left by a crash before doing anything else.
-rm -f bridge/.return_to_menu
-rm -f bridge/.popup_open
-rm -f bridge/.layout_ready
+# ---------------------------------------------------------------------------
+# 0. One-shot migration: v0.6.x runtime files at bridge/ root → bridge/runtime/
+# ---------------------------------------------------------------------------
+if [ ! -d bridge/runtime ]; then
+    mkdir -p bridge/runtime
+    for f in bridge/*.state bridge/*.cache bridge/*.conf bridge/.[a-zA-Z]*; do
+        [ -e "$f" ] || continue
+        mv "$f" bridge/runtime/ 2>/dev/null || true
+    done
+    [ -d bridge/.update_preserve ] && mv bridge/.update_preserve bridge/runtime/
+fi
 
-CONF="bridge/startup.conf"
+# Clear any stale sentinels left by a crash before doing anything else.
+rm -f bridge/runtime/.return_to_menu
+rm -f bridge/runtime/.popup_open
+rm -f bridge/runtime/.layout_ready
+
+CONF="bridge/runtime/startup.conf"
 
 # Create startup.conf with defaults if missing
 if [ ! -f "$CONF" ]; then
@@ -22,7 +34,7 @@ source "$CONF"
 # ---------------------------------------------------------------------------
 # 1. Dirs, permissions, log reset
 # ---------------------------------------------------------------------------
-mkdir -p bridge logs
+mkdir -p bridge/runtime logs
 
 chmod +x bridge/layout/apply_layout.sh
 chmod +x bridge/launcher/open_pane.sh
@@ -137,8 +149,8 @@ tmux attach -t mume
 # Resumes here when the session dies or the user detaches.
 # Check for the return-to-menu sentinel written by ingame_menu.sh before
 # firing cp -e; if set, exec back into the launcher (no extra bash frame).
-if [ -f bridge/.return_to_menu ]; then
-    rm -f bridge/.return_to_menu
+if [ -f bridge/runtime/.return_to_menu ]; then
+    rm -f bridge/runtime/.return_to_menu
     exec bash bridge/launcher/launcher.sh
 fi
 # No sentinel → fall through to shell cleanly.

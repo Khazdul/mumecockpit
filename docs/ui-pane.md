@@ -134,7 +134,7 @@ this to the label ` UI ` when headers are on.
 | In-game popup → Options           | `toggle_pane.sh ui --persist`                   |
 | Launcher Options → UI pane        | `_save_conf` → `startup.conf show_ui`           |
 
-Persistence key: `show_ui` in `bridge/startup.conf`. Fresh-install default
+Persistence key: `show_ui` in `bridge/runtime/startup.conf`. Fresh-install default
 is `1` (UI pane on).
 
 ## Layout integration

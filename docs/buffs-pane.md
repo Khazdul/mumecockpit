@@ -13,7 +13,7 @@ lua/core/affects.lua ──► state.char.affects ──────────
                                 │                                  │
                     affects_changed event                          │
                                 │                                  ▼
-lua/core/stored_spells.lua ──► state.char.stored_spells    lua/core/buffs_state.lua ──► bridge/buffs.state (JSON)
+lua/core/stored_spells.lua ──► state.char.stored_spells    lua/core/buffs_state.lua ──► bridge/runtime/buffs.state (JSON)
                                 │                                  ▲           │
                     stored_spells_changed event ───────────────────┘    mtime poll (100 ms)
                                                                                 │
@@ -22,11 +22,11 @@ lua/core/stored_spells.lua ──► state.char.stored_spells    lua/core/buffs_
 ```
 
 `buffs_state.lua` serialises both `state.char.affects` and
-`state.char.stored_spells` to `bridge/buffs.state` on every `affects_changed`
+`state.char.stored_spells` to `bridge/runtime/buffs.state` on every `affects_changed`
 or `stored_spells_changed` event, on character reset (disconnect), and on
 login. `buffs_pane.py` polls that file and renders the grid.
 
-## State file schema (`bridge/buffs.state`)
+## State file schema (`bridge/runtime/buffs.state`)
 
 JSON object with two arrays:
 
@@ -210,7 +210,7 @@ window, hidden when neither condition holds.
 
 ## Polling and redraw cadence
 
-- **State poll:** `os.stat(bridge/buffs.state).st_mtime` checked every 100 ms.
+- **State poll:** `os.stat(bridge/runtime/buffs.state).st_mtime` checked every 100 ms.
   On mtime change: reload JSON, call `app.invalidate()`. The renderer clamps
   `_scroll_offset` on the next frame.
 - **Blink tick:** `asyncio` task that sleeps `1.0 - frac + 0.01` seconds,
@@ -229,7 +229,7 @@ vertical order.
 
 ## Default height
 
-`buffs_height=5` in `bridge/layout.conf`.
+`buffs_height=5` in `bridge/runtime/layout.conf`.
 
 ## Toggle
 
@@ -240,7 +240,7 @@ vertical order.
 | Launcher Options        | `_save_conf` → `startup.conf show_buffs`         |
 | In-game popup → Options | `toggle_pane.sh buffs --persist`                 |
 
-Persistence key: `show_buffs` in `bridge/startup.conf`. Fresh-install default
+Persistence key: `show_buffs` in `bridge/runtime/startup.conf`. Fresh-install default
 is `0` (pane closed). Existing installs without the key fall through to the
 `${show_buffs:-0}` runtime guard — no change on upgrade.
 

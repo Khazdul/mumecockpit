@@ -10,7 +10,7 @@ cd "$HOME/MUME"
 PANE_COUNT=$(tmux list-panes -t mume:cockpit 2>/dev/null | wc -l)
 [ "$PANE_COUNT" -gt 1 ] && exit 0
 
-source bridge/startup.conf 2>/dev/null || true
+source bridge/runtime/startup.conf 2>/dev/null || true
 
 SHOW_UI="${show_ui:-1}"
 SHOW_DEV="${show_dev:-0}"
@@ -19,7 +19,7 @@ SHOW_BUFFS="${show_buffs:-0}"
 SHOW_COMM="${show_comm:-0}"
 SHOW_DIVIDERS="${show_pane_dividers:-1}"
 
-LAYOUT_CONF="bridge/layout.conf"
+LAYOUT_CONF="bridge/runtime/layout.conf"
 [ -f "$LAYOUT_CONF" ] || printf "ui_width=33\nwindow_cols=0\n" > "$LAYOUT_CONF"
 grep -q "^window_cols=" "$LAYOUT_CONF" || echo "window_cols=0" >> "$LAYOUT_CONF"
 source "$LAYOUT_CONF"
@@ -72,5 +72,5 @@ else
     tmux set-option -t mume pane-active-border-style "fg=black"
 fi
 
-touch bridge/.layout_ready
+touch bridge/runtime/.layout_ready
 tmux set-hook -t mume -u client-attached

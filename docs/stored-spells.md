@@ -90,7 +90,7 @@ lua/core/stored_spells.lua  ──►  state.char.stored_spells       (active li
   │
   ▼ events.emit("stored_spells_changed")
   ▼
-lua/core/buffs_state.lua    ──►  bridge/buffs.state   (JSON, atomic write)
+lua/core/buffs_state.lua    ──►  bridge/runtime/buffs.state   (JSON, atomic write)
 ```
 
 ## State schema

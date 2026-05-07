@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 TYPE=$1
 MUME="$HOME/MUME"
-SENTINEL="$HOME/MUME/bridge/.collapsed_panes"
+SENTINEL="$HOME/MUME/bridge/runtime/.collapsed_panes"
 
 # Bail out silently if the right column is collapsed due to narrow terminal.
 # Pane toggles during the narrow state are no-ops; they auto-restore on widen.
@@ -22,7 +22,7 @@ if [ -n "$EXISTING" ]; then
     exit 0
 fi
 
-LAYOUT_CONF="$HOME/MUME/bridge/layout.conf"
+LAYOUT_CONF="$HOME/MUME/bridge/runtime/layout.conf"
 [ -f "$LAYOUT_CONF" ] || echo "ui_width=33" > "$LAYOUT_CONF"
 source "$LAYOUT_CONF"
 COLS=$(tmux display-message -p -t mume:cockpit '#{window_width}')

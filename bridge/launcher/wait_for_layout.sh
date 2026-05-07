@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-SENTINEL="$HOME/MUME/bridge/.layout_ready"
+SENTINEL="$HOME/MUME/bridge/runtime/.layout_ready"
 # Wait up to 2s for the layout build to signal ready.
 for _ in $(seq 1 40); do
     [ -f "$SENTINEL" ] && break

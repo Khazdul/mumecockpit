@@ -3,7 +3,7 @@
 Everything about tt++ session creation, game session tracking, state
 persistence, and clean startup flow. Touch this file when changing how
 sessions are connected, disconnected, or reloaded, or when modifying
-`bridge/connection.state` consumers.
+`bridge/runtime/connection.state` consumers.
 
 The client uses three tt++ sessions:
 
@@ -41,7 +41,7 @@ and cleared on SESSION DISCONNECTED.
 interferes with socket cleanup and prevents MMapper from releasing
 the connection.
 
-## Runtime connection state (`bridge/connection.state`)
+## Runtime connection state (`bridge/runtime/connection.state`)
 
 Tracks whether the player is connected to MUME — distinct from whether
 the tt++ session is alive. In MMapper mode the tt++ ↔ MMapper socket can
@@ -80,7 +80,7 @@ already cleared and returns early.
   reads `connection_mode` from `startup.conf`), then `system_ui("Connected to MUME.")`.
 - `mark_mume_disconnected()` calls `_clear_connection_state()`, emits
   `system_ui("Disconnected from MUME.")`, then auto-opens the popup if
-  `bridge/.popup_open` is absent (see `docs/popup-menu.md` — Auto-open on disconnect).
+  `bridge/runtime/.popup_open` is absent (see `docs/popup-menu.md` — Auto-open on disconnect).
 
 `set_game_session()` no longer writes `connection.state` — it only tracks tt++
 session liveness. `clear_game_session()` delegates to `mark_mume_disconnected()`
@@ -99,7 +99,7 @@ or malformed values as "Disconnected" and never block.
 
 Consumer: `bridge/launcher/ingame_menu.sh` reads this file on every popup render
 to drive the status header (connected vs disconnected). The Link fragment
-is served from `bridge/ping.cache`, independent of connection state.
+is served from `bridge/runtime/ping.cache`, independent of connection state.
 
 ### Known limitations
 
@@ -293,7 +293,7 @@ by `cp -r`'s `#kill delay` and would need explicit re-arming in the `cp -r`
 alias body. Lua already has clean tick infrastructure used by the clock
 module — a save tick is a copy of that pattern, no new mechanism.
 
-**Configuration.** Interval lives in `bridge/startup.conf`, e.g.
+**Configuration.** Interval lives in `bridge/runtime/startup.conf`, e.g.
 `save_interval_seconds=300` (default 300, 0 disables). Read by
 `bridge/launcher/read_config.sh` (and surfaced as a tt++ var) or directly by
 `brain.lua` at startup. Decision deferred until implementation.

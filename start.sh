@@ -23,7 +23,7 @@ if ! command -v lua >/dev/null 2>&1; then
     sudo apt update && sudo apt install -y lua5.4
 fi
 
-mkdir -p bridge logs
+mkdir -p bridge/runtime logs
 
 # Seed default.tin from the blank-profile template on fresh installs.
 # Idempotent: runs only when default.tin is missing.

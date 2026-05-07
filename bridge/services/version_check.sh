@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # bridge/services/version_check.sh — queries GitHub for the latest release tag and caches it.
 # Usage: bash bridge/services/version_check.sh [--force]
-# Writes bridge/version.cache atomically (temp-file + rename) with a 6h TTL.
+# Writes bridge/runtime/version.cache atomically (temp-file + rename) with a 6h TTL.
 # Silent on all error paths; never blocks the caller.
 
 set -u
 
 cd "$(dirname "$0")/../.."
 
-CACHE="bridge/version.cache"
+CACHE="bridge/runtime/version.cache"
 REPO="Khazdul/mumecockpit"
 TTL=21600
 

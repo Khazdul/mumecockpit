@@ -188,7 +188,7 @@ change — after each successful sync (`gmcp_event_sun`, `mume_time_line`,
 subscribers should read `state.world.clock.format(...)` for the new value.
 
 **Subscribers:** `lua/core/status_state.lua` — calls `serialize()` to update
-`bridge/status.state` immediately, without waiting for the next `Char.Vitals`
+`bridge/runtime/status.state` immediately, without waiting for the next `Char.Vitals`
 tick.
 
 ### `affect_init`
@@ -234,9 +234,9 @@ entries were pruned.
 Subscribers should read `state.char.affects` directly for the new state.
 
 **Subscribers:** `lua/core/status_state.lua` — calls `serialize()` to update
-`bridge/status.state` and rewrite `status_height` in `bridge/layout.conf`
+`bridge/runtime/status.state` and rewrite `status_height` in `bridge/layout.conf`
 when the affect count changes. `lua/core/buffs_state.lua` — calls `serialize()`
-to update `bridge/buffs.state` (affects and stored spells written together).
+to update `bridge/runtime/buffs.state` (affects and stored spells written together).
 
 ### `wimpy_changed`
 
@@ -383,7 +383,7 @@ inside `_load_active()` after restoring persisted entries on `Char.Name`.
 Subscribers should read `state.char.stored_spells` directly for the new state.
 
 **Subscribers:** `lua/core/buffs_state.lua` — calls `serialize()` to write the
-updated `stored_spells` array (alongside `affects`) to `bridge/buffs.state`
+updated `stored_spells` array (alongside `affects`) to `bridge/runtime/buffs.state`
 atomically, giving the buffs-pane renderer a fresh snapshot within one poll
 tick.
 

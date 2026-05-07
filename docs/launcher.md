@@ -9,7 +9,7 @@ flow.
 
 ```bash
 ./start.sh            # show retro startup menu (default)
-./start.sh --no-menu  # skip menu, use current bridge/startup.conf
+./start.sh --no-menu  # skip menu, use current bridge/runtime/startup.conf
 ./start.sh -d         # skip menu, force dev pane on for this run (not persisted)
 ./start.sh -u         # skip menu, force UI pane on for this run (not persisted)
 ```
@@ -20,7 +20,7 @@ flow.
 
 The return-to-menu path (in-game popup "Exit to main menu") is handled by an
 exec-chain inside `tmux_start.sh`: after `tmux attach` returns, the script
-checks for `bridge/.return_to_menu` (written by `ingame_menu.sh` just before
+checks for `bridge/runtime/.return_to_menu` (written by `ingame_menu.sh` just before
 firing `cp -e`) and, if present, `exec`s back into `bridge/launcher/launcher.sh`.
 No intermediate bash frame — no flash. `tmux_start.sh` also clears any stale
 sentinel at the top of each run so a crash cannot mis-route a subsequent cold
@@ -36,10 +36,10 @@ Pure bash + ANSI escapes; no external dependencies beyond coreutils.
 | Session detect | `tmux has-session -t mume` + `list-clients` → top item is "New session", "Continue session", or "Mirror session (attached elsewhere)" |
 | Profile page | Lists `ttpp/sessions/*.tin`; select, create (blank / copy from existing), delete. `default` cannot be deleted. "Create blank" copies from `bridge/launcher/templates/blank_profile.tin` (single source of truth — see ADR 0042). Selected profile is written to `startup.conf` and consumed by `ttpp/core/config.tin` at tt++ startup. |
 | Options page | Toggle Character pane / Buffs pane / Comm pane / UI / Dev panes; Pane dividers; connection mode; live layout mockup (updates on toggle). Fresh-install defaults: status, buffs, comm, ui on; dev off. Content hides progressively at small heights: descriptions → mockup → section headings; menu items always render |
-| Scripts page | Reads `bridge/scripts.cache`; scrollable |
+| Scripts page | Reads `bridge/runtime/scripts.cache`; scrollable |
 | About page | Reads `bridge/launcher/about.txt`; word-wrapped, cached per resize, scrollable |
 | Quit | Confirmation prompt; ESC cancels |
-| Persistence | Options saved to `bridge/startup.conf` on Back / ESC |
+| Persistence | Options saved to `bridge/runtime/startup.conf` on Back / ESC |
 
 ## Rendering conventions
 
@@ -91,7 +91,7 @@ column alignment.
   terminal and jitters the title/footer row.
 - **Dirty-flag redraw.** Main loop uses `_DIRTY=1` set by a `WINCH` trap,
   state-changing key handler, or by the cache-mtime poll when
-  `bridge/version.cache` is updated mid-session; `read -rsn1 -t 0.2` yields
+  `bridge/runtime/version.cache` is updated mid-session; `read -rsn1 -t 0.2` yields
   fast enough resize response without a busy loop.
 - **Handoff via `exec`.** Launcher → tmux_start.sh uses `exec bash …`; the
   tmux session is created and then attached with a plain `tmux attach` (not

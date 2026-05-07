@@ -77,6 +77,7 @@ Active ADRs by area. Click through for context, alternatives, and consequences.
 - [ADR 0001](0001-constant-ping-monitor.md) — Constant ping monitor — a single long-lived ping monitor runs for the tmux session and writes to a shared cache file; the popup reads it on demand.
 - [ADR 0041](0041-post-attach-layout-build.md) — Post-attach initial layout build — the initial pane layout is built after the first client attaches, reading tmux's authoritative post-attach window dimensions.
 - [ADR 0045](0045-bridge-role-based-subdirs.md) — bridge/ role-based subdirectories — split bridge/ top-level into launcher/, panes/, layout/, release/, services/ buckets; runtime state stays in bridge/ root; compat shims for launcher.sh and tmux_start.sh.
+- [ADR 0047](0047-bridge-runtime-consolidation.md) — bridge/runtime/ consolidation — all *.state/*.cache/*.conf/dot-sentinels/.update_preserve/ moved from bridge/ root into bridge/runtime/; gitignore collapsed to one block; one-shot startup migration for v0.6.x installs.
 
 ### Self-update & release
 

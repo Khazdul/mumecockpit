@@ -4,14 +4,14 @@
 --          _read_startup_conf_value
 -- Depends on: system_ui, ui_var, dbg (ui.lua), tintin_cmd, tintin (io.lua)
 
-local CONNECTION_STATE_PATH = "bridge/connection.state"
+local CONNECTION_STATE_PATH = "bridge/runtime/connection.state"
 
 GAME_SESSION = nil  -- set dynamically when a game session connects
 
 -- Generic startup.conf key lookup — never sources/executes the file.
 -- Can move to its own conf module if more callers appear.
 function _read_startup_conf_value(key)
-    local f = io.open("bridge/startup.conf", "r")
+    local f = io.open("bridge/runtime/startup.conf", "r")
     if not f then return nil end
     for line in f:lines() do
         local k, v = line:match("^([^=]+)=(.*)$")
@@ -37,7 +37,7 @@ function _clear_connection_state()
 end
 
 local function _popup_is_open()
-    local f = io.open("bridge/.popup_open", "r")
+    local f = io.open("bridge/runtime/.popup_open", "r")
     if f then f:close(); return true end
     return false
 end
@@ -47,7 +47,7 @@ local function _open_popup()
 end
 
 -- mark_mume_connected() / mark_mume_disconnected() — idempotent, transition-only.
--- Drive bridge/connection.state from GMCP (Char.Name → connected, Core.Goodbye → disconnected).
+-- Drive bridge/runtime/connection.state from GMCP (Char.Name → connected, Core.Goodbye → disconnected).
 -- Only act (and only emit system_ui) on the actual state change; detect via file existence.
 function mark_mume_connected()
     local f = io.open(CONNECTION_STATE_PATH, "r")

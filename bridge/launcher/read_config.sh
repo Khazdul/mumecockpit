@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# bridge/launcher/read_config.sh — reads bridge/startup.conf and prints tt++ variable assignments.
+# bridge/launcher/read_config.sh — reads bridge/runtime/startup.conf and prints tt++ variable assignments.
 # Called by ttpp/core/config.tin via #script at startup.
 # Falls back to sane defaults if startup.conf is missing.
 
-CONF="bridge/startup.conf"
+CONF="bridge/runtime/startup.conf"
 if [ -f "$CONF" ]; then
     . "$CONF"
 fi

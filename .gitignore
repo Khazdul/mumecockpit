@@ -29,24 +29,11 @@ bridge/ipc/cmd_*.tin
 ttpp/sessions/default.tin
 
 bridge/dev/*.conf
-bridge/buffs.state
 data/shared/clock.state
-bridge/comm.state
-bridge/comm_filters.conf
-bridge/layout.conf
-bridge/startup.conf
-bridge/scripts.cache
-bridge/connection.state
-bridge/status.state
-bridge/version.cache
-bridge/.layout_lock
-bridge/.layout_ready
-bridge/.pane_resize_pid
-bridge/ping.cache
-bridge/.ping_pid
-bridge/.popup_open
-bridge/.collapsed_panes
-bridge/.update_preserve/
+
+# Runtime state — generated at runtime; skeleton dir tracked via .gitkeep
+bridge/runtime/*
+!bridge/runtime/.gitkeep
 
 
 

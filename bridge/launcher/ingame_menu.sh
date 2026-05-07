@@ -7,14 +7,14 @@ cd "$(dirname "$0")/../.."
 
 source bridge/launcher/menu_render.sh
 
-touch bridge/.popup_open
+touch bridge/runtime/.popup_open
 
 printf '\e[?1049h\e[?25l'
 printf '\e[?1000l\e[?1002l\e[?1003l\e[?1006l\e[?1007l'
 
 _restore_terminal() {
     printf '\e[?1007h\e[?25h\e[?1049l'
-    rm -f bridge/.popup_open
+    rm -f bridge/runtime/.popup_open
 }
 
 trap '_restore_terminal' EXIT INT TERM HUP
@@ -30,9 +30,9 @@ _save_ts=0
 
 _rebuild_menu() {
     local connected=0
-    if [ -f bridge/connection.state ]; then
+    if [ -f bridge/runtime/connection.state ]; then
         local ca
-        ca=$(awk -F= '/^connected_at=/{print $2}' bridge/connection.state 2>/dev/null)
+        ca=$(awk -F= '/^connected_at=/{print $2}' bridge/runtime/connection.state 2>/dev/null)
         [ -n "$ca" ] && [ "$ca" -gt 0 ] 2>/dev/null && connected=1
     fi
 
@@ -60,7 +60,7 @@ _render_status_header() {
     local cols; cols=$(term_cols)
 
     local profile="default" connection_mode="mmapper"
-    [ -f bridge/startup.conf ] && source bridge/startup.conf
+    [ -f bridge/runtime/startup.conf ] && source bridge/runtime/startup.conf
 
     local mode_label="MMapper"
     case "$connection_mode" in
@@ -69,12 +69,12 @@ _render_status_header() {
     esac
 
     local connected_at=""
-    if [ -f bridge/connection.state ]; then
+    if [ -f bridge/runtime/connection.state ]; then
         while IFS='=' read -r k v; do
             case "$k" in
                 connected_at) connected_at="$v" ;;
             esac
-        done < bridge/connection.state
+        done < bridge/runtime/connection.state
     fi
 
     local base_label
@@ -85,13 +85,13 @@ _render_status_header() {
     fi
 
     local latest="" quality=""
-    if [ -f bridge/ping.cache ]; then
+    if [ -f bridge/runtime/ping.cache ]; then
         while IFS='=' read -r k v; do
             case "$k" in
                 latest)  latest="$v"  ;;
                 quality) quality="$v" ;;
             esac
-        done < bridge/ping.cache
+        done < bridge/runtime/ping.cache
     fi
 
     # Build plain string for width measurement
@@ -257,7 +257,7 @@ _scripts_submenu() {
 
             _slines=()
             local _sin_script=0
-            if [ ! -f "bridge/scripts.cache" ] || [ ! -s "bridge/scripts.cache" ]; then
+            if [ ! -f "bridge/runtime/scripts.cache" ] || [ ! -s "bridge/runtime/scripts.cache" ]; then
                 _slines=("M:No scripts cached yet — start the client once to populate.")
             else
                 while IFS= read -r line; do
@@ -270,7 +270,7 @@ _scripts_submenu() {
                         SUMMARY:*) _slines+=("S:${line#SUMMARY:}") ;;
                         HELP:*)    _slines+=("H:${line#HELP:}")    ;;
                     esac
-                done < "bridge/scripts.cache"
+                done < "bridge/runtime/scripts.cache"
             fi
             _stotal=${#_slines[@]}
 
@@ -365,7 +365,7 @@ _exit_confirm() {
         read_key 0.2 || continue
         case "$LAST_KEY" in
             y|Y)
-                touch bridge/.return_to_menu
+                touch bridge/runtime/.return_to_menu
                 tmux send-keys -t mume:cockpit.0 "cp -e" C-m
                 exit 0
                 ;;

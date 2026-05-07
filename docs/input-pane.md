@@ -270,7 +270,7 @@ forget). The button state updates within ≤ 250 ms via the polling path.
 
 ### Persistence source
 
-Button toggle state is read from `bridge/startup.conf` keys `show_status`,
+Button toggle state is read from `bridge/runtime/startup.conf` keys `show_status`,
 `show_buffs`, `show_comm`, and `show_ui`. The file is polled every 250 ms via mtime
 comparison; toggling via the popup Options menu (which also writes
 `startup.conf` via `toggle_pane.sh --persist`) is therefore reflected in the
@@ -280,7 +280,7 @@ same persistence file with no other synchronisation needed.
 ### Clock
 
 The clock segment (rightmost 6 columns) renders the time remaining until the
-next day/night transition, sourced from `bridge/status.state`:
+next day/night transition, sourced from `bridge/runtime/status.state`:
 
 | Field | Key in `status.state` |
 |-------|----------------------|
@@ -328,7 +328,7 @@ visible         = available_right >= ui_width
 
 Where:
 - `MAIN_MIN = 30` — main/tt++ pane floor (duplicated from `on_window_resize.sh`)
-- `ui_width` — read from `bridge/layout.conf`; fallback 50 if missing
+- `ui_width` — read from `bridge/runtime/layout.conf`; fallback 50 if missing
 - `window_cols` — read live via `os.get_terminal_size().columns`
 
 The `ConditionalContainer` filter evaluates on every redraw. prompt_toolkit

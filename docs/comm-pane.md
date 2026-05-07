@@ -15,7 +15,7 @@ Comm.Channel.List ──► lua/core/comm_log.lua ──► state.comm.channels
                                              lua/core/comm_state.lua
                                              wraps both handlers;
                                              serialises history + channels
-                                             to bridge/comm.state (JSON);
+                                             to bridge/runtime/comm.state (JSON);
                                              restores channels at load
                                                         │
                                              lua/core/comm_store.lua
@@ -32,7 +32,7 @@ Comm.Channel.List ──► lua/core/comm_log.lua ──► state.comm.channels
                                                         │
                                           reads/writes  │
                                                         ▼
-                                          bridge/comm_filters.conf
+                                          bridge/runtime/comm_filters.conf
 ```
 
 ### Load order and event subscriptions
@@ -43,7 +43,7 @@ Comm.Channel.List ──► lua/core/comm_log.lua ──► state.comm.channels
 `gmcp.dispatch` emits `gmcp_comm_channel_text` or `gmcp_comm_channel_list`.
 
 `lua/core/comm_state.lua` (loads after `comm_log`, alphabetical) subscribes to
-both events and calls `serialize()` to write `bridge/comm.state`. It exposes
+both events and calls `serialize()` to write `bridge/runtime/comm.state`. It exposes
 `state.comm.serialize` so `comm_store.lua` can trigger a re-serialise after
 seeding history.
 
@@ -55,7 +55,7 @@ before `comm_store`'s archive append.
 
 ### State flow
 
-After the primary writer and subscribers run, `bridge/comm.state` is written
+After the primary writer and subscribers run, `bridge/runtime/comm.state` is written
 atomically (tmp + rename). `bridge/panes/comm_pane.py` polls via mtime every
 250 ms and redraws on change. `SIGWINCH` is forwarded via signal handler; the
 app calls `invalidate()` to trigger a redraw.
@@ -63,13 +63,13 @@ app calls `invalidate()` to trigger a redraw.
 ### cp -r persistence
 
 History is restored by `comm_state.lua`'s `_load_state_file()`, which reads
-`bridge/comm.state` and repopulates `state.comm.history` and
+`bridge/runtime/comm.state` and repopulates `state.comm.history` and
 `state.comm.channels` (name + caption only; label is re-derived). After
 channels and history load, `serialize()` is called once so the pane picks up
 both on its next 250 ms poll. `comm_store.lua` seeds history on `Char.Name`
 only; since MUME does not re-emit `Char.Name` on a live TCP connection,
 `comm_store` does not run during `cp -r` without reconnect — history comes
-from `bridge/comm.state` instead. Filter state survives `cp -r`
+from `bridge/runtime/comm.state` instead. Filter state survives `cp -r`
 independently: `comm_pane.py` reads `comm_filters.conf` at startup.
 
 ### Disconnect policy
@@ -148,7 +148,7 @@ for backward compatibility but is not read by the renderer.
 
 ## Filter persistence
 
-Filter state lives in `bridge/comm_filters.conf` (gitignored), owned entirely by
+Filter state lives in `bridge/runtime/comm_filters.conf` (gitignored), owned entirely by
 `comm_pane.py`. Lua does not read or write this file.
 
 Format: one `name=true|false` line per explicitly-set channel. Missing key means
@@ -196,12 +196,12 @@ brain start.
 
 After pruning, the filtered entries are clamped to `state.comm.max_size` (1000,
 keeping the most recent) and assigned to `state.comm.history`. Then
-`state.comm.serialize()` is called once so `bridge/comm.state` reflects the
+`state.comm.serialize()` is called once so `bridge/runtime/comm.state` reflects the
 seeded history before the pane's next 250 ms poll.
 
-`comm_state.lua` owns `bridge/comm.state` and channel restore; it does **not**
+`comm_state.lua` owns `bridge/runtime/comm.state` and channel restore; it does **not**
 seed history. This split is deliberate: the archive is the authoritative source
-of truth for history across restarts; `bridge/comm.state` is a derived
+of truth for history across restarts; `bridge/runtime/comm.state` is a derived
 projection used only by the pane renderer.
 
 ### Append path
@@ -528,8 +528,8 @@ in self and other form. Two env vars override the live paths:
 
 | Variable           | Default                              | Purpose                         |
 |--------------------|--------------------------------------|---------------------------------|
-| `COMM_STATE_PATH`  | `bridge/comm.state`                  | State file the pane polls       |
-| `COMM_FILTERS_CONF`| `bridge/comm_filters.conf`           | Filter persistence file         |
+| `COMM_STATE_PATH`  | `bridge/runtime/comm.state`                  | State file the pane polls       |
+| `COMM_FILTERS_CONF`| `bridge/runtime/comm_filters.conf`           | Filter persistence file         |
 
 Usage:
 
@@ -552,7 +552,7 @@ is open, ordering is preserved.
 
 ### Height
 
-`comm_height` in `bridge/layout.conf` (default 10). Unlike `status_height`
+`comm_height` in `bridge/runtime/layout.conf` (default 10). Unlike `status_height`
 (fixed in phase 1), `comm_height` is user-resizable: dragging the comm↔ui
 border persists the new value to `layout.conf` via `on_pane_resize.sh`.
 
@@ -561,7 +561,7 @@ persists `ui_height`.
 
 ### Width
 
-The right column has no minimum width. `ui_width` from `bridge/layout.conf`
+The right column has no minimum width. `ui_width` from `bridge/runtime/layout.conf`
 is the sole authority (ADR 0038). The comm pane adapts to whatever width the
 column provides.
 
@@ -573,7 +573,7 @@ column provides.
 | In-game popup → Options           | `toggle_pane.sh comm --persist`                 |
 | Launcher Options → Comm pane      | `_save_conf` → `startup.conf show_comm`         |
 
-Persistence key: `show_comm` in `bridge/startup.conf`. Fresh-install default
+Persistence key: `show_comm` in `bridge/runtime/startup.conf`. Fresh-install default
 is `1` (comm pane on). Existing `startup.conf` files that lack `show_comm`
 fall through to the runtime `${show_comm:-0}` guard — existing installs see
 no change.

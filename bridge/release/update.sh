@@ -3,7 +3,7 @@
 # Usage: bash bridge/release/update.sh
 # Exit codes: 0=updated, 10=no update, 20=dev checkout, 21=dirty tree,
 #             22=ahead of latest release tag, 30=git failure.
-# Checks out the latest release tag named in bridge/version.cache.
+# Checks out the latest release tag named in bridge/runtime/version.cache.
 # Clients end up on detached HEAD — correct for a stable install.
 # All output is a single human-friendly line; caller renders it verbatim.
 # User-created files in ttpp/sessions/ and lua/scripts/ are preserved
@@ -25,14 +25,14 @@ if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
 fi
 
 # Step 3: check version.cache
-if [ ! -f "bridge/version.cache" ]; then
+if [ ! -f "bridge/runtime/version.cache" ]; then
     echo "Already up to date."
     exit 10
 fi
 latest=""
 while IFS='=' read -r k v; do
     [ "$k" = "latest" ] && latest="$v"
-done < "bridge/version.cache"
+done < "bridge/runtime/version.cache"
 if [ -z "$latest" ]; then
     echo "Already up to date."
     exit 10
@@ -88,12 +88,12 @@ fi
 # Step 4.5: snapshot user-created files before the reset
 _UPDATE_OK=0
 trap '
-    if [ "$_UPDATE_OK" -eq 0 ] && [ -d "bridge/.update_preserve" ]; then
-        echo "Update interrupted. Preserved user files are in bridge/.update_preserve/. Restore manually if needed." >&2
+    if [ "$_UPDATE_OK" -eq 0 ] && [ -d "bridge/runtime/.update_preserve" ]; then
+        echo "Update interrupted. Preserved user files are in bridge/runtime/.update_preserve/. Restore manually if needed." >&2
     fi
 ' EXIT
 
-PRESERVE_DIR="bridge/.update_preserve"
+PRESERVE_DIR="bridge/runtime/.update_preserve"
 rm -rf "$PRESERVE_DIR"
 
 for dir in ttpp/sessions lua/scripts; do

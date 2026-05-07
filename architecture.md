@@ -53,7 +53,7 @@ tracking, and UI feedback.
 │   │                     # no register_script. Examples:
 │   │                     #   char_state.lua    — Char.* → state.char.*
 │   │                     #   comm_log.lua      — Comm.Channel.* → state.comm.*
-│   │                     #   status_state.lua  — state.char → bridge/status.state (runtime)
+│   │                     #   status_state.lua  — state.char → bridge/runtime/status.state (runtime)
 │   │                     # See CLAUDE.md and per-area docs/*.md for the full list.
 │   └── scripts/          # Opt-in automation modules — must call register_script(meta)
 │
@@ -93,27 +93,34 @@ tracking, and UI feedback.
 │   │   └── sanitize_profile.sh  # Strips #class wrappers; called by cp -s/-r after save
 │   ├── services/             # Cockpit-spawned background tasks
 │   │   ├── version_check.sh  # Queries GitHub for latest tag; updates
-│   │   │                     #   bridge/version.cache with 6h TTL
+│   │   │                     #   bridge/runtime/version.cache with 6h TTL
 │   │   ├── ping_monitor.sh   # Session-scoped background ping monitor
 │   │   │                     #   (spawned by tmux_start.sh + launcher.sh; self-terminates)
 │   │   └── read_version.sh   # Emits _client_version tt++ var from VERSION file
 │   ├── ipc/                  # IPC temp files written by tintin_cmd,
 │   │                         #   consumed by tt++ via tintin_read action
+│   ├── runtime/              # All runtime-generated files (ADR 0047; gitignored except .gitkeep)
+│   │   ├── startup.conf      # Persisted startup-menu state
+│   │   ├── layout.conf       # Persisted layout state (keys: ui_width, window_cols)
+│   │   ├── status.state      # Character status JSON written by status_state.lua
+│   │   ├── buffs.state       # Affect grid snapshot written by buffs_state.lua
+│   │   ├── comm.state        # Comm history + channel projection
+│   │   ├── comm_filters.conf # Persisted channel filter overrides, sparse map
+│   │   ├── connection.state  # Runtime state written by Lua on SESSION CONNECTED
+│   │   ├── version.cache     # Cached latest-release tag (6h TTL)
+│   │   ├── ping.cache        # Ping ring buffer: latest, quality, 60-sample history
+│   │   ├── scripts.cache     # Script registry written at brain startup
+│   │   ├── .layout_ready     # Sentinel: build_initial_layout.sh → wait_for_layout.sh
+│   │   ├── .layout_lock      # Lockfile: prevents resize feedback loop
+│   │   ├── .ping_pid         # Single-instance guard for ping_monitor.sh
+│   │   ├── .popup_open       # Sentinel: in-game popup is open
+│   │   ├── .collapsed_panes  # Narrow-terminal collapse state
+│   │   ├── .return_to_menu   # Sentinel: return to launcher after session exits
+│   │   └── .update_preserve/ # Preserved user files during self-update
+│   ├── dev/                  # Developer fixtures (not runtime state)
 │   ├── smoke.sh              # Syntax-check runner (bash/lua/python + core file checks); run with bash bridge/smoke.sh
 │   ├── launcher.sh           # COMPAT SHIM → bridge/launcher/launcher.sh (v0.7.0, ADR 0045)
-│   ├── tmux_start.sh         # COMPAT SHIM → bridge/launcher/tmux_start.sh (v0.7.0, ADR 0045)
-│   ├── ping.cache            # Ping ring buffer: latest, quality, 60-sample history (gitignored)
-│   ├── layout.conf           # Persisted layout state (gitignored)
-│   │                         #   keys: ui_width, window_cols
-│   ├── connection.state      # Runtime state written by Lua on SESSION
-│   │                         #   CONNECTED; cleared on DISCONNECTED and
-│   │                         #   at brain startup (gitignored)
-│   ├── comm.state            # Comm history + channel projection (gitignored)
-│   ├── comm_filters.conf     # Persisted channel filter overrides, sparse map (gitignored)
-│   ├── status.state          # Character status JSON written by status_state.lua (gitignored)
-│   ├── buffs.state           # Affect grid snapshot written by buffs_state.lua (gitignored)
-│   ├── version.cache         # Cached latest-release tag (gitignored)
-│   └── startup.conf          # Persisted startup-menu state (gitignored)
+│   └── tmux_start.sh         # COMPAT SHIM → bridge/launcher/tmux_start.sh (v0.7.0, ADR 0045)
 │
 ├── data/
 │   ├── runs/             # Per-run XP/TP snapshots (one file per run)

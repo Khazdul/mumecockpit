@@ -1,4 +1,4 @@
--- Serialises state.char.* to bridge/status.state (JSON) whenever
+-- Serialises state.char.* to bridge/runtime/status.state (JSON) whenever
 -- Char.Name, Char.StatusVars, Char.Vitals, or char_reset fires.
 -- Subscribes to the gmcp_* events emitted by dispatch after the primary
 -- writers in char_state.lua have updated state.char.*.
@@ -7,9 +7,9 @@
 -- reader never sees a partial file.
 
 local json = require("dkjson")
-local STATE_PATH  = os.getenv("HOME") .. "/MUME/bridge/status.state"
+local STATE_PATH  = os.getenv("HOME") .. "/MUME/bridge/runtime/status.state"
 local TMP_PATH    = STATE_PATH .. ".tmp"
-local LAYOUT_PATH = os.getenv("HOME") .. "/MUME/bridge/layout.conf"
+local LAYOUT_PATH = os.getenv("HOME") .. "/MUME/bridge/runtime/layout.conf"
 
 -- 11 rows (2 progress-bar rows + 1 toggle row + 1 blank + 4 data rows). Bump when rows are added in bridge/panes/status_pane.py.
 local STATIC_ROWS = 11

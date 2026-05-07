@@ -346,7 +346,7 @@ the installer.
   on demand; assumes the rest is present. Will remain the runtime
   entry point after the installer lands — installer is a separate,
   one-shot story.
-- `docs/bridge-services.md` — `bridge/startup.conf` format,
+- `docs/bridge-services.md` — `bridge/runtime/startup.conf` format,
   `update.sh` behaviour and exit codes.
 - `docs/input-pane.md` — prompt_toolkit and cursor-blink caveats
   relevant to the Alacritty config choices above.

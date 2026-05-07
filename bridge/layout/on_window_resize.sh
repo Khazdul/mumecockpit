@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-LAYOUT_CONF="$HOME/MUME/bridge/layout.conf"
-LOCK="$HOME/MUME/bridge/.layout_lock"
-SENTINEL="$HOME/MUME/bridge/.collapsed_panes"
+LAYOUT_CONF="$HOME/MUME/bridge/runtime/layout.conf"
+LOCK="$HOME/MUME/bridge/runtime/.layout_lock"
+SENTINEL="$HOME/MUME/bridge/runtime/.collapsed_panes"
 
 [ -f "$LOCK" ] && exit 0
 

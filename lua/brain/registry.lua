@@ -91,11 +91,11 @@ function _register_cockpit_help()
     tintin_cmd("gts", "#alias {_cockpit_help} {" .. body_str .. "}")
 end
 
--- Writes _scripts registry to bridge/scripts.cache for the startup menu.
+-- Writes _scripts registry to bridge/runtime/scripts.cache for the startup menu.
 -- Called after all scripts have called register_script() and
 -- _register_cockpit_help() has run. Overwrites on every startup.
 function _write_scripts_cache()
-    local fh, err = io.open("bridge/scripts.cache", "w")
+    local fh, err = io.open("bridge/runtime/scripts.cache", "w")
     if not fh then
         dbg("scripts.cache: failed to open — " .. tostring(err))
         return

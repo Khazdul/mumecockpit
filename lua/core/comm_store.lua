@@ -2,7 +2,7 @@
 -- Loads after comm_state.lua (alphabetical: comm_log < comm_state < comm_store).
 -- On gmcp_char_name: migrates legacy profile archive if character name matches
 -- profile, prunes entries older than 7 days, seeds state.comm.history from the
--- archive, and calls state.comm.serialize() so bridge/comm.state reflects the
+-- archive, and calls state.comm.serialize() so bridge/runtime/comm.state reflects the
 -- seeded history before the pane's next 250 ms poll.
 -- On each gmcp_comm_channel_text event: appends one JSON line to the archive.
 
@@ -10,7 +10,7 @@ local json = require("dkjson")
 
 local DATA_COMM_DIR   = os.getenv("HOME") .. "/MUME/data/comm/"
 local OLD_ARCHIVE_DIR = os.getenv("HOME") .. "/MUME/logs/comm_archive/"
-local STARTUP_CONF    = os.getenv("HOME") .. "/MUME/bridge/startup.conf"
+local STARTUP_CONF    = os.getenv("HOME") .. "/MUME/bridge/runtime/startup.conf"
 local RETAIN_SECONDS  = 7 * 86400
 
 local function _read_conf_value(path, key)
@@ -91,7 +91,7 @@ local function _init(char_name)
     end
     state.comm.history = entries
 
-    -- Write bridge/comm.state so the pane picks up seeded history on next poll.
+    -- Write bridge/runtime/comm.state so the pane picks up seeded history on next poll.
     state.comm.serialize()
     dbg("[COMM_STORE] init: " .. char_name .. " (" .. #entries .. " entries)")
 end

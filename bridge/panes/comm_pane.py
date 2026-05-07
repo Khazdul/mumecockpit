@@ -6,8 +6,8 @@
 # List: history filtered by channel, with sticky-bottom scrollback.
 # Indicator: "↓ N newer messages" in its own Window below the list, only when
 #   _scroll_offset > 0 — prevents list wrapping from clipping it.
-# Polls bridge/comm.state every 250 ms via mtime comparison.
-# Filters are owned here: read/write bridge/comm_filters.conf directly.
+# Polls bridge/runtime/comm.state every 250 ms via mtime comparison.
+# Filters are owned here: read/write bridge/runtime/comm_filters.conf directly.
 
 try:
     from prompt_toolkit import Application
@@ -37,11 +37,11 @@ _SGR_RE = re.compile(r"\x1b\[[0-9;]*m")
 
 COMM_STATE_PATH   = os.environ.get(
     "COMM_STATE_PATH",
-    os.path.join(os.environ["HOME"], "MUME", "bridge", "comm.state"),
+    os.path.join(os.environ["HOME"], "MUME", "bridge", "runtime", "comm.state"),
 )
 COMM_FILTERS_CONF = os.environ.get(
     "COMM_FILTERS_CONF",
-    os.path.join(os.environ["HOME"], "MUME", "bridge", "comm_filters.conf"),
+    os.path.join(os.environ["HOME"], "MUME", "bridge", "runtime", "comm_filters.conf"),
 )
 COMM_FILTERS_TMP  = COMM_FILTERS_CONF + ".tmp"
 POLL_MS           = 0.25

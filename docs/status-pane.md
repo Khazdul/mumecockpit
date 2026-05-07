@@ -20,7 +20,7 @@ GMCP payload ──► lua/core/char_state.lua ──► state.char.*
                           lua/core/status_state.lua
                           wraps Char.Name / StatusVars / Vitals
                           handlers; serialises projected view to
-                          bridge/status.state (JSON, atomic write)
+                          bridge/runtime/status.state (JSON, atomic write)
                                                    │
                                        mtime change │  50 ms poll
                                                    ▼
@@ -35,7 +35,7 @@ GMCP payload ──► lua/core/char_state.lua ──► state.char.*
 `gmcp_char_status_vars`, `gmcp_char_vitals`, `char_reset`, and `clock_changed`
 on the event bus. `char_state.lua` is the primary writer for all three Char.*
 modules — `state.char.*` is fully updated before any subscriber runs. Each
-subscription calls `serialize()` and writes `bridge/status.state` atomically.
+subscription calls `serialize()` and writes `bridge/runtime/status.state` atomically.
 
 ### Disconnect clear
 
@@ -44,7 +44,7 @@ subscription calls `serialize()` and writes `bridge/status.state` atomically.
 it wipes every non-function key in `state.char` while keeping the table
 identity intact so cached references elsewhere stay valid, then emits
 `char_reset`. `status_state.lua`'s `char_reset` subscriber calls `serialize()`,
-producing a single atomic write to `bridge/status.state` with all character
+producing a single atomic write to `bridge/runtime/status.state` with all character
 fields null. The renderer displays `—` for null name and empty bars for null
 progress. Data rows render as label-only (empty value cells). Pane height stays
 at `STATIC_ROWS = 11` within one poll tick (≤ 50 ms).
@@ -62,7 +62,7 @@ Full reconnect restores all fields.
 
 ### Polling
 
-`bridge/panes/status_pane.py` polls `bridge/status.state` every 50 ms via an asyncio
+`bridge/panes/status_pane.py` polls `bridge/runtime/status.state` every 50 ms via an asyncio
 task. On mtime change the task re-reads the file and calls `app.invalidate()`.
 SIGWINCH is handled automatically by prompt_toolkit; no dirty flag is needed.
 
@@ -98,7 +98,7 @@ re-render so the new width is applied immediately without a restart. The bridge
 layer imposes no minimum width on the right column (ADR 0038); the renderer
 trusts the reported size and adapts fully (ADR 0023).
 
-## State-file schema (`bridge/status.state`)
+## State-file schema (`bridge/runtime/status.state`)
 
 JSON written by `lua/core/status_state.lua`. Gitignored.
 
@@ -283,7 +283,7 @@ of the right column whenever it exists.
 
 ### Pane height
 
-`status_height = 11` in `bridge/layout.conf`. `lua/core/status_state.lua`
+`status_height = 11` in `bridge/runtime/layout.conf`. `lua/core/status_state.lua`
 sets `STATIC_ROWS = 11` and rewrites `layout.conf` + calls `apply_layout.sh`
 whenever `STATIC_ROWS` changes, so adding a new row in `_build_frame` is a
 two-place update (Python + Lua constant). Current breakdown: 2 progress-bar
@@ -293,7 +293,7 @@ rows + 1 toggle row + 1 blank separator + 4 data rows = 11 total.
 
 `bridge/layout/on_window_resize.sh` enforces `MAIN_MIN = 30` (main/tt++ pane floor).
 The right column has no minimum width enforced by the status pane — `ui_width`
-from `bridge/layout.conf` is the sole authority (ADR 0038). The renderer is
+from `bridge/runtime/layout.conf` is the sole authority (ADR 0038). The renderer is
 adaptive and accepts any width (ADR 0023).
 
 ## Toggle
@@ -304,7 +304,7 @@ adaptive and accepts any width (ADR 0023).
 | In-game popup → Options           | `toggle_pane.sh status --persist`               |
 | Launcher Options → Character pane | `_save_conf` → `startup.conf show_status`       |
 
-Persistence key: `show_status` in `bridge/startup.conf`. Fresh-install default
+Persistence key: `show_status` in `bridge/runtime/startup.conf`. Fresh-install default
 is `1` (status pane on).
 
 ---

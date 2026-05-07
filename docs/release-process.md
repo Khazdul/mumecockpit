@@ -194,7 +194,7 @@ delete it.
 
 Force a fresh version check and confirm the cache reflects the new tag:
 
-    bash bridge/services/version_check.sh --force && cat bridge/version.cache
+    bash bridge/services/version_check.sh --force && cat bridge/runtime/version.cache
 
 Expected:
 
@@ -252,7 +252,7 @@ the release: `gh release upload vX.Y.Z release/MUME-Cockpit-vX.Y.Z.zip`.
 
 **Verify:**
 
-    bash bridge/services/version_check.sh --force && cat bridge/version.cache
+    bash bridge/services/version_check.sh --force && cat bridge/runtime/version.cache
 
 ---
 
@@ -392,7 +392,7 @@ Wait for the user to confirm the paste is done before proceeding.
 
 **Step 8 — Verify the cache:**
 
-    bash bridge/services/version_check.sh --force && cat bridge/version.cache
+    bash bridge/services/version_check.sh --force && cat bridge/runtime/version.cache
 
 Confirm that the output contains `latest=vX.Y.Z`. If it does not (and this is
 not a pre-release), report the anomaly and stop. Do not attempt to fix it.

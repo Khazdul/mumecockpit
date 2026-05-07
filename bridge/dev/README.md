@@ -8,9 +8,9 @@ live game session:
     python3 bridge/panes/comm_pane.py
 
 `COMM_STATE_PATH` overrides the live state file so the pane reads static fixture
-data instead of polling `bridge/comm.state`. `COMM_FILTERS_CONF` points at `/tmp`
+data instead of polling `bridge/runtime/comm.state`. `COMM_FILTERS_CONF` points at `/tmp`
 so toggling filters in the fixture run does not touch the real
-`bridge/comm_filters.conf`.
+`bridge/runtime/comm_filters.conf`.
 
 `comm.state.fixture` covers all ten channels in both self and other forms, with
 edge cases: apostrophe inside a quoted message (tales/Besor), ANSI bold around a

@@ -17,7 +17,7 @@
 #nop ===== CONNECTION ALIASES =====
 
 #nop `connect` opens a session named after the current profile using host/port
-#nop resolved from bridge/startup.conf by config.tin at startup.
+#nop resolved from bridge/runtime/startup.conf by config.tin at startup.
 #alias {connect} {
     #$_ses_cmd {$_profile} {$_host} {$_port}
 }

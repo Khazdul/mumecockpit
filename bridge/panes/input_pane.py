@@ -33,9 +33,10 @@ TMUX_TARGET = "mume:cockpit.0"
 _PRINTABLE  = [c for c in string.printable if c.isprintable()]
 
 BRIDGE_DIR        = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-STATUS_STATE_PATH = os.path.join(BRIDGE_DIR, "status.state")
-STARTUP_CONF_PATH = os.path.join(BRIDGE_DIR, "startup.conf")
-LAYOUT_CONF_PATH  = os.path.join(BRIDGE_DIR, "layout.conf")
+RUNTIME_DIR       = os.path.join(BRIDGE_DIR, "runtime")
+STATUS_STATE_PATH = os.path.join(RUNTIME_DIR, "status.state")
+STARTUP_CONF_PATH = os.path.join(RUNTIME_DIR, "startup.conf")
+LAYOUT_CONF_PATH  = os.path.join(RUNTIME_DIR, "layout.conf")
 MENU_POLL_MS      = 0.25
 MENU_WIDTH        = 29
 

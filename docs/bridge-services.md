@@ -4,12 +4,12 @@ Background services and persisted configuration files in `bridge/`. Touch
 this file when changing the version check, self-update flow, ping monitor,
 `scripts.cache` format, `startup.conf` keys, or layout persistence.
 
-## Version check (`bridge/services/version_check.sh` + `bridge/version.cache`)
+## Version check (`bridge/services/version_check.sh` + `bridge/runtime/version.cache`)
 
 On every launcher startup, `bridge/launcher/launcher.sh` fires `version_check.sh` in
 the background (`&`, `disown`). The script queries the GitHub releases API for
 `Khazdul/mumecockpit` with a 3-second timeout. On success it writes
-`bridge/version.cache` atomically (temp-file + rename):
+`bridge/runtime/version.cache` atomically (temp-file + rename):
 
     latest=vX.Y.Z
     checked_at=<epoch seconds>
@@ -22,7 +22,7 @@ the endpoint returns 404 and the script exits silently without writing the
 cache — the About page then shows the current version only. Any other failure
 (offline, rate-limit, parse) leaves the cache unchanged and exits silently.
 
-If `bridge/version.cache` holds a stale or wrong value, delete the file; the
+If `bridge/runtime/version.cache` holds a stale or wrong value, delete the file; the
 launcher re-runs the check on its next start.
 
 Consumers:
@@ -39,7 +39,7 @@ while the menu is open.
 
 ## Self-update (`bridge/release/update.sh`)
 
-When `bridge/version.cache` indicates a newer tag than the VERSION file, the
+When `bridge/runtime/version.cache` indicates a newer tag than the VERSION file, the
 launcher inserts an "Update" row into the main menu directly below the
 Start/Continue/Mirror row. Selecting it runs `bridge/release/update.sh`, which:
 
@@ -65,7 +65,7 @@ Git failures exit 30.
 ### User data preservation
 
 Before the `git reset --hard`, `update.sh` snapshots files that must survive
-the reset to `bridge/.update_preserve/`, then copies them back after the reset
+the reset to `bridge/runtime/.update_preserve/`, then copies them back after the reset
 succeeds. The preserve dir is then deleted on clean exit.
 
 **Shipped vs user-created.** Each file in `ttpp/sessions/` and `lua/scripts/`
@@ -87,10 +87,10 @@ session data to it; its in-repo contents are irrelevant after first launch.
 script aborts and prints to stderr:
 
     Update interrupted. Preserved user files are in
-    bridge/.update_preserve/. Restore manually if needed.
+    bridge/runtime/.update_preserve/. Restore manually if needed.
 
-Recovery: `cp -rp bridge/.update_preserve/. .` from the repo root, then
-`rm -rf bridge/.update_preserve`.
+Recovery: `cp -rp bridge/runtime/.update_preserve/. .` from the repo root, then
+`rm -rf bridge/runtime/.update_preserve`.
 
 **Limitation.** Edits made directly to shipped files (e.g. modifying
 `autostab.lua` in place) are silently overwritten on the next update. Users
@@ -123,17 +123,17 @@ tagged, and leaves you on the release tag's detached HEAD. Recovery:
 `git reflog` still contains your old HEAD; `git checkout main` returns you
 to the branch.
 
-## Ping monitor (`bridge/services/ping_monitor.sh` + `bridge/ping.cache`)
+## Ping monitor (`bridge/services/ping_monitor.sh` + `bridge/runtime/ping.cache`)
 
 A background process pings `mume.org` once per second and writes cache values
-to `bridge/ping.cache`. The cockpit's in-game popup reads the cache each render
+to `bridge/runtime/ping.cache`. The cockpit's in-game popup reads the cache each render
 and shows the latency + a one-word quality label as part of the status header:
 
     Profile: default  ·  MMapper  ·  Link: 38ms (stable)
 
 **Lifecycle.** The monitor is spawned by `bridge/launcher/tmux_start.sh` after the tmux
 cockpit session is set up, and by `bridge/launcher/launcher.sh` on the Continue/Mirror
-attach paths. A single-instance guard (`bridge/.ping_pid` lockfile) ensures
+attach paths. A single-instance guard (`bridge/runtime/.ping_pid` lockfile) ensures
 duplicate spawns are no-ops. The process self-terminates within ~1 s of the
 `tmux:mume` session disappearing, so `cp -e`, SIGKILL, or any other shutdown
 path stops it cleanly without explicit cleanup code.
@@ -176,7 +176,7 @@ baseline is "noticeable unstable"; ~50 ms is "directly felt"; >100 ms is
 - Two cockpit sessions started simultaneously (rare) → only one monitor; the
   other's start call exits at the PID guard.
 
-## scripts.cache (`bridge/scripts.cache`, gitignored)
+## scripts.cache (`bridge/runtime/scripts.cache`, gitignored)
 
 Written by `brain.lua` at every client startup (inside `load_scripts()` after
 `_register_cockpit_help()`). Parsed by the Scripts page in `bridge/launcher/launcher.sh`.
@@ -191,7 +191,7 @@ SCRIPT:autobow
 ...
 ```
 
-## startup.conf keys (`bridge/startup.conf`, gitignored)
+## startup.conf keys (`bridge/runtime/startup.conf`, gitignored)
 
 | Key               | Default    | Description                              |
 |-------------------|------------|------------------------------------------|
@@ -209,10 +209,10 @@ startup via `bridge/launcher/read_config.sh`, which materialises the `_profile`,
 `_host`, `_port`, and `_ses_cmd` tt++ variables used by the `connect` alias.
 `_ses_cmd` is `ses` for mmapper mode and `ssl` for direct mode (TLS).
 
-## Layout system (`bridge/layout.conf`, gitignored)
+## Layout system (`bridge/runtime/layout.conf`, gitignored)
 
 Pane dimensions are persisted across restarts and adapt to terminal resizes.
-State is stored in `bridge/layout.conf` (gitignored, recreated on first startup).
+State is stored in `bridge/runtime/layout.conf` (gitignored, recreated on first startup).
 
 ### layout.conf keys
 | Key             | Default | Description                                            |
@@ -221,30 +221,47 @@ State is stored in `bridge/layout.conf` (gitignored, recreated on first startup)
 | `window_cols`   | 0       | Last known terminal width — distinguishes WINCH from border drag. |
 
 ### Behaviour
-- **Initial build** — `bridge/launcher/build_initial_layout.sh` is fired by a one-shot `client-attached` hook registered in `bridge/launcher/tmux_start.sh`. It reads the true terminal width from tmux (authoritative only post-attach), runs all `split-window` / `resize-pane` / `open_pane.sh` calls, and touches `bridge/.layout_ready` to release `bridge/launcher/wait_for_layout.sh` so tt++ can start. The hook is then disarmed; subsequent attaches skip the build via an idempotency guard (pane-count check). See ADR 0041.
+- **Initial build** — `bridge/launcher/build_initial_layout.sh` is fired by a one-shot `client-attached` hook registered in `bridge/launcher/tmux_start.sh`. It reads the true terminal width from tmux (authoritative only post-attach), runs all `split-window` / `resize-pane` / `open_pane.sh` calls, and touches `bridge/runtime/.layout_ready` to release `bridge/launcher/wait_for_layout.sh` so tt++ can start. The hook is then disarmed; subsequent attaches skip the build via an idempotency guard (pane-count check). See ADR 0041.
 - **Right-column heights** — Right-column pane heights are tmux-managed and freely resizable. `apply_layout.sh` does not set or restore any right-column height; it only pins the input row to 1 row.
 - **Terminal resize** — `window-resized` hook fires `bridge/layout/on_window_resize.sh`, which re-applies `ui_width` (main pane width) and then calls `bridge/layout/apply_layout.sh` to re-pin the input row.
 - **Border drag** — `MouseDragEnd1Border` binding fires `bridge/layout/on_pane_resize.sh`, which saves the new `ui_width` to `layout.conf`. Vertical (height) drags are not detected and write nothing to `layout.conf`. `bridge/layout/apply_layout.sh` is called afterward to re-pin the input row.
 - **Input pane** — always pinned to 1 row on every terminal resize. Never participates in layout calculations.
-- **Narrow-terminal collapse** — when `bridge/layout/on_window_resize.sh` detects that the available right-column width falls below `ui_width` it writes `bridge/.collapsed_panes` (one pane name per line) and kills all right panes. The restore threshold is always `ui_width`, regardless of which panes were open. When the terminal widens back above `ui_width`, the sentinel is read, each listed pane is re-opened in order via `bridge/launcher/open_pane.sh`, and the sentinel is deleted. `open_pane.sh` exits silently at entry while the sentinel exists, so manual toggle commands (`cp -u`/`-d`/`-c`) are no-ops during the narrow state.
-- **Loop prevention** — `bridge/.layout_lock` is used as a lockfile to prevent `on_window_resize.sh` triggering `on_pane_resize.sh` in a feedback loop.
+- **Narrow-terminal collapse** — when `bridge/layout/on_window_resize.sh` detects that the available right-column width falls below `ui_width` it writes `bridge/runtime/.collapsed_panes` (one pane name per line) and kills all right panes. The restore threshold is always `ui_width`, regardless of which panes were open. When the terminal widens back above `ui_width`, the sentinel is read, each listed pane is re-opened in order via `bridge/launcher/open_pane.sh`, and the sentinel is deleted. `open_pane.sh` exits silently at entry while the sentinel exists, so manual toggle commands (`cp -u`/`-d`/`-c`) are no-ops during the narrow state.
+- **Loop prevention** — `bridge/runtime/.layout_lock` is used as a lockfile to prevent `on_window_resize.sh` triggering `on_pane_resize.sh` in a feedback loop.
 - **`-f` on the input split, not on right-column splits.** `bridge/launcher/open_pane.sh` uses `split-window -v -f` for the input pane so it becomes a window-level full-width split below the top container. Right-column splits in the no-right-column branch must NOT use `-f`; `-f` there would span across the input row, breaking the layout. See ADR 0029.
 
 ## Gitignored runtime files
 
+All runtime-generated files live under `bridge/runtime/` (ADR 0047).
+The directory itself is tracked via `bridge/runtime/.gitkeep`; its contents
+are covered by a single `.gitignore` block:
+
 ```
-bridge/buffs.state
-bridge/layout.conf
-bridge/.layout_ready
-bridge/connection.state
-bridge/status.state
-bridge/version.cache
-bridge/.layout_lock
-bridge/.pane_resize_pid
-bridge/ping.cache
-bridge/.ping_pid
-bridge/.collapsed_panes
-bridge/.update_preserve/
+bridge/runtime/*
+!bridge/runtime/.gitkeep
+```
+
+Representative files:
+
+```
+bridge/runtime/buffs.state
+bridge/runtime/comm.state
+bridge/runtime/comm_filters.conf
+bridge/runtime/connection.state
+bridge/runtime/status.state
+bridge/runtime/layout.conf
+bridge/runtime/startup.conf
+bridge/runtime/version.cache
+bridge/runtime/ping.cache
+bridge/runtime/scripts.cache
+bridge/runtime/.layout_ready
+bridge/runtime/.layout_lock
+bridge/runtime/.pane_resize_pid
+bridge/runtime/.ping_pid
+bridge/runtime/.popup_open
+bridge/runtime/.collapsed_panes
+bridge/runtime/.return_to_menu
+bridge/runtime/.update_preserve/
 ```
 
 ---

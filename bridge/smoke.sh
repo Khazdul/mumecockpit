@@ -155,6 +155,7 @@ required_dirs=(
     "bridge/layout"
     "bridge/release"
     "bridge/services"
+    "bridge/runtime"
     "lua/core"
     "lua/scripts"
     "lua/brain"

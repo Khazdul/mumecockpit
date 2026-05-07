@@ -3,7 +3,7 @@
 # Right-column pane heights are tmux-managed (freely resizable).
 # Called after any right-column operation. Idempotent.
 
-LAYOUT_CONF="$HOME/MUME/bridge/layout.conf"
+LAYOUT_CONF="$HOME/MUME/bridge/runtime/layout.conf"
 [ -f "$LAYOUT_CONF" ] || exit 0
 
 _pane_index() {

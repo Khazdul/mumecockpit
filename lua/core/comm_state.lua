@@ -1,7 +1,7 @@
--- Serialises history and channels to bridge/comm.state on every change.
+-- Serialises history and channels to bridge/runtime/comm.state on every change.
 -- Subscribes to gmcp_comm_channel_text and gmcp_comm_channel_list (emitted by
 -- dispatch after comm_log.lua's primary writers have updated state.comm.*).
--- Reads bridge/comm.state at load time to restore channels after cp -r,
+-- Reads bridge/runtime/comm.state at load time to restore channels after cp -r,
 -- working around one-shot Comm.Channel.List on persistent connections.
 -- History seeding after cp -r is handled by comm_store.lua (loads after this
 -- file alphabetically); this file owns channels-only restore.
@@ -11,7 +11,7 @@
 -- Channel history is retained across reconnects within the same brain process.
 
 local json = require("dkjson")
-local COMM_STATE_PATH = os.getenv("HOME") .. "/MUME/bridge/comm.state"
+local COMM_STATE_PATH = os.getenv("HOME") .. "/MUME/bridge/runtime/comm.state"
 local TMP_PATH        = COMM_STATE_PATH .. ".tmp"
 
 -- Build channels list with computed label.
@@ -62,7 +62,7 @@ local function serialize()
     os.rename(TMP_PATH, COMM_STATE_PATH)
 end
 
--- Read bridge/comm.state at load to restore channels from the previous run.
+-- Read bridge/runtime/comm.state at load to restore channels from the previous run.
 -- Non-fatal: any error leaves state empty and continues.
 -- History seeding is intentionally omitted here; comm_store.lua owns that.
 local function _load_state_file()

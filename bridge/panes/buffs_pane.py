@@ -30,7 +30,7 @@ import time
 
 BUFFS_STATE_PATH = os.environ.get(
     "BUFFS_STATE_PATH",
-    os.path.join(os.environ["HOME"], "MUME", "bridge", "buffs.state"),
+    os.path.join(os.environ["HOME"], "MUME", "bridge", "runtime", "buffs.state"),
 )
 POLL_MS = 0.1
 

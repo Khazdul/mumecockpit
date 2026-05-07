@@ -1,11 +1,11 @@
 -- Serialises state.char.affects and state.char.stored_spells to
--- bridge/buffs.state (JSON) whenever affects_changed, stored_spells_changed,
+-- bridge/runtime/buffs.state (JSON) whenever affects_changed, stored_spells_changed,
 -- char_reset, or gmcp_char_name fires.
 --
 -- Atomic write: buffs.state.tmp → os.rename → buffs.state.
 
 local json       = require("dkjson")
-local STATE_PATH = os.getenv("HOME") .. "/MUME/bridge/buffs.state"
+local STATE_PATH = os.getenv("HOME") .. "/MUME/bridge/runtime/buffs.state"
 local TMP_PATH   = STATE_PATH .. ".tmp"
 
 local function serialize()
