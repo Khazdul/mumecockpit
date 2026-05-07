@@ -40,7 +40,7 @@ view and writes it atomically.
 ### Disconnect clear
 
 `mark_mume_disconnected()` in `lua/brain.lua` calls `state.char.reset()` after
-`state.session.reset()`. `state.char.reset()` is defined in `char_state.lua`;
+`state.run.reset()`. `state.char.reset()` is defined in `char_state.lua`;
 it wipes every non-function key in `state.char` while keeping the table
 identity intact so cached references elsewhere stay valid. The `status_state.lua`
 wrapper around `state.char.reset` then calls `serialize()`, producing a single
@@ -112,8 +112,8 @@ JSON written by `lua/core/status_state.lua`. Gitignored.
   "tp": 122000,
   "xp_progress": 0.42,
   "tp_progress": 0.71,
-  "session_xp": 5400,
-  "session_tp": 0,
+  "run_xp": 5400,
+  "run_tp": 0,
   "mood": "wimpy",
   "alertness": "normal",
   "sneak": "off",
@@ -131,7 +131,7 @@ JSON written by `lua/core/status_state.lua`. Gitignored.
 `xp_progress` and `tp_progress` are computed by `lua/core/level_progress.lua`
 from cumulative threshold tables (levels 1–100). Both are `null` during the
 bootstrap window (before `Char.Vitals` and `Char.StatusVars` have both
-arrived). `session_xp` / `session_tp` are populated by `lua/core/sess_kills.lua`.
+arrived). `run_xp` and `run_tp` are populated by `lua/core/run_state.lua`.
 `game_time` is populated via the `clock_changed` subscription. All non-progress
 fields are retained in the payload for use by future rows.
 
@@ -156,8 +156,8 @@ fields are retained in the payload for use by future rows.
 | `position`       | `Char.Vitals` → `state.char.position`                  |                                              |
 | `climb`          | `Char.Vitals` → `state.char.climb`                     | null→"off", "c"/"C"→"on"                    |
 | `swim`           | `Char.Vitals` → `state.char.swim`                      | bool→"on"/"off"                              |
-| `session_xp`     | `lua/core/sess_kills.lua` → `state.session.session_xp` |                                              |
-| `session_tp`     | `lua/core/sess_kills.lua` → `state.session.session_tp` |                                              |
+| `run_xp`         | `lua/core/run_state.lua` → `state.run.xp`              |                                              |
+| `run_tp`         | `lua/core/run_state.lua` → `state.run.tp`              |                                              |
 | `game_time`          | `lua/core/clock.lua` → `state.world.clock.format("panel_time")` |                                 |
 | `time_period`        | `lua/core/clock.lua` → `state.world.clock.next_transition()` |                                   |
 | `time_transition_at` | `lua/core/clock.lua` → `state.world.clock.next_transition()` | unix epoch int; consumed by input-pane renderer |
@@ -248,13 +248,13 @@ exactly W visible characters; no trailing padding ever needed.
 | Row | Col 1 (label) | Col 2 (value)            | Col 3 (label) | Col 4 (value)              |
 |-----|---------------|--------------------------|---------------|----------------------------|
 | 5   | `RACE:`       | `race`                   | `LEVEL:`      | `level` (bare int)         |
-| 6   | `MOOD:`       | `mood`                   | `SES-XP:`     | `session_xp` (fmt_sess)    |
-| 7   | `ALERTNESS:`  | `alertness`              | `SES-TP:`     | `session_tp` (fmt_sess)    |
+| 6   | `MOOD:`       | `mood`                   | `SES-XP:`     | `run_xp` (fmt_sess)        |
+| 7   | `ALERTNESS:`  | `alertness`              | `SES-TP:`     | `run_tp` (fmt_sess)        |
 | 8   | `POSITION:`   | `position`               | `WIMPY:`      | `wimpy` (bare int)         |
 
 Labels are truncated preserving the trailing colon; values are lowercased and
 sliced. Null/missing values render as empty string (label + col-width spaces).
-`session_xp`/`session_tp` are formatted as `"1.2k"` above 999 and bare integers
+`run_xp`/`run_tp` are formatted as `"1.2k"` above 999 and bare integers
 below. `level` and `wimpy` are bare integers.
 
 Label foreground: `C_LABEL` (RGB 128,128,128). Value foreground: `C_VALUE`

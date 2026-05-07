@@ -3,7 +3,7 @@
 Everything about tt++ session creation, game session tracking, state
 persistence, and clean startup flow. Touch this file when changing how
 sessions are connected, disconnected, or reloaded, or when modifying
-`bridge/session.state` consumers.
+`bridge/connection.state` consumers.
 
 The client uses three tt++ sessions:
 
@@ -41,7 +41,7 @@ and cleared on SESSION DISCONNECTED.
 interferes with socket cleanup and prevents MMapper from releasing
 the connection.
 
-## Runtime session state (`bridge/session.state`)
+## Runtime connection state (`bridge/connection.state`)
 
 Tracks whether the player is connected to MUME — distinct from whether
 the tt++ session is alive. In MMapper mode the tt++ ↔ MMapper socket can
@@ -74,17 +74,17 @@ already cleared and returns early.
 
 `mark_mume_connected()` and `mark_mume_disconnected()` (globals, `brain.lua`):
 - Idempotent and transition-only: they detect current state via the existence
-  of `SESSION_STATE_PATH` and only act — and only emit `system_ui` — on
+  of `CONNECTION_STATE_PATH` and only act — and only emit `system_ui` — on
   an actual disconnected→connected or connected→disconnected transition.
-- `mark_mume_connected()` calls `_write_session_state()` (atomic temp+rename,
+- `mark_mume_connected()` calls `_write_connection_state()` (atomic temp+rename,
   reads `connection_mode` from `startup.conf`), then `system_ui("Connected to MUME.")`.
-- `mark_mume_disconnected()` calls `_clear_session_state()`, emits
+- `mark_mume_disconnected()` calls `_clear_connection_state()`, emits
   `system_ui("Disconnected from MUME.")`, then auto-opens the popup if
   `bridge/.popup_open` is absent (see `docs/popup-menu.md` — Auto-open on disconnect).
 
-`set_game_session()` no longer writes `session.state` — it only tracks tt++
+`set_game_session()` no longer writes `connection.state` — it only tracks tt++
 session liveness. `clear_game_session()` delegates to `mark_mume_disconnected()`
-(rather than calling `_clear_session_state()` directly) so the direct-mode
+(rather than calling `_clear_connection_state()` directly) so the direct-mode
 abrupt-drop path joins the single dispatch point. The belt-and-braces role
 is unchanged; the transition guard in `mark_mume_disconnected()` keeps it
 idempotent.
@@ -99,7 +99,7 @@ or malformed values as "Disconnected" and never block.
 
 Consumer: `bridge/ingame_menu.sh` reads this file on every popup render
 to drive the status header (connected vs disconnected). The Link fragment
-is served from `bridge/ping.cache`, independent of session state.
+is served from `bridge/ping.cache`, independent of connection state.
 
 ### Known limitations
 
@@ -107,12 +107,12 @@ is served from `bridge/ping.cache`, independent of session state.
   the MMapper text trigger fires. The player must invoke `Reconnect` manually
   from the popup. ADR link forthcoming.
 - **Bootstrap window** — the tt++ session opens before `Char.Name` arrives
-  (~0.5–2 s). During this window `session.state` is absent and the popup
+  (~0.5–2 s). During this window `connection.state` is absent and the popup
   shows "Disconnected". The reconnect alias handles this correctly; a
   pending-state is not worth the complexity.
-- **`cp -r` clears uptime** — `_clear_session_state()` runs unconditionally
+- **`cp -r` clears uptime** — `_clear_connection_state()` runs unconditionally
   at brain startup. MUME does not re-send `Char.Name` while the TCP connection
-  is live, so `session.state` stays absent after a reload until the next full
+  is live, so `connection.state` stays absent after a reload until the next full
   reconnect. Popup shows "Disconnected" after `cp -r`. Accepted.
 
 ## cp -r behaviour

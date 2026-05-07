@@ -111,7 +111,7 @@ function char_ui(category, name, verb, detail)
     end
 end
 
-local SESSION_STATE_PATH = "bridge/session.state"
+local CONNECTION_STATE_PATH = "bridge/connection.state"
 
 -- Plain line-by-line parse — never sources/executes the file.
 local function _read_startup_conf_value(key)
@@ -125,19 +125,19 @@ local function _read_startup_conf_value(key)
     return nil
 end
 
-local function _write_session_state()
+local function _write_connection_state()
     local mode = _read_startup_conf_value("connection_mode") or "mmapper"
-    local tmp  = SESSION_STATE_PATH .. ".tmp"
+    local tmp  = CONNECTION_STATE_PATH .. ".tmp"
     local f    = io.open(tmp, "w")
     if not f then return end
     f:write(string.format("connected_at=%d\nconnection_mode=%s\n",
                           os.time(), mode))
     f:close()
-    os.rename(tmp, SESSION_STATE_PATH)
+    os.rename(tmp, CONNECTION_STATE_PATH)
 end
 
-local function _clear_session_state()
-    os.remove(SESSION_STATE_PATH)
+local function _clear_connection_state()
+    os.remove(CONNECTION_STATE_PATH)
 end
 
 local function _popup_is_open()
@@ -153,24 +153,24 @@ end
 GAME_SESSION = nil  -- set dynamically when a game session connects
 
 -- mark_mume_connected() / mark_mume_disconnected() — idempotent, transition-only.
--- Drive bridge/session.state from GMCP (Char.Name → connected, Core.Goodbye → disconnected).
+-- Drive bridge/connection.state from GMCP (Char.Name → connected, Core.Goodbye → disconnected).
 -- Only act (and only emit system_ui) on the actual state change; detect via file existence.
 function mark_mume_connected()
-    local f = io.open(SESSION_STATE_PATH, "r")
+    local f = io.open(CONNECTION_STATE_PATH, "r")
     if f then f:close(); return end
-    _write_session_state()
+    _write_connection_state()
     system_ui("Connected to MUME.")
-    if state.session and state.session.reset then state.session.reset() end
+    if state.run and state.run.reset then state.run.reset() end
 end
 
 function mark_mume_disconnected()
-    local f = io.open(SESSION_STATE_PATH, "r")
+    local f = io.open(CONNECTION_STATE_PATH, "r")
     if not f then return end
     f:close()
-    _clear_session_state()
+    _clear_connection_state()
     system_ui("Disconnected from MUME.")
     if not _popup_is_open() then _open_popup() end
-    if state.session and state.session.reset then state.session.reset() end
+    if state.run and state.run.reset then state.run.reset() end
     if state.char and state.char.reset then state.char.reset() end
 end
 
@@ -585,7 +585,7 @@ end
 package.path = "lua/lib/?.lua;" .. package.path
 gmcp.null = require("dkjson").null
 dbg("Lua brain started (" .. _VERSION .. ")")
-_clear_session_state()
+_clear_connection_state()
 local _n_core, _n_scripts = load_scripts()
 dbg(_n_core .. " core + " .. _n_scripts .. " scripts loaded")
 

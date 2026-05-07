@@ -1,10 +1,10 @@
--- Session XP/TP tracker and kill announcer.
+-- Run XP/TP tracker and kill announcer.
 -- Wraps Char.Vitals for baseline + running totals only.
 -- Subscribes to mob_death; queues mob names and schedules a debounced fold
--- (sess_kills_fold, 100ms) so multiple R.I.P. lines from one combat round
+-- (run_fold, 100ms) so multiple R.I.P. lines from one combat round
 -- batch into a single fold. Killing-blow XP is already in state.char.xp by
 -- the time mob_death fires (MUME emits Vitals before R.I.P.).
--- Exposes state.session (read side) and state.session.reset() for lifecycle hooks.
+-- Exposes state.run (read side) and state.run.reset() for lifecycle hooks.
 
 local FOLD_DELAY = 0.5  -- seconds; brief window to batch group kills
 
@@ -20,27 +20,27 @@ local function fmt_xp(n)
 end
 
 local M = {
-    xp_baseline   = nil,    -- xp at session start; nil = not yet known
+    xp_baseline   = nil,    -- xp at run start; nil = not yet known
     tp_baseline   = nil,
-    session_xp    = 0,
-    session_tp    = 0,
-    last_fold_xp  = nil,    -- xp snapshot at last fold (or session start)
+    xp            = 0,
+    tp            = 0,
+    last_fold_xp  = nil,    -- xp snapshot at last fold (or run start)
     pending_kills = {},     -- mob names awaiting attribution
-    kills         = {},     -- append-only per session: { name, xp }
+    kills         = {},     -- append-only per run: { name, xp }
 }
 
 function M.reset()
     M.xp_baseline   = nil
     M.tp_baseline   = nil
     M.last_fold_xp  = nil
-    M.session_xp    = 0
-    M.session_tp    = 0
+    M.xp            = 0
+    M.tp            = 0
     M.pending_kills = {}
     M.kills         = {}
-    session_cmd("#undelay {sess_kills_fold}")
+    session_cmd("#undelay {run_fold}")
 end
 
-state.session = M
+state.run = M
 
 local _orig_vitals = gmcp.handlers["Char.Vitals"]
 
@@ -52,29 +52,29 @@ gmcp.handlers["Char.Vitals"] = function(body)
         if M.xp_baseline == nil then
             M.xp_baseline  = body.xp
             M.last_fold_xp = body.xp
-            M.session_xp   = 0
+            M.xp           = 0
         elseif body.xp < M.last_fold_xp then
             -- death penalty / level loss → rebaseline, drop pending
             M.xp_baseline   = body.xp
             M.last_fold_xp  = body.xp
-            M.session_xp    = 0
+            M.xp            = 0
             M.pending_kills = {}
         else
-        M.session_xp = body.xp - M.xp_baseline
+        M.xp = body.xp - M.xp_baseline
         end
     end
     if body.tp then
         if M.tp_baseline == nil then
             M.tp_baseline  = body.tp
             M.last_fold_tp = body.tp
-            M.session_tp   = 0
+            M.tp           = 0
         elseif body.tp < M.last_fold_tp then
             -- death penalty / level loss → rebaseline, drop pending
             M.tp_baseline   = body.tp
             M.last_fold_tp  = body.tp
-            M.session_tp    = 0
+            M.tp            = 0
         else
-            M.session_tp = body.tp - M.tp_baseline
+            M.tp = body.tp - M.tp_baseline
         end
     end
 
@@ -83,7 +83,7 @@ end
 
 local function schedule_fold()
     session_cmd(string.format(
-        "#delay {sess_kills_fold} {#lua {state.session._fold()}} {%s}",
+        "#delay {run_fold} {#lua {state.run._fold()}} {%s}",
         FOLD_DELAY))
 end
 
@@ -93,7 +93,7 @@ events.subscribe("mob_death", function(name)
 end)
 
 function M._fold()
-    dbg("[SESS_KILLS] fold fired, pending=" .. #M.pending_kills)
+    dbg("[RUN_STATE] fold fired, pending=" .. #M.pending_kills)
 
     local n = #M.pending_kills
     if n == 0 then return end
@@ -116,4 +116,4 @@ function M._fold()
     M.pending_kills = {}
 end
 
-dbg("[SESS_KILLS] loaded")
+dbg("[RUN_STATE] loaded")

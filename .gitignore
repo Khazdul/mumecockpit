@@ -23,7 +23,7 @@ bridge/comm_filters.conf
 bridge/layout.conf
 bridge/startup.conf
 bridge/scripts.cache
-bridge/session.state
+bridge/connection.state
 bridge/status.state
 bridge/version.cache
 bridge/.layout_lock

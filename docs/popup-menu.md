@@ -14,13 +14,13 @@ helpers with the launcher.
 
 The top menu item is context-aware: "Continue" when connected (dismisses
 popup) or "Reconnect" when disconnected (fires `reconnect` alias then
-dismisses). Both states are rebuilt from `bridge/session.state` on every
+dismisses). Both states are rebuilt from `bridge/connection.state` on every
 render.
 
 ## Status header
 
 The status header at the top of the popup shows Profile · Mode · Link.
-Backed by `bridge/session.state` (connection status) and
+Backed by `bridge/connection.state` (connection status) and
 `bridge/ping.cache` (link quality). Example:
 
     Profile: default  ·  MMapper  ·  Link: 38ms (stable)
@@ -73,7 +73,7 @@ and `#lua {ui_err(...)}` respectively, not `#showme` to the game pane.
 ## Auto-open on disconnect
 
 The popup opens automatically whenever `mark_mume_disconnected()` transitions
-the state from connected to disconnected (i.e. removes `bridge/session.state`).
+the state from connected to disconnected (i.e. removes `bridge/connection.state`).
 All disconnect signals route through this single function:
 
 - `Core.Goodbye` GMCP (graceful quit, both modes)
@@ -82,7 +82,7 @@ All disconnect signals route through this single function:
   (direct-mode abrupt drop and MMapper-process death)
 
 **Dedup:** The transition guard in `mark_mume_disconnected()` returns early
-when `session.state` is already absent, so a second signal for the same
+when `connection.state` is already absent, so a second signal for the same
 disconnect event never reaches the popup trigger.
 
 **Double-open guard:** `bridge/ingame_menu.sh` writes `bridge/.popup_open`
@@ -90,12 +90,12 @@ on start and removes it on exit (via the `EXIT INT TERM HUP` trap). The
 trigger checks for this sentinel before calling `tmux display-popup` and
 skips if present, so a popup already on screen is never disturbed.
 
-**Bootstrap protection:** On fresh start `session.state` is absent, so
+**Bootstrap protection:** On fresh start `connection.state` is absent, so
 `mark_mume_disconnected()` is a no-op and no popup fires during the ~0.5–2 s
 window before `Char.Name` arrives.
 
 **Reconnect pre-highlighted:** `_rebuild_menu` places Reconnect at index 0
-when `session.state` is absent and `_SEL=0` is the default, so the user
+when `connection.state` is absent and `_SEL=0` is the default, so the user
 can hit Enter immediately.
 
 **Stale sentinel cleanup:** `bridge/tmux_start.sh` removes `bridge/.popup_open`

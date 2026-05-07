@@ -127,8 +127,8 @@ def _build_data_rows(c, W):
 
     return [
         row("RACE:",      c.get("race"),      "LEVEL:",  level_val),
-        row("MOOD:",      c.get("mood"),      "SES-XP:", _fmt_sess(c.get("session_xp"))),
-        row("ALERTNESS:", c.get("alertness"), "SES-TP:", _fmt_sess(c.get("session_tp"))),
+        row("MOOD:",      c.get("mood"),      "SES-XP:", _fmt_sess(c.get("run_xp"))),
+        row("ALERTNESS:", c.get("alertness"), "SES-TP:", _fmt_sess(c.get("run_tp"))),
         row("POSITION:",  c.get("position"),  "WIMPY:",  wimpy_val),
     ]
 

@@ -24,7 +24,7 @@ GMCP
 
 Full GMCP integration. Char, Comm.Channel, Event, and Core modules are
 negotiated at handshake and dispatched into Lua handlers. Background
-collectors populate state.char, state.comm, and state.session as
+collectors populate state.char, state.comm, and state.run as
 messages arrive — vitals, kills, channel traffic, alertness, sneak,
 climb, swim, and position. New collectors are drop-in: subscribe to a
 module, write to state.*, done.

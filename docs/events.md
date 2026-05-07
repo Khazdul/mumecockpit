@@ -87,9 +87,9 @@ The `kind` argument is new; existing subscribers that only take `name` are
 unaffected — Lua ignores extra positional args.
 
 **Subscribers:** `lua/scripts/autostab.lua`, `lua/scripts/autobow.lua`
-(abort on kill), `lua/core/sess_kills.lua` (queues name for XP attribution),
+(abort on kill), `lua/core/run_state.lua` (queues name for XP attribution),
 `lua/scripts/coinlooter.lua` (loot coins, dispatches on kind).
-`sess_kills` is the first core module to subscribe to its own bus — direct
+`run_state` is the first core module to subscribe to its own bus — direct
 parallel to script subscribers, no special wiring needed.
 
 ### `event_sun`

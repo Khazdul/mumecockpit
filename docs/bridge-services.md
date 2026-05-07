@@ -236,7 +236,7 @@ State is stored in `bridge/layout.conf` (gitignored, recreated on first startup)
 bridge/buffs.state
 bridge/layout.conf
 bridge/.layout_ready
-bridge/session.state
+bridge/connection.state
 bridge/status.state
 bridge/version.cache
 bridge/.layout_lock

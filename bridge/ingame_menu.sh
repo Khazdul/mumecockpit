@@ -30,9 +30,9 @@ _save_ts=0
 
 _rebuild_menu() {
     local connected=0
-    if [ -f bridge/session.state ]; then
+    if [ -f bridge/connection.state ]; then
         local ca
-        ca=$(awk -F= '/^connected_at=/{print $2}' bridge/session.state 2>/dev/null)
+        ca=$(awk -F= '/^connected_at=/{print $2}' bridge/connection.state 2>/dev/null)
         [ -n "$ca" ] && [ "$ca" -gt 0 ] 2>/dev/null && connected=1
     fi
 
@@ -69,12 +69,12 @@ _render_status_header() {
     esac
 
     local connected_at=""
-    if [ -f bridge/session.state ]; then
+    if [ -f bridge/connection.state ]; then
         while IFS='=' read -r k v; do
             case "$k" in
                 connected_at) connected_at="$v" ;;
             esac
-        done < bridge/session.state
+        done < bridge/connection.state
     fi
 
     local base_label

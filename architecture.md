@@ -81,7 +81,7 @@ tracking, and UI feedback.
 │   ├── ping.cache            # Ping ring buffer: latest, quality, 60-sample history (gitignored)
 │   ├── layout.conf           # Persisted layout state (gitignored)
 │   │                         #   keys: ui_width, window_cols
-│   ├── session.state         # Runtime state written by Lua on SESSION
+│   ├── connection.state      # Runtime state written by Lua on SESSION
 │   │                         #   CONNECTED; cleared on DISCONNECTED and
 │   │                         #   at brain startup (gitignored)
 │   ├── comm.state            # Comm history + channel projection (gitignored)
@@ -197,10 +197,10 @@ actions must be registered before `#run {lua}`).
 via `#lua` must live here; private helpers stay file-local.
 
 **`state.*`** — shared game and world data: `state.char`, `state.room`,
-`state.comm`, `state.world`, `state.core`, `state.session`. Populated by
+`state.comm`, `state.world`, `state.core`, `state.run`. Populated by
 GMCP collectors; field schemas documented in [docs/gmcp.md](docs/gmcp.md).
-`state.session` is owned by `lua/core/sess_kills.lua` and tracks session
-XP/TP deltas and the per-kill list. `state.world.clock` is owned by
+`state.run` is owned by `lua/core/run_state.lua` and tracks run XP/TP
+deltas and the per-kill list. `state.world.clock` is owned by
 `lua/core/clock.lua` — see [docs/clock.md](docs/clock.md) for API.
 
 **`gmcp`** — GMCP subsystem: `gmcp.handlers`, `gmcp.modules`,
@@ -270,7 +270,7 @@ scope.
 - `state.room` — currently unused; reserved.
 - `state.comm` — owned by `lua/core/comm_log.lua` (`history`, `channels`, `max_size`). `lua/core/comm_state.lua` adds the `serialize()` entry point.
 - `state.world` — owned by `lua/core/world_state.lua` (`sun`, `moon`, `moved`, `darkness`) and `lua/core/clock.lua` (`state.world.clock`).
-- `state.session` — owned by `lua/core/sess_kills.lua`; tracks per-session XP/TP deltas, kill list, baselines.
+- `state.run` — owned by `lua/core/run_state.lua`; tracks per-run XP/TP deltas, kill list, baselines.
 - `state.core` — owned by `lua/core/core_state.lua`; `Core.Goodbye` / `Core.Ping`.
 
 **Private state** continues to live in `local` file-scope tables (e.g. `local as`
@@ -349,7 +349,7 @@ See the project board on GitHub for active work and parked ideas.
 - [docs/gmcp.md](docs/gmcp.md) — GMCP module reference, schemas, negotiation. Touched when adding a GMCP collector or subscribing to a new module.
 - [docs/events.md](docs/events.md) — Event bus API and catalogue. Touched when adding a core MUD trigger or subscribing a script to a Lua-side event.
 - [docs/ipc.md](docs/ipc.md) — tt++ ↔ Lua IPC contract, relay actions, startup ordering. Touched when changing how tt++ and Lua communicate.
-- [docs/session-lifecycle.md](docs/session-lifecycle.md) — Session connect/disconnect, session.state, cp -r, settings persistence. Touched when changing session handling or startup flow.
+- [docs/session-lifecycle.md](docs/session-lifecycle.md) — Session connect/disconnect, connection.state, cp -r, settings persistence. Touched when changing session handling or startup flow.
 - [docs/input-pane.md](docs/input-pane.md) — Input pane key forwarding, Enter semantics, history navigation, menu bar (clickable pane toggles + clock). Touched when changing input behaviour, forwarded keys, or the menu bar.
 - [docs/tmux-bindings.md](docs/tmux-bindings.md) — tmux root-table bindings, mouse model, clipboard. Touched when changing tmux key bindings or mouse behaviour.
 - [docs/launcher.md](docs/launcher.md) — Pre-tmux startup menu, rendering conventions, exec-chain. Touched when changing launcher pages or startup options.
