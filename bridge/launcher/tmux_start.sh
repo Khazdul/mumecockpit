@@ -9,14 +9,12 @@ cd "$(dirname "$0")/../.."
 # ---------------------------------------------------------------------------
 # 0. One-shot migration: v0.6.x runtime files at bridge/ root → bridge/runtime/
 # ---------------------------------------------------------------------------
-if [ ! -d bridge/runtime ]; then
-    mkdir -p bridge/runtime
-    for f in bridge/*.state bridge/*.cache bridge/*.conf bridge/.[a-zA-Z]*; do
-        [ -e "$f" ] || continue
-        mv "$f" bridge/runtime/ 2>/dev/null || true
-    done
-    [ -d bridge/.update_preserve ] && mv bridge/.update_preserve bridge/runtime/
-fi
+mkdir -p bridge/runtime
+for f in bridge/*.state bridge/*.cache bridge/*.conf bridge/.[a-zA-Z]*; do
+    [ -e "$f" ] || continue
+    mv "$f" bridge/runtime/ 2>/dev/null || true
+done
+[ -d bridge/.update_preserve ] && mv bridge/.update_preserve bridge/runtime/
 
 # Clear any stale sentinels left by a crash before doing anything else.
 rm -f bridge/runtime/.return_to_menu

@@ -63,18 +63,20 @@ A one-shot migration block is placed in both `bridge/launcher/launcher.sh` and
 `bridge/launcher/tmux_start.sh`, near the top before any runtime file is read:
 
 ```bash
-if [ ! -d bridge/runtime ]; then
-    mkdir -p bridge/runtime
-    for f in bridge/*.state bridge/*.cache bridge/*.conf bridge/.[a-zA-Z]*; do
-        [ -e "$f" ] || continue
-        mv "$f" bridge/runtime/ 2>/dev/null || true
-    done
-    [ -d bridge/.update_preserve ] && mv bridge/.update_preserve bridge/runtime/
-fi
+mkdir -p bridge/runtime
+for f in bridge/*.state bridge/*.cache bridge/*.conf bridge/.[a-zA-Z]*; do
+    [ -e "$f" ] || continue
+    mv "$f" bridge/runtime/ 2>/dev/null || true
+done
+[ -d bridge/.update_preserve ] && mv bridge/.update_preserve bridge/runtime/
 ```
 
-The migration is idempotent (gated on `[ ! -d bridge/runtime ]`). It must be
-in **both** launchers because after a self-update the user re-execs
+The migration always runs; it is idempotent — the loop is a no-op when
+`bridge/` root contains no runtime files, and `mkdir -p` is a no-op when the
+directory exists. The original gate (`[ ! -d bridge/runtime ]`) was removed
+because `bridge/runtime/.gitkeep` is a tracked file, meaning the directory
+always exists after checkout and the gate was always false. It must be in
+**both** launchers because after a self-update the user re-execs
 `launcher.sh` directly — `start.sh` alone would miss the upgrade case.
 
 `start.sh` and `tmux_start.sh` change their `mkdir -p bridge` calls to
