@@ -338,7 +338,9 @@ MUME: "Your mind feels empty for a while."
   → store_decayed
     → find oldest entry by started_at
     → if tracked: record observed duration, persist times
-    → remove entry, persist active list
+    → remove entry; refresh expected_duration / expires_at on remaining active
+      tracked entries of the same spell so countdowns reflect the freshly
+      recorded sample; persist active list
     → script_ui("STORE", ui_var(name) .. " decayed (89:58 — sample recorded).")
 
 user sends: cast 'fireball' orc

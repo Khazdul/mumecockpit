@@ -22,6 +22,17 @@ local _last_cast_intent = nil -- most recent non-store spell cast
 -- Helpers
 -- ---------------------------------------------------------------------------
 
+local function _predicted_duration(name)
+    local samples = state.char.stored_spell_times[name] or {}
+    if #samples > 0 then
+        local sum = 0
+        for _, v in ipairs(samples) do sum = sum + v end
+        return math.floor(sum / #samples + 0.5)
+    else
+        return 5400
+    end
+end
+
 local function _fmt_mmss(seconds)
     seconds = math.max(0, math.floor(seconds))
     return string.format("%d:%02d", math.floor(seconds / 60), seconds % 60)
@@ -237,15 +248,7 @@ events.subscribe("store_succeeded", function()
         return
     end
     local name = table.remove(_pending_attempts, 1)
-    local samples = state.char.stored_spell_times[name] or {}
-    local expected_duration
-    if #samples > 0 then
-        local sum = 0
-        for _, v in ipairs(samples) do sum = sum + v end
-        expected_duration = math.floor(sum / #samples + 0.5)
-    else
-        expected_duration = 5400
-    end
+    local expected_duration = _predicted_duration(name)
     local now = os.time()
     local entry = {
         name              = name,
@@ -309,6 +312,13 @@ events.subscribe("store_decayed", function()
         if #arr > 3 then table.remove(arr, 1) end
         _save_times()
         table.remove(state.char.stored_spells, oldest_idx)
+        local new_predicted = _predicted_duration(name)
+        for _, e in ipairs(state.char.stored_spells) do
+            if e.name == name and e.tracked then
+                e.expected_duration = new_predicted
+                e.expires_at        = e.started_at + new_predicted
+            end
+        end
         _save_active()
         script_ui("STORE", ui_var(name) .. " decayed (" .. _fmt_mmss(observed) .. " \xe2\x80\x94 sample recorded).")
         dbg("[STORED_SPELLS] decay: " .. name .. " observed=" .. observed)

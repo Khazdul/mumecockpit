@@ -295,9 +295,11 @@ Emitted when the game sends `"Your mind feels empty for a while."` No payload.
 **Subscribers:** `lua/core/stored_spells.lua` — finds the oldest entry in
 `state.char.stored_spells` (lowest `started_at`). If `tracked == true`, records
 the observed duration to the ring-buffer in `state.char.stored_spell_times`
-(FIFO, capped at 3 samples) and persists the times file. Removes the entry and
-persists the active list. Emits a `script_ui("STORE", ...)` line noting the
-observed duration or `(untracked)` depending on the `tracked` flag.
+(FIFO, capped at 3 samples) and persists the times file; then refreshes
+`expected_duration` and `expires_at` on all remaining active tracked entries of
+the same spell so their countdowns reflect the freshly recorded sample. Removes
+the entry and persists the active list. Emits a `script_ui("STORE", ...)` line
+noting the observed duration or `(untracked)` depending on the `tracked` flag.
 
 ### `stored_spells_untracked`
 
