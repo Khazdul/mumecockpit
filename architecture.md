@@ -34,7 +34,7 @@ tracking, and UI feedback.
 │   │                     #   welcome.tin    — clean boot banner + auto-connect
 │   └── sessions/         # Per-profile personal settings (.tin files)
 │                         #   default.tin is runtime-seeded from
-│                         #   bridge/templates/blank_profile.tin (ADR 0042)
+│                         #   bridge/launcher/templates/blank_profile.tin (ADR 0042)
 │
 ├── lua/
 │   ├── brain.lua         # Lua brain — infrastructure, event loop, auto-loads core/ then scripts/
@@ -44,46 +44,58 @@ tracking, and UI feedback.
 │   │                     # no register_script. Examples:
 │   │                     #   char_state.lua    — Char.* → state.char.*
 │   │                     #   comm_log.lua      — Comm.Channel.* → state.comm.*
-│   │                     #   status_state.lua  — state.char → bridge/status.state
+│   │                     #   status_state.lua  — state.char → bridge/status.state (runtime)
 │   │                     # See CLAUDE.md and per-area docs/*.md for the full list.
 │   └── scripts/          # Opt-in automation modules — must call register_script(meta)
 │
 ├── bridge/
-│   ├── launcher.sh           # Pre-tmux startup menu (DOS-style, pure bash)
-│   ├── menu_render.sh        # Render/input helpers sourced by launcher.sh
-│   ├── tmux_start.sh         # tmux session creation (extracted from start.sh)
-│   ├── templates/            # New-profile content templates
+│   ├── launcher/             # Pre-tmux menu, tmux orchestration, Windows entry
+│   │   ├── launcher.sh       # Pre-tmux startup menu (DOS-style, pure bash)
+│   │   ├── menu_render.sh    # Render/input helpers sourced by launcher.sh + ingame_menu.sh
+│   │   ├── tmux_start.sh     # tmux session creation, hooks, keybinds
+│   │   ├── ingame_menu.sh    # In-game ESC popup menu
+│   │   ├── launch.sh         # Windows shortcut target (ADR 0045)
+│   │   ├── build_initial_layout.sh  # Builds pane layout on first client-attach
+│   │   ├── wait_for_layout.sh       # Blocks tt++ start until layout is ready
+│   │   ├── open_pane.sh      # Opens/manages tmux panes dynamically
+│   │   ├── read_config.sh    # Emits tt++ #var assignments from startup.conf
+│   │   ├── about.txt         # About page body text
+│   │   ├── quotes.txt        # Tolkien quotes shown on main menu (pipe-sep format)
+│   │   └── templates/        # New-profile content templates
 │   │                         #   blank_profile.tin — seeded into
 │   │                         #   ttpp/sessions/default.tin and used by
-│   │                         #   the launcher's "Create blank profile"
-│   ├── toggle_pane.sh        # Toggle ui / dev / comm / status / buffs panes and pane headers
-│   │                         #   (called by cp aliases and in-game popup)
-│   ├── version_check.sh      # Queries GitHub for latest tag; updates
-│   │                         #   bridge/version.cache with 6h TTL
-│   ├── check_release.sh      # Pre-tag sanity check — verifies VERSION matches intended tag
+│   │                         #   the launcher's "Create blank profile" (ADR 0042)
+│   ├── panes/                # Python prompt_toolkit pane renderers
+│   │   ├── input_pane.py     # Input pane — CLI, forwards to TT++, right-aligned menu bar
+│   │   ├── comm_pane.py      # Comm pane — clickable channel-filter header + scrollable history
+│   │   ├── buffs_pane.py     # Buffs pane — affect grid (grouped, bar drain, blink)
+│   │   ├── status_pane.py    # Status pane — polls status.state
+│   │   └── ui_pane.py        # UI pane — tails logs/ui.log
+│   ├── layout/               # Pane/layout state mutations
+│   │   ├── apply_layout.sh   # Re-applies saved layout after resize or pane toggle
+│   │   ├── on_window_resize.sh  # Fired on terminal resize — re-applies stored layout
+│   │   ├── on_pane_resize.sh    # Fired on border drag — saves new layout values
+│   │   ├── toggle_pane.sh    # Toggle ui/dev/comm/status/buffs panes and pane headers
+│   │   │                     #   (called by cp aliases and in-game popup)
+│   │   └── focus_input.sh    # Resolves input pane index at click time (MouseUp1Pane target)
+│   ├── release/              # Release/update operations
+│   │   ├── update.sh         # Safe self-update runner (fetch, unpack, install)
+│   │   ├── check_release.sh  # Pre-tag sanity check — verifies VERSION matches intended tag
+│   │   └── sanitize_profile.sh  # Strips #class wrappers; called by cp -s/-r after save
+│   ├── services/             # Cockpit-spawned background tasks
+│   │   ├── version_check.sh  # Queries GitHub for latest tag; updates
+│   │   │                     #   bridge/version.cache with 6h TTL
+│   │   ├── ping_monitor.sh   # Session-scoped background ping monitor
+│   │   │                     #   (spawned by tmux_start.sh + launcher.sh; self-terminates)
+│   │   └── read_version.sh   # Emits _client_version tt++ var from VERSION file
+│   ├── ipc/                  # IPC temp files written by tintin_cmd,
+│   │                         #   consumed by tt++ via tintin_read action
 │   ├── smoke.sh              # Syntax-check runner (bash/lua/python + core file checks); run with bash bridge/smoke.sh
-│   ├── update.sh             # Safe self-update runner (fetch, unpack, install)
-│   ├── apply_layout.sh       # Re-applies saved layout after resize or pane toggle
-│   ├── read_config.sh        # Emits tt++ #var assignments from startup.conf
-│   ├── quotes.txt            # Tolkien quotes shown on main menu (pipe-sep format)
-│   ├── about.txt             # About page body text
-│   └── scripts.cache         # Script registry written by brain.lua (gitignored)
-│   ├── open_pane.sh          # Opens/manages tmux panes dynamically
-│   ├── input_pane.py         # Input pane — prompt_toolkit CLI, forwards to TT++, right-aligned menu bar (CHAR/BUFFS/COM/UI + clock)
-│   ├── comm_pane.py          # Comm pane — clickable channel-filter header + scrollable history
-│   ├── buffs_pane.py         # Buffs pane — prompt_toolkit affect grid (grouped, bar drain, blink)
-│   ├── status_pane.py        # Status pane — prompt_toolkit Application, polls status.state
-│   ├── ui_pane.py            # UI pane — prompt_toolkit Application, tails logs/ui.log
-│   ├── focus_input.sh        # Resolves input pane index at click time (MouseUp1Pane target)
-│   ├── on_window_resize.sh   # Fired on terminal resize — re-applies stored layout
-│   ├── on_pane_resize.sh     # Fired on border drag — saves new layout values
-│   ├── ping_monitor.sh       # Session-scoped background ping monitor
-│   │                         #   (spawned by tmux_start.sh + launcher.sh; self-terminates)
+│   ├── launcher.sh           # COMPAT SHIM → bridge/launcher/launcher.sh (v0.7.0, ADR 0045)
+│   ├── tmux_start.sh         # COMPAT SHIM → bridge/launcher/tmux_start.sh (v0.7.0, ADR 0045)
 │   ├── ping.cache            # Ping ring buffer: latest, quality, 60-sample history (gitignored)
 │   ├── layout.conf           # Persisted layout state (gitignored)
 │   │                         #   keys: ui_width, window_cols
-│   ├── ipc/              # IPC temp files written by tintin_cmd,
-│   │                     #   consumed by tt++ via tintin_read action
 │   ├── connection.state      # Runtime state written by Lua on SESSION
 │   │                         #   CONNECTED; cleared on DISCONNECTED and
 │   │                         #   at brain startup (gitignored)

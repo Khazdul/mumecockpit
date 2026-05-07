@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# bridge/check_release.sh — pre-tag sanity check: VERSION must match the intended tag.
-# Usage: bash bridge/check_release.sh vX.Y.Z
+# bridge/release/check_release.sh — pre-tag sanity check: VERSION must match the intended tag.
+# Usage: bash bridge/release/check_release.sh vX.Y.Z
 # Exit codes: 0=match (safe to tag), 1=mismatch or missing VERSION, 2=bad usage.
 
 set -u
 
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/../.."
 
 if [ $# -lt 1 ]; then
-    echo "Usage: bash bridge/check_release.sh vX.Y.Z" >&2
+    echo "Usage: bash bridge/release/check_release.sh vX.Y.Z" >&2
     exit 2
 fi
 

@@ -7,4 +7,4 @@
 #nop Loads before system.tin (alphabetical order) so variables exist when
 #nop connection aliases are registered.
 
-#script {bash bridge/read_config.sh}
+#script {bash bridge/launcher/read_config.sh}

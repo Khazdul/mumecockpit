@@ -14,7 +14,7 @@ if [ "$COLS" = "$window_cols" ]; then
       -F '#{pane_index} #{pane_title}' \
       | awk '$2=="input" {print $1}')
     [ -n "$INPUT_INDEX" ] && tmux resize-pane -t "mume:cockpit.$INPUT_INDEX" -y 1
-    bash "$HOME/MUME/bridge/apply_layout.sh"
+    bash "$HOME/MUME/bridge/layout/apply_layout.sh"
     exit 0
 fi
 
@@ -60,7 +60,7 @@ elif [ -f "$SENTINEL" ]; then
         done < "$SENTINEL"
         rm -f "$SENTINEL"   # delete before opening so open_pane.sh sentinel check passes
         for pname in "${RESTORE_PANES[@]}"; do
-            bash "$HOME/MUME/bridge/open_pane.sh" "$pname"
+            bash "$HOME/MUME/bridge/launcher/open_pane.sh" "$pname"
         done
         rm -f "$LOCK"
         # Fall through to normal layout logic below.
@@ -95,7 +95,7 @@ INPUT_INDEX=$(tmux list-panes -t mume:cockpit \
   | awk '$2=="input" {print $1}')
 [ -n "$INPUT_INDEX" ] && tmux resize-pane -t "mume:cockpit.$INPUT_INDEX" -y 1
 
-bash "$HOME/MUME/bridge/apply_layout.sh"
+bash "$HOME/MUME/bridge/layout/apply_layout.sh"
 
 sed -i "s/^window_cols=.*/window_cols=$COLS/" "$LAYOUT_CONF"
 rm -f "$LOCK"

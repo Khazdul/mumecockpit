@@ -24,7 +24,7 @@ GMCP payload ──► lua/core/char_state.lua ──► state.char.*
                                                    │
                                        mtime change │  50 ms poll
                                                    ▼
-                          bridge/status_pane.py (prompt_toolkit
+                          bridge/panes/status_pane.py (prompt_toolkit
                           Application; asyncio mtime poll task;
                           anchor-top; overflow indicator)
 ```
@@ -62,13 +62,13 @@ Full reconnect restores all fields.
 
 ### Polling
 
-`bridge/status_pane.py` polls `bridge/status.state` every 50 ms via an asyncio
+`bridge/panes/status_pane.py` polls `bridge/status.state` every 50 ms via an asyncio
 task. On mtime change the task re-reads the file and calls `app.invalidate()`.
 SIGWINCH is handled automatically by prompt_toolkit; no dirty flag is needed.
 
 ### Rendering
 
-`bridge/status_pane.py` is a `prompt_toolkit` full-screen `Application`
+`bridge/panes/status_pane.py` is a `prompt_toolkit` full-screen `Application`
 (`mouse_support=True`, `full_screen=True`, `color_depth=ColorDepth.DEPTH_24_BIT`).
 
 Row helpers (`_build_frame`, `_build_toggles_row`, `_build_data_rows`, etc.)
@@ -165,7 +165,7 @@ fields are retained in the payload for use by future rows.
 
 ## Colour scheme
 
-Constants defined at the top of `bridge/status_pane.py`:
+Constants defined at the top of `bridge/panes/status_pane.py`:
 
 | Constant  | Escape                   | Role                                              |
 |-----------|--------------------------|---------------------------------------------------|
@@ -183,7 +183,7 @@ Constants defined at the top of `bridge/status_pane.py`:
 ## Identity
 
 The pane title is `status` (set via `select-pane -T`). The tmux
-`pane-border-format` in `bridge/tmux_start.sh` maps the `status` title to the
+`pane-border-format` in `bridge/launcher/tmux_start.sh` maps the `status` title to the
 label ` Character ` displayed in the top pane border. No header rows are
 rendered inside the pane content.
 
@@ -291,7 +291,7 @@ rows + 1 toggle row + 1 blank separator + 4 data rows = 11 total.
 
 ### Width constraint
 
-`bridge/on_window_resize.sh` enforces `MAIN_MIN = 30` (main/tt++ pane floor).
+`bridge/layout/on_window_resize.sh` enforces `MAIN_MIN = 30` (main/tt++ pane floor).
 The right column has no minimum width enforced by the status pane — `ui_width`
 from `bridge/layout.conf` is the sole authority (ADR 0038). The renderer is
 adaptive and accepts any width (ADR 0023).

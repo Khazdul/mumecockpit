@@ -2,11 +2,11 @@
 
 The input pane is an always-on integral part of the cockpit; there is no toggle.
 
-Full specification for `bridge/input_pane.py` — the prompt_toolkit-based
+Full specification for `bridge/panes/input_pane.py` — the prompt_toolkit-based
 command input pane. Touch this file when changing key forwarding behaviour,
 Enter semantics, history navigation, or the DECKPAM/keypad setup.
 
-A dedicated input pane (`bridge/input_pane.py`) replaces typing directly
+A dedicated input pane (`bridge/panes/input_pane.py`) replaces typing directly
 in the TT++ pane. It runs as a separate tmux pane spanning the full window width at the bottom
 of the cockpit, 1 row tall.
 
@@ -23,7 +23,7 @@ of the cockpit, 1 row tall.
   input pane
 - On startup, a tmux `MouseUp1Pane` binding is registered so that clicking
   any other pane returns focus to the input pane automatically. The binding
-  calls `bridge/focus_input.sh`, which resolves the input pane's current
+  calls `bridge/layout/focus_input.sh`, which resolves the input pane's current
   index at click time — so pane index shifts caused by cp -u / cp -d
   close+open cycles never cause focus to land on the wrong pane
 
@@ -147,7 +147,7 @@ has no size cap.
 
 **Write path (OSC 52):** Ctrl+C and Ctrl+X write to the clipboard by
 emitting an OSC 52 escape sequence. tmux (with `set-clipboard on`, set in
-`bridge/tmux_start.sh`) forwards OSC 52 to the terminal emulator, which
+`bridge/launcher/tmux_start.sh`) forwards OSC 52 to the terminal emulator, which
 sets the system clipboard. The same path tmux's `copy-pipe` already uses.
 
 **Read path (pyperclip):** Ctrl+V reads via `pyperclip.paste()`. On WSL,
@@ -171,7 +171,7 @@ not trigger EOFError).
   by the terminal, used by prompt_toolkit editing, or bound to clipboard
   ops (`c-c`, `c-x`, `c-v`).
 
-`bridge/input_pane.py` is the source of truth for the exact lists.
+`bridge/panes/input_pane.py` is the source of truth for the exact lists.
 
 ## Design consequences
 
@@ -218,7 +218,7 @@ remaining width; the menu strip is a fixed-width `VSplit` sibling.
 
 ### Layout
 
-`bridge/input_pane.py` restructures the Application layout to:
+`bridge/panes/input_pane.py` restructures the Application layout to:
 
 ```
 HSplit([
@@ -313,12 +313,12 @@ The renderer runs two asyncio tasks for clock updates:
 - **`_clock_tick`** (boundary-aligned 1 Hz) — wakes just after each wall-clock
   second boundary and calls `app.invalidate()`, so the countdown decrements at
   uniform cadence regardless of file-poll phase. Same pattern as the buffs blink
-  tick in `bridge/buffs_pane.py` (see [docs/buffs-pane.md](buffs-pane.md)).
+  tick in `bridge/panes/buffs_pane.py` (see [docs/buffs-pane.md](buffs-pane.md)).
 
 ### Visibility
 
 The menu bar is hidden when the terminal is too narrow to host the right
-column, mirroring the collapse threshold in `bridge/on_window_resize.sh`.
+column, mirroring the collapse threshold in `bridge/layout/on_window_resize.sh`.
 The menu is visible iff:
 
 ```

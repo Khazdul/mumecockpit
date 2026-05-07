@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# bridge/buffs_pane.py — affect grid renderer for the buffs pane.
+# bridge/panes/buffs_pane.py — affect grid renderer for the buffs pane.
 # 4-per-row coloured grid grouped by type: spells (blue), buffs (green),
 # debuffs (red). Within each group: untimed first (alphabetical), then timed
 # by expires_at descending (alphabetical tie-break). Empty groups produce no

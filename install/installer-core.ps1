@@ -195,11 +195,11 @@ Write-Host ""
 # leaving a broken shortcut on the desktop.
 
 Write-Host "Verifying cockpit installation..."
-& wsl -d $distroName -u root -- test -x /root/MUME/bridge/launch.sh
+& wsl -d $distroName -u root -- test -x /root/MUME/bridge/launcher/launch.sh
 if ($LASTEXITCODE -ne 0) {
     Write-Host ""
     Write-Host "ERROR: Cockpit installation looks incomplete."
-    Write-Host "       /root/MUME/bridge/launch.sh is missing or not executable."
+    Write-Host "       /root/MUME/bridge/launcher/launch.sh is missing or not executable."
     Write-Host "       This usually means the bootstrap step did not finish cleanly."
     Write-Host "       Re-run this installer; if the problem persists, file an issue."
     exit 1
@@ -388,7 +388,7 @@ $shortcutPath = Join-Path ([Environment]::GetFolderPath('Desktop')) 'MUME Cockpi
 $wsh      = New-Object -ComObject WScript.Shell
 $shortcut = $wsh.CreateShortcut($shortcutPath)
 $shortcut.TargetPath   = $alacrittyExe
-$shortcut.Arguments    = "-e wsl -d $distroName -u root -- /root/MUME/bridge/launch.sh"
+$shortcut.Arguments    = "-e wsl -d $distroName -u root -- /root/MUME/bridge/launcher/launch.sh"
 $shortcut.IconLocation = "$alacrittyExe,0"
 $shortcut.Save()
 Write-Host "Desktop shortcut created: $shortcutPath"

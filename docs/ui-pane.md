@@ -16,7 +16,7 @@ lua/brain.lua helpers
          inode + size poll (250 ms)
                 │
                 ▼
-        bridge/ui_pane.py
+        bridge/panes/ui_pane.py
         prompt_toolkit Application
         anchor-bottom; wrap-aware scroll; overflow indicator
 ```
@@ -28,7 +28,7 @@ lua/brain.lua helpers
 tails this file without any intermediate state file; no Lua changes are needed
 to wire up the pane.
 
-`logs/ui.log` is truncated to zero at session start by `bridge/tmux_start.sh`,
+`logs/ui.log` is truncated to zero at session start by `bridge/launcher/tmux_start.sh`,
 so the pane always shows only the current session's output.
 
 ### Startup read
@@ -51,7 +51,7 @@ On any change, calls `app.invalidate()`.
 
 ### Rendering
 
-`bridge/ui_pane.py` is a `prompt_toolkit` full-screen `Application`
+`bridge/panes/ui_pane.py` is a `prompt_toolkit` full-screen `Application`
 (`mouse_support=True`, `full_screen=True`, `color_depth=ColorDepth.DEPTH_24_BIT`).
 
 Each in-memory log line is an ANSI string. Lines are converted to fragments via
@@ -123,7 +123,7 @@ Dynamic values within messages are rendered in bold yellow (`#FFEE58`) via
 
 ## Pane title and border
 
-Pane title: `ui`. The `pane-border-format` in `bridge/tmux_start.sh` maps
+Pane title: `ui`. The `pane-border-format` in `bridge/launcher/tmux_start.sh` maps
 this to the label ` UI ` when headers are on.
 
 ## Toggle

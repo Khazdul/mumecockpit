@@ -32,14 +32,14 @@ import time
 TMUX_TARGET = "mume:cockpit.0"
 _PRINTABLE  = [c for c in string.printable if c.isprintable()]
 
-BRIDGE_DIR        = os.path.dirname(os.path.abspath(__file__))
+BRIDGE_DIR        = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 STATUS_STATE_PATH = os.path.join(BRIDGE_DIR, "status.state")
 STARTUP_CONF_PATH = os.path.join(BRIDGE_DIR, "startup.conf")
 LAYOUT_CONF_PATH  = os.path.join(BRIDGE_DIR, "layout.conf")
 MENU_POLL_MS      = 0.25
 MENU_WIDTH        = 29
 
-# Layout constants duplicated from bridge/on_window_resize.sh.
+# Layout constants duplicated from bridge/layout/on_window_resize.sh.
 # Keep in sync; see ADR 0031 and ADR 0038.
 MAIN_MIN = 30   # main/tt++ pane floor
 
@@ -49,7 +49,7 @@ BTN_BG_OFF = "#001E28"   # rgb(0,30,40)   — OFF state background
 BTN_FG_ON  = "#C0C0C0"   # ON text — rgb(192,192,192)
 BTN_FG_OFF = "#808080"   # OFF text — rgb(128,128,128)
 
-# Sun/Moon colours — source of truth: bridge/status_pane.py C_SUN / C_MOON
+# Sun/Moon colours — source of truth: bridge/panes/status_pane.py C_SUN / C_MOON
 C_SUN_HEX  = "#ffb000"   # \x1b[38;2;255;176;0m
 C_MOON_HEX = "#4a90e2"   # \x1b[38;2;74;144;226m
 
@@ -438,7 +438,7 @@ def get_input_pane_index():
 def setup_mouse_binding():
     if get_input_pane_index() is None:
         return
-    focus = os.path.expanduser("~/MUME/bridge/focus_input.sh")
+    focus = os.path.expanduser("~/MUME/bridge/layout/focus_input.sh")
     not_input = '[ "#{pane_title}" != "input" ]'
 
     # Click without drag: just refocus the input pane.
@@ -512,7 +512,7 @@ def _make_btn_handler(pane):
         if mouse_event.event_type != MouseEventType.MOUSE_DOWN:
             return
         subprocess.Popen([
-            "bash", os.path.join(BRIDGE_DIR, "toggle_pane.sh"),
+            "bash", os.path.join(BRIDGE_DIR, "layout", "toggle_pane.sh"),
             pane, "--persist",
         ])
     return _handler

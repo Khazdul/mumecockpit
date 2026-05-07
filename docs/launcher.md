@@ -15,18 +15,18 @@ flow.
 ```
 
 `start.sh` is a thin wrapper that installs dependencies and then:
-- Without bypass flags → `exec bash bridge/launcher.sh` (startup menu)
-- With `--no-menu` / `-d` / `-u` → `exec bash bridge/tmux_start.sh` (direct start)
+- Without bypass flags → `exec bash bridge/launcher/launcher.sh` (startup menu)
+- With `--no-menu` / `-d` / `-u` → `exec bash bridge/launcher/tmux_start.sh` (direct start)
 
 The return-to-menu path (in-game popup "Exit to main menu") is handled by an
 exec-chain inside `tmux_start.sh`: after `tmux attach` returns, the script
 checks for `bridge/.return_to_menu` (written by `ingame_menu.sh` just before
-firing `cp -e`) and, if present, `exec`s back into `bridge/launcher.sh`.
+firing `cp -e`) and, if present, `exec`s back into `bridge/launcher/launcher.sh`.
 No intermediate bash frame — no flash. `tmux_start.sh` also clears any stale
 sentinel at the top of each run so a crash cannot mis-route a subsequent cold
 start.
 
-## Startup menu (`bridge/launcher.sh`)
+## Startup menu (`bridge/launcher/launcher.sh`)
 
 A DOS-style retro menu rendered in the terminal before tmux launches.
 Pure bash + ANSI escapes; no external dependencies beyond coreutils.
@@ -34,19 +34,19 @@ Pure bash + ANSI escapes; no external dependencies beyond coreutils.
 | Feature | Detail |
 |---------|--------|
 | Session detect | `tmux has-session -t mume` + `list-clients` → top item is "New session", "Continue session", or "Mirror session (attached elsewhere)" |
-| Profile page | Lists `ttpp/sessions/*.tin`; select, create (blank / copy from existing), delete. `default` cannot be deleted. "Create blank" copies from `bridge/templates/blank_profile.tin` (single source of truth — see ADR 0042). Selected profile is written to `startup.conf` and consumed by `ttpp/core/config.tin` at tt++ startup. |
+| Profile page | Lists `ttpp/sessions/*.tin`; select, create (blank / copy from existing), delete. `default` cannot be deleted. "Create blank" copies from `bridge/launcher/templates/blank_profile.tin` (single source of truth — see ADR 0042). Selected profile is written to `startup.conf` and consumed by `ttpp/core/config.tin` at tt++ startup. |
 | Options page | Toggle Character pane / Buffs pane / Comm pane / UI / Dev panes; Pane dividers; connection mode; live layout mockup (updates on toggle). Fresh-install defaults: status, buffs, comm, ui on; dev off. Content hides progressively at small heights: descriptions → mockup → section headings; menu items always render |
 | Scripts page | Reads `bridge/scripts.cache`; scrollable |
-| About page | Reads `bridge/about.txt`; word-wrapped, cached per resize, scrollable |
+| About page | Reads `bridge/launcher/about.txt`; word-wrapped, cached per resize, scrollable |
 | Quit | Confirmation prompt; ESC cancels |
 | Persistence | Options saved to `bridge/startup.conf` on Back / ESC |
 
 ## Rendering conventions
 
-Launcher pages render through `render_frame` in `bridge/menu_render.sh`.
+Launcher pages render through `render_frame` in `bridge/launcher/menu_render.sh`.
 Rules are strict — deviations reintroduce flicker or scroll artifacts:
 
-**Semantic colour palette (`bridge/menu_render.sh`).** All escape codes are
+**Semantic colour palette (`bridge/launcher/menu_render.sh`).** All escape codes are
 referenced by role, not raw colour, so visual adjustments stay localised:
 
 | Name            | Role                                               |
@@ -99,7 +99,7 @@ column alignment.
   The launcher → tmux_start handoff itself is exec'd, so there is no
   intermediate bash flash between menu and cockpit.
 
-**Post-attach layout build.** `bridge/tmux_start.sh` registers a one-shot `client-attached` hook that fires `bridge/build_initial_layout.sh` the moment the first client attaches. `build_initial_layout.sh` reads the true terminal width via `tmux display-message -p '#{window_width}'` (authoritative only after attach) and runs all `split-window` / `resize-pane` / `open_pane.sh` calls. When finished it touches `bridge/.layout_ready` and disarms itself with `tmux set-hook -u client-attached`. Meanwhile pane 0 runs `bridge/wait_for_layout.sh`, which polls `.layout_ready` in a tight loop (50 ms intervals, 2 s timeout) and then execs `tt++`. This sentinel-based handshake replaces the old `sleep 0.3 &&` barrier: tt++ starts only after the layout is in place, so the first lines of tt++/Lua output are never lost into scrollback. See ADR 0041 for the full rationale.
+**Post-attach layout build.** `bridge/launcher/tmux_start.sh` registers a one-shot `client-attached` hook that fires `bridge/launcher/build_initial_layout.sh` the moment the first client attaches. `build_initial_layout.sh` reads the true terminal width via `tmux display-message -p '#{window_width}'` (authoritative only after attach) and runs all `split-window` / `resize-pane` / `open_pane.sh` calls. When finished it touches `bridge/.layout_ready` and disarms itself with `tmux set-hook -u client-attached`. Meanwhile pane 0 runs `bridge/launcher/wait_for_layout.sh`, which polls `.layout_ready` in a tight loop (50 ms intervals, 2 s timeout) and then execs `tt++`. This sentinel-based handshake replaces the old `sleep 0.3 &&` barrier: tt++ starts only after the layout is in place, so the first lines of tt++/Lua output are never lost into scrollback. See ADR 0041 for the full rationale.
 
 **Ctrl+C hardening (ui/dev panes).** Focusing a UI or DEV pane and pressing Ctrl+C would send SIGINT to the `tail -f` foreground process, kill it, and close the pane — breaking the layout for inexperienced users. Both panes are now launched with a hardened wrapper:
 
@@ -107,7 +107,7 @@ column alignment.
 bash -c 'stty -isig 2>/dev/null; trap "" INT; while true; do tail -f <PATH>; printf "\n[pane kept alive — use cp-u/cp-d to close]\n"; sleep 0.2; done'
 ```
 
-`stty -isig` disables signal generation (INTR/QUIT/SUSP) for the pane's tty, so Ctrl+C never produces SIGINT in the first place. `trap "" INT` is a belt-and-braces fallback in case stty is unavailable. The `while true` loop restarts `tail -f` if it exits for any other reason (log rotation, truncation). The input pane (`python3 bridge/input_pane.py`) is deliberately unwrapped — it needs signals to function correctly.
+`stty -isig` disables signal generation (INTR/QUIT/SUSP) for the pane's tty, so Ctrl+C never produces SIGINT in the first place. `trap "" INT` is a belt-and-braces fallback in case stty is unavailable. The `while true` loop restarts `tail -f` if it exits for any other reason (log rotation, truncation). The input pane (`python3 bridge/panes/input_pane.py`) is deliberately unwrapped — it needs signals to function correctly.
 
 ---
 Back to [architecture.md](../architecture.md).

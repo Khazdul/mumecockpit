@@ -70,7 +70,7 @@ tag, bump VERSION on main, retag on the bump commit (see Recovery below).
 
 Run the pre-tag sanity check:
 
-    bash bridge/check_release.sh vX.Y.Z
+    bash bridge/release/check_release.sh vX.Y.Z
 
 Expected output:
 
@@ -194,7 +194,7 @@ delete it.
 
 Force a fresh version check and confirm the cache reflects the new tag:
 
-    bash bridge/version_check.sh --force && cat bridge/version.cache
+    bash bridge/services/version_check.sh --force && cat bridge/version.cache
 
 Expected:
 
@@ -235,7 +235,7 @@ commit. This is the procedure used to fix v0.2.0.
 **Verify VERSION on the correct commit** (usually main HEAD after the bump
 commit is pushed):
 
-    bash bridge/check_release.sh vX.Y.Z
+    bash bridge/release/check_release.sh vX.Y.Z
 
 **Retag on the correct commit and push:**
 
@@ -252,7 +252,7 @@ the release: `gh release upload vX.Y.Z release/MUME-Cockpit-vX.Y.Z.zip`.
 
 **Verify:**
 
-    bash bridge/version_check.sh --force && cat bridge/version.cache
+    bash bridge/services/version_check.sh --force && cat bridge/version.cache
 
 ---
 
@@ -338,7 +338,7 @@ line what happened. Exact commands:
 
 **Step 3 — Run the pre-tag sanity check:**
 
-    bash bridge/check_release.sh vX.Y.Z
+    bash bridge/release/check_release.sh vX.Y.Z
 
 Expected output: `VERSION matches vX.Y.Z. Safe to tag.`
 If it fails, stop and report the output. Do not proceed to the tag step.
@@ -392,7 +392,7 @@ Wait for the user to confirm the paste is done before proceeding.
 
 **Step 8 — Verify the cache:**
 
-    bash bridge/version_check.sh --force && cat bridge/version.cache
+    bash bridge/services/version_check.sh --force && cat bridge/version.cache
 
 Confirm that the output contains `latest=vX.Y.Z`. If it does not (and this is
 not a pre-release), report the anomaly and stop. Do not attempt to fix it.

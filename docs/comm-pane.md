@@ -26,7 +26,7 @@ Comm.Channel.List ──► lua/core/comm_log.lua ──► state.comm.channels
                                                         │
                                             mtime change │  250 ms poll
                                                         ▼
-                                          bridge/comm_pane.py
+                                          bridge/panes/comm_pane.py
                                           prompt_toolkit full-screen
                                           Application with mouse_support
                                                         │
@@ -47,7 +47,7 @@ a second time to append each new message to the per-profile archive.
 ### State flow
 
 After either wrapped handler runs, `serialize()` writes `bridge/comm.state`
-atomically (tmp + rename). `bridge/comm_pane.py` polls via mtime every 250 ms
+atomically (tmp + rename). `bridge/panes/comm_pane.py` polls via mtime every 250 ms
 and redraws on change. `SIGWINCH` is forwarded via signal handler; the app
 calls `invalidate()` to trigger a redraw.
 
@@ -111,7 +111,7 @@ fragments.
 ## Header labels
 
 Labels are hardcoded 2–3 character abbreviations in `CHANNEL_LABELS` at the top
-of `bridge/comm_pane.py`. Unknown channels fall back to `channel[:2].capitalize()`.
+of `bridge/panes/comm_pane.py`. Unknown channels fall back to `channel[:2].capitalize()`.
 
 | Channel   | Label |
 |-----------|-------|
@@ -218,7 +218,7 @@ See [docs/decisions/0011-per-profile-comm-archive.md](decisions/0011-per-profile
 
 ## comm_pane.py
 
-`bridge/comm_pane.py` — prompt_toolkit `Application(full_screen=True,
+`bridge/panes/comm_pane.py` — prompt_toolkit `Application(full_screen=True,
 mouse_support=True)`.
 
 ### Layout
@@ -393,7 +393,7 @@ Clicking it (`MOUSE_DOWN`) resets offset to 0.
 
 ### Colour palette
 
-All constants are defined at the top of `bridge/comm_pane.py`:
+All constants are defined at the top of `bridge/panes/comm_pane.py`:
 
 | Constant          | Value                   | Role                                                        |
 |-------------------|-------------------------|-------------------------------------------------------------|
@@ -409,7 +409,7 @@ Per-channel verb/label colors are in `CHANNEL_COLORS` (see top of file).
 
 ### Display normalization
 
-`bridge/comm_pane.py` normalizes raw GMCP payloads at render time. Raw data in
+`bridge/panes/comm_pane.py` normalizes raw GMCP payloads at render time. Raw data in
 `state.comm.history`, `comm.state`, and the JSONL archive is untouched.
 
 **Channel classes** — the renderer dispatches on two sets:
@@ -527,7 +527,7 @@ Usage:
 ```sh
 COMM_STATE_PATH=bridge/dev/comm.state.fixture \
 COMM_FILTERS_CONF=/tmp/comm_filters.fixture.conf \
-python3 bridge/comm_pane.py
+python3 bridge/panes/comm_pane.py
 ```
 
 Point `COMM_FILTERS_CONF` at `/tmp` so toggling in fixture mode does not touch the

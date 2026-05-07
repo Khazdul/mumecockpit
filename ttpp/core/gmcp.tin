@@ -5,7 +5,7 @@
 #nop Module list in Core.Supports.Set must stay in sync with
 #nop gmcp.modules in lua/brain.lua.
 
-#script {bash bridge/read_version.sh}
+#script {bash bridge/services/read_version.sh}
 
 #var {IAC}  {\xFF}
 #var {SB}   {\xFA}

@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# bridge/ingame_menu.sh — in-game popup menu (Phase 3)
+# bridge/launcher/ingame_menu.sh — in-game popup menu (Phase 3)
 # Launched via: tmux display-popup -E -w 80% -h 80% -x C -y C "bash .../ingame_menu.sh"
 # Do NOT invoke directly from outside a tmux popup context.
 
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/../.."
 
-source bridge/menu_render.sh
+source bridge/launcher/menu_render.sh
 
 touch bridge/.popup_open
 
@@ -234,7 +234,7 @@ _options_submenu() {
             ENTER|SPACE)
                 case "$_osel" in
                     0|1|2|3|4|5)
-                        bash "$HOME/MUME/bridge/toggle_pane.sh" "${_targets[$_osel]}" --persist
+                        bash "$HOME/MUME/bridge/layout/toggle_pane.sh" "${_targets[$_osel]}" --persist
                         ;;
                     6) return ;;
                 esac

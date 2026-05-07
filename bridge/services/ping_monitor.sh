@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# bridge/ping_monitor.sh — session-scoped background ping monitor.
-# Spawned by tmux_start.sh and launcher.sh; self-terminates when tmux:mume dies.
+# bridge/services/ping_monitor.sh — session-scoped background ping monitor.
+# Spawned by bridge/launcher/tmux_start.sh and bridge/launcher/launcher.sh; self-terminates when tmux:mume dies.
 # Single-instance guard via bridge/.ping_pid. Writes bridge/ping.cache atomically.
 
 set -u
 
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/../.."
 
 _PID_FILE="bridge/.ping_pid"
 _CACHE="bridge/ping.cache"

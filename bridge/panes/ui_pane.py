@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# bridge/ui_pane.py — UI log pane renderer.
+# bridge/panes/ui_pane.py — UI log pane renderer.
 # prompt_toolkit Application. Tails logs/ui.log directly (no state file).
 # Anchor-bottom scroll with wrap-aware capacity; indicator when scrolled.
 

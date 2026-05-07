@@ -1,6 +1,6 @@
 #!/bin/bash
-# bridge/menu_render.sh — terminal render + input helpers for the startup menu.
-# Sourced by bridge/launcher.sh; designed for reuse by bridge/ingame_menu.sh (Phase 3).
+# bridge/launcher/menu_render.sh — terminal render + input helpers for the startup menu.
+# Sourced by bridge/launcher/launcher.sh; designed for reuse by bridge/launcher/ingame_menu.sh (Phase 3).
 # Do NOT execute directly.
 
 # ---------------------------------------------------------------------------

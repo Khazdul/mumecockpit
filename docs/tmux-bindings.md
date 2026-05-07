@@ -6,7 +6,7 @@ routed through cockpit helpers. Consult this file when changing any tmux binding
 or when a player reports unexpected tmux behaviour.
 
 See [docs/input-pane.md](input-pane.md) for the key-forwarding model (prompt_toolkit
-and tt++ own all keyboard input); see [bridge/focus_input.sh](../bridge/focus_input.sh)
+and tt++ own all keyboard input); see [bridge/layout/focus_input.sh](../bridge/layout/focus_input.sh)
 for the click-to-refocus helper this work composes with.
 
 ---
@@ -22,25 +22,25 @@ from unexpected clicks) are disabled or overridden.
 
 | Event | Action | Set in |
 |-------|--------|--------|
-| `Escape` | Open in-game popup (`ingame_menu.sh`) | `bridge/tmux_start.sh` |
-| `MouseDragEnd1Border` | Resize panes (`on_pane_resize.sh`), then sweep + refocus input (`focus_input.sh --sweep`) | `bridge/tmux_start.sh` |
-| `MouseUp1Pane` | Refocus input pane (`focus_input.sh`), gated on `pane_title != input` | `bridge/input_pane.py` |
-| `MouseDragEnd1Pane` (copy-mode table) | Copy selection + refocus input (`focus_input.sh`) | `bridge/input_pane.py` |
-| `MouseDragEnd1Pane` (root table) | Sweep stuck copy-mode panes + refocus input (`focus_input.sh --sweep`) | `bridge/input_pane.py` |
-| `MouseDragEnd1Status` | Sweep + refocus input (`focus_input.sh --sweep`) | `bridge/tmux_start.sh` |
-| `MouseDragEnd1StatusLeft` | Sweep + refocus input (`focus_input.sh --sweep`) | `bridge/tmux_start.sh` |
-| `MouseDragEnd1StatusRight` | Sweep + refocus input (`focus_input.sh --sweep`) | `bridge/tmux_start.sh` |
-| `WheelUpPane` | Stock copy-mode entry; no-op in the cockpit status pane | `bridge/tmux_start.sh` |
-| `WheelDownPane` | Pass-through in copy-mode; no-op in the cockpit status pane | `bridge/tmux_start.sh` |
+| `Escape` | Open in-game popup (`ingame_menu.sh`) | `bridge/launcher/tmux_start.sh` |
+| `MouseDragEnd1Border` | Resize panes (`on_pane_resize.sh`), then sweep + refocus input (`focus_input.sh --sweep`) | `bridge/launcher/tmux_start.sh` |
+| `MouseUp1Pane` | Refocus input pane (`focus_input.sh`), gated on `pane_title != input` | `bridge/panes/input_pane.py` |
+| `MouseDragEnd1Pane` (copy-mode table) | Copy selection + refocus input (`focus_input.sh`) | `bridge/panes/input_pane.py` |
+| `MouseDragEnd1Pane` (root table) | Sweep stuck copy-mode panes + refocus input (`focus_input.sh --sweep`) | `bridge/panes/input_pane.py` |
+| `MouseDragEnd1Status` | Sweep + refocus input (`focus_input.sh --sweep`) | `bridge/launcher/tmux_start.sh` |
+| `MouseDragEnd1StatusLeft` | Sweep + refocus input (`focus_input.sh --sweep`) | `bridge/launcher/tmux_start.sh` |
+| `MouseDragEnd1StatusRight` | Sweep + refocus input (`focus_input.sh --sweep`) | `bridge/launcher/tmux_start.sh` |
+| `WheelUpPane` | Stock copy-mode entry; no-op in the cockpit status pane | `bridge/launcher/tmux_start.sh` |
+| `WheelDownPane` | Pass-through in copy-mode; no-op in the cockpit status pane | `bridge/launcher/tmux_start.sh` |
 
 ## Active hooks
 
 | Hook | Trigger | Action | Gating | Set in |
 |------|---------|--------|--------|--------|
-| `pane-mode-changed` | Any pane enters or exits copy-mode | Refocus input pane (`focus_input.sh`) | `pane_in_mode != 1` (exit only) and `pane_title != input` (avoid self-refocus) | `bridge/tmux_start.sh` |
+| `pane-mode-changed` | Any pane enters or exits copy-mode | Refocus input pane (`focus_input.sh`) | `pane_in_mode != 1` (exit only) and `pane_title != input` (avoid self-refocus) | `bridge/launcher/tmux_start.sh` |
 
 The two click/drag bindings (`MouseUp1Pane`, `MouseDragEnd1Pane`) are registered
-by `bridge/input_pane.py` at input-pane startup and remain for the lifetime of the
+by `bridge/panes/input_pane.py` at input-pane startup and remain for the lifetime of the
 cockpit session. The pane no longer closes during normal use.
 
 ## Disabled defaults

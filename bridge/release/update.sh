@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# bridge/update.sh — safe self-update runner for the MUME cockpit.
-# Usage: bash bridge/update.sh
+# bridge/release/update.sh — safe self-update runner for the MUME cockpit.
+# Usage: bash bridge/release/update.sh
 # Exit codes: 0=updated, 10=no update, 20=dev checkout, 21=dirty tree,
 #             22=ahead of latest release tag, 30=git failure.
 # Checks out the latest release tag named in bridge/version.cache.
@@ -11,7 +11,7 @@
 
 set -u
 
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/../.."
 
 _strip_v() {
     local s="$1"

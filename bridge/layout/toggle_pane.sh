@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# bridge/toggle_pane.sh — toggle ui/dev/comm/status panes and pane-border headers.
+# bridge/layout/toggle_pane.sh — toggle ui/dev/comm/status panes and pane-border headers.
 # Usage: toggle_pane.sh <target> [--persist]
 # Targets: ui, dev, comm, status, headers
 # Called by cp -u/-d/-m/-c/-h aliases in system.tin.
@@ -8,7 +8,8 @@
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-CONF="$SCRIPT_DIR/startup.conf"
+BRIDGE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+CONF="$BRIDGE_DIR/startup.conf"
 TARGET="${1:-}"
 PERSIST=0
 
@@ -47,7 +48,7 @@ case "$TARGET" in
             _kill_pane "buffs"
             bash "$SCRIPT_DIR/apply_layout.sh"
         else
-            bash "$SCRIPT_DIR/open_pane.sh" buffs
+            bash "$BRIDGE_DIR/launcher/open_pane.sh" buffs
         fi
         if [ "$PERSIST" -eq 1 ]; then
             if _pane_exists "buffs"; then
@@ -63,7 +64,7 @@ case "$TARGET" in
             _kill_pane "comm"
             bash "$SCRIPT_DIR/apply_layout.sh"
         else
-            bash "$SCRIPT_DIR/open_pane.sh" comm
+            bash "$BRIDGE_DIR/launcher/open_pane.sh" comm
         fi
         if [ "$PERSIST" -eq 1 ]; then
             if _pane_exists "comm"; then
@@ -79,7 +80,7 @@ case "$TARGET" in
             _kill_pane "status"
             bash "$SCRIPT_DIR/apply_layout.sh"
         else
-            bash "$SCRIPT_DIR/open_pane.sh" status
+            bash "$BRIDGE_DIR/launcher/open_pane.sh" status
         fi
         if [ "$PERSIST" -eq 1 ]; then
             if _pane_exists "status"; then
@@ -95,7 +96,7 @@ case "$TARGET" in
             _kill_pane "ui"
             bash "$SCRIPT_DIR/apply_layout.sh"
         else
-            bash "$SCRIPT_DIR/open_pane.sh" ui
+            bash "$BRIDGE_DIR/launcher/open_pane.sh" ui
         fi
         if [ "$PERSIST" -eq 1 ]; then
             if _pane_exists "ui"; then
@@ -111,7 +112,7 @@ case "$TARGET" in
             _kill_pane "dev"
             bash "$SCRIPT_DIR/apply_layout.sh"
         else
-            bash "$SCRIPT_DIR/open_pane.sh" dev
+            bash "$BRIDGE_DIR/launcher/open_pane.sh" dev
         fi
         if [ "$PERSIST" -eq 1 ]; then
             if _pane_exists "dev"; then

@@ -80,10 +80,10 @@ Fully unattended beyond the initial UAC prompt:
 6. Install Alacritty (winget, MSI fallback) and write
    `%APPDATA%\alacritty\alacritty.toml`.
 7. Create a desktop shortcut that runs:
-   `alacritty.exe -e wsl -d Ubuntu -u root -- /root/MUME/bridge/launch.sh`.
+   `alacritty.exe -e wsl -d Ubuntu -u root -- /root/MUME/bridge/launcher/launch.sh`.
    The launcher script handles the cd-and-exec on the Linux side; see
    [ADR 0028](decisions/0028-windows-shortcut-delegation.md) for rationale.
-8. Verify `/root/MUME/bridge/launch.sh` and `/root/MUME/start.sh` are
+8. Verify `/root/MUME/bridge/launcher/launch.sh` and `/root/MUME/start.sh` are
    executable. Abort with a clear error if either is missing.
 
 No reboot. No manual first-run. The user sees UAC once, a progress
@@ -309,7 +309,7 @@ the installer.
 - **Repo path hardcoded.** `~/MUME` (or `/root/MUME` on Windows/WSL-as-root)
   in the desktop shortcut and bootstrap script. Custom paths are a v2
   problem — document as a constraint.
-- **Collision with `bridge/update.sh`.** Self-update expects a clean
+- **Collision with `bridge/release/update.sh`.** Self-update expects a clean
   git tree. If the installer ever gains a "repair" mode, it must not
   clobber local user changes. Cross-reference with
   `docs/bridge-services.md`.

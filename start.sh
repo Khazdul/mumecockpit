@@ -27,18 +27,20 @@ mkdir -p bridge logs
 
 # Seed default.tin from the blank-profile template on fresh installs.
 # Idempotent: runs only when default.tin is missing.
-if [ ! -f ttpp/sessions/default.tin ] && [ -f bridge/templates/blank_profile.tin ]; then
+if [ ! -f ttpp/sessions/default.tin ] && [ -f bridge/launcher/templates/blank_profile.tin ]; then
     mkdir -p ttpp/sessions
-    cp bridge/templates/blank_profile.tin ttpp/sessions/default.tin
+    cp bridge/launcher/templates/blank_profile.tin ttpp/sessions/default.tin
 fi
 
-chmod +x bridge/open_pane.sh
-chmod +x bridge/focus_input.sh
+chmod +x bridge/launcher/open_pane.sh
+chmod +x bridge/layout/focus_input.sh
 chmod +x bridge/launcher.sh
 chmod +x bridge/tmux_start.sh
-chmod +x bridge/build_initial_layout.sh
-chmod +x bridge/wait_for_layout.sh
-[ -f bridge/ingame_menu.sh ] && chmod +x bridge/ingame_menu.sh
+chmod +x bridge/launcher/launcher.sh
+chmod +x bridge/launcher/tmux_start.sh
+chmod +x bridge/launcher/build_initial_layout.sh
+chmod +x bridge/launcher/wait_for_layout.sh
+chmod +x bridge/launcher/ingame_menu.sh
 
 # ---------------------------------------------------------------------------
 # 2. Parse flags
@@ -61,7 +63,7 @@ done
 # ---------------------------------------------------------------------------
 if [ "$_NO_MENU" -eq 1 ]; then
     export _OVERRIDE_SHOW_UI _OVERRIDE_SHOW_DEV
-    exec bash bridge/tmux_start.sh
+    exec bash bridge/launcher/tmux_start.sh
 fi
 
-exec bash bridge/launcher.sh
+exec bash bridge/launcher/launcher.sh

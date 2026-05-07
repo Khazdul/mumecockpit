@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# bridge/status_pane.py — character status pane renderer.
+# bridge/panes/status_pane.py — character status pane renderer.
 # prompt_toolkit Application; polls bridge/status.state every 50 ms.
 # Anchor-top: top rows always visible; overflow indicator when clipped.
 

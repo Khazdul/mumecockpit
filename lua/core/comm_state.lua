@@ -4,7 +4,7 @@
 -- working around one-shot Comm.Channel.List on persistent connections.
 -- History seeding after cp -r is handled by comm_store.lua (loads after this
 -- file alphabetically); this file owns channels-only restore.
--- Filter state is owned by bridge/comm_pane.py; this file does not touch it.
+-- Filter state is owned by bridge/panes/comm_pane.py; this file does not touch it.
 --
 -- Disconnect policy: state.comm.history is NOT cleared on SESSION DISCONNECTED.
 -- Channel history is retained across reconnects within the same brain process.

@@ -1,6 +1,6 @@
 # In-Game Popup Menu
 
-Implementation details for `bridge/ingame_menu.sh` — the ESC-triggered
+Implementation details for `bridge/launcher/ingame_menu.sh` — the ESC-triggered
 overlay that appears during play. Touch this file when changing popup
 submenus, the status header, `cp -s` internals, or toggle-pane persistence
 behaviour.
@@ -9,7 +9,7 @@ behaviour.
 
 ESC from any pane opens a tmux display-popup overlay via a tmux root
 keybinding in `tmux_start.sh` — this works regardless of pane focus.
-The popup renders via `bridge/ingame_menu.sh`, sharing `bridge/menu_render.sh`
+The popup renders via `bridge/launcher/ingame_menu.sh`, sharing `bridge/launcher/menu_render.sh`
 helpers with the launcher.
 
 The top menu item is context-aware: "Continue" when connected (dismisses
@@ -40,7 +40,7 @@ is a sibling surface for the same four pane toggles. Both surfaces write
 the other within ≤ 250 ms.
 
 `cp -u`, `cp -d`, `cp -m`, `cp -c`, `cp -b`, and `cp -h` are thin wrappers
-around `bridge/toggle_pane.sh`, each passing `--persist`. All toggle paths —
+around `bridge/layout/toggle_pane.sh`, each passing `--persist`. All toggle paths —
 popup, launcher Options, input-pane menu buttons, and `cp -X` aliases — are
 equivalent and write to `startup.conf`.
 
@@ -85,7 +85,7 @@ All disconnect signals route through this single function:
 when `connection.state` is already absent, so a second signal for the same
 disconnect event never reaches the popup trigger.
 
-**Double-open guard:** `bridge/ingame_menu.sh` writes `bridge/.popup_open`
+**Double-open guard:** `bridge/launcher/ingame_menu.sh` writes `bridge/.popup_open`
 on start and removes it on exit (via the `EXIT INT TERM HUP` trap). The
 trigger checks for this sentinel before calling `tmux display-popup` and
 skips if present, so a popup already on screen is never disturbed.
@@ -98,7 +98,7 @@ window before `Char.Name` arrives.
 when `connection.state` is absent and `_SEL=0` is the default, so the user
 can hit Enter immediately.
 
-**Stale sentinel cleanup:** `bridge/tmux_start.sh` removes `bridge/.popup_open`
+**Stale sentinel cleanup:** `bridge/launcher/tmux_start.sh` removes `bridge/.popup_open`
 at the top of each run, guarding against a crashed popup from a previous
 cockpit session leaving the sentinel behind.
 

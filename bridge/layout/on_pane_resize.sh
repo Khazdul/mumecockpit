@@ -12,4 +12,4 @@ NEW_WIDTH=$(tmux list-panes -t mume:cockpit \
 
 sed -i "s/^ui_width=.*/ui_width=$NEW_WIDTH/" "$LAYOUT_CONF"
 
-bash "$HOME/MUME/bridge/apply_layout.sh"
+bash "$HOME/MUME/bridge/layout/apply_layout.sh"

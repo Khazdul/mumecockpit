@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# bridge/build_initial_layout.sh — builds the cockpit pane layout post-attach.
+# bridge/launcher/build_initial_layout.sh — builds the cockpit pane layout post-attach.
 # Fired by a one-shot client-attached hook registered in tmux_start.sh.
 # Reads true terminal width from tmux (authoritative post-attach) rather than
 # stty size (unreliable pre-attach on terminals that haven't synced PTY size).
@@ -29,13 +29,13 @@ sed -i "s/^window_cols=.*/window_cols=$COLS/" "$LAYOUT_CONF"
 LEFT_WIDTH=$(( COLS - ui_width - 1 ))
 
 if [ "$SHOW_UI" -eq 1 ] && [ "$SHOW_DEV" -eq 1 ]; then
-    tmux split-window -h -t mume:cockpit.0 "bash -c 'stty -isig 2>/dev/null; trap \"\" INT; while true; do python3 $HOME/MUME/bridge/ui_pane.py; printf \"\\n[pane kept alive — use cp -u to close]\\n\"; sleep 0.2; done'"
+    tmux split-window -h -t mume:cockpit.0 "bash -c 'stty -isig 2>/dev/null; trap \"\" INT; while true; do python3 $HOME/MUME/bridge/panes/ui_pane.py; printf \"\\n[pane kept alive — use cp -u to close]\\n\"; sleep 0.2; done'"
     tmux select-pane -t mume:cockpit.1 -T "ui"
     tmux split-window -v -t mume:cockpit.1 "bash -c 'stty -isig 2>/dev/null; trap \"\" INT; while true; do tail -f $HOME/MUME/logs/debug.log; printf \"\\n[pane kept alive — use cp -d to close]\\n\"; sleep 0.2; done'"
     tmux select-pane -t mume:cockpit.2 -T "dev"
     tmux resize-pane -t mume:cockpit.0 -x "$LEFT_WIDTH"
 elif [ "$SHOW_UI" -eq 1 ]; then
-    tmux split-window -h -t mume:cockpit.0 "bash -c 'stty -isig 2>/dev/null; trap \"\" INT; while true; do python3 $HOME/MUME/bridge/ui_pane.py; printf \"\\n[pane kept alive — use cp -u to close]\\n\"; sleep 0.2; done'"
+    tmux split-window -h -t mume:cockpit.0 "bash -c 'stty -isig 2>/dev/null; trap \"\" INT; while true; do python3 $HOME/MUME/bridge/panes/ui_pane.py; printf \"\\n[pane kept alive — use cp -u to close]\\n\"; sleep 0.2; done'"
     tmux select-pane -t mume:cockpit.1 -T "ui"
     tmux resize-pane -t mume:cockpit.0 -x "$LEFT_WIDTH"
 elif [ "$SHOW_DEV" -eq 1 ]; then
@@ -45,17 +45,17 @@ elif [ "$SHOW_DEV" -eq 1 ]; then
 fi
 
 if [ "$SHOW_STATUS" -eq 1 ]; then
-    bash "$HOME/MUME/bridge/open_pane.sh" status
+    bash "$HOME/MUME/bridge/launcher/open_pane.sh" status
 fi
 if [ "$SHOW_BUFFS" -eq 1 ]; then
-    bash "$HOME/MUME/bridge/open_pane.sh" buffs
+    bash "$HOME/MUME/bridge/launcher/open_pane.sh" buffs
 fi
 if [ "$SHOW_COMM" -eq 1 ]; then
-    bash "$HOME/MUME/bridge/open_pane.sh" comm
+    bash "$HOME/MUME/bridge/launcher/open_pane.sh" comm
 fi
-bash "$HOME/MUME/bridge/apply_layout.sh"
+bash "$HOME/MUME/bridge/layout/apply_layout.sh"
 
-bash "$HOME/MUME/bridge/open_pane.sh" input
+bash "$HOME/MUME/bridge/launcher/open_pane.sh" input
 
 INPUT_INDEX=$(tmux list-panes -t mume:cockpit \
     -F '#{pane_index} #{pane_title}' \

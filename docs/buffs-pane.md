@@ -18,7 +18,7 @@ lua/core/stored_spells.lua ──► state.char.stored_spells    lua/core/buffs_
                     stored_spells_changed event ───────────────────┘    mtime poll (100 ms)
                                                                                 │
                                                                                 ▼
-                                                                    bridge/buffs_pane.py
+                                                                    bridge/panes/buffs_pane.py
 ```
 
 `buffs_state.lua` serialises both `state.char.affects` and
@@ -54,7 +54,7 @@ and shows only affects — no crash, no Stored group.
 
 ## Rendering
 
-`bridge/buffs_pane.py` is a `prompt_toolkit` full-screen `Application`.
+`bridge/panes/buffs_pane.py` is a `prompt_toolkit` full-screen `Application`.
 
 ### Grouping
 
@@ -250,7 +250,7 @@ via mtime comparison — the same path as the other menu buttons.
 
 ## Pane title and border
 
-Pane title: `buffs`. The `pane-border-format` in `bridge/tmux_start.sh`
+Pane title: `buffs`. The `pane-border-format` in `bridge/launcher/tmux_start.sh`
 maps this to the label ` Buffs ` when headers are on.
 
 ## Data layer

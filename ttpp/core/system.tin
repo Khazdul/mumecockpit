@@ -56,12 +56,12 @@
 #nop Direct cp aliases. {cp} has priority 6 so specific {cp -X} aliases (priority 5) win.
 #nop Script aliases like {cp -autostab} are registered by Lua at startup.
 
-#alias {cp -u} {#system {bash $HOME/MUME/bridge/toggle_pane.sh ui --persist}}
-#alias {cp -m} {#system {bash $HOME/MUME/bridge/toggle_pane.sh comm --persist}}
-#alias {cp -b} {#system {bash $HOME/MUME/bridge/toggle_pane.sh buffs --persist}}
-#alias {cp -d} {#system {bash $HOME/MUME/bridge/toggle_pane.sh dev --persist}}
-#alias {cp -c} {#system {bash $HOME/MUME/bridge/toggle_pane.sh status --persist}}
-#alias {cp -h} {#system {bash $HOME/MUME/bridge/toggle_pane.sh headers --persist}}
+#alias {cp -u} {#system {bash $HOME/MUME/bridge/layout/toggle_pane.sh ui --persist}}
+#alias {cp -m} {#system {bash $HOME/MUME/bridge/layout/toggle_pane.sh comm --persist}}
+#alias {cp -b} {#system {bash $HOME/MUME/bridge/layout/toggle_pane.sh buffs --persist}}
+#alias {cp -d} {#system {bash $HOME/MUME/bridge/layout/toggle_pane.sh dev --persist}}
+#alias {cp -c} {#system {bash $HOME/MUME/bridge/layout/toggle_pane.sh status --persist}}
+#alias {cp -h} {#system {bash $HOME/MUME/bridge/layout/toggle_pane.sh headers --persist}}
 
 #alias {cp -s}
 {
@@ -73,7 +73,7 @@
             {
                 #class {$_profile} {write} {ttpp/sessions/$_profile.tin}
             };
-            #system {bash $HOME/MUME/bridge/sanitize_profile.sh ttpp/sessions/$_profile.tin};
+            #system {bash $HOME/MUME/bridge/release/sanitize_profile.sh ttpp/sessions/$_profile.tin};
             #lua {system_ui("Profile saved to ttpp/sessions/" .. ui_var("$_profile") .. ".tin.")}
         };
         #else
@@ -87,7 +87,7 @@
     #gts;
     #if {&game_session} {
         #$game_session #class {$game_session} {write} {ttpp/sessions/$game_session.tin};
-        #system {bash $HOME/MUME/bridge/sanitize_profile.sh ttpp/sessions/$game_session.tin}
+        #system {bash $HOME/MUME/bridge/release/sanitize_profile.sh ttpp/sessions/$game_session.tin}
     };
     #system {echo "[$(date '+%H:%M:%S')] COCKPIT RELOAD — wiping state" >> $HOME/MUME/logs/debug.log};
     #zap lua;
@@ -103,7 +103,7 @@
     #read ttpp/main.tin;
     #if {&game_session} {
         #lua {set_game_session("$game_session")};
-        #system {bash $HOME/MUME/bridge/sanitize_profile.sh ttpp/sessions/$game_session.tin};
+        #system {bash $HOME/MUME/bridge/release/sanitize_profile.sh ttpp/sessions/$game_session.tin};
         #$game_session #class {$game_session} {open};
         #$game_session #read ttpp/sessions/$game_session.tin;
         #$game_session #class {$game_session} {close};
@@ -120,7 +120,7 @@
         if [ -n "$EXISTS" ]; then
             tmux kill-pane -t $(tmux list-panes -t mume:cockpit -F '#{pane_index} #{pane_title}' | awk '/input/{print "mume:cockpit." $1}');
         fi;
-        bash $HOME/MUME/bridge/open_pane.sh input;
+        bash $HOME/MUME/bridge/launcher/open_pane.sh input;
     }
 }
 
@@ -128,7 +128,7 @@
     #gts;
     #if {&game_session} {
         #$game_session #class {$game_session} {write} {ttpp/sessions/$game_session.tin};
-        #system {bash $HOME/MUME/bridge/sanitize_profile.sh ttpp/sessions/$game_session.tin}
+        #system {bash $HOME/MUME/bridge/release/sanitize_profile.sh ttpp/sessions/$game_session.tin}
     };
     #showme {[COCKPIT] Goodbye. Shutting down client...};
     #if {&game_session} {#$game_session #zap};
@@ -153,7 +153,7 @@
             #var {_zapping_intruder} {1};
             #zap %0
         } {
-            #system {bash $HOME/MUME/bridge/sanitize_profile.sh ttpp/sessions/%0.tin};
+            #system {bash $HOME/MUME/bridge/release/sanitize_profile.sh ttpp/sessions/%0.tin};
             #lua {set_game_session("%0")};
             #%0 #class {%0} {open};
             #%0 #read ttpp/sessions/%0.tin;
@@ -197,7 +197,7 @@
 #event {SESSION DEACTIVATED} {
     #if {"%0" != "gts" && "%0" != "lua"} {
         #%0 #class {%0} {write} {ttpp/sessions/%0.tin};
-        #system {bash $HOME/MUME/bridge/sanitize_profile.sh ttpp/sessions/%0.tin}
+        #system {bash $HOME/MUME/bridge/release/sanitize_profile.sh ttpp/sessions/%0.tin}
     }
 }
 

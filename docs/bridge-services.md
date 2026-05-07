@@ -4,9 +4,9 @@ Background services and persisted configuration files in `bridge/`. Touch
 this file when changing the version check, self-update flow, ping monitor,
 `scripts.cache` format, `startup.conf` keys, or layout persistence.
 
-## Version check (`bridge/version_check.sh` + `bridge/version.cache`)
+## Version check (`bridge/services/version_check.sh` + `bridge/version.cache`)
 
-On every launcher startup, `bridge/launcher.sh` fires `version_check.sh` in
+On every launcher startup, `bridge/launcher/launcher.sh` fires `version_check.sh` in
 the background (`&`, `disown`). The script queries the GitHub releases API for
 `Khazdul/mumecockpit` with a 3-second timeout. On success it writes
 `bridge/version.cache` atomically (temp-file + rename):
@@ -37,11 +37,11 @@ cadence) and rebuilds the menu items array if the cache is updated, so the
 Update row appears on the first launcher run if the GitHub query completes
 while the menu is open.
 
-## Self-update (`bridge/update.sh`)
+## Self-update (`bridge/release/update.sh`)
 
 When `bridge/version.cache` indicates a newer tag than the VERSION file, the
 launcher inserts an "Update" row into the main menu directly below the
-Start/Continue/Mirror row. Selecting it runs `bridge/update.sh`, which:
+Start/Continue/Mirror row. Selecting it runs `bridge/release/update.sh`, which:
 
 1. Verifies `version.cache` actually indicates a newer version (comparison
    strips a single leading "v" from both operands, so "0.1.0" matches
@@ -123,7 +123,7 @@ tagged, and leaves you on the release tag's detached HEAD. Recovery:
 `git reflog` still contains your old HEAD; `git checkout main` returns you
 to the branch.
 
-## Ping monitor (`bridge/ping_monitor.sh` + `bridge/ping.cache`)
+## Ping monitor (`bridge/services/ping_monitor.sh` + `bridge/ping.cache`)
 
 A background process pings `mume.org` once per second and writes cache values
 to `bridge/ping.cache`. The cockpit's in-game popup reads the cache each render
@@ -131,8 +131,8 @@ and shows the latency + a one-word quality label as part of the status header:
 
     Profile: default  ·  MMapper  ·  Link: 38ms (stable)
 
-**Lifecycle.** The monitor is spawned by `bridge/tmux_start.sh` after the tmux
-cockpit session is set up, and by `bridge/launcher.sh` on the Continue/Mirror
+**Lifecycle.** The monitor is spawned by `bridge/launcher/tmux_start.sh` after the tmux
+cockpit session is set up, and by `bridge/launcher/launcher.sh` on the Continue/Mirror
 attach paths. A single-instance guard (`bridge/.ping_pid` lockfile) ensures
 duplicate spawns are no-ops. The process self-terminates within ~1 s of the
 `tmux:mume` session disappearing, so `cp -e`, SIGKILL, or any other shutdown
@@ -179,7 +179,7 @@ baseline is "noticeable unstable"; ~50 ms is "directly felt"; >100 ms is
 ## scripts.cache (`bridge/scripts.cache`, gitignored)
 
 Written by `brain.lua` at every client startup (inside `load_scripts()` after
-`_register_cockpit_help()`). Parsed by the Scripts page in `launcher.sh`.
+`_register_cockpit_help()`). Parsed by the Scripts page in `bridge/launcher/launcher.sh`.
 
 Format (line-prefixed, one block per script, alphabetical by alias):
 ```
@@ -205,7 +205,7 @@ SCRIPT:autobow
 Toggle panes (with persistence) via `cp -u`, `cp -d`, `cp -m`, `cp -c`, `cp -b`, `cp -h`.
 
 `profile` and `connection_mode` are read by `ttpp/core/config.tin` at tt++
-startup via `bridge/read_config.sh`, which materialises the `_profile`,
+startup via `bridge/launcher/read_config.sh`, which materialises the `_profile`,
 `_host`, `_port`, and `_ses_cmd` tt++ variables used by the `connect` alias.
 `_ses_cmd` is `ses` for mmapper mode and `ssl` for direct mode (TLS).
 
@@ -221,14 +221,14 @@ State is stored in `bridge/layout.conf` (gitignored, recreated on first startup)
 | `window_cols`   | 0       | Last known terminal width — distinguishes WINCH from border drag. |
 
 ### Behaviour
-- **Initial build** — `build_initial_layout.sh` is fired by a one-shot `client-attached` hook registered in `tmux_start.sh`. It reads the true terminal width from tmux (authoritative only post-attach), runs all `split-window` / `resize-pane` / `open_pane.sh` calls, and touches `bridge/.layout_ready` to release `wait_for_layout.sh` so tt++ can start. The hook is then disarmed; subsequent attaches skip the build via an idempotency guard (pane-count check). See ADR 0041.
+- **Initial build** — `bridge/launcher/build_initial_layout.sh` is fired by a one-shot `client-attached` hook registered in `bridge/launcher/tmux_start.sh`. It reads the true terminal width from tmux (authoritative only post-attach), runs all `split-window` / `resize-pane` / `open_pane.sh` calls, and touches `bridge/.layout_ready` to release `bridge/launcher/wait_for_layout.sh` so tt++ can start. The hook is then disarmed; subsequent attaches skip the build via an idempotency guard (pane-count check). See ADR 0041.
 - **Right-column heights** — Right-column pane heights are tmux-managed and freely resizable. `apply_layout.sh` does not set or restore any right-column height; it only pins the input row to 1 row.
-- **Terminal resize** — `window-resized` hook fires `on_window_resize.sh`, which re-applies `ui_width` (main pane width) and then calls `apply_layout.sh` to re-pin the input row.
-- **Border drag** — `MouseDragEnd1Border` binding fires `on_pane_resize.sh`, which saves the new `ui_width` to `layout.conf`. Vertical (height) drags are not detected and write nothing to `layout.conf`. `apply_layout.sh` is called afterward to re-pin the input row.
+- **Terminal resize** — `window-resized` hook fires `bridge/layout/on_window_resize.sh`, which re-applies `ui_width` (main pane width) and then calls `bridge/layout/apply_layout.sh` to re-pin the input row.
+- **Border drag** — `MouseDragEnd1Border` binding fires `bridge/layout/on_pane_resize.sh`, which saves the new `ui_width` to `layout.conf`. Vertical (height) drags are not detected and write nothing to `layout.conf`. `bridge/layout/apply_layout.sh` is called afterward to re-pin the input row.
 - **Input pane** — always pinned to 1 row on every terminal resize. Never participates in layout calculations.
-- **Narrow-terminal collapse** — when `on_window_resize.sh` detects that the available right-column width falls below `ui_width` it writes `bridge/.collapsed_panes` (one pane name per line) and kills all right panes. The restore threshold is always `ui_width`, regardless of which panes were open. When the terminal widens back above `ui_width`, the sentinel is read, each listed pane is re-opened in order via `open_pane.sh`, and the sentinel is deleted. `open_pane.sh` exits silently at entry while the sentinel exists, so manual toggle commands (`cp -u`/`-d`/`-c`) are no-ops during the narrow state.
+- **Narrow-terminal collapse** — when `bridge/layout/on_window_resize.sh` detects that the available right-column width falls below `ui_width` it writes `bridge/.collapsed_panes` (one pane name per line) and kills all right panes. The restore threshold is always `ui_width`, regardless of which panes were open. When the terminal widens back above `ui_width`, the sentinel is read, each listed pane is re-opened in order via `bridge/launcher/open_pane.sh`, and the sentinel is deleted. `open_pane.sh` exits silently at entry while the sentinel exists, so manual toggle commands (`cp -u`/`-d`/`-c`) are no-ops during the narrow state.
 - **Loop prevention** — `bridge/.layout_lock` is used as a lockfile to prevent `on_window_resize.sh` triggering `on_pane_resize.sh` in a feedback loop.
-- **`-f` on the input split, not on right-column splits.** `open_pane.sh` uses `split-window -v -f` for the input pane so it becomes a window-level full-width split below the top container. Right-column splits in the no-right-column branch must NOT use `-f`; `-f` there would span across the input row, breaking the layout. See ADR 0029.
+- **`-f` on the input split, not on right-column splits.** `bridge/launcher/open_pane.sh` uses `split-window -v -f` for the input pane so it becomes a window-level full-width split below the top container. Right-column splits in the no-right-column branch must NOT use `-f`; `-f` there would span across the input row, breaking the layout. See ADR 0029.
 
 ## Gitignored runtime files
 

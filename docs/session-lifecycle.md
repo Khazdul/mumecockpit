@@ -97,7 +97,7 @@ idempotent.
 Written atomically via temp-file + rename; readers must treat missing
 or malformed values as "Disconnected" and never block.
 
-Consumer: `bridge/ingame_menu.sh` reads this file on every popup render
+Consumer: `bridge/launcher/ingame_menu.sh` reads this file on every popup render
 to drive the status header (connected vs disconnected). The Link fragment
 is served from `bridge/ping.cache`, independent of connection state.
 
@@ -145,7 +145,7 @@ of the same name on SESSION CONNECTED, and the class is kept open for
 the duration of the session so that any aliases, variables, or other
 settings added at runtime are captured automatically.
 
-**New-profile origin.** `bridge/templates/blank_profile.tin` is the single
+**New-profile origin.** `bridge/launcher/templates/blank_profile.tin` is the single
 source of truth for the content of any new profile. `start.sh` seeds
 `ttpp/sessions/default.tin` from this template on fresh installs (idempotent
 — a no-op when the file already exists). The launcher's "Create blank profile"
@@ -160,7 +160,7 @@ cockpit handles class assignment externally. Legacy MUME settings files can
 be dropped into `ttpp/sessions/` and renamed to match the session without
 modification.
 
-**Sanitizer:** `bridge/sanitize_profile.sh <path>` is the boundary between
+**Sanitizer:** `bridge/release/sanitize_profile.sh <path>` is the boundary between
 user-editable profile files and tt++'s strict `#read` parser. It normalizes
 common file-header artifacts in place using an atomic temp-file + rename:
 
@@ -295,7 +295,7 @@ module — a save tick is a copy of that pattern, no new mechanism.
 
 **Configuration.** Interval lives in `bridge/startup.conf`, e.g.
 `save_interval_seconds=300` (default 300, 0 disables). Read by
-`bridge/read_config.sh` (and surfaced as a tt++ var) or directly by
+`bridge/launcher/read_config.sh` (and surfaced as a tt++ var) or directly by
 `brain.lua` at startup. Decision deferred until implementation.
 
 **Tradeoffs.** Worst-case data loss bounded to one interval rather than the
@@ -312,7 +312,7 @@ use cases, or a planned move toward less graceful shutdown paths.
 ## Clean client startup
 
 tt++ is launched with a CLI flag that suppresses its built-in greeting
-banner (set in `bridge/tmux_start.sh`). The small residual flash is
+banner (set in `bridge/launcher/tmux_start.sh`). The small residual flash is
 eliminated by also having tmux start tt++ directly as the pane command
 (`tmux new-session ... "cd ~/MUME && exec tt++ ..."`), bypassing an
 intermediate bash prompt.

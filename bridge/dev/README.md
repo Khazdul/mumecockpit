@@ -5,7 +5,7 @@ live game session:
 
     COMM_STATE_PATH=bridge/dev/comm.state.fixture \
     COMM_FILTERS_CONF=/tmp/comm_filters.fixture.conf \
-    python3 bridge/comm_pane.py
+    python3 bridge/panes/comm_pane.py
 
 `COMM_STATE_PATH` overrides the live state file so the pane reads static fixture
 data instead of polling `bridge/comm.state`. `COMM_FILTERS_CONF` points at `/tmp`

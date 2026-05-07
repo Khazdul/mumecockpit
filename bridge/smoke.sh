@@ -99,7 +99,7 @@ fi
 
 # --- check 6: menu_render.sh sources cleanly ---
 
-source_err=$(bash -c 'source bridge/menu_render.sh' 2>&1)
+source_err=$(bash -c 'source bridge/launcher/menu_render.sh' 2>&1)
 source_exit=$?
 if [ $source_exit -ne 0 ] || [ -n "$source_err" ]; then
     fail "menu_render.sh sources cleanly"

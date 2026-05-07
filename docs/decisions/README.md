@@ -59,7 +59,7 @@ Active ADRs by area. Click through for context, alternatives, and consequences.
 
 - [ADR 0014](0014-system-owned-profile-autosave.md) — System-owned profile auto-save — the `SESSION DEACTIVATED` auto-save handler lives in `system.tin`; user profiles must not register their own.
 - [ADR 0018](0018-update-preserves-user-files.md) — update.sh preserves user-created files — user-created files in `ttpp/sessions/` and `lua/scripts/` are snapshotted before the git reset and restored after.
-- [ADR 0042](0042-blank-profile-template.md) — Blank-profile template and runtime-seeded default.tin — `bridge/templates/blank_profile.tin` is the sole source for new-profile content; `default.tin` is seeded from it on first launch.
+- [ADR 0042](0042-blank-profile-template.md) — Blank-profile template and runtime-seeded default.tin — `bridge/launcher/templates/blank_profile.tin` is the sole source for new-profile content; `default.tin` is seeded from it on first launch.
 
 ### Data layout & runs
 
@@ -75,6 +75,7 @@ Active ADRs by area. Click through for context, alternatives, and consequences.
 
 - [ADR 0001](0001-constant-ping-monitor.md) — Constant ping monitor — a single long-lived ping monitor runs for the tmux session and writes to a shared cache file; the popup reads it on demand.
 - [ADR 0041](0041-post-attach-layout-build.md) — Post-attach initial layout build — the initial pane layout is built after the first client attaches, reading tmux's authoritative post-attach window dimensions.
+- [ADR 0045](0045-bridge-role-based-subdirs.md) — bridge/ role-based subdirectories — split bridge/ top-level into launcher/, panes/, layout/, release/, services/ buckets; runtime state stays in bridge/ root; compat shims for launcher.sh and tmux_start.sh.
 
 ### Self-update & release
 
@@ -85,7 +86,7 @@ Active ADRs by area. Click through for context, alternatives, and consequences.
 
 - [ADR 0015](0015-windows-installer-scope.md) — Windows installer supports Windows 11 22H2+ only — the installer requires Windows 11 build 22621+; no slow-path for older Windows.
 - [ADR 0020](0020-platform-support-policy.md) — Platform support policy — Linux/WSL is Tier 1; macOS is Tier 2 with portable helpers required in place of GNU-specific flags.
-- [ADR 0028](0028-windows-shortcut-delegation.md) — Windows shortcut delegates to Linux-side launcher — the desktop shortcut invokes `bridge/launch.sh` directly, eliminating shell-quoting bugs in the alacritty → wsl chain.
+- [ADR 0028](0028-windows-shortcut-delegation.md) — Windows shortcut delegates to Linux-side launcher — the desktop shortcut invokes `bridge/launcher/launch.sh` directly, eliminating shell-quoting bugs in the alacritty → wsl chain.
 - [ADR 0035](0035-tt-from-source.md) — Build tt++ from source when unsuitable — the bootstrap probes for a TLS-linked tt++ and builds from a pinned source tag when absent or unsuitable.
 
 ## When to add an ADR

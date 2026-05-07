@@ -147,7 +147,7 @@ local function _popup_is_open()
 end
 
 local function _open_popup()
-    os.execute('tmux display-popup -E -w 80% -h 80% -x C -y C "bash $HOME/MUME/bridge/ingame_menu.sh" >/dev/null 2>&1 &')
+    os.execute('tmux display-popup -E -w 80% -h 80% -x C -y C "bash $HOME/MUME/bridge/launcher/ingame_menu.sh" >/dev/null 2>&1 &')
 end
 
 GAME_SESSION = nil  -- set dynamically when a game session connects

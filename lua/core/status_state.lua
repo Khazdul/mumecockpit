@@ -14,7 +14,7 @@ local STATE_PATH  = os.getenv("HOME") .. "/MUME/bridge/status.state"
 local TMP_PATH    = STATE_PATH .. ".tmp"
 local LAYOUT_PATH = os.getenv("HOME") .. "/MUME/bridge/layout.conf"
 
--- 11 rows (2 progress-bar rows + 1 toggle row + 1 blank + 4 data rows). Bump when rows are added in bridge/status_pane.py.
+-- 11 rows (2 progress-bar rows + 1 toggle row + 1 blank + 4 data rows). Bump when rows are added in bridge/panes/status_pane.py.
 local STATIC_ROWS = 11
 
 local _last_height = nil
@@ -112,7 +112,7 @@ local function serialize()
             lf2:close()
             os.rename(ltmp, LAYOUT_PATH)
         end
-        tintin_cmd("gts", "#system {bash bridge/apply_layout.sh}")
+        tintin_cmd("gts", "#system {bash bridge/layout/apply_layout.sh}")
         _last_height = new_height
     end
 end

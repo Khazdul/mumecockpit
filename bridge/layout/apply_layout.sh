@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# bridge/apply_layout.sh — pins the input row to 1 row.
+# bridge/layout/apply_layout.sh — pins the input row to 1 row.
 # Right-column pane heights are tmux-managed (freely resizable).
 # Called after any right-column operation. Idempotent.
 

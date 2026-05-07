@@ -46,10 +46,10 @@ _right_pane_at_bottom() {
 }
 
 # Pane commands
-STATUS_CMD="bash -c 'stty -isig 2>/dev/null; trap \"\" INT; while true; do python3 $MUME/bridge/status_pane.py; printf \"\\n[pane kept alive — use cp -c to close]\\n\"; sleep 0.2; done'"
-BUFFS_CMD="bash -c 'stty -isig 2>/dev/null; trap \"\" INT; while true; do python3 $MUME/bridge/buffs_pane.py; printf \"\\n[pane kept alive — use cp -b to close]\\n\"; sleep 0.2; done'"
-COMM_CMD="bash -c 'stty -isig 2>/dev/null; trap \"\" INT; while true; do python3 $MUME/bridge/comm_pane.py; printf \"\\n[pane kept alive — use cp -m to close]\\n\"; sleep 0.2; done'"
-UI_CMD="bash -c 'stty -isig 2>/dev/null; trap \"\" INT; while true; do python3 $MUME/bridge/ui_pane.py; printf \"\\n[pane kept alive — use cp -u to close]\\n\"; sleep 0.2; done'"
+STATUS_CMD="bash -c 'stty -isig 2>/dev/null; trap \"\" INT; while true; do python3 $MUME/bridge/panes/status_pane.py; printf \"\\n[pane kept alive — use cp -c to close]\\n\"; sleep 0.2; done'"
+BUFFS_CMD="bash -c 'stty -isig 2>/dev/null; trap \"\" INT; while true; do python3 $MUME/bridge/panes/buffs_pane.py; printf \"\\n[pane kept alive — use cp -b to close]\\n\"; sleep 0.2; done'"
+COMM_CMD="bash -c 'stty -isig 2>/dev/null; trap \"\" INT; while true; do python3 $MUME/bridge/panes/comm_pane.py; printf \"\\n[pane kept alive — use cp -m to close]\\n\"; sleep 0.2; done'"
+UI_CMD="bash -c 'stty -isig 2>/dev/null; trap \"\" INT; while true; do python3 $MUME/bridge/panes/ui_pane.py; printf \"\\n[pane kept alive — use cp -u to close]\\n\"; sleep 0.2; done'"
 
 if [ -n "$HAS_RIGHT" ]; then
     # Right column exists — split vertically inside it using geometric position.
@@ -62,7 +62,7 @@ if [ -n "$HAS_RIGHT" ]; then
             NEW_INDEX=$(tmux split-window -v -b -t mume:cockpit.$TOP_IDX -P -F '#{pane_index}' "$STATUS_CMD")
             tmux select-pane -t mume:cockpit.$NEW_INDEX -T "status"
             tmux select-pane -t "$(resolve_focus_target)"
-            bash "$MUME/bridge/apply_layout.sh"
+            bash "$MUME/bridge/layout/apply_layout.sh"
             ;;
 
         buffs)
@@ -90,7 +90,7 @@ if [ -n "$HAS_RIGHT" ]; then
             fi
             tmux select-pane -t mume:cockpit.$NEW_INDEX -T "buffs"
             tmux select-pane -t "$(resolve_focus_target)"
-            bash "$MUME/bridge/apply_layout.sh"
+            bash "$MUME/bridge/layout/apply_layout.sh"
             ;;
 
         comm)
@@ -118,7 +118,7 @@ if [ -n "$HAS_RIGHT" ]; then
             fi
             tmux select-pane -t mume:cockpit.$NEW_INDEX -T "comm"
             tmux select-pane -t "$(resolve_focus_target)"
-            bash "$MUME/bridge/apply_layout.sh"
+            bash "$MUME/bridge/layout/apply_layout.sh"
             ;;
 
         ui)
@@ -141,7 +141,7 @@ if [ -n "$HAS_RIGHT" ]; then
             fi
             tmux select-pane -t mume:cockpit.$NEW_INDEX -T "ui"
             tmux select-pane -t "$(resolve_focus_target)"
-            bash "$MUME/bridge/apply_layout.sh"
+            bash "$MUME/bridge/layout/apply_layout.sh"
             ;;
 
         dev)
@@ -151,12 +151,12 @@ if [ -n "$HAS_RIGHT" ]; then
                 "bash -c 'stty -isig 2>/dev/null; trap \"\" INT; while true; do tail -f $MUME/logs/debug.log; printf \"\\n[pane kept alive — use cp -d to close]\\n\"; sleep 0.2; done'")
             tmux select-pane -t mume:cockpit.$NEW_INDEX -T "dev"
             tmux select-pane -t "$(resolve_focus_target)"
-            bash "$MUME/bridge/apply_layout.sh"
+            bash "$MUME/bridge/layout/apply_layout.sh"
             ;;
 
         input)
             NEW_INDEX=$(tmux split-window -v -f -l 1 -t mume:cockpit.0 -P -F '#{pane_index}' \
-                "python3 $MUME/bridge/input_pane.py")
+                "python3 $MUME/bridge/panes/input_pane.py")
             tmux select-pane -t mume:cockpit.$NEW_INDEX -T "input"
             ;;
     esac
@@ -169,36 +169,36 @@ else
             NEW_INDEX=$(tmux split-window -h -t mume:cockpit.0 -P -F '#{pane_index}' "$STATUS_CMD")
             tmux select-pane -t mume:cockpit.$NEW_INDEX -T "status"
             tmux select-pane -t "$(resolve_focus_target)"
-            bash "$MUME/bridge/apply_layout.sh"
+            bash "$MUME/bridge/layout/apply_layout.sh"
             ;;
         buffs)
             NEW_INDEX=$(tmux split-window -h -t mume:cockpit.0 -P -F '#{pane_index}' "$BUFFS_CMD")
             tmux select-pane -t mume:cockpit.$NEW_INDEX -T "buffs"
             tmux select-pane -t "$(resolve_focus_target)"
-            bash "$MUME/bridge/apply_layout.sh"
+            bash "$MUME/bridge/layout/apply_layout.sh"
             ;;
         comm)
             NEW_INDEX=$(tmux split-window -h -t mume:cockpit.0 -P -F '#{pane_index}' "$COMM_CMD")
             tmux select-pane -t mume:cockpit.$NEW_INDEX -T "comm"
             tmux select-pane -t "$(resolve_focus_target)"
-            bash "$MUME/bridge/apply_layout.sh"
+            bash "$MUME/bridge/layout/apply_layout.sh"
             ;;
         ui)
             NEW_INDEX=$(tmux split-window -h -t mume:cockpit.0 -P -F '#{pane_index}' "$UI_CMD")
             tmux select-pane -t mume:cockpit.$NEW_INDEX -T "ui"
             tmux select-pane -t "$(resolve_focus_target)"
-            bash "$MUME/bridge/apply_layout.sh"
+            bash "$MUME/bridge/layout/apply_layout.sh"
             ;;
         dev)
             NEW_INDEX=$(tmux split-window -h -t mume:cockpit.0 -P -F '#{pane_index}' \
                 "bash -c 'stty -isig 2>/dev/null; trap \"\" INT; while true; do tail -f $MUME/logs/debug.log; printf \"\\n[pane kept alive — use cp -d to close]\\n\"; sleep 0.2; done'")
             tmux select-pane -t mume:cockpit.$NEW_INDEX -T "dev"
             tmux select-pane -t "$(resolve_focus_target)"
-            bash "$MUME/bridge/apply_layout.sh"
+            bash "$MUME/bridge/layout/apply_layout.sh"
             ;;
         input)
             NEW_INDEX=$(tmux split-window -v -f -l 1 -t mume:cockpit.0 -P -F '#{pane_index}' \
-                "python3 $MUME/bridge/input_pane.py")
+                "python3 $MUME/bridge/panes/input_pane.py")
             tmux select-pane -t mume:cockpit.$NEW_INDEX -T "input"
             ;;
     esac
