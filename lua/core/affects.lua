@@ -1,5 +1,5 @@
 -- Affect tracker: tracks active affects per character, learns durations from
--- up to 3 observed samples, persists per character to logs/affect_times/.
+-- up to 3 observed samples, persists per character to data/characters/<name>/.
 -- No alias, no register_script — background collector only.
 --
 -- Load order: affects.lua sorts before affects_data.lua and char_state.lua
@@ -12,8 +12,13 @@
 local json        = require("dkjson")
 local affects_data = dofile(os.getenv("HOME") .. "/MUME/lua/core/affects_data.lua")
 
-local TIMES_DIR  = os.getenv("HOME") .. "/MUME/logs/affect_times/"
-local ACTIVE_DIR = os.getenv("HOME") .. "/MUME/logs/affects_active/"
+local _MUME        = os.getenv("HOME") .. "/MUME/"
+local OLD_TIMES_DIR  = _MUME .. "logs/affect_times/"
+local OLD_ACTIVE_DIR = _MUME .. "logs/affects_active/"
+
+local function _char_dir(name)
+    return _MUME .. "data/characters/" .. name .. "/"
+end
 
 -- Initialise state slots. state.char.reset() (char_state.lua) wipes all
 -- non-function keys on disconnect, so these are cleared automatically.
@@ -27,8 +32,9 @@ state.char.affect_times = {}
 local function _save()
     local name = state.char.name
     if not name then return end
-    os.execute("mkdir -p '" .. TIMES_DIR .. "'")
-    local path = TIMES_DIR .. name .. ".json"
+    local dir  = _char_dir(name)
+    os.execute("mkdir -p '" .. dir .. "'")
+    local path = dir .. "affects_learned.json"
     local tmp  = path .. ".tmp"
     local ok, encoded = pcall(json.encode, state.char.affect_times)
     if not ok then
@@ -48,8 +54,9 @@ end
 local function _save_active()
     local name = state.char.name
     if not name then return end
-    os.execute("mkdir -p '" .. ACTIVE_DIR .. "'")
-    local path = ACTIVE_DIR .. name .. ".json"
+    local dir  = _char_dir(name)
+    os.execute("mkdir -p '" .. dir .. "'")
+    local path = dir .. "affects_active.json"
     local tmp  = path .. ".tmp"
     local to_save = {}
     for _, e in ipairs(state.char.affects) do
@@ -73,7 +80,26 @@ local function _save_active()
 end
 
 local function _load_times(char_name)
-    local path = TIMES_DIR .. char_name .. ".json"
+    local dir  = _char_dir(char_name)
+    local path = dir .. "affects_learned.json"
+    -- one-time migration from logs/affect_times/
+    do
+        local fn = io.open(path, "r")
+        if not fn then
+            local old = OLD_TIMES_DIR .. char_name .. ".json"
+            local fo = io.open(old, "r")
+            if fo then
+                fo:close()
+                os.execute("mkdir -p '" .. dir .. "'")
+                if os.rename(old, path) then
+                    dbg("[AFFECTS] migrated: affect_times/" .. char_name)
+                    os.execute("rmdir '" .. OLD_TIMES_DIR .. "' 2>/dev/null")
+                end
+            end
+        else
+            fn:close()
+        end
+    end
     local f = io.open(path, "r")
     if not f then return end
     local content = f:read("*a")
@@ -101,7 +127,26 @@ local function _load_times(char_name)
 end
 
 local function _load_active(char_name)
-    local path = ACTIVE_DIR .. char_name .. ".json"
+    local dir  = _char_dir(char_name)
+    local path = dir .. "affects_active.json"
+    -- one-time migration from logs/affects_active/
+    do
+        local fn = io.open(path, "r")
+        if not fn then
+            local old = OLD_ACTIVE_DIR .. char_name .. ".json"
+            local fo = io.open(old, "r")
+            if fo then
+                fo:close()
+                os.execute("mkdir -p '" .. dir .. "'")
+                if os.rename(old, path) then
+                    dbg("[AFFECTS] migrated: affects_active/" .. char_name)
+                    os.execute("rmdir '" .. OLD_ACTIVE_DIR .. "' 2>/dev/null")
+                end
+            end
+        else
+            fn:close()
+        end
+    end
     local f = io.open(path, "r")
     if not f then return end
     local content = f:read("*a")

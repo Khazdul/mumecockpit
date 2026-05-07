@@ -81,6 +81,8 @@ tracking, and UI feedback.
 │   ├── ping.cache            # Ping ring buffer: latest, quality, 60-sample history (gitignored)
 │   ├── layout.conf           # Persisted layout state (gitignored)
 │   │                         #   keys: ui_width, window_cols
+│   ├── ipc/              # IPC temp files written by tintin_cmd,
+│   │                     #   consumed by tt++ via tintin_read action
 │   ├── connection.state      # Runtime state written by Lua on SESSION
 │   │                         #   CONNECTED; cleared on DISCONNECTED and
 │   │                         #   at brain startup (gitignored)
@@ -90,6 +92,12 @@ tracking, and UI feedback.
 │   ├── buffs.state           # Affect grid snapshot written by buffs_state.lua (gitignored)
 │   ├── version.cache         # Cached latest-release tag (gitignored)
 │   └── startup.conf          # Persisted startup-menu state (gitignored)
+│
+├── data/
+│   ├── runs/             # Per-run XP/TP snapshots (one file per run)
+│   ├── comm/             # Per-character comm archive JSONL files
+│   ├── characters/       # Per-character subdirs: affects, stored spells, etc.
+│   └── shared/           # Shared cross-session state (clock.state)
 │
 └── logs/
     ├── ui.log            # Persistent UI output (shown in ui pane)

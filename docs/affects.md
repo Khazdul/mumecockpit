@@ -20,7 +20,7 @@ tt++ #action (GAME_SESSION, priority 3)
       ▼
 lua/core/affects.lua  ──►  state.char.affects      (active list)
                       ──►  state.char.affect_times  (ring-buffer history)
-                      ──►  logs/affect_times/<character>.json  (disk)
+                      ──►  data/characters/<character>/affects_learned.json  (disk)
 ```
 
 ## State schema
@@ -70,7 +70,7 @@ rendered, and no observed durations are recorded. Examples: `hunger`, `thirst`,
 The `duration` field is the single gate: if it is absent, `expected_duration`
 and `expires_at` are both nil regardless of any legacy samples on disk. The
 tick never prunes indefinite entries. Duration-less affects never appear in
-`logs/affect_times/<character>.json`.
+`data/characters/<character>/affects_learned.json`.
 
 Indefinite affects are also excluded from active-list persistence (see
 [Persistence — active list](#persistence--active-list) below). Rationale:
@@ -85,7 +85,7 @@ re-initialisation from in-game refresh strings.
 
 ## Persistence
 
-**Path:** `logs/affect_times/<character>.json`
+**Path:** `data/characters/<character>/affects_learned.json`
 
 `<character>` is `state.char.name` exactly as received from GMCP `Char.Name`
 (no case-folding, no sanitising).
@@ -114,10 +114,10 @@ stays `{}` and a non-fatal `dbg` warning is logged.
 
 ## Persistence — active list
 
-**Path:** `logs/affects_active/<character>.json`
+**Path:** `data/characters/<character>/affects_active.json`
 
 `<character>` is `state.char.name` verbatim (same convention as
-`logs/affect_times/`).
+`data/characters/`).
 
 **Schema:** a JSON array of entries with the same shape as
 `state.char.affects` items:

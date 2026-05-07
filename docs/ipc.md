@@ -91,7 +91,7 @@ and avoids stale triggers firing outside their intended context.
 Two mechanisms, depending on whether the command contains braces:
 
 **`tintin_cmd(ses, cmd)`** — for TT++ commands that contain `{}` (actions, aliases, delays):
-Writes `#ses cmd` to a unique `logs/cmd_N.tin` file, prints `tintin_read <path>`.
+Writes `#ses cmd` to a unique `bridge/ipc/cmd_N.tin` file, prints `tintin_read <path>`.
 TT++ reads the file via `#read` and the `#ses` prefix dispatches to the target session.
 Braces in the file are never passed through wildcard substitution — they survive intact.
 Unique filenames prevent race conditions when multiple calls happen in rapid succession.

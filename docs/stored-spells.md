@@ -85,8 +85,8 @@ tt++ #action (GAME_SESSION, priority 3) → events.emit("store_succeeded" | "sto
   ▼
 lua/core/stored_spells.lua  ──►  state.char.stored_spells       (active list)
                             ──►  state.char.stored_spell_times   (ring-buffer history)
-                            ──►  logs/stored_spells_active/<char>.json   (disk)
-                            ──►  logs/stored_spells_times/<char>.json    (disk)
+                            ──►  data/characters/<char>/stored_spells_active.json   (disk)
+                            ──►  data/characters/<char>/stored_spells_learned.json  (disk)
   │
   ▼ events.emit("stored_spells_changed")
   ▼
@@ -243,7 +243,7 @@ resolve to the same full name.
 
 ### Times file
 
-**Path:** `logs/stored_spells_times/<character>.json`
+**Path:** `data/characters/<character>/stored_spells_learned.json`
 
 ```json
 {
@@ -259,7 +259,7 @@ filtered out at load time.
 
 ### Active list file
 
-**Path:** `logs/stored_spells_active/<character>.json`
+**Path:** `data/characters/<character>/stored_spells_active.json`
 
 ```json
 [

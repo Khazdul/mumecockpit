@@ -255,10 +255,10 @@ maps this to the label ` Buffs ` when headers are on.
 
 ## Data layer
 
-`state.char.affects` and the supporting disk files (`logs/affect_times/`,
-`logs/affects_active/`) continue to be maintained by `lua/core/affects.lua`
-regardless of whether the buffs pane is open. The data layer is independent
-of the visualisation layer.
+`state.char.affects` and the supporting disk files under
+`data/characters/<character>/` continue to be maintained by
+`lua/core/affects.lua` regardless of whether the buffs pane is open. The data
+layer is independent of the visualisation layer.
 
 See [`docs/affects.md`](affects.md) for the full data-layer specification.
 

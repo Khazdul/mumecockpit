@@ -1,9 +1,9 @@
 -- Passive game-time clock. Single-anchor model after MMapper:
 -- mume_start_epoch is the only persisted state; current time is computed on demand.
 -- Three sync sources on the event bus: event_sun, mume_time_line, room_clock_line.
--- Persists to bridge/clock.state. Drives status-pane Phase 3.
+-- Persists to data/shared/clock.state. Drives status-pane Phase 3.
 
-local CLOCK_STATE_PATH = os.getenv("HOME") .. "/MUME/bridge/clock.state"
+local CLOCK_STATE_PATH = os.getenv("HOME") .. "/MUME/data/shared/clock.state"
 local TMP_PATH         = CLOCK_STATE_PATH .. ".tmp"
 
 -- Derived from: year 2850 month 0 day 0 hour 0 = unix 1696118400
@@ -144,7 +144,19 @@ local function _read_value(key)
     return nil
 end
 
+local function _migrate_clock()
+    local old = os.getenv("HOME") .. "/MUME/bridge/clock.state"
+    local f = io.open(CLOCK_STATE_PATH, "r")
+    if f then f:close(); return end
+    local fo = io.open(old, "r")
+    if not fo then return end
+    fo:close()
+    os.rename(old, CLOCK_STATE_PATH)
+    dbg("[CLOCK] migrated bridge/clock.state → data/shared/clock.state")
+end
+
 local function _load()
+    _migrate_clock()
     local se = tonumber(_read_value("mume_start_epoch"))
     if not se then
         C.mume_start_epoch = SEED_EPOCH

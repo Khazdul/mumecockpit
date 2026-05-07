@@ -20,8 +20,8 @@ Comm.Channel.List ──► lua/core/comm_log.lua ──► state.comm.channels
                                                         │
                                              lua/core/comm_store.lua
                                              wraps Comm.Channel.Text;
-                                             appends to per-profile JSONL;
-                                             seeds history at load from
+                                             appends to per-character JSONL;
+                                             seeds history on Char.Name from
                                              archive (7-day window)
                                                         │
                                             mtime change │  250 ms poll
@@ -53,17 +53,15 @@ calls `invalidate()` to trigger a redraw.
 
 ### cp -r persistence
 
-History is restored by `comm_store.lua` from the per-profile JSONL archive
-(see **Per-profile archive** below), clamped to `max_size` (1000). Channel
-state is restored by `comm_state.lua`'s `_load_state_file()`, which reads
-`bridge/comm.state` and repopulates `state.comm.channels` (name + caption
-only; label is re-derived). After channels load, `serialize()` is called once
-to write a well-formed file; after `comm_store.lua` seeds history it calls
-`state.comm.serialize()` again so the pane picks up the full history on its
-next 250 ms poll. This means channel header and history reappear immediately
-after `cp -r`, even though `Comm.Channel.List` is not re-emitted on a
-persistent TCP connection. Filter state survives `cp -r` independently:
-`comm_pane.py` reads `comm_filters.conf` at startup.
+History is restored by `comm_state.lua`'s `_load_state_file()`, which reads
+`bridge/comm.state` and repopulates `state.comm.history` and
+`state.comm.channels` (name + caption only; label is re-derived). After
+channels and history load, `serialize()` is called once so the pane picks up
+both on its next 250 ms poll. `comm_store.lua` seeds history on `Char.Name`
+only; since MUME does not re-emit `Char.Name` on a live TCP connection,
+`comm_store` does not run during `cp -r` without reconnect — history comes
+from `bridge/comm.state` instead. Filter state survives `cp -r`
+independently: `comm_pane.py` reads `comm_filters.conf` at startup.
 
 ### Disconnect policy
 
@@ -153,17 +151,18 @@ a filter is entirely silent; nothing appears in the game pane.
 
 See [docs/decisions/0010-comm-filter-persistence.md](decisions/0010-comm-filter-persistence.md).
 
-## Per-profile archive
+## Per-character archive
 
-`lua/core/comm_store.lua` maintains a durable, per-profile JSONL file at:
+`lua/core/comm_store.lua` maintains a durable, per-character JSONL file at:
 
 ```
-logs/comm_archive/<profile>.jsonl
+data/comm/<character>.jsonl
 ```
 
-`<profile>` is resolved at brain startup by parsing `bridge/startup.conf` for
-the `profile=` key; falls back to `"default"` if the key is absent or the file
-is missing.
+`<character>` is `state.char.name` as received from GMCP `Char.Name`.
+The archive is initialised lazily on `Char.Name`; no file is opened at brain
+startup. Switching profiles starts a fresh brain process; `Char.Name` resolves
+the character key for that run.
 
 ### File format
 
@@ -206,13 +205,14 @@ startup read.
 ### Storage bound
 
 Archive size is bounded by message activity within the 7-day window. In
-practice sub-MB. The `logs/` tree is gitignored.
+practice sub-MB. The `data/` tree is gitignored.
 
-### Profile isolation
+### Character isolation
 
-Each profile gets its own file. Switching profiles via the launcher starts a
-fresh brain process; `comm_store.lua` resolves the new profile name and reads
-only that file. Other profiles' archives are never read or modified.
+Each character gets its own file under `data/comm/`. Switching profiles starts
+a fresh brain process; `Char.Name` resolves the character key for that run and
+only that character's file is read or written. Other characters' archives are
+never touched.
 
 See [docs/decisions/0011-per-profile-comm-archive.md](decisions/0011-per-profile-comm-archive.md).
 

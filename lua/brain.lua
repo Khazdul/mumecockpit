@@ -247,7 +247,7 @@ end
 
 function tintin_cmd(ses, cmd)
     _tintin_cmd_seq = _tintin_cmd_seq + 1
-    local path = string.format("logs/cmd_%d.tin", _tintin_cmd_seq)
+    local path = string.format("bridge/ipc/cmd_%d.tin", _tintin_cmd_seq)
     local f, err = io.open(path, "w")
     if not f then
         dbg("tintin_cmd ERROR: cannot open " .. path .. " — " .. tostring(err))
@@ -585,6 +585,7 @@ end
 package.path = "lua/lib/?.lua;" .. package.path
 gmcp.null = require("dkjson").null
 dbg("Lua brain started (" .. _VERSION .. ")")
+os.execute("mkdir -p bridge/ipc data/runs data/comm data/characters data/shared")
 _clear_connection_state()
 local _n_core, _n_scripts = load_scripts()
 dbg(_n_core .. " core + " .. _n_scripts .. " scripts loaded")

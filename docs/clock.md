@@ -184,7 +184,7 @@ forest) and are ignored.
 - `"set"`  → sets hour to `dusk[month+1]`, minute to 0
 
 Requires precision ≥ DAY (month must be known). On success, upgrades
-precision to MINUTE and writes `bridge/clock.state`.
+precision to MINUTE and writes `data/shared/clock.state`.
 
 ### `mume_time_line` (emitted by `ttpp/core/clock.tin` on `time` output)
 
@@ -212,7 +212,7 @@ ignored — too coarse to anchor on.
 Pattern: `"The current time is 8:00am."` → exact hour + minute.
 Requires precision ≥ DAY. On success, precision MINUTE.
 
-## Persistence — `bridge/clock.state`
+## Persistence — `data/shared/clock.state`
 
 Written atomically (temp-file + rename) after every successful sync. No
 per-tick writes. Format:
@@ -226,7 +226,7 @@ precision=<UNSET|DAY|HOUR|MINUTE>
 
 ## Load-time degradation
 
-Applied at brain startup when reading `bridge/clock.state`:
+Applied at brain startup when reading `data/shared/clock.state`:
 
 | `last_sync_epoch` age | Result |
 |----------------------|--------|
@@ -246,7 +246,7 @@ Derived from: MUME year 2850 month 0 day 0 hour 0 coincided with unix
 returns `"?"` — the wrong year is never shown to the player.
 
 **Refining the seed after a fresh install:** after the client has synced at
-least once and `bridge/clock.state` exists, copy the `mume_start_epoch`
+least once and `data/shared/clock.state` exists, copy the `mume_start_epoch`
 value out of that file and update `SEED_EPOCH` at the top of
 `lua/core/clock.lua`. This keeps the cold-start estimate accurate and
 reduces the UNSET window on future installs.
@@ -257,7 +257,7 @@ reduces the UNSET window on future installs.
 |------|------|
 | `lua/core/clock.lua` | Clock module — sync, state, public API |
 | `ttpp/core/clock.tin` | Per-session ticker + `#action` pre-filters, registered via `_register_clock_actions` |
-| `bridge/clock.state` | Persisted anchor (gitignored) |
+| `data/shared/clock.state` | Persisted anchor (gitignored) |
 
 ---
 Back to [architecture.md](../architecture.md).
