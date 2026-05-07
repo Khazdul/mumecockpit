@@ -8,7 +8,7 @@ file when changing the renderer, the scroll model, or the spawn call.
 
 ```
 lua/brain.lua helpers
-  ui(), script_ui(), system_ui(), ui_warn(), ui_err(), affect_ui()
+  ui(), script_ui(), system_ui(), ui_warn(), ui_err(), char_ui()
                 │
                 ▼
         logs/ui.log  (ANSI text, one line per event)
@@ -114,7 +114,7 @@ Prefixes rendered in the pane:
 |-------------|---------------|-------------------|
 | `▶ NAME:`   | `script_ui`   | Teal `#26C6DA`    |
 | `● SYSTEM:` | `system_ui`   | Blue `#42A5F5`    |
-| `◆ TYPE:`   | `affect_ui`   | Type-specific     |
+| `◆ TYPE:`   | `char_ui`     | Type-specific     |
 | `⚠ WARN:`   | `ui_warn`     | Amber `#FFB300`   |
 | `✖ ERROR:`  | `ui_err`      | Red `#E53935`     |
 

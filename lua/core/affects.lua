@@ -230,7 +230,7 @@ events.subscribe("affect_init", function(name)
     end
     dbg("[AFFECTS] init: " .. name)
     events.emit("affects_changed")
-    affect_ui(entry.type, name, "up")
+    char_ui(entry.type, name, "up")
     _save_active()
 end)
 
@@ -249,7 +249,7 @@ events.subscribe("affect_refresh", function(name)
     dbg("[AFFECTS] refresh: " .. name)
     events.emit("affects_changed")
     if data and data.duration then
-        affect_ui(data.type, name, "refreshed")
+        char_ui(data.type, name, "refreshed")
     end
     _save_active()
 end)
@@ -276,7 +276,7 @@ events.subscribe("affect_down", function(name)
     end
     dbg("[AFFECTS] down: " .. name .. " observed=" .. observed)
     events.emit("affects_changed")
-    affect_ui(data and data.type, name, "down")
+    char_ui(data and data.type, name, "down")
     _save_active()
 end)
 

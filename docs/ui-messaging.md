@@ -89,38 +89,83 @@ script-load diagnostics) go to `dbg()` and appear in the dev pane only.
 Use `system_ui` for user-relevant state transitions only — not for game events,
 script lifecycle (use `script_ui`), warnings (`ui_warn`), or errors (`ui_err`).
 
-## Affect Events
+## Helper Selection Guide
 
-Affect lifecycle events from MUD output use `affect_ui()` in `brain.lua`:
+Pick the helper by what the event represents:
+
+| Event type                                                         | Helper               | Marker    |
+|--------------------------------------------------------------------|----------------------|-----------|
+| Character-state lifecycle (affect up/down, spell stored/recalled)  | `char_ui`            | `◆`       |
+| Script lifecycle (started, stopped, error)                         | `script_ui`          | `▶`       |
+| Infrastructure event (connect, disconnect, reload)                 | `system_ui`          | `●`       |
+| Degraded path the player should see                                | `ui_warn` / `ui_err` | `⚠` / `✖` |
+
+Rule of thumb: character-state lifecycle event → `◆`; script started/stopped/error → `▶`; cockpit infrastructure → `●`; degraded path the player must act on → `⚠` / `✖`.
+
+## Character Events
+
+Character-state lifecycle events use `char_ui()` in `brain.lua`:
 
 ```lua
-affect_ui("spell",  "armour", "up")
-affect_ui("buff",   "Orkish draught", "up")
-affect_ui("debuff", "lethargy", "down")
+char_ui("spell",  "armour",      "up")
+char_ui("buff",   "Orkish draught", "refreshed")
+char_ui("debuff", "lethargy",    "down")
+char_ui("store",  "fireball",    "stored")
+char_ui("store",  "fireball",    "recalled")
+char_ui("store",  "earthquake",  "decayed", "89:58 — sample recorded")
+char_ui("store",  "fireball",    "decayed", "untracked")
 ```
 
 Renders in the UI pane as:
 
 ```
 ◆ SPELL: armour up.
-◆ BUFF: Orkish draught up.
+◆ BUFF: Orkish draught refreshed.
 ◆ DEBUFF: lethargy down.
+◆ STORE: fireball stored.
+◆ STORE: fireball recalled.
+◆ STORE: earthquake decayed (89:58 — sample recorded).
+◆ STORE: fireball decayed (untracked).
 ```
 
-Prefix and tag are coloured per type, matching the character-pane palette:
+### Signature
 
-| Type   | Colour            | Hex       |
-|--------|-------------------|-----------|
-| spell  | light steel-blue  | `#7AA9D6` |
-| buff   | soft sage green   | `#8FBC8F` |
-| debuff | muted brick red   | `#C97070` |
+```
+char_ui(category, name, verb, detail?)
+```
 
-Affect names are rendered via `ui_var()` (bold yellow) for the same visual
-treatment dynamic values get in `script_ui` / `system_ui`.
+- **`category`** — selects the tag label and colour. Controlled vocabulary: see table below.
+- **`name`** — the character-state entity name; rendered via `ui_var()` (bold yellow).
+- **`verb`** — what happened. Canonical verbs: `up`, `refreshed`, `expiring` (reserved — no emitters yet), `down`. Domain-specific verbs (`stored`, `recalled`, `decayed`, …) are allowed when they read more naturally.
+- **`detail`** (optional) — extra context appended in parentheses. Plain string; not highlighted.
 
-Verbs are fixed: `up` (init), `refreshed` (re-application while active),
-`down` (drop). One `affect_ui` call per event — no other helper is invoked
-for the same event.
+Prose form: `◆ TAG: name verb.` or `◆ TAG: name verb (detail).` Trailing period is always present.
+
+### Category table
+
+| Category    | Tag      | Colour           | Hex       | Notes                                    |
+|-------------|----------|------------------|-----------|------------------------------------------|
+| `spell`     | `SPELL`  | Light steel-blue | `#7AA9D6` |                                          |
+| `buff`      | `BUFF`   | Soft sage green  | `#8FBC8F` |                                          |
+| `debuff`    | `DEBUFF` | Muted brick red  | `#C97070` |                                          |
+| `store`     | `STORE`  | Muted lavender   | `#B39DDB` |                                          |
+| `herb`      | —        | TBD              | —         | Reserved; colour set when tracker lands  |
+| `charm`     | —        | TBD              | —         | Reserved; colour set when tracker lands  |
+| *(unknown)* | `AFFECT` | Teal             | `#26C6DA` | Defensive fallback                       |
+
+### Canonical verbs
+
+| Verb        | Meaning                                  | Emitters                  |
+|-------------|------------------------------------------|---------------------------|
+| `up`        | Effect became active                     | affects (init)            |
+| `refreshed` | Effect re-applied while already active   | affects (refresh)         |
+| `expiring`  | Effect about to drop (**reserved**)      | *(none yet)*              |
+| `down`      | Effect dropped                           | affects (drop)            |
+| `stored`    | Spell stored to memory                   | stored\_spells            |
+| `recalled`  | Stored spell recalled                    | stored\_spells            |
+| `decayed`   | Stored spell decayed naturally           | stored\_spells            |
+
+One `char_ui` call per event — no other helper is invoked for the same event.
 
 ## UI Warnings and Errors
 
@@ -237,6 +282,7 @@ are known without guessing.
 | `_C_SPELL`  | `"\027[38;2;122;169;214m"`          | Light steel-blue `#7AA9D6` — `◆ SPELL` prefix |
 | `_C_BUFF`   | `"\027[38;2;143;188;143m"`          | Soft sage green `#8FBC8F` — `◆ BUFF` prefix |
 | `_C_DEBUFF` | `"\027[38;2;201;112;112m"`          | Muted brick red `#C97070` — `◆ DEBUFF` prefix |
+| `_C_STORE`  | `"\027[38;2;179;157;219m"`          | Muted lavender `#B39DDB` — `◆ STORE` prefix |
 | `_C_VAR`    | `"\027[1;38;2;255;238;88m"`         | Bold yellow `#FFEE58` — dynamic values |
 | `_C_TEXT`   | `"\027[1;97m"`                      | Bold bright white — base message text |
 | `_C_RESET`  | `"\027[0m"`                         | Reset all attributes                  |

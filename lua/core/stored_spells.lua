@@ -260,7 +260,7 @@ events.subscribe("store_succeeded", function()
     state.char.stored_spells[#state.char.stored_spells + 1] = entry
     _save_active()
     events.emit("stored_spells_changed")
-    script_ui("STORE", "stored " .. ui_var(name) .. ".")
+    char_ui("store", name, "stored")
     dbg("[STORED_SPELLS] stored: " .. name)
 end)
 
@@ -285,7 +285,7 @@ events.subscribe("store_recalled", function()
     table.remove(state.char.stored_spells, best_idx)
     _save_active()
     events.emit("stored_spells_changed")
-    script_ui("STORE", ui_var(name) .. " recalled.")
+    char_ui("store", name, "recalled")
     dbg("[STORED_SPELLS] recall: " .. name)
     -- _last_cast_intent is intentionally NOT cleared here
 end)
@@ -320,12 +320,12 @@ events.subscribe("store_decayed", function()
             end
         end
         _save_active()
-        script_ui("STORE", ui_var(name) .. " decayed (" .. _fmt_mmss(observed) .. " \xe2\x80\x94 sample recorded).")
+        char_ui("store", name, "decayed", _fmt_mmss(observed) .. " \xe2\x80\x94 sample recorded")
         dbg("[STORED_SPELLS] decay: " .. name .. " observed=" .. observed)
     else
         table.remove(state.char.stored_spells, oldest_idx)
         _save_active()
-        script_ui("STORE", ui_var(name) .. " decayed (untracked).")
+        char_ui("store", name, "decayed", "untracked")
         dbg("[STORED_SPELLS] decay: " .. name .. " untracked")
     end
     events.emit("stored_spells_changed")

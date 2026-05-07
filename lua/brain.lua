@@ -41,6 +41,9 @@ local _C_ERR    = "\027[38;2;229;57;53m"   -- red        #E53935 — errors
 local _C_SPELL  = "\027[38;2;122;169;214m"  -- light steel-blue #7AA9D6
 local _C_BUFF   = "\027[38;2;143;188;143m"  -- soft sage green  #8FBC8F
 local _C_DEBUFF = "\027[38;2;201;112;112m"  -- muted brick red  #C97070
+local _C_STORE  = "\027[38;2;179;157;219m"  -- muted lavender   #B39DDB
+-- _C_HERB  = nil  -- placeholder: colour TBD when herblore tracker lands
+-- _C_CHARM = nil  -- placeholder: colour TBD when charm tracker lands
 local _C_RESET  = "\027[0m"
 
 function script_ui(name, msg)
@@ -80,24 +83,32 @@ function ui_err(msg)
     ui(string.format("%s✖ ERROR:%s %s%s%s", _C_ERR, _C_RESET, _C_TEXT, msg, _C_RESET))
 end
 
--- affect_ui(type, name, verb) — affect-event line for the UI pane.
--- type: "spell" | "buff" | "debuff" — selects prefix colour and tag.
--- name: affect name (rendered with ui_var for the dynamic-value style).
--- verb: "up" | "refreshed" | "down".
--- Format: ◆ TAG: name verb.
-function affect_ui(typ, name, verb)
+-- char_ui(category, name, verb, detail?) — character-state lifecycle line for the UI pane.
+-- category: "spell" | "buff" | "debuff" | "store" — selects prefix colour and tag.
+-- name: entity name (rendered with ui_var for the dynamic-value style).
+-- verb: "up" | "refreshed" | "expiring" | "down", or domain verbs ("stored", "recalled", "decayed", …).
+-- detail (optional): appended in parentheses — e.g. "89:58 — sample recorded".
+-- Format: ◆ TAG: name verb.   or   ◆ TAG: name verb (detail).
+function char_ui(category, name, verb, detail)
     local colour, tag
-    if typ == "spell" then
+    if category == "spell" then
         colour, tag = _C_SPELL, "SPELL"
-    elseif typ == "buff" then
+    elseif category == "buff" then
         colour, tag = _C_BUFF, "BUFF"
-    elseif typ == "debuff" then
+    elseif category == "debuff" then
         colour, tag = _C_DEBUFF, "DEBUFF"
+    elseif category == "store" then
+        colour, tag = _C_STORE, "STORE"
     else
         colour, tag = _C_SCRIPT, "AFFECT"  -- defensive fallback
     end
-    ui(string.format("%s◆ %s:%s %s%s %s.%s",
-        colour, tag, _C_RESET, _C_TEXT, ui_var(name), verb, _C_RESET))
+    if detail then
+        ui(string.format("%s◆ %s:%s %s%s %s (%s).%s",
+            colour, tag, _C_RESET, _C_TEXT, ui_var(name), verb, detail, _C_RESET))
+    else
+        ui(string.format("%s◆ %s:%s %s%s %s.%s",
+            colour, tag, _C_RESET, _C_TEXT, ui_var(name), verb, _C_RESET))
+    end
 end
 
 local SESSION_STATE_PATH = "bridge/session.state"

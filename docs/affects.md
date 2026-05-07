@@ -157,7 +157,7 @@ after `_load_times()`:
   `dbg` log line.
 - Surviving entries are appended to `state.char.affects`. If any survive, the
   tick delay is armed and `affects_changed` is emitted.
-- No `affect_ui` lines are emitted — restore is silent.
+- No `char_ui` lines are emitted — restore is silent.
 - `dbg` line: `[AFFECTS] restored N active affects (M expired)`.
 
 ## Pattern storage convention
@@ -228,7 +228,7 @@ keeps the entry in overrun (`expires_at <= now`) and does nothing, so the
 renderer can show `!` and `affect_down` can record the actual duration when
 the drop arrives. A hard 2.5× safety net applies: if
 `now - started_at >= floor(2.5 × expected_duration)` the entry is silently
-pruned with no sample and no `affect_ui` "down" line. Dbg log:
+pruned with no sample and no `char_ui` "down" line. Dbg log:
 `[AFFECTS] tick timeout (no drop): <name>`.
 
 **Corrupt entry** (affect name absent from `affects_data.affects`) — pruned
@@ -265,7 +265,7 @@ An affect with a drop string that remains active past its `expires_at` is in
 [docs/buffs-pane.md](buffs-pane.md) for the rendering phase details.
 
 Each `affect_init`, `affect_refresh`, and `affect_down` event also emits a
-`◆ TAG: name verb.` line to the UI pane via `affect_ui()` — see
+`◆ TAG: name verb.` line to the UI pane via `char_ui()` — see
 [docs/ui-messaging.md](ui-messaging.md) for the format and colour palette.
 
 ## Known limitations
