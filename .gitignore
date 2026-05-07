@@ -44,6 +44,12 @@ __pycache__/
 
 
 
+# Editor backups
+
+*.bak
+
+
+
 # VS Code settings (optional — remove if you want to sync these)
 
 .vscode/

@@ -145,12 +145,12 @@ Right column (top to bottom): `status` → `buffs` → `comm` → `ui` → `dev`
 
 ### Height
 
-`ui_height` in `bridge/layout.conf`. User-resizable: dragging the ui↔dev
+`ui_height` in `bridge/runtime/layout.conf`. User-resizable: dragging the ui↔dev
 border persists the new value via `on_pane_resize.sh`.
 
 ### Width
 
-The right column has no minimum width. `ui_width` from `bridge/layout.conf`
+The right column has no minimum width. `ui_width` from `bridge/runtime/layout.conf`
 is the sole authority (ADR 0038). `MAIN_MIN = 30` constrains the main pane,
 not the right column.
 

@@ -234,7 +234,7 @@ entries were pruned.
 Subscribers should read `state.char.affects` directly for the new state.
 
 **Subscribers:** `lua/core/status_state.lua` — calls `serialize()` to update
-`bridge/runtime/status.state` and rewrite `status_height` in `bridge/layout.conf`
+`bridge/runtime/status.state` and rewrite `status_height` in `bridge/runtime/layout.conf`
 when the affect count changes. `lua/core/buffs_state.lua` — calls `serialize()`
 to update `bridge/runtime/buffs.state` (affects and stored spells written together).
 
