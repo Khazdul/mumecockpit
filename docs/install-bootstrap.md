@@ -200,24 +200,37 @@ cyan    = "#00FFFF"
 white   = "#FFFFFF"
 
 [cursor]
-style = { shape = "Beam", blinking = "On" }
+style = { shape = "Beam", blinking = "Always" }
 blink_interval = 500
 thickness = 0.15
 
 [window]
+dimensions = { columns = 80, lines = 24 }
 startup_mode = "Windowed"
-padding = { x = 6, y = 6 }
+padding = { x = 0, y = 0 }
 dynamic_padding = true
 decorations = "Full"
+decorations_theme_variant = "Dark"
 
 [font]
 size = 15
 
-# font.normal.family / font.bold.family / etc. — see "Font selection" below.
+# font.*.family — see "Font selection" below.
+
+[font.normal]
+style = "Regular"
+
+[font.bold]
+style = "Bold"
+
+[font.italic]
+style = "Italic"
+
+[font.bold_italic]
+style = "Bold Italic"
 
 [terminal.shell]   # Windows only — drop on macOS/Linux
 program = "wsl.exe"
-args = ["-d", "Ubuntu", "-u", "root"]
 
 [scrolling]
 history = 10000
