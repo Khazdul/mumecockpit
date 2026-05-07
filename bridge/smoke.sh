@@ -1,4 +1,14 @@
 #!/usr/bin/env bash
+# bridge/smoke.sh — source-tree smoke checks (syntax + ADR invariants).
+#
+# Run manually:
+#   bash bridge/smoke.sh
+#
+# Optional pre-commit hook (opt-in, not auto-installed):
+#   ln -s ../../bridge/smoke.sh .git/hooks/pre-commit
+#
+# Smoke is source-only. It assumes a fresh git checkout and does not
+# touch runtime artefacts (logs/, data/, bridge/*.state, etc.).
 set -u
 
 cd "$(dirname "$0")/.."
@@ -8,7 +18,7 @@ FAILED=0
 SKIPPED=0
 FAILURES=()
 
-echo "bridge/smoke.sh — syntax checks"
+echo "bridge/smoke.sh — smoke checks"
 echo ""
 
 # --- helpers ---
@@ -16,6 +26,10 @@ echo ""
 pass() { echo "[PASS] $1"; (( PASSED++ )); }
 fail() { echo "[FAIL] $1"; (( FAILED++ )); FAILURES+=("$1"); }
 skip() { echo "[SKIP] $1"; (( SKIPPED++ )); }
+
+# --- Syntax ---
+
+echo "Syntax"
 
 # --- check 1: bash syntax ---
 
@@ -106,6 +120,122 @@ if [ $source_exit -ne 0 ] || [ -n "$source_err" ]; then
     [ -n "$source_err" ] && echo "       $source_err"
 else
     pass "menu_render.sh sources cleanly"
+fi
+
+# --- Required files & directories ---
+
+echo ""
+echo "Required files & directories"
+
+# --- check 7: required template and library files exist ---
+
+required_files=(
+    "bridge/launcher/templates/blank_profile.tin"
+    "lua/lib/dkjson.lua"
+    "start.sh"
+)
+
+missing_files=()
+for f in "${required_files[@]}"; do
+    [ -f "$f" ] || missing_files+=("       $f")
+done
+
+if (( ${#missing_files[@]} > 0 )); then
+    fail "required template and library files"
+    printf '%s\n' "${missing_files[@]}"
+else
+    pass "required template and library files"
+fi
+
+# --- check 8: required source directories are non-empty ---
+
+required_dirs=(
+    "bridge/launcher"
+    "bridge/panes"
+    "bridge/layout"
+    "bridge/release"
+    "bridge/services"
+    "lua/core"
+    "lua/scripts"
+    "lua/brain"
+    "ttpp/core"
+)
+
+empty_dirs=()
+for d in "${required_dirs[@]}"; do
+    if [ ! -d "$d" ]; then
+        empty_dirs+=("       $d (missing)")
+    else
+        count=$(find "$d" -maxdepth 1 -type f | wc -l)
+        (( count == 0 )) && empty_dirs+=("       $d (empty)")
+    fi
+done
+
+if (( ${#empty_dirs[@]} > 0 )); then
+    fail "required source directories non-empty"
+    printf '%s\n' "${empty_dirs[@]}"
+else
+    pass "required source directories non-empty"
+fi
+
+# --- ADR invariants ---
+
+echo ""
+echo "ADR invariants"
+
+if ! command -v git &>/dev/null || ! git rev-parse --is-inside-work-tree &>/dev/null; then
+    skip "git not available — ADR invariant checks skipped"
+    (( SKIPPED += 2 ))
+else
+    # --- check 9: no GMCP handler wraps in lua/core/ (ADR 0046) ---
+
+    wrap_pattern='^[[:space:]]*local[[:space:]]+[a-zA-Z_][a-zA-Z0-9_]*[[:space:]]*=[[:space:]]*gmcp\.handlers\['
+    wrap_matches=()
+    while IFS= read -r line; do
+        wrap_matches+=("       $line")
+    done < <(grep -rn --include="*.lua" -E "$wrap_pattern" lua/core/ 2>/dev/null)
+
+    if (( ${#wrap_matches[@]} > 0 )); then
+        fail "no GMCP handler wraps in lua/core/ (ADR 0046)"
+        printf '%s\n' "${wrap_matches[@]}"
+    else
+        pass "no GMCP handler wraps in lua/core/ (ADR 0046)"
+    fi
+
+    # --- check 10: ttpp/sessions/default.tin not tracked (ADR 0042) ---
+
+    tracked_default=$(git ls-files ttpp/sessions/default.tin 2>/dev/null)
+    if [ -n "$tracked_default" ]; then
+        fail "default.tin not tracked (ADR 0042)"
+    else
+        pass "default.tin not tracked (ADR 0042)"
+    fi
+
+    # --- check 11: runtime artefacts not tracked ---
+
+    tracked_artefacts=$(git ls-files 2>/dev/null | grep -E '\.(state|cache)$|^logs/.*\.log$|^bridge/.*\.conf$' || true)
+    if [ -n "$tracked_artefacts" ]; then
+        fail "runtime artefacts not tracked"
+        while IFS= read -r line; do
+            echo "       $line"
+        done <<< "$tracked_artefacts"
+    else
+        pass "runtime artefacts not tracked"
+    fi
+fi
+
+# --- Format ---
+
+echo ""
+echo "Format"
+
+# --- check 12: VERSION is strict semver ---
+
+version=$(tr -d '[:space:]' < VERSION 2>/dev/null || true)
+if [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    pass "VERSION is semver"
+else
+    fail "VERSION is semver"
 fi
 
 # --- summary ---

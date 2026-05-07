@@ -25,6 +25,9 @@ bridge/ipc/cmd_*.tin
 
 *.tmp
 
+# Runtime-seeded session file (bootstrapped from blank_profile.tin, ADR 0042)
+ttpp/sessions/default.tin
+
 bridge/dev/*.conf
 bridge/buffs.state
 data/shared/clock.state
