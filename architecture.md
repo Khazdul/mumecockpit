@@ -37,7 +37,16 @@ tracking, and UI feedback.
 │                         #   bridge/launcher/templates/blank_profile.tin (ADR 0042)
 │
 ├── lua/
-│   ├── brain.lua         # Lua brain — infrastructure, event loop, auto-loads core/ then scripts/
+│   ├── brain.lua         # Lua brain — entry point: globals, dofile sequence,
+│   │                     #   handle_event, main loop. ~60 lines.
+│   ├── brain/            # Brain submodules (auto-loaded by brain.lua in fixed order)
+│   │                     #   ui.lua         — loggers, colour constants, ui()/script_ui()/system_ui()/...
+│   │                     #   io.lua         — tt++ command relay (tintin/send/game_cmd/session_cmd)
+│   │                     #   events.lua     — event bus (subscribe/emit/unsubscribe/trace)
+│   │                     #   gmcp.lua       — GMCP namespace, dispatch, module_to_event
+│   │                     #   connection.lua — MUME connection state, popup helpers
+│   │                     #   registry.lua   — register_script, cockpit help, box drawing
+│   │                     #   loader.lua     — lua/core + lua/scripts auto-loader
 │   ├── lib/              # Bundled Lua libraries (on package.path)
 │   │                     #   dkjson.lua  — pure-Lua JSON parser (MIT, David Kolf)
 │   ├── core/             # Always-on GMCP collectors and serializers — no alias,
