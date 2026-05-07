@@ -122,27 +122,6 @@ Verbs are fixed: `up` (init), `refreshed` (re-application while active),
 `down` (drop). One `affect_ui` call per event — no other helper is invoked
 for the same event.
 
-## Store Events
-
-Stored-spell lifecycle events use `store_ui()` in `brain.lua`:
-
-```lua
-store_ui("stored " .. ui_var(name) .. ".")
-store_ui(ui_var(name) .. " recalled.")
-store_ui(ui_var(name) .. " decayed (89:58 — sample recorded).")
-```
-
-Renders in the UI pane as:
-
-```
-◆ STORE: stored fireball.
-◆ STORE: fireball recalled.
-◆ STORE: fireball decayed (89:58 — sample recorded).
-```
-
-`◆ STORE` is light steel-blue (`#7AA9D6`, `_C_SPELL`), the message is bold bright
-white, and spell names are bold yellow via `ui_var()`.
-
 ## UI Warnings and Errors
 
 When the player needs to see a warning or error, use the severity helpers in
@@ -202,8 +181,8 @@ a specific style. If the style changes later, only one place needs updating.
 
 Spell names in script UI output follow the same convention: pass the spell name
 to `ui_var()` and omit surrounding quotes. Example:
-`store_ui("stored " .. ui_var(name) .. ".")` renders as
-`◆ STORE: stored fireball.` with `fireball` in bold yellow.
+`script_ui("STORE", "stored " .. ui_var(name) .. ".")` renders as
+`▶ STORE: stored fireball.` with `fireball` in bold yellow.
 
 See "UI Message Style Rules" below for when to apply `ui_var()` and other
 cross-cutting rules.
