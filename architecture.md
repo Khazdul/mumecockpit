@@ -61,6 +61,7 @@ tracking, and UI feedback.
 │   ├── version_check.sh      # Queries GitHub for latest tag; updates
 │   │                         #   bridge/version.cache with 6h TTL
 │   ├── check_release.sh      # Pre-tag sanity check — verifies VERSION matches intended tag
+│   ├── smoke.sh              # Syntax-check runner (bash/lua/python + core file checks); run with bash bridge/smoke.sh
 │   ├── update.sh             # Safe self-update runner (fetch, unpack, install)
 │   ├── apply_layout.sh       # Re-applies saved layout after resize or pane toggle
 │   ├── read_config.sh        # Emits tt++ #var assignments from startup.conf
