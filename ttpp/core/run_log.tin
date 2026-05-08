@@ -1,14 +1,11 @@
 #nop ===== RUN LOG CAPTURE =====
 #nop Per-line capture for the run .log file. RECEIVED LINE event
-#nop computes a microsecond timestamp via #format %U + string
-#nop slicing, then #line log writes <ts> <line> directly to the
-#nop file. No Lua dispatch in the hot path.
+#nop computes a microsecond timestamp via #format %U (raw integer
+#nop microseconds since epoch), then #line log writes <ts> <line>
+#nop directly to the file. No Lua dispatch in the hot path.
 
 #function {run_log_ts} {
-    #format utime {%U};
-    #format secs  {%.10s} {$utime};
-    #format usecs {%.-6s} {$utime};
-    #format result {%s.%s} {$secs} {$usecs}
+    #format result {%U}
 }
 
 #alias {_register_run_log_capture %1} {

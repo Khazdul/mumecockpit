@@ -181,28 +181,27 @@ type can safely ignore the row.
 foundation for a future replay player.
 
 **Filename.** `<archive_dir>/<run-id>.log`, where `<run-id>` is the same
-ISO-like timestamp as the paired `.jsonl` file. The integer seconds part of
-any `.log` timestamp is directly comparable to the `ts` field of `.jsonl`
-rows.
+ISO-like timestamp as the paired `.jsonl` file. To cross-correlate with
+`.jsonl` rows: `int(log_ts / 1_000_000) == jsonl_ts`.
 
 **Format.** One line per server line:
 
 ```
-<epoch_seconds>.<microseconds_6> <raw_line>
+<microseconds_since_epoch> <raw_line>
 ```
 
 ANSI escape codes are preserved; `%0` in the `RECEIVED LINE` event carries
 the raw byte stream. Example:
 
 ```
-1746640335.123456 \e[1;33mYou feel better.\e[0m
+1746640335123456 \e[1;33mYou feel better.\e[0m
 ```
 
 **Mechanism.** Pure tt++ native pipeline — no Lua dispatch on the line hot
 path, preserving PvP responsiveness. A `RECEIVED LINE` event handler
 registered in the game session computes a microsecond timestamp via
-`#format %U` + string slicing (`%.10s` / `%.-6s`), then writes
-`<secs>.<usecs> <raw_line>` to the `.log` via `#line log`. Lua's sole role
+`#format %U` (raw 16-digit integer microseconds since epoch), then writes
+`<microseconds> <raw_line>` to the `.log` via `#line log`. Lua's sole role
 is lifecycle: it sets the tt++ variable `_run_log_path` at run start
 (`_open_log`) and clears it at run end (`_close_log`) via `tintin_cmd`. The
 event handler is a no-op when the variable is unset.
