@@ -8,7 +8,7 @@
 End users accumulate two kinds of data inside the repo tree that must survive
 updates:
 
-- **Profile files** in `ttpp/sessions/` — created via the launcher's Profile
+- **Profile files** in `ttpp/profiles/` — created via the launcher's Profile
   page and overwritten by the SESSION DEACTIVATED auto-save hook (ADR 0014)
   on every session exit.
 - **Opt-in automation scripts** in `lua/scripts/` — the directory documented
@@ -17,7 +17,7 @@ updates:
 Both directories also contain shipped product files (e.g. `autostab.lua`,
 `bogger.tin`) that must receive their new tagged versions on update.
 
-`ttpp/sessions/default.tin` is a third category: it ships in the repo as a
+`ttpp/profiles/default.tin` is a third category: it ships in the repo as a
 starting template, but the auto-save hook writes the user's live session state
 to it. It is both a shipped file and live user data.
 
@@ -30,7 +30,7 @@ auto-save commits unstaged changes to them as part of normal cockpit operation.
 
 ## Decision
 
-Classify each file in `ttpp/sessions/` and `lua/scripts/` as **shipped** or
+Classify each file in `ttpp/profiles/` and `lua/scripts/` as **shipped** or
 **user-created** by checking its presence in the target release tag:
 
     git cat-file -e "refs/tags/$LATEST_TAG:$relpath"
@@ -39,9 +39,9 @@ Classify each file in `ttpp/sessions/` and `lua/scripts/` as **shipped** or
 - **Absent from tag → user-created.** Snapshotted to `bridge/.update_preserve/`
   before the reset and restored afterward with `cp -p`.
 
-`ttpp/sessions/default.tin` is **always preserved** regardless of tag presence.
+`ttpp/profiles/default.tin` is **always preserved** regardless of tag presence.
 
-The dirty-tree guard is made permissive for `ttpp/sessions/` and `lua/scripts/`
+The dirty-tree guard is made permissive for `ttpp/profiles/` and `lua/scripts/`
 using pathspec exclusions, so auto-save activity no longer triggers exit 21.
 
 A bash `EXIT` trap prints a stderr message pointing to `bridge/.update_preserve/`
@@ -85,6 +85,6 @@ would silently cause user files to be overwritten.
 
 - Conflict detection when a shipped file has local edits (the local edit is
   silently overwritten; documenting this is the chosen mitigation).
-- Recursive preservation in subdirectories (`ttpp/sessions/` and `lua/scripts/`
+- Recursive preservation in subdirectories (`ttpp/profiles/` and `lua/scripts/`
   are flat by design; no subdirectories are expected).
 - Migration tooling for users who have heavily modified shipped files.

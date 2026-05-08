@@ -13,7 +13,7 @@ Two failure-mode observations converged on this change:
   state of any brand-new profile before the user has typed a single
   alias — the resulting file is empty. The next session connect then
   fails on `#read`.
-- The shipped `ttpp/sessions/default.tin` and the launcher's "Create
+- The shipped `ttpp/profiles/default.tin` and the launcher's "Create
   blank profile" flow both produced new-profile content, with no
   shared source. Any future addition to that content (default macros,
   comments, conventions) would need to land in both places.

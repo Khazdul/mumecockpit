@@ -6,7 +6,7 @@
 ## Context
 
 Auto-save was previously implemented as a SESSION DEACTIVATED handler in the
-user profile file (`ttpp/sessions/default.tin`). That handler hardcoded the
+user profile file (`ttpp/profiles/default.tin`). That handler hardcoded the
 class name and was never part of system code. It was removed without
 replacement, leaving `cp -s` (the popup Save button) as the only working save
 path. `cp -e`, `cp -r`, and the popup "Exit to main menu" flow all left
