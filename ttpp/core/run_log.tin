@@ -10,6 +10,8 @@
 
 #alias {_register_run_log_capture %1} {
     #if {"%1" != ""} {
+        #%1 #unevent {RECEIVED LINE};
+        #%1 #unvar _run_log_path;
         #%1 #event {RECEIVED LINE} {
             #if {&_run_log_path} {
                 #line log $_run_log_path {@run_log_ts{} %%0}
