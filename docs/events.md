@@ -131,8 +131,9 @@ before `state.run.reset()`. No payload. `state.char.name` is populated when
 this fires (set by the `Char.Name` primary writer before `mark_mume_connected()`
 is called).
 
-**Subscribers:** `lua/core/run_log.lua` — initialises per-character archive
-directory and arms deferred run_start write.
+**Subscribers:** `lua/core/run_log.lua` — seals any orphaned `current.jsonl`
+from a prior unclean session, then initialises the per-character archive
+directory and arms the deferred run_start write.
 
 ### `run_ending`
 

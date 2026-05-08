@@ -105,6 +105,26 @@ clean end of a run.
 }
 ```
 
+### `orphan_close`
+
+Appended by `run_log` immediately before sealing an orphaned `current.jsonl`
+(one left by a prior brain crash). Marks the truncation point. No corresponding
+Lua event is emitted.
+
+```json
+{
+  "event": "orphan_close",
+  "ts":    1746644200
+}
+```
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `ts` | integer | `os.time()` when the orphan was sealed, not when the run ended |
+
+A sealed orphan has no `run_end` row. Readers should treat the absence of
+`run_end` (or the presence of `orphan_close`) as an unclean run boundary.
+
 ### `kill`
 
 Written once per attributed kill at fold time (~500ms debounce after the
@@ -154,20 +174,76 @@ fields changes in a breaking way.
 | JSON encode fails | `dbg()` log; row skipped (should be impossible with fixed schemas) |
 | `os.rename` on seal fails | `ui_warn()` surfaced to the UI pane; `current.jsonl` remains as an orphan |
 
-## Orphan handling (Phase 4)
+## cp -r mid-run resume
 
-If the brain dies while MUME is still connected, `current.jsonl` is left
-unsealed. Phase 4 will detect this on the next `run_started` and seal it with
-an `orphan_close` row before starting the new run. See ADR 0044 §"Orphan
-`current.jsonl` handling" for the planned mechanics.
+Restarting the brain while MUME is still connected (`cp -r`) resets all Lua
+state but the TCP connection survives. Because `Char.Name` is sticky and not
+re-emitted on a live connection, `mark_mume_connected()` never fires, so the
+normal `run_started` path cannot be used.
 
-## `cp -r` mid-run (Phase 4)
+The recovery signal is `state.char.name`. At brain startup, `brain.lua` reads
+`bridge/runtime/connection.state` and, if a `character_name` is present,
+writes it to `state.char.name` before calling `load_scripts()`. By the time
+`run_log.lua` loads, `bridge/runtime/connection.state` has already been
+cleared — its *presence* cannot be tested — but `state.char.name` survives as
+the signal.
 
-Restarting the brain while MUME is connected resets all Lua state. Phase 4
-adds a boot-time recovery path: if `bridge/runtime/connection.state` is
-present at brain startup, `run_log` opens `current.jsonl` for append and
-resumes logging without a new `run_start` row. Deferred to keep Phase 2
-simple.
+At the bottom of `run_log.lua`, after all subscribers are registered, the
+module checks `state.char.name`:
+
+- **Set** → MUME was connected; open `data/runs/<name>/current.jsonl` for
+  continued append. No new `run_start` row is written.
+  - If `current.jsonl` is missing (crash before first Vitals): arm
+    `_pending_baseline = true` so the next Vitals tick writes a fresh
+    `run_start`.
+  - If `current.jsonl` exists but its first line is unparseable: use
+    `os.time()` as the fallback `_run_start_ts` (the eventual sealed filename
+    becomes approximate; row data is preserved).
+- **Nil** → fresh start; skip the resume path entirely.
+
+After resume, the run continues as normal: subsequent kills and level-ups
+append to the same file, and `run_ending` seals it to
+`<original-run-start-ts>.jsonl` on disconnect.
+
+**Known limitation after cp -r-resume + disconnect.** Because
+`bridge/runtime/connection.state` is gone, the next `mark_mume_disconnected()`
+returns early on its idempotency guard and does not emit `run_ending` or the
+"logged out" `system_ui` line. Run data integrity is preserved via orphan
+handling at the *next* login for that character, but those UI lines are
+missed. This is a pre-existing limitation in the connection.state model and is
+not addressed here. See ADR 0044 for context.
+
+See ADR 0044 §"cp -r mid-run".
+
+## Orphan handling
+
+If the brain crashes (or is killed) while MUME is connected, `current.jsonl`
+is left unsealed without a `run_end` row. On the next `run_started` event for
+that character, `run_log` detects and seals the orphan before starting the new
+run:
+
+1. After `mkdir -p` for the archive directory, `run_log` tests whether
+   `current.jsonl` already exists.
+2. If it does, the original `run_start` timestamp is read from the file's
+   first line. If the line is missing or unparseable, `os.time()` is used as a
+   fallback (row data is preserved; only the sealed filename becomes
+   approximate).
+3. An `orphan_close` row is appended to `current.jsonl`.
+4. The file is renamed to `<original-run-start-ts>.jsonl`.
+   If the rename fails (e.g. filesystem error), a `ui_warn` is surfaced and
+   the orphan stays as `current.jsonl`; it will be re-detected and re-sealed
+   at the next login.
+5. The fresh run then starts normally: `_pending_baseline = true`, new
+   `current.jsonl` created on the next Vitals tick.
+
+The sealed orphan run has no `run_end` row — readers must tolerate this (the
+JSONL self-healing pattern from ADR 0011). The `orphan_close` row marks where
+the log was truncated.
+
+`orphan_close` is written directly by `run_log`, not emitted on the event bus.
+It is a JSONL marker, not a Lua event.
+
+See ADR 0044 §"Orphan current.jsonl handling".
 
 ---
 Back to [architecture.md](../architecture.md).

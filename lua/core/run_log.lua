@@ -1,7 +1,6 @@
 -- Per-character JSONL run log. Writes run_start (deferred to first Vitals),
--- level_up, and run_end rows to data/runs/<character>/current.jsonl.
+-- level_up, kill, and run_end rows to data/runs/<character>/current.jsonl.
 -- Sealed to <run-id>.jsonl on run_ending. Open-append-close per row.
--- Orphan-handling and cp -r mid-run recovery deferred to Phase 4.
 
 local json = require("dkjson")
 
@@ -38,15 +37,57 @@ local function _append(row)
     f:close()
 end
 
+-- Read the numeric `ts` field from the first line of path, or return nil.
+local function _read_first_ts(path)
+    local f = io.open(path, "r")
+    if not f then return nil end
+    local line = f:read("*l")
+    f:close()
+    if not line then return nil end
+    local decoded = json.decode(line)
+    if decoded and type(decoded.ts) == "number" then return decoded.ts end
+    return nil
+end
+
+-- Append orphan_close and rename current.jsonl to a sealed run-id file.
+local function _seal_orphan(path, archive_dir, name)
+    local original_ts = _read_first_ts(path)
+    if not original_ts then
+        dbg("[RUN_LOG] orphan first-line unreadable, using now as ts")
+        original_ts = os.time()
+    end
+    local af = io.open(path, "a")
+    if af then
+        local row = json.encode({ event = "orphan_close", ts = os.time() })
+        if row then af:write(row .. "\n") end
+        af:close()
+    end
+    local sealed = archive_dir .. os.date("%Y-%m-%dT%H-%M-%S", original_ts) .. ".jsonl"
+    local ok = os.rename(path, sealed)
+    if not ok then
+        ui_warn("RUN_LOG: failed to seal orphan current.jsonl; will retry next login.")
+        return
+    end
+    dbg("[RUN_LOG] sealed orphan for " .. tostring(name))
+end
+
 events.subscribe("run_started", function()
     local name = state.char and state.char.name
     if not name then
         dbg("[RUN_LOG] run_started: no char name, skipping")
         return
     end
-    _archive_dir  = os.getenv("HOME") .. "/MUME/data/runs/" .. name .. "/"
-    _current_path = _archive_dir .. "current.jsonl"
-    os.execute("mkdir -p '" .. _archive_dir .. "' 2>/dev/null")
+    local archive_dir  = os.getenv("HOME") .. "/MUME/data/runs/" .. name .. "/"
+    local current_path = archive_dir .. "current.jsonl"
+    os.execute("mkdir -p '" .. archive_dir .. "' 2>/dev/null")
+    -- Orphan-detection: seal any leftover current.jsonl from a prior unsealed run.
+    local probe = io.open(current_path, "r")
+    if probe then
+        probe:close()
+        _seal_orphan(current_path, archive_dir, name)
+    end
+    _archive_dir      = archive_dir
+    _current_path     = current_path
     _active           = true
     _pending_baseline = true
     _last_level       = nil
@@ -116,5 +157,46 @@ events.subscribe("run_ending", function()
     end
     _clear_state()
 end)
+
+-- cp -r mid-run resume: state.char.name is populated here iff Phase 1 rehydrated it
+-- from connection.state (written by the previous brain while MUME was connected).
+-- connection.state is cleared unconditionally before load_scripts() runs, so its
+-- *presence* cannot be used — state.char.name is the surviving signal.
+local _resume_name = state.char and state.char.name
+if _resume_name then
+    local archive_dir  = os.getenv("HOME") .. "/MUME/data/runs/" .. _resume_name .. "/"
+    local current_path = archive_dir .. "current.jsonl"
+    local f = io.open(current_path, "r")
+    if not f then
+        -- Anomaly: mid-run signal but no current.jsonl (crash before first Vitals).
+        dbg("[RUN_LOG] resume: state.char.name set but no current.jsonl; starting fresh on next Vitals")
+        _archive_dir      = archive_dir
+        _current_path     = current_path
+        _active           = true
+        _pending_baseline = true
+        _last_level       = nil
+    else
+        local first = f:read("*l")
+        f:close()
+        local run_start_ts
+        if first then
+            local decoded = json.decode(first)
+            if decoded and type(decoded.ts) == "number" then
+                run_start_ts = decoded.ts
+            end
+        end
+        if not run_start_ts then
+            dbg("[RUN_LOG] resume: first-line parse failed, using now as run_start_ts")
+            run_start_ts = os.time()
+        end
+        _run_start_ts     = run_start_ts
+        _archive_dir      = archive_dir
+        _current_path     = current_path
+        _active           = true
+        _pending_baseline = false
+        _last_level       = nil
+        dbg("[RUN_LOG] resumed run for " .. _resume_name .. " (run_start ts=" .. tostring(run_start_ts) .. ")")
+    end
+end
 
 dbg("[RUN_LOG] loaded")
