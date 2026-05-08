@@ -60,6 +60,8 @@ event flow. Same pattern as `gmcp.trace`.
 | `gmcp_event_moved` | decoded body | `lua/brain.lua` `gmcp.dispatch` — emitted after `world_state.lua` primary writer |
 | `gmcp_core_goodbye` | decoded body | `lua/brain.lua` `gmcp.dispatch` — emitted after `core_state.lua` primary writer |
 | `gmcp_core_ping` | decoded body | `lua/brain.lua` `gmcp.dispatch` — emitted after `core_state.lua` primary writer |
+| `run_started` | (none) | `lua/brain/connection.lua` `mark_mume_connected()` — emitted after `_write_connection_state()` and login `system_ui`, before `state.run.reset()` |
+| `run_ending` | (none) | `lua/brain/connection.lua` `mark_mume_disconnected()` — emitted after `_clear_connection_state()` and logout `system_ui`, before `state.run.reset()` and `state.char.reset()` |
 | `char_reset` | (none) | `lua/core/char_state.lua` `state.char.reset()` — emitted after wiping all non-function keys |
 | `mob_death` | mob name string, kind (`"living"` \| `"undead"`) | `ttpp/core/mud_events.tin` |
 | `mume_time_line` | full matched line string | `ttpp/core/clock.tin` `#action` |
@@ -105,11 +107,13 @@ persisted data), `lua/core/buffs_state.lua` (serialize), `lua/core/comm_store.lu
 `lua/core/status_state.lua` (serialize), `lua/core/stored_spells.lua`
 (re-init stored spells, load persisted data).
 
-**`gmcp_char_vitals`** — `lua/core/run_state.lua` (update XP/TP baseline),
+**`gmcp_char_vitals`** — `lua/core/run_log.lua` (write deferred run_start row on
+first tick), `lua/core/run_state.lua` (update XP/TP baseline),
 `lua/core/status_state.lua` (serialize). Added to `events.trace_skip` to
 suppress log noise when tracing is on.
 
-**`gmcp_char_status_vars`** — `lua/core/status_state.lua` (serialize).
+**`gmcp_char_status_vars`** — `lua/core/run_log.lua` (level-up detection),
+`lua/core/status_state.lua` (serialize).
 
 **`gmcp_comm_channel_text`** — `lua/core/comm_state.lua` (serialize, runs
 first), `lua/core/comm_store.lua` (append to archive).
@@ -117,6 +121,27 @@ first), `lua/core/comm_store.lua` (append to archive).
 **`gmcp_comm_channel_list`** — `lua/core/comm_state.lua` (serialize).
 
 **`gmcp_event_sun`** — see dedicated section below.
+
+### `run_started`
+
+Emitted by `mark_mume_connected()` in `lua/brain/connection.lua` immediately
+after `_write_connection_state()` and the `system_ui("… logged in.")` line,
+before `state.run.reset()`. No payload. `state.char.name` is populated when
+this fires (set by the `Char.Name` primary writer before `mark_mume_connected()`
+is called).
+
+**Subscribers:** `lua/core/run_log.lua` — initialises per-character archive
+directory and arms deferred run_start write.
+
+### `run_ending`
+
+Emitted by `mark_mume_disconnected()` in `lua/brain/connection.lua` after
+`_clear_connection_state()` and the logout `system_ui` line, before
+`state.run.reset()` and `state.char.reset()`. No payload. Both `state.char.name`
+and `state.char.level` are still populated when this fires.
+
+**Subscribers:** `lua/core/run_log.lua` — writes `run_end` row and seals
+`current.jsonl` to `<run-id>.jsonl`.
 
 ### `char_reset`
 

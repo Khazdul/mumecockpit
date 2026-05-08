@@ -71,6 +71,7 @@ function mark_mume_connected()
     _write_connection_state()
     local name = state.char.name or "Character"
     system_ui(ui_var(name) .. " logged in.")
+    events.emit("run_started")
     if state.run and state.run.reset then state.run.reset() end
 end
 
@@ -82,6 +83,7 @@ function mark_mume_disconnected()
     local name = state.char.name or "Character"
     system_ui(ui_var(name) .. " logged out.")
     if not _popup_is_open() then _open_popup() end
+    events.emit("run_ending")
     if state.run and state.run.reset then state.run.reset() end
     if state.char and state.char.reset then state.char.reset() end
 end

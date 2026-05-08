@@ -401,6 +401,7 @@ See the project board on GitHub for active work and parked ideas.
 - [docs/clock.md](docs/clock.md) — Game clock: sync sources, state schema, persistence, seed handling, degradation rules. Touched when changing clock sync or consuming game time.
 - [docs/affects.md](docs/affects.md) — Affect tracker: data flow, state schemas, persistence, pattern-conversion rules, tick lifecycle. Touched when changing affect tracking or adding new affect entries.
 - [docs/stored-spells.md](docs/stored-spells.md) — Stored spells tracker: data flow, schemas, spell-name resolver, persistence, SENT OUTPUT snooping. Touched when changing stored-spell tracking or the spells data table.
+- [docs/runs.md](docs/runs.md) — Run log contract: file layout, event schema (run_start/level_up/run_end), lifecycle, schema versioning. Touched when changing run-log behaviour or adding new row types.
 - [docs/buffs-pane.md](docs/buffs-pane.md) — Buffs pane: renderer, scroll, blink, layout integration. Touched when changing the buffs pane renderer or the buffs.state schema.
 - [docs/ui-pane.md](docs/ui-pane.md) — UI pane: renderer, scroll, log-tail mechanics. Touched when changing the UI pane.
 - [docs/install-bootstrap.md](docs/install-bootstrap.md) — Cross-platform install and bootstrap plan. Touched when scheduling installer work or when a platform constraint (WSL, Alacritty, package versions) changes.
