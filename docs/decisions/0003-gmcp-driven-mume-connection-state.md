@@ -2,7 +2,7 @@
 
 ## Context
 
-`bridge/session.state` was previously driven by tt++'s `SESSION CONNECTED` /
+`bridge/runtime/connection.state` was previously driven by tt++'s `SESSION CONNECTED` /
 `SESSION DISCONNECTED` events. In direct mode this coincides with the MUME
 connection. In MMapper mode it does not — the tt++ session is against
 `localhost:4242` and stays alive as long as MMapper does, regardless of
@@ -15,7 +15,7 @@ Separate the two concepts.
 
 - `GAME_SESSION` / `$game_session` continues to track the tt++ session's
   lifetime (unchanged).
-- `bridge/session.state` now tracks the MUME connection and is driven by
+- `bridge/runtime/connection.state` now tracks the MUME connection and is driven by
   GMCP: `Char.Name` → connected, `Core.Goodbye` → disconnected. MMapper
   abrupt-close is caught via a tt++ `#action` on
   `"Status: MUME closed the connection."`. `SESSION DISCONNECTED` remains a
@@ -25,7 +25,7 @@ Separate the two concepts.
 ## Consequences
 
 - The popup reflects real MUME status in both connection modes.
-- There is a short bootstrap window (~0.5–2 s) where `session.state` is absent
+- There is a short bootstrap window (~0.5–2 s) where `connection.state` is absent
   before the first `Char.Name` arrives. Acceptable — the `reconnect` alias
   handles this case correctly.
 - Silent disconnects (half-open TCP) are still not detected automatically;

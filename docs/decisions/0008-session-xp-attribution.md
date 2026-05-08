@@ -20,11 +20,11 @@ first per-hit delta from the next fight to the dead mob. All three are wrong.
 Accumulate XP continuously in `Char.Vitals`; fold on a **debounced timer**
 triggered by `mob_death`.
 
-- `Char.Vitals` continuously updates running totals (`session_xp`, `session_tp`)
-  and tracks `last_fold_xp` — the XP snapshot at the previous fold (or session
+- `Char.Vitals` continuously updates running totals (`state.run.xp`, `state.run.tp`)
+  and tracks `last_fold_xp` — the XP snapshot at the previous fold (or run
   start).
 - Each `mob_death` event pushes the mob name onto `pending_kills` and issues a
-  named `#delay {sess_kills_fold}` of **500 ms** in `GAME_SESSION` via
+  named `#delay {run_fold}` of **500 ms** in `GAME_SESSION` via
   `session_cmd`. Because the delay tag is named, each new `mob_death` within the
   window replaces the pending delay, so consecutive kills in a burst are batched
   into one fold.

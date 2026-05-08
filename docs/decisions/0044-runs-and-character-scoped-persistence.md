@@ -226,9 +226,6 @@ mess.
 
 ## Out of scope / follow-up
 
-- **Renaming PR** (`state.session` → `state.run`, file/dir renames,
-  `bridge/session.state` → `bridge/connection.state`, all doc
-  references). Mechanical; separate step.
 - **Migration PR** for existing on-disk files into the new `data/` tree.
   Idempotent script; runs once on first launch after the rename PR
   ships.

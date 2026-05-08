@@ -40,7 +40,7 @@ Full requirements, troubleshooting, and steps for other distros in
 
 **GMCP** — full integration. Char, Comm.Channel, Event, and Core modules
 are negotiated at handshake and dispatched into Lua handlers. Background
-collectors populate `state.char`, `state.comm`, and `state.session` as
+collectors populate `state.char`, `state.comm`, and `state.run` as
 messages arrive.
 
 **Panes** — toggleable at runtime:
