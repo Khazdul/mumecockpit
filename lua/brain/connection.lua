@@ -28,8 +28,24 @@ local function _write_connection_state()
     if not f then return end
     f:write(string.format("connected_at=%d\nconnection_mode=%s\n",
                           os.time(), mode))
+    local name = state and state.char and state.char.name
+    if name then f:write("character_name=" .. name .. "\n") end
     f:close()
     os.rename(tmp, CONNECTION_STATE_PATH)
+end
+
+-- Plain line-by-line parse; returns table with nil for missing keys, or nil if absent.
+-- Tolerates unknown keys silently — never sources/executes the file.
+function _read_connection_state()
+    local f = io.open(CONNECTION_STATE_PATH, "r")
+    if not f then return nil end
+    local result = {}
+    for line in f:lines() do
+        local k, v = line:match("^([^=]+)=(.*)$")
+        if k then result[k] = v end
+    end
+    f:close()
+    return result
 end
 
 function _clear_connection_state()

@@ -93,9 +93,11 @@ idempotent.
 
     connected_at=<epoch seconds>
     connection_mode=<mmapper|direct>
+    character_name=<name>
 
 Written atomically via temp-file + rename; readers must treat missing
-or malformed values as "Disconnected" and never block.
+or malformed values as "Disconnected" and never block. Readers must
+silently ignore unknown keys — new keys may be added in future versions.
 
 Consumer: `bridge/launcher/ingame_menu.sh` reads this file on every popup render
 to drive the status header (connected vs disconnected). The Link fragment
@@ -113,7 +115,9 @@ is served from `bridge/runtime/ping.cache`, independent of connection state.
 - **`cp -r` clears uptime** — `_clear_connection_state()` runs unconditionally
   at brain startup. MUME does not re-send `Char.Name` while the TCP connection
   is live, so `connection.state` stays absent after a reload until the next full
-  reconnect. Popup shows "Disconnected" after `cp -r`. Accepted.
+  reconnect. Popup shows "Disconnected" after `cp -r`. Accepted. `character_name`
+  is rehydrated into `state.char.name` before the file is cleared, so the status
+  pane's Name field is populated immediately without waiting for `Char.Vitals`.
 
 ## cp -r behaviour
 
