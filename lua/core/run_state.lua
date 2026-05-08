@@ -25,6 +25,7 @@ local M = {
     xp            = 0,
     tp            = 0,
     last_fold_xp  = nil,    -- xp snapshot at last fold (or run start)
+    last_tp       = nil,    -- tp at last Vitals tick (or run start)
     pending_kills = {},     -- mob names awaiting attribution
     kills         = {},     -- append-only per run: { name, xp }
 }
@@ -33,6 +34,7 @@ function M.reset()
     M.xp_baseline   = nil
     M.tp_baseline   = nil
     M.last_fold_xp  = nil
+    M.last_tp       = nil
     M.xp            = 0
     M.tp            = 0
     M.pending_kills = {}
@@ -62,17 +64,20 @@ events.subscribe("gmcp_char_vitals", function(body)
     end
     if body.tp then
         if M.tp_baseline == nil then
-            M.tp_baseline  = body.tp
-            M.last_fold_tp = body.tp
-            M.tp           = 0
-        elseif body.tp < M.last_fold_tp then
-            -- death penalty / level loss → rebaseline, drop pending
-            M.tp_baseline   = body.tp
-            M.last_fold_tp  = body.tp
-            M.tp            = 0
-        else
-            M.tp = body.tp - M.tp_baseline
+            M.tp_baseline = body.tp
+            M.last_tp     = body.tp
+            M.tp          = 0
+        elseif body.tp < M.last_tp then
+            -- tp drop (death penalty / trainer-spend) → silent rebaseline
+            M.tp_baseline = body.tp
+            M.last_tp     = body.tp
+            M.tp          = 0
+        elseif body.tp > M.last_tp then
+            events.emit("tp_gained", { delta = body.tp - M.last_tp })
+            M.last_tp = body.tp
+            M.tp      = body.tp - M.tp_baseline
         end
+        -- body.tp == M.last_tp is a no-op; M.tp is already correct
     end
 end)
 

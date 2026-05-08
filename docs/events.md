@@ -83,6 +83,7 @@ event flow. Same pattern as `gmcp.trace`.
 | `stored_spells_untracked` | (none) | `ttpp/core/stored_spells.tin` `#action` |
 | `stored_spells_changed` | (none) | `lua/core/stored_spells.lua` — emitted on every state mutation and on `_load_active()` restore |
 | `kill_attributed` | `{name = "<mob name>", xp = <integer>}` | `lua/core/run_state.lua` `_fold()` — emitted once per attributed kill after `script_ui` announce |
+| `tp_gained` | `{delta = <integer>}` | `lua/core/run_state.lua` `gmcp_char_vitals` subscriber — emitted on each positive TP increase |
 
 ### `gmcp_<module>` events
 
@@ -109,9 +110,9 @@ persisted data), `lua/core/buffs_state.lua` (serialize), `lua/core/comm_store.lu
 (re-init stored spells, load persisted data).
 
 **`gmcp_char_vitals`** — `lua/core/run_log.lua` (write deferred run_start row on
-first tick), `lua/core/run_state.lua` (update XP/TP baseline),
-`lua/core/status_state.lua` (serialize). Added to `events.trace_skip` to
-suppress log noise when tracing is on.
+first tick), `lua/core/run_state.lua` (update XP/TP baseline; emit `tp_gained`
+when TP increases), `lua/core/status_state.lua` (serialize). Added to
+`events.trace_skip` to suppress log noise when tracing is on.
 
 **`gmcp_char_status_vars`** — `lua/core/run_log.lua` (level-up detection),
 `lua/core/status_state.lua` (serialize).

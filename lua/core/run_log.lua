@@ -138,6 +138,16 @@ events.subscribe("kill_attributed", function(payload)
     dbg("[RUN_LOG] kill: " .. tostring(payload.name) .. " xp=" .. tostring(payload.xp))
 end)
 
+events.subscribe("tp_gained", function(payload)
+    if not _active then return end
+    _append({
+        event    = "tp_gained",
+        ts       = os.time(),
+        tp_delta = payload.delta,
+    })
+    dbg("[RUN_LOG] tp_gained: " .. tostring(payload.delta))
+end)
+
 events.subscribe("run_ending", function()
     if not _active then return end
     if _pending_baseline then

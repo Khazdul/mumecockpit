@@ -151,6 +151,29 @@ For group kills (multiple mobs dying within the 500ms window), N consecutive
 `pending_xp` is not divisible by N. Kill ordering within the JSONL matches
 `state.run.kills` insertion order (same as `mob_death` arrival order).
 
+### `tp_gained`
+
+Written on each `Char.Vitals` tick where TP increased since the previous tick.
+TP-awarding rooms emit a Vitals bump on entry; the delta is always positive.
+Drops (trainer-spend or death penalty) are detected and silently rebaselined —
+no `tp_gained` row is written for decreases.
+
+```json
+{
+  "event":    "tp_gained",
+  "ts":       1746641800,
+  "tp_delta": 3
+}
+```
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `ts` | integer | `os.time()` at write time |
+| `tp_delta` | integer | Positive integer; Vitals-to-Vitals difference; never zero or negative |
+
+Schema version is unchanged at `1`; old readers that do not recognise this event
+type can safely ignore the row.
+
 ## Schema versioning
 
 The `schema` field in `run_start` carries an integer version. Current value: `1`.
