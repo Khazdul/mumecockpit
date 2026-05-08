@@ -183,10 +183,10 @@ normal `run_started` path cannot be used.
 
 The recovery signal is `state.char.name`. At brain startup, `brain.lua` reads
 `bridge/runtime/connection.state` and, if a `character_name` is present,
-writes it to `state.char.name` before calling `load_scripts()`. By the time
-`run_log.lua` loads, `bridge/runtime/connection.state` has already been
-cleared — its *presence* cannot be tested — but `state.char.name` survives as
-the signal.
+writes it to `state.char.name` and **preserves the file** before calling
+`load_scripts()`. By the time `run_log.lua` loads, `state.char.name` is set
+and `connection.state` is still present — `mark_mume_disconnected()` will act
+normally on the next clean quit or abrupt drop.
 
 At the bottom of `run_log.lua`, after all subscribers are registered, the
 module checks `state.char.name`:
@@ -204,14 +204,6 @@ module checks `state.char.name`:
 After resume, the run continues as normal: subsequent kills and level-ups
 append to the same file, and `run_ending` seals it to
 `<original-run-start-ts>.jsonl` on disconnect.
-
-**Known limitation after cp -r-resume + disconnect.** Because
-`bridge/runtime/connection.state` is gone, the next `mark_mume_disconnected()`
-returns early on its idempotency guard and does not emit `run_ending` or the
-"logged out" `system_ui` line. Run data integrity is preserved via orphan
-handling at the *next* login for that character, but those UI lines are
-missed. This is a pre-existing limitation in the connection.state model and is
-not addressed here. See ADR 0044 for context.
 
 See ADR 0044 §"cp -r mid-run".
 

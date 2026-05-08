@@ -89,6 +89,22 @@ abrupt-drop path joins the single dispatch point. The belt-and-braces role
 is unchanged; the transition guard in `mark_mume_disconnected()` keeps it
 idempotent.
 
+### Bootstrap semantics
+
+At brain startup, `_read_connection_state()` is called first. If
+`character_name` rehydrates, `connection.state` is preserved — the brain
+restarted while MUME was still connected (typically a `cp -r`), and the file
+must survive so the next `mark_mume_disconnected()` sees correct state and
+emits `run_ending` plus the user-facing logged-out / popup-open UI normally.
+If nothing rehydrates, the file is cleared as a defensive measure.
+
+Stale `connection.state` after a brain crash followed by a full restart is
+cleaned up in `set_game_session()` when the next game session is established:
+a new game session necessarily means a new MUME TCP connection, so any
+surviving file is from a prior session. `cp -r` does not trigger SESSION
+CONNECTED for an already-live game session, so `set_game_session()` does not
+fire in the `cp -r` path and the file is preserved correctly.
+
 ### Format
 
     connected_at=<epoch seconds>
@@ -112,12 +128,6 @@ is served from `bridge/runtime/ping.cache`, independent of connection state.
   (~0.5–2 s). During this window `connection.state` is absent and the popup
   shows "Disconnected". The reconnect alias handles this correctly; a
   pending-state is not worth the complexity.
-- **`cp -r` clears uptime** — `_clear_connection_state()` runs unconditionally
-  at brain startup. MUME does not re-send `Char.Name` while the TCP connection
-  is live, so `connection.state` stays absent after a reload until the next full
-  reconnect. Popup shows "Disconnected" after `cp -r`. Accepted. `character_name`
-  is rehydrated into `state.char.name` before the file is cleared, so the status
-  pane's Name field is populated immediately without waiting for `Char.Vitals`.
 
 ## cp -r behaviour
 
