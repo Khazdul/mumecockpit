@@ -8,6 +8,7 @@ local SCHEMA_VERSION = 1
 
 local _active           = false
 local _pending_baseline = false
+local _log_armed        = false
 local _run_start_ts     = nil
 local _last_level       = nil
 local _archive_dir      = nil
@@ -16,6 +17,7 @@ local _current_path     = nil
 local function _clear_state()
     _active           = false
     _pending_baseline = false
+    _log_armed        = false
     _run_start_ts     = nil
     _last_level       = nil
     _archive_dir      = nil
@@ -51,12 +53,14 @@ local function _open_log(ts)
     os.execute("touch '" .. log_path .. "' 2>/dev/null")
     tintin_cmd(GAME_SESSION, "#var {_run_log_path} {" .. log_path .. "}")
     dbg("[RUN_LOG] .log path armed: " .. log_path)
+    _log_armed = true
 end
 
 local function _close_log()
     if not GAME_SESSION then return end
     tintin_cmd(GAME_SESSION, "#unvar _run_log_path")
     dbg("[RUN_LOG] .log path cleared")
+    _log_armed = false
 end
 
 -- Read the numeric `ts` field from the first line of path, or return nil.
@@ -118,21 +122,26 @@ end)
 
 events.subscribe("gmcp_char_vitals", function()
     if not _active then return end
-    if not _pending_baseline then return end
-    local ts = os.time()
-    _run_start_ts = ts
-    _append({
-        event     = "run_start",
-        ts        = ts,
-        character = state.char and state.char.name,
-        level     = state.char and state.char.level,
-        xp        = state.char and state.char.xp,
-        tp        = state.char and state.char.tp,
-        schema    = SCHEMA_VERSION,
-    })
-    _pending_baseline = false
-    _open_log(ts)
-    dbg("[RUN_LOG] run_start written")
+    if _pending_baseline then
+        local ts = os.time()
+        _run_start_ts = ts
+        _append({
+            event     = "run_start",
+            ts        = ts,
+            character = state.char and state.char.name,
+            level     = state.char and state.char.level,
+            xp        = state.char and state.char.xp,
+            tp        = state.char and state.char.tp,
+            schema    = SCHEMA_VERSION,
+        })
+        _pending_baseline = false
+        _open_log(ts)
+        dbg("[RUN_LOG] run_start written")
+        return
+    end
+    if not _log_armed and _run_start_ts then
+        _open_log(_run_start_ts)
+    end
 end)
 
 events.subscribe("gmcp_char_status_vars", function()
