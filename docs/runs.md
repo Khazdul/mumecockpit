@@ -13,7 +13,8 @@ data/
 └── runs/
     └── <character>/
         ├── current.jsonl               ← active run; exists only while a run is in progress
-        └── <YYYY-MM-DD>T<HH-MM-SS>.jsonl  ← sealed run; created on clean disconnect
+        ├── <YYYY-MM-DD>T<HH-MM-SS>.jsonl  ← sealed run; created on clean disconnect
+        └── <YYYY-MM-DD>T<HH-MM-SS>.log    ← raw text capture for the same run
 ```
 
 **`current.jsonl`** — open-ended run log. Written from the first `Char.Vitals`
@@ -173,6 +174,58 @@ no `tp_gained` row is written for decreases.
 
 Schema version is unchanged at `1`; old readers that do not recognise this event
 type can safely ignore the row.
+
+## Per-run text log (.log)
+
+**Purpose.** Full-fidelity raw capture of all server output for the run — a
+foundation for a future replay player.
+
+**Filename.** `<archive_dir>/<run-id>.log`, where `<run-id>` is the same
+ISO-like timestamp as the paired `.jsonl` file. The integer seconds part of
+any `.log` timestamp is directly comparable to the `ts` field of `.jsonl`
+rows.
+
+**Format.** One line per server line:
+
+```
+<epoch_seconds>.<microseconds_6> <raw_line>
+```
+
+ANSI escape codes are preserved; `%0` in the `RECEIVED LINE` event carries
+the raw byte stream. Example:
+
+```
+1746640335.123456 \e[1;33mYou feel better.\e[0m
+```
+
+**Mechanism.** Pure tt++ native pipeline — no Lua dispatch on the line hot
+path, preserving PvP responsiveness. A `RECEIVED LINE` event handler
+registered in the game session computes a microsecond timestamp via
+`#format %U` + string slicing (`%.10s` / `%.-6s`), then writes
+`<secs>.<usecs> <raw_line>` to the `.log` via `#line log`. Lua's sole role
+is lifecycle: it sets the tt++ variable `_run_log_path` at run start
+(`_open_log`) and clears it at run end (`_close_log`) via `tintin_cmd`. The
+event handler is a no-op when the variable is unset.
+
+**Lifecycle.** Armed on the first `Char.Vitals` tick after login (parallel to
+the `run_start` JSONL row), disarmed on `run_ending` (after the `run_end`
+row is written). There is a short login-screen gap before arming — same as
+the `.jsonl`.
+
+**cp -r mid-run.** `#kill event` clears the RECEIVED LINE handler, but
+the `cp -r` alias re-registers it via `_register_run_log_capture`. The Lua
+resume block re-arms `_run_log_path` via `_open_log`, so capture continues
+seamlessly after reload.
+
+**Orphan handling.** A `.log` left after a brain crash has no `orphan_close`
+marker (unlike `.jsonl`). Pair with the `.jsonl` to determine cleanliness: a
+`.log` without a matching sealed `.jsonl` is orphaned.
+
+**Known limitations.**
+
+- Server output only; player input is not captured.
+- No replay player tooling yet.
+- Pre-first-Vitals login screen output is not captured.
 
 ## Schema versioning
 

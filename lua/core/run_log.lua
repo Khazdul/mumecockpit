@@ -37,6 +37,28 @@ local function _append(row)
     f:close()
 end
 
+-- Arms the tt++ _run_log_path variable so the RECEIVED LINE event handler
+-- starts writing timestamped lines to the .log file. Lua only manages the
+-- variable; tt++ handles all per-line I/O (no Lua dispatch on the hot path).
+local function _open_log(ts)
+    if not GAME_SESSION then
+        dbg("[RUN_LOG] _open_log: no game session, skipping")
+        return
+    end
+    local log_path = _archive_dir
+                     .. os.date("%Y-%m-%dT%H-%M-%S", ts)
+                     .. ".log"
+    os.execute("touch '" .. log_path .. "' 2>/dev/null")
+    tintin_cmd(GAME_SESSION, "#var {_run_log_path} {" .. log_path .. "}")
+    dbg("[RUN_LOG] .log path armed: " .. log_path)
+end
+
+local function _close_log()
+    if not GAME_SESSION then return end
+    tintin_cmd(GAME_SESSION, "#unvar _run_log_path")
+    dbg("[RUN_LOG] .log path cleared")
+end
+
 -- Read the numeric `ts` field from the first line of path, or return nil.
 local function _read_first_ts(path)
     local f = io.open(path, "r")
@@ -109,6 +131,7 @@ events.subscribe("gmcp_char_vitals", function()
         schema    = SCHEMA_VERSION,
     })
     _pending_baseline = false
+    _open_log(ts)
     dbg("[RUN_LOG] run_start written")
 end)
 
@@ -157,6 +180,7 @@ events.subscribe("run_ending", function()
         return
     end
     _append({ event = "run_end", ts = os.time() })
+    _close_log()
     local run_id = os.date("%Y-%m-%dT%H-%M-%S", _run_start_ts)
     local sealed = _archive_dir .. run_id .. ".jsonl"
     local ok     = os.rename(_current_path, sealed)
@@ -205,6 +229,7 @@ if _resume_name then
         _active           = true
         _pending_baseline = false
         _last_level       = nil
+        _open_log(run_start_ts)
         dbg("[RUN_LOG] resumed run for " .. _resume_name .. " (run_start ts=" .. tostring(run_start_ts) .. ")")
     end
 end

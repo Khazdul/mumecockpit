@@ -111,6 +111,7 @@
         _register_clock_actions $game_session;
         _register_affect_actions;
         _register_stored_spells_actions;
+        _register_run_log_capture $game_session;
         #$game_session #class {$game_session} {open}
     };
     #showme {[COCKPIT] Full reload complete};
@@ -164,6 +165,7 @@
             _register_clock_actions %0;
             _register_affect_actions;
             _register_stored_spells_actions;
+            _register_run_log_capture %0;
             #%0 #class {%0} {open}
         }
     }
