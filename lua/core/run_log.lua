@@ -86,6 +86,17 @@ events.subscribe("gmcp_char_status_vars", function()
     end
 end)
 
+events.subscribe("kill_attributed", function(payload)
+    if not _active then return end
+    _append({
+        event    = "kill",
+        ts       = os.time(),
+        mob_name = payload.name,
+        xp_delta = payload.xp,
+    })
+    dbg("[RUN_LOG] kill: " .. tostring(payload.name) .. " xp=" .. tostring(payload.xp))
+end)
+
 events.subscribe("run_ending", function()
     if not _active then return end
     if _pending_baseline then

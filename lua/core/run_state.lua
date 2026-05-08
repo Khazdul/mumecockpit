@@ -1,7 +1,7 @@
 -- Run XP/TP tracker and kill announcer.
 -- Subscribes to gmcp_char_vitals for baseline + running totals only.
 -- Subscribes to mob_death; queues mob names and schedules a debounced fold
--- (run_fold, 100ms) so multiple R.I.P. lines from one combat round
+-- (run_fold, 500ms) so multiple R.I.P. lines from one combat round
 -- batch into a single fold. Killing-blow XP is already in state.char.xp by
 -- the time mob_death fires (MUME emits Vitals before R.I.P.).
 -- Exposes state.run (read side) and state.run.reset() for lifecycle hooks.
@@ -105,6 +105,7 @@ function M._fold()
         if i == n then xp = xp + rem end
         table.insert(M.kills, { name = name, xp = xp })
         script_ui("KILL", ui_var(name) .. ", " .. ui_var(fmt_xp(xp)) .. " xp.")
+        events.emit("kill_attributed", { name = name, xp = xp })
     end
 
     M.last_fold_xp  = current_xp

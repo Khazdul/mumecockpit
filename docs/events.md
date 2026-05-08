@@ -82,6 +82,7 @@ event flow. Same pattern as `gmcp.trace`.
 | `store_decayed` | (none) | `ttpp/core/stored_spells.tin` `#action` |
 | `stored_spells_untracked` | (none) | `ttpp/core/stored_spells.tin` `#action` |
 | `stored_spells_changed` | (none) | `lua/core/stored_spells.lua` — emitted on every state mutation and on `_load_active()` restore |
+| `kill_attributed` | `{name = "<mob name>", xp = <integer>}` | `lua/core/run_state.lua` `_fold()` — emitted once per attributed kill after `script_ui` announce |
 
 ### `gmcp_<module>` events
 
@@ -411,6 +412,20 @@ Subscribers should read `state.char.stored_spells` directly for the new state.
 updated `stored_spells` array (alongside `affects`) to `bridge/runtime/buffs.state`
 atomically, giving the buffs-pane renderer a fresh snapshot within one poll
 tick.
+
+### `kill_attributed`
+
+Emitted by `lua/core/run_state.lua`'s `_fold()` once per attributed kill,
+immediately after the `script_ui("KILL", ...)` announce. Payload:
+`{name = "<mob name>", xp = <integer>}` where `name` is the mob name as
+captured by `mob_death` (includes article, e.g. `"an elven slave"`) and `xp`
+is the even-split XP attributed to this kill (may be `0` for empty-Vitals
+folds). For group kills inside the 500ms debounce window, fires once per mob
+with the even-split share; the last mob receives the remainder. See ADR 0008
+for the attribution model.
+
+**Subscribers:** `lua/core/run_log.lua` — writes a `kill` row to
+`current.jsonl`.
 
 ## Adding a new event
 

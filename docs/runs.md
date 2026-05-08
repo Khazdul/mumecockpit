@@ -105,10 +105,31 @@ clean end of a run.
 }
 ```
 
-### `kill` (Phase 3)
+### `kill`
 
-Kill attribution is added in a follow-up phase once `run_state.lua` emits
-`kill_attributed`. Not present in Phase 2 logs.
+Written once per attributed kill at fold time (~500ms debounce after the
+R.I.P. line). Fold timing means the timestamp is the fold time, not the exact
+death time.
+
+```json
+{
+  "event":    "kill",
+  "ts":       1746641200,
+  "mob_name": "an elven slave",
+  "xp_delta": 142
+}
+```
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `ts` | integer | `os.time()` at fold time, not exact death time |
+| `mob_name` | string | Full mob name with article, as captured by `mob_death` |
+| `xp_delta` | integer | XP attributed to this kill; `0` for empty-Vitals folds |
+
+For group kills (multiple mobs dying within the 500ms window), N consecutive
+`kill` rows appear with even-split XP; the last row receives the remainder if
+`pending_xp` is not divisible by N. Kill ordering within the JSONL matches
+`state.run.kills` insertion order (same as `mob_death` arrival order).
 
 ## Schema versioning
 
