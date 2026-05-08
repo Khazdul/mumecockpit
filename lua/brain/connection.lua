@@ -53,7 +53,8 @@ function mark_mume_connected()
     local f = io.open(CONNECTION_STATE_PATH, "r")
     if f then f:close(); return end
     _write_connection_state()
-    system_ui("Connected to MUME.")
+    local name = state.char.name or "Character"
+    system_ui(ui_var(name) .. " logged in.")
     if state.run and state.run.reset then state.run.reset() end
 end
 
@@ -62,7 +63,8 @@ function mark_mume_disconnected()
     if not f then return end
     f:close()
     _clear_connection_state()
-    system_ui("Disconnected from MUME.")
+    local name = state.char.name or "Character"
+    system_ui(ui_var(name) .. " logged out.")
     if not _popup_is_open() then _open_popup() end
     if state.run and state.run.reset then state.run.reset() end
     if state.char and state.char.reset then state.char.reset() end
@@ -70,7 +72,7 @@ end
 
 function set_game_session(ses)
     GAME_SESSION = ses
-    system_ui("tt++ session " .. ui_var(ses) .. " open.")
+    system_ui("Connecting to MUME...")
     tintin_cmd("gts", "#var {game_session} {" .. ses .. "}")
 end
 
@@ -83,7 +85,7 @@ function clear_game_session(ses)
     if GAME_SESSION == ses then
         GAME_SESSION = nil
         mark_mume_disconnected()
-        system_ui("tt++ session " .. ui_var(ses) .. " closed.")
+        system_ui("Connection to MUME closed.")
         tintin("gts", "#unvar game_session")
     else
         dbg("clear_game_session: mismatch")

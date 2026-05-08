@@ -126,11 +126,11 @@ _update_available() {
 _build_menu_items() {
     _ITEMS=()
     if [ "$HAS_SESSION" -eq 0 ]; then
-        _ITEMS+=("New session")
+        _ITEMS+=("Enter game")
     elif [ "$ATTACHED" -eq 0 ]; then
-        _ITEMS+=("Continue session")
+        _ITEMS+=("Resume game")
     else
-        _ITEMS+=("Mirror session (attached elsewhere)")
+        _ITEMS+=("Mirror game (attached elsewhere)")
     fi
     if _update_available; then
         _ITEMS+=("Update")
@@ -1064,7 +1064,7 @@ while true; do
         ESC) _quit_confirm ;;
         ENTER|SPACE)
             case "${_ITEMS[$_SEL]}" in
-                "New session"|"Continue session"|"Mirror session (attached elsewhere)")
+                "Enter game"|"Resume game"|"Mirror game (attached elsewhere)")
                     trap - EXIT INT TERM HUP
                     printf '\e[?1007h'  # re-enable alt-scroll before tmux takes over
                     if [ "$HAS_SESSION" -eq 1 ]; then

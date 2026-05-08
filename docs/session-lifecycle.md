@@ -77,9 +77,9 @@ already cleared and returns early.
   of `CONNECTION_STATE_PATH` and only act — and only emit `system_ui` — on
   an actual disconnected→connected or connected→disconnected transition.
 - `mark_mume_connected()` calls `_write_connection_state()` (atomic temp+rename,
-  reads `connection_mode` from `startup.conf`), then `system_ui("Connected to MUME.")`.
+  reads `connection_mode` from `startup.conf`), then `system_ui(ui_var(name) .. " logged in.")`.
 - `mark_mume_disconnected()` calls `_clear_connection_state()`, emits
-  `system_ui("Disconnected from MUME.")`, then auto-opens the popup if
+  `system_ui(ui_var(name) .. " logged out.")`, then auto-opens the popup if
   `bridge/runtime/.popup_open` is absent (see `docs/popup-menu.md` — Auto-open on disconnect).
 
 `set_game_session()` no longer writes `connection.state` — it only tracks tt++

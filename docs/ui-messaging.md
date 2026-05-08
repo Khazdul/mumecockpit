@@ -67,15 +67,19 @@ cockpit reload, future framework-level events) use `system_ui()` in
 `brain.lua`:
 
 ```lua
-system_ui("Game session " .. ui_var(ses) .. " connected.")
-system_ui("Game session " .. ui_var(ses) .. " closed.")
+system_ui("Connecting to MUME...")
+system_ui(ui_var(name) .. " logged in.")
+system_ui(ui_var(name) .. " logged out.")
+system_ui("Connection to MUME closed.")
 ```
 
 Renders in the UI pane as:
 
 ```
-● SYSTEM: Game session mume connected.
-● SYSTEM: Game session mume closed.
+● SYSTEM: Connecting to MUME...
+● SYSTEM: Khazdul logged in.
+● SYSTEM: Khazdul logged out.
+● SYSTEM: Connection to MUME closed.
 ```
 
 `● SYSTEM` is blue (`#42A5F5`), the message is bold bright white, and
@@ -216,7 +220,7 @@ default.
 Usage:
 
 ```lua
-system_ui("Game session " .. ui_var(ses) .. " connected.")
+system_ui(ui_var(name) .. " logged in.")
 script_ui("AUTOSTAB", "Stopped — " .. ui_var(reason) .. ".")
 ui_err("Failed to load script " .. ui_var("foo.lua") .. ".")
 ```
@@ -237,9 +241,9 @@ cross-cutting rules.
 These rules apply to every message written to `ui.log` through any helper
 (`ui`, `script_ui`, `system_ui`, `ui_warn`, `ui_err`):
 
-- **Trailing period — UI vs dev.** User-facing helpers (`ui`, `system_ui`, `script_ui`, `ui_warn`, `ui_err`) write full sentences and always end with a period. `dbg()` is developer-facing log output — terse, `key: value` or status-style — and never ends with a period. Quick test: if the line reads like console output from a tool (`server connected`, `cache miss for foo`, `3 scripts loaded`), it's `dbg()` and takes no period. If it reads like a status report to the player (`Game session mume connected.`), it's one of the UI helpers and does.
+- **Trailing period — UI vs dev.** User-facing helpers (`ui`, `system_ui`, `script_ui`, `ui_warn`, `ui_err`) write full sentences and always end with a period. `dbg()` is developer-facing log output — terse, `key: value` or status-style — and never ends with a period. Quick test: if the line reads like console output from a tool (`server connected`, `cache miss for foo`, `3 scripts loaded`), it's `dbg()` and takes no period. If it reads like a status report to the player (`Khazdul logged in.`), it's one of the UI helpers and does.
 - **Event-style phrasing.** Describe what happened, not what the state is
-  now. `Game session mume connected.`, not `Game session: mume`.
+  now. `Khazdul logged in.`, not `Character: Khazdul`.
 - **Dynamic values highlighted.** Any variable part of a message (session
   name, target, reason, count, filename) is wrapped in `ui_var()` and
   renders in bold yellow against the bold white base text.
