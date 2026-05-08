@@ -90,11 +90,6 @@ end
 
 function set_game_session(ses)
     GAME_SESSION = ses
-    -- A new game session means a new MUME TCP connection; anything in
-    -- connection.state is from a previous brain session and is stale.
-    -- cp -r does NOT trigger SESSION CONNECTED for the game session, so
-    -- this clear only runs on a full restart — not in the cp -r path.
-    _clear_connection_state()
     system_ui("Connecting to MUME...")
     tintin_cmd("gts", "#var {game_session} {" .. ses .. "}")
 end

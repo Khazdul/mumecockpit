@@ -70,9 +70,8 @@ local _saved_conn = _read_connection_state()
 if _saved_conn and _saved_conn.character_name then
     state.char.name = _saved_conn.character_name
     dbg("char.name: " .. _saved_conn.character_name .. " (rehydrated)")
-else
-    _clear_connection_state()
 end
+_clear_connection_state()
 local _n_core, _n_scripts = load_scripts()
 dbg(_n_core .. " core + " .. _n_scripts .. " scripts loaded")
 
