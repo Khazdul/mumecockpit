@@ -27,9 +27,9 @@ mkdir -p bridge/runtime logs
 
 # Seed default.tin from the blank-profile template on fresh installs.
 # Idempotent: runs only when default.tin is missing.
-if [ ! -f ttpp/sessions/default.tin ] && [ -f bridge/launcher/templates/blank_profile.tin ]; then
-    mkdir -p ttpp/sessions
-    cp bridge/launcher/templates/blank_profile.tin ttpp/sessions/default.tin
+if [ ! -f ttpp/profiles/default.tin ] && [ -f bridge/launcher/templates/blank_profile.tin ]; then
+    mkdir -p ttpp/profiles
+    cp bridge/launcher/templates/blank_profile.tin ttpp/profiles/default.tin
 fi
 
 chmod +x bridge/launcher/open_pane.sh

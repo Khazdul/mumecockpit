@@ -59,8 +59,9 @@ Active ADRs by area. Click through for context, alternatives, and consequences.
 ### Sessions & profile persistence
 
 - [ADR 0014](0014-system-owned-profile-autosave.md) — System-owned profile auto-save — the `SESSION DEACTIVATED` auto-save handler lives in `system.tin`; user profiles must not register their own.
-- [ADR 0018](0018-update-preserves-user-files.md) — update.sh preserves user-created files — user-created files in `ttpp/sessions/` and `lua/scripts/` are snapshotted before the git reset and restored after.
+- [ADR 0018](0018-update-preserves-user-files.md) — update.sh preserves user-created files — user-created files in `ttpp/profiles/` and `lua/scripts/` are snapshotted before the git reset and restored after.
 - [ADR 0042](0042-blank-profile-template.md) — Blank-profile template and runtime-seeded default.tin — `bridge/launcher/templates/blank_profile.tin` is the sole source for new-profile content; `default.tin` is seeded from it on first launch.
+- [ADR 0048](0048-ttpp-profiles-path-rename.md) — ttpp/profiles/ path rename — `ttpp/sessions/` renamed to `ttpp/profiles/` to match the profile/session vocabulary from ADR 0044; one-shot migration in both launchers.
 
 ### Data layout & runs
 

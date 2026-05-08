@@ -50,7 +50,7 @@ Start/Continue/Mirror row. Selecting it runs `bridge/release/update.sh`, which:
    - Developer fingerprint: `git config user.email` must NOT match any
      commit author in the repo history.
    - Working tree clean: no uncommitted changes, no untracked files
-     outside `.gitignore`. Files in `ttpp/sessions/` and `lua/scripts/`
+     outside `.gitignore`. Files in `ttpp/profiles/` and `lua/scripts/`
      are excluded from this check — auto-save writes there as part of
      normal operation.
    - Local commits: zero commits ahead of the latest release tag.
@@ -68,7 +68,7 @@ Before the `git reset --hard`, `update.sh` snapshots files that must survive
 the reset to `bridge/runtime/.update_preserve/`, then copies them back after the reset
 succeeds. The preserve dir is then deleted on clean exit.
 
-**Shipped vs user-created.** Each file in `ttpp/sessions/` and `lua/scripts/`
+**Shipped vs user-created.** Each file in `ttpp/profiles/` and `lua/scripts/`
 is classified by checking whether it exists in the target release tag
 (`git cat-file -e "refs/tags/$TAG:$path"`):
 
@@ -77,9 +77,9 @@ is classified by checking whether it exists in the target release tag
   receive their new tagged versions.
 - **Does not exist in tag → user-created.** Preserved across the reset. These
   are files the user created via the launcher's Profile page or by writing a
-  new script (e.g. `ttpp/sessions/myhero.tin`, `lua/scripts/mybot.lua`).
+  new script (e.g. `ttpp/profiles/myhero.tin`, `lua/scripts/mybot.lua`).
 
-**`ttpp/sessions/default.tin` is always preserved**, even though it ships in
+**`ttpp/profiles/default.tin` is always preserved**, even though it ships in
 the repo as a starting template. The auto-save hook writes the user's live
 session data to it; its in-repo contents are irrelevant after first launch.
 
@@ -200,7 +200,7 @@ SCRIPT:autobow
 | `show_dev`        | `0`        | Whether to open the dev pane             |
 | `show_status`     | `0`        | Whether to open the status pane          |
 | `show_pane_dividers` | `1`     | Whether tmux pane borders and the pane-border-status bar are visible at startup. `cp -h` persists the new state via `toggle_pane.sh headers --persist`. |
-| `profile`         | `default`  | Which file in `ttpp/sessions/` to load; also the tt++ session name |
+| `profile`         | `default`  | Which file in `ttpp/profiles/` to load; also the tt++ session name |
 
 Toggle panes (with persistence) via `cp -u`, `cp -d`, `cp -m`, `cp -c`, `cp -b`, `cp -h`.
 

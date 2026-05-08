@@ -32,7 +32,7 @@ tracking, and UI feedback.
 │   │                     #   mud_events.tin — core MUD triggers → Lua event bus (priority 3)
 │   │                     #   system.tin     — connection aliases, cp commands, session events
 │   │                     #   welcome.tin    — clean boot banner + auto-connect
-│   └── sessions/         # Per-profile personal settings (.tin files)
+│   └── profiles/         # Per-profile personal settings (.tin files)
 │                         #   default.tin is runtime-seeded from
 │                         #   bridge/launcher/templates/blank_profile.tin (ADR 0042)
 │
@@ -72,7 +72,7 @@ tracking, and UI feedback.
 │   │   ├── quotes.txt        # Tolkien quotes shown on main menu (pipe-sep format)
 │   │   └── templates/        # New-profile content templates
 │   │                         #   blank_profile.tin — seeded into
-│   │                         #   ttpp/sessions/default.tin and used by
+│   │                         #   ttpp/profiles/default.tin and used by
 │   │                         #   the launcher's "Create blank profile" (ADR 0042)
 │   ├── panes/                # Python prompt_toolkit pane renderers
 │   │   ├── input_pane.py     # Input pane — CLI, forwards to TT++, right-aligned menu bar
@@ -286,7 +286,7 @@ Scripts must never hardcode a session name. Use these functions:
 
 Registrations made via `game_cmd()` / `session_cmd()` are placed in the permanent
 `{core}` class, separate from the user's profile class (`{<profile>}`). The profile
-class contains only what is loaded from `ttpp/sessions/<profile>.tin` plus any
+class contains only what is loaded from `ttpp/profiles/<profile>.tin` plus any
 runtime user-typed additions. `cp -s` only serializes the profile class, so script
 registrations never leak into saved profiles.
 

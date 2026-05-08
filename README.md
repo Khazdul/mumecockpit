@@ -60,7 +60,7 @@ call `register_script()`, and the cockpit auto-loads it at startup,
 registers its commands, and lists it in `cp` help and on the launcher
 Scripts page. Remove the file and the feature is gone — no leftover
 state. Per-profile triggers, aliases, macros, and highlights live in
-`.tin` files under `ttpp/sessions/`.
+`.tin` files under `ttpp/profiles/`.
 
 **Launcher** — pre-tmux startup menu with profile picker, options, and
 a self-update flow. ESC opens the same menu in-game without leaving

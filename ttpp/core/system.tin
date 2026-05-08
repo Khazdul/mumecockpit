@@ -71,10 +71,10 @@
         {
             #$_profile
             {
-                #class {$_profile} {write} {ttpp/sessions/$_profile.tin}
+                #class {$_profile} {write} {ttpp/profiles/$_profile.tin}
             };
-            #system {bash $HOME/MUME/bridge/release/sanitize_profile.sh ttpp/sessions/$_profile.tin};
-            #lua {system_ui("Profile saved to ttpp/sessions/" .. ui_var("$_profile") .. ".tin.")}
+            #system {bash $HOME/MUME/bridge/release/sanitize_profile.sh ttpp/profiles/$_profile.tin};
+            #lua {system_ui("Profile saved to ttpp/profiles/" .. ui_var("$_profile") .. ".tin.")}
         };
         #else
         {
@@ -86,8 +86,8 @@
 #alias {cp -r} {
     #gts;
     #if {&game_session} {
-        #$game_session #class {$game_session} {write} {ttpp/sessions/$game_session.tin};
-        #system {bash $HOME/MUME/bridge/release/sanitize_profile.sh ttpp/sessions/$game_session.tin}
+        #$game_session #class {$game_session} {write} {ttpp/profiles/$game_session.tin};
+        #system {bash $HOME/MUME/bridge/release/sanitize_profile.sh ttpp/profiles/$game_session.tin}
     };
     #system {echo "[$(date '+%H:%M:%S')] COCKPIT RELOAD — wiping state" >> $HOME/MUME/logs/debug.log};
     #zap lua;
@@ -103,9 +103,9 @@
     #read ttpp/main.tin;
     #if {&game_session} {
         #lua {set_game_session("$game_session")};
-        #system {bash $HOME/MUME/bridge/release/sanitize_profile.sh ttpp/sessions/$game_session.tin};
+        #system {bash $HOME/MUME/bridge/release/sanitize_profile.sh ttpp/profiles/$game_session.tin};
         #$game_session #class {$game_session} {open};
-        #$game_session #read ttpp/sessions/$game_session.tin;
+        #$game_session #read ttpp/profiles/$game_session.tin;
         #$game_session #class {$game_session} {close};
         _register_mud_events $game_session;
         _register_clock_actions $game_session;
@@ -127,8 +127,8 @@
 #alias {cp -e} {
     #gts;
     #if {&game_session} {
-        #$game_session #class {$game_session} {write} {ttpp/sessions/$game_session.tin};
-        #system {bash $HOME/MUME/bridge/release/sanitize_profile.sh ttpp/sessions/$game_session.tin}
+        #$game_session #class {$game_session} {write} {ttpp/profiles/$game_session.tin};
+        #system {bash $HOME/MUME/bridge/release/sanitize_profile.sh ttpp/profiles/$game_session.tin}
     };
     #showme {[COCKPIT] Goodbye. Shutting down client...};
     #if {&game_session} {#$game_session #zap};
@@ -153,10 +153,10 @@
             #var {_zapping_intruder} {1};
             #zap %0
         } {
-            #system {bash $HOME/MUME/bridge/release/sanitize_profile.sh ttpp/sessions/%0.tin};
+            #system {bash $HOME/MUME/bridge/release/sanitize_profile.sh ttpp/profiles/%0.tin};
             #lua {set_game_session("%0")};
             #%0 #class {%0} {open};
-            #%0 #read ttpp/sessions/%0.tin;
+            #%0 #read ttpp/profiles/%0.tin;
             #%0 #class {%0} {close};
             #%0 #alias {reconnect} {#gts reconnect};
             #%0 #action {^Status: MUME closed the connection.$} {#lua {mark_mume_disconnected()}};
@@ -196,8 +196,8 @@
 
 #event {SESSION DEACTIVATED} {
     #if {"%0" != "gts" && "%0" != "lua"} {
-        #%0 #class {%0} {write} {ttpp/sessions/%0.tin};
-        #system {bash $HOME/MUME/bridge/release/sanitize_profile.sh ttpp/sessions/%0.tin}
+        #%0 #class {%0} {write} {ttpp/profiles/%0.tin};
+        #system {bash $HOME/MUME/bridge/release/sanitize_profile.sh ttpp/profiles/%0.tin}
     }
 }
 

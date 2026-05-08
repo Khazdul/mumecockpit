@@ -2,7 +2,7 @@
 # bridge/launcher/tmux_start.sh — creates and attaches to the MUME tmux cockpit session.
 # Session options, hooks, and keybinds are configured here; pane layout is built
 # post-attach by build_initial_layout.sh via a one-shot client-attached hook.
-# Called by start.sh (--no-menu / -d / -u) or bridge/launcher/launcher.sh ("New session").
+# Called by start.sh (--no-menu / -d / -u) or bridge/launcher/launcher.sh ("Enter game").
 
 cd "$(dirname "$0")/../.."
 
@@ -15,6 +15,11 @@ for f in bridge/*.state bridge/*.cache bridge/*.conf bridge/.[a-zA-Z]*; do
     mv "$f" bridge/runtime/ 2>/dev/null || true
 done
 [ -d bridge/.update_preserve ] && mv bridge/.update_preserve bridge/runtime/
+
+# ttpp/sessions/ → ttpp/profiles/ (ADR 0048)
+if [ -d ttpp/sessions ] && [ ! -d ttpp/profiles ]; then
+    mv ttpp/sessions ttpp/profiles
+fi
 
 # Clear any stale sentinels left by a crash before doing anything else.
 rm -f bridge/runtime/.return_to_menu

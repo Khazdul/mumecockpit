@@ -203,9 +203,9 @@ else
         pass "no GMCP handler wraps in lua/core/ (ADR 0046)"
     fi
 
-    # --- check 10: ttpp/sessions/default.tin not tracked (ADR 0042) ---
+    # --- check 10: ttpp/profiles/default.tin not tracked (ADR 0042) ---
 
-    tracked_default=$(git ls-files ttpp/sessions/default.tin 2>/dev/null)
+    tracked_default=$(git ls-files ttpp/profiles/default.tin 2>/dev/null)
     if [ -n "$tracked_default" ]; then
         fail "default.tin not tracked (ADR 0042)"
     else

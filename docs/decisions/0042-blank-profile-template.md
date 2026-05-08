@@ -31,7 +31,7 @@ keypad application mode) to common MUME commands.
 
 Two consumers copy from this template:
 
-- `start.sh` seeds `ttpp/sessions/default.tin` from the template if
+- `start.sh` seeds `ttpp/profiles/default.tin` from the template if
   the file is missing. The check runs unconditionally on every launch
   (both `--no-menu` and menu paths) and is idempotent — a no-op when
   the file is already present.
@@ -39,7 +39,7 @@ Two consumers copy from this template:
   template into the chosen profile path, with a defensive fallback if
   the template is somehow missing.
 
-`ttpp/sessions/default.tin` is removed from the repo. ADR 0018's
+`ttpp/profiles/default.tin` is removed from the repo. ADR 0018's
 preservation loop continues to protect existing users — its
 special-case is keyed on filename, not on tag presence, so the
 behaviour for users with a customised `default.tin` is unchanged
@@ -62,7 +62,7 @@ across updates.
 - Existing users who have already hit the empty-file bug and have a
   zero-byte `default.tin` are not auto-healed — the seed check is on
   file existence, not size. Workaround is trivial (`rm
-  ttpp/sessions/default.tin` then relaunch). Accepted given near-zero
+  ttpp/profiles/default.tin` then relaunch). Accepted given near-zero
   current user count.
 
 ## Alternatives considered
@@ -91,7 +91,7 @@ manual workaround (`rm` + relaunch) acceptable.
 
 ## Relation to ADR 0018
 
-ADR 0018's preservation loop special-cases `ttpp/sessions/default.tin`
+ADR 0018's preservation loop special-cases `ttpp/profiles/default.tin`
 by filename. That special-case is unchanged and still correct: the
 loop iterates only over existing files, so the file's absence from
 the repo does not affect preservation for users who have one on

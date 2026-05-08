@@ -62,7 +62,7 @@ since tt++ keeps the disconnected session alive. Selecting it triggers
 `cp -s` via `tmux send-keys`; an inline "Saved ✓" flashes in `_MR_ACCENT`
 for ~1 s.
 
-`cp -s` runs `#class {$_profile} {write} {ttpp/sessions/$_profile.tin}`
+`cp -s` runs `#class {$_profile} {write} {ttpp/profiles/$_profile.tin}`
 inside the profile's tt++ session via a `#gts { #$_profile { ... } }`
 wrapper. Uses `$_profile` (stable, set once at tt++ startup from
 `startup.conf`) rather than `$game_session` (cleared on disconnect) so

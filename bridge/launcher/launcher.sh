@@ -18,6 +18,11 @@ for f in bridge/*.state bridge/*.cache bridge/*.conf bridge/.[a-zA-Z]*; do
 done
 [ -d bridge/.update_preserve ] && mv bridge/.update_preserve bridge/runtime/
 
+# ttpp/sessions/ → ttpp/profiles/ (ADR 0048)
+if [ -d ttpp/sessions ] && [ ! -d ttpp/profiles ]; then
+    mv ttpp/sessions ttpp/profiles
+fi
+
 # ---------------------------------------------------------------------------
 # Bootstrap
 # ---------------------------------------------------------------------------
@@ -415,7 +420,7 @@ _create_profile_flow() {
                         errmsg="Name cannot be empty."; nr=1
                     elif [[ ! "$buf" =~ ^[a-zA-Z][a-zA-Z0-9_]*$ ]]; then
                         errmsg="Must start with a letter; only letters, numbers, _ allowed."; nr=1
-                    elif [ -f "ttpp/sessions/${buf}.tin" ]; then
+                    elif [ -f "ttpp/profiles/${buf}.tin" ]; then
                         errmsg="Profile \"${buf}\" already exists."; nr=1
                     else
                         break
@@ -458,11 +463,11 @@ _create_profile_flow() {
             ESC) _DIRTY=1; return ;;
             'b'|'B')
                 if [ -f bridge/launcher/templates/blank_profile.tin ]; then
-                    cp bridge/launcher/templates/blank_profile.tin "ttpp/sessions/${new_name}.tin"
+                    cp bridge/launcher/templates/blank_profile.tin "ttpp/profiles/${new_name}.tin"
                 else
                     # Defensive fallback — template should always be present in a working install.
                     printf '#nop %s.tin — MUME Cockpit profile\n' "$new_name" \
-                        > "ttpp/sessions/${new_name}.tin"
+                        > "ttpp/profiles/${new_name}.tin"
                 fi
                 profile="$new_name"; _save_conf
                 _DIRTY=1; return
@@ -471,7 +476,7 @@ _create_profile_flow() {
                 # === Phase 3: Copy picker — dirty-flag loop with SIGWINCH redraw ===
                 local -a src_profiles=()
                 local f bn
-                for f in ttpp/sessions/*.tin; do
+                for f in ttpp/profiles/*.tin; do
                     [ -f "$f" ] || continue
                     bn="${f##*/}"; src_profiles+=("${bn%.tin}")
                 done
@@ -540,8 +545,8 @@ _create_profile_flow() {
                         UP)   csel=$(( (csel - 1 + ${#src_profiles[@]}) % ${#src_profiles[@]} )) ;;
                         DOWN) csel=$(( (csel + 1) % ${#src_profiles[@]} )) ;;
                         ENTER|SPACE)
-                            cp "ttpp/sessions/${src_profiles[$csel]}.tin" \
-                               "ttpp/sessions/${new_name}.tin"
+                            cp "ttpp/profiles/${src_profiles[$csel]}.tin" \
+                               "ttpp/profiles/${new_name}.tin"
                             profile="$new_name"; _save_conf
                             _DIRTY=1; return
                             ;;
@@ -562,7 +567,7 @@ _profile_page() {
     _load_profiles() {
         _profiles=()
         local f bn
-        for f in ttpp/sessions/*.tin; do
+        for f in ttpp/profiles/*.tin; do
             [ -f "$f" ] || continue
             bn="${f##*/}"; _profiles+=("${bn%.tin}")
         done
@@ -697,7 +702,7 @@ _profile_page() {
                             break
                         done
                         if [ "$_confirmed" -eq 1 ]; then
-                            rm "ttpp/sessions/${dname}.tin"
+                            rm "ttpp/profiles/${dname}.tin"
                             if [ "$profile" = "$dname" ]; then
                                 profile="default"; _save_conf
                             fi

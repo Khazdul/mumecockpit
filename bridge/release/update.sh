@@ -6,7 +6,7 @@
 # Checks out the latest release tag named in bridge/runtime/version.cache.
 # Clients end up on detached HEAD — correct for a stable install.
 # All output is a single human-friendly line; caller renders it verbatim.
-# User-created files in ttpp/sessions/ and lua/scripts/ are preserved
+# User-created files in ttpp/profiles/ and lua/scripts/ are preserved
 # across the reset; see docs/bridge-services.md for details.
 
 set -u
@@ -53,13 +53,13 @@ if [ -n "$AUTHOR_EMAIL" ] && \
 fi
 
 # Step 4b: dirty working tree / untracked files
-# ttpp/sessions/ and lua/scripts/ are excluded — auto-save writes there normally.
-if ! git diff --quiet -- ':(exclude)ttpp/sessions/*' \
+# ttpp/profiles/ and lua/scripts/ are excluded — auto-save writes there normally.
+if ! git diff --quiet -- ':(exclude)ttpp/profiles/*' \
                          ':(exclude)lua/scripts/*'; then
     echo "Uncommitted local changes outside user data directories. Update refuses to overwrite them. Commit or stash first."
     exit 21
 fi
-if ! git diff --cached --quiet -- ':(exclude)ttpp/sessions/*' \
+if ! git diff --cached --quiet -- ':(exclude)ttpp/profiles/*' \
                                    ':(exclude)lua/scripts/*'; then
     echo "Staged local changes outside user data directories. Update refuses to overwrite them. Commit or stash first."
     exit 21
@@ -67,7 +67,7 @@ fi
 
 # Untracked files: ignore the two user-data dirs
 untracked=$(git ls-files --others --exclude-standard \
-            | grep -v -E '^(ttpp/sessions|lua/scripts)/' || true)
+            | grep -v -E '^(ttpp/profiles|lua/scripts)/' || true)
 if [ -n "$untracked" ]; then
     echo "Untracked files present outside user data directories. Update refuses to overwrite them. Commit, stash, or delete first."
     exit 21
@@ -96,12 +96,12 @@ trap '
 PRESERVE_DIR="bridge/runtime/.update_preserve"
 rm -rf "$PRESERVE_DIR"
 
-for dir in ttpp/sessions lua/scripts; do
+for dir in ttpp/profiles lua/scripts; do
     [ -d "$dir" ] || continue
     for f in "$dir"/*; do
         [ -f "$f" ] || continue
         relpath="$f"
-        if [ "$relpath" = "ttpp/sessions/default.tin" ]; then
+        if [ "$relpath" = "ttpp/profiles/default.tin" ]; then
             mkdir -p "$PRESERVE_DIR/$(dirname "$relpath")"
             cp -p "$f" "$PRESERVE_DIR/$relpath"
             continue

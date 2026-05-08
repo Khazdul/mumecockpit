@@ -139,7 +139,7 @@ simultaneously.
 
 ## Session Settings Persistence
 
-Personal game settings live in `ttpp/sessions/<name>.tin`, named after
+Personal game settings live in `ttpp/profiles/<name>.tin`, named after
 the session (default: `default.tin`). The file is loaded into a tt++ class
 of the same name on SESSION CONNECTED, and the class is kept open for
 the duration of the session so that any aliases, variables, or other
@@ -147,7 +147,7 @@ settings added at runtime are captured automatically.
 
 **New-profile origin.** `bridge/launcher/templates/blank_profile.tin` is the single
 source of truth for the content of any new profile. `start.sh` seeds
-`ttpp/sessions/default.tin` from this template on fresh installs (idempotent
+`ttpp/profiles/default.tin` from this template on fresh installs (idempotent
 — a no-op when the file already exists). The launcher's "Create blank profile"
 flow `cp`s from the same template. The shipped template includes default numpad
 `#macro` registrations so that `#class {<profile>} {write}` on session
@@ -157,7 +157,7 @@ deactivation never produces an empty file (which tt++ would reject on the next
 **Profile file format:** Profile files are stored bare — no
 `#class {name} {open}` / `{close}` wrapping is required or expected. The
 cockpit handles class assignment externally. Legacy MUME settings files can
-be dropped into `ttpp/sessions/` and renamed to match the session without
+be dropped into `ttpp/profiles/` and renamed to match the session without
 modification.
 
 **Sanitizer:** `bridge/release/sanitize_profile.sh <path>` is the boundary between
@@ -220,7 +220,7 @@ issued from gts) are applied to the session but do not re-trigger
 DEACTIVATED. If the user exits without activating the session again, such
 changes are lost. To persist them, either activate the session (`#mume`
 then `#gts`) before exiting, or run
-`#default #class {default} {write} {ttpp/sessions/default.tin}` manually.
+`#default #class {default} {write} {ttpp/profiles/default.tin}` manually.
 
 **Shutdown Teardown:** PROGRAM TERMINATION runs
 `tmux kill-session -t mume 2>/dev/null`. Any graceful tt++ exit — `cp -e`,
@@ -231,9 +231,9 @@ Standalone tt++ runs outside the cockpit are unaffected by the missing
 tmux session (error is suppressed).
 
 **Load sequence on SESSION CONNECTED:**
-1. `sanitize_profile.sh ttpp/sessions/%0.tin` — normalizes BOM, CRLF, class wrapping, leading blanks
+1. `sanitize_profile.sh ttpp/profiles/%0.tin` — normalizes BOM, CRLF, class wrapping, leading blanks
 2. `#class {%0} {open}` — opens the session class
-3. `#read ttpp/sessions/%0.tin` — loads profile content into the open class
+3. `#read ttpp/profiles/%0.tin` — loads profile content into the open class
 4. `#class {%0} {close}` — closes the class; subsequent registrations land in no class
 5. Register infrastructure: reconnect alias, disconnect action, `_register_mud_events`,
    `_register_clock_actions`, `_register_affect_actions` — these are not user data
@@ -252,17 +252,17 @@ model: `{<profile>}` holds user data, `{core}` holds all script and infrastructu
 registrations.
 
 **Load sequence on cp -r (already-connected session):**
-1. `sanitize_profile.sh ttpp/sessions/$game_session.tin` — normalizes BOM, CRLF, class wrapping, leading blanks
+1. `sanitize_profile.sh ttpp/profiles/$game_session.tin` — normalizes BOM, CRLF, class wrapping, leading blanks
 2. `#class {$game_session} {open}` — opens the session class
-3. `#read ttpp/sessions/$game_session.tin` — loads profile content into the open class
+3. `#read ttpp/profiles/$game_session.tin` — loads profile content into the open class
 4. `#class {$game_session} {close}` — closes the class; subsequent registrations land in no class
 5. Register infrastructure: `_register_mud_events`, `_register_clock_actions`,
    `_register_affect_actions` — these are not user data
 6. `#class {$game_session} {open}` — re-opens the class so runtime additions are captured
 
 **Save sequence** (same two-step body at every call site):
-1. `#class {name} {write} {ttpp/sessions/name.tin}` — writes file with wrapping
-2. `sanitize_profile.sh ttpp/sessions/name.tin` — normalizes the file (strips wrapping and header artifacts)
+1. `#class {name} {write} {ttpp/profiles/name.tin}` — writes file with wrapping
+2. `sanitize_profile.sh ttpp/profiles/name.tin` — normalizes the file (strips wrapping and header artifacts)
 
 Call sites: SESSION DEACTIVATED handler, `cp -s`, `cp -e`, `cp -r`.
 
@@ -299,7 +299,7 @@ module — a save tick is a copy of that pattern, no new mechanism.
 `brain.lua` at startup. Decision deferred until implementation.
 
 **Tradeoffs.** Worst-case data loss bounded to one interval rather than the
-full session. Cost: one file write to `ttpp/sessions/<profile>.tin` every N
+full session. Cost: one file write to `ttpp/profiles/<profile>.tin` every N
 seconds while connected — negligible. No tt++ event-loop impact; the work
 happens in Lua and reaches tt++ via the existing IPC.
 
