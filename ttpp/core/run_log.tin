@@ -1,12 +1,8 @@
 #nop ===== RUN LOG CAPTURE =====
 #nop Per-line capture for the run .log file. RECEIVED LINE event
-#nop computes a microsecond timestamp via #format %U (raw integer
-#nop microseconds since epoch), then #line log writes <ts> <line>
-#nop directly to the file. No Lua dispatch in the hot path.
-
-#function {run_log_ts} {
-    #format result {%U}
-}
+#nop inlines #format %U directly so each firing gets a fresh microsecond
+#nop timestamp. Function indirection reuses the same %U evaluation across
+#nop all events in a tight batch, causing duplicate timestamps.
 
 #alias {_register_run_log_capture %1} {
     #if {"%1" != ""} {
@@ -14,7 +10,8 @@
         #%1 #unvar _run_log_path;
         #%1 #event {RECEIVED LINE} {
             #if {&_run_log_path} {
-                #line log $_run_log_path {@run_log_ts{} %%0}
+                #format _ts {%%U};
+                #line log $_run_log_path {$_ts %%0}
             }
         }
     }
