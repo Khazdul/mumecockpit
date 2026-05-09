@@ -214,10 +214,16 @@ the `run_start` JSONL row), disarmed on `run_ending` (after the `run_end`
 row is written). There is a short login-screen gap before arming — same as
 the `.jsonl`.
 
-**cp -r mid-run.** `#kill event` clears the RECEIVED LINE handler, but
-the `cp -r` alias re-registers it via `_register_run_log_capture`. The Lua
-resume block re-arms `_run_log_path` via `_open_log`, so capture continues
-seamlessly after reload.
+**cp -r mid-run.** `#kill event` clears the RECEIVED LINE handler, but the
+`cp -r` alias re-registers it via `_register_run_log_capture`. The Lua resume
+block re-arms `_run_log_path` via `_open_log` if `state.char.name` is set, but
+lines received during the reload window are lost. See Limitations below.
+
+**Limitations.** The `.log` capture has a gap if `cp -r` is invoked mid-run.
+The Lua brain reload sequence cannot rearm `_run_log_path` because GMCP
+dispatch is not currently re-established to the new brain. Use a full launcher
+restart instead. JSONL event capture is unaffected — it covers the connection
+lifecycle, not the moment-to-moment text stream.
 
 **Per-session state hygiene.** The registration alias explicitly clears any
 persisted `_run_log_path` and `RECEIVED LINE` event (`#unevent` + `#unvar`)
