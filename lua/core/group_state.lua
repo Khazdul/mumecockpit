@@ -1,4 +1,4 @@
--- Always-on GMCP collector for Group.Add / Group.Update / Group.Remove.
+-- Always-on GMCP collector for Group.Set / Group.Add / Group.Update / Group.Remove.
 -- Primary writer for state.group.*; no alias, no register_script.
 
 local _band = {
@@ -33,6 +33,7 @@ local _band = {
 -- Explicit field projection: GMCP kebab-case key → snake_case state key.
 local _field_map = {
     ["id"]          = "id",
+    ["type"]        = "type",
     ["name"]        = "name",
     ["hp"]          = "hp",
     ["hp-string"]   = "hp_string",
@@ -76,6 +77,50 @@ function state.group.pct_for(kind, value, maxv, str)
 end
 
 -- ── GMCP handlers ────────────────────────────────────────────────────────────
+
+gmcp.handlers["Group.Set"] = function(body)
+    if body == nil or type(body) ~= "table" then
+        dbg("[GROUP] Set: unexpected payload " .. tostring(body))
+        return
+    end
+
+    local old_ids = {}
+    for id in pairs(state.group.members) do
+        old_ids[id] = true
+    end
+
+    for k in pairs(state.group.members) do
+        state.group.members[k] = nil
+    end
+
+    local new_ids = {}
+    for _, entry in ipairs(body) do
+        if entry.type ~= "npc" then
+            local member = {}
+            for gmcp_key, state_key in pairs(_field_map) do
+                local v = entry[gmcp_key]
+                if v ~= nil and v ~= gmcp.null then
+                    member[state_key] = v
+                end
+            end
+            state.group.members[member.id] = member
+            new_ids[member.id] = true
+        end
+    end
+
+    for id in pairs(old_ids) do
+        if not new_ids[id] then
+            events.emit("group_member_removed", id)
+        end
+    end
+    for id in pairs(new_ids) do
+        if not old_ids[id] then
+            events.emit("group_member_added", state.group.members[id])
+        end
+    end
+
+    events.emit("group_changed")
+end
 
 gmcp.handlers["Group.Add"] = function(body)
     body = body or {}
