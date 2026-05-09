@@ -4,7 +4,7 @@
 
 events = {
     handlers   = {},
-    trace      = true,
+    trace      = false,
     trace_skip = { clock_changed = true, gmcp_char_vitals = false },
 }
 
