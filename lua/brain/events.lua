@@ -4,8 +4,8 @@
 
 events = {
     handlers   = {},
-    trace      = false,
-    trace_skip = { clock_changed = true, gmcp_char_vitals = true },
+    trace      = true,
+    trace_skip = { clock_changed = true, gmcp_char_vitals = false },
 }
 
 function events.subscribe(name, fn)
