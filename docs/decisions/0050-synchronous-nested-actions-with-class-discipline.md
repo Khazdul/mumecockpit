@@ -114,3 +114,44 @@ this is the same alternative considered and rejected in ADR 0049.
   wrap for the runtime registration. Both solve the same invariant violation.
 - **ADR 0044** establishes the run-log file layout; this ADR's `achievement`
   event writes into that structure.
+
+## Related pitfalls
+
+### Unbraced `#nop` arguments in alias bodies
+
+During implementation, the `#nop` comment rows added above the outer action
+were initially written without braces:
+
+```
+#nop Class: profile open per ADR 0049; #class {core} keeps inner out of profile.
+```
+
+Inside an alias body, `;` is a command separator at alias-firing time — it is
+not treated as prose punctuation. The text after the `;` parsed as a real
+command invocation:
+
+```
+#class {core} keeps inner out of profile.
+```
+
+tt++ interpreted `keeps` as the second argument and produced `#SYNTAX: CLASS
+{name} {OPEN|CLEAR|CLOSE|READ|SIZE|WRITE|KILL}` on every session start, once
+per invocation of `_register_mud_events`.
+
+**Fix applied.** The `#nop` rows were rewritten with braced arguments so the
+entire text is a single token:
+
+```
+#nop {Class: profile open per ADR 0049; core class wrap keeps inner out of profile.}
+```
+
+The literal `#class {core}` phrase was also removed from the comment text to
+avoid brace-nesting confusion (an inner `{core}` inside the nop arg brace is
+syntactically valid but confusing to read and fragile to edit).
+
+**Generalisation.** Any command body inside an alias — comment or not — that
+contains `;` must be wrapped in braces. The rule applies equally to `#nop`,
+`#showme`, `#lua`, and any other command whose argument might contain a
+semicolon. The same category of mistake as ADR 0049's profile-class capture:
+alias-body parse-time semantics turn small notational choices into silent
+runtime failures.
