@@ -1,0 +1,292 @@
+#!/usr/bin/env python3
+# bridge/panes/group_pane.py — group member bars renderer.
+# Three horizontal bars per member (HP / Mana / Moves) with a name overlay
+# centred on the mana bar. Anchor-top; overflow indicator when clipped.
+# Polling and prompt_toolkit patterns mirror buffs_pane.py.
+
+try:
+    from prompt_toolkit import Application
+    from prompt_toolkit.filters import Condition
+    from prompt_toolkit.key_binding import KeyBindings
+    from prompt_toolkit.layout import Layout
+    from prompt_toolkit.layout.containers import ConditionalContainer, HSplit, Window
+    from prompt_toolkit.layout.controls import FormattedTextControl
+    from prompt_toolkit.output import ColorDepth
+except ImportError:
+    print("Error: prompt_toolkit is not installed.")
+    print("Run: pip install prompt_toolkit --break-system-packages")
+    exit(1)
+
+import asyncio
+import atexit
+import json
+import os
+import shutil
+import signal
+import sys
+
+GROUP_STATE_PATH = os.environ.get(
+    "GROUP_STATE_PATH",
+    os.path.join(os.environ["HOME"], "MUME", "bridge", "runtime", "group.state"),
+)
+POLL_MS = 0.1
+NAME_W  = 12   # columns reserved for the member name on the left
+
+# ---------------------------------------------------------------------------
+# Colour constants (24-bit truecolor; swap values here to retheme)
+# ---------------------------------------------------------------------------
+HP_DEFAULT_BG   = "#00b050"
+HP_DEFAULT_FG   = "#00b050"
+MANA_DEFAULT_BG = "#2a7fff"
+MANA_DEFAULT_FG = "#2a7fff"
+MP_DEFAULT_BG   = "#d4a020"
+MP_DEFAULT_FG   = "#d4a020"
+ORANGE_BG       = "#ff8c00"
+ORANGE_FG       = "#ff8c00"
+RED_BG          = "#d92020"
+RED_FG          = "#d92020"
+
+C_NAME_ON_FILL  = "fg:#000000"   # name char that falls inside the fill region
+C_NAME_ON_EMPTY = "fg:#cccccc"   # name char that falls outside the fill region
+C_INDICATOR     = "fg:#d4a04e italic"
+
+# ---------------------------------------------------------------------------
+# Renderer state
+# ---------------------------------------------------------------------------
+_members    = []
+_last_mtime = None
+_app        = None
+
+
+def _term_rows():
+    try:
+        return os.get_terminal_size().lines
+    except OSError:
+        return 24
+
+
+# ---------------------------------------------------------------------------
+# Layout helpers
+# ---------------------------------------------------------------------------
+
+def _bar_widths(total):
+    """Distribute `total` columns across 3 bars, left-to-right rounding."""
+    base  = total // 3
+    extra = total %  3
+    return [base + (1 if i < extra else 0) for i in range(3)]
+
+
+def _bar_palette(pct, default_bg, default_fg):
+    """Return (style_fill, style_sep) for a bar based on pct threshold."""
+    if pct is not None and pct <= 0.25:
+        bg, fg = RED_BG, RED_FG
+    elif pct is not None and pct <= 0.45:
+        bg, fg = ORANGE_BG, ORANGE_FG
+    else:
+        bg, fg = default_bg, default_fg
+    return f"bg:{bg}", f"fg:{fg}"
+
+
+# ---------------------------------------------------------------------------
+# Bar renderers
+# ---------------------------------------------------------------------------
+
+def _plain_bar_frags(pct, bar_w, default_bg, default_fg):
+    """HP or MP bar — no overlay; returns list of (style, char) fragments."""
+    if bar_w <= 0:
+        return []
+    style_fill, style_sep = _bar_palette(pct, default_bg, default_fg)
+    fill = int(pct * bar_w + 0.5) if pct is not None else 0
+
+    frags = []
+    for i in range(bar_w):
+        if i == bar_w - 1 and fill >= bar_w:
+            frags.append((style_sep, "▌"))
+        elif i < fill:
+            frags.append((style_fill, " "))
+        else:
+            frags.append(("", " "))
+    return frags
+
+
+def _mana_bar_frags(pct, bar_w, name):
+    """Mana bar with member name centred over it as an overlay.
+
+    Per-column colour split: columns inside fill use black FG on bar BG;
+    columns outside fill use grey FG on terminal BG. The ▌ marker at full
+    fill overrides whatever name char sits at the last column.
+    """
+    if bar_w <= 0:
+        return []
+    style_fill, style_sep = _bar_palette(pct, MANA_DEFAULT_BG, MANA_DEFAULT_FG)
+    fill = int(pct * bar_w + 0.5) if pct is not None else 0
+
+    if name is not None:
+        raw      = name[:bar_w]
+        name_str = raw.center(bar_w)[:bar_w]
+    else:
+        name_str = " " * bar_w
+
+    frags = []
+    for i in range(bar_w):
+        ch = name_str[i]
+        if i == bar_w - 1 and fill >= bar_w:
+            frags.append((style_sep, "▌"))
+        elif i < fill:
+            frags.append((C_NAME_ON_FILL + " " + style_fill, ch))
+        else:
+            frags.append((C_NAME_ON_EMPTY, ch))
+    return frags
+
+
+# ---------------------------------------------------------------------------
+# Row builder
+# ---------------------------------------------------------------------------
+
+def _member_frags(member, W):
+    """Return prompt_toolkit fragments for one member row at terminal width W."""
+    residual             = max(0, W - NAME_W - 3)   # 3 spaces between the 4 segments
+    bar_hp_w, bar_mana_w, bar_mp_w = _bar_widths(residual)
+
+    name = (member.get("name") or "")[:NAME_W].ljust(NAME_W)
+    frags = [("", name), ("", " ")]
+
+    frags.extend(_plain_bar_frags(member.get("hp_pct"),   bar_hp_w,   HP_DEFAULT_BG, HP_DEFAULT_FG))
+    frags.append(("", " "))
+    frags.extend(_mana_bar_frags( member.get("mana_pct"), bar_mana_w, member.get("name")))
+    frags.append(("", " "))
+    frags.extend(_plain_bar_frags(member.get("mp_pct"),   bar_mp_w,   MP_DEFAULT_BG, MP_DEFAULT_FG))
+
+    return frags
+
+
+# ---------------------------------------------------------------------------
+# prompt_toolkit text providers
+# ---------------------------------------------------------------------------
+
+def _rows_text():
+    if not _members:
+        return []
+    W     = max(NAME_W + 3, shutil.get_terminal_size().columns)
+    H     = max(1, _term_rows())
+    total = len(_members)
+    # Reserve 1 row for the overflow indicator when it will be shown.
+    list_height = H - 1 if total > H else H
+
+    frags = []
+    for i, member in enumerate(_members[:list_height]):
+        if i > 0:
+            frags.append(("", "\n"))
+        frags.extend(_member_frags(member, W))
+    return frags
+
+
+def _indicator_text():
+    total = len(_members)
+    H     = max(1, _term_rows())
+    if total > H:
+        hidden = total - (H - 1)
+        return [(C_INDICATOR, f"↓ {hidden} more members")]
+    return []
+
+
+# ---------------------------------------------------------------------------
+# Lifecycle helpers
+# ---------------------------------------------------------------------------
+
+def _restore_cursor():
+    sys.stdout.write("\x1b[?25h")
+    sys.stdout.flush()
+
+
+async def _poll_state(app):
+    global _members, _last_mtime
+
+    while True:
+        try:
+            mtime = os.stat(GROUP_STATE_PATH).st_mtime
+        except OSError:
+            mtime = None
+
+        if mtime != _last_mtime:
+            _last_mtime = mtime
+            if mtime is not None:
+                try:
+                    with open(GROUP_STATE_PATH, "r") as fh:
+                        loaded = json.load(fh)
+                    _members = loaded.get("members", [])
+                except Exception:
+                    pass
+            else:
+                _members = []
+            app.invalidate()
+
+        await asyncio.sleep(POLL_MS)
+
+
+kb = KeyBindings()
+
+
+@kb.add("q")
+@kb.add("c-c")
+def _quit(event):
+    event.app.exit()
+
+
+def main():
+    global _app
+
+    sys.stdout.write("\x1b[?25l")
+    sys.stdout.flush()
+    atexit.register(_restore_cursor)
+
+    rows_window = Window(
+        content=FormattedTextControl(_rows_text, focusable=False),
+        wrap_lines=False,
+    )
+
+    indicator_container = ConditionalContainer(
+        content=Window(
+            content=FormattedTextControl(_indicator_text, focusable=False),
+            height=1,
+            dont_extend_height=True,
+        ),
+        filter=Condition(lambda: len(_members) > _term_rows()),
+    )
+
+    root   = HSplit([rows_window, indicator_container])
+    layout = Layout(root)
+
+    app = Application(
+        layout=layout,
+        key_bindings=kb,
+        full_screen=True,
+        mouse_support=True,
+        color_depth=ColorDepth.DEPTH_24_BIT,
+    )
+    _app = app
+
+    def _on_sigwinch(signum, frame):
+        if _app:
+            _app.invalidate()
+
+    signal.signal(signal.SIGWINCH, _on_sigwinch)
+    signal.signal(signal.SIGTERM, lambda s, f: (_restore_cursor(), sys.exit(0)))
+    signal.signal(signal.SIGINT,  signal.SIG_IGN)
+
+    async def _run():
+        poll_task = asyncio.ensure_future(_poll_state(app))
+        try:
+            await app.run_async()
+        finally:
+            poll_task.cancel()
+            try:
+                await poll_task
+            except asyncio.CancelledError:
+                pass
+
+    asyncio.run(_run())
+
+
+if __name__ == "__main__":
+    main()

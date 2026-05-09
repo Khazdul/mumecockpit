@@ -381,6 +381,10 @@ implementations, `cp -s` internals, and toggle-pane persistence details.
 
 ## Current Work
 
+- **Group pane (fas 6):** standalone `prompt_toolkit` renderer for
+  `bridge/runtime/group.state`; three bars per member with name overlay.
+  Layout integration (tmux wiring, toggles, `cp -g`) follows in fas 7.
+
 See the project board on GitHub for active work and parked ideas.
 
 ## See also
@@ -403,5 +407,6 @@ See the project board on GitHub for active work and parked ideas.
 - [docs/stored-spells.md](docs/stored-spells.md) — Stored spells tracker: data flow, schemas, spell-name resolver, persistence, SENT OUTPUT snooping. Touched when changing stored-spell tracking or the spells data table.
 - [docs/runs.md](docs/runs.md) — Run log contract: file layout, event schema (run_start/level_up/run_end), lifecycle, schema versioning. Touched when changing run-log behaviour or adding new row types.
 - [docs/buffs-pane.md](docs/buffs-pane.md) — Buffs pane: renderer, scroll, blink, layout integration. Touched when changing the buffs pane renderer or the buffs.state schema.
+- [docs/group-pane.md](docs/group-pane.md) — Group pane: renderer, state-file schema, bar fill, threshold colours, name overlay, overflow indicator. Touched when changing the group pane renderer or the group.state schema.
 - [docs/ui-pane.md](docs/ui-pane.md) — UI pane: renderer, scroll, log-tail mechanics. Touched when changing the UI pane.
 - [docs/install-bootstrap.md](docs/install-bootstrap.md) — Cross-platform install and bootstrap plan. Touched when scheduling installer work or when a platform constraint (WSL, Alacritty, package versions) changes.
