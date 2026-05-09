@@ -63,6 +63,10 @@ event flow. Same pattern as `gmcp.trace`.
 | `run_started` | (none) | `lua/brain/connection.lua` `mark_mume_connected()` — emitted after `_write_connection_state()` and login `system_ui`, before `state.run.reset()` |
 | `run_ending` | (none) | `lua/brain/connection.lua` `mark_mume_disconnected()` — emitted after `_clear_connection_state()` and logout `system_ui`, before `state.run.reset()` and `state.char.reset()` |
 | `char_reset` | (none) | `lua/core/char_state.lua` `state.char.reset()` — emitted after wiping all non-function keys |
+| `group_member_added` | member table | `lua/core/group_collector.lua` — emitted by `Group.Set` (for ids new vs old) and `Group.Add` after member inserted into `state.group.members` |
+| `group_member_updated` | member table | `lua/core/group_collector.lua` — emitted by `Group.Update` after merge (including freshness inference) |
+| `group_member_removed` | member id (integer) | `lua/core/group_collector.lua` — emitted by `Group.Set` (for ids removed) and `Group.Remove` after member deleted from `state.group.members` |
+| `group_changed` | (none) | `lua/core/group_collector.lua` — emitted after every `Group.*` handler and on `state.group.reset()` |
 | `mob_death` | mob name string, kind (`"living"` \| `"undead"`) | `ttpp/core/mud_events.tin` |
 | `mume_time_line` | full matched line string | `ttpp/core/clock.tin` `#action` |
 | `room_clock_line` | full matched line string | `ttpp/core/clock.tin` `#action` |
@@ -158,7 +162,18 @@ wiping all non-function keys from `state.char`. No payload. Called from
 
 **Subscribers:** `lua/core/affects.lua` (cancel the affects tick timer),
 `lua/core/buffs_state.lua` (serialize blank buffs.state),
+`lua/core/group_collector.lua` (calls `state.group.reset()`, which wipes members and emits `group_changed`),
+`lua/core/group_state.lua` (serialize blank group.state),
 `lua/core/status_state.lua` (serialize blank status.state).
+
+### `group_changed`
+
+Emitted by `lua/core/group_collector.lua` with no payload after every `Group.*` GMCP
+handler completes and at the end of `state.group.reset()`. No payload; subscribers should
+read `state.group.members` directly for the new state.
+
+**Subscribers:** `lua/core/group_state.lua` — calls `serialize()` to write
+`bridge/runtime/group.state` atomically.
 
 ### `mob_death`
 

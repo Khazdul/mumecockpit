@@ -136,7 +136,33 @@ All Event handlers store the decoded body as-is under the corresponding `state.w
 
 **Group**
 
-TODO: payload schemas will be filled in once observed traces are available. Subscribed for discovery; no handler or state module yet.
+| Message       | Direction | Body                           | Handler                        |
+|---------------|-----------|--------------------------------|--------------------------------|
+| Group.Set     | ← server  | array of member objects        | lua/core/group_collector.lua (primary writer) |
+| Group.Add     | ← server  | single member object           | lua/core/group_collector.lua   |
+| Group.Update  | ← server  | partial member object (by id)  | lua/core/group_collector.lua   |
+| Group.Remove  | ← server  | naked integer (member id)      | lua/core/group_collector.lua   |
+
+Member object fields (kebab-case from server, stored snake_case in `state.group.members`):
+
+    id, type, name
+    hp, hp-string, maxhp
+    mana, mana-string, maxmana
+    mp, mp-string, maxmp
+
+`type` is one of `"ally"`, `"npc"`, `"you"`. Members where `type` is `"npc"` or `"you"` are
+silently excluded from `state.group.members` (denylist in `group_collector.lua`).
+
+`Group.Remove` delivers a bare JSON integer (not an object). The handler converts it via
+`tonumber(body)` before removing the entry from `state.group.members`.
+
+`Group.Update` is incremental — a single packet carries either the numeric value for a vital
+(e.g. `{"id":2,"hp":200}`) or its band-string (`{"id":2,"hp-string":"fine"}`) but not always
+both. See [ADR 0052](decisions/0052-group-vital-pair-freshness.md) for the freshness inference
+logic that keeps value and string consistent across partial updates.
+
+Downstream serialisation: `lua/core/group_state.lua` subscribes to `group_changed` and
+`char_reset` and writes `bridge/runtime/group.state` atomically.
 
 ### Unsubscribed modules — one-liner per module
 

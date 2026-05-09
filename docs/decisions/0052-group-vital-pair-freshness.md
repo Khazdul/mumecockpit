@@ -30,7 +30,7 @@ mp/mp_string) is handled according to which fields are present in the payload:
 per field present; absent fields are left nil. They need no inference.
 
 Band tables are defined as inclusive integer-percent `{lo, hi}` ranges in
-`lua/core/group_state.lua` and serve as the truth source for
+`lua/core/group_collector.lua` and serve as the truth source for
 value↔string consistency. The helper `state.group.in_band(kind, pct_int, label)`
 encapsulates all band lookups.
 
