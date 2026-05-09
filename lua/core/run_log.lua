@@ -1,5 +1,5 @@
--- Per-character JSONL run log. Writes run_start (deferred to first Vitals),
--- level_up, kill, and run_end rows to data/runs/<character>/current.jsonl.
+-- Per-character JSONL run log. Writes various run events (run_start, level_up,
+-- kill, group_changed, etc.) to data/runs/<character>/current.jsonl.
 -- Sealed to <run-id>.jsonl on run_ending. Open-append-close per row.
 
 local json = require("dkjson")
@@ -199,6 +199,23 @@ events.subscribe("achievement", function(payload)
     _append({ event = "achievement", ts = os.time(), name = payload })
     dbg("[RUN_LOG] achievement: " .. tostring(payload))
 end)
+
+local function _on_group_changed()
+    if not _active or _pending_baseline then return end
+    local ids = {}
+    for id in pairs(state.group.members or {}) do ids[#ids + 1] = id end
+    table.sort(ids)
+    local members = {}
+    for _, id in ipairs(ids) do
+        local m = state.group.members[id]
+        if m and m.name then members[#members + 1] = m.name end
+    end
+    _append({ event = "group_changed", ts = os.time(), members = members })
+    dbg("[RUN_LOG] group_changed: " .. #members .. " members")
+end
+
+events.subscribe("group_member_added",   _on_group_changed)
+events.subscribe("group_member_removed", _on_group_changed)
 
 events.subscribe("run_ending", function()
     if not _active then return end

@@ -173,7 +173,9 @@ handler completes and at the end of `state.group.reset()`. No payload; subscribe
 read `state.group.members` directly for the new state.
 
 **Subscribers:** `lua/core/group_state.lua` — calls `serialize()` to write
-`bridge/runtime/group.state` atomically.
+`bridge/runtime/group.state` atomically. `lua/core/run_log.lua` — appends a
+`group_changed` row to `current.jsonl` on member-add and member-remove (not
+on vitals update).
 
 ### `mob_death`
 
