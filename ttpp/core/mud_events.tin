@@ -1,8 +1,9 @@
 #nop ===== MUD EVENTS =====
 #nop Core triggers that fan out via the Lua event bus.
 #nop Registered (and re-registered) from SESSION CONNECTED and cp -r
-#nop via _register_mud_events. All four mob-death patterns emit "mob_death".
-#nop Priority 3 — fires before per-script actions (default priority 5).
+#nop via _register_mud_events. Four mob-death patterns emit "mob_death";
+#nop one player-death pattern emits "char_death"; three PvP R.I.P. patterns
+#nop emit "pc_death". Priority 3 — fires before per-script actions (default 5).
 
 #alias {_register_mud_events %1} {
     #if {"%1" != ""} {
@@ -11,7 +12,11 @@
         #%1 #action {^%%1 has drawn her last breath! R.I.P.$} {#lua {events.emit("mob_death", "%%1", "living")}} {3};
         #%1 #action {^%%1 disappears into nothing.$} {#lua {events.emit("mob_death", "%%1", "undead")}} {3};
         #%1 #action {^Wimpy removed.$} {#lua {events.emit("wimpy_changed", "0")}} {3};
-        #%1 #action {^Wimpy set to: %%1$} {#lua {events.emit("wimpy_changed", "%%1")}} {3}
+        #%1 #action {^Wimpy set to: %%1$} {#lua {events.emit("wimpy_changed", "%%1")}} {3};
+        #%1 #action {^You are dead! Sorry...$} {#lua {events.emit("char_death")}} {3};
+        #%1 #action {^\*%%1\* is dead! R.I.P.$} {#lua {events.emit("pc_death", "%%1")}} {3};
+        #%1 #action {^\*%%1\* has drawn his last breath! R.I.P.$} {#lua {events.emit("pc_death", "%%1")}} {3};
+        #%1 #action {^\*%%1\* has drawn her last breath! R.I.P.$} {#lua {events.emit("pc_death", "%%1")}} {3}
     }
 }
     

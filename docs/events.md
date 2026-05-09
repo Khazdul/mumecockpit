@@ -84,6 +84,9 @@ event flow. Same pattern as `gmcp.trace`.
 | `stored_spells_changed` | (none) | `lua/core/stored_spells.lua` — emitted on every state mutation and on `_load_active()` restore |
 | `kill_attributed` | `{name = "<mob name>", xp = <integer>}` | `lua/core/run_state.lua` `_fold()` — emitted once per attributed kill after `script_ui` announce |
 | `tp_gained` | `{delta = <integer>}` | `lua/core/run_state.lua` `gmcp_char_vitals` subscriber — emitted on each positive TP increase |
+| `char_death` | (none) | `ttpp/core/mud_events.tin` — `"You are dead! Sorry..."` pattern |
+| `pc_death` | PC name+race-suffix string | `ttpp/core/mud_events.tin` — three asterisk-wrapped R.I.P. patterns |
+| `pkill_attributed` | `{name = "<pc name>", race = "<race suffix>", xp = <integer>}` | `lua/core/run_state.lua` `_fold()` — emitted once per attributed PC kill after `script_ui` announce |
 
 ### `gmcp_<module>` events
 
@@ -427,6 +430,53 @@ with the even-split share; the last mob receives the remainder. See ADR 0008
 for the attribution model.
 
 **Subscribers:** `lua/core/run_log.lua` — writes a `kill` row to
+`current.jsonl`.
+
+### `char_death`
+
+Emitted by one pattern in `ttpp/core/mud_events.tin`. No payload.
+
+| Pattern | Notes |
+|---------|-------|
+| `^You are dead! Sorry...$` | fires on player death (PvE, PvP, environment) |
+
+**Subscribers:** `lua/core/run_state.lua` — increments `state.run.deaths`; no
+fold interaction. `lua/core/run_log.lua` — writes a `char_death` row to
+`current.jsonl` with the character's current level (omitted if not yet known).
+
+### `pc_death`
+
+Emitted by three patterns in `ttpp/core/mud_events.tin`. Payload is the full
+string captured between the asterisks, including race-suffix (e.g.
+`"Moraxus the Orc"`).
+
+| Pattern | Notes |
+|---------|-------|
+| `^\*%1\* is dead! R.I.P.$` | standard PvP kill message |
+| `^\*%1\* has drawn his last breath! R.I.P.$` | male-pronoun variant |
+| `^\*%1\* has drawn her last breath! R.I.P.$` | female-pronoun variant |
+
+The asterisks (`*`) are literal characters in the MUME output that delimit PC
+names; they do not appear in mob R.I.P. lines. `%1` captures only the content
+between the asterisks.
+
+**Subscribers:** `lua/core/run_state.lua` — splits the payload into
+`name` (first word) and `race` (remainder, or `""` if single word); appends
+`{name, race}` to `M.pending_pkills`; calls `schedule_fold()` to debounce
+XP attribution.
+
+### `pkill_attributed`
+
+Emitted by `lua/core/run_state.lua`'s `_fold()` once per attributed PC kill,
+immediately after the `script_ui("PKILL", ...)` announce. Payload:
+`{name = "<pc name>", race = "<race suffix>", xp = <integer>}` where `name`
+is the first word of the R.I.P. string, `race` is the remainder (may be `""`),
+and `xp` is the even-split XP attributed to this kill (may be `0` for
+empty-Vitals folds). For mixed folds (mob kills + PC kills within the 500ms
+window), XP is split evenly across all entries; the last entry processed
+receives the remainder. See `kill_attributed` for the attribution model.
+
+**Subscribers:** `lua/core/run_log.lua` — writes a `pkill` row to
 `current.jsonl`.
 
 ## Adding a new event

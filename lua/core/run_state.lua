@@ -20,25 +20,31 @@ local function fmt_xp(n)
 end
 
 local M = {
-    xp_baseline   = nil,    -- xp at run start; nil = not yet known
-    tp_baseline   = nil,
-    xp            = 0,
-    tp            = 0,
-    last_fold_xp  = nil,    -- xp snapshot at last fold (or run start)
-    last_tp       = nil,    -- tp at last Vitals tick (or run start)
-    pending_kills = {},     -- mob names awaiting attribution
-    kills         = {},     -- append-only per run: { name, xp }
+    xp_baseline    = nil,    -- xp at run start; nil = not yet known
+    tp_baseline    = nil,
+    xp             = 0,
+    tp             = 0,
+    last_fold_xp   = nil,    -- xp snapshot at last fold (or run start)
+    last_tp        = nil,    -- tp at last Vitals tick (or run start)
+    pending_kills  = {},     -- mob names awaiting attribution
+    kills          = {},     -- append-only per run: { name, xp }
+    deaths         = 0,
+    pkills         = {},     -- append-only per run: { name, race, xp }
+    pending_pkills = {},     -- pc names awaiting attribution
 }
 
 function M.reset()
-    M.xp_baseline   = nil
-    M.tp_baseline   = nil
-    M.last_fold_xp  = nil
-    M.last_tp       = nil
-    M.xp            = 0
-    M.tp            = 0
-    M.pending_kills = {}
-    M.kills         = {}
+    M.xp_baseline    = nil
+    M.tp_baseline    = nil
+    M.last_fold_xp   = nil
+    M.last_tp        = nil
+    M.xp             = 0
+    M.tp             = 0
+    M.pending_kills  = {}
+    M.kills          = {}
+    M.deaths         = 0
+    M.pkills         = {}
+    M.pending_pkills = {}
     session_cmd("#undelay {run_fold}")
 end
 
@@ -54,10 +60,11 @@ events.subscribe("gmcp_char_vitals", function(body)
             M.xp           = 0
         elseif body.xp < M.last_fold_xp then
             -- death penalty / level loss → rebaseline, drop pending
-            M.xp_baseline   = body.xp
-            M.last_fold_xp  = body.xp
-            M.xp            = 0
-            M.pending_kills = {}
+            M.xp_baseline    = body.xp
+            M.last_fold_xp   = body.xp
+            M.xp             = 0
+            M.pending_kills  = {}
+            M.pending_pkills = {}
         else
             M.xp = body.xp - M.xp_baseline
         end
@@ -92,10 +99,23 @@ events.subscribe("mob_death", function(name)
     schedule_fold()
 end)
 
-function M._fold()
-    dbg("[RUN_STATE] fold fired, pending=" .. #M.pending_kills)
+events.subscribe("char_death", function()
+    M.deaths = M.deaths + 1
+end)
 
-    local n = #M.pending_kills
+events.subscribe("pc_death", function(full)
+    local name = full:match("^(%S+)")
+    local race = full:match("^%S+%s+(.*)$") or ""
+    table.insert(M.pending_pkills, { name = name, race = race })
+    schedule_fold()
+end)
+
+function M._fold()
+    local nk = #M.pending_kills
+    local np = #M.pending_pkills
+    local n  = nk + np
+    dbg("[RUN_STATE] fold fired, kills=" .. nk .. " pkills=" .. np)
+
     if n == 0 then return end
 
     local current_xp = state.char.xp or M.last_fold_xp
@@ -105,16 +125,29 @@ function M._fold()
     local per = math.floor(pending_xp / n)
     local rem = pending_xp - per * n
 
-    for i, name in ipairs(M.pending_kills) do
+    local idx = 0
+
+    for _, name in ipairs(M.pending_kills) do
+        idx = idx + 1
         local xp = per
-        if i == n then xp = xp + rem end
+        if idx == n then xp = xp + rem end
         table.insert(M.kills, { name = name, xp = xp })
         script_ui("KILL", ui_var(name) .. ", " .. ui_var(fmt_xp(xp)) .. " xp.")
         events.emit("kill_attributed", { name = name, xp = xp })
     end
 
-    M.last_fold_xp  = current_xp
-    M.pending_kills = {}
+    for _, pk in ipairs(M.pending_pkills) do
+        idx = idx + 1
+        local xp = per
+        if idx == n then xp = xp + rem end
+        table.insert(M.pkills, { name = pk.name, race = pk.race, xp = xp })
+        script_ui("PKILL", ui_var(pk.name) .. ", " .. ui_var(fmt_xp(xp)) .. " xp.")
+        events.emit("pkill_attributed", { name = pk.name, race = pk.race, xp = xp })
+    end
+
+    M.last_fold_xp   = current_xp
+    M.pending_kills  = {}
+    M.pending_pkills = {}
 end
 
 dbg("[RUN_STATE] loaded")

@@ -173,6 +173,27 @@ events.subscribe("tp_gained", function(payload)
     dbg("[RUN_LOG] tp_gained: " .. tostring(payload.delta))
 end)
 
+events.subscribe("char_death", function()
+    if not _active then return end
+    local level = state.char and state.char.level
+    local row = { event = "char_death", ts = os.time() }
+    if level then row.level = level end
+    _append(row)
+    dbg("[RUN_LOG] char_death: level=" .. tostring(level))
+end)
+
+events.subscribe("pkill_attributed", function(payload)
+    if not _active then return end
+    _append({
+        event    = "pkill",
+        ts       = os.time(),
+        name     = payload.name,
+        race     = payload.race,
+        xp_delta = payload.xp,
+    })
+    dbg("[RUN_LOG] pkill: " .. tostring(payload.name) .. " xp=" .. tostring(payload.xp))
+end)
+
 events.subscribe("run_ending", function()
     if not _active then return end
     if _pending_baseline then
