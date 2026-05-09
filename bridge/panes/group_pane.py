@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # bridge/panes/group_pane.py — group member bars renderer.
 # Three horizontal bars per member (HP / Mana / Moves) with a name overlay
-# centred on the mana bar. Anchor-top; overflow indicator when clipped.
+# centred across the full row. Anchor-top; overflow indicator when clipped.
 # Polling and prompt_toolkit patterns mirror buffs_pane.py.
 
 try:
@@ -30,21 +30,20 @@ GROUP_STATE_PATH = os.environ.get(
     os.path.join(os.environ["HOME"], "MUME", "bridge", "runtime", "group.state"),
 )
 POLL_MS = 0.1
-NAME_W  = 12   # columns reserved for the member name on the left
 
 # ---------------------------------------------------------------------------
 # Colour constants (24-bit truecolor; swap values here to retheme)
 # ---------------------------------------------------------------------------
-HP_DEFAULT_BG   = "#00b050"
-HP_DEFAULT_FG   = "#00b050"
-MANA_DEFAULT_BG = "#2a7fff"
-MANA_DEFAULT_FG = "#2a7fff"
-MP_DEFAULT_BG   = "#d4a020"
-MP_DEFAULT_FG   = "#d4a020"
-ORANGE_BG       = "#ff8c00"
-ORANGE_FG       = "#ff8c00"
-RED_BG          = "#d92020"
-RED_FG          = "#d92020"
+HP_DEFAULT_BG   = "#0a8a30"
+HP_DEFAULT_FG   = "#0a8a30"
+MANA_DEFAULT_BG = "#1f5fcc"
+MANA_DEFAULT_FG = "#1f5fcc"
+MP_DEFAULT_BG   = "#a07030"
+MP_DEFAULT_FG   = "#a07030"
+ORANGE_BG       = "#ff7020"
+ORANGE_FG       = "#ff7020"
+RED_BG          = "#e02020"
+RED_FG          = "#e02020"
 
 C_NAME_ON_FILL  = "fg:#000000"   # name char that falls inside the fill region
 C_NAME_ON_EMPTY = "fg:#cccccc"   # name char that falls outside the fill region
@@ -88,74 +87,66 @@ def _bar_palette(pct, default_bg, default_fg):
 
 
 # ---------------------------------------------------------------------------
-# Bar renderers
-# ---------------------------------------------------------------------------
-
-def _plain_bar_frags(pct, bar_w, default_bg, default_fg):
-    """HP or MP bar — no overlay; returns list of (style, char) fragments."""
-    if bar_w <= 0:
-        return []
-    style_fill, style_sep = _bar_palette(pct, default_bg, default_fg)
-    fill = int(pct * bar_w + 0.5) if pct is not None else 0
-
-    frags = []
-    for i in range(bar_w):
-        if i == bar_w - 1 and fill >= bar_w:
-            frags.append((style_sep, "▌"))
-        elif i < fill:
-            frags.append((style_fill, " "))
-        else:
-            frags.append(("", " "))
-    return frags
-
-
-def _mana_bar_frags(pct, bar_w, name):
-    """Mana bar with member name centred over it as an overlay.
-
-    Per-column colour split: columns inside fill use black FG on bar BG;
-    columns outside fill use grey FG on terminal BG. The ▌ marker at full
-    fill overrides whatever name char sits at the last column.
-    """
-    if bar_w <= 0:
-        return []
-    style_fill, style_sep = _bar_palette(pct, MANA_DEFAULT_BG, MANA_DEFAULT_FG)
-    fill = int(pct * bar_w + 0.5) if pct is not None else 0
-
-    if name is not None:
-        raw      = name[:bar_w]
-        name_str = raw.center(bar_w)[:bar_w]
-    else:
-        name_str = " " * bar_w
-
-    frags = []
-    for i in range(bar_w):
-        ch = name_str[i]
-        if i == bar_w - 1 and fill >= bar_w:
-            frags.append((style_sep, "▌"))
-        elif i < fill:
-            frags.append((C_NAME_ON_FILL + " " + style_fill, ch))
-        else:
-            frags.append((C_NAME_ON_EMPTY, ch))
-    return frags
-
-
-# ---------------------------------------------------------------------------
 # Row builder
 # ---------------------------------------------------------------------------
 
 def _member_frags(member, W):
-    """Return prompt_toolkit fragments for one member row at terminal width W."""
-    residual             = max(0, W - NAME_W - 3)   # 3 spaces between the 4 segments
-    bar_hp_w, bar_mana_w, bar_mp_w = _bar_widths(residual)
+    """Return prompt_toolkit fragments for one member row at terminal width W.
 
-    name = (member.get("name") or "")[:NAME_W].ljust(NAME_W)
-    frags = [("", name), ("", " ")]
+    Three bars fill all W columns (no name prefix column). The member name
+    is centred as an overlay across the entire row. Per-column style: black
+    on bar-BG when the column is within that bar's fill, grey on terminal-BG
+    when outside fill. The ▌ marker wins at the rightmost column of any bar
+    when that bar is full.
+    """
+    hp_pct   = member.get("hp_pct")
+    mana_pct = member.get("mana_pct")
+    mp_pct   = member.get("mp_pct")
+    name     = member.get("name") or ""
 
-    frags.extend(_plain_bar_frags(member.get("hp_pct"),   bar_hp_w,   HP_DEFAULT_BG, HP_DEFAULT_FG))
-    frags.append(("", " "))
-    frags.extend(_mana_bar_frags( member.get("mana_pct"), bar_mana_w, member.get("name")))
-    frags.append(("", " "))
-    frags.extend(_plain_bar_frags(member.get("mp_pct"),   bar_mp_w,   MP_DEFAULT_BG, MP_DEFAULT_FG))
+    bar_hp_w, bar_mana_w, bar_mp_w = _bar_widths(W)
+    bar_widths_list = [bar_hp_w, bar_mana_w, bar_mp_w]
+    bar_pcts        = [hp_pct, mana_pct, mp_pct]
+    bar_default_bgs = [HP_DEFAULT_BG, MANA_DEFAULT_BG, MP_DEFAULT_BG]
+    bar_default_fgs = [HP_DEFAULT_FG, MANA_DEFAULT_FG, MP_DEFAULT_FG]
+
+    fills  = []
+    styles = []
+    for i in range(3):
+        pct = bar_pcts[i]
+        bw  = bar_widths_list[i]
+        fills.append(int(pct * bw + 0.5) if pct is not None else 0)
+        styles.append(_bar_palette(pct, bar_default_bgs[i], bar_default_fgs[i]))
+
+    name_trunc = name[:W]
+    name_start = (W - len(name_trunc)) // 2
+    name_end   = name_start + len(name_trunc)
+
+    frags = []
+    for c in range(W):
+        if c < bar_hp_w:
+            bi, local = 0, c
+        elif c < bar_hp_w + bar_mana_w:
+            bi, local = 1, c - bar_hp_w
+        else:
+            bi, local = 2, c - bar_hp_w - bar_mana_w
+
+        bw                    = bar_widths_list[bi]
+        fill                  = fills[bi]
+        style_fill, style_sep = styles[bi]
+
+        if local == bw - 1 and fill >= bw:
+            frags.append((style_sep, "▌"))
+        elif name_start <= c < name_end:
+            ch = name_trunc[c - name_start]
+            if local < fill:
+                frags.append((C_NAME_ON_FILL + " " + style_fill, ch))
+            else:
+                frags.append((C_NAME_ON_EMPTY, ch))
+        elif local < fill:
+            frags.append((style_fill, " "))
+        else:
+            frags.append(("", " "))
 
     return frags
 
@@ -167,7 +158,7 @@ def _member_frags(member, W):
 def _rows_text():
     if not _members:
         return []
-    W     = max(NAME_W + 3, shutil.get_terminal_size().columns)
+    W     = max(3, shutil.get_terminal_size().columns)
     H     = max(1, _term_rows())
     total = len(_members)
     # Reserve 1 row for the overflow indicator when it will be shown.

@@ -2,8 +2,8 @@
 
 A `prompt_toolkit` full-screen application that renders `state.group.members`
 as three horizontal bars per member (HP / Mana / Moves), with the member name
-centred over the mana bar. Anchor-top; overflow indicator when the pane is
-shorter than the member list.
+centred as an overlay across the full row. Anchor-top; overflow indicator when
+the pane is shorter than the member list.
 
 ## Architecture
 
@@ -64,17 +64,17 @@ renderer preserves that order.
 Terminal width `W = shutil.get_terminal_size().columns` per frame.
 
 ```
-[NAME 12] [space] [HP bar] [space] [Mana bar] [space] [MP bar]
+[ HP bar ][ Mana bar ][ MP bar ]   total = W
 ```
 
-Three bar widths share the residual `W − 12 − 3` columns distributed
-left-to-right with the same round-extra helper:
+Three bars fill the entire row with no name prefix column and no separator
+spaces between bars. Bar widths are distributed left-to-right using the same
+round-extra helper as the buffs pane (adapted for 3 bars):
 
 ```python
-residual = W - 12 - 3
-base     = residual // 3
-extra    = residual %  3
-widths   = [base + (1 if i < extra else 0) for i in range(3)]
+base   = W // 3
+extra  = W %  3
+widths = [base + (1 if i < extra else 0) for i in range(3)]
 ```
 
 At narrow widths bars become very small or zero; content is simply chopped
@@ -97,8 +97,8 @@ The same threshold is applied uniformly to all three bars:
 
 | Condition          | Bar BG    | Bar FG (▌) |
 |--------------------|-----------|------------|
-| `pct <= 0.25`      | `#d92020` | `#d92020`  |
-| `0.25 < pct ≤ 0.45`| `#ff8c00` | `#ff8c00`  |
+| `pct <= 0.25`      | `#e02020` | `#e02020`  |
+| `0.25 < pct ≤ 0.45`| `#ff7020` | `#ff7020`  |
 | `pct > 0.45`       | default   | default    |
 | `pct is null`      | default   | default    |
 
@@ -106,9 +106,9 @@ Default colours:
 
 | Bar  | BG       | FG (▌)   |
 |------|----------|----------|
-| HP   | `#00b050`| `#00b050`|
-| Mana | `#2a7fff`| `#2a7fff`|
-| MP   | `#d4a020`| `#d4a020`|
+| HP   | `#0a8a30`| `#0a8a30`|
+| Mana | `#1f5fcc`| `#1f5fcc`|
+| MP   | `#a07030`| `#a07030`|
 
 > **Note — MP thresholds:** MP bands in `group_collector.lua` are still
 > placeholder (calibration pending server data; see ADR 0052). At band
@@ -123,24 +123,28 @@ bar's FG colour with no background. Otherwise that column is a plain space
 following the normal fill rule. Adjacent empty bars merge visually on any
 terminal background.
 
-### Name overlay (mana bar only)
+### Name overlay (full row)
 
-The member `name` is centred horizontally in `bar_mana_w` columns, truncated
-to `bar_mana_w` chars without an ellipsis:
+The member `name` is centred horizontally across the entire row (`W` columns),
+truncated to `W` chars without an ellipsis:
 
 ```python
-name_str = name[:bar_mana_w].center(bar_mana_w)[:bar_mana_w]
+name_trunc = name[:W]
+name_start = (W - len(name_trunc)) // 2
+name_end   = name_start + len(name_trunc)
 ```
 
-Per-column colour split against the mana fill boundary:
+At narrow widths a long name visibly extends across HP / Mana / MP bar
+boundaries. Per-character style is determined by which bar the column falls in
+and whether that column is within the bar's fill:
 
-| Column position | FG        | BG           |
-|-----------------|-----------|--------------|
-| `col < fill`    | `#000000` | mana bar BG  |
-| `col >= fill`   | `#cccccc` | terminal BG  |
+| Column position         | FG        | BG           |
+|-------------------------|-----------|--------------|
+| `local < bar_fill`      | `#000000` | that bar's BG|
+| `local >= bar_fill`     | `#cccccc` | terminal BG  |
 
-When `fill >= bar_mana_w`, the last column shows `▌` in mana FG (no BG),
-overriding any name character or space at that position.
+The ▌ marker rule wins over any name character: when `fill >= bar_w` and the
+column is the rightmost of its bar, `▌` is rendered in the bar's FG (no BG).
 
 When `member.name` is `null` in the state file, no overlay is rendered
 (all columns follow plain-bar fill rules with spaces).
