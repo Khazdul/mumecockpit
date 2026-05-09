@@ -7,7 +7,7 @@ to a new module, or debugging GMCP message flow.
 
 > **Two-place sync required.** The subscription list must be kept in sync in
 > two places:
-> - `gmcp.modules` in `lua/brain.lua` — Lua source of truth
+> - `gmcp.modules` in `lua/brain/gmcp.lua` — Lua source of truth
 > - `Core.Supports.Set` payload in `ttpp/core/gmcp.tin` — sent to the server at handshake
 >
 > Adding a module to only one place will either silently skip dispatch or send
@@ -170,7 +170,7 @@ Syntax: `#send {$IAC$SB${GMCP}Package.Name JSON $IAC$SE\}`
 
 ## Lua dispatch
 
-`gmcp.dispatch(module, payload)` in `brain.lua` strips the leading package-name token, parses the remainder as JSON via dkjson, calls the primary handler (if set) under `pcall`, then **always** emits a `gmcp_<module_snake>` event via the event bus. A crashing handler logs to dev via `dbg()` but doesn't prevent the event from being emitted.
+`gmcp.dispatch(module, payload)` in `lua/brain/gmcp.lua` strips the leading package-name token, parses the remainder as JSON via dkjson, calls the primary handler (if set) under `pcall`, then **always** emits a `gmcp_<module_snake>` event via the event bus. A crashing handler logs to dev via `dbg()` but doesn't prevent the event from being emitted.
 
 `module_to_event` converts the module name to the event name:
 `"Char.StatusVars"` → `"gmcp_char_status_vars"` (camelCase split, dots replaced by underscores, lowercased).
@@ -206,10 +206,11 @@ will follow in iteration 2b once we have observed traces of actual MUME payloads
 fields so Lua access stays straightforward (`state.char.hp_string`, not
 `state.char["hp-string"]`).
 
-**`gmcp.trace`.** When true (default in development), every decoded GMCP body
-is dumped to debug.log as `[GMCP] <Module> = <json>`. Flip to false in
-brain.lua if volume becomes a problem. Expected load: tens of messages/minute
-during active play, line length ~100–300 chars.
+**`gmcp.trace`.** When true, every decoded GMCP body is dumped to debug.log
+as `[GMCP] <Module> = <json>`. For selective tracing of a single module or
+package without the global flood, use `gmcp.trace_only` (see Debugging §
+Per-module trace). Expected load: tens of messages/minute during active play,
+line length ~100–300 chars.
 
 ## Null handling
 
@@ -218,7 +219,7 @@ when the character is not climbing). Without special treatment, dkjson decodes
 `null` as Lua `nil`, which is indistinguishable from a missing key — the field
 simply disappears from the decoded table.
 
-To preserve the distinction, `brain.lua` passes `json.null` as the third argument
+To preserve the distinction, `lua/brain/gmcp.lua` passes `json.null` as the third argument
 to `json.decode`:
 
 ```lua
@@ -253,9 +254,29 @@ field can legitimately arrive as JSON `null`.
 
 Turn on telnet trace with `#config {debug telnet} {on}` in gts (NOT `#config {telnet} {info} {on}` — that is invalid syntax that puts TELNET in DEBUG mode and disables the telnet stack). Turn off with `#config {debug telnet} {off}`.
 
-`GMCP no handler: <Module>` entries in `debug.log` are the health signal — if they appear, negotiation completed and the server is streaming the modules we subscribed to.
+The health signal that GMCP data is flowing is `[EVENTS] gmcp_<module_snake>` lines in `debug.log` (requires `events.trace = true`, which is the default). These fire for every dispatched message regardless of `gmcp.trace`.
 
-With `gmcp.trace = true`, the best way to discover a module's real body shape is to subscribe, reload, and grep debug.log for `[GMCP] <Module>`.
+With `gmcp.trace = true`, every decoded body is also dumped as `[GMCP] <Module> = <json>` — useful for seeing the raw payload but noisy across all modules.
+
+### Per-module trace
+
+`gmcp.trace_only` is a whitelist that enables trace for specific modules without turning on the global catch-all. Set it in `lua/brain/gmcp.lua` before reloading:
+
+```lua
+-- Trace all Char.* messages (prefix match):
+gmcp.trace_only = { Char = true }
+
+-- Trace only Char.Vitals (exact match):
+gmcp.trace_only = { ["Char.Vitals"] = true }
+```
+
+Matching rules, in priority order:
+1. `gmcp.trace = true` — catch-all; overrides `trace_only`.
+2. `gmcp.trace_only` is nil — no trace (default).
+3. Exact key match: `gmcp.trace_only[module]` truthy.
+4. Prefix match: package extracted from `module` (e.g. `"Char"` from `"Char.Vitals"`); `gmcp.trace_only[package]` truthy.
+
+Typical discovery workflow: set `gmcp.trace_only = { Char = true }`, `cp -r`, grep `debug.log` for `[GMCP] Char`, revert.
 
 ---
 Back to [architecture.md](../architecture.md).

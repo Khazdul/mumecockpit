@@ -3,8 +3,17 @@
 -- Depends on: events.emit (events.lua), dbg (ui.lua), dkjson
 
 -- Keep in sync with Core.Supports.Set payload in ttpp/core/gmcp.tin.
-gmcp.modules = { "Char 1", "Comm.Channel 1", "Event 1", "Core 1" }
-gmcp.trace   = false
+gmcp.modules     = { "Char 1", "Comm.Channel 1", "Event 1", "Core 1" }
+gmcp.trace       = false
+gmcp.trace_only  = { ["Char.Vitals"] = true }  -- whitelist table: exact key or package prefix; nil = off
+
+local function should_trace(module)
+    if gmcp.trace then return true end
+    if not gmcp.trace_only then return false end
+    if gmcp.trace_only[module] then return true end
+    local pkg = module:match("^([^%.]+)")
+    return pkg ~= nil and gmcp.trace_only[pkg] == true
+end
 
 function gmcp.module_to_event(module)
     return "gmcp_" .. module
@@ -35,7 +44,7 @@ function gmcp.dispatch(module, payload)
         body = parsed
     end
 
-    if gmcp.trace then
+    if should_trace(module) then
         local encoded = body and json.encode(body) or "(nil)"
         dbg(string.format("[GMCP] %s = %s", module, encoded))
     end
