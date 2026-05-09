@@ -36,7 +36,7 @@ pick from a known map without re-reading help files.
 | Event             | yes        | World events (darkness, sun, moon, moved) |
 | Client            | no         | Mudlet-specific client package / map      |
 | External.Discord  | no         | MUME Discord channel integration          |
-| Group             | no         | Group / party state                       |
+| Group             | yes        | Group / party state                       |
 | MUME.Client       | no         | Remote text editing                       |
 | Room              | no         | Current room data                         |
 | Room.Chars        | no         | Characters in current room                |
@@ -134,11 +134,14 @@ No channel list is hardcoded client-side — whatever the server advertises gets
 
 All Event handlers store the decoded body as-is under the corresponding `state.world.<event>` field.
 
+**Group**
+
+TODO: payload schemas will be filled in once observed traces are available. Subscribed for discovery; no handler or state module yet.
+
 ### Unsubscribed modules — one-liner per module
 
 - **Client** — Mudlet-specific client package and map data; used by Mudlet's MUME plugin for room mapping.
 - **External.Discord** — integrates with the MUME Discord channel; bridges in-game communication to Discord.
-- **Group** — group/party state; tracks members, their positions and vitals for group displays.
 - **MUME.Client** — remote text editing; allows the server to open an editor on the client for composing notes and mail.
 - **Room** — current room data including vnum, name, description, and exits; the basis for any mapper.
 - **Room.Chars** — characters present in the current room; used for room-level displays and targeting aids.

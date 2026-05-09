@@ -3,9 +3,9 @@
 -- Depends on: events.emit (events.lua), dbg (ui.lua), dkjson
 
 -- Keep in sync with Core.Supports.Set payload in ttpp/core/gmcp.tin.
-gmcp.modules     = { "Char 1", "Comm.Channel 1", "Event 1", "Core 1" }
+gmcp.modules     = { "Char 1", "Comm.Channel 1", "Event 1", "Core 1", "Group 1" }
 gmcp.trace       = false
-gmcp.trace_only  = { ["Char.Vitals"] = true }  -- whitelist table: exact key or package prefix; nil = off
+gmcp.trace_only  = { Group = true }  -- whitelist table: exact key or package prefix; nil = off
 
 local function should_trace(module)
     if gmcp.trace then return true end
