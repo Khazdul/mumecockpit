@@ -136,7 +136,35 @@ All Event handlers store the decoded body as-is under the corresponding `state.w
 
 **Group**
 
-TODO: payload schemas will be filled in once observed traces are available. Subscribed for discovery; no handler or state module yet.
+| Message       | Direction | Body                                             | Handler                                    |
+|---------------|-----------|--------------------------------------------------|--------------------------------------------|
+| Group.Set     | ← server  | array of member objects (see below)              | lua/core/group_state.lua (primary writer)  |
+| Group.Add     | ← server  | single member object                             | lua/core/group_state.lua                   |
+| Group.Update  | ← server  | partial member object (`id` + changed fields)    | lua/core/group_state.lua                   |
+| Group.Remove  | ← server  | naked integer (member id, not an object)         | lua/core/group_state.lua                   |
+
+Group member object fields (Group.Set array entries, Group.Add body):
+
+    id           — integer member id
+    type         — "ally" | "you" | "npc"
+    name         — member name string
+    hp           — integer current HP (may be absent when only the string descriptor is known)
+    hp-string    — qualitative HP descriptor ("healthy", "fine", "hurt", "wounded", "bad", "awful", "dying")
+    maxhp        — integer max HP
+    mana         — integer current mana
+    mana-string  — qualitative mana descriptor ("full", "burning", "hot", "warm", "cold", "icy", "frozen")
+    maxmana      — integer max mana
+    mp           — integer current move points
+    mp-string    — qualitative move descriptor ("unwearied", "tired", "slow", "weak", "fainting", "exhausted")
+    maxmp        — integer max move points
+
+Group.Update carries `id` plus any subset of the above fields that changed. Only present fields are merged into the existing member table; absent fields retain their prior value.
+
+Group.Remove payload is a **naked JSON integer**, not an object. dkjson decodes it directly to a Lua number, so handlers must use `tonumber(body)` rather than `body.id`.
+
+**Primary-writer + serializer split.** `lua/core/group_state.lua` owns `gmcp.handlers["Group.*"]` and writes into `state.group.members` (keyed by integer id). It emits `group_member_added`, `group_member_updated`, `group_member_removed`, and `group_changed` after each mutation. `lua/core/group_serializer.lua` subscribes to `group_changed` and writes `bridge/runtime/group.state` atomically on each change.
+
+**Denylist.** Members with `type == "npc"` or `type == "you"` are silently discarded by the primary writer — the group pane visualises group members only, not the player. Unknown types (anything other than `"ally"`, `"you"`, or `"npc"`) are logged via `dbg()` and pass through (default-allow), so future MUME additions do not silently break the group pane.
 
 ### Unsubscribed modules — one-liner per module
 

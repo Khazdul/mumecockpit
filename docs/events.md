@@ -63,6 +63,10 @@ event flow. Same pattern as `gmcp.trace`.
 | `run_started` | (none) | `lua/brain/connection.lua` `mark_mume_connected()` — emitted after `_write_connection_state()` and login `system_ui`, before `state.run.reset()` |
 | `run_ending` | (none) | `lua/brain/connection.lua` `mark_mume_disconnected()` — emitted after `_clear_connection_state()` and logout `system_ui`, before `state.run.reset()` and `state.char.reset()` |
 | `char_reset` | (none) | `lua/core/char_state.lua` `state.char.reset()` — emitted after wiping all non-function keys |
+| `group_member_added` | member table (new member as stored in `state.group.members`) | `lua/core/group_state.lua` — `Group.Add` and `Group.Set` (net-new id) handlers |
+| `group_member_updated` | member table (merged existing member) | `lua/core/group_state.lua` — `Group.Update` handler |
+| `group_member_removed` | integer id | `lua/core/group_state.lua` — `Group.Remove` and `Group.Set` (removed id) handlers |
+| `group_changed` | (none) | `lua/core/group_state.lua` — after every `Group.*` mutation and `state.group.reset()` |
 | `mob_death` | mob name string, kind (`"living"` \| `"undead"`) | `ttpp/core/mud_events.tin` |
 | `mume_time_line` | full matched line string | `ttpp/core/clock.tin` `#action` |
 | `room_clock_line` | full matched line string | `ttpp/core/clock.tin` `#action` |
@@ -158,7 +162,34 @@ wiping all non-function keys from `state.char`. No payload. Called from
 
 **Subscribers:** `lua/core/affects.lua` (cancel the affects tick timer),
 `lua/core/buffs_state.lua` (serialize blank buffs.state),
+`lua/core/group_serializer.lua` (serialize empty group.state),
 `lua/core/status_state.lua` (serialize blank status.state).
+
+### `group_member_added`
+
+Emitted by `lua/core/group_state.lua` when a new member joins the group. Payload is the member table as stored in `state.group.members[id]` — the same table reference, so subscribers must not cache it across events. Fired by `Group.Add` and by `Group.Set` for each id present in the new set that was absent in the old set.
+
+Members with `type == "npc"` or `type == "you"` are discarded before this fires — the payload is always a tracked group member.
+
+**Subscribers:** none currently — `group_serializer.lua` serializes on `group_changed` rather than per-member events.
+
+### `group_member_updated`
+
+Emitted by `lua/core/group_state.lua` after `Group.Update` merges partial fields into an existing member. Payload is the updated member table (same reference as `state.group.members[id]`, post-merge). Only the fields present in the GMCP payload are updated; absent fields retain their prior value.
+
+**Subscribers:** none currently.
+
+### `group_member_removed`
+
+Emitted by `lua/core/group_state.lua` when a member leaves the group. Payload is the integer member id. Fired by `Group.Remove` and by `Group.Set` for each id present in the old set that is absent in the new set. The member has already been removed from `state.group.members` when this fires.
+
+**Subscribers:** none currently.
+
+### `group_changed`
+
+Emitted by `lua/core/group_state.lua` after every `Group.*` mutation and by `state.group.reset()`. No payload. Subscribers should read `state.group.members` directly for the current state. Fires once per incoming GMCP packet even if multiple per-member events also fired in the same packet (e.g. a `Group.Set` that adds two members and removes one still emits a single `group_changed` at the end).
+
+**Subscribers:** `lua/core/group_serializer.lua` — calls `serialize()` to write `bridge/runtime/group.state` atomically.
 
 ### `mob_death`
 
