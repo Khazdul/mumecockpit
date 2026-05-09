@@ -154,7 +154,9 @@ Member object fields (kebab-case from server, stored snake_case in `state.group.
 silently excluded from `state.group.members` (denylist in `group_collector.lua`).
 
 `Group.Remove` delivers a bare JSON integer (not an object). The handler converts it via
-`tonumber(body)` before removing the entry from `state.group.members`.
+`tonumber(body)` before removing the entry from `state.group.members`. Removals for ids
+not present in `state.group.members` — e.g. NPCs filtered out at add time — are silently
+ignored; no events are emitted.
 
 `Group.Update` is incremental — a single packet carries either the numeric value for a vital
 (e.g. `{"id":2,"hp":200}`) or its band-string (`{"id":2,"hp-string":"fine"}`) but not always

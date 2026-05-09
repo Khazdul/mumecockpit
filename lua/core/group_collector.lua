@@ -232,6 +232,9 @@ gmcp.handlers["Group.Remove"] = function(body)
         dbg("[GROUP] Remove: expected integer payload, got " .. tostring(body))
         return
     end
+    if state.group.members[id] == nil then
+        return
+    end
     state.group.members[id] = nil
     events.emit("group_member_removed", id)
     events.emit("group_changed")
