@@ -95,12 +95,7 @@ gmcp.handlers["Group.Set"] = function(body)
 
     local new_ids = {}
     for _, entry in ipairs(body) do
-        if entry.type == "npc" or entry.type == "you" then
-            -- silently excluded
-        else
-            if entry.type ~= "ally" then
-                dbg("[GROUP] unknown member type in Set: " .. tostring(entry.type))
-            end
+        if entry.type ~= "npc" then
             local member = {}
             for gmcp_key, state_key in pairs(_field_map) do
                 local v = entry[gmcp_key]
@@ -129,10 +124,7 @@ end
 
 gmcp.handlers["Group.Add"] = function(body)
     body = body or {}
-    if body.type == "npc" or body.type == "you" then return end
-    if body.type ~= "ally" then
-        dbg("[GROUP] unknown member type in Add: " .. tostring(body.type))
-    end
+    if body.type == "npc" then return end
 
     local member = {}
     for gmcp_key, state_key in pairs(_field_map) do
