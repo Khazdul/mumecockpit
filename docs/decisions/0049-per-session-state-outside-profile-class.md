@@ -5,9 +5,9 @@
 
 ## Context
 
-tt++ session profiles (`ttpp/sessions/<name>.tin`) are written via
+tt++ session profiles (`ttpp/profiles/<name>.tin`) are written via
 `#class {name} {write} {file}` on session deactivation, and re-read
-via `#%0 #read ttpp/sessions/%0.tin` on SESSION CONNECTED. The class
+via `#%0 #read ttpp/profiles/%0.tin` on SESSION CONNECTED. The class
 file contains all `#var`, `#alias`, `#action`, `#event` etc. that
 were registered while the class was open.
 

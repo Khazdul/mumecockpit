@@ -49,7 +49,7 @@ Cosmetic UI labels stay as-is: the status pane keeps `Sess XP` / `Sess TP`.
 
 All speldata, run logs, and the comm archive are scoped per **character
 name** (`state.char.name` from `Char.Name`). A "profile" reduces to "which
-tt++ settings file is loaded" (`ttpp/sessions/<profile>.tin`) — it is no
+tt++ settings file is loaded" (`ttpp/profiles/<profile>.tin`) — it is no
 longer a persistence boundary.
 
 This supersedes ADR 0011 in the scope dimension only. The mechanics

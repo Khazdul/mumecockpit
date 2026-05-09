@@ -39,7 +39,7 @@ Running a full audit (`grep -rni 'master'` across `*.sh`, `*.ps1`,
 `*.md`, `*.tin`, `*.lua`, `*.py`) returned three hits, all unrelated to
 git:
 
-- `ttpp/sessions/bogger.tin` — TinTin++ game variable `{master}`
+- `ttpp/profiles/bogger.tin` — TinTin++ game variable `{master}`
   storing a character name.
 - `lua/core/affects_data.lua` (×2) — in-game spell-effect strings
   containing the word "Master's".
