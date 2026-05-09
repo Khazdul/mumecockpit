@@ -194,6 +194,12 @@ events.subscribe("pkill_attributed", function(payload)
     dbg("[RUN_LOG] pkill: " .. tostring(payload.name) .. " xp=" .. tostring(payload.xp))
 end)
 
+events.subscribe("achievement", function(payload)
+    if not _active then return end
+    _append({ event = "achievement", ts = os.time(), name = payload })
+    dbg("[RUN_LOG] achievement: " .. tostring(payload))
+end)
+
 events.subscribe("run_ending", function()
     if not _active then return end
     if _pending_baseline then

@@ -225,6 +225,22 @@ For mixed folds (mob kills and PC kills within the same 500ms window), XP is
 split evenly across all kills combined; the last entry processed — mob or PC,
 whichever is last — receives the remainder. Schema version is unchanged at `1`.
 
+### `achievement`
+
+Written when the game sends `"You achieved something new!"` and the inner
+one-shot action captures the description line that immediately follows.
+
+```json
+{"event":"achievement","ts":1746642000,"name":"That was a quick trip!"}
+```
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `ts` | integer | `os.time()` when the row is written |
+| `name` | string | Achievement description line as captured by the inner action |
+
+Schema version is unchanged at `1`; this event is additive.
+
 ## Per-run text log (.log)
 
 **Purpose.** Full-fidelity raw capture of all server output for the run — a
