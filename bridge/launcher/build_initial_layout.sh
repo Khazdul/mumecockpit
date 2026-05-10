@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # bridge/launcher/build_initial_layout.sh — builds the cockpit pane layout post-attach.
 # Fired by a one-shot client-attached hook registered in tmux_start.sh.
-# Reads true terminal width from tmux (authoritative post-attach) rather than
+# Reads true terminal dimensions from tmux (authoritative post-attach) rather than
 # stty size (unreliable pre-attach on terminals that haven't synced PTY size).
 
 cd "$HOME/MUME"
@@ -27,39 +27,66 @@ source "$LAYOUT_CONF"
 
 COLS=$(tmux display-message -p -t mume:cockpit '#{window_width}')
 sed -i "s/^window_cols=.*/window_cols=$COLS/" "$LAYOUT_CONF"
-LEFT_WIDTH=$(( COLS - ui_width - 1 ))
 
-if [ "$SHOW_UI" -eq 1 ] && [ "$SHOW_DEV" -eq 1 ]; then
-    tmux split-window -h -t mume:cockpit.0 "bash -c 'stty -isig 2>/dev/null; trap \"\" INT; while true; do python3 $HOME/MUME/bridge/panes/ui_pane.py; printf \"\\n[pane kept alive — use cp -u to close]\\n\"; sleep 0.2; done'"
-    tmux select-pane -t mume:cockpit.1 -T "ui"
-    tmux split-window -v -t mume:cockpit.1 "bash -c 'stty -isig 2>/dev/null; trap \"\" INT; while true; do tail -f $HOME/MUME/logs/debug.log; printf \"\\n[pane kept alive — use cp -d to close]\\n\"; sleep 0.2; done'"
-    tmux select-pane -t mume:cockpit.2 -T "dev"
-    tmux resize-pane -t mume:cockpit.0 -x "$LEFT_WIDTH"
-elif [ "$SHOW_UI" -eq 1 ]; then
-    tmux split-window -h -t mume:cockpit.0 "bash -c 'stty -isig 2>/dev/null; trap \"\" INT; while true; do python3 $HOME/MUME/bridge/panes/ui_pane.py; printf \"\\n[pane kept alive — use cp -u to close]\\n\"; sleep 0.2; done'"
-    tmux select-pane -t mume:cockpit.1 -T "ui"
-    tmux resize-pane -t mume:cockpit.0 -x "$LEFT_WIDTH"
-elif [ "$SHOW_DEV" -eq 1 ]; then
-    tmux split-window -h -t mume:cockpit.0 "bash -c 'stty -isig 2>/dev/null; trap \"\" INT; while true; do tail -f $HOME/MUME/logs/debug.log; printf \"\\n[pane kept alive — use cp -d to close]\\n\"; sleep 0.2; done'"
-    tmux select-pane -t mume:cockpit.1 -T "dev"
-    tmux resize-pane -t mume:cockpit.0 -x "$LEFT_WIDTH"
-fi
+# Pre-flight: compute the right-column budget, build the requested pane list
+# in visual order, then drop the lowest-priority survivors until they fit.
+# Skipped panes stay enabled in startup.conf — a wider terminal next start
+# gets them back without manual reconfiguration.
+ROWS=$(tmux display-message -p -t mume:cockpit '#{window_height}')
+source bridge/layout/right_column_budget.sh
+MAX=$(rc_max_panes)
 
-if [ "$SHOW_STATUS" -eq 1 ]; then
-    bash "$HOME/MUME/bridge/launcher/open_pane.sh" status
-fi
-if [ "$SHOW_BUFFS" -eq 1 ]; then
-    bash "$HOME/MUME/bridge/launcher/open_pane.sh" buffs
-fi
-if [ "$SHOW_GROUP" -eq 1 ]; then
-    bash "$HOME/MUME/bridge/launcher/open_pane.sh" group
-fi
-if [ "$SHOW_COMM" -eq 1 ]; then
-    bash "$HOME/MUME/bridge/launcher/open_pane.sh" comm
-fi
-bash "$HOME/MUME/bridge/layout/apply_layout.sh"
+REQUESTED=()
+[ "$SHOW_STATUS" -eq 1 ] && REQUESTED+=(status)
+[ "$SHOW_BUFFS"  -eq 1 ] && REQUESTED+=(buffs)
+[ "$SHOW_GROUP"  -eq 1 ] && REQUESTED+=(group)
+[ "$SHOW_COMM"   -eq 1 ] && REQUESTED+=(comm)
+[ "$SHOW_UI"     -eq 1 ] && REQUESTED+=(ui)
+[ "$SHOW_DEV"    -eq 1 ] && REQUESTED+=(dev)
+
+# Drop order: lowest priority first. ui is kept last.
+DROP_ORDER=(dev group buffs comm status ui)
+while [ "${#REQUESTED[@]}" -gt "$MAX" ]; do
+    dropped=""
+    for victim in "${DROP_ORDER[@]}"; do
+        new=()
+        for p in "${REQUESTED[@]}"; do
+            if [ -z "$dropped" ] && [ "$p" = "$victim" ]; then
+                dropped="$victim"
+                continue
+            fi
+            new+=("$p")
+        done
+        if [ -n "$dropped" ]; then
+            REQUESTED=("${new[@]}")
+            echo "[layout] cold start: skipping $dropped (terminal too short: $ROWS rows)" >> logs/debug.log
+            break
+        fi
+    done
+    [ -z "$dropped" ] && break
+done
+
+for pane in "${REQUESTED[@]}"; do
+    bash "$HOME/MUME/bridge/launcher/open_pane.sh" "$pane"
+done
 
 bash "$HOME/MUME/bridge/launcher/open_pane.sh" input
+
+# Equalize pass — runs once at cold start; never on resizes or drags (ADR 0030).
+mapfile -t RC_INDICES < <(
+    tmux list-panes -t mume:cockpit -F '#{pane_top} #{pane_index} #{pane_title}' \
+    | awk '$3 ~ /^(status|buffs|group|comm|ui|dev)$/' \
+    | sort -n \
+    | awk '{print $2}'
+)
+N=${#RC_INDICES[@]}
+if [ "$N" -gt 1 ]; then
+    BUDGET=$(( ROWS - INPUT_RESERVE - N ))
+    SHARE=$(( BUDGET / N ))
+    for ((i=0; i<N-1; i++)); do
+        tmux resize-pane -t "mume:cockpit.${RC_INDICES[$i]}" -y "$SHARE"
+    done
+fi
 
 INPUT_INDEX=$(tmux list-panes -t mume:cockpit \
     -F '#{pane_index} #{pane_title}' \
