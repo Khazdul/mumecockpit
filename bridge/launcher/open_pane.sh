@@ -76,21 +76,26 @@ if [ -n "$HAS_RIGHT" ]; then
               | awk '$2=="comm" {print $1; exit}')
             UI_INDEX=$(tmux list-panes -t mume:cockpit -F '#{pane_index} #{pane_title}' \
               | awk '$2=="ui" {print $1; exit}')
+            DEV_INDEX=$(tmux list-panes -t mume:cockpit -F '#{pane_index} #{pane_title}' \
+              | awk '$2=="dev" {print $1; exit}')
 
             if [ -n "$STATUS_INDEX" ]; then
-                # Split below status
+                # Split below status (predecessor)
                 NEW_INDEX=$(tmux split-window -v -t mume:cockpit.$STATUS_INDEX -P -F '#{pane_index}' "$BUFFS_CMD")
             elif [ -n "$GROUP_INDEX" ]; then
-                # No status — split above group (buffs is above group)
+                # No status — split above group (successor)
                 NEW_INDEX=$(tmux split-window -v -b -t mume:cockpit.$GROUP_INDEX -P -F '#{pane_index}' "$BUFFS_CMD")
             elif [ -n "$COMM_INDEX" ]; then
-                # No status or group — split above comm
+                # No status or group — split above comm (successor)
                 NEW_INDEX=$(tmux split-window -v -b -t mume:cockpit.$COMM_INDEX -P -F '#{pane_index}' "$BUFFS_CMD")
             elif [ -n "$UI_INDEX" ]; then
-                # No status, group, or comm — split above ui
+                # No status, group, or comm — split above ui (successor)
                 NEW_INDEX=$(tmux split-window -v -b -t mume:cockpit.$UI_INDEX -P -F '#{pane_index}' "$BUFFS_CMD")
+            elif [ -n "$DEV_INDEX" ]; then
+                # No status, group, comm, or ui — split above dev (successor)
+                NEW_INDEX=$(tmux split-window -v -b -t mume:cockpit.$DEV_INDEX -P -F '#{pane_index}' "$BUFFS_CMD")
             else
-                # Only dev or empty — go at top
+                # Only empty column — go at top
                 TOP_IDX=$(_right_pane_at_top)
                 NEW_INDEX=$(tmux split-window -v -b -t mume:cockpit.$TOP_IDX -P -F '#{pane_index}' "$BUFFS_CMD")
             fi
@@ -147,21 +152,26 @@ if [ -n "$HAS_RIGHT" ]; then
               | awk '$2=="status" {print $1; exit}')
             UI_INDEX=$(tmux list-panes -t mume:cockpit -F '#{pane_index} #{pane_title}' \
               | awk '$2=="ui" {print $1; exit}')
+            DEV_INDEX=$(tmux list-panes -t mume:cockpit -F '#{pane_index} #{pane_title}' \
+              | awk '$2=="dev" {print $1; exit}')
 
             if [ -n "$GROUP_INDEX" ]; then
-                # Split below group
+                # Split below group (predecessor)
                 NEW_INDEX=$(tmux split-window -v -t mume:cockpit.$GROUP_INDEX -P -F '#{pane_index}' "$COMM_CMD")
             elif [ -n "$BUFFS_INDEX" ]; then
-                # Split below buffs
+                # Split below buffs (predecessor)
                 NEW_INDEX=$(tmux split-window -v -t mume:cockpit.$BUFFS_INDEX -P -F '#{pane_index}' "$COMM_CMD")
             elif [ -n "$STATUS_INDEX" ]; then
-                # Split below status
+                # Split below status (predecessor)
                 NEW_INDEX=$(tmux split-window -v -t mume:cockpit.$STATUS_INDEX -P -F '#{pane_index}' "$COMM_CMD")
             elif [ -n "$UI_INDEX" ]; then
-                # No status — split above ui
+                # No predecessors — split above ui (successor)
                 NEW_INDEX=$(tmux split-window -v -b -t mume:cockpit.$UI_INDEX -P -F '#{pane_index}' "$COMM_CMD")
+            elif [ -n "$DEV_INDEX" ]; then
+                # No predecessors or ui — split above dev (successor)
+                NEW_INDEX=$(tmux split-window -v -b -t mume:cockpit.$DEV_INDEX -P -F '#{pane_index}' "$COMM_CMD")
             else
-                # Only dev — split above it
+                # Empty column — go at top
                 TOP_IDX=$(_right_pane_at_top)
                 NEW_INDEX=$(tmux split-window -v -b -t mume:cockpit.$TOP_IDX -P -F '#{pane_index}' "$COMM_CMD")
             fi
@@ -174,17 +184,32 @@ if [ -n "$HAS_RIGHT" ]; then
             # ui goes below comm, above dev.
             COMM_INDEX=$(tmux list-panes -t mume:cockpit -F '#{pane_index} #{pane_title}' \
               | awk '$2=="comm" {print $1; exit}')
+            GROUP_INDEX=$(tmux list-panes -t mume:cockpit -F '#{pane_index} #{pane_title}' \
+              | awk '$2=="group" {print $1; exit}')
+            BUFFS_INDEX=$(tmux list-panes -t mume:cockpit -F '#{pane_index} #{pane_title}' \
+              | awk '$2=="buffs" {print $1; exit}')
+            STATUS_INDEX=$(tmux list-panes -t mume:cockpit -F '#{pane_index} #{pane_title}' \
+              | awk '$2=="status" {print $1; exit}')
             DEV_INDEX=$(tmux list-panes -t mume:cockpit -F '#{pane_index} #{pane_title}' \
               | awk '$2=="dev" {print $1; exit}')
 
             if [ -n "$COMM_INDEX" ]; then
-                # Split below comm
+                # Split below comm (predecessor)
                 NEW_INDEX=$(tmux split-window -v -t mume:cockpit.$COMM_INDEX -P -F '#{pane_index}' "$UI_CMD")
+            elif [ -n "$GROUP_INDEX" ]; then
+                # Split below group (predecessor)
+                NEW_INDEX=$(tmux split-window -v -t mume:cockpit.$GROUP_INDEX -P -F '#{pane_index}' "$UI_CMD")
+            elif [ -n "$BUFFS_INDEX" ]; then
+                # Split below buffs (predecessor)
+                NEW_INDEX=$(tmux split-window -v -t mume:cockpit.$BUFFS_INDEX -P -F '#{pane_index}' "$UI_CMD")
+            elif [ -n "$STATUS_INDEX" ]; then
+                # Split below status (predecessor)
+                NEW_INDEX=$(tmux split-window -v -t mume:cockpit.$STATUS_INDEX -P -F '#{pane_index}' "$UI_CMD")
             elif [ -n "$DEV_INDEX" ]; then
-                # No comm — split above dev
+                # No predecessors — split above dev (successor)
                 NEW_INDEX=$(tmux split-window -v -b -t mume:cockpit.$DEV_INDEX -P -F '#{pane_index}' "$UI_CMD")
             else
-                # Only status (or status+comm already handled) — go at bottom
+                # Only unreachable edge case — go at bottom
                 BOT_IDX=$(_right_pane_at_bottom)
                 NEW_INDEX=$(tmux split-window -v -t mume:cockpit.$BOT_IDX -P -F '#{pane_index}' "$UI_CMD")
             fi
