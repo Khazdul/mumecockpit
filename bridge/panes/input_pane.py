@@ -45,10 +45,11 @@ MENU_WIDTH        = 31
 MAIN_MIN = 30   # main/tt++ pane floor
 
 # Button colours — toggle-state indicator
-BTN_BG_ON  = "#025570"   # rgb(2,85,112) — ON state background
+# BTN_BG_ON mirrors C_TP_FG in bridge/panes/status_pane.py — keep coupled on re-theme.
+BTN_BG_ON  = "#002832"   # rgb(0,40,50) — ON state background (matches TP-bar fg)
 BTN_BG_OFF = "#001E28"   # rgb(0,30,40)   — OFF state background
 BTN_FG_ON  = "#C0C0C0"   # ON text — rgb(192,192,192)
-BTN_FG_OFF = "#808080"   # OFF text — rgb(128,128,128)
+BTN_FG_OFF = "#707070"   # OFF text — rgb(112,112,112)
 
 # Sun/Moon colours — source of truth: bridge/panes/status_pane.py C_SUN / C_MOON
 C_SUN_HEX  = "#ffb000"   # \x1b[38;2;255;176;0m
