@@ -278,10 +278,6 @@ if _resume_name then
         _open_log(run_start_ts)
         dbg("[RUN_LOG] resumed run for " .. _resume_name .. " (run_start ts=" .. tostring(run_start_ts) .. ")")
     end
-    -- Right-column data panes use connection.state existence as their render-active
-    -- signal. brain.lua clears it unconditionally at startup, so without this
-    -- rewrite the panes would stay dark for the rest of a cp -r-resumed run.
-    _write_connection_state()
 end
 
 dbg("[RUN_LOG] loaded")

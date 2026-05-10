@@ -1,7 +1,7 @@
 -- lua/brain/connection.lua
 -- Exports: GAME_SESSION, mark_mume_connected, mark_mume_disconnected,
 --          set_game_session, clear_game_session, _clear_connection_state,
---          _write_connection_state, _read_startup_conf_value
+--          _read_startup_conf_value
 -- Depends on: system_ui, ui_var, dbg (ui.lua), tintin_cmd, tintin (io.lua)
 
 local CONNECTION_STATE_PATH = "bridge/runtime/connection.state"
@@ -21,7 +21,7 @@ function _read_startup_conf_value(key)
     return nil
 end
 
-function _write_connection_state()
+local function _write_connection_state()
     local mode = _read_startup_conf_value("connection_mode") or "mmapper"
     local tmp  = CONNECTION_STATE_PATH .. ".tmp"
     local f    = io.open(tmp, "w")
