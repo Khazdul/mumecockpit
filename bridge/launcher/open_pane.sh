@@ -29,7 +29,7 @@ case "$TYPE" in
     status|buffs|group|comm|ui|dev)
         if ! rc_fits_one_more; then
             echo "[layout] cannot open $TYPE — terminal too short; close another pane first." \
-                >> "$HOME/MUME/logs/ui.log"
+                >> "$HOME/MUME/logs/debug.log"
             exit 0
         fi
         ;;
@@ -76,13 +76,13 @@ if [ -n "$HAS_RIGHT" ]; then
             SPLIT_DIR="-b"
             if ! rc_target_can_be_split "$TARGET_IDX"; then
                 echo "[layout] cannot open $TYPE — adjacent pane too short to split; resize or close another pane first." \
-                    >> "$HOME/MUME/logs/ui.log"
+                    >> "$HOME/MUME/logs/debug.log"
                 exit 0
             fi
             NEW_INDEX=$(tmux split-window -v $SPLIT_DIR -t mume:cockpit.$TARGET_IDX -P -F '#{pane_index}' "$STATUS_CMD")
             if [ -z "$NEW_INDEX" ]; then
                 echo "[layout] split-window failed for $TYPE (target idx=$TARGET_IDX); aborting open." \
-                    >> "$HOME/MUME/logs/ui.log"
+                    >> "$HOME/MUME/logs/debug.log"
                 exit 0
             fi
             tmux select-pane -t mume:cockpit.$NEW_INDEX -T "status"
@@ -124,13 +124,13 @@ if [ -n "$HAS_RIGHT" ]; then
             fi
             if ! rc_target_can_be_split "$TARGET_IDX"; then
                 echo "[layout] cannot open $TYPE — adjacent pane too short to split; resize or close another pane first." \
-                    >> "$HOME/MUME/logs/ui.log"
+                    >> "$HOME/MUME/logs/debug.log"
                 exit 0
             fi
             NEW_INDEX=$(tmux split-window -v $SPLIT_DIR -t mume:cockpit.$TARGET_IDX -P -F '#{pane_index}' "$BUFFS_CMD")
             if [ -z "$NEW_INDEX" ]; then
                 echo "[layout] split-window failed for $TYPE (target idx=$TARGET_IDX); aborting open." \
-                    >> "$HOME/MUME/logs/ui.log"
+                    >> "$HOME/MUME/logs/debug.log"
                 exit 0
             fi
             tmux select-pane -t mume:cockpit.$NEW_INDEX -T "buffs"
@@ -172,13 +172,13 @@ if [ -n "$HAS_RIGHT" ]; then
             fi
             if ! rc_target_can_be_split "$TARGET_IDX"; then
                 echo "[layout] cannot open $TYPE — adjacent pane too short to split; resize or close another pane first." \
-                    >> "$HOME/MUME/logs/ui.log"
+                    >> "$HOME/MUME/logs/debug.log"
                 exit 0
             fi
             NEW_INDEX=$(tmux split-window -v $SPLIT_DIR -t mume:cockpit.$TARGET_IDX -P -F '#{pane_index}' "$GROUP_CMD")
             if [ -z "$NEW_INDEX" ]; then
                 echo "[layout] split-window failed for $TYPE (target idx=$TARGET_IDX); aborting open." \
-                    >> "$HOME/MUME/logs/ui.log"
+                    >> "$HOME/MUME/logs/debug.log"
                 exit 0
             fi
             tmux select-pane -t mume:cockpit.$NEW_INDEX -T "group"
@@ -220,13 +220,13 @@ if [ -n "$HAS_RIGHT" ]; then
             fi
             if ! rc_target_can_be_split "$TARGET_IDX"; then
                 echo "[layout] cannot open $TYPE — adjacent pane too short to split; resize or close another pane first." \
-                    >> "$HOME/MUME/logs/ui.log"
+                    >> "$HOME/MUME/logs/debug.log"
                 exit 0
             fi
             NEW_INDEX=$(tmux split-window -v $SPLIT_DIR -t mume:cockpit.$TARGET_IDX -P -F '#{pane_index}' "$COMM_CMD")
             if [ -z "$NEW_INDEX" ]; then
                 echo "[layout] split-window failed for $TYPE (target idx=$TARGET_IDX); aborting open." \
-                    >> "$HOME/MUME/logs/ui.log"
+                    >> "$HOME/MUME/logs/debug.log"
                 exit 0
             fi
             tmux select-pane -t mume:cockpit.$NEW_INDEX -T "comm"
@@ -268,13 +268,13 @@ if [ -n "$HAS_RIGHT" ]; then
             fi
             if ! rc_target_can_be_split "$TARGET_IDX"; then
                 echo "[layout] cannot open $TYPE — adjacent pane too short to split; resize or close another pane first." \
-                    >> "$HOME/MUME/logs/ui.log"
+                    >> "$HOME/MUME/logs/debug.log"
                 exit 0
             fi
             NEW_INDEX=$(tmux split-window -v $SPLIT_DIR -t mume:cockpit.$TARGET_IDX -P -F '#{pane_index}' "$UI_CMD")
             if [ -z "$NEW_INDEX" ]; then
                 echo "[layout] split-window failed for $TYPE (target idx=$TARGET_IDX); aborting open." \
-                    >> "$HOME/MUME/logs/ui.log"
+                    >> "$HOME/MUME/logs/debug.log"
                 exit 0
             fi
             tmux select-pane -t mume:cockpit.$NEW_INDEX -T "ui"
@@ -288,14 +288,14 @@ if [ -n "$HAS_RIGHT" ]; then
             SPLIT_DIR=""
             if ! rc_target_can_be_split "$TARGET_IDX"; then
                 echo "[layout] cannot open $TYPE — adjacent pane too short to split; resize or close another pane first." \
-                    >> "$HOME/MUME/logs/ui.log"
+                    >> "$HOME/MUME/logs/debug.log"
                 exit 0
             fi
             NEW_INDEX=$(tmux split-window -v $SPLIT_DIR -t mume:cockpit.$TARGET_IDX -P -F '#{pane_index}' \
                 "bash -c 'stty -isig 2>/dev/null; trap \"\" INT; while true; do tail -f $MUME/logs/debug.log; printf \"\\n[pane kept alive — use cp -d to close]\\n\"; sleep 0.2; done'")
             if [ -z "$NEW_INDEX" ]; then
                 echo "[layout] split-window failed for $TYPE (target idx=$TARGET_IDX); aborting open." \
-                    >> "$HOME/MUME/logs/ui.log"
+                    >> "$HOME/MUME/logs/debug.log"
                 exit 0
             fi
             tmux select-pane -t mume:cockpit.$NEW_INDEX -T "dev"
