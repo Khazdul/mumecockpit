@@ -22,6 +22,19 @@ if [ -n "$EXISTING" ]; then
     exit 0
 fi
 
+# Budget gate — refuse to open if the right column is already full.
+# input and unrelated TYPE values are not gated.
+source "$HOME/MUME/bridge/layout/right_column_budget.sh"
+case "$TYPE" in
+    status|buffs|group|comm|ui|dev)
+        if ! rc_fits_one_more; then
+            echo "[layout] cannot open $TYPE — terminal too short; close another pane first." \
+                >> "$HOME/MUME/logs/ui.log"
+            exit 0
+        fi
+        ;;
+esac
+
 LAYOUT_CONF="$HOME/MUME/bridge/runtime/layout.conf"
 [ -f "$LAYOUT_CONF" ] || echo "ui_width=33" > "$LAYOUT_CONF"
 source "$LAYOUT_CONF"
