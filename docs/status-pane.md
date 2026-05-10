@@ -174,13 +174,13 @@ Constants defined at the top of `bridge/panes/status_pane.py`:
 | `C_RESET` | `\x1b[0m`                | Reset all                                         |
 | `C_NAME`  | `\x1b[38;2;192;192;192m` | Row 1 text foreground (name + padding spaces)     |
 | `C_XP_BG` | `\x1b[48;2;0;30;40m`    | XP bar background — baseline segment (RGB 0,30,40) |
-| `C_XP_NEW_BG` | `\x1b[48;2;139;26;138m` | XP bar session-gain segment background (RGB 139,26,138 — `#8B1A8A`) |
+| `C_XP_NEW_BG` | `\x1b[48;2;92;15;91m`   | XP bar session-gain segment background (RGB 92,15,91 — `#5C0F5B`) |
 | `C_BG_RST`| `\x1b[49m`               | Reset background only, keep foreground            |
 | `C_TP_FG` | `\x1b[38;2;0;40;50m`    | TP bar `▀` foreground — baseline segment (RGB 0,40,50) |
-| `C_TP_NEW_FG` | `\x1b[38;2;92;16;91m` | TP bar session-gain segment `▀` foreground (RGB 92,16,91 — `#5C105B`) |
+| `C_TP_NEW_FG` | `\x1b[38;2;61;10;60m`   | TP bar session-gain segment `▀` foreground (RGB 61,10,60 — `#3D0A3C`) |
 | `C_LABEL`         | `\x1b[38;2;128;128;128m`    | Data row label foreground (RGB 128,128,128)          |
 | `C_VALUE`         | `\x1b[38;2;192;192;192m`    | Data row value foreground (RGB 192,192,192)          |
-| `C_TOG_OFF_LABEL` | `\x1b[38;2;72;65;58m`       | Toggle label foreground — off state (RGB 72,65,58 — `#48413A` warm dark grey) |
+| `C_TOG_OFF_LABEL` | `\x1b[38;2;83;72;56m`       | Toggle label foreground — off state (RGB 83,72,56 — `#534838` warm dark brown) |
 | `C_TOG_ON_LABEL`  | `\x1b[38;2;212;160;78m`     | Toggle label foreground — on state (RGB 212,160,78 — `#D4A04E` warm gold)        |
 
 
@@ -204,7 +204,7 @@ rendered inside the pane content.
   - leftmost `floor(W × xp_progress_baseline)` columns: `C_XP_BG` (RGB 0,30,40)
     — XP already present at session start.
   - next `floor(W × xp_progress) − floor(W × xp_progress_baseline)` columns:
-    `C_XP_NEW_BG` (RGB 139,26,138 — `#8B1A8A`) — XP gained this session.
+    `C_XP_NEW_BG` (RGB 92,15,91 — `#5C0F5B`) — XP gained this session.
   - remaining columns: terminal default (no background).
 - Boundary trick:
   `<C_NAME><C_XP_BG><baseline><C_XP_NEW_BG><session-gain><C_BG_RST><unfilled><C_RESET>`.
@@ -218,7 +218,7 @@ rendered inside the pane content.
 - Leftmost `floor(W × tp_progress_baseline)` columns: `▀` (U+2580), foreground
   `C_TP_FG` (RGB 0,40,50), no background — TP already present at session start.
 - Next `floor(W × tp_progress) − floor(W × tp_progress_baseline)` columns: `▀`,
-  foreground `C_TP_NEW_FG` (RGB 92,16,91 — `#5C105B`), no background — TP
+  foreground `C_TP_NEW_FG` (RGB 61,10,60 — `#3D0A3C`), no background — TP
   gained this session.
 - Remaining columns: space characters, no colour.
 - See [Session-gain visualisation](#session-gain-visualisation) below for the
@@ -233,12 +233,12 @@ cell is laid out as `[label][space-pad]`:
 - **space-pad**: `col_w - len(label)` trailing space chars (min 0), unstyled.
 
 No background is set; the terminal background shows through. State is
-communicated entirely through label colour: off uses a warm dark grey label
-(`RGB 72,65,58`); on uses a warm gold label (`RGB 212,160,78`).
+communicated entirely through label colour: off uses a warm dark brown label
+(`RGB 83,72,56`); on uses a warm gold label (`RGB 212,160,78`).
 
 | Col | Toggle | Off colours                          | On colours                          |
 |-----|--------|--------------------------------------|-------------------------------------|
-| 0   | SNEAK  | label `C_TOG_OFF_LABEL` (`#48413A`)  | label `C_TOG_ON_LABEL` (`#D4A04E`) |
+| 0   | SNEAK  | label `C_TOG_OFF_LABEL` (`#534838`)  | label `C_TOG_ON_LABEL` (`#D4A04E`) |
 | 1   | RIDE   | same                                 | same                                |
 | 2   | CLIMB  | same                                 | same                                |
 | 3   | SWIM   | same                                 | same                                |

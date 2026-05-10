@@ -35,14 +35,14 @@ POLL_MS    = 0.05
 C_RESET     = "\x1b[0m"
 C_NAME      = "\x1b[38;2;192;192;192m"   # row 1 text (fg only)
 C_XP_BG     = "\x1b[48;2;0;30;40m"       # XP bar background — baseline (pre-session) segment
-C_XP_NEW_BG = "\x1b[48;2;139;26;138m"    # #8B1A8A — session-gain XP segment
+C_XP_NEW_BG = "\x1b[48;2;92;15;91m"      # #5C0F5B — session-gain XP segment
 C_BG_RST    = "\x1b[49m"                 # reset background only (keep fg)
 C_TP_FG     = "\x1b[38;2;0;40;50m"       # TP bar ▀ foreground — baseline (pre-session) segment
-C_TP_NEW_FG = "\x1b[38;2;92;16;91m"      # #5C105B — session-gain TP segment
+C_TP_NEW_FG = "\x1b[38;2;61;10;60m"      # #3D0A3C — session-gain TP segment
 C_LABEL     = "\x1b[38;2;128;128;128m"   # data row label foreground
 C_VALUE     = "\x1b[38;2;192;192;192m"   # data row value foreground
 
-C_TOG_OFF_LABEL = "\x1b[38;2;72;65;58m"    # #48413A — warm dark grey
+C_TOG_OFF_LABEL = "\x1b[38;2;83;72;56m"    # #534838 — warm dark brown
 C_TOG_ON_LABEL  = "\x1b[38;2;212;160;78m"  # #D4A04E — warm gold (matches overflow indicator)
 
 C_INDICATOR = "fg:#d4a04e italic"   # overflow indicator style
