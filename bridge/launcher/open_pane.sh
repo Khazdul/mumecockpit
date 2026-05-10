@@ -72,8 +72,19 @@ if [ -n "$HAS_RIGHT" ]; then
     case $TYPE in
         status)
             # status is always at the top of the right column.
-            TOP_IDX=$(_right_pane_at_top)
-            NEW_INDEX=$(tmux split-window -v -b -t mume:cockpit.$TOP_IDX -P -F '#{pane_index}' "$STATUS_CMD")
+            TARGET_IDX=$(_right_pane_at_top)
+            SPLIT_DIR="-b"
+            if ! rc_target_can_be_split "$TARGET_IDX"; then
+                echo "[layout] cannot open $TYPE — adjacent pane too short to split; resize or close another pane first." \
+                    >> "$HOME/MUME/logs/ui.log"
+                exit 0
+            fi
+            NEW_INDEX=$(tmux split-window -v $SPLIT_DIR -t mume:cockpit.$TARGET_IDX -P -F '#{pane_index}' "$STATUS_CMD")
+            if [ -z "$NEW_INDEX" ]; then
+                echo "[layout] split-window failed for $TYPE (target idx=$TARGET_IDX); aborting open." \
+                    >> "$HOME/MUME/logs/ui.log"
+                exit 0
+            fi
             tmux select-pane -t mume:cockpit.$NEW_INDEX -T "status"
             tmux select-pane -t "$(resolve_focus_target)"
             bash "$MUME/bridge/layout/apply_layout.sh"
@@ -94,23 +105,33 @@ if [ -n "$HAS_RIGHT" ]; then
 
             if [ -n "$STATUS_INDEX" ]; then
                 # Split below status (predecessor)
-                NEW_INDEX=$(tmux split-window -v -t mume:cockpit.$STATUS_INDEX -P -F '#{pane_index}' "$BUFFS_CMD")
+                TARGET_IDX=$STATUS_INDEX; SPLIT_DIR=""
             elif [ -n "$GROUP_INDEX" ]; then
                 # No status — split above group (successor)
-                NEW_INDEX=$(tmux split-window -v -b -t mume:cockpit.$GROUP_INDEX -P -F '#{pane_index}' "$BUFFS_CMD")
+                TARGET_IDX=$GROUP_INDEX; SPLIT_DIR="-b"
             elif [ -n "$COMM_INDEX" ]; then
                 # No status or group — split above comm (successor)
-                NEW_INDEX=$(tmux split-window -v -b -t mume:cockpit.$COMM_INDEX -P -F '#{pane_index}' "$BUFFS_CMD")
+                TARGET_IDX=$COMM_INDEX; SPLIT_DIR="-b"
             elif [ -n "$UI_INDEX" ]; then
                 # No status, group, or comm — split above ui (successor)
-                NEW_INDEX=$(tmux split-window -v -b -t mume:cockpit.$UI_INDEX -P -F '#{pane_index}' "$BUFFS_CMD")
+                TARGET_IDX=$UI_INDEX; SPLIT_DIR="-b"
             elif [ -n "$DEV_INDEX" ]; then
                 # No status, group, comm, or ui — split above dev (successor)
-                NEW_INDEX=$(tmux split-window -v -b -t mume:cockpit.$DEV_INDEX -P -F '#{pane_index}' "$BUFFS_CMD")
+                TARGET_IDX=$DEV_INDEX; SPLIT_DIR="-b"
             else
                 # Only empty column — go at top
-                TOP_IDX=$(_right_pane_at_top)
-                NEW_INDEX=$(tmux split-window -v -b -t mume:cockpit.$TOP_IDX -P -F '#{pane_index}' "$BUFFS_CMD")
+                TARGET_IDX=$(_right_pane_at_top); SPLIT_DIR="-b"
+            fi
+            if ! rc_target_can_be_split "$TARGET_IDX"; then
+                echo "[layout] cannot open $TYPE — adjacent pane too short to split; resize or close another pane first." \
+                    >> "$HOME/MUME/logs/ui.log"
+                exit 0
+            fi
+            NEW_INDEX=$(tmux split-window -v $SPLIT_DIR -t mume:cockpit.$TARGET_IDX -P -F '#{pane_index}' "$BUFFS_CMD")
+            if [ -z "$NEW_INDEX" ]; then
+                echo "[layout] split-window failed for $TYPE (target idx=$TARGET_IDX); aborting open." \
+                    >> "$HOME/MUME/logs/ui.log"
+                exit 0
             fi
             tmux select-pane -t mume:cockpit.$NEW_INDEX -T "buffs"
             tmux select-pane -t "$(resolve_focus_target)"
@@ -132,23 +153,33 @@ if [ -n "$HAS_RIGHT" ]; then
 
             if [ -n "$BUFFS_INDEX" ]; then
                 # Split below buffs
-                NEW_INDEX=$(tmux split-window -v -t mume:cockpit.$BUFFS_INDEX -P -F '#{pane_index}' "$GROUP_CMD")
+                TARGET_IDX=$BUFFS_INDEX; SPLIT_DIR=""
             elif [ -n "$STATUS_INDEX" ]; then
                 # No buffs — split below status
-                NEW_INDEX=$(tmux split-window -v -t mume:cockpit.$STATUS_INDEX -P -F '#{pane_index}' "$GROUP_CMD")
+                TARGET_IDX=$STATUS_INDEX; SPLIT_DIR=""
             elif [ -n "$COMM_INDEX" ]; then
                 # No status or buffs — split above comm
-                NEW_INDEX=$(tmux split-window -v -b -t mume:cockpit.$COMM_INDEX -P -F '#{pane_index}' "$GROUP_CMD")
+                TARGET_IDX=$COMM_INDEX; SPLIT_DIR="-b"
             elif [ -n "$UI_INDEX" ]; then
                 # Split above ui
-                NEW_INDEX=$(tmux split-window -v -b -t mume:cockpit.$UI_INDEX -P -F '#{pane_index}' "$GROUP_CMD")
+                TARGET_IDX=$UI_INDEX; SPLIT_DIR="-b"
             elif [ -n "$DEV_INDEX" ]; then
                 # Split above dev
-                NEW_INDEX=$(tmux split-window -v -b -t mume:cockpit.$DEV_INDEX -P -F '#{pane_index}' "$GROUP_CMD")
+                TARGET_IDX=$DEV_INDEX; SPLIT_DIR="-b"
             else
                 # Fallback — go at top
-                TOP_IDX=$(_right_pane_at_top)
-                NEW_INDEX=$(tmux split-window -v -b -t mume:cockpit.$TOP_IDX -P -F '#{pane_index}' "$GROUP_CMD")
+                TARGET_IDX=$(_right_pane_at_top); SPLIT_DIR="-b"
+            fi
+            if ! rc_target_can_be_split "$TARGET_IDX"; then
+                echo "[layout] cannot open $TYPE — adjacent pane too short to split; resize or close another pane first." \
+                    >> "$HOME/MUME/logs/ui.log"
+                exit 0
+            fi
+            NEW_INDEX=$(tmux split-window -v $SPLIT_DIR -t mume:cockpit.$TARGET_IDX -P -F '#{pane_index}' "$GROUP_CMD")
+            if [ -z "$NEW_INDEX" ]; then
+                echo "[layout] split-window failed for $TYPE (target idx=$TARGET_IDX); aborting open." \
+                    >> "$HOME/MUME/logs/ui.log"
+                exit 0
             fi
             tmux select-pane -t mume:cockpit.$NEW_INDEX -T "group"
             tmux select-pane -t "$(resolve_focus_target)"
@@ -170,23 +201,33 @@ if [ -n "$HAS_RIGHT" ]; then
 
             if [ -n "$GROUP_INDEX" ]; then
                 # Split below group (predecessor)
-                NEW_INDEX=$(tmux split-window -v -t mume:cockpit.$GROUP_INDEX -P -F '#{pane_index}' "$COMM_CMD")
+                TARGET_IDX=$GROUP_INDEX; SPLIT_DIR=""
             elif [ -n "$BUFFS_INDEX" ]; then
                 # Split below buffs (predecessor)
-                NEW_INDEX=$(tmux split-window -v -t mume:cockpit.$BUFFS_INDEX -P -F '#{pane_index}' "$COMM_CMD")
+                TARGET_IDX=$BUFFS_INDEX; SPLIT_DIR=""
             elif [ -n "$STATUS_INDEX" ]; then
                 # Split below status (predecessor)
-                NEW_INDEX=$(tmux split-window -v -t mume:cockpit.$STATUS_INDEX -P -F '#{pane_index}' "$COMM_CMD")
+                TARGET_IDX=$STATUS_INDEX; SPLIT_DIR=""
             elif [ -n "$UI_INDEX" ]; then
                 # No predecessors — split above ui (successor)
-                NEW_INDEX=$(tmux split-window -v -b -t mume:cockpit.$UI_INDEX -P -F '#{pane_index}' "$COMM_CMD")
+                TARGET_IDX=$UI_INDEX; SPLIT_DIR="-b"
             elif [ -n "$DEV_INDEX" ]; then
                 # No predecessors or ui — split above dev (successor)
-                NEW_INDEX=$(tmux split-window -v -b -t mume:cockpit.$DEV_INDEX -P -F '#{pane_index}' "$COMM_CMD")
+                TARGET_IDX=$DEV_INDEX; SPLIT_DIR="-b"
             else
                 # Empty column — go at top
-                TOP_IDX=$(_right_pane_at_top)
-                NEW_INDEX=$(tmux split-window -v -b -t mume:cockpit.$TOP_IDX -P -F '#{pane_index}' "$COMM_CMD")
+                TARGET_IDX=$(_right_pane_at_top); SPLIT_DIR="-b"
+            fi
+            if ! rc_target_can_be_split "$TARGET_IDX"; then
+                echo "[layout] cannot open $TYPE — adjacent pane too short to split; resize or close another pane first." \
+                    >> "$HOME/MUME/logs/ui.log"
+                exit 0
+            fi
+            NEW_INDEX=$(tmux split-window -v $SPLIT_DIR -t mume:cockpit.$TARGET_IDX -P -F '#{pane_index}' "$COMM_CMD")
+            if [ -z "$NEW_INDEX" ]; then
+                echo "[layout] split-window failed for $TYPE (target idx=$TARGET_IDX); aborting open." \
+                    >> "$HOME/MUME/logs/ui.log"
+                exit 0
             fi
             tmux select-pane -t mume:cockpit.$NEW_INDEX -T "comm"
             tmux select-pane -t "$(resolve_focus_target)"
@@ -208,23 +249,33 @@ if [ -n "$HAS_RIGHT" ]; then
 
             if [ -n "$COMM_INDEX" ]; then
                 # Split below comm (predecessor)
-                NEW_INDEX=$(tmux split-window -v -t mume:cockpit.$COMM_INDEX -P -F '#{pane_index}' "$UI_CMD")
+                TARGET_IDX=$COMM_INDEX; SPLIT_DIR=""
             elif [ -n "$GROUP_INDEX" ]; then
                 # Split below group (predecessor)
-                NEW_INDEX=$(tmux split-window -v -t mume:cockpit.$GROUP_INDEX -P -F '#{pane_index}' "$UI_CMD")
+                TARGET_IDX=$GROUP_INDEX; SPLIT_DIR=""
             elif [ -n "$BUFFS_INDEX" ]; then
                 # Split below buffs (predecessor)
-                NEW_INDEX=$(tmux split-window -v -t mume:cockpit.$BUFFS_INDEX -P -F '#{pane_index}' "$UI_CMD")
+                TARGET_IDX=$BUFFS_INDEX; SPLIT_DIR=""
             elif [ -n "$STATUS_INDEX" ]; then
                 # Split below status (predecessor)
-                NEW_INDEX=$(tmux split-window -v -t mume:cockpit.$STATUS_INDEX -P -F '#{pane_index}' "$UI_CMD")
+                TARGET_IDX=$STATUS_INDEX; SPLIT_DIR=""
             elif [ -n "$DEV_INDEX" ]; then
                 # No predecessors — split above dev (successor)
-                NEW_INDEX=$(tmux split-window -v -b -t mume:cockpit.$DEV_INDEX -P -F '#{pane_index}' "$UI_CMD")
+                TARGET_IDX=$DEV_INDEX; SPLIT_DIR="-b"
             else
                 # Only unreachable edge case — go at bottom
-                BOT_IDX=$(_right_pane_at_bottom)
-                NEW_INDEX=$(tmux split-window -v -t mume:cockpit.$BOT_IDX -P -F '#{pane_index}' "$UI_CMD")
+                TARGET_IDX=$(_right_pane_at_bottom); SPLIT_DIR=""
+            fi
+            if ! rc_target_can_be_split "$TARGET_IDX"; then
+                echo "[layout] cannot open $TYPE — adjacent pane too short to split; resize or close another pane first." \
+                    >> "$HOME/MUME/logs/ui.log"
+                exit 0
+            fi
+            NEW_INDEX=$(tmux split-window -v $SPLIT_DIR -t mume:cockpit.$TARGET_IDX -P -F '#{pane_index}' "$UI_CMD")
+            if [ -z "$NEW_INDEX" ]; then
+                echo "[layout] split-window failed for $TYPE (target idx=$TARGET_IDX); aborting open." \
+                    >> "$HOME/MUME/logs/ui.log"
+                exit 0
             fi
             tmux select-pane -t mume:cockpit.$NEW_INDEX -T "ui"
             tmux select-pane -t "$(resolve_focus_target)"
@@ -233,9 +284,20 @@ if [ -n "$HAS_RIGHT" ]; then
 
         dev)
             # dev is always at the bottom.
-            BOT_IDX=$(_right_pane_at_bottom)
-            NEW_INDEX=$(tmux split-window -v -t mume:cockpit.$BOT_IDX -P -F '#{pane_index}' \
+            TARGET_IDX=$(_right_pane_at_bottom)
+            SPLIT_DIR=""
+            if ! rc_target_can_be_split "$TARGET_IDX"; then
+                echo "[layout] cannot open $TYPE — adjacent pane too short to split; resize or close another pane first." \
+                    >> "$HOME/MUME/logs/ui.log"
+                exit 0
+            fi
+            NEW_INDEX=$(tmux split-window -v $SPLIT_DIR -t mume:cockpit.$TARGET_IDX -P -F '#{pane_index}' \
                 "bash -c 'stty -isig 2>/dev/null; trap \"\" INT; while true; do tail -f $MUME/logs/debug.log; printf \"\\n[pane kept alive — use cp -d to close]\\n\"; sleep 0.2; done'")
+            if [ -z "$NEW_INDEX" ]; then
+                echo "[layout] split-window failed for $TYPE (target idx=$TARGET_IDX); aborting open." \
+                    >> "$HOME/MUME/logs/ui.log"
+                exit 0
+            fi
             tmux select-pane -t mume:cockpit.$NEW_INDEX -T "dev"
             tmux select-pane -t "$(resolve_focus_target)"
             bash "$MUME/bridge/layout/apply_layout.sh"

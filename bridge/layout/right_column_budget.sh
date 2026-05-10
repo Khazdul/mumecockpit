@@ -30,3 +30,19 @@ rc_fits_one_more() {
     max=$(rc_max_panes)
     [ $((n + 1)) -le "$max" ]
 }
+
+# True if the given target pane has enough body height to be split such
+# that both halves can satisfy MIN_PER_PANE. tmux #{pane_height} reports
+# body rows excluding the title row.
+#
+# Math: target.body must accommodate two MIN content rows plus one row
+# that becomes the new pane's title row.
+#   target.body >= 2 * MIN_PER_PANE + 1
+rc_target_can_be_split() {
+    local idx=$1
+    [ -z "$idx" ] && return 1
+    local h
+    h=$(tmux display-message -p -t "mume:cockpit.$idx" '#{pane_height}' 2>/dev/null)
+    [ -z "$h" ] && return 1
+    [ "$h" -ge $(( 2 * MIN_PER_PANE + 1 )) ]
+}
