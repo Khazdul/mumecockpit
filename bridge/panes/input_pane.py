@@ -27,6 +27,7 @@ import signal
 import string
 import subprocess
 import sys
+import termios
 import time
 
 TMUX_TARGET = "mume:cockpit.0"
@@ -692,6 +693,17 @@ async def _poll_menu(app):
 
 def main():
     global last_cmd
+
+    # Startup hygiene: keystrokes typed before prompt_toolkit installs raw
+    # mode are echoed by the kernel (cooked mode) and queued in stdin. Drain
+    # the queue and erase the row so the initial render starts clean.
+    try:
+        termios.tcflush(sys.stdin.fileno(), termios.TCIFLUSH)
+    except (termios.error, OSError):
+        pass
+    sys.stdout.write('\r\x1b[2K')
+    sys.stdout.flush()
+
     setup_mouse_binding()
 
     # Enable keypad application mode so numpad keys send distinct escape

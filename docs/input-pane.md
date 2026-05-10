@@ -55,6 +55,15 @@ Application mode causes numpad keys to emit SS3 escape sequences
 (`\eOp`..`\eOy` for digits, `\eOj`..`\eOo` for operators, `\eOM` for
 enter) which the input pane can bind individually.
 
+## Startup hygiene
+
+Before DECKPAM and any prompt_toolkit setup, `main()` flushes the stdin
+input queue (`termios.tcflush(..., TCIFLUSH)`) and writes `\r\x1b[2K` to
+clear the row. This avoids sticky echo artifacts from keystrokes typed
+during the brief window between pty creation (cooked mode, kernel echo
+on) and prompt_toolkit installing raw mode — without it, early characters
+remain visible to the left of the `> ` prefix.
+
 ## Key forwarding policy
 
 Keys are split into three disjoint categories:
