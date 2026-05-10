@@ -25,8 +25,9 @@ bridge/ipc/cmd_*.tin
 
 *.tmp
 
-# Runtime-seeded session file (bootstrapped from blank_profile.tin, ADR 0042)
-ttpp/sessions/default.tin
+# Profile files — personal user data
+ttpp/profiles/*
+!ttpp/profiles/.gitkeep
 
 bridge/dev/*.conf
 data/shared/clock.state

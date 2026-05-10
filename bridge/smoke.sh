@@ -203,13 +203,16 @@ else
         pass "no GMCP handler wraps in lua/core/ (ADR 0046)"
     fi
 
-    # --- check 10: ttpp/profiles/default.tin not tracked (ADR 0042) ---
+    # --- check 10: no profiles tracked ---
 
-    tracked_default=$(git ls-files ttpp/profiles/default.tin 2>/dev/null)
-    if [ -n "$tracked_default" ]; then
-        fail "default.tin not tracked (ADR 0042)"
+    tracked_profiles=$(git ls-files 'ttpp/profiles/*.tin' 2>/dev/null)
+    if [ -n "$tracked_profiles" ]; then
+        fail "no profiles tracked"
+        while IFS= read -r line; do
+            echo "       $line"
+        done <<< "$tracked_profiles"
     else
-        pass "default.tin not tracked (ADR 0042)"
+        pass "no profiles tracked"
     fi
 
     # --- check 11: runtime artefacts not tracked ---
