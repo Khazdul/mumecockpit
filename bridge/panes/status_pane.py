@@ -40,7 +40,7 @@ C_TP_FG  = "\x1b[38;2;0;40;50m"       # TP bar ▀ foreground
 C_LABEL  = "\x1b[38;2;128;128;128m"   # data row label foreground
 C_VALUE  = "\x1b[38;2;192;192;192m"   # data row value foreground
 
-C_TOG_OFF_LABEL = "\x1b[38;2;107;82;35m"   # #6B5223 — dark brown-gold
+C_TOG_OFF_LABEL = "\x1b[38;2;72;65;58m"    # #48413A — warm dark grey
 C_TOG_ON_LABEL  = "\x1b[38;2;212;160;78m"  # #D4A04E — warm gold (matches overflow indicator)
 
 C_INDICATOR = "fg:#d4a04e italic"   # overflow indicator style
@@ -125,8 +125,8 @@ def _build_data_rows(c, W):
     wimpy_val = str(int(c["wimpy"])) if c.get("wimpy") is not None else ""
 
     return [
-        row("ALERTNESS:", c.get("alertness"), "POSITION:", c.get("position")),
-        row("MOOD:",      c.get("mood"),      "WIMPY:",    wimpy_val),
+        row("MOOD:",  c.get("mood"), "ALERTNESS:", c.get("alertness")),
+        row("WIMPY:", wimpy_val,     "POSITION:",  c.get("position")),
     ]
 
 

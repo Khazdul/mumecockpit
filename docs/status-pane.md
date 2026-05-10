@@ -176,7 +176,7 @@ Constants defined at the top of `bridge/panes/status_pane.py`:
 | `C_TP_FG` | `\x1b[38;2;0;40;50m`    | TP bar `▀` foreground (RGB 0,40,50)               |
 | `C_LABEL`         | `\x1b[38;2;128;128;128m`    | Data row label foreground (RGB 128,128,128)          |
 | `C_VALUE`         | `\x1b[38;2;192;192;192m`    | Data row value foreground (RGB 192,192,192)          |
-| `C_TOG_OFF_LABEL` | `\x1b[38;2;107;82;35m`      | Toggle label foreground — off state (RGB 107,82,35 — `#6B5223` dark brown-gold) |
+| `C_TOG_OFF_LABEL` | `\x1b[38;2;72;65;58m`       | Toggle label foreground — off state (RGB 72,65,58 — `#48413A` warm dark grey) |
 | `C_TOG_ON_LABEL`  | `\x1b[38;2;212;160;78m`     | Toggle label foreground — on state (RGB 212,160,78 — `#D4A04E` warm gold)        |
 
 
@@ -216,12 +216,12 @@ cell is laid out as `[label][space-pad]`:
 - **space-pad**: `col_w - len(label)` trailing space chars (min 0), unstyled.
 
 No background is set; the terminal background shows through. State is
-communicated entirely through label colour: off uses a dark brown-gold label
-(`RGB 107,82,35`); on uses a warm gold label (`RGB 212,160,78`).
+communicated entirely through label colour: off uses a warm dark grey label
+(`RGB 72,65,58`); on uses a warm gold label (`RGB 212,160,78`).
 
 | Col | Toggle | Off colours                          | On colours                          |
 |-----|--------|--------------------------------------|-------------------------------------|
-| 0   | SNEAK  | label `C_TOG_OFF_LABEL` (`#6B5223`)  | label `C_TOG_ON_LABEL` (`#D4A04E`) |
+| 0   | SNEAK  | label `C_TOG_OFF_LABEL` (`#48413A`)  | label `C_TOG_ON_LABEL` (`#D4A04E`) |
 | 1   | RIDE   | same                                 | same                                |
 | 2   | CLIMB  | same                                 | same                                |
 | 3   | SWIM   | same                                 | same                                |
@@ -245,10 +245,10 @@ cols  = [base + (1 if i < extra else 0) for i in range(4)]
 A single-char spacer (no SGR) separates column 2 and column 3. Every row is
 exactly W visible characters; no trailing padding ever needed.
 
-| Row | Col 1 (label) | Col 2 (value) | Col 3 (label) | Col 4 (value)         |
-|-----|---------------|---------------|---------------|-----------------------|
-| 5   | `ALERTNESS:`  | `alertness`   | `POSITION:`   | `position`            |
-| 6   | `MOOD:`       | `mood`        | `WIMPY:`      | `wimpy` (bare int)    |
+| Row | Col 1 (label) | Col 2 (value)        | Col 3 (label) | Col 4 (value) |
+|-----|---------------|----------------------|---------------|---------------|
+| 5   | `MOOD:`       | `mood`               | `ALERTNESS:`  | `alertness`   |
+| 6   | `WIMPY:`      | `wimpy` (bare int)   | `POSITION:`   | `position`    |
 
 Labels are truncated preserving the trailing colon; values are lowercased and
 sliced. Null/missing values render as empty string (label + col-width spaces).
