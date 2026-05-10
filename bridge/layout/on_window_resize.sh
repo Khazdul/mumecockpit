@@ -25,7 +25,7 @@ MAIN_MIN=30
 RIGHT_FLOOR=$ui_width
 
 HAS_RIGHT=$(tmux list-panes -t mume:cockpit -F '#{pane_title}' \
-    | grep -E '^(ui|comm|dev|status|buffs)$' | head -1)
+    | grep -E '^(ui|comm|dev|status|buffs|group)$' | head -1)
 
 AVAILABLE_RIGHT=$(( COLS - MAIN_MIN - 1 ))
 
@@ -34,7 +34,7 @@ if [ -n "$HAS_RIGHT" ] && [ "$AVAILABLE_RIGHT" -lt "$RIGHT_FLOOR" ]; then
     # Terminal too narrow: record open right panes and kill them.
     touch "$LOCK"
     tmux list-panes -t mume:cockpit -F '#{pane_title}' \
-        | grep -E '^(ui|comm|dev|status|buffs)$' > "$SENTINEL"
+        | grep -E '^(ui|comm|dev|status|buffs|group)$' > "$SENTINEL"
     while IFS= read -r pname; do
         PIDX=$(tmux list-panes -t mume:cockpit -F '#{pane_index} #{pane_title}' \
             | awk -v n="$pname" '$2==n {print $1; exit}')
@@ -67,7 +67,7 @@ elif [ -f "$SENTINEL" ]; then
         source "$LAYOUT_CONF"
         RIGHT_FLOOR=$ui_width
         HAS_RIGHT=$(tmux list-panes -t mume:cockpit -F '#{pane_title}' \
-            | grep -E '^(ui|comm|dev|status|buffs)$' | head -1)
+            | grep -E '^(ui|comm|dev|status|buffs|group)$' | head -1)
     fi
 fi
 
