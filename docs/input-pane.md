@@ -212,7 +212,7 @@ not trigger EOFError).
 
 ## Menu bar
 
-A 29-column clickable menu bar occupies the right end of the input pane's
+A 31-column clickable menu bar occupies the right end of the input pane's
 single row, sharing it with the input buffer. The input buffer takes all
 remaining width; the menu strip is a fixed-width `VSplit` sibling.
 
@@ -224,7 +224,7 @@ remaining width; the menu strip is a fixed-width `VSplit` sibling.
 HSplit([
     VSplit([
         input_window,    # flex width — prompt_toolkit BufferControl
-        menu_window,     # fixed width = 29 cols, FormattedTextControl
+        menu_window,     # fixed width = 31 cols, FormattedTextControl
     ]),
 ])
 ```
@@ -236,19 +236,20 @@ input buffer — `menu_window` is not focusable.
 ### Visual layout
 
 ```
-█CHAR▌█BUFFS▌█COM▌█UI█ 4:33 ☼
+█CHR▌█BUF▌█GRP▌█COM▌█UI█ 4:33 ☼
 ```
 
 | Segment | Cols | Notes |
 |---------|------|-------|
-| `█CHAR▌` | 6 | CHAR button |
-| `█BUFFS▌` | 7 | BUFFS button |
-| `█COM▌` | 5 | COM button |
+| `█CHR▌` | 5 | CHR button (status pane) |
+| `█BUF▌` | 5 | BUF button (buffs pane) |
+| `█GRP▌` | 5 | GRP button (group pane) |
+| `█COM▌` | 5 | COM button (comm pane) |
 | `█UI█` | 4 | UI button (full-block right edge) |
 | ` ` | 1 | separator |
 | `<time> <icon>` | 6 | clock (see below) |
 
-Total: 29 columns. The leading `█` of each button and the trailing `▌`/`█`
+Total: 31 columns. The leading `█` of each button and the trailing `▌`/`█`
 are rendered in the button's background colour so they blend visually.
 
 | State | Background | Foreground |
@@ -260,19 +261,24 @@ are rendered in the button's background colour so they blend visually.
 
 | Button | Pane target | On click |
 |--------|-------------|----------|
-| CHAR   | `status`    | `toggle_pane.sh status --persist` |
-| BUFFS  | `buffs`     | `toggle_pane.sh buffs --persist`  |
+| CHR    | `status`    | `toggle_pane.sh status --persist` |
+| BUF    | `buffs`     | `toggle_pane.sh buffs --persist`  |
+| GRP    | `group`     | `toggle_pane.sh group --persist`  |
 | COM    | `comm`      | `toggle_pane.sh comm --persist`   |
 | UI     | `ui`        | `toggle_pane.sh ui --persist`     |
 
 Clicks use `MouseEventType.MOUSE_DOWN` and `subprocess.Popen` (fire-and-
 forget). The button state updates within ≤ 250 ms via the polling path.
 
+Each button's full visible region — the leading `█`, the label characters,
+and the trailing `▌` or `█` — is clickable. The click handler is attached to
+every fragment in the button so users don't need to target the label exactly.
+
 ### Persistence source
 
 Button toggle state is read from `bridge/runtime/startup.conf` keys `show_status`,
-`show_buffs`, `show_comm`, and `show_ui`. The file is polled every 250 ms via mtime
-comparison; toggling via the popup Options menu (which also writes
+`show_buffs`, `show_group`, `show_comm`, and `show_ui`. The file is polled every
+250 ms via mtime comparison; toggling via the popup Options menu (which also writes
 `startup.conf` via `toggle_pane.sh --persist`) is therefore reflected in the
 menu bar within one poll tick. The two surfaces are siblings — they share the
 same persistence file with no other synchronisation needed.
@@ -333,7 +339,9 @@ Where:
 
 The `ConditionalContainer` filter evaluates on every redraw. prompt_toolkit
 handles `SIGWINCH` internally and triggers redraws on terminal resize, so no
-explicit signal handler is needed for visibility evaluation.
+explicit signal handler is needed for visibility evaluation. The menu width
+reduction from 36 to 31 columns means the menu fits comfortably at any default
+`ui_width`.
 
 See [ADR 0031](decisions/0031-input-menu-width-threshold.md) for the
 formula-duplication trade-off and [ADR 0038](decisions/0038-drop-right-column-width-floor.md)

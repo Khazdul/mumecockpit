@@ -38,7 +38,7 @@ STATUS_STATE_PATH = os.path.join(RUNTIME_DIR, "status.state")
 STARTUP_CONF_PATH = os.path.join(RUNTIME_DIR, "startup.conf")
 LAYOUT_CONF_PATH  = os.path.join(RUNTIME_DIR, "layout.conf")
 MENU_POLL_MS      = 0.25
-MENU_WIDTH        = 36
+MENU_WIDTH        = 31
 
 # Layout constants duplicated from bridge/layout/on_window_resize.sh.
 # Keep in sync; see ADR 0031 and ADR 0038.
@@ -536,32 +536,34 @@ def _menu_visible():
 
 
 def _menu_text():
-    """Fragments for the 36-col right-aligned CHAR/BUFFS/GROUP/COM/UI/clock menu bar.
+    """Fragments for the 31-col right-aligned CHR/BUF/GRP/COM/UI/clock menu bar.
 
-    Layout: █CHAR▌█BUFFS▌█GROUP▌█COM▌█UI█ <time> <icon>
-    Total = 6+7+7+5+4+1+6 = 36 columns.
+    Layout: █CHR▌█BUF▌█GRP▌█COM▌█UI█ <time> <icon>
+    Total = 5+5+5+5+4+1+6 = 31 columns.
     """
     buttons = [
-        ("CHAR",  _menu_show_status, _BTN_STATUS),
-        ("BUFFS", _menu_show_buffs,  _BTN_BUFFS),
-        ("GROUP", _menu_show_group,  _BTN_GROUP),
-        ("COM",   _menu_show_comm,   _BTN_COMM),
-        ("UI",    _menu_show_ui,     _BTN_UI),
+        ("CHR", _menu_show_status, _BTN_STATUS),
+        ("BUF", _menu_show_buffs,  _BTN_BUFFS),
+        ("GRP", _menu_show_group,  _BTN_GROUP),
+        ("COM", _menu_show_comm,   _BTN_COMM),
+        ("UI",  _menu_show_ui,     _BTN_UI),
     ]
     frags    = []
     last_idx = len(buttons) - 1
     for i, (label, on, handler) in enumerate(buttons):
         bg         = BTN_BG_ON  if on else BTN_BG_OFF
         fg         = BTN_FG_ON  if on else BTN_FG_OFF
-        trail      = "▌" if i == last_idx else "▌"
+        trail      = "█" if i == last_idx else "▌"
         btn_style  = f"bg:{bg} fg:{fg}"
         edge_style = f"fg:{bg}"
-        frags.append((edge_style, "█"))
         if handler is not None:
+            frags.append((edge_style, "█", handler))
             frags.append((btn_style, label, handler))
+            frags.append((edge_style, trail, handler))
         else:
+            frags.append((edge_style, "█"))
             frags.append((btn_style, label))
-        frags.append((edge_style, trail))
+            frags.append((edge_style, trail))
     frags.append(("", " "))
     if (_menu_time_period is not None
             and _menu_time_transition_at is not None

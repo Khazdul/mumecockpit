@@ -198,13 +198,9 @@ are on (`cp -h`).
 | Method                  | Mechanism                                        |
 |-------------------------|--------------------------------------------------|
 | `cp -g`                 | `toggle_pane.sh group --persist`                 |
-| GROUP button            | `toggle_pane.sh group --persist` (PR 2)          |
-| Launcher Options        | `_save_conf` → `startup.conf show_group` (PR 2)  |
-| In-game popup → Options | `toggle_pane.sh group --persist` (PR 2)          |
-
-`cp -g` and the `build_initial_layout.sh` path are wired. The GROUP button,
-Launcher Options entry, and in-game popup Options entry follow in a subsequent
-PR.
+| GRP button              | `toggle_pane.sh group --persist`                 |
+| Launcher Options        | `_save_conf` → `startup.conf show_group`         |
+| In-game popup → Options | `toggle_pane.sh group --persist`                 |
 
 ## Persistence key
 

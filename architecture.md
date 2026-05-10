@@ -361,10 +361,11 @@ Unified window and system management via `cp` commands:
 | Command       | Action                          |
 |---------------|---------------------------------|
 | `cp`          | Show help                       |
-| `cp -u`       | Toggle UI pane                  |
-| `cp -m`       | Toggle comm pane                |
-| `cp -b`       | Toggle buffs pane               |
 | `cp -c`       | Toggle status pane              |
+| `cp -b`       | Toggle buffs pane               |
+| `cp -g`       | Toggle group pane               |
+| `cp -m`       | Toggle comm pane                |
+| `cp -u`       | Toggle UI pane                  |
 | `cp -d`       | Toggle dev pane                 |
 | `cp -h`       | Toggle pane title headers       |
 | `cp -s`       | Save profile to disk            |
@@ -380,10 +381,6 @@ See [docs/popup-menu.md](docs/popup-menu.md) for Options/Scripts submenu
 implementations, `cp -s` internals, and toggle-pane persistence details.
 
 ## Current Work
-
-- **Group pane (fas 6):** standalone `prompt_toolkit` renderer for
-  `bridge/runtime/group.state`; three bars per member with name overlay.
-  Layout integration (tmux wiring, toggles, `cp -g`) follows in fas 7.
 
 See the project board on GitHub for active work and parked ideas.
 
