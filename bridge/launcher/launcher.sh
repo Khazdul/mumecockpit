@@ -338,7 +338,7 @@ _options_menu() {
             _oitem 9 "    Back"
             if [ "$show_mockup" -eq 1 ]; then
                 printf '\n'
-                draw_layout_mockup "$_ui" "$_dev" 1 "$show_desc" "$_pdv" "$_sts" "$_comm" "$_buf"
+                draw_layout_mockup "$_ui" "$_dev" 1 "$show_desc" "$_pdv" "$_sts" "$_buf" "$_grp" "$_comm"
             fi
             printf '\n'
             printf "%${fpad}s${_MR_HINT}%s${_MR_RESET}\n" "" "$footer"
