@@ -1154,7 +1154,9 @@
 #SUBSTITUTE {^-%1wound%2} {<Fff0000>%0<900>} {5}
 #SUBSTITUTE {^A pair of tiny eyes gleam at you from the shadows.} {<F00ffff>%0<900>} {5}
 #TICKER {clock} {#lua {state.world.clock.tick()}} {0.25}
+#VARIABLE {_run_log_path} {/home/ole/MUME/data/runs/Valamir/2026-05-10T09-44-40.log}
 #VARIABLE {_sd_line} {<F9AA8B7> SD1: <FFFFFFF>exit}
+#VARIABLE {_ts} {1778399631096174}
 #VARIABLE {abody} {}
 #VARIABLE {acontainer} {quiver}
 #VARIABLE {arrow} {arrow}
