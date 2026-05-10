@@ -76,8 +76,8 @@ already cleared and returns early.
 - Idempotent and transition-only: they detect current state via the existence
   of `CONNECTION_STATE_PATH` and only act — and only emit `system_ui` — on
   an actual disconnected→connected or connected→disconnected transition.
-- `mark_mume_connected()` calls `_write_connection_state()` (atomic temp+rename,
-  reads `connection_mode` from `startup.conf`), then `system_ui(ui_var(name) .. " logged in.")`.
+- `mark_mume_connected()` calls `_write_connection_state()` (atomic temp+rename
+  of a single `connected_at` line), then `system_ui(ui_var(name) .. " logged in.")`.
 - `mark_mume_disconnected()` calls `_clear_connection_state()`, emits
   `system_ui(ui_var(name) .. " logged out.")`, then auto-opens the popup if
   `bridge/runtime/.popup_open` is absent (see `docs/popup-menu.md` — Auto-open on disconnect).
@@ -92,16 +92,16 @@ idempotent.
 ### Format
 
     connected_at=<epoch seconds>
-    connection_mode=<mmapper|direct>
-    character_name=<name>
 
-Written atomically via temp-file + rename; readers must treat missing
-or malformed values as "Disconnected" and never block. Readers must
-silently ignore unknown keys — new keys may be added in future versions.
+Written atomically via temp-file + rename; readers must treat the file
+as a sentinel — present when connected, absent when disconnected — and
+must never block on parse errors. Readers may silently ignore unknown
+keys for forward compatibility.
 
-Consumer: `bridge/launcher/ingame_menu.sh` reads this file on every popup render
-to drive the status header (connected vs disconnected). The Link fragment
-is served from `bridge/runtime/ping.cache`, independent of connection state.
+Consumer: `bridge/launcher/ingame_menu.sh` and the four right-column data
+panes (status, buffs, group, comm) test for file existence to gate
+rendering. The connection-mode label in the popup status header is
+sourced from `bridge/runtime/startup.conf`, not from this file.
 
 ### Known limitations
 

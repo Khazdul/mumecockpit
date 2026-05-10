@@ -1,51 +1,19 @@
 -- lua/brain/connection.lua
 -- Exports: GAME_SESSION, mark_mume_connected, mark_mume_disconnected,
---          set_game_session, clear_game_session, _clear_connection_state,
---          _read_startup_conf_value
+--          set_game_session, clear_game_session, _clear_connection_state
 -- Depends on: system_ui, ui_var, dbg (ui.lua), tintin_cmd, tintin (io.lua)
 
 local CONNECTION_STATE_PATH = "bridge/runtime/connection.state"
 
 GAME_SESSION = nil  -- set dynamically when a game session connects
 
--- Generic startup.conf key lookup — never sources/executes the file.
--- Can move to its own conf module if more callers appear.
-function _read_startup_conf_value(key)
-    local f = io.open("bridge/runtime/startup.conf", "r")
-    if not f then return nil end
-    for line in f:lines() do
-        local k, v = line:match("^([^=]+)=(.*)$")
-        if k == key then f:close(); return v end
-    end
-    f:close()
-    return nil
-end
-
 local function _write_connection_state()
-    local mode = _read_startup_conf_value("connection_mode") or "mmapper"
-    local tmp  = CONNECTION_STATE_PATH .. ".tmp"
-    local f    = io.open(tmp, "w")
+    local tmp = CONNECTION_STATE_PATH .. ".tmp"
+    local f   = io.open(tmp, "w")
     if not f then return end
-    f:write(string.format("connected_at=%d\nconnection_mode=%s\n",
-                          os.time(), mode))
-    local name = state and state.char and state.char.name
-    if name then f:write("character_name=" .. name .. "\n") end
+    f:write(string.format("connected_at=%d\n", os.time()))
     f:close()
     os.rename(tmp, CONNECTION_STATE_PATH)
-end
-
--- Plain line-by-line parse; returns table with nil for missing keys, or nil if absent.
--- Tolerates unknown keys silently — never sources/executes the file.
-function _read_connection_state()
-    local f = io.open(CONNECTION_STATE_PATH, "r")
-    if not f then return nil end
-    local result = {}
-    for line in f:lines() do
-        local k, v = line:match("^([^=]+)=(.*)$")
-        if k then result[k] = v end
-    end
-    f:close()
-    return result
 end
 
 function _clear_connection_state()
