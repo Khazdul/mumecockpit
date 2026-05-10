@@ -172,23 +172,45 @@ side ensure no partial reads.
 
 ## Position
 
-Right column (top to bottom, planned): `status` → `buffs` → **`group`** →
-`comm` → `ui` → `dev`. Fas 7 wires it between the buffs and comm panes.
+Right column (top to bottom): `status` → `buffs` → **`group`** → `comm` →
+`ui` → `dev`.
+
+When a subset of right panes is open, ordering is preserved — group always
+sits directly below buffs (when buffs is open) or below status (when buffs is
+closed and status is open), and above comm (when comm is open). Toggling other
+right panes in any order does not break the vertical order.
 
 ## Default height
 
-TBD in fas 7 (`group_height` key in `bridge/runtime/layout.conf`).
+`group_height=4` in `bridge/runtime/layout.conf` (documented intent only).
+Per [ADR 0030](decisions/0030-right-column-heights-free.md), right-column
+heights are tmux-managed at creation (equal-share among siblings) and are
+freely user-resizable. No height is enforced on open or apply-layout.
+
+## Pane title and border
+
+Pane title: `group`. The `pane-border-format` in
+`bridge/launcher/tmux_start.sh` maps this to the label ` Group ` when headers
+are on (`cp -h`).
 
 ## Toggle
-
-TBD in fas 7:
 
 | Method                  | Mechanism                                        |
 |-------------------------|--------------------------------------------------|
 | `cp -g`                 | `toggle_pane.sh group --persist`                 |
-| GROUP button            | `toggle_pane.sh group --persist`                 |
-| Launcher Options        | `_save_conf` → `startup.conf show_group`         |
-| In-game popup → Options | `toggle_pane.sh group --persist`                 |
+| GROUP button            | `toggle_pane.sh group --persist` (PR 2)          |
+| Launcher Options        | `_save_conf` → `startup.conf show_group` (PR 2)  |
+| In-game popup → Options | `toggle_pane.sh group --persist` (PR 2)          |
+
+`cp -g` and the `build_initial_layout.sh` path are wired. The GROUP button,
+Launcher Options entry, and in-game popup Options entry follow in a subsequent
+PR.
+
+## Persistence key
+
+`show_group` in `bridge/runtime/startup.conf`. Fresh-install default is `0`
+(pane closed). Existing installs without the key fall through to the
+`${show_group:-0}` runtime guard — no migration needed.
 
 ---
 Back to [architecture.md](../architecture.md).

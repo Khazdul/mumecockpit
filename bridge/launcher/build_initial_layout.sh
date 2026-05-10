@@ -16,6 +16,7 @@ SHOW_UI="${show_ui:-1}"
 SHOW_DEV="${show_dev:-0}"
 SHOW_STATUS="${show_status:-0}"
 SHOW_BUFFS="${show_buffs:-0}"
+SHOW_GROUP="${show_group:-0}"
 SHOW_COMM="${show_comm:-0}"
 SHOW_DIVIDERS="${show_pane_dividers:-1}"
 
@@ -49,6 +50,9 @@ if [ "$SHOW_STATUS" -eq 1 ]; then
 fi
 if [ "$SHOW_BUFFS" -eq 1 ]; then
     bash "$HOME/MUME/bridge/launcher/open_pane.sh" buffs
+fi
+if [ "$SHOW_GROUP" -eq 1 ]; then
+    bash "$HOME/MUME/bridge/launcher/open_pane.sh" group
 fi
 if [ "$SHOW_COMM" -eq 1 ]; then
     bash "$HOME/MUME/bridge/launcher/open_pane.sh" comm

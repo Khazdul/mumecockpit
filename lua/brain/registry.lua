@@ -67,6 +67,7 @@ function _register_cockpit_help()
         "   cp -m       toggle comm pane",
         "   cp -c       toggle status pane",
         "   cp -b       toggle buffs pane",
+        "   cp -g       toggle group pane",
         "   cp -d       toggle dev pane",
         "   cp -h       toggle headers",
         "   cp -s       save profile to disk",

@@ -59,6 +59,22 @@ case "$TARGET" in
         fi
         ;;
 
+    group)
+        if _pane_exists "group"; then
+            _kill_pane "group"
+            bash "$SCRIPT_DIR/apply_layout.sh"
+        else
+            bash "$BRIDGE_DIR/launcher/open_pane.sh" group
+        fi
+        if [ "$PERSIST" -eq 1 ]; then
+            if _pane_exists "group"; then
+                _persist_key "show_group" "1"
+            else
+                _persist_key "show_group" "0"
+            fi
+        fi
+        ;;
+
     comm)
         if _pane_exists "comm"; then
             _kill_pane "comm"
