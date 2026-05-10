@@ -47,8 +47,8 @@ equivalent and write to `startup.conf`.
 ## Scripts submenu
 
 Ports the launcher's Scripts page into the popup. Reads `bridge/runtime/scripts.cache`
-on each render — picks up cache changes if `cp -r` fires while the submenu
-is open. Scrollable with UP/DOWN; scroll hint appears in the footer only
+on each render — always reflects the cache as written at the most recent
+brain startup. Scrollable with UP/DOWN; scroll hint appears in the footer only
 when content exceeds visible rows. Rendering is identical to the launcher
 (A:/S:/H:/B:/M: tags, 60-col block centred). Parser and renderer are
 duplicated from `launcher.sh` — not extracted into `menu_render.sh` — to
@@ -106,7 +106,6 @@ cockpit session leaving the sentinel behind.
 
 Deliberately NOT in the popup:
 - **About** — not enough value to justify the code.
-- **Reload** — `cp -r` from the input pane is the intended path.
 - **Profile switch / connection mode** — launcher-only; requires restart.
 - **Layout mockup** — saves vertical space in the popup.
 

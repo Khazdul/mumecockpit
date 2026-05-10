@@ -515,7 +515,7 @@ is already past.
 **Class discipline.** The inner action registration is wrapped in
 `#class {core} {open}` / `{close}` inside the outer body. Without this wrap,
 the inner action would be registered while the profile class is open (per ADR
-0049), land in the profile auto-save, and persist across `cp -r`, accumulating
+0049), land in the profile auto-save, and persist across restarts, accumulating
 stale registrations. See
 [ADR 0050](decisions/0050-synchronous-nested-actions-with-class-discipline.md)
 for the full derivation.
@@ -542,9 +542,9 @@ Events can come from three sources:
 
 - **tt++ action** — add a `#action` line (at priority 3) inside a
   `_register_<module>_actions` alias in the relevant `ttpp/core/<module>.tin`,
-  and call that alias from `SESSION CONNECTED` and `cp -r` in
-  `ttpp/core/system.tin`. For project-wide events that have no owning module,
-  use `ttpp/core/mud_events.tin` and the existing `_register_mud_events` alias.
+  and call that alias from `SESSION CONNECTED` in `ttpp/core/system.tin`.
+  For project-wide events that have no owning module, use
+  `ttpp/core/mud_events.tin` and the existing `_register_mud_events` alias.
 - **GMCP dispatch** — `gmcp.dispatch` automatically emits `gmcp_<module_snake>`
   after every packet. Subscribing to the event is sufficient; no changes to
   `gmcp.dispatch` or the primary handler are needed.

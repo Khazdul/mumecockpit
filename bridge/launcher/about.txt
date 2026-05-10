@@ -66,9 +66,8 @@ COCKPIT COMMANDS
 
 Most cockpit features are reachable from the in-game menu — press
 <Esc> from any pane to open it. The cp command prefix offers the
-same controls plus a few extras useful for scripting and reload:
+same controls plus a few extras useful for scripting:
 
-  cp -r     full reload (TinTin++ + Lua brain, no tmux restart)
   cp -e     clean shutdown
   cp -s     save the current profile to disk
   cp -u     toggle UI pane

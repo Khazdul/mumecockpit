@@ -95,9 +95,9 @@ self-documenting in the alias body.
 
 ## Consequences
 
-- `_register_run_log_capture` is idempotent across both
-  SESSION CONNECTED (fresh session) and cp -r reload (existing
-  session). Both call sites work without further conditionals.
+- `_register_run_log_capture` is idempotent across SESSION
+  CONNECTED, and the unset-before-register pattern protects
+  against stale state injected by profile-class auto-save.
 - Lines arriving between SESSION CONNECTED and the first
   Char.Vitals (~1 s of login screen) are correctly not written,
   because `_run_log_path` is unset and the event body no-ops via

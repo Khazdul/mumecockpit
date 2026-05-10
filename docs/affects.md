@@ -13,7 +13,7 @@ MUME game output
       ▼
 tt++ #action (GAME_SESSION, priority 3)
   — one action per unique pattern string
-  — registered by _affects_register_triggers() at SESSION CONNECTED / cp -r
+  — registered by _affects_register_triggers() at SESSION CONNECTED
       │
       ▼ events.emit("affect_init"|"affect_refresh"|"affect_down", name)
       │
@@ -198,16 +198,14 @@ Examples:
 
 `_affects_register_triggers()` is a global Lua function defined in
 `lua/core/affects.lua`. It is called by the `_register_affect_actions` alias
-in `ttpp/core/affects.tin`, which is invoked from:
-
-- `SESSION CONNECTED` in `ttpp/core/system.tin` (immediately after
-  `_register_clock_actions`).
-- The `cp -r` reload chain in `ttpp/core/system.tin` (same position).
+in `ttpp/core/affects.tin`, which is invoked from `SESSION CONNECTED` in
+`ttpp/core/system.tin` (immediately after `_register_clock_actions`).
 
 The function also calls `_install_hooks()` on its first invocation per load
 cycle, which wraps `gmcp.handlers["Char.Name"]` (to reload persisted times on
-login) and `state.char.reset` (to cancel the tick on disconnect). The `_installed`
-flag is file-local and resets to `false` on each `cp -r` (fresh module load).
+login) and `state.char.reset` (to cancel the tick on disconnect). The
+`_installed` flag is file-local and resets to `false` on each fresh brain
+launch.
 
 The function lives in `lua/core/` (not `lua/scripts/`) because it is
 infrastructure: it has no player-facing alias and exists only to populate the
@@ -248,7 +246,6 @@ The tick is armed on the 0→1 transition in `affect_init` and cancelled:
   GAME_SESSION is still set, i.e. the Core.Goodbye path; the SESSION DISCONNECTED
   fallback path finds GAME_SESSION nil, but the session dying clears all its
   delays automatically).
-- By `cp -r`: `#kill delay` on GAME_SESSION kills all delays including the tick.
 
 ## Overrun
 
@@ -267,25 +264,6 @@ An affect with a drop string that remains active past its `expires_at` is in
 Each `affect_init`, `affect_refresh`, and `affect_down` event also emits a
 `◆ TAG: name verb.` line to the UI pane via `char_ui()` — see
 [docs/ui-messaging.md](ui-messaging.md) for the format and colour palette.
-
-## Known limitations
-
-### `cp -r` mid-session without reconnect
-
-After `cp -r` the Lua brain restarts, clearing `state.char.affects` and
-`state.char.affect_times`. MUME does not re-send `Char.Name` while the TCP
-connection is live, so the persisted `affect_times` file is not reloaded until
-the next full reconnect. Any affects that were active at the time of `cp -r`
-are lost from the tracker's view. Accepted limitation — same root cause as
-documented for `docs/status-pane.md`.
-
-### `cp -r` does not restore the active affect list
-
-For the same reason above, the active affect list is not restored after
-`cp -r`: `Char.Name` is not re-emitted on a live TCP connection, so
-`_load_active()` never runs. The affect list stays empty until the next full
-login. Accepted — same root cause as the Name/Lv blank documented in
-`docs/status-pane.md` and `docs/session-lifecycle.md`.
 
 ---
 Back to [architecture.md](../architecture.md).

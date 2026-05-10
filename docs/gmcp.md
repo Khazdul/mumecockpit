@@ -307,7 +307,7 @@ Matching rules, in priority order:
 3. Exact key match: `gmcp.trace_only[module]` truthy.
 4. Prefix match: package extracted from `module` (e.g. `"Char"` from `"Char.Vitals"`); `gmcp.trace_only[package]` truthy.
 
-Typical discovery workflow: set `gmcp.trace_only = { Char = true }`, `cp -r`, grep `debug.log` for `[GMCP] Char`, revert.
+Typical discovery workflow: set `gmcp.trace_only = { Char = true }`, restart the brain, grep `debug.log` for `[GMCP] Char`, revert.
 
 ---
 Back to [architecture.md](../architecture.md).

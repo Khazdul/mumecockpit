@@ -306,34 +306,23 @@ the `run_start` JSONL row), disarmed on `run_ending` (after the `run_end`
 row is written). There is a short login-screen gap before arming — same as
 the `.jsonl`.
 
-**cp -r mid-run.** `#kill event` clears the RECEIVED LINE handler, but the
-`cp -r` alias re-registers it via `_register_run_log_capture`. The Lua resume
-block re-arms `_run_log_path` via `_open_log` if `state.char.name` is set, but
-lines received during the reload window are lost. See Limitations below.
+**Limitations.**
 
-**Limitations.** The `.log` capture has a gap if `cp -r` is invoked mid-run.
-The Lua brain reload sequence cannot rearm `_run_log_path` because GMCP
-dispatch is not currently re-established to the new brain. Use a full launcher
-restart instead. JSONL event capture is unaffected — it covers the connection
-lifecycle, not the moment-to-moment text stream.
+- Server output only; player input is not captured.
+- No replay player tooling yet.
+- Pre-first-Vitals login screen output is not captured.
 
 **Per-session state hygiene.** The registration alias explicitly clears any
 persisted `_run_log_path` and `RECEIVED LINE` event (`#unevent` + `#unvar`)
-before re-registering at each SESSION CONNECTED and cp -r reload. Without
-this, profile-class auto-save would inject stale state from the previous
-session, causing each run's `.log` to receive the previous run's lines.
+before re-registering at each SESSION CONNECTED. Without this, profile-class
+auto-save would inject stale state from the previous session, causing each
+run's `.log` to receive the previous run's lines.
 See [ADR 0049](decisions/0049-per-session-state-outside-profile-class.md)
 for context, alternatives considered, and the trade-offs.
 
 **Orphan handling.** A `.log` left after a brain crash has no `orphan_close`
 marker (unlike `.jsonl`). Pair with the `.jsonl` to determine cleanliness: a
 `.log` without a matching sealed `.jsonl` is orphaned.
-
-**Known limitations.**
-
-- Server output only; player input is not captured.
-- No replay player tooling yet.
-- Pre-first-Vitals login screen output is not captured.
 
 ## Schema versioning
 
@@ -357,47 +346,6 @@ fields changes in a breaking way.
 | `io.open` for append fails | `dbg()` log; row skipped; module keeps running |
 | JSON encode fails | `dbg()` log; row skipped (should be impossible with fixed schemas) |
 | `os.rename` on seal fails | `ui_warn()` surfaced to the UI pane; `current.jsonl` remains as an orphan |
-
-## cp -r mid-run resume
-
-Restarting the brain while MUME is still connected (`cp -r`) resets all Lua
-state but the TCP connection survives. Because `Char.Name` is sticky and not
-re-emitted on a live connection, `mark_mume_connected()` never fires, so the
-normal `run_started` path cannot be used.
-
-The recovery signal is `state.char.name`. At brain startup, `brain.lua` reads
-`bridge/runtime/connection.state` and, if a `character_name` is present,
-writes it to `state.char.name` before calling `load_scripts()`. By the time
-`run_log.lua` loads, `bridge/runtime/connection.state` has already been
-cleared — its *presence* cannot be tested — but `state.char.name` survives as
-the signal.
-
-At the bottom of `run_log.lua`, after all subscribers are registered, the
-module checks `state.char.name`:
-
-- **Set** → MUME was connected; open `data/runs/<name>/current.jsonl` for
-  continued append. No new `run_start` row is written.
-  - If `current.jsonl` is missing (crash before first Vitals): arm
-    `_pending_baseline = true` so the next Vitals tick writes a fresh
-    `run_start`.
-  - If `current.jsonl` exists but its first line is unparseable: use
-    `os.time()` as the fallback `_run_start_ts` (the eventual sealed filename
-    becomes approximate; row data is preserved).
-- **Nil** → fresh start; skip the resume path entirely.
-
-After resume, the run continues as normal: subsequent kills and level-ups
-append to the same file, and `run_ending` seals it to
-`<original-run-start-ts>.jsonl` on disconnect.
-
-**Known limitation after cp -r-resume + disconnect.** Because
-`bridge/runtime/connection.state` is gone, the next `mark_mume_disconnected()`
-returns early on its idempotency guard and does not emit `run_ending` or the
-"logged out" `system_ui` line. Run data integrity is preserved via orphan
-handling at the *next* login for that character, but those UI lines are
-missed. This is a pre-existing limitation in the connection.state model and is
-not addressed here. See ADR 0044 for context.
-
-See ADR 0044 §"cp -r mid-run".
 
 ## Orphan handling
 

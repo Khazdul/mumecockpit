@@ -112,34 +112,6 @@ is served from `bridge/runtime/ping.cache`, independent of connection state.
   (~0.5–2 s). During this window `connection.state` is absent and the popup
   shows "Disconnected". The reconnect alias handles this correctly; a
   pending-state is not worth the complexity.
-- **`cp -r` clears uptime** — `_clear_connection_state()` runs unconditionally
-  at brain startup. MUME does not re-send `Char.Name` while the TCP connection
-  is live, so `connection.state` stays absent after a reload until the next full
-  reconnect. Popup shows "Disconnected" after `cp -r`. Accepted. `character_name`
-  is rehydrated into `state.char.name` before the file is cleared, so the status
-  pane's Name field is populated immediately without waiting for `Char.Vitals`.
-
-## cp -r behaviour
-
-- Always runs in gts context
-- Kills all tt++ state (alias, action, substitute, highlight,
-  macro, delay, event) and restarts Lua
-- Re-syncs GAME_SESSION after reload via `set_game_session()`
-  since SESSION CONNECTED does not fire for already-connected sessions
-- After reload: always returns to game session via 1-second delay
-  if one exists, otherwise stays in gts
-- By design: always returns to game session regardless of where
-  cp -r was invoked from
-
-**Known limitation — .tin aliases not visible in existing game session
-after reload:** `cp -r` re-registers aliases from `core/*.tin` in `gts`
-only. An already-connected game session does not pick these up since
-inheritance only happens at session creation. This is intentional —
-`.tin` aliases are stable infrastructure that does not change during a
-play session. If a new `.tin` file is added, restart the game session
-once to inherit it. Lua-based aliases do not have this limitation
-because `game_cmd()` registers in both `gts` and `GAME_SESSION`
-simultaneously.
 
 ## Session Settings Persistence
 
@@ -184,17 +156,16 @@ The `mume` alias is retained as a legacy shortcut that connects as `default`
 — the game session name is always `default` unless a profile is explicitly
 selected (Phase 2).
 
-**Save mechanism:** Two save paths cover graceful exit and reload:
+**Save mechanism:** Two save paths cover graceful exit:
 
 1. **SESSION DEACTIVATED handler** (registered in `system.tin`, runs in gts) —
    fires when the game session loses focus. This covers:
    - `#zap` — user disconnects directly
-   - `cp -r` — `#gts` at the start of reload deactivates the game session
    - `cp -e` — `#gts` at the start of shutdown deactivates the game session
 
-2. **Explicit save in `cp -e` and `cp -r`** — immediately after `#gts` and
-   before any teardown or reload logic. Runs idempotently after the event
-   handler as defense in depth against any tt++ event-context subtleties.
+2. **Explicit save in `cp -e`** — immediately after `#gts` and before any
+   teardown logic. Runs idempotently after the event handler as defense in
+   depth against any tt++ event-context subtleties.
 
 `cp -s` is the user-triggered save path (popup Save button) and is unchanged.
 
@@ -255,20 +226,11 @@ so they land in `{core}` regardless of session class state when the relay drains
 model: `{<profile>}` holds user data, `{core}` holds all script and infrastructure
 registrations.
 
-**Load sequence on cp -r (already-connected session):**
-1. `sanitize_profile.sh ttpp/profiles/$game_session.tin` — normalizes BOM, CRLF, class wrapping, leading blanks
-2. `#class {$game_session} {open}` — opens the session class
-3. `#read ttpp/profiles/$game_session.tin` — loads profile content into the open class
-4. `#class {$game_session} {close}` — closes the class; subsequent registrations land in no class
-5. Register infrastructure: `_register_mud_events`, `_register_clock_actions`,
-   `_register_affect_actions` — these are not user data
-6. `#class {$game_session} {open}` — re-opens the class so runtime additions are captured
-
 **Save sequence** (same two-step body at every call site):
 1. `#class {name} {write} {ttpp/profiles/name.tin}` — writes file with wrapping
 2. `sanitize_profile.sh ttpp/profiles/name.tin` — normalizes the file (strips wrapping and header artifacts)
 
-Call sites: SESSION DEACTIVATED handler, `cp -s`, `cp -e`, `cp -r`.
+Call sites: SESSION DEACTIVATED handler, `cp -s`, `cp -e`.
 
 **Conventions:**
 - Never hardcode `mume` as the class name in system code — always use
@@ -279,9 +241,9 @@ Call sites: SESSION DEACTIVATED handler, `cp -s`, `cp -e`, `cp -r`.
 ## Possible future: periodic auto-save
 
 **Motivation.** Phase 1 covers all graceful exit paths (SESSION DEACTIVATED,
-`cp -e`, `cp -r`). Remaining gap: ungraceful termination — terminal window
-closed, tmux kill-server, SIGKILL, system crash. PROGRAM TERMINATION cannot
-save (sessions already torn down — see Shutdown Teardown above). Current
+`cp -e`). Remaining gap: ungraceful termination — terminal window closed,
+tmux kill-server, SIGKILL, system crash. PROGRAM TERMINATION cannot save
+(sessions already torn down — see Shutdown Teardown above). Current
 mitigations are the popup Save button and the user habit of `cp -s` before
 risky operations.
 
@@ -289,13 +251,7 @@ risky operations.
 recurring timer at startup that, every N seconds, calls `tintin_cmd()` to
 fire the same two-step save against the active GAME_SESSION: `#class write`
 followed by `sanitize_profile.sh`. Falls through silently when GAME_SESSION
-is nil. Re-armed each tick. Survives `cp -r` naturally because `cp -r`
-restarts `brain.lua` and the new brain re-arms the timer at startup.
-
-**Why Lua-driven, not tt++-driven.** A tt++ `#delay`-based timer is killed
-by `cp -r`'s `#kill delay` and would need explicit re-arming in the `cp -r`
-alias body. Lua already has clean tick infrastructure used by the clock
-module — a save tick is a copy of that pattern, no new mechanism.
+is nil. Re-armed each tick.
 
 **Configuration.** Interval lives in `bridge/runtime/startup.conf`, e.g.
 `save_interval_seconds=300` (default 300, 0 disables). Read by
@@ -307,11 +263,11 @@ full session. Cost: one file write to `ttpp/profiles/<profile>.tin` every N
 seconds while connected — negligible. No tt++ event-loop impact; the work
 happens in Lua and reaches tt++ via the existing IPC.
 
-**Why parked.** Phase 1 covers all documented exit paths (`cp -e`, `cp -r`,
-popup Exit). Remaining failure modes are infrequent enough that the
-explicit-save habit suffices for now. Pick up when there is a concrete
-trigger — recurring data-loss reports from users, unattended long-session
-use cases, or a planned move toward less graceful shutdown paths.
+**Why parked.** Phase 1 covers all documented exit paths (`cp -e`, popup
+Exit). Remaining failure modes are infrequent enough that the explicit-save
+habit suffices for now. Pick up when there is a concrete trigger — recurring
+data-loss reports from users, unattended long-session use cases, or a
+planned move toward less graceful shutdown paths.
 
 ## Clean client startup
 
@@ -332,8 +288,7 @@ Inside tt++, `main.tin` does three things to keep the game window clean:
 
 2. **Boot-only scrollback wipe.** `#buffer clear` + `#screen clear all`
    guarded by `#if {!&game_session}`. Wipes any residual tt++ chatter
-   on initial boot. On `cp -r` mid-session the guard skips it, so the
-   game's scrollback survives reloads.
+   on initial boot.
 
 3. **Silent Lua launch.** `#line quiet {#run {lua} {lua lua/brain.lua}}`
    suppresses the `#TRYING TO LAUNCH 'lua'` notice.
@@ -341,8 +296,7 @@ Inside tt++, `main.tin` does three things to keep the game window clean:
 `welcome.tin` then owns the welcome screen and auto-connect:
 
 - `_do_startup` runs 0.5 s after boot (time for tt++ and Lua to finish
-  their own boot output). Same game_session guard — skips entirely on
-  cp -r mid-session.
+  their own boot output). Skipped if a game session is already active.
 - Clears scrollback (tt++'s `#buffer clear`, terminal's `\e[3J`, and
   `tmux clear-history`).
 - Prints the MUME + COCKPIT ASCII banner, a welcome line, a

@@ -60,24 +60,21 @@ atomically (tmp + rename). `bridge/panes/comm_pane.py` polls via mtime every
 250 ms and redraws on change. `SIGWINCH` is forwarded via signal handler; the
 app calls `invalidate()` to trigger a redraw.
 
-### cp -r persistence
+### Cross-launch persistence
 
 History is restored by `comm_state.lua`'s `_load_state_file()`, which reads
-`bridge/runtime/comm.state` and repopulates `state.comm.history` and
-`state.comm.channels` (name + caption only; label is re-derived). After
-channels and history load, `serialize()` is called once so the pane picks up
-both on its next 250 ms poll. `comm_store.lua` seeds history on `Char.Name`
-only; since MUME does not re-emit `Char.Name` on a live TCP connection,
-`comm_store` does not run during `cp -r` without reconnect — history comes
-from `bridge/runtime/comm.state` instead. Filter state survives `cp -r`
-independently: `comm_pane.py` reads `comm_filters.conf` at startup.
+`bridge/runtime/comm.state` at brain startup and repopulates
+`state.comm.history` and `state.comm.channels` (name + caption only; label
+is re-derived). After channels and history load, `serialize()` is called
+once so the pane picks up both on its next 250 ms poll. Filter state is
+restored independently: `comm_pane.py` reads `comm_filters.conf` at
+startup.
 
 ### Disconnect policy
 
 `state.comm.history` is **not** cleared on `SESSION DISCONNECTED`. Channel
-history is retained across reconnects within the same brain process. `cp -r`
-restarts Lua; `_load_state_file()` repopulates from the previous run.
-This diverges from `status_pane`, which blanks on disconnect because its
+history is retained across reconnects within the same brain process. This
+diverges from `status_pane`, which blanks on disconnect because its
 fields have meaningful null states. Communication history is purely
 append-only log data with no meaningful null state.
 
@@ -86,7 +83,7 @@ append-only log data with no meaningful null state.
 JSON, atomic write (tmp + rename), gitignored. Filter state is **not** included
 — it is owned by `comm_pane.py` and stored separately in `comm_filters.conf`.
 The file also serves as a load-time cache: `comm_state.lua` reads it at startup
-to repopulate history and channels after `cp -r`.
+to repopulate history and channels for cross-launch continuity.
 
 ```json
 {

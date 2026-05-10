@@ -130,6 +130,10 @@ Direct consequences:
 
 ### `cp -r` mid-run
 
+> **Invalidated by [ADR 0054](0054-remove-cp-r-full-reload.md).** `cp -r` is no
+> longer a supported operation. The mechanics described below are no longer
+> implemented. Retained for historical context.
+
 When the brain process is restarted while MUME is still connected, the new
 brain checks `bridge/connection.state` at startup:
 
@@ -175,8 +179,8 @@ future launcher run browser.
   `data/characters/<char>/` (current state) or `data/runs/<char>/`
   (per-run history). Comm joins this principle. World-level data goes
   under `data/shared/`. No further "where do I put this?" decisions.
-- **`cp -r` mid-run is data-safe.** The new brain seamlessly continues
-  appending to the existing run.
+- **Brain crash mid-run is data-safe.** The orphan handler seals the
+  leftover `current.jsonl` on the next login for the same character.
 - **Long disconnect + reconnect is naturally captured as two runs,**
   matching the user's mental model.
 - **`logs/` becomes meaningful again.** Tail-readable, no surprises.

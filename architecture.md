@@ -25,7 +25,7 @@ tracking, and UI feedback.
 ├── ttpp/
 │   ├── main.tin          # tt++ entry point — auto-loads all of core/
 │   ├── core/             # System modules (.tin files), auto-loaded
-│   │                     #   affects.tin    — affect trigger registration (per session, cp -r)
+│   │                     #   affects.tin    — affect trigger registration (per session)
 │   │                     #   clock.tin      — 4 Hz clock ticker + game-time sync actions
 │   │                     #   config.tin     — reads startup.conf → _profile/_host/_port/_ses_cmd
 │   │                     #   gmcp.tin       — GMCP telnet negotiation and Lua dispatch
@@ -372,7 +372,6 @@ Unified window and system management via `cp` commands:
 | `cp -d`       | Toggle dev pane                 |
 | `cp -h`       | Toggle pane title headers       |
 | `cp -s`       | Save profile to disk            |
-| `cp -r`       | Full reload                     |
 | `cp -e`       | Full shutdown                   |
 | `cp -<alias>` | Show help for installed script  |
 
@@ -393,7 +392,7 @@ See the project board on GitHub for active work and parked ideas.
 - [docs/gmcp.md](docs/gmcp.md) — GMCP module reference, schemas, negotiation. Touched when adding a GMCP collector or subscribing to a new module.
 - [docs/events.md](docs/events.md) — Event bus API and catalogue. Touched when adding a core MUD trigger or subscribing a script to a Lua-side event.
 - [docs/ipc.md](docs/ipc.md) — tt++ ↔ Lua IPC contract, relay actions, startup ordering. Touched when changing how tt++ and Lua communicate.
-- [docs/session-lifecycle.md](docs/session-lifecycle.md) — Session connect/disconnect, connection.state, cp -r, settings persistence. Touched when changing session handling or startup flow.
+- [docs/session-lifecycle.md](docs/session-lifecycle.md) — Session connect/disconnect, connection.state, settings persistence. Touched when changing session handling or startup flow.
 - [docs/input-pane.md](docs/input-pane.md) — Input pane key forwarding, Enter semantics, history navigation, menu bar (clickable pane toggles + clock). Touched when changing input behaviour, forwarded keys, or the menu bar.
 - [docs/tmux-bindings.md](docs/tmux-bindings.md) — tmux root-table bindings, mouse model, clipboard. Touched when changing tmux key bindings or mouse behaviour.
 - [docs/launcher.md](docs/launcher.md) — Pre-tmux startup menu, rendering conventions, exec-chain. Touched when changing launcher pages or startup options.

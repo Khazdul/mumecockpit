@@ -75,7 +75,7 @@ the amber "[+] Create new profile" row).
 **About page three-colour scheme.** `_render_about` classifies each wrapped
 line before printing: all-uppercase lines → `_MR_TITLE` (headings); lines
 starting with whitespace → `_MR_ACCENT` (key/command lines such as
-`  cp -r`); all other non-empty lines → `_MR_BODY` (prose). Indented lines
+`  cp -e`); all other non-empty lines → `_MR_BODY` (prose). Indented lines
 pass through `wrap_text` unchanged — a leading-whitespace guard flushes the
 current word-wrap buffer and emits the line verbatim, preserving command
 column alignment.

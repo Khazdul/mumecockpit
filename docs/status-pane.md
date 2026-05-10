@@ -57,17 +57,6 @@ indicator is suppressed via the same `_run_active` flag. Pane structure
 (size, splits, tmux borders, `cp -h` header status) is unchanged. The flag is
 updated by the existing 50 ms poll loop on each tick.
 
-### cp -r partial blank
-
-After `cp -r` mid-session, **Name** shows `—` and progress bars show empty
-until the next full reconnect. Other fields repopulate within seconds (next
-`Char.Vitals` tick), but `xp_progress`/`tp_progress` depend on level (from
-`Char.StatusVars`) which is a sticky module not re-emitted over an existing
-connection.
-
-**Status:** Accepted. Cosmetic effect under a secondary developer workflow.
-Full reconnect restores all fields.
-
 ### Polling
 
 `bridge/panes/status_pane.py` polls `bridge/runtime/status.state` every 50 ms via an asyncio

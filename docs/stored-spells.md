@@ -131,8 +131,7 @@ them via the standard non-function-key sweep in `char_state.lua`.
 ### Runtime-only structures
 
 Two module-local variables hold transient state that is never written to disk.
-They reset on each `cp -r` (fresh module load) and do not survive a reconnect
-without reload.
+They reset on each fresh brain launch and do not survive a reconnect.
 
 **`_pending_attempts`** — FIFO queue (Lua array) of spell full names. One entry
 is pushed per `store_attempt_started`; the front entry is consumed by
@@ -298,11 +297,9 @@ serialised by dkjson).
 
 `_register_stored_spells_actions()` is a global Lua function defined in
 `lua/core/stored_spells.lua`. It is called by the `_register_stored_spells_actions`
-alias in `ttpp/core/stored_spells.tin`, which is invoked from:
-
-- `SESSION CONNECTED` in `ttpp/core/system.tin` (immediately after
-  `_register_affect_actions`).
-- The `cp -r` reload chain in `ttpp/core/system.tin` (same position).
+alias in `ttpp/core/stored_spells.tin`, which is invoked from `SESSION
+CONNECTED` in `ttpp/core/system.tin` (immediately after
+`_register_affect_actions`).
 
 On each invocation the function registers via `session_cmd()`:
 
@@ -318,7 +315,7 @@ On each invocation the function registers via `session_cmd()`:
 
 On its first invocation per load cycle the function also calls `_install_hooks()`,
 which wraps `gmcp.handlers["Char.Name"]` to reload persisted data on login. The
-`_installed` flag is module-local and resets to `false` on each `cp -r`.
+`_installed` flag is module-local and resets to `false` on each fresh brain launch.
 
 ## Event lifecycle
 
@@ -378,14 +375,6 @@ When no observed samples exist for a spell, `expected_duration` defaults to
 the mean of up to 3 samples is used.
 
 ## Known limitations
-
-### `cp -r` mid-session without reconnect
-
-After `cp -r` the Lua brain restarts, clearing `_pending_attempts`,
-`_last_cast_intent`, and `state.char.stored_spells`. MUME does not re-send
-`Char.Name` while the TCP connection is live, so the persisted active list is
-not reloaded until the next full reconnect. Accepted — same root cause as
-documented for `docs/affects.md`.
 
 ### Untracked entries after magic blast
 

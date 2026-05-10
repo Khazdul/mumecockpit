@@ -32,10 +32,6 @@ the existing file means:
 - No new state-file plumbing.
 - The light-up / dark-down moment is byte-for-byte aligned with the UI-pane
   notification the user already sees.
-- The `cp -r` mid-run resume gap (where `connection.state` was being cleared
-  unconditionally at brain startup) is closed by the companion fix in
-  `lua/core/run_log.lua`, which calls `_write_connection_state()` after
-  resume.
 
 ## Why content-only, not pane chrome
 
@@ -69,14 +65,6 @@ blanking only the content area sidesteps all of that.
   `if not _run_active: return [("", "")]`.
 - Every overflow-indicator `ConditionalContainer` filter is rewritten as
   `Condition(lambda: _run_active and <existing predicate>)`.
-
-## Companion fix
-
-`lua/core/run_log.lua` now calls `_write_connection_state()` at the end of
-its cp -r mid-run resume block. Without that, `connection.state` would
-remain absent for the rest of the resumed run (because brain.lua's
-`_clear_connection_state()` runs unconditionally at startup) and the panes
-would stay dark.
 
 ---
 Back to [architecture.md](../architecture.md).
