@@ -238,46 +238,4 @@ events.subscribe("run_ending", function()
     _clear_state()
 end)
 
--- cp -r mid-run resume: state.char.name is populated here iff Phase 1 rehydrated it
--- from connection.state (written by the previous brain while MUME was connected).
--- connection.state is cleared unconditionally before load_scripts() runs, so its
--- *presence* cannot be used — state.char.name is the surviving signal.
-local _resume_name = state.char and state.char.name
-if _resume_name then
-    local archive_dir  = os.getenv("HOME") .. "/MUME/data/runs/" .. _resume_name .. "/"
-    local current_path = archive_dir .. "current.jsonl"
-    local f = io.open(current_path, "r")
-    if not f then
-        -- Anomaly: mid-run signal but no current.jsonl (crash before first Vitals).
-        dbg("[RUN_LOG] resume: state.char.name set but no current.jsonl; starting fresh on next Vitals")
-        _archive_dir      = archive_dir
-        _current_path     = current_path
-        _active           = true
-        _pending_baseline = true
-        _last_level       = nil
-    else
-        local first = f:read("*l")
-        f:close()
-        local run_start_ts
-        if first then
-            local decoded = json.decode(first)
-            if decoded and type(decoded.ts) == "number" then
-                run_start_ts = decoded.ts
-            end
-        end
-        if not run_start_ts then
-            dbg("[RUN_LOG] resume: first-line parse failed, using now as run_start_ts")
-            run_start_ts = os.time()
-        end
-        _run_start_ts     = run_start_ts
-        _archive_dir      = archive_dir
-        _current_path     = current_path
-        _active           = true
-        _pending_baseline = false
-        _last_level       = nil
-        _open_log(run_start_ts)
-        dbg("[RUN_LOG] resumed run for " .. _resume_name .. " (run_start ts=" .. tostring(run_start_ts) .. ")")
-    end
-end
-
 dbg("[RUN_LOG] loaded")

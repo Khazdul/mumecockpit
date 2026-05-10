@@ -84,48 +84,6 @@
     }
 }
 
-#alias {cp -r} {
-    #gts;
-    #if {&game_session} {
-        #$game_session #class {$game_session} {write} {ttpp/profiles/$game_session.tin};
-        #system {bash $HOME/MUME/bridge/release/sanitize_profile.sh ttpp/profiles/$game_session.tin}
-    };
-    #system {echo "[$(date '+%H:%M:%S')] COCKPIT RELOAD — wiping state" >> $HOME/MUME/logs/debug.log};
-    #zap lua;
-    #kill alias;
-    #kill action;
-    #kill substitute;
-    #kill highlight;
-    #kill macro;
-    #kill delay;
-    #nop Kill delays in game session if one exists.;
-    #if {&game_session} {#if {&$game_session} {#$game_session #kill delay}};
-    #kill event;
-    #read ttpp/main.tin;
-    #if {&game_session} {
-        #lua {set_game_session("$game_session")};
-        #system {bash $HOME/MUME/bridge/release/sanitize_profile.sh ttpp/profiles/$game_session.tin};
-        #$game_session #class {$game_session} {open};
-        #$game_session #read ttpp/profiles/$game_session.tin;
-        #$game_session #class {$game_session} {close};
-        _register_mud_events $game_session;
-        _register_clock_actions $game_session;
-        _register_affect_actions;
-        _register_stored_spells_actions;
-        _register_run_log_capture $game_session;
-        #$game_session #class {$game_session} {open}
-    };
-    #showme {[COCKPIT] Full reload complete};
-    #if {&game_session} {#delay {1} {#ses {$game_session}}};
-    #system {
-        EXISTS=$(tmux list-panes -t mume:cockpit -F '#{pane_title}' | grep '^input$');
-        if [ -n "$EXISTS" ]; then
-            tmux kill-pane -t $(tmux list-panes -t mume:cockpit -F '#{pane_index} #{pane_title}' | awk '/input/{print "mume:cockpit." $1}');
-        fi;
-        bash $HOME/MUME/bridge/launcher/open_pane.sh input;
-    }
-}
-
 #alias {cp -e} {
     #gts;
     #if {&game_session} {
