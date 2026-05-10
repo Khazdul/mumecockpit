@@ -34,12 +34,12 @@ POLL_MS = 0.1
 # ---------------------------------------------------------------------------
 # Colour constants (24-bit truecolor; swap values here to retheme)
 # ---------------------------------------------------------------------------
-HP_DEFAULT_BG   = "#0a8a30"
-HP_DEFAULT_FG   = "#0a8a30"
-MANA_DEFAULT_BG = "#1f5fcc"
-MANA_DEFAULT_FG = "#1f5fcc"
-MP_DEFAULT_BG   = "#a07030"
-MP_DEFAULT_FG   = "#a07030"
+HP_DEFAULT_BG   = "#0FA838"
+HP_DEFAULT_FG   = "#0FA838"
+MANA_DEFAULT_BG = "#1846B8"
+MANA_DEFAULT_FG = "#1846B8"
+MP_DEFAULT_BG   = "#B87A2C"
+MP_DEFAULT_FG   = "#B87A2C"
 ORANGE_BG       = "#ff7020"
 ORANGE_FG       = "#ff7020"
 RED_BG          = "#e02020"
