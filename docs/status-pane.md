@@ -111,7 +111,9 @@ JSON written by `lua/core/status_state.lua`. Gitignored.
   "xp": 34000000,
   "tp": 122000,
   "xp_progress": 0.42,
+  "xp_progress_baseline": 0.40,
   "tp_progress": 0.71,
+  "tp_progress_baseline": 0.71,
   "run_xp": 5400,
   "run_tp": 0,
   "mood": "wimpy",
@@ -171,9 +173,11 @@ Constants defined at the top of `bridge/panes/status_pane.py`:
 |-----------|--------------------------|---------------------------------------------------|
 | `C_RESET` | `\x1b[0m`                | Reset all                                         |
 | `C_NAME`  | `\x1b[38;2;192;192;192m` | Row 1 text foreground (name + padding spaces)     |
-| `C_XP_BG` | `\x1b[48;2;0;30;40m`    | XP bar background (RGB 0,30,40)                   |
+| `C_XP_BG` | `\x1b[48;2;0;30;40m`    | XP bar background — baseline segment (RGB 0,30,40) |
+| `C_XP_NEW_BG` | `\x1b[48;2;139;26;138m` | XP bar session-gain segment background (RGB 139,26,138 — `#8B1A8A`) |
 | `C_BG_RST`| `\x1b[49m`               | Reset background only, keep foreground            |
-| `C_TP_FG` | `\x1b[38;2;0;40;50m`    | TP bar `▀` foreground (RGB 0,40,50)               |
+| `C_TP_FG` | `\x1b[38;2;0;40;50m`    | TP bar `▀` foreground — baseline segment (RGB 0,40,50) |
+| `C_TP_NEW_FG` | `\x1b[38;2;92;16;91m` | TP bar session-gain segment `▀` foreground (RGB 92,16,91 — `#5C105B`) |
 | `C_LABEL`         | `\x1b[38;2;128;128;128m`    | Data row label foreground (RGB 128,128,128)          |
 | `C_VALUE`         | `\x1b[38;2;192;192;192m`    | Data row value foreground (RGB 192,192,192)          |
 | `C_TOG_OFF_LABEL` | `\x1b[38;2;72;65;58m`       | Toggle label foreground — off state (RGB 72,65,58 — `#48413A` warm dark grey) |
@@ -196,16 +200,29 @@ rendered inside the pane content.
 - Full-width string: `state.char.name` (or `—` if null) centered in W columns
   (truncated to W if longer, space-padded otherwise).
 - Foreground: `C_NAME` (RGB 192,192,192) everywhere on the row.
-- Background: `C_XP_BG` (RGB 0,30,40) covers the leftmost
-  `floor(W × xp_progress)` columns; remaining columns use the terminal default.
-- Boundary trick: `<C_NAME><C_XP_BG><filled><C_BG_RST><unfilled><C_RESET>`.
-  The background resets mid-line without touching the foreground.
+- Three-segment background:
+  - leftmost `floor(W × xp_progress_baseline)` columns: `C_XP_BG` (RGB 0,30,40)
+    — XP already present at session start.
+  - next `floor(W × xp_progress) − floor(W × xp_progress_baseline)` columns:
+    `C_XP_NEW_BG` (RGB 139,26,138 — `#8B1A8A`) — XP gained this session.
+  - remaining columns: terminal default (no background).
+- Boundary trick:
+  `<C_NAME><C_XP_BG><baseline><C_XP_NEW_BG><session-gain><C_BG_RST><unfilled><C_RESET>`.
+  The background changes mid-line without touching the foreground; `C_BG_RST`
+  resets only the background at the trailing edge.
+- See [Session-gain visualisation](#session-gain-visualisation) below for the
+  baseline rules.
 
 ### Row 2 — TP-progress thin bar
 
-- Leftmost `floor(W × tp_progress)` columns: `▀` (U+2580), foreground `C_TP_FG`
-  (RGB 0,40,50), no background.
+- Leftmost `floor(W × tp_progress_baseline)` columns: `▀` (U+2580), foreground
+  `C_TP_FG` (RGB 0,40,50), no background — TP already present at session start.
+- Next `floor(W × tp_progress) − floor(W × tp_progress_baseline)` columns: `▀`,
+  foreground `C_TP_NEW_FG` (RGB 92,16,91 — `#5C105B`), no background — TP
+  gained this session.
 - Remaining columns: space characters, no colour.
+- See [Session-gain visualisation](#session-gain-visualisation) below for the
+  baseline rules.
 
 ### Row 3 — four toggle-box cells (4-column layout)
 
@@ -261,9 +278,28 @@ no SGR.
 ### Bootstrap behaviour
 
 - `xp_progress` / `tp_progress` is `null` → bar renders empty (no fill).
+- `xp_progress_baseline` / `tp_progress_baseline` is `null` or `0` → no
+  session-gain segment is drawn; the bar is visually identical to the
+  pre-feature single-colour rendering.
 - `character` is `null` → `—` centered on row 1.
 - Any data-row value is `null` → empty string; only label text is shown.
 - Any toggle field missing or `null` → rendered as off (no garbled text).
+
+### Session-gain visualisation
+
+Both the XP bar (Row 1) and TP bar (Row 2) split into a baseline segment and a
+session-gain segment to show progress earned during the current session. The
+baseline values (`xp_progress_baseline`, `tp_progress_baseline`) are computed
+in `lua/core/level_progress.lua` from `xp − run_xp` and `tp − run_tp`.
+
+| Scenario                                  | Baseline value                                      | Visual                                                                              |
+|-------------------------------------------|-----------------------------------------------------|-------------------------------------------------------------------------------------|
+| Level-up during session                   | 0 (re-anchored at the new level's start)            | Whole filled region renders in the session-gain colour until the next level-up.     |
+| Disconnect / reconnect                    | `run_xp`/`run_tp` reset to 0 → baseline = current   | Bar reverts to all-baseline colour until the next XP/TP tick.                       |
+| Lost XP this session (negative `run_xp`)  | clamped to current progress                         | Session-gain segment is zero-width; the loss is not separately visualised.          |
+
+Troll TP scaling (×0.1) applies identically to both `tp_progress` and
+`tp_progress_baseline`.
 
 ### Troll TP scaling
 

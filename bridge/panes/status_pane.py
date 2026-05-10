@@ -32,13 +32,15 @@ POLL_MS    = 0.05
 # ---------------------------------------------------------------------------
 # Colour constants (24-bit truecolor ANSI — consumed by _build_frame)
 # ---------------------------------------------------------------------------
-C_RESET  = "\x1b[0m"
-C_NAME   = "\x1b[38;2;192;192;192m"   # row 1 text (fg only)
-C_XP_BG  = "\x1b[48;2;0;30;40m"       # XP bar background
-C_BG_RST = "\x1b[49m"                  # reset background only (keep fg)
-C_TP_FG  = "\x1b[38;2;0;40;50m"       # TP bar ▀ foreground
-C_LABEL  = "\x1b[38;2;128;128;128m"   # data row label foreground
-C_VALUE  = "\x1b[38;2;192;192;192m"   # data row value foreground
+C_RESET     = "\x1b[0m"
+C_NAME      = "\x1b[38;2;192;192;192m"   # row 1 text (fg only)
+C_XP_BG     = "\x1b[48;2;0;30;40m"       # XP bar background — baseline (pre-session) segment
+C_XP_NEW_BG = "\x1b[48;2;139;26;138m"    # #8B1A8A — session-gain XP segment
+C_BG_RST    = "\x1b[49m"                 # reset background only (keep fg)
+C_TP_FG     = "\x1b[38;2;0;40;50m"       # TP bar ▀ foreground — baseline (pre-session) segment
+C_TP_NEW_FG = "\x1b[38;2;92;16;91m"      # #5C105B — session-gain TP segment
+C_LABEL     = "\x1b[38;2;128;128;128m"   # data row label foreground
+C_VALUE     = "\x1b[38;2;192;192;192m"   # data row value foreground
 
 C_TOG_OFF_LABEL = "\x1b[38;2;72;65;58m"    # #48413A — warm dark grey
 C_TOG_ON_LABEL  = "\x1b[38;2;212;160;78m"  # #D4A04E — warm gold (matches overflow indicator)
@@ -139,14 +141,26 @@ def _build_frame(data):
     name = name.capitalize()
     if len(name) > width:
         name = name[:width]
-    padded  = name.center(width)
-    xp_prog = c.get("xp_progress") or 0.0
-    fill    = int(math.floor(width * xp_prog))
-    row1    = C_NAME + C_XP_BG + padded[:fill] + C_BG_RST + padded[fill:] + C_RESET
+    padded     = name.center(width)
+    xp_prog    = c.get("xp_progress")          or 0.0
+    xp_base    = c.get("xp_progress_baseline") or 0.0
+    fill_total = int(math.floor(width * xp_prog))
+    fill_base  = int(math.floor(width * xp_base))
+    fill_base  = max(0, min(fill_base, fill_total))
+    row1 = (C_NAME
+            + C_XP_BG     + padded[:fill_base]
+            + C_XP_NEW_BG + padded[fill_base:fill_total]
+            + C_BG_RST    + padded[fill_total:]
+            + C_RESET)
 
-    tp_prog = c.get("tp_progress") or 0.0
-    tp_fill = int(math.floor(width * tp_prog))
-    row2    = C_TP_FG + "▀" * tp_fill + C_RESET + " " * (width - tp_fill)
+    tp_prog     = c.get("tp_progress")          or 0.0
+    tp_base     = c.get("tp_progress_baseline") or 0.0
+    tp_total    = int(math.floor(width * tp_prog))
+    tp_basefill = int(math.floor(width * tp_base))
+    tp_basefill = max(0, min(tp_basefill, tp_total))
+    row2 = (C_TP_FG     + "▀" * tp_basefill
+            + C_TP_NEW_FG + "▀" * (tp_total - tp_basefill)
+            + C_RESET    + " " * (width - tp_total))
 
     blank = " " * width
     return [row1, row2, _build_toggles_row(c, width), blank] + _build_data_rows(c, width)

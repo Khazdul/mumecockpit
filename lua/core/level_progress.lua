@@ -49,4 +49,34 @@ function level_progress.compute_tp_progress(level, tp, race)
     return _progress(TABLE_TP, level, tp, mult)
 end
 
+local function _baseline(table, level, value, run_value, mult)
+    if level == nil or value == nil then return nil end
+    if run_value == nil or run_value <= 0 then
+        return _progress(table, level, value, mult)
+    end
+    if level < 1 then return nil end
+    if level >= 100 then return 1.0 end
+    local session_start = value - run_value
+    local lvl_start = table[level]     * mult
+    local lvl_end   = table[level + 1] * mult
+    if lvl_end <= lvl_start then return nil end
+    if session_start <= lvl_start then
+        return 0   -- level-up during session: re-anchor at new level
+    end
+    local baseline = (session_start - lvl_start) / (lvl_end - lvl_start)
+    local current  = _progress(table, level, value, mult) or 0
+    if baseline < 0       then baseline = 0       end
+    if baseline > current then baseline = current end
+    return baseline
+end
+
+function level_progress.compute_xp_baseline(level, xp, run_xp)
+    return _baseline(TABLE_XP, level, xp, run_xp, 1.0)
+end
+
+function level_progress.compute_tp_baseline(level, tp, run_tp, race)
+    local mult = (type(race) == "string" and race:lower() == "troll") and 0.1 or 1.0
+    return _baseline(TABLE_TP, level, tp, run_tp, mult)
+end
+
 dbg("[LEVEL_PROGRESS] loaded")
