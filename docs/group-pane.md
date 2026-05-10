@@ -107,8 +107,8 @@ Default colours:
 | Bar  | BG        |
 |------|-----------|
 | HP   | `#0FA838` |
-| Mana | `#1846B8` |
-| MP   | `#B87A2C` |
+| Mana | `#0F38B0` |
+| MP   | `#8A7838` |
 
 > **Note — MP thresholds:** MP bands in `group_collector.lua` are still
 > placeholder (calibration pending server data; see ADR 0052). At band
