@@ -44,6 +44,9 @@ COMM_FILTERS_CONF = os.environ.get(
     os.path.join(os.environ["HOME"], "MUME", "bridge", "runtime", "comm_filters.conf"),
 )
 COMM_FILTERS_TMP  = COMM_FILTERS_CONF + ".tmp"
+CONNECTION_STATE_PATH = os.path.join(
+    os.environ["HOME"], "MUME", "bridge", "runtime", "connection.state"
+)
 POLL_MS           = 0.25
 
 # ---------------------------------------------------------------------------
@@ -122,6 +125,7 @@ _app            = None      # set in main() after Application is created
 _filters        = {}        # sparse map: missing key = enabled (True)
 _solo_channel   = None      # name of currently soloed channel, or None
 _solo_snapshot  = None      # dict copy of _filters at solo entry, or None
+_run_active     = False
 
 # ---------------------------------------------------------------------------
 # Filter persistence
@@ -623,6 +627,8 @@ def _restore_cursor():
 
 def _header_text():
     """Fragments for the 1-row channel-filter header."""
+    if not _run_active:
+        return [("", "")]
     frags = []
     if _state is None:
         return frags
@@ -679,6 +685,9 @@ def _list_text():
     """Fragments for the scrollable message list."""
     global _scroll_offset
 
+    if not _run_active:
+        return [("", "")]
+
     frags = []
     if _state is None:
         return frags
@@ -730,6 +739,8 @@ def _list_text():
 
 def _indicator_text():
     """Single-fragment row shown below the list when scroll_offset > 0."""
+    if not _run_active:
+        return [("", "")]
     if _state is None or _scroll_offset <= 0:
         return []
     newer = _scroll_offset
@@ -801,7 +812,7 @@ def _quit(event):
 # ---------------------------------------------------------------------------
 
 async def _poll_state(app):
-    global _state, _last_mtime, _scroll_offset, _prev_filtered
+    global _state, _last_mtime, _scroll_offset, _prev_filtered, _run_active
 
     while True:
         try:
@@ -835,6 +846,11 @@ async def _poll_state(app):
                     app.invalidate()
                 except Exception:
                     pass  # keep last good state; silent recovery
+
+        new_run_active = os.path.exists(CONNECTION_STATE_PATH)
+        if new_run_active != _run_active:
+            _run_active = new_run_active
+            app.invalidate()
 
         await asyncio.sleep(POLL_MS)
 
@@ -882,7 +898,7 @@ def main():
             content=FormattedTextControl(_indicator_text),
             height=1,
         ),
-        filter=Condition(lambda: _scroll_offset > 0),
+        filter=Condition(lambda: _run_active and _scroll_offset > 0),
     )
 
     root      = HSplit([header_window, list_window, indicator_container])

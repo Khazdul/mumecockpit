@@ -400,6 +400,15 @@ chat content). It is rendered by `_indicator_text()` inside its own
 `ConditionalContainer / Window`, so it is always visible below the list.
 Clicking it (`MOUSE_DOWN`) resets offset to 0.
 
+### Inactive run
+
+When `bridge/runtime/connection.state` is absent, every text provider
+(`_header_text`, `_list_text`, `_indicator_text`) returns blank fragments and
+the overflow indicator is suppressed via the same `_run_active` flag. The
+channel filter header blanks entirely — no leading inert space, no labels.
+Pane structure (size, splits, tmux borders, `cp -h` header status) is unchanged.
+The flag is updated by the existing 250 ms poll loop on each tick.
+
 ### Colour palette
 
 All constants are defined at the top of `bridge/panes/comm_pane.py`:

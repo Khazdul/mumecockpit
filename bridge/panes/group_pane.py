@@ -29,6 +29,9 @@ GROUP_STATE_PATH = os.environ.get(
     "GROUP_STATE_PATH",
     os.path.join(os.environ["HOME"], "MUME", "bridge", "runtime", "group.state"),
 )
+CONNECTION_STATE_PATH = os.path.join(
+    os.environ["HOME"], "MUME", "bridge", "runtime", "connection.state"
+)
 POLL_MS = 0.1
 
 # ---------------------------------------------------------------------------
@@ -55,6 +58,7 @@ C_INDICATOR     = "fg:#d4a04e italic"
 _members    = []
 _last_mtime = None
 _app        = None
+_run_active = False
 
 
 def _term_rows():
@@ -153,6 +157,8 @@ def _member_frags(member, W):
 # ---------------------------------------------------------------------------
 
 def _rows_text():
+    if not _run_active:
+        return [("", "")]
     if not _members:
         return []
     W     = max(3, shutil.get_terminal_size().columns)
@@ -170,6 +176,8 @@ def _rows_text():
 
 
 def _indicator_text():
+    if not _run_active:
+        return [("", "")]
     total = len(_members)
     H     = max(1, _term_rows())
     if total > H:
@@ -188,7 +196,7 @@ def _restore_cursor():
 
 
 async def _poll_state(app):
-    global _members, _last_mtime
+    global _members, _last_mtime, _run_active
 
     while True:
         try:
@@ -207,6 +215,11 @@ async def _poll_state(app):
                     pass
             else:
                 _members = []
+            app.invalidate()
+
+        new_run_active = os.path.exists(CONNECTION_STATE_PATH)
+        if new_run_active != _run_active:
+            _run_active = new_run_active
             app.invalidate()
 
         await asyncio.sleep(POLL_MS)
@@ -239,7 +252,7 @@ def main():
             height=1,
             dont_extend_height=True,
         ),
-        filter=Condition(lambda: len(_members) > _term_rows()),
+        filter=Condition(lambda: _run_active and len(_members) > _term_rows()),
     )
 
     root   = HSplit([rows_window, indicator_container])

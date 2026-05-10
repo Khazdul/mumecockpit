@@ -153,6 +153,14 @@ member list. `N = total − (H − 1)`. The list shows the first `H − 1` membe
 
 When members is empty the pane renders nothing (empty space).
 
+## Inactive run
+
+When `bridge/runtime/connection.state` is absent, every text provider
+(`_rows_text`, `_indicator_text`) returns blank fragments and the overflow
+indicator is suppressed via the same `_run_active` flag. Pane structure
+(size, splits, tmux borders, `cp -h` header status) is unchanged. The flag is
+updated by the existing 100 ms poll loop on each tick.
+
 ## Polling cadence
 
 `os.stat(group.state).st_mtime` is checked every **100 ms** via an asyncio

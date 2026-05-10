@@ -208,6 +208,14 @@ N for `↑ N rows above` is `_scroll_offset`. N for `↓ N more rows` is
 The indicator occupies a dedicated 1-row `ConditionalContainer` below the grid
 window, hidden when neither condition holds.
 
+## Inactive run
+
+When `bridge/runtime/connection.state` is absent, every text provider
+(grid and overflow indicator) returns blank fragments and the overflow
+indicator is suppressed via the same `_run_active` flag. Pane structure
+(size, splits, tmux borders, `cp -h` header status) is unchanged. The flag is
+updated by the existing 100 ms poll loop on each tick.
+
 ## Polling and redraw cadence
 
 - **State poll:** `os.stat(bridge/runtime/buffs.state).st_mtime` checked every 100 ms.

@@ -32,6 +32,9 @@ BUFFS_STATE_PATH = os.environ.get(
     "BUFFS_STATE_PATH",
     os.path.join(os.environ["HOME"], "MUME", "bridge", "runtime", "buffs.state"),
 )
+CONNECTION_STATE_PATH = os.path.join(
+    os.environ["HOME"], "MUME", "bridge", "runtime", "connection.state"
+)
 POLL_MS = 0.1
 
 # Spells — blue
@@ -69,6 +72,7 @@ _stored_spells = []
 _last_mtime    = None
 _app           = None
 _scroll_offset = 0   # 0 = top (first row at top of pane); N = N rows hidden above
+_run_active    = False
 
 
 def _term_rows():
@@ -219,6 +223,9 @@ def _build_all_rows():
 def _grid_text():
     global _scroll_offset
 
+    if not _run_active:
+        return [("", "")]
+
     H        = max(1, _term_rows())
     all_rows = _build_all_rows()
     total    = len(all_rows)
@@ -243,6 +250,9 @@ def _grid_text():
 
 
 def _indicator_text():
+    if not _run_active:
+        return [("", "")]
+
     H     = max(1, _term_rows())
     total = _total_rows(*_split_groups())
 
@@ -290,7 +300,7 @@ def _restore_cursor():
 
 
 async def _poll_state(app):
-    global _affects, _stored_spells, _last_mtime
+    global _affects, _stored_spells, _last_mtime, _run_active
 
     while True:
         try:
@@ -315,6 +325,11 @@ async def _poll_state(app):
             else:
                 _affects       = []
                 _stored_spells = []
+            app.invalidate()
+
+        new_run_active = os.path.exists(CONNECTION_STATE_PATH)
+        if new_run_active != _run_active:
+            _run_active = new_run_active
             app.invalidate()
 
         await asyncio.sleep(POLL_MS)
@@ -354,7 +369,7 @@ def main():
             height=1,
             dont_extend_height=True,
         ),
-        filter=Condition(lambda: _scroll_offset > 0 or _total_rows(*_split_groups()) > _term_rows()),
+        filter=Condition(lambda: _run_active and (_scroll_offset > 0 or _total_rows(*_split_groups()) > _term_rows())),
     )
 
     root   = HSplit([grid_window, indicator_container])

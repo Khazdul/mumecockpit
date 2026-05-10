@@ -27,6 +27,9 @@ import signal
 import sys
 
 STATE_PATH = os.path.join(os.environ["HOME"], "MUME", "bridge", "runtime", "status.state")
+CONNECTION_STATE_PATH = os.path.join(
+    os.environ["HOME"], "MUME", "bridge", "runtime", "connection.state"
+)
 POLL_MS    = 0.05
 
 # ---------------------------------------------------------------------------
@@ -53,6 +56,7 @@ C_INDICATOR = "fg:#d4a04e italic"   # overflow indicator style
 _last_mtime = None
 _last_data  = None
 _app        = None
+_run_active = False
 
 
 def _term_rows():
@@ -170,6 +174,8 @@ def _build_frame(data):
 # prompt_toolkit text providers
 # ---------------------------------------------------------------------------
 def _status_text():
+    if not _run_active:
+        return [("", "")]
     frags = []
     for i, row_ansi in enumerate(_build_frame(_last_data)):
         if i > 0:
@@ -179,6 +185,8 @@ def _status_text():
 
 
 def _indicator_text():
+    if not _run_active:
+        return [("", "")]
     total = len(_build_frame(_last_data))
     H     = _term_rows()
     n     = total - (H - 1)
@@ -191,7 +199,7 @@ def _restore_cursor():
 
 
 async def _poll_state(app):
-    global _last_mtime, _last_data
+    global _last_mtime, _last_data, _run_active
 
     while True:
         try:
@@ -207,6 +215,11 @@ async def _poll_state(app):
                         _last_data = json.load(fh)
                 except Exception:
                     pass
+            app.invalidate()
+
+        new_run_active = os.path.exists(CONNECTION_STATE_PATH)
+        if new_run_active != _run_active:
+            _run_active = new_run_active
             app.invalidate()
 
         await asyncio.sleep(POLL_MS)
@@ -239,7 +252,7 @@ def main():
             height=1,
             dont_extend_height=True,
         ),
-        filter=Condition(lambda: len(_build_frame(_last_data)) > _term_rows()),
+        filter=Condition(lambda: _run_active and len(_build_frame(_last_data)) > _term_rows()),
     )
 
     root   = HSplit([rows_window, indicator_container])

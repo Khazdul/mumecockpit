@@ -49,6 +49,14 @@ fields null. The renderer displays `—` for null name and empty bars for null
 progress. Data rows render as label-only (empty value cells). Pane height stays
 at `STATIC_ROWS = 6` within one poll tick (≤ 50 ms).
 
+### Inactive run
+
+When `bridge/runtime/connection.state` is absent, every text provider
+(`_status_text`, `_indicator_text`) returns blank fragments and the overflow
+indicator is suppressed via the same `_run_active` flag. Pane structure
+(size, splits, tmux borders, `cp -h` header status) is unchanged. The flag is
+updated by the existing 50 ms poll loop on each tick.
+
 ### cp -r partial blank
 
 After `cp -r` mid-session, **Name** shows `—` and progress bars show empty
