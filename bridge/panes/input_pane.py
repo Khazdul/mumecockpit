@@ -49,7 +49,7 @@ MAIN_MIN = 30   # main/tt++ pane floor
 BTN_BG_ON  = "#002832"   # rgb(0,40,50) — ON state background (matches TP-bar fg)
 BTN_BG_OFF = "#001E28"   # rgb(0,30,40)   — OFF state background
 BTN_FG_ON  = "#C0C0C0"   # ON text — rgb(192,192,192)
-BTN_FG_OFF = "#707070"   # OFF text — rgb(112,112,112)
+BTN_FG_OFF = "#646464"   # OFF text — rgb(100,100,100)
 
 # Sun/Moon colours — source of truth: bridge/panes/status_pane.py C_SUN / C_MOON
 C_SUN_HEX  = "#ffb000"   # \x1b[38;2;255;176;0m
