@@ -313,11 +313,10 @@ of the right column whenever it exists.
 
 ### Pane height
 
-`status_height = 6` in `bridge/runtime/layout.conf`. `lua/core/status_state.lua`
-sets `STATIC_ROWS = 6` and rewrites `layout.conf` + calls `apply_layout.sh`
-whenever `STATIC_ROWS` changes, so adding a new row in `_build_frame` is a
-two-place update (Python + Lua constant). Current breakdown: 2 progress-bar
-rows + 1 toggle row + 1 blank separator + 2 data rows = 6 total.
+The status pane participates in the right-column equal-share pool (ADR 0055);
+current rendered content is ≤ 6 rows (2 progress-bar rows + 1 toggle row +
+1 blank separator + 2 data rows). Height is tmux-managed and user-resizable
+after cold start (ADR 0030).
 
 ### Width constraint
 
