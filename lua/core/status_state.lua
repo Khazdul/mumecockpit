@@ -11,8 +11,8 @@ local STATE_PATH  = os.getenv("HOME") .. "/MUME/bridge/runtime/status.state"
 local TMP_PATH    = STATE_PATH .. ".tmp"
 local LAYOUT_PATH = os.getenv("HOME") .. "/MUME/bridge/runtime/layout.conf"
 
--- 11 rows (2 progress-bar rows + 1 toggle row + 1 blank + 4 data rows). Bump when rows are added in bridge/panes/status_pane.py.
-local STATIC_ROWS = 11
+-- 6 rows (2 progress-bar rows + 1 toggle row + 1 blank + 2 data rows). Bump when rows are added in bridge/panes/status_pane.py.
+local STATIC_ROWS = 6
 
 local _last_height = nil
 

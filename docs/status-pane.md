@@ -6,10 +6,10 @@ Touch this file when changing the renderer, the state-file schema, the field
 layout, or layout integration.
 
 Two progress-bar rows (XP and TP), a row of four toggle-box cells
-(SNEAK / RIDE / CLIMB / SWIM), a blank separator, and four data rows (race/level,
-mood/session-xp, alertness/session-tp, position/wimpy) make up the eleven-row
-layout. Game time is shown in the input-pane menu bar, sourced from the same
-`status.state` payload.
+(SNEAK / RIDE / CLIMB / SWIM), a blank separator, and two data rows
+(alertness/position, mood/wimpy) make up the six-row layout. Game time is
+shown in the input-pane menu bar, sourced from the same `status.state`
+payload.
 
 ## Architecture
 
@@ -47,7 +47,7 @@ identity intact so cached references elsewhere stay valid, then emits
 producing a single atomic write to `bridge/runtime/status.state` with all character
 fields null. The renderer displays `—` for null name and empty bars for null
 progress. Data rows render as label-only (empty value cells). Pane height stays
-at `STATIC_ROWS = 11` within one poll tick (≤ 50 ms).
+at `STATIC_ROWS = 6` within one poll tick (≤ 50 ms).
 
 ### cp -r partial blank
 
@@ -176,8 +176,8 @@ Constants defined at the top of `bridge/panes/status_pane.py`:
 | `C_TP_FG` | `\x1b[38;2;0;40;50m`    | TP bar `▀` foreground (RGB 0,40,50)               |
 | `C_LABEL`         | `\x1b[38;2;128;128;128m`    | Data row label foreground (RGB 128,128,128)          |
 | `C_VALUE`         | `\x1b[38;2;192;192;192m`    | Data row value foreground (RGB 192,192,192)          |
-| `C_TOG_OFF_LABEL` | `\x1b[38;2;102;102;102m`    | Toggle label foreground — off state (RGB 102,102,102 mid-grey) |
-| `C_TOG_ON_LABEL`  | `\x1b[38;2;192;192;192m`    | Toggle label foreground — on state (RGB 192,192,192)           |
+| `C_TOG_OFF_LABEL` | `\x1b[38;2;107;82;35m`      | Toggle label foreground — off state (RGB 107,82,35 — `#6B5223` dark brown-gold) |
+| `C_TOG_ON_LABEL`  | `\x1b[38;2;212;160;78m`     | Toggle label foreground — on state (RGB 212,160,78 — `#D4A04E` warm gold)        |
 
 
 ## Identity
@@ -216,12 +216,12 @@ cell is laid out as `[label][space-pad]`:
 - **space-pad**: `col_w - len(label)` trailing space chars (min 0), unstyled.
 
 No background is set; the terminal background shows through. State is
-communicated entirely through label colour: off uses a mid-grey label
-(`RGB 102,102,102`); on uses a light label (`RGB 192,192,192`).
+communicated entirely through label colour: off uses a dark brown-gold label
+(`RGB 107,82,35`); on uses a warm gold label (`RGB 212,160,78`).
 
 | Col | Toggle | Off colours                          | On colours                          |
 |-----|--------|--------------------------------------|-------------------------------------|
-| 0   | SNEAK  | label `C_TOG_OFF_LABEL` (`#666666`)  | label `C_TOG_ON_LABEL` (`#C0C0C0`) |
+| 0   | SNEAK  | label `C_TOG_OFF_LABEL` (`#6B5223`)  | label `C_TOG_ON_LABEL` (`#D4A04E`) |
 | 1   | RIDE   | same                                 | same                                |
 | 2   | CLIMB  | same                                 | same                                |
 | 3   | SWIM   | same                                 | same                                |
@@ -232,7 +232,7 @@ Missing or `"off"` value → cell renders in off state. `"on"` → on state.
 
 Plain `" " * W` — no SGR.
 
-### Rows 5–8 — four data rows (4-column layout)
+### Rows 5–6 — two data rows (4-column layout)
 
 `W = pane width`. Four columns sized by `_col_widths(W)`:
 
@@ -245,17 +245,14 @@ cols  = [base + (1 if i < extra else 0) for i in range(4)]
 A single-char spacer (no SGR) separates column 2 and column 3. Every row is
 exactly W visible characters; no trailing padding ever needed.
 
-| Row | Col 1 (label) | Col 2 (value)            | Col 3 (label) | Col 4 (value)              |
-|-----|---------------|--------------------------|---------------|----------------------------|
-| 5   | `RACE:`       | `race`                   | `LEVEL:`      | `level` (bare int)         |
-| 6   | `MOOD:`       | `mood`                   | `SES-XP:`     | `run_xp` (fmt_sess)        |
-| 7   | `ALERTNESS:`  | `alertness`              | `SES-TP:`     | `run_tp` (fmt_sess)        |
-| 8   | `POSITION:`   | `position`               | `WIMPY:`      | `wimpy` (bare int)         |
+| Row | Col 1 (label) | Col 2 (value) | Col 3 (label) | Col 4 (value)         |
+|-----|---------------|---------------|---------------|-----------------------|
+| 5   | `ALERTNESS:`  | `alertness`   | `POSITION:`   | `position`            |
+| 6   | `MOOD:`       | `mood`        | `WIMPY:`      | `wimpy` (bare int)    |
 
 Labels are truncated preserving the trailing colon; values are lowercased and
 sliced. Null/missing values render as empty string (label + col-width spaces).
-`run_xp`/`run_tp` are formatted as `"1.2k"` above 999 and bare integers
-below. `level` and `wimpy` are bare integers.
+Only `wimpy` is a bare integer.
 
 Label foreground: `C_LABEL` (RGB 128,128,128). Value foreground: `C_VALUE`
 (RGB 192,192,192). `C_RESET` between each value and the next label; spacer has
@@ -283,11 +280,11 @@ of the right column whenever it exists.
 
 ### Pane height
 
-`status_height = 11` in `bridge/runtime/layout.conf`. `lua/core/status_state.lua`
-sets `STATIC_ROWS = 11` and rewrites `layout.conf` + calls `apply_layout.sh`
+`status_height = 6` in `bridge/runtime/layout.conf`. `lua/core/status_state.lua`
+sets `STATIC_ROWS = 6` and rewrites `layout.conf` + calls `apply_layout.sh`
 whenever `STATIC_ROWS` changes, so adding a new row in `_build_frame` is a
 two-place update (Python + Lua constant). Current breakdown: 2 progress-bar
-rows + 1 toggle row + 1 blank separator + 4 data rows = 11 total.
+rows + 1 toggle row + 1 blank separator + 2 data rows = 6 total.
 
 ### Width constraint
 
