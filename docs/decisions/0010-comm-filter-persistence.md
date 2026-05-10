@@ -6,7 +6,7 @@
 ## Context
 
 Channel filter state (which channels are shown in the comm pane) must survive
-`cp -r` (Lua restart) so the player's configuration is not lost on reload. Two
+a brain restart so the player's configuration is not lost on reload. Two
 persistence approaches were considered.
 
 **Option A — Full map: write every known channel with its current state.**
@@ -32,9 +32,9 @@ File format: `name=true|false` (one line per explicitly-set channel).
   configuration action. This is almost always the desired behaviour.
 - **`comm_filters.conf` stays minimal.** Most players who have never toggled
   any channel will have an empty file.
-- **State is preserved across `cp -r`.** `comm_state.lua` reads the conf at
-  load time, restoring all explicit overrides before the first `Comm.Channel.List`
-  arrives.
+- **State is preserved across brain restarts.** `comm_state.lua` reads the conf
+  at load time, restoring all explicit overrides before the first
+  `Comm.Channel.List` arrives.
 - **Toggling a channel back to its default state (re-enabling a disabled channel)
   writes an explicit `name=true` entry.** This is harmless — an explicit `true`
   is semantically identical to an absent key. The file will accumulate one `true`
@@ -51,8 +51,8 @@ File format: `name=true|false` (one line per explicitly-set channel).
   require a user action to appear. The sparse map's default-on behaviour is more
   appropriate for a log-like communication pane.
 - **No persistence (in-memory only).** Rejected: filter state is lost on every
-  `cp -r`, which is frequent during development. Players who disable busy channels
-  (e.g. `news`) should not need to redo this on every reload.
+  brain restart. Players who disable busy channels (e.g. `news`) should not need
+  to redo this on every reload.
 
 ## 2026-04-26 update
 

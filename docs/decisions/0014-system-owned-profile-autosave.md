@@ -9,8 +9,8 @@ Auto-save was previously implemented as a SESSION DEACTIVATED handler in the
 user profile file (`ttpp/profiles/default.tin`). That handler hardcoded the
 class name and was never part of system code. It was removed without
 replacement, leaving `cp -s` (the popup Save button) as the only working save
-path. `cp -e`, `cp -r`, and the popup "Exit to main menu" flow all left
-runtime profile changes unsaved.
+path. `cp -e` and the popup "Exit to main menu" flow all left runtime profile
+changes unsaved.
 
 ## Decision
 
@@ -23,10 +23,10 @@ context prefix, so the `#class write` executes in the deactivating session
 regardless of where the event handler runs. Internal sessions (`gts`, `lua`)
 are filtered out identically to the other session event handlers.
 
-**(b) Idempotent explicit save in `cp -e` and `cp -r`** — immediately after
-`#gts` and before any teardown or reload logic. Runs after the SESSION
-DEACTIVATED handler fires as defense in depth against tt++ event-context
-subtleties. Same file, same content — writing twice is harmless.
+**(b) Idempotent explicit save in `cp -e`** — immediately after `#gts` and
+before any teardown logic. Runs after the SESSION DEACTIVATED handler fires
+as defense in depth against tt++ event-context subtleties. Same file, same
+content — writing twice is harmless.
 
 SESSION DEACTIVATED is reserved as a system event going forward. User
 profiles must not register their own SESSION DEACTIVATED handler.
@@ -52,8 +52,8 @@ System code is the right owner.
 
 **Single mechanism (event-only or explicit-only)** — rejected. tt++ event
 semantics around session deactivation context are not fully documented; the
-explicit save in `cp -e` and `cp -r` is cheap and provides a documented
-call-site guarantee independent of event delivery subtleties.
+explicit save in `cp -e` is cheap and provides a documented call-site
+guarantee independent of event delivery subtleties.
 
 **Sanitizer enforcement of reserved-event rule** — deferred. Worth doing if
 the footgun materializes in practice; not required to fix the present bug.

@@ -67,8 +67,8 @@ end
 dbg("Lua brain started (" .. _VERSION .. ")")
 os.execute("mkdir -p bridge/ipc data/runs data/comm data/characters data/shared")
 -- Clear any stale connection.state left by a previous crashed brain.
--- No rehydration: cp -r is no longer supported (ADR 0054), so a fresh
--- brain always starts with state.char empty and waits for a real Char.Name.
+-- A fresh brain always starts with state.char empty and waits for a real
+-- Char.Name (no rehydration — see ADR 0054).
 _clear_connection_state()
 local _n_core, _n_scripts = load_scripts()
 dbg(_n_core .. " core + " .. _n_scripts .. " scripts loaded")

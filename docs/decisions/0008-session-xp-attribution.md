@@ -59,8 +59,6 @@ than crediting any kill or attempting recovery.
   Accepted limitation; no source of truth to distinguish it.
 - No orphan-XP concept; every XP delta is absorbed by the accumulator and
   credited on the next fold (or discarded if no mobs ever die).
-- `cp -r` resets Lua state; next Vitals tick rebaselines from current XP, `Sess
-  XP` resets to 0. Expected behaviour.
 
 ## Alternatives considered
 

@@ -12,8 +12,7 @@ and `state.char.reset` was wrapped by three modules. Two modules (`affects`,
 `stored_spells`) installed their wraps lazily via `_install_hooks()`;
 `buffs_state` even wrapped the global function `_affects_register_triggers` to
 inject another wrap. This was fragile: the order was implicit, the chains were
-invisible to callers, and `cp -r` correctness depended on `_installed` guards
-that were easy to get wrong.
+invisible to callers, and ordering bugs were easy to introduce.
 
 ## Decision
 
@@ -50,8 +49,8 @@ emits `char_reset` (no payload) at the end. Modules that previously wrapped
 automatically emitted `gmcp_event_sun`. `clock.lua` (sole subscriber) updated.
 
 **`_install_hooks()` removed** from `affects.lua` and `stored_spells.lua`:
-each cp -r produces a fresh Lua state where every top-level subscribe
-is registered exactly once, making the `_installed` guard unnecessary.
+every top-level subscribe is registered exactly once at brain startup,
+making the `_installed` guard unnecessary.
 
 **`_affects_register_triggers` wrap removed** from `buffs_state.lua`: with
 load-order subscription, `affects.lua` (alphabetically first) subscribes to
@@ -61,7 +60,7 @@ a wrap.
 ## Alternatives rejected
 
 **(a) Keep wrap chains.** Would leave the fragility in place. No benefit over
-events-based approach, and breaks `cp -r` unless guards remain.
+the events-based approach.
 
 **(b) Remove `gmcp.handlers` entirely, use only events.** Introduces ambiguity
 about who writes `state.*`. Keeping a single named primary writer makes
@@ -77,7 +76,6 @@ extra mechanism.
 
 - No functional regressions in steady state. All panes, trackers, and scripts
   behave identically from the player's perspective.
-- `cp -r` reload is cleaner: no `_installed` guards, no lazy hook installation.
 - Disconnect blanks both `bridge/status.state` and `bridge/buffs.state` within
   one poll tick (previously `buffs_state` only serialised on `affects_changed`,
   not on `char_reset`).

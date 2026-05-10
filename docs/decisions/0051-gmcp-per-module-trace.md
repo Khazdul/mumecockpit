@@ -41,8 +41,8 @@ we need.
 
 - `gmcp.trace` semantics preserved exactly.
 - Default state unchanged (no implicit tracing).
-- Discovery workflow: set `gmcp.trace_only = { Char = true }`, `cp -r`,
-  observe, revert.
+- Discovery workflow: set `gmcp.trace_only = { Char = true }`, restart the
+  brain, observe, revert.
 
 ## Relation to other ADRs
 

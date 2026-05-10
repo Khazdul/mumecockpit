@@ -60,7 +60,7 @@ per-session log files, or sharding by channel) only requires updating
 `comm.state` is now also read by `lua/core/comm_state.lua` at load time,
 populating `state.comm.history` and `state.comm.channels` from the previous run.
 This works around the one-shot nature of `Comm.Channel.List` on persistent TCP
-connections, so the pane is not blank after `cp -r`.
+connections, so the pane is not blank after a brain restart.
 
 The schema dropped the `filters` field — filter state is now owned by
 `comm_pane.py` directly. See ADR 0010 update.

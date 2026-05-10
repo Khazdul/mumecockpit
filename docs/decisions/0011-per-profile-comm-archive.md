@@ -8,19 +8,19 @@
 The comm pipeline previously had two storage layers:
 
 1. **In-RAM ring buffer** (`state.comm.history`, max 500 entries) — lost on
-   every `cp -r` (Lua restart) except for a short-lived recovery path via
+   every brain restart except for a short-lived recovery path via
    `bridge/comm.state`.
 2. **`bridge/comm.state` projection** — a JSON snapshot written on every
-   event, read back by `comm_state.lua` on load to repopulate history after
-   `cp -r`. This capped history recovery at whatever was in RAM when the
+   event, read back by `comm_state.lua` on load to repopulate history after a
+   brain restart. This capped history recovery at whatever was in RAM when the
    last restart happened; it was not durable across reboots or long gaps, and
    it carried no per-profile separation.
 
 Two problems motivated a third layer:
 
-- **Short retention.** History visible after `cp -r` was limited to the events
-  that had arrived since the last brain start, not a meaningful sliding window.
-  A player who disconnects for a few hours returns to an empty comm pane.
+- **Short retention.** History visible after a brain restart was limited to the
+  events that had arrived since the last brain start, not a meaningful sliding
+  window. A player who disconnects for a few hours returns to an empty comm pane.
 - **Profile leakage.** `bridge/comm.state` mixed history from whichever profile
   was active. Switching profiles via the launcher could present a different
   character's communication log to the new session.

@@ -19,7 +19,7 @@ This two-state surface created ongoing maintenance cost:
 ## Decision
 
 The input pane is an integral, always-on component of the cockpit. It is opened
-unconditionally at startup and after `cp -r`. The following affordances are removed:
+unconditionally at startup. The following affordances are removed:
 
 - `cp -i` alias in `ttpp/core/system.tin`
 - `input)` case in `bridge/toggle_pane.sh`

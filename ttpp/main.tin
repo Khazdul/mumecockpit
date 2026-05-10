@@ -14,9 +14,7 @@
 #message {classes}     {off}
 #message {events}      {off}
 
-#nop Wipe tt++'s MOTD banner on initial boot. Skipped on cp -r when
-#nop a game session is active — the game's scrollback must survive
-#nop reloads.
+#nop Wipe tt++'s MOTD banner on initial boot.
 #if {!&game_session} {
     #buffer clear;
     #screen clear all
@@ -45,6 +43,5 @@
 #nop Return to startup session
 #gts
 
-#nop Clean the screen, show welcome, and auto-connect. Guarded against
-#nop cp -r mid-session via the game_session check inside _startup.
+#nop Clean the screen, show welcome, and auto-connect.
 _startup

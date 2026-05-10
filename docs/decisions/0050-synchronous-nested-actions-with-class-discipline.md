@@ -27,9 +27,9 @@ The outer body registered the inner action directly with an `#action` command
 description line. However, the profile class is open for the entire game session
 (per ADR 0049 — the auto-save mechanism expects this). Any `#action` registered
 while the class is open lands in the profile, is written by `#class write` on
-disconnect, and is reloaded on the next session start or `cp -r`. After each
-achievement, a new `^%1$` inner action accumulated in the profile. The only
-remedy was editing the profile file directly.
+disconnect, and is reloaded on the next session start. After each achievement,
+a new `^%1$` inner action accumulated in the profile. The only remedy was
+editing the profile file directly.
 
 ## Decision
 
@@ -74,7 +74,7 @@ only with this table at hand.
 ## Consequences
 
 - The inner action is registered in the `core` class and is discarded after
-  firing. `#info action` after `cp -r` shows the outer marker action only.
+  firing.
 - After any number of achievements, `cp -s` produces a profile file containing
   no `events.emit("achievement"...)` lines and no `^%1$`-pattern actions.
 - Future two-stage triggers inside any `_register_<module>_*` alias body should

@@ -1,10 +1,10 @@
 -- Serialises history and channels to bridge/runtime/comm.state on every change.
 -- Subscribes to gmcp_comm_channel_text and gmcp_comm_channel_list (emitted by
 -- dispatch after comm_log.lua's primary writers have updated state.comm.*).
--- Reads bridge/runtime/comm.state at load time to restore channels after cp -r,
--- working around one-shot Comm.Channel.List on persistent connections.
--- History seeding after cp -r is handled by comm_store.lua (loads after this
--- file alphabetically); this file owns channels-only restore.
+-- Reads bridge/runtime/comm.state at load time to restore channels across brain
+-- restarts, working around one-shot Comm.Channel.List on persistent connections.
+-- History seeding across brain restarts is handled by comm_store.lua (loads
+-- after this file alphabetically); this file owns channels-only restore.
 -- Filter state is owned by bridge/panes/comm_pane.py; this file does not touch it.
 --
 -- Disconnect policy: state.comm.history is NOT cleared on SESSION DISCONNECTED.

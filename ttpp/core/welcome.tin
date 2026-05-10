@@ -1,7 +1,6 @@
 #nop ===== WELCOME =====
 #nop Clear tt++ MOTD noise, show the MUME Cockpit banner, and auto-connect.
-#nop Skipped when a game session is already active (cp -r mid-session
-#nop should not wipe the game screen or attempt a reconnect).
+#nop Skipped when a game session is already active.
 
 #alias {_do_startup} {
     #if {&game_session} {

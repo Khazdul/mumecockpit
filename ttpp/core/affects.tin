@@ -1,6 +1,6 @@
 #nop ===== AFFECTS =====
 #nop Trigger registration alias for the affect tracker.
-#nop Called from SESSION CONNECTED and the cp -r reload chain in system.tin.
+#nop Called from SESSION CONNECTED in system.tin.
 #nop The alias delegates to Lua which iterates affects_data and registers
 #nop one #action per unique converted pattern in the game session.
 

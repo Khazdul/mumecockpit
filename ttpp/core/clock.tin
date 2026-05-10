@@ -1,7 +1,7 @@
 #nop ===== CLOCK =====
 #nop Per-session: 4Hz ticker + action pre-filters for game-time sync.
 #nop Registered into the game session by _register_clock_actions, called
-#nop from SESSION CONNECTED and cp -r in ttpp/core/system.tin.
+#nop from SESSION CONNECTED in ttpp/core/system.tin.
 #nop
 #nop The ticker lives in the game session (not gts) for two reasons:
 #nop   1. tt++ tickers do not fire in the startup session (gts).
