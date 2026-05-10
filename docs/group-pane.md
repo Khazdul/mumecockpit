@@ -2,8 +2,8 @@
 
 A `prompt_toolkit` full-screen application that renders `state.group.members`
 as three horizontal bars per member (HP / Mana / Moves), with the member name
-centred as an overlay across the full row. Anchor-top; overflow indicator when
-the pane is shorter than the member list.
+left-aligned as an overlay starting from column 0. Anchor-top; overflow
+indicator when the pane is shorter than the member list.
 
 ## Architecture
 
@@ -95,20 +95,20 @@ For null `*_pct`: `fill = 0` (empty bar, no overlay text colouring).
 
 The same threshold is applied uniformly to all three bars:
 
-| Condition          | Bar BG    | Bar FG (▌) |
-|--------------------|-----------|------------|
-| `pct <= 0.25`      | `#e02020` | `#e02020`  |
-| `0.25 < pct ≤ 0.45`| `#ff7020` | `#ff7020`  |
-| `pct > 0.45`       | default   | default    |
-| `pct is null`      | default   | default    |
+| Condition           | Bar BG    |
+|---------------------|-----------|
+| `pct <= 0.25`       | `#e02020` |
+| `0.25 < pct ≤ 0.45` | `#ff7020` |
+| `pct > 0.45`        | default   |
+| `pct is null`       | default   |
 
 Default colours:
 
-| Bar  | BG       | FG (▌)   |
-|------|----------|----------|
-| HP   | `#0a8a30`| `#0a8a30`|
-| Mana | `#1f5fcc`| `#1f5fcc`|
-| MP   | `#a07030`| `#a07030`|
+| Bar  | BG        |
+|------|-----------|
+| HP   | `#0a8a30` |
+| Mana | `#1f5fcc` |
+| MP   | `#a07030` |
 
 > **Note — MP thresholds:** MP bands in `group_collector.lua` are still
 > placeholder (calibration pending server data; see ADR 0052). At band
@@ -116,22 +116,15 @@ Default colours:
 > ≤45 %/≤25 % threshold on whatever `mp_pct` it receives. Mis-categorisation
 > is visible (orange or red MP bar) and accepted; it is not hidden.
 
-### ▌ marker
-
-When `fill >= bar_w` (visually full), the rightmost column renders `▌` in the
-bar's FG colour with no background. Otherwise that column is a plain space
-following the normal fill rule. Adjacent empty bars merge visually on any
-terminal background.
-
 ### Name overlay (full row)
 
-The member `name` is centred horizontally across the entire row (`W` columns),
+The member `name` is left-aligned from column 0 across the row (`W` columns),
 truncated to `W` chars without an ellipsis:
 
 ```python
 name_trunc = name[:W]
-name_start = (W - len(name_trunc)) // 2
-name_end   = name_start + len(name_trunc)
+name_start = 0
+name_end   = len(name_trunc)
 ```
 
 At narrow widths a long name visibly extends across HP / Mana / MP bar
@@ -142,9 +135,6 @@ and whether that column is within the bar's fill:
 |-------------------------|-----------|--------------|
 | `local < bar_fill`      | `#000000` | that bar's BG|
 | `local >= bar_fill`     | `#cccccc` | terminal BG  |
-
-The ▌ marker rule wins over any name character: when `fill >= bar_w` and the
-column is the rightmost of its bar, `▌` is rendered in the bar's FG (no BG).
 
 When `member.name` is `null` in the state file, no overlay is rendered
 (all columns follow plain-bar fill rules with spaces).

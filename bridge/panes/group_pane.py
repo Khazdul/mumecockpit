@@ -76,14 +76,14 @@ def _bar_widths(total):
 
 
 def _bar_palette(pct, default_bg, default_fg):
-    """Return (style_fill, style_sep) for a bar based on pct threshold."""
+    """Return style_fill for a bar based on pct threshold."""
     if pct is not None and pct <= 0.25:
-        bg, fg = RED_BG, RED_FG
+        bg = RED_BG
     elif pct is not None and pct <= 0.45:
-        bg, fg = ORANGE_BG, ORANGE_FG
+        bg = ORANGE_BG
     else:
-        bg, fg = default_bg, default_fg
-    return f"bg:{bg}", f"fg:{fg}"
+        bg = default_bg
+    return f"bg:{bg}"
 
 
 # ---------------------------------------------------------------------------
@@ -94,10 +94,9 @@ def _member_frags(member, W):
     """Return prompt_toolkit fragments for one member row at terminal width W.
 
     Three bars fill all W columns (no name prefix column). The member name
-    is centred as an overlay across the entire row. Per-column style: black
+    is left-aligned from column 0 across the row. Per-column style: black
     on bar-BG when the column is within that bar's fill, grey on terminal-BG
-    when outside fill. The ▌ marker wins at the rightmost column of any bar
-    when that bar is full.
+    when outside fill.
     """
     hp_pct   = member.get("hp_pct")
     mana_pct = member.get("mana_pct")
@@ -119,8 +118,8 @@ def _member_frags(member, W):
         styles.append(_bar_palette(pct, bar_default_bgs[i], bar_default_fgs[i]))
 
     name_trunc = name[:W]
-    name_start = (W - len(name_trunc)) // 2
-    name_end   = name_start + len(name_trunc)
+    name_start = 0
+    name_end   = len(name_trunc)
 
     frags = []
     for c in range(W):
@@ -131,13 +130,11 @@ def _member_frags(member, W):
         else:
             bi, local = 2, c - bar_hp_w - bar_mana_w
 
-        bw                    = bar_widths_list[bi]
-        fill                  = fills[bi]
-        style_fill, style_sep = styles[bi]
+        bw         = bar_widths_list[bi]
+        fill       = fills[bi]
+        style_fill = styles[bi]
 
-        if local == bw - 1 and fill >= bw:
-            frags.append((style_sep, "▌"))
-        elif name_start <= c < name_end:
+        if name_start <= c < name_end:
             ch = name_trunc[c - name_start]
             if local < fill:
                 frags.append((C_NAME_ON_FILL + " " + style_fill, ch))

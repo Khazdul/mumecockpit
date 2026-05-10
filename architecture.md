@@ -78,6 +78,7 @@ tracking, and UI feedback.
 │   │   ├── input_pane.py     # Input pane — CLI, forwards to TT++, right-aligned menu bar
 │   │   ├── comm_pane.py      # Comm pane — clickable channel-filter header + scrollable history
 │   │   ├── buffs_pane.py     # Buffs pane — affect grid (grouped, bar drain, blink)
+│   │   ├── group_pane.py     # Group pane — member HP/Mana/Moves bars with name overlay
 │   │   ├── status_pane.py    # Status pane — polls status.state
 │   │   └── ui_pane.py        # UI pane — tails logs/ui.log
 │   ├── layout/               # Pane/layout state mutations
@@ -104,6 +105,7 @@ tracking, and UI feedback.
 │   │   ├── layout.conf       # Persisted layout state (keys: ui_width, window_cols)
 │   │   ├── status.state      # Character status JSON written by status_state.lua
 │   │   ├── buffs.state       # Affect grid snapshot written by buffs_state.lua
+│   │   ├── group.state       # Group member vitals JSON written by group_state.lua
 │   │   ├── comm.state        # Comm history + channel projection
 │   │   ├── comm_filters.conf # Persisted channel filter overrides, sparse map
 │   │   ├── connection.state  # Runtime state written by Lua on SESSION CONNECTED
@@ -165,8 +167,9 @@ tracking, and UI feedback.
 │  pane 0 (top-left):  TinTin++ — game I/O │
 │  pane 1 (top-right): status — status_pane.py  │
 │  pane 1b (right):    buffs — buffs_pane.py    │
-│  pane 1c (right):    comm — comm_pane.py      │
-│  pane 1d (right):    ui  — ui_pane.py         │
+│  pane 1c (right):    group — group_pane.py    │
+│  pane 1d (right):    comm — comm_pane.py      │
+│  pane 1e (right):    ui  — ui_pane.py         │
 │  pane 2 (right):     dev — tail debug.log     │
 │  pane 0b (full-width bottom):             │
 │                      input — prompt_toolkit│
