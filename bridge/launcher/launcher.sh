@@ -58,6 +58,7 @@ if [ ! -f "$CONF" ]; then
     printf 'connection_mode=mmapper\n'                             >> "$CONF"
     printf 'show_status=1\n'                                       >> "$CONF"
     printf 'show_buffs=1\n'                                        >> "$CONF"
+    printf 'show_group=0\n'                                        >> "$CONF"
     printf 'show_comm=1\n'                                         >> "$CONF"
     printf 'show_ui=1\n'                                           >> "$CONF"
     printf 'show_dev=0\n'                                          >> "$CONF"
@@ -72,6 +73,7 @@ show_ui="${show_ui:-1}"
 show_dev="${show_dev:-0}"
 show_status="${show_status:-0}"
 show_buffs="${show_buffs:-1}"
+show_group="${show_group:-0}"
 show_comm="${show_comm:-0}"
 show_pane_dividers="${show_pane_dividers:-1}"
 profile="${profile:-default}"
@@ -84,6 +86,7 @@ _save_conf() {
     printf 'connection_mode=%s\n'    "$connection_mode"            >> "$CONF"
     printf 'show_status=%s\n'        "$show_status"                >> "$CONF"
     printf 'show_buffs=%s\n'         "$show_buffs"                 >> "$CONF"
+    printf 'show_group=%s\n'         "$show_group"                 >> "$CONF"
     printf 'show_comm=%s\n'          "$show_comm"                  >> "$CONF"
     printf 'show_ui=%s\n'            "$show_ui"                    >> "$CONF"
     printf 'show_dev=%s\n'           "$show_dev"                   >> "$CONF"
@@ -245,13 +248,14 @@ _options_menu() {
     local _dev="$show_dev"
     local _sts="$show_status"
     local _buf="$show_buffs"
+    local _grp="$show_group"
     local _comm="$show_comm"
     local _pdv="$show_pane_dividers"
     local _conn="$connection_mode"
 
-    # Selectable items: 0=Status 1=Buffs 2=Comm 3=UI 4=Dev 5=PaneDividers 6=MMapper 7=Direct 8=Back
+    # Selectable items: 0=Status 1=Buffs 2=Group 3=Comm 4=UI 5=Dev 6=PaneDividers 7=MMapper 8=Direct 9=Back
     local _osel=0
-    local _OCOUNT=9
+    local _OCOUNT=10
 
     _oitem() {
         local idx="$1" label="$2"
@@ -271,9 +275,10 @@ _options_menu() {
     _render_opts() {
         local cols; cols=$(term_cols)
         local rows; rows=$(term_lines)
-        local chk_sts="[ ]" chk_buf="[ ]" chk_comm="[ ]" chk_ui="[ ]" chk_dev="[ ]" chk_pdv="[ ]"
+        local chk_sts="[ ]" chk_buf="[ ]" chk_grp="[ ]" chk_comm="[ ]" chk_ui="[ ]" chk_dev="[ ]" chk_pdv="[ ]"
         [ "$_sts"  -eq 1 ] && chk_sts="[x]"
         [ "$_buf"  -eq 1 ] && chk_buf="[x]"
+        [ "$_grp"  -eq 1 ] && chk_grp="[x]"
         [ "$_comm" -eq 1 ] && chk_comm="[x]"
         [ "$_ui"   -eq 1 ] && chk_ui="[x]"
         [ "$_dev"  -eq 1 ] && chk_dev="[x]"
@@ -292,6 +297,7 @@ _options_menu() {
         local _opt_labels=(
             "$chk_sts Character pane"
             "$chk_buf Buffs pane"
+            "$chk_grp Group pane"
             "$chk_comm Comm pane"
             "$chk_ui UI pane"
             "$chk_dev Dev pane"
@@ -319,16 +325,17 @@ _options_menu() {
             [ "$show_headings" -eq 1 ] && _section_hdr "Panes"
             _oitem 0 "$chk_sts Character pane"
             _oitem 1 "$chk_buf Buffs pane"
-            _oitem 2 "$chk_comm Comm pane"
-            _oitem 3 "$chk_ui UI pane"
-            _oitem 4 "$chk_dev Dev pane"
-            _oitem 5 "$chk_pdv Pane dividers"
+            _oitem 2 "$chk_grp Group pane"
+            _oitem 3 "$chk_comm Comm pane"
+            _oitem 4 "$chk_ui UI pane"
+            _oitem 5 "$chk_dev Dev pane"
+            _oitem 6 "$chk_pdv Pane dividers"
             printf '\n'
             [ "$show_headings" -eq 1 ] && _section_hdr "Connection"
-            _oitem 6 "$r_mm MMapper  (localhost:4242)"
-            _oitem 7 "$r_di Direct   (mume.org:4242)"
+            _oitem 7 "$r_mm MMapper  (localhost:4242)"
+            _oitem 8 "$r_di Direct   (mume.org:4242)"
             printf '\n'
-            _oitem 8 "    Back"
+            _oitem 9 "    Back"
             if [ "$show_mockup" -eq 1 ]; then
                 printf '\n'
                 draw_layout_mockup "$_ui" "$_dev" 1 "$show_desc" "$_pdv" "$_sts" "$_comm" "$_buf"
@@ -355,20 +362,23 @@ _options_menu() {
                 case "$_osel" in
                     0) _sts=$(( 1 - _sts )) ;;
                     1) _buf=$(( 1 - _buf )) ;;
-                    2) _comm=$(( 1 - _comm )) ;;
-                    3) _ui=$(( 1 - _ui )) ;;
-                    4) _dev=$(( 1 - _dev )) ;;
-                    5) _pdv=$(( 1 - _pdv )) ;;
-                    6) _conn="mmapper" ;;
-                    7) _conn="direct" ;;
-                    8) show_ui="$_ui"; show_dev="$_dev"; show_status="$_sts"
-                       show_buffs="$_buf"; show_comm="$_comm"; show_pane_dividers="$_pdv"
-                       connection_mode="$_conn"; _save_conf; return ;;
+                    2) _grp=$(( 1 - _grp )) ;;
+                    3) _comm=$(( 1 - _comm )) ;;
+                    4) _ui=$(( 1 - _ui )) ;;
+                    5) _dev=$(( 1 - _dev )) ;;
+                    6) _pdv=$(( 1 - _pdv )) ;;
+                    7) _conn="mmapper" ;;
+                    8) _conn="direct" ;;
+                    9) show_ui="$_ui"; show_dev="$_dev"; show_status="$_sts"
+                       show_buffs="$_buf"; show_group="$_grp"; show_comm="$_comm"
+                       show_pane_dividers="$_pdv"; connection_mode="$_conn"
+                       _save_conf; return ;;
                 esac
                 ;;
             ESC) show_ui="$_ui"; show_dev="$_dev"; show_status="$_sts"
-                 show_buffs="$_buf"; show_comm="$_comm"; show_pane_dividers="$_pdv"
-                 connection_mode="$_conn"; _save_conf; return ;;
+                 show_buffs="$_buf"; show_group="$_grp"; show_comm="$_comm"
+                 show_pane_dividers="$_pdv"; connection_mode="$_conn"
+                 _save_conf; return ;;
         esac
     done
 }

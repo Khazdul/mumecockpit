@@ -38,7 +38,7 @@ STATUS_STATE_PATH = os.path.join(RUNTIME_DIR, "status.state")
 STARTUP_CONF_PATH = os.path.join(RUNTIME_DIR, "startup.conf")
 LAYOUT_CONF_PATH  = os.path.join(RUNTIME_DIR, "layout.conf")
 MENU_POLL_MS      = 0.25
-MENU_WIDTH        = 29
+MENU_WIDTH        = 36
 
 # Layout constants duplicated from bridge/layout/on_window_resize.sh.
 # Keep in sync; see ADR 0031 and ADR 0038.
@@ -60,6 +60,7 @@ _menu_time_transition_at = None   # float (unix epoch) or None
 _menu_time_precision     = None   # "MINUTE"/"HOUR"/None
 _menu_show_status    = False
 _menu_show_buffs     = False
+_menu_show_group     = False
 _menu_show_comm      = False
 _menu_show_ui        = False
 _menu_ui_width       = 50
@@ -521,6 +522,7 @@ def _make_btn_handler(pane):
 
 _BTN_STATUS = _make_btn_handler("status")
 _BTN_BUFFS  = _make_btn_handler("buffs")
+_BTN_GROUP  = _make_btn_handler("group")
 _BTN_COMM   = _make_btn_handler("comm")
 _BTN_UI     = _make_btn_handler("ui")
 
@@ -534,14 +536,15 @@ def _menu_visible():
 
 
 def _menu_text():
-    """Fragments for the 29-col right-aligned CHAR/BUFFS/COM/UI/clock menu bar.
+    """Fragments for the 36-col right-aligned CHAR/BUFFS/GROUP/COM/UI/clock menu bar.
 
-    Layout: █CHAR▌█BUFFS▌█COM▌█UI█ <time> <icon>
-    Total = 6+7+5+4+1+6 = 29 columns.
+    Layout: █CHAR▌█BUFFS▌█GROUP▌█COM▌█UI█ <time> <icon>
+    Total = 6+7+7+5+4+1+6 = 36 columns.
     """
     buttons = [
         ("CHAR",  _menu_show_status, _BTN_STATUS),
         ("BUFFS", _menu_show_buffs,  _BTN_BUFFS),
+        ("GROUP", _menu_show_group,  _BTN_GROUP),
         ("COM",   _menu_show_comm,   _BTN_COMM),
         ("UI",    _menu_show_ui,     _BTN_UI),
     ]
@@ -599,7 +602,7 @@ async def _clock_tick(app):
 
 async def _poll_menu(app):
     global _menu_time_period, _menu_time_transition_at, _menu_time_precision
-    global _menu_show_status, _menu_show_buffs, _menu_show_comm, _menu_show_ui, _menu_ui_width
+    global _menu_show_status, _menu_show_buffs, _menu_show_group, _menu_show_comm, _menu_show_ui, _menu_ui_width
     global _menu_status_mtime, _menu_conf_mtime, _menu_layout_mtime
 
     while True:
@@ -634,7 +637,7 @@ async def _poll_menu(app):
                     _menu_time_precision     = None
                     changed = True
 
-        # startup.conf — show_status, show_comm, show_ui
+        # startup.conf — show_status, show_buffs, show_group, show_comm, show_ui
         try:
             cmtime = os.stat(STARTUP_CONF_PATH).st_mtime
         except OSError:
@@ -645,11 +648,13 @@ async def _poll_menu(app):
             conf = _parse_startup_conf(STARTUP_CONF_PATH)
             ss = _conf_bool(conf, "show_status")
             sb = _conf_bool(conf, "show_buffs")
+            sg = _conf_bool(conf, "show_group")
             sc = _conf_bool(conf, "show_comm")
             su = _conf_bool(conf, "show_ui")
-            if ss != _menu_show_status or sb != _menu_show_buffs or sc != _menu_show_comm or su != _menu_show_ui:
+            if ss != _menu_show_status or sb != _menu_show_buffs or sg != _menu_show_group or sc != _menu_show_comm or su != _menu_show_ui:
                 _menu_show_status = ss
                 _menu_show_buffs  = sb
+                _menu_show_group  = sg
                 _menu_show_comm   = sc
                 _menu_show_ui     = su
                 changed = True
