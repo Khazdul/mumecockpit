@@ -24,6 +24,7 @@ fi
 # Clear any stale sentinels left by a crash before doing anything else.
 rm -f bridge/runtime/.return_to_menu
 rm -f bridge/runtime/.popup_open
+rm -f bridge/runtime/.user_reconnecting
 rm -f bridge/runtime/.layout_ready
 
 CONF="bridge/runtime/startup.conf"

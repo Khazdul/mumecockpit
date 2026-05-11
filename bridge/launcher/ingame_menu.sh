@@ -41,6 +41,7 @@ _rebuild_menu() {
 
     if [ "$connected" -eq 1 ]; then
         _ITEMS+=("Continue");  _ACTIONS+=("continue")
+        _ITEMS+=("Reconnect"); _ACTIONS+=("reconnect")
     else
         _ITEMS+=("Reconnect"); _ACTIONS+=("reconnect")
     fi

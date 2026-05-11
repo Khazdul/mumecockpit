@@ -4,6 +4,7 @@
 -- Depends on: system_ui, ui_var, dbg (ui.lua), tintin_cmd, tintin (io.lua)
 
 local CONNECTION_STATE_PATH = "bridge/runtime/connection.state"
+local USER_RECONNECT_PATH   = "bridge/runtime/.user_reconnecting"
 
 GAME_SESSION = nil  -- set dynamically when a game session connects
 
@@ -19,6 +20,27 @@ end
 function _clear_connection_state()
     os.remove(CONNECTION_STATE_PATH)
 end
+
+-- User-initiated reconnect sentinel. Set by the reconnect alias before the
+-- disconnect step; single-shot eaten by mark_mume_disconnected() so the
+-- transient disconnect signal does not auto-open the popup mid-reconnect.
+local function _mark_user_reconnecting()
+    local f = io.open(USER_RECONNECT_PATH, "w")
+    if f then f:close() end
+end
+
+local function _clear_user_reconnecting()
+    os.remove(USER_RECONNECT_PATH)
+end
+
+local function _is_user_reconnecting()
+    local f = io.open(USER_RECONNECT_PATH, "r")
+    if f then f:close(); return true end
+    return false
+end
+
+function mark_user_reconnecting()  _mark_user_reconnecting()  end
+function clear_user_reconnecting() _clear_user_reconnecting() end
 
 local function _popup_is_open()
     local f = io.open("bridge/runtime/.popup_open", "r")
@@ -50,7 +72,11 @@ function mark_mume_disconnected()
     _clear_connection_state()
     local name = state.char.name or "Character"
     system_ui(ui_var(name) .. " logged out.")
-    if not _popup_is_open() then _open_popup() end
+    if _is_user_reconnecting() then
+        _clear_user_reconnecting()
+    elseif not _popup_is_open() then
+        _open_popup()
+    end
     events.emit("run_ending")
     if state.run and state.run.reset then state.run.reset() end
     if state.char and state.char.reset then state.char.reset() end

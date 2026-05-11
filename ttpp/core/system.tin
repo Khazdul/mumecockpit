@@ -27,11 +27,20 @@
 #alias {mume}    {connect}
 
 #nop `reconnect` — mode-aware reconnect - routes on $_ses_cmd and &game_session.
+#nop MMapper mode bounces _disconnect → _connect (raw _connect on a live link
+#nop is rejected by MMapper as "already connected"). The user-reconnect sentinel
+#nop is set before the disconnect step so the transient disconnect signal does
+#nop not auto-open the popup — mark_mume_disconnected eats it single-shot.
 #alias {reconnect} {
     #if {"$_ses_cmd" == "ses"} {
         #if {&game_session} {
-            #lua {system_ui("Sending _connect to MMapper.")};
-            #$game_session _connect
+            #lua {mark_user_reconnecting()};
+            #lua {system_ui("Reconnecting (MMapper mode) — disconnect + connect.")};
+            #$game_session _disconnect;
+            #delay {1} {
+                #$game_session _connect;
+                #lua {clear_user_reconnecting()}
+            }
         } {
             #lua {system_ui("Opening new session (MMapper mode).")};
             connect
@@ -39,9 +48,13 @@
     } {
         #if {"$_ses_cmd" == "ssl"} {
             #if {&game_session} {
+                #lua {mark_user_reconnecting()};
                 #lua {system_ui("Reconnecting (direct mode) — zapping and rebuilding.")};
                 #$game_session #zap;
-                #delay {1} {connect}
+                #delay {1} {
+                    connect;
+                    #lua {clear_user_reconnecting()}
+                }
             } {
                 #lua {system_ui("Opening new session (direct mode).")};
                 connect

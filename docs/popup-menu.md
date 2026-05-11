@@ -12,10 +12,20 @@ keybinding in `tmux_start.sh` — this works regardless of pane focus.
 The popup renders via `bridge/launcher/ingame_menu.sh`, sharing `bridge/launcher/menu_render.sh`
 helpers with the launcher.
 
-The top menu item is context-aware: "Continue" when connected (dismisses
-popup) or "Reconnect" when disconnected (fires `reconnect` alias then
-dismisses). Both states are rebuilt from `bridge/runtime/connection.state` on every
-render.
+The top menu items are context-aware, rebuilt from `bridge/runtime/connection.state`
+on every render:
+
+- **Connected:** Continue (dismisses popup) and Reconnect (fires `reconnect`
+  alias then dismisses). Continue is pre-highlighted. Reconnect is exposed
+  even when connected so the player has a UX path for silent disconnects
+  (half-open TCP), where `connection.state` still exists but the link is
+  dead.
+- **Disconnected:** Reconnect only. Pre-highlighted so the player can
+  hit Enter immediately.
+
+Selecting Reconnect from either state routes through the same `reconnect`
+alias in `ttpp/core/system.tin`, which sets the user-reconnect sentinel
+before the disconnect step — see "Auto-open on disconnect" below.
 
 ## Status header
 
@@ -84,6 +94,18 @@ All disconnect signals route through this single function:
 **Dedup:** The transition guard in `mark_mume_disconnected()` returns early
 when `connection.state` is already absent, so a second signal for the same
 disconnect event never reaches the popup trigger.
+
+**User-reconnect suppression:** The `reconnect` alias deliberately produces
+a transient disconnect signal (MMapper `_disconnect` or direct-mode `#zap`)
+before issuing the follow-up connect. To prevent that transient from
+opening a spurious popup mid-reconnect, the alias writes
+`bridge/runtime/.user_reconnecting` before the disconnect step.
+`mark_mume_disconnected()` checks for this sentinel and, if present,
+removes it and skips the popup auto-open (single-shot eat). The alias
+also clears the sentinel from the post-`#delay` body as belt-and-braces.
+A second, genuine disconnect after the sentinel has been eaten opens the
+popup normally. See [docs/session-lifecycle.md](session-lifecycle.md) and
+ADR 0058 for full semantics.
 
 **Double-open guard:** `bridge/launcher/ingame_menu.sh` writes `bridge/runtime/.popup_open`
 on start and removes it on exit (via the `EXIT INT TERM HUP` trap). The

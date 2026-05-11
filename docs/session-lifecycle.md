@@ -103,11 +103,39 @@ panes (status, buffs, group, comm) test for file existence to gate
 rendering. The connection-mode label in the popup status header is
 sourced from `bridge/runtime/startup.conf`, not from this file.
 
+### User-reconnect sentinel (`bridge/runtime/.user_reconnecting`)
+
+A single-shot sentinel that suppresses the disconnect-popup auto-open
+during a user-initiated `reconnect`. Without it, the transient disconnect
+signal that the reconnect alias deliberately produces (MMapper `_disconnect`
+or direct-mode `#zap`) would race ahead of the follow-up `_connect`/`connect`
+and pop the menu mid-reconnect.
+
+- **Writer:** `ttpp/core/system.tin` — the `reconnect` alias calls
+  `#lua {mark_user_reconnecting()}` before the disconnect step, and
+  `#lua {clear_user_reconnecting()}` from the post-`#delay` body as
+  belt-and-braces (in case the disconnect signal never arrives).
+- **Reader:** `lua/brain/connection.lua` — `mark_mume_disconnected()`
+  checks the sentinel. When present it is removed and the popup
+  auto-open is skipped (single-shot eat). All other disconnect-side
+  work (state clear, `system_ui` logout line, `run_ending` emit, resets)
+  still runs unchanged.
+- **Semantics:** single-shot. A second disconnect after the sentinel is
+  eaten opens the popup normally — a real disconnect following a
+  user-initiated reconnect is not suppressed.
+- **Stale cleanup:** `bridge/launcher/tmux_start.sh` removes the file at
+  the top of each run alongside the other startup sentinels.
+
+See ADR 0058 for the design rationale and rejected alternatives.
+
 ### Known limitations
 
-- **Silent disconnect (half-open TCP)** — not detected. Neither GMCP nor
-  the MMapper text trigger fires. The player must invoke `Reconnect` manually
-  from the popup. ADR link forthcoming.
+- **Silent disconnect (half-open TCP)** — not detected automatically.
+  Neither GMCP nor the MMapper text trigger fires. The player has a clean
+  UX path: ESC opens the popup (Reconnect appears beneath Continue
+  whenever `connection.state` exists), and selecting Reconnect routes
+  through the sentinel-protected alias so a successful reconnect does
+  not produce a spurious popup. See ADR 0058.
 - **Bootstrap window** — the tt++ session opens before `Char.Name` arrives
   (~0.5–2 s). During this window `connection.state` is absent and the popup
   shows "Disconnected". The reconnect alias handles this correctly; a
