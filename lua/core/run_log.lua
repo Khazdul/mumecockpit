@@ -40,6 +40,9 @@ end
 -- Arms the tt++ _run_log_path variable so the RECEIVED LINE event handler
 -- starts writing timestamped lines to the .log file. Lua only manages the
 -- variable; tt++ handles all per-line I/O (no Lua dispatch on the hot path).
+-- session_cmd wraps the registration in #class {core} {open}/{close} so
+-- _run_log_path lives in {core}, not the profile class — #class write
+-- {<profile>} on auto-save correctly excludes it.
 local function _open_log(ts)
     if not GAME_SESSION then
         dbg("[RUN_LOG] _open_log: no game session, skipping")
@@ -49,13 +52,13 @@ local function _open_log(ts)
                      .. os.date("%Y-%m-%dT%H-%M-%S", ts)
                      .. ".log"
     os.execute("touch '" .. log_path .. "' 2>/dev/null")
-    tintin_cmd(GAME_SESSION, "#var {_run_log_path} {" .. log_path .. "}")
+    session_cmd("#var {_run_log_path} {" .. log_path .. "}")
     dbg("[RUN_LOG] .log path armed: " .. log_path)
 end
 
 local function _close_log()
     if not GAME_SESSION then return end
-    tintin_cmd(GAME_SESSION, "#unvar _run_log_path")
+    session_cmd("#unvar _run_log_path")
     dbg("[RUN_LOG] .log path cleared")
 end
 

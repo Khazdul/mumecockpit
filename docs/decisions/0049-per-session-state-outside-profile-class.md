@@ -1,6 +1,6 @@
 # ADR 0049 — Per-session capture state stays out of the profile class
 
-**Status:** Accepted  
+**Status:** Accepted (amended 2026-05-11)  
 **Date:** 2026-05-09
 
 ## Context
@@ -36,6 +36,37 @@ The visible symptom was a one-step lag: every run wrote to the
 showed the correct current path, but the registered event ignored
 it because the path was already baked into the body string.
 
+## Update (2026-05-11): structural fix
+
+The original decision was a workaround at the registration layer:
+`#unevent` / `#unvar` before re-register, accepting that the
+profile class would still acquire stale state across saves.
+
+The structural fix puts per-session capture state in the `{core}`
+class by construction:
+
+- **Lua side.** `_open_log` / `_close_log` register `_run_log_path`
+  via `session_cmd()` instead of raw `tintin_cmd(GAME_SESSION, ...)`.
+  `session_cmd()` brackets the registration in
+  `#class {core} {open}` / `#class {core} {close}`, so the variable
+  lands in `{core}`.
+- **tt++ side.** `_register_run_log_capture` brackets the
+  `#event {RECEIVED LINE}` registration in `#class {core} {open}` /
+  `#class {core} {close}`, so the event itself is owned by `{core}`.
+  The event body additionally wraps its `#format _ts {%U}` line in
+  the same way, so the per-line timestamp variable `_ts` is created
+  and updated in `{core}` regardless of which class is active when
+  the event fires. `#format _ts {%U}` remains a top-level statement
+  in the event body — the wrap is inline, not function indirection,
+  so per-fire `%U` freshness is preserved.
+
+Profile auto-save (`#class write {<profile>}`) now correctly
+excludes this state because it only serializes profile-class items.
+The unset-before-register hygiene survives only as a transitional
+safeguard for legacy profile files that already contain baked-in
+state from the pre-`{core}` architecture; it can be removed once
+all known profiles have been resaved under the new model.
+
 ## Decision
 
 Per-session capture state must not persist across tt++ sessions.
@@ -68,10 +99,18 @@ fragile ordering constraints.
 
 **(b) Store `_run_log_path` in the gts namespace instead of the
 session class.** Would isolate it from profile auto-save. Rejected
-because the `#event {RECEIVED LINE}` body that reads the variable
-runs in the game session; cross-session variable lookups via
-`@ses{$var}` are syntactically heavier and would muddy the
-registration pattern.
+at the time because the `#event {RECEIVED LINE}` body that reads
+the variable runs in the game session; cross-session variable
+lookups via `@ses{$var}` were thought to be syntactically heavier
+and would muddy the registration pattern.
+
+The 2026-05-11 amendment inverts this rationale. The relevant
+infrastructure — `session_cmd()` on the Lua side, `#class {core}
+{open}/{close}` on the tt++ side — already exists for exactly this
+purpose, and the variable still lives in the game session (just in
+a different class). No `@ses{...}` lookups are needed; the
+registration pattern is in fact cleaner than the unset-before-
+register workaround it replaces.
 
 **(c) Pass the path as an event argument instead of a variable.**
 Not directly possible — tt++ event arguments (`%0..%99`) are line
@@ -95,20 +134,30 @@ self-documenting in the alias body.
 
 ## Consequences
 
-- `_register_run_log_capture` is idempotent across SESSION
-  CONNECTED, and the unset-before-register pattern protects
-  against stale state injected by profile-class auto-save.
+- Per-session capture state lives in `{core}` by construction —
+  `_run_log_path` via `session_cmd()`, the `RECEIVED LINE` event
+  and `_ts` via the `#class {core} {open}/{close}` wraps in
+  `_register_run_log_capture`. Profile auto-save no longer
+  acquires this state because `#class write {<profile>}`
+  serializes only profile-class items.
+- The `#unevent {RECEIVED LINE}` / `#unvar _run_log_path` lines
+  in `_register_run_log_capture` remain only as transitional
+  hygiene for legacy profile files that already contain baked-in
+  pre-`{core}` state. They may be removed in a future release
+  once all known profile files have been resaved under the new
+  architecture.
+- `_register_run_log_capture` is still idempotent across SESSION
+  CONNECTED — re-registering the same event in the same class is
+  a no-op modulo body replacement.
 - Lines arriving between SESSION CONNECTED and the first
   Char.Vitals (~1 s of login screen) are correctly not written,
   because `_run_log_path` is unset and the event body no-ops via
   `#if {&_run_log_path}`.
-- Profile files may still contain stale `_run_log_path` values
-  and event bodies, but the unset-before-register pattern makes
-  that harmless. Profile cleanliness is not asserted.
 - Future capture features (e.g., a possible RECEIVED INPUT mirror
-  for player commands) should follow the same pattern: explicit
-  `#unevent` and `#unvar` for any state they own, before
-  re-registering.
+  for player commands) should follow the structural model:
+  register infrastructure state in `{core}` via `session_cmd()`
+  (Lua) or explicit `#class {core} {open}/{close}` wraps (tt++),
+  not in the profile class.
 
 ## Relation to other ADRs
 

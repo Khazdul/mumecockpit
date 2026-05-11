@@ -3,16 +3,28 @@
 #nop inlines #format %U directly so each firing gets a fresh microsecond
 #nop timestamp. Function indirection reuses the same %U evaluation across
 #nop all events in a tight batch, causing duplicate timestamps.
+#nop
+#nop Both the event and the per-session vars (_run_log_path, _ts) live in
+#nop {core}, not the profile class. Registration is bracketed in
+#nop #class {core} {open}/{close}, and the event body wraps the
+#nop #format _ts {%U} line the same way so _ts is created and updated in
+#nop {core} regardless of which class is active when the event fires.
+#nop Profile auto-save (#class write {<profile>}) therefore excludes them.
 
 #alias {_register_run_log_capture %1} {
     #if {"%1" != ""} {
+        #nop {Transitional hygiene: strips stale state loaded from legacy profile files that pre-date the move to the core class. May be removed once all known profile files have been saved under the current architecture.};
         #%1 #unevent {RECEIVED LINE};
         #%1 #unvar _run_log_path;
+        #%1 #class {core} {open};
         #%1 #event {RECEIVED LINE} {
             #if {&_run_log_path} {
+                #class {core} {open};
                 #format _ts {%%U};
+                #class {core} {close};
                 #line log $_run_log_path {$_ts %%0}
             }
-        }
+        };
+        #%1 #class {core} {close}
     }
 }
