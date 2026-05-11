@@ -1,16 +1,23 @@
 # In-Game Popup Menu
 
-Implementation details for `bridge/launcher/ingame_menu.sh` — the ESC-triggered
+Implementation details for `bridge/launcher/ingame_menu.py` — the ESC-triggered
 overlay that appears during play. Touch this file when changing popup
 submenus, the status header, `cp -s` internals, or toggle-pane persistence
 behaviour.
 
 ## Overview
 
-ESC from any pane opens a tmux display-popup overlay via a tmux root
+ESC from any pane opens a tmux `display-popup` overlay via a tmux root
 keybinding in `tmux_start.sh` — this works regardless of pane focus.
-The popup renders via `bridge/launcher/ingame_menu.sh`, sharing `bridge/launcher/menu_render.sh`
-helpers with the launcher.
+The popup body is `bridge/launcher/ingame_menu.py`, a `prompt_toolkit`
+full-screen `Application`. `bridge/launcher/ingame_menu.sh` is a thin
+wrapper that `exec`s the Python entry; both the tmux root binding and
+the Lua auto-open path in `lua/brain/connection.lua` invoke the wrapper.
+
+The UI is a frame stack: a single `DynamicContainer` swaps between
+`main`, `options`, `scripts`, and `exit_confirm` containers, pushed and
+popped via `_push_frame` / `_pop_frame`. Each frame owns its own
+`KeyBindings` filter so navigation, scroll, and ESC behave per-frame.
 
 The top menu items are context-aware, rebuilt from `bridge/runtime/connection.state`
 on every render:
@@ -20,12 +27,29 @@ on every render:
   even when connected so the player has a UX path for silent disconnects
   (half-open TCP), where `connection.state` still exists but the link is
   dead.
-- **Disconnected:** Reconnect only. Pre-highlighted so the player can
-  hit Enter immediately.
+- **Disconnected:** Reconnect only (no Continue). Pre-highlighted so the
+  player can hit Enter immediately.
 
 Selecting Reconnect from either state routes through the same `reconnect`
 alias in `ttpp/core/system.tin`, which sets the user-reconnect sentinel
 before the disconnect step — see "Auto-open on disconnect" below.
+
+## Input
+
+- **ESC** — on the main frame, dismisses the popup. On any submenu
+  (`options`, `scripts`, `exit_confirm`), pops one frame back toward
+  `main`. ESC bindings use `eager=True` to bypass prompt_toolkit's
+  key-disambiguation timeout; `app.ttimeoutlen` / `app.timeoutlen` are
+  also lowered to 50 ms so bare ESC feels instant.
+- **Arrow keys** — navigate within the current frame's selectable rows
+  (wrap-around). PageUp/PageDown in the Scripts frame scrolls by ten
+  rows.
+- **Enter / Space** — activates the highlighted row. In `exit_confirm`,
+  Y confirms; any other key cancels back to main.
+- **Mouse click** — clicks on a row both select and activate it in a
+  single click. Implemented as per-fragment `mouse_handler` callbacks
+  on `MouseEventType.MOUSE_DOWN`.
+- **Mouse wheel** — not used inside the popup. See Scope trims.
 
 ## Status header
 
@@ -39,10 +63,15 @@ State is re-probed from the files on every render — never cached.
 
 ## Options submenu
 
-Seven toggles (Character pane / Buffs pane / Group pane / Comm pane / UI / Dev / Pane dividers) + Back.
-State is re-probed from tmux on every render — never cached. Toggling calls
-`toggle_pane.sh --persist` directly; toggles do **not** route through tt++
-so no `cp -X` lines appear in the game pane.
+Seven toggles (Character pane / Buffs pane / Group pane / Comm pane / UI pane /
+Dev pane / Pane dividers) + Back. Source of truth is `_PANE_TOGGLES` in
+`ingame_menu.py`. State is re-probed from tmux on every render — never
+cached. Toggling calls `toggle_pane.sh --persist` directly; toggles do
+**not** route through tt++ so no `cp -X` lines appear in the game pane.
+
+Connection mode (MMapper / Direct) and profile switch are deliberately
+**not** present in the popup Options — they require a restart and are
+launcher-only.
 
 The input-pane menu bar (CHR / BUF / GRP / COM / UI buttons in the bottom row)
 is a sibling surface for the same five pane toggles. Both surfaces write
@@ -58,19 +87,22 @@ equivalent and write to `startup.conf`.
 
 Ports the launcher's Scripts page into the popup. Reads `bridge/runtime/scripts.cache`
 on each render — always reflects the cache as written at the most recent
-brain startup. Scrollable with UP/DOWN; scroll hint appears in the footer only
-when content exceeds visible rows. Rendering is identical to the launcher
-(A:/S:/H:/B:/M: tags, 60-col block centred). Parser and renderer are
-duplicated from `launcher.sh` — not extracted into `menu_render.sh` — to
-keep the shared helper stable. Not covered: live script state
-(IDLE/RUNNING/FIRING) and a stop-all-scripts button — both parked.
+brain startup. Scroll is keyboard-only: UP/DOWN moves one row, PageUp/PageDown
+moves ten. **Mouse wheel does not scroll** the Scripts list — see Scope trims
+for the cause. A scroll hint appears in the footer only when content exceeds
+the visible rows. Rendering matches the launcher (A:/S:/H:/B:/M: tags,
+60-col block centred); the parser is reimplemented in Python rather than
+extracted into a shared helper, to keep the launcher's bash renderer stable.
+Not covered: live script state (IDLE/RUNNING/FIRING) and a stop-all-scripts
+button — both parked.
 
 ## Save profile (`cp -s`)
 
 The "Save profile" row is always visible — save works even after link loss,
 since tt++ keeps the disconnected session alive. Selecting it triggers
-`cp -s` via `tmux send-keys`; an inline "Saved ✓" flashes in `_MR_ACCENT`
-for ~1 s.
+`cp -s` via `tmux send-keys`; an inline "Saved ✓" flashes in `C_ACCENT`
+for ~1 s (a `loop.call_later` re-invalidates the app at the end of the
+flash window).
 
 `cp -s` runs `#class {$_profile} {write} {ttpp/profiles/$_profile.tin}`
 inside the profile's tt++ session via a `#gts { #$_profile { ... } }`
@@ -107,18 +139,19 @@ A second, genuine disconnect after the sentinel has been eaten opens the
 popup normally. See [docs/session-lifecycle.md](session-lifecycle.md) and
 ADR 0058 for full semantics.
 
-**Double-open guard:** `bridge/launcher/ingame_menu.sh` writes `bridge/runtime/.popup_open`
-on start and removes it on exit (via the `EXIT INT TERM HUP` trap). The
-trigger checks for this sentinel before calling `tmux display-popup` and
-skips if present, so a popup already on screen is never disturbed.
+**Double-open guard:** `bridge/launcher/ingame_menu.py` writes `bridge/runtime/.popup_open`
+on start and removes it on exit (via `atexit` plus SIGTERM/SIGHUP/SIGINT
+signal handlers). The trigger checks for this sentinel before calling
+`tmux display-popup` and skips if present, so a popup already on screen
+is never disturbed.
 
 **Bootstrap protection:** On fresh start `connection.state` is absent, so
 `mark_mume_disconnected()` is a no-op and no popup fires during the ~0.5–2 s
 window before `Char.Name` arrives.
 
-**Reconnect pre-highlighted:** `_rebuild_menu` places Reconnect at index 0
-when `connection.state` is absent and `_SEL=0` is the default, so the user
-can hit Enter immediately.
+**Reconnect pre-highlighted:** `_main_items()` places Reconnect at index 0
+when `connection.state` is absent and `_sel_main = 0` is the default, so the
+user can hit Enter immediately.
 
 **Stale sentinel cleanup:** `bridge/launcher/tmux_start.sh` removes `bridge/runtime/.popup_open`
 at the top of each run, guarding against a crashed popup from a previous
@@ -130,6 +163,13 @@ Deliberately NOT in the popup:
 - **About** — not enough value to justify the code.
 - **Profile switch / connection mode** — launcher-only; requires restart.
 - **Layout mockup** — saves vertical space in the popup.
+- **Mouse wheel scroll in the popup** — tmux `display-popup` does not
+  forward wheel events to the popup application (only click events).
+  A global rebind of `WheelUpPane`/`WheelDownPane` to `send-keys -M`
+  would forward them, but breaks wheel scrollback in the game pane and
+  other non-mouse-mode panes. The tradeoff is unacceptable; keyboard
+  navigation (UP/DOWN, PageUp/PageDown) is the documented path. See
+  [ADR 0062](decisions/0062-popup-menu-prompt-toolkit.md).
 
 ---
 Back to [architecture.md](../architecture.md).

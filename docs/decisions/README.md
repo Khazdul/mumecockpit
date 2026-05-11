@@ -74,6 +74,7 @@ Active ADRs by area. Click through for context, alternatives, and consequences.
 - [ADR 0019](0019-launcher-polls-version-cache-mtime.md) — Launcher polls version.cache mtime — the launcher rebuilds the menu when `version.cache` mtime changes, so the Update row appears without a relaunch.
 - [ADR 0021](0021-stty-over-tput-for-terminal-dimensions.md) — Use stty for terminal dimensions — `stty size </dev/tty` is used instead of `tput cols`, which returns wrong values in macOS non-interactive subshells.
 - [ADR 0039](0039-cp-aliases-persistent.md) — cp -X aliases always persist — all `cp -X` aliases pass `--persist` to `toggle_pane.sh`; every toggle from any entry point writes to `startup.conf`.
+- [ADR 0062](0062-popup-menu-prompt-toolkit.md) — In-game popup rewritten in prompt_toolkit — `ingame_menu.py` is the popup body; `ingame_menu.sh` is a thin exec wrapper. Mouse wheel deliberately not supported (tmux display-popup limitation).
 
 ### Bridge services & startup
 
