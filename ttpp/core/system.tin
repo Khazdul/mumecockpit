@@ -142,7 +142,7 @@
             #lua {clear_game_session("%0")}
         }
     } {
-        #nop Internal session (gts/lua) disconnected -- do nothing.;
+        #nop Internal session (gts/lua) disconnected -- do nothing.
         #session {gts}
     }
 }
