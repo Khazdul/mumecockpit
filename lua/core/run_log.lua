@@ -59,6 +59,25 @@ local function _close_log()
     dbg("[RUN_LOG] .log path cleared")
 end
 
+-- Lexicographic max of `<run-id>.jsonl` files in the archive dir, with the
+-- suffix stripped. Run-ids are ISO-like so lexicographic == chronological.
+-- Returns nil when no sealed run exists for this character.
+local function _find_previous_run_id()
+    local p = io.popen("ls -1 '" .. _archive_dir .. "' 2>/dev/null")
+    if not p then return nil end
+    local latest = nil
+    for entry in p:lines() do
+        if entry ~= "current.jsonl" then
+            local id = entry:match("^(.+)%.jsonl$")
+            if id and (latest == nil or id > latest) then
+                latest = id
+            end
+        end
+    end
+    p:close()
+    return latest
+end
+
 -- Read the numeric `ts` field from the first line of path, or return nil.
 local function _read_first_ts(path)
     local f = io.open(path, "r")
@@ -121,7 +140,7 @@ events.subscribe("gmcp_char_vitals", function()
     if _pending_baseline then
         local ts = os.time()
         _run_start_ts = ts
-        _append({
+        local row = {
             event     = "run_start",
             ts        = ts,
             character = state.char and state.char.name,
@@ -129,10 +148,13 @@ events.subscribe("gmcp_char_vitals", function()
             xp        = state.char and state.char.xp,
             tp        = state.char and state.char.tp,
             schema    = SCHEMA_VERSION,
-        })
+        }
+        local prev = _find_previous_run_id()
+        if prev then row.previous_run_id = prev end
+        _append(row)
         _pending_baseline = false
         _open_log(ts)
-        dbg("[RUN_LOG] run_start written")
+        dbg("[RUN_LOG] run_start written prev=" .. tostring(prev))
         return
     end
 end)

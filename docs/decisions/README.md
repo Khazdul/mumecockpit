@@ -67,6 +67,7 @@ Active ADRs by area. Click through for context, alternatives, and consequences.
 
 - [ADR 0044](0044-runs-and-character-scoped-persistence.md) — Runs and character-scoped persistence — play sessions are "runs", all persistent state is per-character, and files live under `data/`. (supersedes 0011 in scope)
 - [ADR 0054](0054-remove-cp-r-full-reload.md) — Remove cp -r full system reload — the full-reload alias and its brain-startup rehydration are removed; restart-via-launcher is the only supported recovery path. (invalidates §"cp -r mid-run" of 0044)
+- [ADR 0056](0056-previous-run-id-linking.md) — previous_run_id links each run to its predecessor — `run_start` rows include the most recent sealed run-id for the same character, so consumers can stitch link-loss runs without a writer-side grace window.
 
 ### Launcher & terminal UX
 

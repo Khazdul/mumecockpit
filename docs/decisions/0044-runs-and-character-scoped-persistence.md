@@ -217,7 +217,10 @@ automatically in every observed scenario.
 
 **Run boundaries with grace window (reconnect within N minutes = same
 run).** Considered for the link-loss case; rejected as needless complexity.
-Two short runs is an honest model.
+Two short runs is an honest model. The lighter-weight chosen alternative
+is to link each run to its predecessor via `previous_run_id` in the
+`run_start` row, so the consumer (not the writer) decides stitching
+policy — see [ADR 0056](0056-previous-run-id-linking.md).
 
 **Unix-epoch run-ids.** Shorter, sortable, guaranteed-unique. Rejected
 because the launcher will list runs and ISO timestamps are scannable at a

@@ -62,13 +62,14 @@ Written on the first `Char.Vitals` tick after login. Baseline snapshot.
 
 ```json
 {
-  "event":     "run_start",
-  "ts":        1746640335,
-  "character": "Fingolfin",
-  "level":     35,
-  "xp":        1234567,
-  "tp":        890,
-  "schema":    1
+  "event":           "run_start",
+  "ts":              1746640335,
+  "character":       "Fingolfin",
+  "level":           35,
+  "xp":              1234567,
+  "tp":              890,
+  "previous_run_id": "2026-05-07T18-32-15",
+  "schema":          1
 }
 ```
 
@@ -79,6 +80,7 @@ Written on the first `Char.Vitals` tick after login. Baseline snapshot.
 | `level` | integer or absent | `state.char.level`; absent if not yet received |
 | `xp` | integer or absent | `state.char.xp` from `Char.Vitals`; absent if not yet received |
 | `tp` | integer or absent | `state.char.tp` from `Char.Vitals`; absent if not yet received |
+| `previous_run_id` | string or absent | Run-id of the most recent sealed run for this character (lexicographic max of `<run-id>.jsonl` in the archive dir, taken at write time so a freshly-sealed orphan from the same login counts). Absent when no prior sealed run for this character. Lets consumers stitch link-loss runs without a writer-side grace window. See [ADR 0056](decisions/0056-previous-run-id-linking.md). |
 | `schema` | integer | Schema version; current value `1` |
 
 ### `level_up`
