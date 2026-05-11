@@ -48,8 +48,9 @@
             #if {&_run_log_path} {
                 #class {core} {open};
                 #format _ts {%%U};
+                #format _sent {%%p} {%%0};
                 #class {core} {close};
-                #line log $_run_log_path {$_ts > %%0}
+                #line log $_run_log_path {$_ts > $_sent}
             };
             #if {"%%0" != ""} {#lua {USER_INPUT:%%0}}
         };
