@@ -328,6 +328,15 @@ session-scoping is what avoids the recursion documented in
 fire in the `lua` `#run` session, where every `#lua {...}` call counts
 as sent output and would self-amplify within seconds of connect.
 
+The same `SENT OUTPUT` event body also dispatches `USER_INPUT:%0` to
+`brain.lua` for non-empty payloads, after the `.log`-write branch. This
+is the canonical site for `#event {SENT OUTPUT}` in the project — tt++
+allows only one handler per event type per session, so any future
+SENT OUTPUT consumer (currently the stored-spells `user_input`
+subscriber is the only one besides the run-log) must add its branch to
+this handler rather than registering a competing one. See
+[ADR 0059](decisions/0059-canonical-sent-output-handler.md).
+
 **Lifecycle.** Armed on the first `Char.Vitals` tick after login (parallel to
 the `run_start` JSONL row), disarmed on `run_ending` (after the `run_end`
 row is written). There is a short login-screen gap before arming — same as

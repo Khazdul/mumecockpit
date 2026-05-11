@@ -16,8 +16,10 @@ on `state.char.stored_spells` and emit `stored_spells_changed` downstream.
 User types: cast 'store' fireball   (or: sto fireball, stor fireball, etc.)
   │
   ▼
-GAME_SESSION #event {SENT OUTPUT} — session-scoped to avoid recursion (see docs/ipc.md)
-  — non-empty payload only: #if {"%0" != ""}
+GAME_SESSION #event {SENT OUTPUT} — owned by _register_run_log_capture in
+  ttpp/core/run_log.tin (canonical handler — see ADR 0059).
+  Session-scoped to avoid recursion (see docs/ipc.md).
+  USER_INPUT branch gated on non-empty payload: #if {"%0" != ""}
   │
   ▼ #lua {USER_INPUT:%0}
   │
@@ -176,11 +178,12 @@ Examples:
 The only path that sees the target spell for store attempts. This path drives
 `_pending_attempts` exclusively.
 
-The event `#event {SENT OUTPUT} {#if {"%0" != ""} {#lua {USER_INPUT:%0}}}` is
-registered in GAME_SESSION by `_register_stored_spells_actions()` (see
-`docs/ipc.md` for why top-level registration causes self-amplifying recursion
-and must be session-scoped). The `%0 != ""` guard filters IAC/GMCP flushes that
-also fire `SENT OUTPUT` with empty payload.
+The `USER_INPUT:%0` dispatch lives inside the canonical
+`#event {SENT OUTPUT}` handler registered by `_register_run_log_capture`
+in `ttpp/core/run_log.tin` (see [ADR 0059](decisions/0059-canonical-sent-output-handler.md)
+and `docs/ipc.md` for why the registration is session-scoped). The
+USER_INPUT branch is gated on `#if {"%0" != ""}`, which filters
+IAC/GMCP flushes that also fire `SENT OUTPUT` with empty payload.
 
 The `user_input` subscriber matches in two stages, first match wins:
 
@@ -303,7 +306,6 @@ CONNECTED` in `ttpp/core/system.tin` (immediately after
 
 On each invocation the function registers via `session_cmd()`:
 
-- **`SENT OUTPUT` event** — path 1 snooper; non-empty payload only.
 - **`RECEIVED INPUT` event** — path 2 abort detector; empty payload only.
 - **Twelve failure-pattern `#action` triggers** (priority 3) — each emits
   `store_attempt_failed`.
@@ -312,6 +314,14 @@ On each invocation the function registers via `session_cmd()`:
 - **`stored_spells_untracked` `#action` triggers** — two patterns (self-cast and
   third-party magic blast).
 - **Two MUME-echo `#action` triggers** — path 3; emit `user_cast`.
+
+The `SENT OUTPUT` snooper that drives path 1 is **not** registered here.
+It lives in the canonical `#event {SENT OUTPUT}` handler owned by
+`_register_run_log_capture` in `ttpp/core/run_log.tin` (see
+[ADR 0059](decisions/0059-canonical-sent-output-handler.md)); the Lua
+`user_input` event-bus subscription further up in `stored_spells.lua`
+is what binds this module to that dispatch. Store-attempt detection
+therefore depends on both pieces being in place.
 
 On its first invocation per load cycle the function also calls `_install_hooks()`,
 which wraps `gmcp.handlers["Char.Name"]` to reload persisted data on login. The

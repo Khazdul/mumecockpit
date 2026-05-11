@@ -409,13 +409,6 @@ end)
 
 function _register_stored_spells_actions()
 
-    -- Register the SENT OUTPUT snooper in GAME_SESSION only. A top-level
-    -- #event {SENT OUTPUT} would also fire on writes to the lua #run
-    -- subprocess stdin (every #lua {...} call), creating a self-amplifying
-    -- recursion that floods tt++ within seconds. Scoping to GAME_SESSION
-    -- restricts the event to MUD-bound bytes.
-    session_cmd([[#event {SENT OUTPUT} {#if {"%0" != ""} {#lua {USER_INPUT:%0}}}]])
-
     -- Empty-input abort detection. RECEIVED INPUT fires only on actual
     -- user input (unlike SENT OUTPUT, which also fires on tt++ IAC/GMCP
     -- flushes), so an empty %0 here is unambiguously "user pressed Enter

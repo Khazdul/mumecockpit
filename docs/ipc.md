@@ -59,14 +59,20 @@ Event types are defined as features are built. Each type maps to a handler
 registered by the relevant script. Unknown types are logged to dev.
 
 `USER_INPUT` and `EMPTY_INPUT` are the two IPC event types used by the stored-
-spell detection paths. Both follow Pattern 1: `stored_spells.lua` registers
-`#event {SENT OUTPUT} {#if {"%0" != ""} {#lua {USER_INPUT:%0}}}` and
-`#event {RECEIVED INPUT} {#if {"%0" == ""} {#lua {EMPTY_INPUT}}}` in
-GAME_SESSION via `session_cmd()`. `brain.lua`'s `USER_INPUT` handler rejoins
-the IPC parts with `":"` before emitting `user_input`, because raw player input
-may itself contain `":"`. `EMPTY_INPUT` carries no payload — the empty-`%0`
-guard in the tt++ rule makes the handler unconditional. See the `SENT OUTPUT`
-caveat above for why session-scoping is mandatory.
+spell detection paths. Both follow Pattern 1. `USER_INPUT` is dispatched from
+the canonical `#event {SENT OUTPUT}` handler registered by
+`_register_run_log_capture` in `ttpp/core/run_log.tin` — the same handler
+that writes outbound commands to the per-run `.log`, with the `USER_INPUT`
+dispatch sitting in a second `#if {"%0" != ""} {#lua {USER_INPUT:%0}}`
+branch alongside the log-write branch. `EMPTY_INPUT` is registered by
+`stored_spells.lua` via `session_cmd()` as
+`#event {RECEIVED INPUT} {#if {"%0" == ""} {#lua {EMPTY_INPUT}}}`.
+`brain.lua`'s `USER_INPUT` handler rejoins the IPC parts with `":"` before
+emitting `user_input`, because raw player input may itself contain `":"`.
+`EMPTY_INPUT` carries no payload — the empty-`%0` guard in the tt++ rule
+makes the handler unconditional. See the `SENT OUTPUT` caveat above for why
+session-scoping is mandatory; the canonical handler in `run_log.tin` is
+scoped via `#%1` precisely for this reason.
 
 **Pattern 2 — Script-owned aliases and triggers**
 

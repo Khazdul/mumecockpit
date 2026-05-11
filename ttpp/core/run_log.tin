@@ -7,6 +7,16 @@
 #nop same %U evaluation across all events in a tight batch, causing
 #nop duplicate timestamps.
 #nop
+#nop _register_run_log_capture owns the canonical #event {SENT OUTPUT}
+#nop handler for the project. The body has two independently-gated
+#nop responsibilities: writing outbound commands to the per-run .log
+#nop file (gated on &_run_log_path), and dispatching USER_INPUT:%0 to
+#nop brain.lua for non-empty payloads (consumed by stored_spells.lua
+#nop and any future user_input subscriber). New SENT OUTPUT consumers
+#nop must append a gated branch to this handler rather than registering
+#nop a competing #event — tt++ allows only one handler per event type
+#nop per session. See docs/decisions/0059-canonical-sent-output-handler.md.
+#nop
 #nop Both events and the per-session vars (_run_log_path, _ts) live in
 #nop {core}, not the profile class. Registration is bracketed in
 #nop #class {core} {open}/{close}, and each event body wraps the
@@ -40,7 +50,8 @@
                 #format _ts {%%U};
                 #class {core} {close};
                 #line log $_run_log_path {$_ts > %%0}
-            }
+            };
+            #if {"%%0" != ""} {#lua {USER_INPUT:%%0}}
         };
         #%1 #class {core} {close}
     }
