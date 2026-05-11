@@ -77,17 +77,29 @@
 #alias {cp -c} {#system {bash $HOME/MUME/bridge/layout/toggle_pane.sh status --persist}}
 #alias {cp -h} {#system {bash $HOME/MUME/bridge/layout/toggle_pane.sh headers --persist}}
 
+#nop _save_profile — single definition of the profile save sequence
+#nop (#class write + sanitize). Safe to call from any session context;
+#nop no-ops when no profile is loaded. Used by cp -s, cp -e (indirectly
+#nop via mark_mume_disconnected), the SESSION DEACTIVATED handler, and
+#nop mark_mume_disconnected. See ADR 0060.
+#alias {_save_profile} {
+    #gts {
+        #if {"$_profile" != ""} {
+            #$_profile {
+                #class {$_profile} {write} {ttpp/profiles/$_profile.tin}
+            };
+            #system {bash $HOME/MUME/bridge/release/sanitize_profile.sh ttpp/profiles/$_profile.tin}
+        }
+    }
+}
+
 #alias {cp -s}
 {
     #gts
     {
         #if {"$_profile" != ""}
         {
-            #$_profile
-            {
-                #class {$_profile} {write} {ttpp/profiles/$_profile.tin}
-            };
-            #system {bash $HOME/MUME/bridge/release/sanitize_profile.sh ttpp/profiles/$_profile.tin};
+            _save_profile;
             #lua {system_ui("Profile saved to ttpp/profiles/" .. ui_var("$_profile") .. ".tin.")}
         };
         #else
@@ -99,10 +111,6 @@
 
 #alias {cp -e} {
     #gts;
-    #if {&game_session} {
-        #$game_session #class {$game_session} {write} {ttpp/profiles/$game_session.tin};
-        #system {bash $HOME/MUME/bridge/release/sanitize_profile.sh ttpp/profiles/$game_session.tin}
-    };
     #showme {[COCKPIT] Goodbye. Shutting down client...};
     #if {&game_session} {#$game_session #zap};
     #zap
@@ -170,8 +178,7 @@
 
 #event {SESSION DEACTIVATED} {
     #if {"%0" != "gts" && "%0" != "lua"} {
-        #%0 #class {%0} {write} {ttpp/profiles/%0.tin};
-        #system {bash $HOME/MUME/bridge/release/sanitize_profile.sh ttpp/profiles/%0.tin}
+        _save_profile
     }
 }
 
