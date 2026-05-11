@@ -79,9 +79,9 @@
 
 #nop _save_profile — single definition of the profile save sequence
 #nop (#class write + sanitize). Safe to call from any session context;
-#nop no-ops when no profile is loaded. Used by cp -s, cp -e (indirectly
-#nop via mark_mume_disconnected), the SESSION DEACTIVATED handler, and
-#nop mark_mume_disconnected. See ADR 0060.
+#nop no-ops when no profile is loaded. Used by cp -s, cp -e, the
+#nop SESSION DEACTIVATED handler, and the MMapper "Status: MUME closed
+#nop the connection." text action. See ADR 0061.
 #alias {_save_profile} {
     #gts {
         #if {"$_profile" != ""} {
@@ -111,6 +111,7 @@
 
 #alias {cp -e} {
     #gts;
+    _save_profile;
     #showme {[COCKPIT] Goodbye. Shutting down client...};
     #if {&game_session} {#$game_session #zap};
     #zap
@@ -140,7 +141,7 @@
             #%0 #read ttpp/profiles/%0.tin;
             #%0 #class {%0} {close};
             #%0 #alias {reconnect} {#gts reconnect};
-            #%0 #action {^Status: MUME closed the connection.$} {#lua {mark_mume_disconnected()}};
+            #%0 #action {^Status: MUME closed the connection.$} {_save_profile;#lua {mark_mume_disconnected()}};
             _register_mud_events %0;
             _register_clock_actions %0;
             _register_affect_actions;
