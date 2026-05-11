@@ -1,9 +1,18 @@
 # 0060 — Disconnect dispatch as canonical profile-save point
 
-**Status:** Accepted
+**Status:** Superseded by [ADR 0061](0061-synchronous-ttpp-save-hooks.md)
 **Date:** 2026-05-11
 
 Supersedes the auto-save mechanism in ADR 0014.
+
+> **Superseded 2026-05-11.** Routing the save through
+> `tintin_cmd("gts", "_save_profile")` from `mark_mume_disconnected()`
+> is async: tt++ may process the relay after `cp -e` has zapped the
+> game session, at which point `#class write` dispatches to a dead
+> session and the on-disk profile becomes a 0-byte file. ADR 0061
+> reverses the design — saves move back to synchronous tt++ event hooks
+> (cp -e, SESSION DEACTIVATED, MMapper text action) that all run while
+> the session class is still alive.
 
 ## Context
 
