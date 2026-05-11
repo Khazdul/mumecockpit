@@ -26,10 +26,18 @@ if [ -z "$CURRENT" ]; then
     exit 1
 fi
 
-if [ "$CURRENT" = "$STRIPPED_TAG" ]; then
-    echo "VERSION matches ${INTENDED_TAG}. Safe to tag."
-    exit 0
-else
+if [ "$CURRENT" != "$STRIPPED_TAG" ]; then
     echo "VERSION says ${CURRENT} but tag would be ${INTENDED_TAG}. Bump VERSION first." >&2
     exit 1
 fi
+
+# #nop is not opaque to ';' — see docs/decisions/0057-nop-not-opaque-to-semicolons.md.
+NOP_HITS=$(grep -nE '^[[:space:]]*#nop[[:space:]][^{].*;' $(git ls-files '*.tin') || true)
+if [ -n "$NOP_HITS" ]; then
+    echo "ERROR: unbraced #nop lines contain ';' — see ADR 0057" >&2
+    echo "$NOP_HITS" >&2
+    exit 1
+fi
+
+echo "VERSION matches ${INTENDED_TAG}. Safe to tag."
+exit 0

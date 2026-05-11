@@ -45,6 +45,10 @@ with a scripting brain on top.
   `brain.lua` or `main.tin` needed.
 - **Self-contained tt++ modules.** New modules go in `ttpp/core/*.tin`.
   Auto-loaded by `main.tin`.
+- **`#nop` is not opaque to `;`** — text after a semicolon inside an
+  unbraced `#nop` is parsed and executed as a separate command. Use
+  `,` or `—` for pauses, or `#nop {…}` if `;` is unavoidable. See
+  ADR 0057.
 - **Never hardcode session names.** From inside a Lua script use
   `game_cmd()` / `session_cmd()` / `send()`. `tintin_cmd()` / `tintin()` are
   for brain infrastructure, not scripts.
