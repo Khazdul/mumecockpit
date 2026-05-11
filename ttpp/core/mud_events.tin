@@ -1,8 +1,8 @@
 #nop ===== MUD EVENTS =====
 #nop Core triggers that fan out via the Lua event bus.
 #nop Registered from SESSION CONNECTED via _register_mud_events.
-#nop Four mob-death patterns emit "mob_death".
-#nop One player-death pattern emits "char_death" - three PvP R.I.P. patterns
+#nop Four mob-death patterns emit "mob_death";
+#nop one player-death pattern emits "char_death" - three PvP R.I.P. patterns
 #nop emit "pc_death". Priority 3 — fires before per-script actions (default 5).
 
 #alias {_register_mud_events %1} {

@@ -32,9 +32,10 @@ if [ "$CURRENT" != "$STRIPPED_TAG" ]; then
 fi
 
 # #nop is not opaque to ';' — see docs/decisions/0057-nop-not-opaque-to-semicolons.md.
-NOP_HITS=$(grep -nE '^[[:space:]]*#nop[[:space:]][^{].*;' $(git ls-files '*.tin') || true)
+# Trailing ';' is harmless; a ';' in the middle of an unbraced #nop is the trap.
+NOP_HITS=$(grep -nE '^[[:space:]]*#nop[[:space:]][^{].*;[[:space:]]*[^[:space:]]' $(git ls-files '*.tin') || true)
 if [ -n "$NOP_HITS" ]; then
-    echo "ERROR: unbraced #nop lines contain ';' — see ADR 0057" >&2
+    echo "ERROR: unbraced #nop lines contain a mid-text ';' — see ADR 0057" >&2
     echo "$NOP_HITS" >&2
     exit 1
 fi

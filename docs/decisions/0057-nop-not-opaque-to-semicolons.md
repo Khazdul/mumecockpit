@@ -20,25 +20,34 @@ active session is `gts`, which has no server connection, so tt++ prints
 
 once per occurrence, visible in the game window above the welcome banner.
 
-Four `.tin` files in the repo carried this defect: `ttpp/core/clock.tin`,
-`ttpp/core/system.tin`, `ttpp/core/mud_events.tin`, and
-`bridge/launcher/templates/blank_profile.tin`. ADR 0050 noted the same
-mechanism in its "Related pitfalls" appendix for alias-body `#nop` lines
-specifically; this ADR generalises the rule to every `#nop` and gives it
-its own decision record so future contributors hit it on a doc grep.
+The trap is specifically a **mid-text** `;`. A trailing `;` (the last
+non-whitespace character on the line) is harmless: the post-`;` command
+is empty, and the parser treats an empty command as a no-op. Several
+trailing-`;` `#nop` lines exist in `ttpp/core/*.tin` for stylistic
+consistency with surrounding `#alias`-body statements and stay as-is.
+
+The defect appeared in `bridge/launcher/templates/blank_profile.tin`,
+where `#nop Edit freely; auto-save (SESSION DEACTIVATED) ...` produced a
+`#NO SESSION ACTIVE` warning at startup. ADR 0050 noted the same
+mechanism in its "Related pitfalls" appendix for alias-body `#nop` lines;
+this ADR generalises the rule to every `#nop` and gives it its own
+decision record so future contributors hit it on a doc grep.
 
 `#nop {…}` with braces is safe — braces group the entire argument and
 any internal `;` is literal.
 
 ## Decision
 
-Do not use `;` in the argument of an unbraced `#nop`. Use one of:
+Do not put a `;` in the **middle** of an unbraced `#nop` argument
+(i.e. with non-whitespace after it on the same line). Use one of:
 
 - `,` for a list separator,
 - `—` (em dash) for a clause break,
 - parentheses for a parenthetical,
-- or the braced form `#nop {…}` when `;` is genuinely required in the
-  comment text (e.g. quoting a code snippet).
+- or the braced form `#nop {…}` when a mid-text `;` is genuinely
+  required (e.g. quoting a code snippet).
+
+Trailing `;` is allowed and is not subject to this rule.
 
 ## Consequences
 
@@ -47,9 +56,10 @@ Do not use `;` in the argument of an unbraced `#nop`. Use one of:
 - The rule is captured in `CLAUDE.md` under tt++ conventions, so future
   Claude sessions and human contributors get it at edit time rather than
   after a release.
-- One-line audit:
+- One-line audit (matches `;` followed by non-whitespace on the same
+  line — i.e. mid-text only, not trailing):
 
-      grep -nE '^[[:space:]]*#nop[[:space:]][^{].*;' $(git ls-files '*.tin')
+      grep -nE '^[[:space:]]*#nop[[:space:]][^{].*;[[:space:]]*[^[:space:]]' $(git ls-files '*.tin')
 
   An empty result is the desired state.
 

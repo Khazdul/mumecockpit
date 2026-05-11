@@ -12,7 +12,7 @@
 
 #alias {_register_clock_actions %1} {
     #if {"%1" != ""} {
-        #nop Both `time` patterns end with "of the Third Age." — one action catches both.
+        #nop Both `time` patterns end with "of the Third Age." — one action catches both.;
         #%1 #action {^%%1 of the Third Age.$} {#lua {events.emit("mume_time_line", "%%0")}} {3};
         #%1 #action {^The current time is %%1.$} {#lua {events.emit("room_clock_line", "%%0")}} {3};
         #%1 #ticker {clock} {#lua {state.world.clock.tick()}} {0.25}
