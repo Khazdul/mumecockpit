@@ -184,18 +184,37 @@ The `mume` alias is retained as a legacy shortcut that connects as `default`
 — the game session name is always `default` unless a profile is explicitly
 selected (Phase 2).
 
-**Save mechanism:** Two save paths cover graceful exit:
+**Save mechanism:** Profile auto-save is canonically driven by
+`mark_mume_disconnected()` in `lua/brain/connection.lua`, with the
+SESSION DEACTIVATED handler retained as defense in depth:
 
-1. **SESSION DEACTIVATED handler** (registered in `system.tin`, runs in gts) —
-   fires when the game session loses focus. This covers:
-   - `#zap` — user disconnects directly
-   - `cp -e` — `#gts` at the start of shutdown deactivates the game session
+1. **Canonical save point — `mark_mume_disconnected()`** — fires
+   `_save_profile` via the relay (`tintin_cmd("gts", "_save_profile")`)
+   on every connected→disconnected transition, immediately after the
+   transition guard and before any state teardown. Covers both modes
+   uniformly, including the MMapper-mode case where the tt++↔MMapper
+   socket stays alive across MUME disconnects and SESSION DEACTIVATED
+   never fires.
 
-2. **Explicit save in `cp -e`** — immediately after `#gts` and before any
-   teardown logic. Runs idempotently after the event handler as defense in
-   depth against any tt++ event-context subtleties.
+2. **Defense in depth — SESSION DEACTIVATED handler** (registered in
+   `system.tin`, runs in gts) — still fires `_save_profile` for paths
+   that deactivate the game session without going through
+   `mark_mume_disconnected()`, e.g. a manual `#zap` of the game session
+   issued from gts. Idempotent and harmless when both fire.
 
-`cp -s` is the user-triggered save path (popup Save button) and is unchanged.
+3. **User-triggered — `cp -s`** — the popup Save button. Delegates to
+   `_save_profile` and emits the `system_ui` "Profile saved to ..."
+   confirmation. Works after link loss as well as during a live
+   connection (tt++ keeps the disconnected session alive).
+
+`cp -e` no longer carries an inline save. Its `#$game_session #zap`
+step triggers SESSION DISCONNECTED → `clear_game_session()` →
+`mark_mume_disconnected()`, which runs `_save_profile`.
+
+**Single definition of the save sequence.** `_save_profile` in
+`ttpp/core/system.tin` is the only place `#class write` + `sanitize_profile.sh`
+appears. It is safe to call from any session context (internal `#gts`)
+and no-ops when no profile is loaded.
 
 After `#class write`, `sanitize_profile.sh` strips the wrapping lines that
 `#class write` always emits, keeping the at-rest file bare.
@@ -216,13 +235,14 @@ it is a no-op. The event is only used for tmux teardown (see Shutdown
 Teardown below). Periodic save for terminal close / SIGKILL / crash is a
 separate future phase.
 
-**Known limitation — settings modified from gts are not saved.** The save
-hook is SESSION DEACTIVATED, which fires when the game session loses focus.
-Commands that modify the session from outside (e.g. `#mume #alias {...}`
-issued from gts) are applied to the session but do not re-trigger
-DEACTIVATED. If the user exits without activating the session again, such
-changes are lost. To persist them, either activate the session (`#mume`
-then `#gts`) before exiting, or run
+**Known limitation — settings modified from gts after disconnect are not
+saved.** With the canonical save point in `mark_mume_disconnected()`
+(driven from Lua, not session-focus dependent), changes made to the
+session class from gts *while connected* ARE saved on the next disconnect.
+The remaining gap is changes made from gts *after* disconnect, when no
+game session is running — there is no session class to write at that
+point. To persist late edits, reconnect (which writes a fresh class on
+SESSION CONNECTED) or run
 `#default #class {default} {write} {ttpp/profiles/default.tin}` manually.
 
 **Shutdown Teardown:** PROGRAM TERMINATION runs
@@ -254,11 +274,14 @@ so they land in `{core}` regardless of session class state when the relay drains
 model: `{<profile>}` holds user data, `{core}` holds all script and infrastructure
 registrations.
 
-**Save sequence** (same two-step body at every call site):
-1. `#class {name} {write} {ttpp/profiles/name.tin}` — writes file with wrapping
-2. `sanitize_profile.sh ttpp/profiles/name.tin` — normalizes the file (strips wrapping and header artifacts)
+**Save sequence** (same two-step body, defined once in `_save_profile`):
+1. `#class {$_profile} {write} {ttpp/profiles/$_profile.tin}` — writes file with wrapping
+2. `sanitize_profile.sh ttpp/profiles/$_profile.tin` — normalizes the file (strips wrapping and header artifacts)
 
-Call sites: SESSION DEACTIVATED handler, `cp -s`, `cp -e`.
+Call sites of `_save_profile`: `mark_mume_disconnected()` (canonical),
+SESSION DEACTIVATED handler (defense in depth), `cp -s` (user-triggered).
+`cp -e` reaches it transitively via its `#$game_session #zap` →
+SESSION DISCONNECTED → `mark_mume_disconnected()` chain.
 
 **Conventions:**
 - Never hardcode `mume` as the class name in system code — always use

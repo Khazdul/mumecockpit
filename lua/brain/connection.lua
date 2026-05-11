@@ -69,6 +69,10 @@ function mark_mume_disconnected()
     local f = io.open(CONNECTION_STATE_PATH, "r")
     if not f then return end
     f:close()
+    -- Canonical save point — closes the MMapper-mode gap where SESSION
+    -- DEACTIVATED never fires on a game-side quit or MMapper-MUME drop.
+    -- See ADR 0060.
+    tintin_cmd("gts", "_save_profile")
     _clear_connection_state()
     local name = state.char.name or "Character"
     system_ui(ui_var(name) .. " logged out.")
