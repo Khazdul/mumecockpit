@@ -213,33 +213,6 @@ def _toggle_pane(target):
         pass
 
 
-def _persist_connection_mode(mode):
-    """Rewrite connection_mode=<value> in startup.conf (atomic temp+rename).
-    Mirrors the _persist_key pattern in toggle_pane.sh."""
-    tmp = STARTUP_CONF_PATH + ".tmp"
-    try:
-        with open(STARTUP_CONF_PATH) as fh:
-            lines = fh.readlines()
-    except OSError:
-        lines = []
-    found = False
-    new_lines = []
-    for line in lines:
-        if line.startswith("connection_mode="):
-            new_lines.append(f"connection_mode={mode}\n")
-            found = True
-        else:
-            new_lines.append(line)
-    if not found:
-        new_lines.append(f"connection_mode={mode}\n")
-    try:
-        with open(tmp, "w") as fh:
-            fh.writelines(new_lines)
-        os.replace(tmp, STARTUP_CONF_PATH)
-    except OSError:
-        pass
-
-
 # ---------------------------------------------------------------------------
 # Frame stack
 # ---------------------------------------------------------------------------
@@ -432,15 +405,11 @@ def _options_rows():
     kinds:
       "pane"      payload=(target, label)
       "sep"
-      "mode"      payload=(mode_value, label)
       "back"
     """
     rows = []
     for target, label in _PANE_TOGGLES:
         rows.append(("pane", (target, label)))
-    rows.append(("sep", None))
-    rows.append(("mode", ("mmapper", "MMapper")))
-    rows.append(("mode", ("direct",  "Direct")))
     rows.append(("back", None))
     return rows
 
@@ -458,11 +427,6 @@ def _options_activate(row_idx):
     if kind == "pane":
         target, _ = payload
         _toggle_pane(target)
-        if _app:
-            _app.invalidate()
-    elif kind == "mode":
-        mode_value, _ = payload
-        _persist_connection_mode(mode_value)
         if _app:
             _app.invalidate()
     elif kind == "back":
@@ -485,7 +449,6 @@ def _options_content_text():
     rows       = _options_rows()
     titles_set = set(_tmux_pane_titles())
     headers_on = (_tmux_border_status() != "off")
-    conn_mode  = (_parse_keyval(STARTUP_CONF_PATH).get("connection_mode") or "mmapper")
 
     # Build labels for width measurement (uncentred, fixed-width column)
     labels = []
@@ -498,10 +461,6 @@ def _options_content_text():
                 on = (target in titles_set)
             box = "[x]" if on else "[ ]"
             labels.append(f"{box} {lbl}")
-        elif kind == "mode":
-            mode_value, lbl = payload
-            mark = "(*)" if conn_mode == mode_value else "( )"
-            labels.append(f"{mark} {lbl}")
         elif kind == "sep":
             labels.append("")
         elif kind == "back":
@@ -588,30 +547,43 @@ def _scripts_parsed_lines():
     return out
 
 
+def _scripts_visible_rows():
+    # Content window height = popup rows − title (3) − footer (2).
+    return max(1, _term_rows() - 3 - 2)
+
+
 def _scripts_content_text():
-    """Render script entries in a centred 60-col block."""
-    cols  = _term_cols()
-    pad   = max(0, (cols - 60) // 2)
-    p     = " " * pad
-    lines = _scripts_parsed_lines()
-    frags = []
-    for i, (tag, text) in enumerate(lines):
+    """Render script entries in a centred 60-col block, sliced by _scripts_scroll."""
+    global _scripts_scroll
+    cols   = _term_cols()
+    pad    = max(0, (cols - 60) // 2)
+    p      = " " * pad
+    parsed = _scripts_parsed_lines()
+
+    # One fragment list per visual line; we slice by _scripts_scroll below.
+    visual_lines = []
+    for tag, text in parsed:
         if tag == "A":
-            frags.append(("", p))
-            frags.append((C_ACCENT, "▶ "))
-            frags.append((C_ACTIVE, text.upper()))
+            visual_lines.append([("", p), (C_ACCENT, "▶ "), (C_ACTIVE, text.upper())])
         elif tag == "S":
-            frags.append(("", p + "  "))
-            frags.append((C_BODY, text))
+            visual_lines.append([("", p + "  "), (C_BODY, text)])
         elif tag == "H":
-            frags.append(("", p + "  "))
-            frags.append((C_ITEM, text))
+            visual_lines.append([("", p + "  "), (C_ITEM, text)])
         elif tag == "B":
-            pass  # blank line — only newline below
+            visual_lines.append([])
         elif tag == "M":
-            frags.append(("", p))
-            frags.append((C_BODY, text))
-        if i < len(lines) - 1:
+            visual_lines.append([("", p), (C_BODY, text)])
+
+    # Re-clamp in case content or terminal size shrank since last scroll.
+    max_scroll = max(0, len(visual_lines) - _scripts_visible_rows())
+    if _scripts_scroll > max_scroll:
+        _scripts_scroll = max_scroll
+
+    sliced = visual_lines[_scripts_scroll:]
+    frags  = []
+    for i, line_frags in enumerate(sliced):
+        frags.extend(line_frags)
+        if i < len(sliced) - 1:
             frags.append(("", "\n"))
     return frags
 
@@ -628,10 +600,7 @@ def _scripts_title_text():
 
 
 def _scripts_has_overflow():
-    if _scripts_window is None or _scripts_window.render_info is None:
-        return False
-    info = _scripts_window.render_info
-    return info.content_height > info.window_height
+    return len(_scripts_parsed_lines()) > _scripts_visible_rows()
 
 
 def _scripts_footer_text():
@@ -713,7 +682,17 @@ def _set_scripts_scroll(v):
 
 
 def _scripts_max_scroll():
-    return _window_max_scroll(_scripts_window)
+    return max(0, len(_scripts_parsed_lines()) - _scripts_visible_rows())
+
+
+def _scroll_scripts(delta):
+    global _scripts_scroll
+    mx = _scripts_max_scroll()
+    new_val = max(0, min(mx, _scripts_scroll + delta))
+    if new_val != _scripts_scroll:
+        _scripts_scroll = new_val
+        if _app:
+            _app.invalidate()
 
 
 def _get_options_scroll():
@@ -765,7 +744,7 @@ def _main_select(event):
         _activate_main_item(items[idx][1])
 
 
-@kb.add("escape", filter=_in_frame("main"))
+@kb.add("escape", filter=_in_frame("main"), eager=True)
 def _main_escape(event):
     event.app.exit()
 
@@ -797,7 +776,7 @@ def _opt_select(event):
     _options_activate(sel_indices[idx])
 
 
-@kb.add("escape", filter=_in_frame("options"))
+@kb.add("escape", filter=_in_frame("options"), eager=True)
 def _opt_escape(event):
     _pop_frame()
 
@@ -805,32 +784,25 @@ def _opt_escape(event):
 # Scripts frame
 @kb.add("up", filter=_in_frame("scripts"))
 def _scr_up(event):
-    global _scripts_scroll
-    if _scripts_scroll > 0:
-        _scripts_scroll -= 1
+    _scroll_scripts(-1)
 
 
 @kb.add("down", filter=_in_frame("scripts"))
 def _scr_down(event):
-    global _scripts_scroll
-    mx = _scripts_max_scroll()
-    if _scripts_scroll < mx:
-        _scripts_scroll += 1
+    _scroll_scripts(1)
 
 
 @kb.add("pageup", filter=_in_frame("scripts"))
 def _scr_pageup(event):
-    global _scripts_scroll
-    _scripts_scroll = max(0, _scripts_scroll - 10)
+    _scroll_scripts(-10)
 
 
 @kb.add("pagedown", filter=_in_frame("scripts"))
 def _scr_pagedown(event):
-    global _scripts_scroll
-    _scripts_scroll = min(_scripts_max_scroll(), _scripts_scroll + 10)
+    _scroll_scripts(10)
 
 
-@kb.add("escape", filter=_in_frame("scripts"))
+@kb.add("escape", filter=_in_frame("scripts"), eager=True)
 def _scr_escape(event):
     _pop_frame()
 
@@ -842,6 +814,11 @@ def _ec_confirm(event):
     _write_sentinel(RETURN_TO_MENU_SENT)
     _send_to_game("cp -e")
     event.app.exit()
+
+
+@kb.add("escape", filter=_in_frame("exit_confirm"), eager=True)
+def _ec_escape(event):
+    _pop_frame()
 
 
 @kb.add("<any>", filter=_in_frame("exit_confirm"))
@@ -872,9 +849,12 @@ def _signal_exit(signum, frame):
 # Layout / main
 # ---------------------------------------------------------------------------
 def _build_main_container():
+    # focusable=False + always_hide_cursor so the terminal cursor doesn't
+    # blink on the main frame (submenus already use focusable=False FTCs).
     return Window(
-        content=FormattedTextControl(text=_main_text, focusable=True),
+        content=FormattedTextControl(text=_main_text, focusable=False),
         wrap_lines=False,
+        always_hide_cursor=True,
     )
 
 
@@ -882,7 +862,13 @@ def _build_options_container():
     global _options_window
 
     title_window = Window(
-        content=FormattedTextControl(text=_options_title_text, focusable=False),
+        content=_ScrollControl(
+            text=_options_title_text,
+            focusable=False,
+            get_scroll=_get_options_scroll,
+            set_scroll=_set_options_scroll,
+            get_max=_options_max_scroll,
+        ),
         height=3,
         wrap_lines=False,
     )
@@ -898,7 +884,13 @@ def _build_options_container():
         get_vertical_scroll=lambda w: min(_options_scroll, _window_max_scroll(w)),
     )
     footer_window = Window(
-        content=FormattedTextControl(text=_options_footer_text, focusable=False),
+        content=_ScrollControl(
+            text=_options_footer_text,
+            focusable=False,
+            get_scroll=_get_options_scroll,
+            set_scroll=_set_options_scroll,
+            get_max=_options_max_scroll,
+        ),
         height=2,
         wrap_lines=False,
     )
@@ -910,10 +902,18 @@ def _build_scripts_container():
     global _scripts_window
 
     title_window = Window(
-        content=FormattedTextControl(text=_scripts_title_text, focusable=False),
+        content=_ScrollControl(
+            text=_scripts_title_text,
+            focusable=False,
+            get_scroll=_get_scripts_scroll,
+            set_scroll=_set_scripts_scroll,
+            get_max=_scripts_max_scroll,
+        ),
         height=3,
         wrap_lines=False,
     )
+    # No get_vertical_scroll: _scripts_content_text already slices by
+    # _scripts_scroll, so the Window just renders the visible chunk.
     content_window = Window(
         content=_ScrollControl(
             text=_scripts_content_text,
@@ -923,10 +923,15 @@ def _build_scripts_container():
             get_max=_scripts_max_scroll,
         ),
         wrap_lines=False,
-        get_vertical_scroll=lambda w: min(_scripts_scroll, _window_max_scroll(w)),
     )
     footer_window = Window(
-        content=FormattedTextControl(text=_scripts_footer_text, focusable=False),
+        content=_ScrollControl(
+            text=_scripts_footer_text,
+            focusable=False,
+            get_scroll=_get_scripts_scroll,
+            set_scroll=_set_scripts_scroll,
+            get_max=_scripts_max_scroll,
+        ),
         height=2,
         wrap_lines=False,
     )
@@ -967,6 +972,12 @@ def main():
         mouse_support=True,
         color_depth=ColorDepth.DEPTH_24_BIT,
     )
+    # Lower the input-parser flush timeout so bare ESC fires near-instantly
+    # instead of waiting the prompt_toolkit default of 500 ms to disambiguate
+    # from escape sequences. tmux's escape-time is already 10 ms; 50 ms here
+    # is generous on top of that.
+    app.ttimeoutlen = 0.05
+    app.timeoutlen  = 0.05
     _app = app
 
     try:
