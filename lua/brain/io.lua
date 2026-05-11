@@ -17,6 +17,7 @@
 --                         use GAME_SESSION to display in the MUD window
 -- send(cmd)            — send a MUD command to GAME_SESSION
 -- -----------------------------
+
 local _tintin_cmd_seq = 0
 
 function tintin(ses, cmd)

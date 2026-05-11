@@ -27,9 +27,11 @@
 #nop ===== CORE — auto-loaded from ttpp/core/ =====
 #script {ls ttpp/core/*.tin 2>/dev/null | sed 's/^/#read /'}
 
+
 #nop Catch commands from Lua — must be registered before #run {lua} so they exist
 #nop when Lua starts and immediately emits output during script load.
 #nop tintin(ses, cmd)  — relay for simple brace-free commands (MUD sends, etc.)
+
 #action {tintin (%1) %2}      {#%1 %2}
 #nop tintin_cmd — file-based relay for commands with braces (actions, delays, etc.)
 #nop brain.lua writes the command to a unique file then signals via tintin_read.
