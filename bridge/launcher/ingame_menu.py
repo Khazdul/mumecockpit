@@ -66,7 +66,7 @@ C_ERR     = "bold fg:#ff5f5f"   # _MR_ERR
 # Statistics-frame palette (mockup-driven; isolated from the other frames so
 # the main/options/scripts palettes are unaffected).
 # ---------------------------------------------------------------------------
-C_HEADER   = "bold fg:#ffd060"  # gold ◆ RUN STATISTICS banner only
+C_HEADER   = "bold fg:#ffd060"  # gold ◆ STATISTICS banner only
 C_SECTION  = C_TITLE            # cyan section titles (KILLS, PvPs, …, XP/h, TP/h)
 C_DIVIDER  = C_HINT             # muted gray section rules and chart frame strokes
 _S_VALUE   = "fg:#ffffff"       # data values, names
@@ -1567,8 +1567,8 @@ def _statistics_text():
     if cur_lv is None:
         cur_lv = status.get("level", "?")
     base_header = (
-        f"◆ RUN STATISTICS  —  {_stats_char}  "
-        f"·  Lv {cur_lv}  ·  Run {_fmt_duration(stats.duration_seconds)}"
+        f"◆ STATISTICS  —  {_stats_char}  "
+        f"·  Lvl {cur_lv}  ·  Run {_fmt_duration(stats.duration_seconds)}"
     )
     suffix = " · Run ended" if _stats_run_ended else ""
     frags.append(("", "\n"))
@@ -1589,7 +1589,7 @@ def _statistics_text():
 
     _append_xp_linjalen(frags, stats, cols)
 
-    footer = "ESC Back     ↑↓ Scroll     R Refresh"
+    footer = "ESC Back     ↑↓ Scroll     Tab/Shift+Tab Switch table"
     frags.append(("", _pad_centre(footer, cols)))
     frags.append((_S_HINT, footer))
 
@@ -1774,35 +1774,6 @@ def _scr_escape(event):
 def _stat_escape(event):
     _stop_stats_tick()
     _pop_frame()
-
-
-@kb.add("r", filter=_in_frame("statistics"))
-@kb.add("R", filter=_in_frame("statistics"))
-def _stat_refresh(event):
-    global _stats_data, _stats_status, _stats_run_ended
-    if not _stats_char:
-        return
-    try:
-        new_stats = run_stats.load_current_run_stats(_stats_char)
-    except Exception:
-        new_stats = None
-    if _stats_run_ended:
-        # After run-end-mid-view: only adopt a fresh active run (the rare
-        # case where the player reconnected and a new run started). A None
-        # or still-inactive result leaves the cached data and indicator.
-        if new_stats is not None and new_stats.is_active:
-            _stats_run_ended = False
-            _stats_data      = new_stats
-            _stats_status    = _read_status_state()
-            _refresh_stats_scrollbars(_stats_kills_pvps_visible)
-            _start_stats_tick()
-    else:
-        if new_stats is not None:
-            _stats_data = new_stats
-        _stats_status = _read_status_state()
-        _refresh_stats_scrollbars(_stats_kills_pvps_visible)
-    if _app:
-        _app.invalidate()
 
 
 @kb.add("up", filter=_in_frame("statistics"))
