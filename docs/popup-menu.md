@@ -111,22 +111,56 @@ If either disappears mid-session the row vanishes from the main frame.
 Selecting the row reads the cached aggregator output via
 `run_stats.load_current_run_stats(character)` once, stores it in
 module-level globals, and pushes the `statistics` frame. The frame
-renders a single `FormattedTextControl` — all sections (header, XP bar,
-sparklines, kill / pkill / allies / achievements tables, footer) emit
-plain styled fragments with no mouse handlers. Per-fragment click
-handlers, click-to-sort, focus, and the scrollbar widget land in a
-follow-up commit.
+renders a single `FormattedTextControl`. Header, XP bar, and sparklines
+emit plain styled fragments; the kill / pkill / allies / achievements
+tables emit per-cell fragments with mouse handlers (sort, focus,
+scrollbar click) using the shared `widgets/scrollbar.py` widget.
+
+Four tables, each with its own `Scrollbar` instance: Kills (5 visible
+rows), Player Kills (5), Allies (2 — each row is a comma-separated
+group of 3 names), Achievements (2). Each table renders a sticky
+column-header row, a window of data rows, and (for Kills/PKills) a
+sticky Total row. The per-row scrollbar cell sits in the rightmost
+column of each table.
+
+**Sort.** Kills and Player Kills have a `(column, direction)` sort
+state. Defaults at frame push: Kills `("XP tot", "desc")`, Player Kills
+`("XP", "desc")`. Clicking a column header toggles direction when the
+clicked column is already active, or switches to it with the
+column-type default (text asc, numeric desc). The active column shows
+` ▲` (asc) or ` ▼` (desc) after its name. Switching column resets that
+table's scroll offset to 0. Allies and Achievements are fixed
+(alphabetical / chronological) and have no sort UI.
+
+**Focus.** A module-level `_stats_focused` integer (0..3) tracks which
+table receives keyboard scroll. Tab / Shift+Tab cycle. Mouse click
+anywhere in a table (title, header, row, scrollbar) sets focus to that
+table. The focused table's title renders in `C_ACTIVE` (bright white)
+instead of `C_TITLE` (cyan).
+
+**Live tick.** When the frame is pushed an `asyncio` task starts; it
+sleeps 60 s, re-invokes `load_current_run_stats(character)`, updates
+the scrollbars, and invalidates the app. The task exits when the
+statistics frame is no longer on top of the stack. ESC cancels it
+explicitly.
+
+**Run-end-mid-view.** If a tick refresh sees `is_active` flip from True
+to False, the run ended while the user was viewing. The cached data
+stays on screen, the tick stops, and the header gets ` · Run ended`
+appended in `C_HINT` dim style. R remains live: it leaves the cached
+data in place unless the load returns a new active run (e.g. the
+player reconnected and a new run started), in which case it adopts
+that and restarts the tick.
 
 Key bindings on the frame:
 
-- **ESC** (eager) — pop back to the main frame.
-- **R / r** — re-invokes the aggregator and re-reads `status.state`;
-  the view refreshes via `app.invalidate()`.
+- **ESC** (eager) — stop the tick, pop back to the main frame.
+- **↑ / ↓** — scroll the focused table by one row.
+- **PageUp / PageDown** — scroll the focused table by `visible_items` rows.
+- **Tab / Shift+Tab** — cycle focus across the four tables.
+- **R / r** — immediate refresh. Re-invokes the aggregator and re-reads
+  `status.state` (or, after run-end, only adopts a freshly active run).
 - **E / e** — placeholder, no-op for now; export run data is parked.
-
-Out of scope for this frame (parked for follow-up commits): per-table
-scrollbars and click-to-sort, Tab / Shift+Tab focus traversal, the live
-60 s tick, the `E` export action, and run-end-mid-view detection.
 
 ## Save profile (`cp -s`)
 
