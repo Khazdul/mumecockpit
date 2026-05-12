@@ -60,11 +60,13 @@ events.subscribe("gmcp_char_vitals", function(body)
             M.xp           = 0
         elseif body.xp < M.last_fold_xp then
             -- death penalty / level loss → rebaseline, drop pending
+            local delta = body.xp - M.last_fold_xp
             M.xp_baseline    = body.xp
             M.last_fold_xp   = body.xp
             M.xp             = 0
             M.pending_kills  = {}
             M.pending_pkills = {}
+            events.emit("xp_loss", { delta = delta })
         else
             M.xp = body.xp - M.xp_baseline
         end
@@ -75,10 +77,14 @@ events.subscribe("gmcp_char_vitals", function(body)
             M.last_tp     = body.tp
             M.tp          = 0
         elseif body.tp < M.last_tp then
-            -- tp drop (death penalty / trainer-spend) → silent rebaseline
+            -- tp drop → silent rebaseline. Fires for trainer-spend as well
+            -- as death penalty; downstream consumers cannot disambiguate
+            -- the two from GMCP alone.
+            local delta = body.tp - M.last_tp
             M.tp_baseline = body.tp
             M.last_tp     = body.tp
             M.tp          = 0
+            events.emit("tp_loss", { delta = delta })
         elseif body.tp > M.last_tp then
             events.emit("tp_gained", { delta = body.tp - M.last_tp })
             M.last_tp = body.tp

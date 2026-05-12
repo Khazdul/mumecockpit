@@ -177,6 +177,53 @@ no `tp_gained` row is written for decreases.
 Schema version is unchanged at `1`; old readers that do not recognise this event
 type can safely ignore the row.
 
+### `xp_loss`
+
+Written on each `Char.Vitals` tick where XP decreased since the previous tick.
+The negative delta is captured before `run_state` rebaselines, so the row
+reflects the magnitude of the loss as observed from GMCP. Typical cause is a
+death penalty, but any future server-side XP debit (e.g. quest penalty) would
+also trigger this event.
+
+```json
+{
+  "event":    "xp_loss",
+  "ts":       1746641500,
+  "xp_delta": -42000
+}
+```
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `ts` | integer | `os.time()` at write time |
+| `xp_delta` | integer | Negative integer; Vitals-to-Vitals difference; never zero or positive |
+
+Schema version is unchanged at `1`; this event is additive.
+
+### `tp_loss`
+
+Written on each `Char.Vitals` tick where TP decreased since the previous tick.
+The negative delta is captured before `run_state` rebaselines.
+
+```json
+{
+  "event":    "tp_loss",
+  "ts":       1746641500,
+  "tp_delta": -5
+}
+```
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `ts` | integer | `os.time()` at write time |
+| `tp_delta` | integer | Negative integer; Vitals-to-Vitals difference; never zero or positive |
+
+Note: this event fires for trainer-spend as well as death penalty — the two
+are indistinguishable from GMCP alone. Consumers that want to attribute a TP
+drop to death specifically must correlate with a nearby `char_death` row.
+
+Schema version is unchanged at `1`; this event is additive.
+
 ### `char_death`
 
 Written when the game sends `"You are dead! Sorry..."` — i.e. the character died

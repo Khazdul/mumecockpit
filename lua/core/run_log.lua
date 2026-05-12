@@ -198,6 +198,26 @@ events.subscribe("tp_gained", function(payload)
     dbg("[RUN_LOG] tp_gained: " .. tostring(payload.delta))
 end)
 
+events.subscribe("xp_loss", function(payload)
+    if not _active then return end
+    _append({
+        event    = "xp_loss",
+        ts       = os.time(),
+        xp_delta = payload.delta,
+    })
+    dbg("[RUN_LOG] xp_loss: " .. tostring(payload.delta))
+end)
+
+events.subscribe("tp_loss", function(payload)
+    if not _active then return end
+    _append({
+        event    = "tp_loss",
+        ts       = os.time(),
+        tp_delta = payload.delta,
+    })
+    dbg("[RUN_LOG] tp_loss: " .. tostring(payload.delta))
+end)
+
 events.subscribe("char_death", function()
     if not _active then return end
     local level = state.char and state.char.level
