@@ -78,40 +78,35 @@
 #alias {cp -h} {#system {bash $HOME/MUME/bridge/layout/toggle_pane.sh headers --persist}}
 
 #nop _save_profile — single definition of the profile save sequence
-#nop (#class write + sanitize). Safe to call from any session context;
-#nop no-ops when no profile is loaded. Used by cp -s, cp -e, the
-#nop SESSION DEACTIVATED handler, and the MMapper "Status: MUME closed
-#nop the connection." text action. See ADR 0061.
+#nop (#class write + sanitize). Session-context-only by design: must be
+#nop invoked from the session whose class is being written. The session
+#nop owns the profile class and the _profile_loaded flag; gts cannot
+#nop see them. Used by cp -s, cp -e, the SESSION DEACTIVATED handler,
+#nop and the MMapper "Status: MUME closed the connection." text action
+#nop — all of which fire in session context. See ADR 0064.
 #alias {_save_profile} {
-    #gts {
-        #if {"$_profile" != "" && $_profile_loaded} {
-            #$_profile {
-                #class {$_profile} {write} {ttpp/profiles/$_profile.tin}
-            };
-            #system {bash $HOME/MUME/bridge/release/sanitize_profile.sh ttpp/profiles/$_profile.tin}
-        }
+    #if {"$_profile" != "" && $_profile_loaded} {
+        #class {$_profile} {write} {ttpp/profiles/$_profile.tin};
+        #system {bash $HOME/MUME/bridge/release/sanitize_profile.sh ttpp/profiles/$_profile.tin}
     }
 }
 
 #alias {cp -s}
 {
-    #gts
+    #if {"$_profile" != ""}
     {
-        #if {"$_profile" != ""}
-        {
-            _save_profile;
-            #lua {system_ui("Profile saved to ttpp/profiles/" .. ui_var("$_profile") .. ".tin.")}
-        };
-        #else
-        {
-            #lua {ui_err("cp -s: no profile loaded.")}
-        }
+        _save_profile;
+        #lua {system_ui("Profile saved to ttpp/profiles/" .. ui_var("$_profile") .. ".tin.")}
+    };
+    #else
+    {
+        #lua {ui_err("cp -s: no profile loaded.")}
     }
 }
 
 #alias {cp -e} {
-    #gts;
     _save_profile;
+    #gts;
     #showme {[COCKPIT] Goodbye. Shutting down client...};
     #if {&game_session} {#$game_session #zap};
     #zap
@@ -123,7 +118,6 @@
 #nop variables.tin — placeholder
 
 #var {_zapping_intruder} {0}
-#var {_profile_loaded} {0}
 
 #nop ===== EVENTS / TRIGGERS =====
 
