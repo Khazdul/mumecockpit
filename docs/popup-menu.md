@@ -127,8 +127,12 @@ name + sort-trigger column labels in their data-column positions), a
 divider rule, a window of data rows, and a sticky Total row.
 ALLIES/ACHIEVEMENTS pad with blank rows when data is shorter than 3
 entries. The per-row scrollbar cell sits in the rightmost column of
-each table. Right-column content (PvPs / ALLIES / ACHIEVEMENTS) renders
-flush with its column boundary — there is no leading-glyph offset.
+each table. PvPs / ALLIES / ACHIEVEMENTS data rows carry a semantic
+glyph prefix (`⚔` red, `♦` cyan, `★` gold) absorbed into the existing
+left padding of the name/message column: the visible name shifts right
+by 2 cells, but the N / XP columns and the right edges of all tables
+stay at their original positions. Title rows and the PvPs Total row
+have no glyph.
 
 **KILLS/PvPs auto-fit.** `_compute_kills_pvps_visible()` reads the
 popup height at render time and subtracts `_STATS_FIXED_LINES` (the
@@ -165,11 +169,14 @@ module-level `C_TITLE` cyan that the popup banner also uses. The
 focused KILLS / PvPs / ALLIES / ACHIEVEMENTS title row paints en bloc
 in `C_ACTIVE` (bold white). Divider rules under section titles and
 sparkline frame strokes (`──┬──` under XP/h / TP/h, axis `│`, bottom
-`└──`) render in `C_DIVIDER`, a muted gray aliased to `C_HINT`. The
+`└──`) render in `C_DIVIDER`, a muted gray aliased to `C_HINT`.
+KILLS / PvPs data rows render in `_S_LABEL` (medium gray) so the
+`_S_TOTAL` (bold white) sticky Total row visually anchors the
+aggregate; ALLIES / ACHIEVEMENTS data rows stay in `_S_VALUE`. The
 data-cell palette (`_S_VALUE`, `_S_LABEL`, `_S_GAINED`, `_S_TP_BAR`,
-`_S_LEVEL`, `_S_TRACK`, `_S_THUMB`, `_S_TOTAL`, `_S_ARROW`, `_S_HINT`)
-is private to the frame so main / options / scripts palettes are
-unaffected.
+`_S_LEVEL`, `_S_TRACK`, `_S_THUMB`, `_S_TOTAL`, `_S_ARROW`, `_S_HINT`,
+`_S_PVP`, `_S_ALLY`, `_S_STAR`) is private to the frame so main /
+options / scripts palettes are unaffected.
 
 **Sparklines.** XP/h and TP/h each fill their column above (KILLS and
 PvPs widths respectively). A `──┬──` divider rule sits directly below
@@ -179,11 +186,13 @@ is `<y-label>` (right-aligned, 5 cells) · space · `│` · bucket
 columns, then a `└────` bottom rule and a `00:00 … MM:SS` x-axis.
 
 **XP-linjalen.** Four rows. Row 1 is the bracketed gain label
-`│◄── N XP ──►│` with the two `│` glyphs anchored to the green segment's
-start / end columns. The number and trailing ` XP ` label both render
-in `_S_GAINED` (green); brackets and arrow dashes in `_S_ARROW`. When
-the green segment is too narrow to fit the arrows, the label falls
-back to a plain `N XP` centred on the green segment. Row 2 is the bar
+`▌◄▬▬ N XP ▬▬►▐` with the two half-block glyphs (`▌` / `▐`) anchored
+to the green segment's start / end columns — the same glyphs used for
+the level boundary markers in row 3. The number and the ` XP ` label
+both render in `_S_GAINED` (green); the brackets, arrowheads, and `▬`
+filler render in `_S_ARROW`. When the green segment is too narrow to
+fit the arrows, the label falls back to a plain `N XP` centred on the
+green segment. Row 2 is the bar
 itself (`_S_TRACK` for unfilled, `_S_GAINED` for the gained segment).
 Row 3 is the level markers: `▌<level>` per boundary (except the last)
 and `<level>▐` on the final boundary. The half-block glyphs `▌` / `▐`

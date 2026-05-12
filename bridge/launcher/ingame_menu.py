@@ -79,6 +79,9 @@ _S_THUMB   = "fg:#ffffff"       # scrollbar thumb
 _S_TOTAL   = "bold fg:#ffffff"  # sticky Total rows
 _S_ARROW   = "fg:#b0b0b0"       # arrow brackets around XP-gain label
 _S_HINT    = "fg:#5c5c5c"       # footer hints
+_S_PVP     = "fg:#ff5f5f"       # ⚔ glyph before PvPs data rows
+_S_ALLY    = "fg:#00d7d7"       # ♦ glyph before ALLIES data rows
+_S_STAR    = "fg:#ffd060"       # ★ glyph before ACHIEVEMENTS data rows
 
 # ---------------------------------------------------------------------------
 # ASCII title (mirrors menu_render.sh draw_ascii_title)
@@ -1002,7 +1005,8 @@ def _append_xp_linjalen(frags, stats, cols):
     margin = max(0, (cols - bar_w) // 2)
     pad    = " " * margin
 
-    # Row 1: │◄── <N> XP ──►│  — brackets anchored to green-segment boundaries.
+    # Row 1: ▌◄▬▬ <N> XP ▬▬►▐  — half-block brackets match the level markers in
+    # row 3; ▬ (U+25AC) filler keeps the row visually aligned with the bar below.
     n_str       = f"{stats.xp_gained:,}"
     green_w     = cur_col - start_col
     inner_w     = max(0, green_w - 2)
@@ -1014,9 +1018,9 @@ def _append_xp_linjalen(frags, stats, cols):
         slack = inner_w - label_min_w
         left  = 2 + slack // 2
         right = 2 + slack - slack // 2
-        frags.append((_S_ARROW, "│◄" + "─" * left + " "))
+        frags.append((_S_ARROW, "▌◄" + "▬" * left + " "))
         frags.append((_S_GAINED, n_str + " XP "))
-        frags.append((_S_ARROW, "─" * right + "►│"))
+        frags.append((_S_ARROW, "▬" * right + "►▐"))
     elif green_w > 0:
         # Segment too narrow for brackets: centre the plain "<N> XP" label on
         # the green segment's centre point, even if it overflows.
@@ -1411,6 +1415,13 @@ def _append_kills_pvps(frags, stats, cols, visible):
     k_sb_cells = _scrollbar_row_cells(_kills_sb,  0)
     p_sb_cells = _scrollbar_row_cells(_pkills_sb, 1)
 
+    # PvPs row geometry: ⚔ + space are absorbed into the name column's left
+    # padding so the N / XP columns and the right edge stay put.
+    pk_n_col      = 3
+    pk_xp_col_w   = 9
+    pk_name_col   = max(1, right_w - pk_n_col - pk_xp_col_w - 2)
+    pk_inner_name = max(1, pk_name_col - 2)
+
     for i in range(visible):
         if i < len(k_view):
             name, agg = k_view[i]
@@ -1418,20 +1429,29 @@ def _append_kills_pvps(frags, stats, cols, visible):
             k_line = _format_kill_row(name, str(agg.count), str(avg), str(agg.total_xp), left_w)
         else:
             k_line = " " * left_w
-        if i < len(p_view):
-            name, agg = p_view[i]
-            p_line  = _format_pkill_row(name, str(agg.count), str(agg.total_xp), right_w)
-        else:
-            p_line  = " " * right_w
 
         frags.append(("", pad))
-        frags.append((_S_VALUE, k_line, k_focus))
+        frags.append((_S_LABEL, k_line, k_focus))
         if i < len(k_sb_cells):
             frags.append(k_sb_cells[i])
         else:
             frags.append(("", " "))
         frags.append(("", gap))
-        frags.append((_S_VALUE, p_line, p_focus))
+        if i < len(p_view):
+            name, agg = p_view[i]
+            if len(name) > pk_inner_name:
+                name = name[:pk_inner_name - 1] + "…"
+            n_str_pk  = str(agg.count)
+            xp_str_pk = str(agg.total_xp)
+            p_rest    = (
+                f" {name.ljust(pk_inner_name)} "
+                f"{n_str_pk.rjust(pk_n_col)} "
+                f"{xp_str_pk.rjust(pk_xp_col_w)}"
+            )
+            frags.append((_S_PVP,   "⚔", p_focus))
+            frags.append((_S_LABEL, p_rest, p_focus))
+        else:
+            frags.append((_S_LABEL, " " * right_w, p_focus))
         if i < len(p_sb_cells):
             frags.append(p_sb_cells[i])
         else:
@@ -1485,32 +1505,33 @@ def _append_allies_achievements(frags, stats, cols):
     a_sb_cells = _scrollbar_row_cells(_allies_sb,       2)
     h_sb_cells = _scrollbar_row_cells(_achievements_sb, 3)
 
-    a_name_w = left_w
-    h_name_w = right_w
+    # ♦ / ★ glyphs + space are absorbed into the name column's left padding so
+    # the right edges of both tables stay put.
+    a_inner_w = max(1, left_w  - 2)
+    h_inner_w = max(1, right_w - 2)
     for i in range(_ALLIES_ACH_VISIBLE):
+        frags.append(("", pad))
         if i < len(a_view):
             a = a_view[i]
-            if len(a) > a_name_w:
-                a = a[:a_name_w - 1] + "…"
-            a = a.ljust(a_name_w)
+            if len(a) > a_inner_w:
+                a = a[:a_inner_w - 1] + "…"
+            frags.append((_S_ALLY,  "♦", a_focus))
+            frags.append((_S_VALUE, " " + a.ljust(a_inner_w), a_focus))
         else:
-            a = " " * a_name_w
-        if i < len(h_view):
-            b = h_view[i]
-            if len(b) > h_name_w:
-                b = b[:h_name_w - 1] + "…"
-            b = b.ljust(h_name_w)
-        else:
-            b = " " * h_name_w
-
-        frags.append(("", pad))
-        frags.append((_S_VALUE, a, a_focus))
+            frags.append((_S_VALUE, " " * left_w, a_focus))
         if i < len(a_sb_cells):
             frags.append(a_sb_cells[i])
         else:
             frags.append(("", " "))
         frags.append(("", gap))
-        frags.append((_S_VALUE, b, h_focus))
+        if i < len(h_view):
+            b = h_view[i]
+            if len(b) > h_inner_w:
+                b = b[:h_inner_w - 1] + "…"
+            frags.append((_S_STAR,  "★", h_focus))
+            frags.append((_S_VALUE, " " + b.ljust(h_inner_w), h_focus))
+        else:
+            frags.append((_S_VALUE, " " * right_w, h_focus))
         if i < len(h_sb_cells):
             frags.append(h_sb_cells[i])
         else:
