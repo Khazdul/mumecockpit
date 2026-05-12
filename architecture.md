@@ -63,6 +63,8 @@ tracking, and UI feedback.
 │   │   ├── menu_render.sh    # Render/input helpers sourced by launcher.sh + ingame_menu.sh
 │   │   ├── tmux_start.sh     # tmux session creation, hooks, keybinds
 │   │   ├── ingame_menu.sh    # In-game ESC popup menu
+│   │   ├── run_stats.py      # JSONL run-statistics aggregator — shared by the popup
+│   │   │                     #   Statistics frame and the future launcher run-browser (ADR 0065)
 │   │   ├── launch.sh         # Windows shortcut target (ADR 0045)
 │   │   ├── build_initial_layout.sh  # Builds pane layout on first client-attach
 │   │   ├── wait_for_layout.sh       # Blocks tt++ start until layout is ready
@@ -70,10 +72,12 @@ tracking, and UI feedback.
 │   │   ├── read_config.sh    # Emits tt++ #var assignments from startup.conf
 │   │   ├── about.txt         # About page body text
 │   │   ├── quotes.txt        # Tolkien quotes shown on main menu (pipe-sep format)
-│   │   └── templates/        # New-profile content templates
-│   │                         #   blank_profile.tin — seeded into
-│   │                         #   ttpp/profiles/default.tin and used by
-│   │                         #   the launcher's "Create blank profile" (ADR 0042)
+│   │   ├── templates/        # New-profile content templates
+│   │   │                     #   blank_profile.tin — seeded into
+│   │   │                     #   ttpp/profiles/default.tin and used by
+│   │   │                     #   the launcher's "Create blank profile" (ADR 0042)
+│   │   └── widgets/          # Reusable prompt_toolkit widgets for the popup
+│   │                         #   scrollbar.py — click-to-jump scrollbar widget
 │   ├── panes/                # Python prompt_toolkit pane renderers
 │   │   ├── input_pane.py     # Input pane — CLI, forwards to TT++, right-aligned menu bar
 │   │   ├── comm_pane.py      # Comm pane — clickable channel-filter header + scrollable history

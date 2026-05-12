@@ -162,6 +162,14 @@ Key bindings on the frame:
   `status.state` (or, after run-end, only adopts a freshly active run).
 - **E / e** — placeholder, no-op for now; export run data is parked.
 
+**Parked.** `E` export of the current run to a file; drag-to-scroll on the
+scrollbar track (click-to-jump and keyboard scroll are the supported paths).
+
+The aggregation library backing this frame lives at
+`bridge/launcher/run_stats.py` and is shared with the future launcher
+run-browser. See [ADR 0065](decisions/0065-run-stats-python-aggregator.md)
+for the rationale.
+
 ## Save profile (`cp -s`)
 
 The "Save profile" row is always visible — save works even after link loss,
@@ -236,6 +244,37 @@ Deliberately NOT in the popup:
   other non-mouse-mode panes. The tradeoff is unacceptable; keyboard
   navigation (UP/DOWN, PageUp/PageDown) is the documented path. See
   [ADR 0062](decisions/0062-popup-menu-prompt-toolkit.md).
+
+## Adding a new frame
+
+The popup is a frame stack pushed and popped through `_push_frame` /
+`_pop_frame` (see [Overview](#overview)). Frame builders must observe
+one contract for mouse routing to work:
+
+1. **Each frame builder constructs at least one focusable `Window` and
+   stores it at module level.** Today: `_main_window`, `_options_window`,
+   `_scripts_window`, `_statistics_window`, `_exit_confirm_window`. The
+   "primary" window of a frame is the one that receives keyboard focus
+   while that frame is on top of the stack — usually the window whose
+   control owns the frame's mouse handlers.
+
+2. **`_push_frame` calls `app.layout.focus()` on the new frame's primary
+   window** after updating `_current_frame`. The dispatch is factored
+   into `_focus_current_frame()` — a small switch over `_current_frame`.
+   Add an entry there when adding a frame. `_pop_frame` re-runs the same
+   dispatch on the way back so the previous frame regains focus.
+
+3. **Frames whose interactivity is keyboard-only can technically skip
+   this**, but should not. Marking the primary control `focusable=True`
+   and wiring one line into `_focus_current_frame` costs nothing; the
+   silent mouse-routing failure that follows if a future contributor
+   adds a mouse handler to a frame outside the dispatch is exactly what
+   this contract prevents.
+
+If a new frame's mouse handlers seem to fire on the wrong control or
+not at all, check the dispatch switch first. See
+[ADR 0066](decisions/0066-popup-frame-focus-on-push.md) for the failure
+mode that motivated the contract.
 
 ---
 Back to [architecture.md](../architecture.md).
