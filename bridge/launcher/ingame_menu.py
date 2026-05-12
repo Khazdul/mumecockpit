@@ -28,6 +28,7 @@ import sys
 import time
 
 import run_stats
+from widgets.scrollbar import Scrollbar
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -102,12 +103,24 @@ _sel_options      = 0
 _options_scroll   = 0
 _scripts_scroll   = 0
 _save_flash_until = 0.0
-_app              = None
-_options_window   = None        # set in main(); referenced for render_info
-_scripts_window   = None        # set in main(); referenced for render_info
+_app                 = None
+_main_window         = None     # set in main(); referenced for focus
+_options_window      = None     # set in main(); referenced for render_info / focus
+_scripts_window      = None     # set in main(); referenced for render_info / focus
+_statistics_window   = None     # set in main(); referenced for focus
+_exit_confirm_window = None     # set in main(); referenced for focus
 _stats_data       = None        # cached run_stats.RunStats for statistics frame
 _stats_status     = None        # cached status.state dict (xp_progress source)
 _stats_char       = None        # character name driving the statistics view
+_stats_kills_sort  = ("XP tot", "desc")
+_stats_pkills_sort = ("XP", "desc")
+_stats_focused     = 0          # 0=Kills, 1=PKills, 2=Allies, 3=Achievements
+_stats_run_ended   = False
+_stats_tick_task   = None       # asyncio.Task for the 60 s refresh loop
+_kills_sb          = None       # Scrollbar instances, created on first push
+_pkills_sb         = None
+_allies_sb         = None
+_achievements_sb   = None
 
 
 # ---------------------------------------------------------------------------
@@ -249,10 +262,29 @@ def _toggle_pane(target):
 # ---------------------------------------------------------------------------
 # Frame stack
 # ---------------------------------------------------------------------------
+def _focus_current_frame():
+    if not _app:
+        return
+    win = {
+        "main":         _main_window,
+        "options":      _options_window,
+        "scripts":      _scripts_window,
+        "statistics":   _statistics_window,
+        "exit_confirm": _exit_confirm_window,
+    }.get(_current_frame)
+    if win is None:
+        return
+    try:
+        _app.layout.focus(win)
+    except Exception:
+        pass
+
+
 def _push_frame(frame):
     global _current_frame
     _frame_stack.append(_current_frame)
     _current_frame = frame
+    _focus_current_frame()
     if _app:
         _app.invalidate()
 
@@ -263,6 +295,7 @@ def _pop_frame():
         _current_frame = _frame_stack.pop()
     else:
         _current_frame = "main"
+    _focus_current_frame()
     if _app:
         _app.invalidate()
 
@@ -323,6 +356,7 @@ def _activate_main_item(action):
         if char:
             _load_statistics(char)
             _push_frame("statistics")
+            _start_stats_tick()
     elif action == "exit":
         _push_frame("exit_confirm")
 
@@ -668,25 +702,115 @@ def _exit_confirm_text():
 
 
 # ---------------------------------------------------------------------------
-# Statistics frame (static layout in this commit; sort/focus/scroll lands next)
+# Statistics frame
 # ---------------------------------------------------------------------------
-_STAT_BAR_WIDTH     = 84
-_STAT_SPARK_WIDTH   = 30      # bucket columns per sparkline
-_STAT_Y_LABEL_W     = 5       # right-aligned y-axis label width
-_STAT_TABLE_LEFT_W  = 40
-_STAT_TABLE_RIGHT_W = 40
-_STAT_TABLE_GAP     = "  "
-_STAT_BLOCKS        = "▁▂▃▄▅▆▇█"
+_STAT_BAR_WIDTH       = 84
+_STAT_SPARK_WIDTH     = 30      # bucket columns per sparkline
+_STAT_Y_LABEL_W       = 5       # right-aligned y-axis label width
+_STAT_TABLE_LEFT_W    = 40
+_STAT_TABLE_RIGHT_W   = 40
+_STAT_TABLE_GAP       = "  "
+_STAT_BLOCKS          = "▁▂▃▄▅▆▇█"
+
+_KILLS_VISIBLE        = 5
+_PKILLS_VISIBLE       = 5
+_ALLIES_VISIBLE       = 2
+_ACHIEVEMENTS_VISIBLE = 2
+
+
+def _ensure_stats_scrollbars():
+    global _kills_sb, _pkills_sb, _allies_sb, _achievements_sb
+    if _kills_sb is None:
+        _kills_sb        = Scrollbar(0, _KILLS_VISIBLE,        _KILLS_VISIBLE)
+        _pkills_sb       = Scrollbar(0, _PKILLS_VISIBLE,       _PKILLS_VISIBLE)
+        _allies_sb       = Scrollbar(0, _ALLIES_VISIBLE,       _ALLIES_VISIBLE)
+        _achievements_sb = Scrollbar(0, _ACHIEVEMENTS_VISIBLE, _ACHIEVEMENTS_VISIBLE)
+
+
+def _ally_visual_rows(allies):
+    return [", ".join(allies[i:i + 3]) for i in range(0, len(allies), 3)]
+
+
+def _refresh_stats_scrollbars():
+    if _stats_data is None or _kills_sb is None:
+        return
+    _kills_sb.update(len(_stats_data.kills),  _KILLS_VISIBLE)
+    _pkills_sb.update(len(_stats_data.pkills), _PKILLS_VISIBLE)
+    _allies_sb.update(len(_ally_visual_rows(_stats_data.allies)), _ALLIES_VISIBLE)
+    _achievements_sb.update(len(_stats_data.achievements), _ACHIEVEMENTS_VISIBLE)
 
 
 def _load_statistics(character):
     global _stats_data, _stats_status, _stats_char
+    global _stats_kills_sort, _stats_pkills_sort, _stats_focused, _stats_run_ended
     _stats_char   = character
     _stats_status = _read_status_state()
     try:
         _stats_data = run_stats.load_current_run_stats(character)
     except Exception:
         _stats_data = None
+    _stats_kills_sort  = ("XP tot", "desc")
+    _stats_pkills_sort = ("XP", "desc")
+    _stats_focused     = 0
+    _stats_run_ended   = False
+    _ensure_stats_scrollbars()
+    for sb in (_kills_sb, _pkills_sb, _allies_sb, _achievements_sb):
+        sb.scroll_to(0)
+    _refresh_stats_scrollbars()
+
+
+async def _stats_tick():
+    """60 s refresh loop. Detects run-end-mid-view and stops itself."""
+    global _stats_data, _stats_status, _stats_run_ended
+    try:
+        while True:
+            await asyncio.sleep(60)
+            if _current_frame != "statistics" or not _stats_char:
+                return
+            old_active = bool(_stats_data and _stats_data.is_active)
+            try:
+                new_stats = run_stats.load_current_run_stats(_stats_char)
+            except Exception:
+                new_stats = None
+            if new_stats is None:
+                continue
+            _stats_data   = new_stats
+            _stats_status = _read_status_state()
+            _refresh_stats_scrollbars()
+            if old_active and not new_stats.is_active:
+                _stats_run_ended = True
+                if _app:
+                    _app.invalidate()
+                return
+            if _app:
+                _app.invalidate()
+    except asyncio.CancelledError:
+        pass
+
+
+def _start_stats_tick():
+    global _stats_tick_task
+    _stop_stats_tick()
+    try:
+        loop = asyncio.get_running_loop()
+        _stats_tick_task = loop.create_task(_stats_tick())
+    except RuntimeError:
+        pass
+
+
+def _stop_stats_tick():
+    global _stats_tick_task
+    if _stats_tick_task is not None:
+        _stats_tick_task.cancel()
+        _stats_tick_task = None
+
+
+def _focused_scrollbar():
+    return (_kills_sb, _pkills_sb, _allies_sb, _achievements_sb)[_stats_focused]
+
+
+def _focused_visible_count():
+    return (_KILLS_VISIBLE, _PKILLS_VISIBLE, _ALLIES_VISIBLE, _ACHIEVEMENTS_VISIBLE)[_stats_focused]
 
 
 def _fmt_xp_short(n):
@@ -933,49 +1057,217 @@ def _append_sparklines(frags, stats, cols):
     frags.append((C_HINT, x_line))
 
 
+def _make_focus_handler(idx):
+    def _handler(ev):
+        if ev.event_type != MouseEventType.MOUSE_DOWN:
+            return
+        global _stats_focused
+        _stats_focused = idx
+        if _app:
+            _app.invalidate()
+    return _handler
+
+
+def _scrollbar_row_cells(sb, table_idx):
+    """Render `sb` and return one fragment per row (newlines stripped).
+
+    Wraps each cell handler so a click also moves keyboard focus to this table.
+    """
+    out = []
+    for f in sb.render():
+        if len(f) >= 2 and f[1] == "\n":
+            continue
+        if len(f) == 3:
+            style, text, orig = f
+
+            def _wrapped(ev, orig=orig, idx=table_idx):
+                if ev.event_type == MouseEventType.MOUSE_DOWN:
+                    global _stats_focused
+                    _stats_focused = idx
+                return orig(ev)
+
+            out.append((style, text, _wrapped))
+        else:
+            style, text = f[0], f[1]
+            out.append((style, text, _make_focus_handler(table_idx)))
+    return out
+
+
+def _default_sort_dir(col):
+    return "asc" if col in ("Mob", "Player") else "desc"
+
+
+def _toggle_sort(state_tuple, col):
+    cur_col, cur_dir = state_tuple
+    if col == cur_col:
+        return (col, "asc" if cur_dir == "desc" else "desc")
+    return (col, _default_sort_dir(col))
+
+
+def _make_kill_header_handler(col):
+    def _h(ev):
+        if ev.event_type != MouseEventType.MOUSE_DOWN:
+            return
+        global _stats_kills_sort, _stats_focused
+        _stats_focused = 0
+        _stats_kills_sort = _toggle_sort(_stats_kills_sort, col)
+        _kills_sb.scroll_to(0)
+        if _app:
+            _app.invalidate()
+    return _h
+
+
+def _make_pkill_header_handler(col):
+    def _h(ev):
+        if ev.event_type != MouseEventType.MOUSE_DOWN:
+            return
+        global _stats_pkills_sort, _stats_focused
+        _stats_focused = 1
+        _stats_pkills_sort = _toggle_sort(_stats_pkills_sort, col)
+        _pkills_sb.scroll_to(0)
+        if _app:
+            _app.invalidate()
+    return _h
+
+
+def _sorted_kills_items(kills_dict, sort_col, sort_dir):
+    keys = {
+        "Mob":    lambda kv: kv[0].lower(),
+        "N":      lambda kv: kv[1].count,
+        "XP/N":   lambda kv: (kv[1].total_xp // kv[1].count) if kv[1].count else 0,
+        "XP tot": lambda kv: kv[1].total_xp,
+    }
+    items = list(kills_dict.items())
+    items.sort(key=keys.get(sort_col, keys["XP tot"]), reverse=(sort_dir == "desc"))
+    return items
+
+
+def _sorted_pkills_items(pkills_dict, sort_col, sort_dir):
+    keys = {
+        "Player": lambda kv: kv[0].lower(),
+        "N":      lambda kv: kv[1].count,
+        "XP":     lambda kv: kv[1].total_xp,
+    }
+    items = list(pkills_dict.items())
+    items.sort(key=keys.get(sort_col, keys["XP"]), reverse=(sort_dir == "desc"))
+    return items
+
+
+def _header_label(base, is_active, sort_dir, align, width):
+    txt = base
+    if is_active:
+        txt += " ▼" if sort_dir == "desc" else " ▲"
+    if align == "left":
+        return txt[:width].ljust(width)
+    return txt[:width].rjust(width)
+
+
 def _append_kills_pkills(frags, stats, cols):
     left_w  = _STAT_TABLE_LEFT_W
     right_w = _STAT_TABLE_RIGHT_W
     gap     = _STAT_TABLE_GAP
-    margin  = max(0, (cols - (left_w + right_w + len(gap))) // 2)
+    # +2 reserves one column on each side for the per-table scrollbar strip.
+    total_w = left_w + 1 + len(gap) + right_w + 1
+    margin  = max(0, (cols - total_w) // 2)
     pad     = " " * margin
 
+    k_focus = _make_focus_handler(0)
+    p_focus = _make_focus_handler(1)
+    k_title_style = C_ACTIVE if _stats_focused == 0 else C_TITLE
+    p_title_style = C_ACTIVE if _stats_focused == 1 else C_TITLE
+
+    # Table titles
     frags.append(("", pad))
-    frags.append((C_TITLE, "Kills".ljust(left_w)))
+    frags.append((k_title_style, "Kills".ljust(left_w), k_focus))
+    frags.append(("", " "))
     frags.append(("", gap))
-    frags.append((C_TITLE, "Player Kills".ljust(right_w)))
+    frags.append((p_title_style, "Player Kills".ljust(right_w), p_focus))
+    frags.append(("", " "))
     frags.append(("", "\n"))
 
-    k_hdr  = _format_kill_row("Mob", "N", "XP/N", "XP tot", left_w)
-    pk_hdr = _format_pkill_row("Player", "N", "XP", right_w)
+    # Column headers (clickable to sort)
+    sort_col_k, sort_dir_k   = _stats_kills_sort
+    sort_col_pk, sort_dir_pk = _stats_pkills_sort
+
+    n_col, xp_per_col, xp_tot_col = 3, 7, 9
+    k_name_col = max(1, left_w - n_col - xp_per_col - xp_tot_col - 3)
+    pk_xp_col  = 9
+    p_name_col = max(1, right_w - n_col - pk_xp_col - 2)
+
+    k_header_cols = [
+        ("Mob",    "left",  k_name_col),
+        ("N",      "right", n_col),
+        ("XP/N",   "right", xp_per_col),
+        ("XP tot", "right", xp_tot_col),
+    ]
+    p_header_cols = [
+        ("Player", "left",  p_name_col),
+        ("N",      "right", n_col),
+        ("XP",     "right", pk_xp_col),
+    ]
+
     frags.append(("", pad))
-    frags.append((C_HINT, k_hdr))
+    for i, (col, align, w) in enumerate(k_header_cols):
+        is_active = (col == sort_col_k)
+        label = _header_label(col, is_active, sort_dir_k, align, w)
+        h     = _make_kill_header_handler(col)
+        style = C_ACTIVE if is_active else C_HINT
+        frags.append((style, label, h))
+        if i < len(k_header_cols) - 1:
+            frags.append(("", " ", h))
+    frags.append(("", " "))
     frags.append(("", gap))
-    frags.append((C_HINT, pk_hdr))
+    for i, (col, align, w) in enumerate(p_header_cols):
+        is_active = (col == sort_col_pk)
+        label = _header_label(col, is_active, sort_dir_pk, align, w)
+        h     = _make_pkill_header_handler(col)
+        style = C_ACTIVE if is_active else C_HINT
+        frags.append((style, label, h))
+        if i < len(p_header_cols) - 1:
+            frags.append(("", " ", h))
+    frags.append(("", " "))
     frags.append(("", "\n"))
 
-    kills  = sorted(stats.kills.items(),  key=lambda kv: -kv[1].total_xp)[:5]
-    pkills = sorted(stats.pkills.items(), key=lambda kv: -kv[1].total_xp)[:5]
+    # Data rows with per-row scrollbar cells
+    kills_items  = _sorted_kills_items(stats.kills, sort_col_k, sort_dir_k)
+    pkills_items = _sorted_pkills_items(stats.pkills, sort_col_pk, sort_dir_pk)
 
-    n_rows = max(len(kills), len(pkills), 1)
-    for i in range(n_rows):
-        if i < len(kills):
-            name, agg = kills[i]
+    k_off  = _kills_sb.scroll_offset
+    pk_off = _pkills_sb.scroll_offset
+    k_view = kills_items[k_off:k_off + _KILLS_VISIBLE]
+    p_view = pkills_items[pk_off:pk_off + _PKILLS_VISIBLE]
+
+    k_sb_cells = _scrollbar_row_cells(_kills_sb,  0)
+    p_sb_cells = _scrollbar_row_cells(_pkills_sb, 1)
+
+    for i in range(_KILLS_VISIBLE):
+        if i < len(k_view):
+            name, agg = k_view[i]
             avg = agg.total_xp // agg.count if agg.count else 0
             k_line = _format_kill_row(name, str(agg.count), str(avg), str(agg.total_xp), left_w)
         else:
             k_line = " " * left_w
-        if i < len(pkills):
-            name, agg = pkills[i]
-            pk_line = _format_pkill_row(name, str(agg.count), str(agg.total_xp), right_w)
+        if i < len(p_view):
+            name, agg = p_view[i]
+            p_line = _format_pkill_row(name, str(agg.count), str(agg.total_xp), right_w)
         else:
-            pk_line = " " * right_w
+            p_line = " " * right_w
+
         frags.append(("", pad))
-        frags.append((C_ITEM, k_line))
+        frags.append((C_ITEM, k_line, k_focus))
+        if i < len(k_sb_cells):
+            frags.append(k_sb_cells[i])
+        else:
+            frags.append(("", " "))
         frags.append(("", gap))
-        frags.append((C_ITEM, pk_line))
+        frags.append((C_ITEM, p_line, p_focus))
+        if i < len(p_sb_cells):
+            frags.append(p_sb_cells[i])
+        else:
+            frags.append(("", " "))
         frags.append(("", "\n"))
 
+    # Sticky total row
     k_cnt = sum(a.count for a in stats.kills.values())
     k_xp  = sum(a.total_xp for a in stats.kills.values())
     k_avg = k_xp // k_cnt if k_cnt else 0
@@ -985,9 +1277,11 @@ def _append_kills_pkills(frags, stats, cols):
     k_total  = _format_kill_row("Total",  str(k_cnt), str(k_avg), str(k_xp), left_w)
     pk_total = _format_pkill_row("Total", str(p_cnt), str(p_xp), right_w)
     frags.append(("", pad))
-    frags.append((C_ACCENT, k_total))
+    frags.append((C_ACCENT, k_total, k_focus))
+    frags.append(("", " "))
     frags.append(("", gap))
-    frags.append((C_ACCENT, pk_total))
+    frags.append((C_ACCENT, pk_total, p_focus))
+    frags.append(("", " "))
     frags.append(("", "\n"))
 
 
@@ -995,38 +1289,62 @@ def _append_allies_achievements(frags, stats, cols):
     left_w  = _STAT_TABLE_LEFT_W
     right_w = _STAT_TABLE_RIGHT_W
     gap     = _STAT_TABLE_GAP
-    margin  = max(0, (cols - (left_w + right_w + len(gap))) // 2)
+    total_w = left_w + 1 + len(gap) + right_w + 1
+    margin  = max(0, (cols - total_w) // 2)
     pad     = " " * margin
 
+    a_focus = _make_focus_handler(2)
+    h_focus = _make_focus_handler(3)
+    a_title_style = C_ACTIVE if _stats_focused == 2 else C_TITLE
+    h_title_style = C_ACTIVE if _stats_focused == 3 else C_TITLE
+
     frags.append(("", pad))
-    frags.append((C_TITLE, "Allies".ljust(left_w)))
+    frags.append((a_title_style, "Allies".ljust(left_w), a_focus))
+    frags.append(("", " "))
     frags.append(("", gap))
-    frags.append((C_TITLE, "Achievements".ljust(right_w)))
+    frags.append((h_title_style, "Achievements".ljust(right_w), h_focus))
+    frags.append(("", " "))
     frags.append(("", "\n"))
 
-    allies = stats.allies[:6]
-    ally_rows = []
-    for i in range(0, len(allies), 3):
-        ally_rows.append(", ".join(allies[i:i + 3]))
-    while len(ally_rows) < 2:
-        ally_rows.append("")
-    ally_rows = ally_rows[:2]
+    ally_rows = _ally_visual_rows(stats.allies)
+    ach_rows  = [a[1] for a in stats.achievements]
 
-    ach_rows = [a[1] for a in stats.achievements[:2]]
-    while len(ach_rows) < 2:
-        ach_rows.append("")
+    a_off = _allies_sb.scroll_offset
+    h_off = _achievements_sb.scroll_offset
+    a_view = ally_rows[a_off:a_off + _ALLIES_VISIBLE]
+    h_view = ach_rows[h_off:h_off + _ACHIEVEMENTS_VISIBLE]
 
-    for i in range(2):
-        a = ally_rows[i]
-        if len(a) > left_w:
-            a = a[:left_w - 1] + "…"
-        b = ach_rows[i]
-        if len(b) > right_w:
-            b = b[:right_w - 1] + "…"
+    a_sb_cells = _scrollbar_row_cells(_allies_sb,       2)
+    h_sb_cells = _scrollbar_row_cells(_achievements_sb, 3)
+
+    for i in range(_ALLIES_VISIBLE):
+        if i < len(a_view):
+            a = a_view[i]
+            if len(a) > left_w:
+                a = a[:left_w - 1] + "…"
+            a = a.ljust(left_w)
+        else:
+            a = " " * left_w
+        if i < len(h_view):
+            b = h_view[i]
+            if len(b) > right_w:
+                b = b[:right_w - 1] + "…"
+            b = b.ljust(right_w)
+        else:
+            b = " " * right_w
+
         frags.append(("", pad))
-        frags.append((C_ITEM, a.ljust(left_w)))
+        frags.append((C_ITEM, a, a_focus))
+        if i < len(a_sb_cells):
+            frags.append(a_sb_cells[i])
+        else:
+            frags.append(("", " "))
         frags.append(("", gap))
-        frags.append((C_ITEM, b.ljust(right_w)))
+        frags.append((C_ITEM, b, h_focus))
+        if i < len(h_sb_cells):
+            frags.append(h_sb_cells[i])
+        else:
+            frags.append(("", " "))
         frags.append(("", "\n"))
 
 
@@ -1052,13 +1370,16 @@ def _statistics_text():
     cur_lv = stats.current_level
     if cur_lv is None:
         cur_lv = status.get("level", "?")
-    header = (
+    base_header = (
         f"◆ RUN STATISTICS  —  {_stats_char}  "
         f"·  Lv {cur_lv}  ·  Run {_fmt_duration(stats.duration_seconds)}"
     )
+    suffix = " · Run ended" if _stats_run_ended else ""
     frags.append(("", "\n"))
-    frags.append(("", _pad_centre(header, cols)))
-    frags.append((C_TITLE, header))
+    frags.append(("", _pad_centre(base_header + suffix, cols)))
+    frags.append((C_TITLE, base_header))
+    if suffix:
+        frags.append((C_HINT, suffix))
     frags.append(("", "\n\n"))
 
     _append_xp_bar(frags, stats, cols)
@@ -1072,7 +1393,7 @@ def _statistics_text():
     _append_allies_achievements(frags, stats, cols)
 
     frags.append(("", "\n"))
-    footer = "ESC Back     R Refresh     E Export run data"
+    footer = "ESC Back   ↑↓ Scroll   R Refresh   E Export run data"
     frags.append(("", _pad_centre(footer, cols)))
     frags.append((C_HINT, footer))
 
@@ -1255,14 +1576,35 @@ def _scr_escape(event):
 # Statistics frame
 @kb.add("escape", filter=_in_frame("statistics"), eager=True)
 def _stat_escape(event):
+    _stop_stats_tick()
     _pop_frame()
 
 
 @kb.add("r", filter=_in_frame("statistics"))
 @kb.add("R", filter=_in_frame("statistics"))
 def _stat_refresh(event):
-    if _stats_char:
-        _load_statistics(_stats_char)
+    global _stats_data, _stats_status, _stats_run_ended
+    if not _stats_char:
+        return
+    try:
+        new_stats = run_stats.load_current_run_stats(_stats_char)
+    except Exception:
+        new_stats = None
+    if _stats_run_ended:
+        # After run-end-mid-view: only adopt a fresh active run (the rare
+        # case where the player reconnected and a new run started). A None
+        # or still-inactive result leaves the cached data and indicator.
+        if new_stats is not None and new_stats.is_active:
+            _stats_run_ended = False
+            _stats_data      = new_stats
+            _stats_status    = _read_status_state()
+            _refresh_stats_scrollbars()
+            _start_stats_tick()
+    else:
+        if new_stats is not None:
+            _stats_data = new_stats
+        _stats_status = _read_status_state()
+        _refresh_stats_scrollbars()
     if _app:
         _app.invalidate()
 
@@ -1272,6 +1614,58 @@ def _stat_refresh(event):
 def _stat_export(event):
     # Placeholder — export lands in a follow-up commit.
     pass
+
+
+@kb.add("up", filter=_in_frame("statistics"))
+def _stat_up(event):
+    if _kills_sb is None:
+        return
+    _focused_scrollbar().scroll_by(-1)
+    if _app:
+        _app.invalidate()
+
+
+@kb.add("down", filter=_in_frame("statistics"))
+def _stat_down(event):
+    if _kills_sb is None:
+        return
+    _focused_scrollbar().scroll_by(1)
+    if _app:
+        _app.invalidate()
+
+
+@kb.add("pageup", filter=_in_frame("statistics"))
+def _stat_pgup(event):
+    if _kills_sb is None:
+        return
+    _focused_scrollbar().scroll_by(-_focused_visible_count())
+    if _app:
+        _app.invalidate()
+
+
+@kb.add("pagedown", filter=_in_frame("statistics"))
+def _stat_pgdn(event):
+    if _kills_sb is None:
+        return
+    _focused_scrollbar().scroll_by(_focused_visible_count())
+    if _app:
+        _app.invalidate()
+
+
+@kb.add("tab", filter=_in_frame("statistics"))
+def _stat_tab(event):
+    global _stats_focused
+    _stats_focused = (_stats_focused + 1) % 4
+    if _app:
+        _app.invalidate()
+
+
+@kb.add("s-tab", filter=_in_frame("statistics"))
+def _stat_stab(event):
+    global _stats_focused
+    _stats_focused = (_stats_focused - 1) % 4
+    if _app:
+        _app.invalidate()
 
 
 # Exit-confirm frame
@@ -1316,13 +1710,15 @@ def _signal_exit(signum, frame):
 # Layout / main
 # ---------------------------------------------------------------------------
 def _build_main_container():
+    global _main_window
     # focusable=False + always_hide_cursor so the terminal cursor doesn't
     # blink on the main frame (submenus already use focusable=False FTCs).
-    return Window(
+    _main_window = Window(
         content=FormattedTextControl(text=_main_text, focusable=False),
         wrap_lines=False,
         always_hide_cursor=True,
     )
+    return _main_window
 
 
 def _build_options_container():
@@ -1407,18 +1803,22 @@ def _build_scripts_container():
 
 
 def _build_exit_confirm_container():
-    return Window(
+    global _exit_confirm_window
+    _exit_confirm_window = Window(
         content=FormattedTextControl(text=_exit_confirm_text, focusable=True),
         wrap_lines=False,
     )
+    return _exit_confirm_window
 
 
 def _build_statistics_container():
-    return Window(
-        content=FormattedTextControl(text=_statistics_text, focusable=False),
+    global _statistics_window
+    _statistics_window = Window(
+        content=FormattedTextControl(text=_statistics_text, focusable=True),
         wrap_lines=False,
         always_hide_cursor=True,
     )
+    return _statistics_window
 
 
 def main():
