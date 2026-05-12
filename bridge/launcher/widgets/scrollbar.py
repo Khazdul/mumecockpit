@@ -58,9 +58,16 @@ class Scrollbar:
     # ------------------------------------------------------------------
     # Reconfiguration / scrolling
     # ------------------------------------------------------------------
-    def update(self, total_items: int, visible_items: int) -> None:
+    def update(
+        self,
+        total_items: int,
+        visible_items: int,
+        height: int | None = None,
+    ) -> None:
         self._total   = max(0, int(total_items))
         self._visible = max(0, int(visible_items))
+        if height is not None:
+            self._height = max(1, int(height))
         max_scroll = self._max_scroll()
         if self._offset > max_scroll:
             self._offset = max_scroll

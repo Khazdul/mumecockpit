@@ -61,7 +61,26 @@ C_HINT    = "fg:#585858"        # _MR_HINT   — dim, colour 240
 C_ACCENT  = "bold fg:#ffaf00"   # _MR_ACCENT — colour 214, bold
 C_YELLOW  = "bold fg:#ffd75f"   # _MR_YELLOW
 C_ERR     = "bold fg:#ff5f5f"   # _MR_ERR
-C_GAINED  = "fg:#6fe060"        # statistics: traversed XP bar / sparkline bars
+
+# ---------------------------------------------------------------------------
+# Statistics-frame palette (mockup-driven; isolated from the other frames so
+# the main/options/scripts palettes are unaffected).
+# ---------------------------------------------------------------------------
+_S_TITLE   = "bold fg:#ffd060"  # section titles
+_S_DIVIDER = "fg:#3fb1d9"       # divider rules, chart axes
+_S_VALUE   = "fg:#ffffff"       # data values, names
+_S_LABEL   = "fg:#909090"       # axis numbers, column headers
+_S_GAINED  = "fg:#6fe060"       # XP bar gained portion, XP/h bars
+_S_TP_BAR  = "fg:#ffc847"       # TP/h bars
+_S_PVP_X   = "fg:#ff7060"       # × glyph in PvPs rows
+_S_ALLY    = "fg:#65d5e8"       # ◆ glyph in ALLIES rows
+_S_STAR    = "fg:#ffc847"       # ★ glyph in ACHIEVEMENTS rows
+_S_LEVEL   = "fg:#9fb8ff"       # level markers
+_S_TRACK   = "fg:#3a3a3a"       # scrollbar track, untraversed bar
+_S_THUMB   = "fg:#ffffff"       # scrollbar thumb
+_S_TOTAL   = "bold fg:#ffffff"  # sticky Total rows
+_S_ARROW   = "fg:#b0b0b0"       # arrow brackets around XP-gain label
+_S_HINT    = "fg:#5c5c5c"       # footer hints
 
 # ---------------------------------------------------------------------------
 # ASCII title (mirrors menu_render.sh draw_ascii_title)
@@ -712,32 +731,46 @@ _STAT_TABLE_RIGHT_W   = 40
 _STAT_TABLE_GAP       = "  "
 _STAT_BLOCKS          = "▁▂▃▄▅▆▇█"
 
-_KILLS_VISIBLE        = 5
-_PKILLS_VISIBLE       = 5
-_ALLIES_VISIBLE       = 2
-_ACHIEVEMENTS_VISIBLE = 2
+# ALLIES + ACHIEVEMENTS show a fixed 3 rows each. KILLS + PvPs auto-fit the
+# popup height (see _compute_kills_pvps_visible) with a 2-row minimum.
+_ALLIES_ACH_VISIBLE        = 3
+_KILLS_PVPS_MIN_VISIBLE    = 2
+# Fixed lines around the kills/pvps data rows in _statistics_text. Counted to
+# match the actual render output so the footer pins to the bottom of the popup.
+_STATS_FIXED_LINES         = 27
+
+_stats_kills_pvps_visible  = _KILLS_PVPS_MIN_VISIBLE
+
+
+def _compute_kills_pvps_visible():
+    available = _term_rows() - _STATS_FIXED_LINES
+    return max(_KILLS_PVPS_MIN_VISIBLE, available)
 
 
 def _ensure_stats_scrollbars():
     global _kills_sb, _pkills_sb, _allies_sb, _achievements_sb
     if _kills_sb is None:
-        _kills_sb        = Scrollbar(0, _KILLS_VISIBLE,        _KILLS_VISIBLE)
-        _pkills_sb       = Scrollbar(0, _PKILLS_VISIBLE,       _PKILLS_VISIBLE)
-        _allies_sb       = Scrollbar(0, _ALLIES_VISIBLE,       _ALLIES_VISIBLE)
-        _achievements_sb = Scrollbar(0, _ACHIEVEMENTS_VISIBLE, _ACHIEVEMENTS_VISIBLE)
+        _kills_sb        = Scrollbar(0, _KILLS_PVPS_MIN_VISIBLE, _KILLS_PVPS_MIN_VISIBLE,
+                                     thumb_style=_S_THUMB, track_style=_S_TRACK)
+        _pkills_sb       = Scrollbar(0, _KILLS_PVPS_MIN_VISIBLE, _KILLS_PVPS_MIN_VISIBLE,
+                                     thumb_style=_S_THUMB, track_style=_S_TRACK)
+        _allies_sb       = Scrollbar(0, _ALLIES_ACH_VISIBLE,     _ALLIES_ACH_VISIBLE,
+                                     thumb_style=_S_THUMB, track_style=_S_TRACK)
+        _achievements_sb = Scrollbar(0, _ALLIES_ACH_VISIBLE,     _ALLIES_ACH_VISIBLE,
+                                     thumb_style=_S_THUMB, track_style=_S_TRACK)
 
 
-def _ally_visual_rows(allies):
-    return [", ".join(allies[i:i + 3]) for i in range(0, len(allies), 3)]
-
-
-def _refresh_stats_scrollbars():
+def _refresh_stats_scrollbars(visible):
+    global _stats_kills_pvps_visible
     if _stats_data is None or _kills_sb is None:
         return
-    _kills_sb.update(len(_stats_data.kills),  _KILLS_VISIBLE)
-    _pkills_sb.update(len(_stats_data.pkills), _PKILLS_VISIBLE)
-    _allies_sb.update(len(_ally_visual_rows(_stats_data.allies)), _ALLIES_VISIBLE)
-    _achievements_sb.update(len(_stats_data.achievements), _ACHIEVEMENTS_VISIBLE)
+    _stats_kills_pvps_visible = visible
+    _kills_sb.update(len(_stats_data.kills),  visible, height=visible)
+    _pkills_sb.update(len(_stats_data.pkills), visible, height=visible)
+    _allies_sb.update(len(_stats_data.allies), _ALLIES_ACH_VISIBLE,
+                      height=_ALLIES_ACH_VISIBLE)
+    _achievements_sb.update(len(_stats_data.achievements), _ALLIES_ACH_VISIBLE,
+                            height=_ALLIES_ACH_VISIBLE)
 
 
 def _load_statistics(character):
@@ -756,15 +789,15 @@ def _load_statistics(character):
     _ensure_stats_scrollbars()
     for sb in (_kills_sb, _pkills_sb, _allies_sb, _achievements_sb):
         sb.scroll_to(0)
-    _refresh_stats_scrollbars()
+    _refresh_stats_scrollbars(_compute_kills_pvps_visible())
 
 
 async def _stats_tick():
-    """60 s refresh loop. Detects run-end-mid-view and stops itself."""
+    """1 s refresh loop. Detects run-end-mid-view and stops itself."""
     global _stats_data, _stats_status, _stats_run_ended
     try:
         while True:
-            await asyncio.sleep(60)
+            await asyncio.sleep(1)
             if _current_frame != "statistics" or not _stats_char:
                 return
             old_active = bool(_stats_data and _stats_data.is_active)
@@ -776,7 +809,7 @@ async def _stats_tick():
                 continue
             _stats_data   = new_stats
             _stats_status = _read_status_state()
-            _refresh_stats_scrollbars()
+            _refresh_stats_scrollbars(_stats_kills_pvps_visible)
             if old_active and not new_stats.is_active:
                 _stats_run_ended = True
                 if _app:
@@ -810,7 +843,9 @@ def _focused_scrollbar():
 
 
 def _focused_visible_count():
-    return (_KILLS_VISIBLE, _PKILLS_VISIBLE, _ALLIES_VISIBLE, _ACHIEVEMENTS_VISIBLE)[_stats_focused]
+    if _stats_focused < 2:
+        return _stats_kills_pvps_visible
+    return _ALLIES_ACH_VISIBLE
 
 
 def _fmt_xp_short(n):
@@ -950,7 +985,8 @@ def _xp_to_bar_col(xp, min_lv, hi_lv, bar_w):
     return max(0, min(bar_w, int(round(level_pos / span * bar_w))))
 
 
-def _append_xp_bar(frags, stats, cols):
+def _append_xp_linjalen(frags, stats, cols):
+    """XP-linjalen: gain label centered above green segment, bar, level markers."""
     bar_w = _STAT_BAR_WIDTH
     if stats.min_level is None or stats.current_level is None:
         return
@@ -967,20 +1003,51 @@ def _append_xp_bar(frags, stats, cols):
     margin = max(0, (cols - bar_w) // 2)
     pad    = " " * margin
 
-    gained_str = f"{stats.xp_gained:,} XP gained"
-    frags.append(("", _pad_centre(gained_str, cols)))
-    frags.append((C_ACCENT, gained_str))
+    # Row 1: bracketed-arrow gain label centred above the green segment.
+    green_w = cur_col - start_col
+    n_str   = f"{stats.xp_gained:,}"
+    inner   = f" {n_str} XP "
+    frags.append(("", pad))
+    if green_w >= len(inner) + 4:
+        if start_col > 0:
+            frags.append(("", " " * start_col))
+        slack = green_w - len(inner) - 4
+        left  = slack // 2
+        right = slack - left
+        frags.append((_S_ARROW, "|<" + "─" * left))
+        frags.append((_S_GAINED, inner))
+        frags.append((_S_ARROW, "─" * right + ">|"))
+    elif green_w >= len(inner) + 2:
+        if start_col > 0:
+            frags.append(("", " " * start_col))
+        slack = green_w - len(inner) - 2
+        left  = slack // 2
+        right = slack - left
+        frags.append((_S_ARROW, "<" + "─" * left))
+        frags.append((_S_GAINED, inner))
+        frags.append((_S_ARROW, "─" * right + ">"))
+    else:
+        # Segment too narrow for brackets: centre the plain "<N> XP" label on
+        # the green segment's centre point, even if it overflows.
+        plain  = f"{n_str} XP"
+        centre = start_col + green_w // 2
+        before = max(0, centre - len(plain) // 2)
+        if before > 0:
+            frags.append(("", " " * before))
+        frags.append((_S_GAINED, plain))
     frags.append(("", "\n"))
 
+    # Row 2: the bar.
     frags.append(("", pad))
     if start_col > 0:
-        frags.append((C_HINT, "░" * start_col))
+        frags.append((_S_TRACK, "░" * start_col))
     if cur_col > start_col:
-        frags.append((C_GAINED, "█" * (cur_col - start_col)))
+        frags.append((_S_GAINED, "█" * (cur_col - start_col)))
     if cur_col < bar_w:
-        frags.append((C_HINT, "░" * (bar_w - cur_col)))
+        frags.append((_S_TRACK, "░" * (bar_w - cur_col)))
     frags.append(("", "\n"))
 
+    # Row 3: level markers at segment boundaries.
     line = [" "] * bar_w
     for lv_offset in range(span + 1):
         col = int(round(lv_offset / span * bar_w))
@@ -993,7 +1060,8 @@ def _append_xp_bar(frags, stats, cols):
             if 0 <= col + i < bar_w:
                 line[col + i] = ch
     frags.append(("", pad))
-    frags.append((C_HINT, "".join(line)))
+    frags.append((_S_LEVEL, "".join(line)))
+    frags.append(("", "\n"))
 
 
 def _append_sparklines(frags, stats, cols):
@@ -1018,21 +1086,30 @@ def _append_sparklines(frags, stats, cols):
     tp_rows = _sparkline_rows(tp_rates, tp_max, rows=3)
 
     label_w = _STAT_Y_LABEL_W
-    side_w  = label_w + 1 + n
+    # side layout: <label_w>" "<│><n bucket cols>
+    side_w  = label_w + 1 + 1 + n
     gap     = "    "
     total_w = side_w * 2 + len(gap)
     margin  = max(0, (cols - total_w) // 2)
     pad     = " " * margin
+    chart_indent = " " * (label_w + 1 + 1)   # past label + space + │
 
-    # Title line (above each sparkline)
-    title_xp = "XP/h"
-    title_tp = "TP/h"
-    left_title  = (" " * (label_w + 1)) + title_xp.ljust(n)
-    right_title = (" " * (label_w + 1)) + title_tp.ljust(n)
+    # Title row: XP/h and TP/h in section-title style.
     frags.append(("", pad))
-    frags.append((C_BODY, left_title))
+    frags.append(("", chart_indent))
+    frags.append((_S_TITLE, "XP/h".ljust(n)))
     frags.append(("", gap))
-    frags.append((C_BODY, right_title))
+    frags.append(("", chart_indent))
+    frags.append((_S_TITLE, "TP/h".ljust(n)))
+    frags.append(("", "\n"))
+
+    # Divider row directly under each title (spans the chart column width).
+    frags.append(("", pad))
+    frags.append(("", chart_indent))
+    frags.append((_S_DIVIDER, "─" * n))
+    frags.append(("", gap))
+    frags.append(("", chart_indent))
+    frags.append((_S_DIVIDER, "─" * n))
     frags.append(("", "\n"))
 
     xp_labels = [_fmt_xp_short(xp_max), _fmt_xp_short(xp_max / 2), "0"]
@@ -1040,21 +1117,39 @@ def _append_sparklines(frags, stats, cols):
 
     for r in range(3):
         frags.append(("", pad))
-        frags.append((C_HINT, xp_labels[r].rjust(label_w) + " "))
-        frags.append((C_GAINED, xp_rows[r]))
+        frags.append((_S_LABEL, xp_labels[r].rjust(label_w)))
+        frags.append(("", " "))
+        frags.append((_S_DIVIDER, "│"))
+        frags.append((_S_GAINED, xp_rows[r]))
         frags.append(("", gap))
-        frags.append((C_HINT, tp_labels[r].rjust(label_w) + " "))
-        frags.append((C_GAINED, tp_rows[r]))
+        frags.append((_S_LABEL, tp_labels[r].rjust(label_w)))
+        frags.append(("", " "))
+        frags.append((_S_DIVIDER, "│"))
+        frags.append((_S_TP_BAR, tp_rows[r]))
         frags.append(("", "\n"))
 
+    # Bottom rule: └────...
+    axis_indent = " " * (label_w + 1)
+    frags.append(("", pad))
+    frags.append(("", axis_indent))
+    frags.append((_S_DIVIDER, "└" + "─" * n))
+    frags.append(("", gap))
+    frags.append(("", axis_indent))
+    frags.append((_S_DIVIDER, "└" + "─" * n))
+    frags.append(("", "\n"))
+
+    # X-axis labels (under the chart area).
     x_left  = "00:00"
     x_right = _fmt_duration(duration)[:5]
     fill    = max(1, n - len(x_left) - len(x_right))
-    x_line  = (" " * (label_w + 1)) + x_left + (" " * fill) + x_right
+    x_line  = x_left + (" " * fill) + x_right
     frags.append(("", pad))
-    frags.append((C_HINT, x_line))
+    frags.append(("", chart_indent))
+    frags.append((_S_LABEL, x_line))
     frags.append(("", gap))
-    frags.append((C_HINT, x_line))
+    frags.append(("", chart_indent))
+    frags.append((_S_LABEL, x_line))
+    frags.append(("", "\n"))
 
 
 def _make_focus_handler(idx):
@@ -1162,7 +1257,37 @@ def _header_label(base, is_active, sort_dir, align, width):
     return txt[:width].rjust(width)
 
 
-def _append_kills_pkills(frags, stats, cols):
+def _section_title_pair(frags, left_title, right_title, left_w, right_w, gap, pad,
+                         left_active=False, right_active=False,
+                         left_focus=None, right_focus=None):
+    """Two side-by-side section titles, each with a cyan divider rule under it."""
+    l_style = _S_VALUE if left_active else _S_TITLE
+    r_style = _S_VALUE if right_active else _S_TITLE
+
+    frags.append(("", pad))
+    if left_focus:
+        frags.append((l_style, left_title.ljust(left_w), left_focus))
+    else:
+        frags.append((l_style, left_title.ljust(left_w)))
+    frags.append(("", " "))
+    frags.append(("", gap))
+    if right_focus:
+        frags.append((r_style, right_title.ljust(right_w), right_focus))
+    else:
+        frags.append((r_style, right_title.ljust(right_w)))
+    frags.append(("", " "))
+    frags.append(("", "\n"))
+
+    frags.append(("", pad))
+    frags.append((_S_DIVIDER, "─" * left_w))
+    frags.append(("", " "))
+    frags.append(("", gap))
+    frags.append((_S_DIVIDER, "─" * right_w))
+    frags.append(("", " "))
+    frags.append(("", "\n"))
+
+
+def _append_kills_pvps(frags, stats, cols, visible):
     left_w  = _STAT_TABLE_LEFT_W
     right_w = _STAT_TABLE_RIGHT_W
     gap     = _STAT_TABLE_GAP
@@ -1173,26 +1298,24 @@ def _append_kills_pkills(frags, stats, cols):
 
     k_focus = _make_focus_handler(0)
     p_focus = _make_focus_handler(1)
-    k_title_style = C_ACTIVE if _stats_focused == 0 else C_TITLE
-    p_title_style = C_ACTIVE if _stats_focused == 1 else C_TITLE
 
-    # Table titles
-    frags.append(("", pad))
-    frags.append((k_title_style, "Kills".ljust(left_w), k_focus))
-    frags.append(("", " "))
-    frags.append(("", gap))
-    frags.append((p_title_style, "Player Kills".ljust(right_w), p_focus))
-    frags.append(("", " "))
-    frags.append(("", "\n"))
+    _section_title_pair(
+        frags, "KILLS", "PvPs", left_w, right_w, gap, pad,
+        left_active=(_stats_focused == 0),
+        right_active=(_stats_focused == 1),
+        left_focus=k_focus, right_focus=p_focus,
+    )
 
-    # Column headers (clickable to sort)
+    # Column headers (clickable to sort).
     sort_col_k, sort_dir_k   = _stats_kills_sort
     sort_col_pk, sort_dir_pk = _stats_pkills_sort
 
     n_col, xp_per_col, xp_tot_col = 3, 7, 9
     k_name_col = max(1, left_w - n_col - xp_per_col - xp_tot_col - 3)
     pk_xp_col  = 9
-    p_name_col = max(1, right_w - n_col - pk_xp_col - 2)
+    # PvPs rows carry a leading "× " glyph (2 cells); the header is offset to
+    # match so the columns line up under it.
+    p_name_col = max(1, right_w - 2 - n_col - pk_xp_col - 2)
 
     k_header_cols = [
         ("Mob",    "left",  k_name_col),
@@ -1211,36 +1334,38 @@ def _append_kills_pkills(frags, stats, cols):
         is_active = (col == sort_col_k)
         label = _header_label(col, is_active, sort_dir_k, align, w)
         h     = _make_kill_header_handler(col)
-        style = C_ACTIVE if is_active else C_HINT
+        style = _S_VALUE if is_active else _S_LABEL
         frags.append((style, label, h))
         if i < len(k_header_cols) - 1:
             frags.append(("", " ", h))
     frags.append(("", " "))
     frags.append(("", gap))
+    # 2-col placeholder under the × glyph column.
+    frags.append(("", "  ", p_focus))
     for i, (col, align, w) in enumerate(p_header_cols):
         is_active = (col == sort_col_pk)
         label = _header_label(col, is_active, sort_dir_pk, align, w)
         h     = _make_pkill_header_handler(col)
-        style = C_ACTIVE if is_active else C_HINT
+        style = _S_VALUE if is_active else _S_LABEL
         frags.append((style, label, h))
         if i < len(p_header_cols) - 1:
             frags.append(("", " ", h))
     frags.append(("", " "))
     frags.append(("", "\n"))
 
-    # Data rows with per-row scrollbar cells
-    kills_items  = _sorted_kills_items(stats.kills, sort_col_k, sort_dir_k)
+    kills_items  = _sorted_kills_items(stats.kills,  sort_col_k,  sort_dir_k)
     pkills_items = _sorted_pkills_items(stats.pkills, sort_col_pk, sort_dir_pk)
 
     k_off  = _kills_sb.scroll_offset
     pk_off = _pkills_sb.scroll_offset
-    k_view = kills_items[k_off:k_off + _KILLS_VISIBLE]
-    p_view = pkills_items[pk_off:pk_off + _PKILLS_VISIBLE]
+    k_view = kills_items[k_off:k_off + visible]
+    p_view = pkills_items[pk_off:pk_off + visible]
 
     k_sb_cells = _scrollbar_row_cells(_kills_sb,  0)
     p_sb_cells = _scrollbar_row_cells(_pkills_sb, 1)
 
-    for i in range(_KILLS_VISIBLE):
+    p_name_w = right_w - 2
+    for i in range(visible):
         if i < len(k_view):
             name, agg = k_view[i]
             avg = agg.total_xp // agg.count if agg.count else 0
@@ -1249,25 +1374,31 @@ def _append_kills_pkills(frags, stats, cols):
             k_line = " " * left_w
         if i < len(p_view):
             name, agg = p_view[i]
-            p_line = _format_pkill_row(name, str(agg.count), str(agg.total_xp), right_w)
+            p_body  = _format_pkill_row(name, str(agg.count), str(agg.total_xp), p_name_w)
+            has_pvp = True
         else:
-            p_line = " " * right_w
+            p_body  = " " * p_name_w
+            has_pvp = False
 
         frags.append(("", pad))
-        frags.append((C_ITEM, k_line, k_focus))
+        frags.append((_S_VALUE, k_line, k_focus))
         if i < len(k_sb_cells):
             frags.append(k_sb_cells[i])
         else:
             frags.append(("", " "))
         frags.append(("", gap))
-        frags.append((C_ITEM, p_line, p_focus))
+        if has_pvp:
+            frags.append((_S_PVP_X, "× ", p_focus))
+        else:
+            frags.append(("", "  ", p_focus))
+        frags.append((_S_VALUE, p_body, p_focus))
         if i < len(p_sb_cells):
             frags.append(p_sb_cells[i])
         else:
             frags.append(("", " "))
         frags.append(("", "\n"))
 
-    # Sticky total row
+    # Sticky total row.
     k_cnt = sum(a.count for a in stats.kills.values())
     k_xp  = sum(a.total_xp for a in stats.kills.values())
     k_avg = k_xp // k_cnt if k_cnt else 0
@@ -1275,12 +1406,13 @@ def _append_kills_pkills(frags, stats, cols):
     p_xp  = sum(a.total_xp for a in stats.pkills.values())
 
     k_total  = _format_kill_row("Total",  str(k_cnt), str(k_avg), str(k_xp), left_w)
-    pk_total = _format_pkill_row("Total", str(p_cnt), str(p_xp), right_w)
+    pk_total = _format_pkill_row("Total", str(p_cnt), str(p_xp), p_name_w)
     frags.append(("", pad))
-    frags.append((C_ACCENT, k_total, k_focus))
+    frags.append((_S_TOTAL, k_total, k_focus))
     frags.append(("", " "))
     frags.append(("", gap))
-    frags.append((C_ACCENT, pk_total, p_focus))
+    frags.append(("", "  ", p_focus))
+    frags.append((_S_TOTAL, pk_total, p_focus))
     frags.append(("", " "))
     frags.append(("", "\n"))
 
@@ -1295,52 +1427,63 @@ def _append_allies_achievements(frags, stats, cols):
 
     a_focus = _make_focus_handler(2)
     h_focus = _make_focus_handler(3)
-    a_title_style = C_ACTIVE if _stats_focused == 2 else C_TITLE
-    h_title_style = C_ACTIVE if _stats_focused == 3 else C_TITLE
 
-    frags.append(("", pad))
-    frags.append((a_title_style, "Allies".ljust(left_w), a_focus))
-    frags.append(("", " "))
-    frags.append(("", gap))
-    frags.append((h_title_style, "Achievements".ljust(right_w), h_focus))
-    frags.append(("", " "))
-    frags.append(("", "\n"))
+    _section_title_pair(
+        frags, "ALLIES", "ACHIEVEMENTS", left_w, right_w, gap, pad,
+        left_active=(_stats_focused == 2),
+        right_active=(_stats_focused == 3),
+        left_focus=a_focus, right_focus=h_focus,
+    )
 
-    ally_rows = _ally_visual_rows(stats.allies)
+    ally_rows = list(stats.allies)
     ach_rows  = [a[1] for a in stats.achievements]
 
-    a_off = _allies_sb.scroll_offset
-    h_off = _achievements_sb.scroll_offset
-    a_view = ally_rows[a_off:a_off + _ALLIES_VISIBLE]
-    h_view = ach_rows[h_off:h_off + _ACHIEVEMENTS_VISIBLE]
+    a_off  = _allies_sb.scroll_offset
+    h_off  = _achievements_sb.scroll_offset
+    a_view = ally_rows[a_off:a_off + _ALLIES_ACH_VISIBLE]
+    h_view = ach_rows[h_off:h_off + _ALLIES_ACH_VISIBLE]
 
     a_sb_cells = _scrollbar_row_cells(_allies_sb,       2)
     h_sb_cells = _scrollbar_row_cells(_achievements_sb, 3)
 
-    for i in range(_ALLIES_VISIBLE):
+    a_name_w = left_w  - 2
+    h_name_w = right_w - 2
+    for i in range(_ALLIES_ACH_VISIBLE):
         if i < len(a_view):
             a = a_view[i]
-            if len(a) > left_w:
-                a = a[:left_w - 1] + "…"
-            a = a.ljust(left_w)
+            if len(a) > a_name_w:
+                a = a[:a_name_w - 1] + "…"
+            a = a.ljust(a_name_w)
+            a_glyph = True
         else:
-            a = " " * left_w
+            a = " " * a_name_w
+            a_glyph = False
         if i < len(h_view):
             b = h_view[i]
-            if len(b) > right_w:
-                b = b[:right_w - 1] + "…"
-            b = b.ljust(right_w)
+            if len(b) > h_name_w:
+                b = b[:h_name_w - 1] + "…"
+            b = b.ljust(h_name_w)
+            h_glyph = True
         else:
-            b = " " * right_w
+            b = " " * h_name_w
+            h_glyph = False
 
         frags.append(("", pad))
-        frags.append((C_ITEM, a, a_focus))
+        if a_glyph:
+            frags.append((_S_ALLY, "◆ ", a_focus))
+        else:
+            frags.append(("", "  ", a_focus))
+        frags.append((_S_VALUE, a, a_focus))
         if i < len(a_sb_cells):
             frags.append(a_sb_cells[i])
         else:
             frags.append(("", " "))
         frags.append(("", gap))
-        frags.append((C_ITEM, b, h_focus))
+        if h_glyph:
+            frags.append((_S_STAR, "★ ", h_focus))
+        else:
+            frags.append(("", "  ", h_focus))
+        frags.append((_S_VALUE, b, h_focus))
         if i < len(h_sb_cells):
             frags.append(h_sb_cells[i])
         else:
@@ -1362,8 +1505,13 @@ def _statistics_text():
             (C_ERR, msg),
             ("", "\n\n"),
             ("", _pad_centre(hint, cols)),
-            (C_HINT, hint),
+            (_S_HINT, hint),
         ]
+
+    # Auto-fit KILLS/PvPs to the popup height; update both scrollbars so the
+    # thumb geometry matches the rendered row count.
+    visible = _compute_kills_pvps_visible()
+    _refresh_stats_scrollbars(visible)
 
     frags = []
 
@@ -1377,25 +1525,25 @@ def _statistics_text():
     suffix = " · Run ended" if _stats_run_ended else ""
     frags.append(("", "\n"))
     frags.append(("", _pad_centre(base_header + suffix, cols)))
-    frags.append((C_TITLE, base_header))
+    frags.append((_S_TITLE, base_header))
     if suffix:
-        frags.append((C_HINT, suffix))
+        frags.append((_S_HINT, suffix))
     frags.append(("", "\n\n"))
 
-    _append_xp_bar(frags, stats, cols)
-    frags.append(("", "\n\n"))
+    _append_allies_achievements(frags, stats, cols)
+    frags.append(("", "\n"))
+
+    _append_kills_pvps(frags, stats, cols, visible)
+    frags.append(("", "\n"))
 
     _append_sparklines(frags, stats, cols)
-    frags.append(("", "\n\n"))
-
-    _append_kills_pkills(frags, stats, cols)
     frags.append(("", "\n"))
-    _append_allies_achievements(frags, stats, cols)
 
-    frags.append(("", "\n"))
-    footer = "ESC Back   ↑↓ Scroll   R Refresh   E Export run data"
+    _append_xp_linjalen(frags, stats, cols)
+
+    footer = "ESC Back     ↑↓ Scroll     R Refresh"
     frags.append(("", _pad_centre(footer, cols)))
-    frags.append((C_HINT, footer))
+    frags.append((_S_HINT, footer))
 
     return frags
 
@@ -1598,22 +1746,15 @@ def _stat_refresh(event):
             _stats_run_ended = False
             _stats_data      = new_stats
             _stats_status    = _read_status_state()
-            _refresh_stats_scrollbars()
+            _refresh_stats_scrollbars(_stats_kills_pvps_visible)
             _start_stats_tick()
     else:
         if new_stats is not None:
             _stats_data = new_stats
         _stats_status = _read_status_state()
-        _refresh_stats_scrollbars()
+        _refresh_stats_scrollbars(_stats_kills_pvps_visible)
     if _app:
         _app.invalidate()
-
-
-@kb.add("e", filter=_in_frame("statistics"))
-@kb.add("E", filter=_in_frame("statistics"))
-def _stat_export(event):
-    # Placeholder — export lands in a follow-up commit.
-    pass
 
 
 @kb.add("up", filter=_in_frame("statistics"))

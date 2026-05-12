@@ -111,43 +111,71 @@ If either disappears mid-session the row vanishes from the main frame.
 Selecting the row reads the cached aggregator output via
 `run_stats.load_current_run_stats(character)` once, stores it in
 module-level globals, and pushes the `statistics` frame. The frame
-renders a single `FormattedTextControl`. Header, XP bar, and sparklines
-emit plain styled fragments; the kill / pkill / allies / achievements
-tables emit per-cell fragments with mouse handlers (sort, focus,
-scrollbar click) using the shared `widgets/scrollbar.py` widget.
+renders a single `FormattedTextControl`. Header, XP-linjalen, and
+sparklines emit plain styled fragments; the KILLS / PvPs / ALLIES /
+ACHIEVEMENTS tables emit per-cell fragments with mouse handlers (sort,
+focus, scrollbar click) using the shared `widgets/scrollbar.py` widget.
 
-Four tables, each with its own `Scrollbar` instance: Kills (5 visible
-rows), Player Kills (5), Allies (2 — each row is a comma-separated
-group of 3 names), Achievements (2). Each table renders a sticky
-column-header row, a window of data rows, and (for Kills/PKills) a
-sticky Total row. The per-row scrollbar cell sits in the rightmost
-column of each table.
+**Section order** (top to bottom): header line · ALLIES + ACHIEVEMENTS
+row · KILLS + PvPs row · sparklines (XP/h + TP/h) · XP-linjalen ·
+footer.
 
-**Sort.** Kills and Player Kills have a `(column, direction)` sort
-state. Defaults at frame push: Kills `("XP tot", "desc")`, Player Kills
-`("XP", "desc")`. Clicking a column header toggles direction when the
-clicked column is already active, or switches to it with the
-column-type default (text asc, numeric desc). The active column shows
-` ▲` (asc) or ` ▼` (desc) after its name. Switching column resets that
-table's scroll offset to 0. Allies and Achievements are fixed
-(alphabetical / chronological) and have no sort UI.
+Four tables, each with its own `Scrollbar` instance: KILLS (auto-fit,
+2 minimum), PvPs (same auto-fit count), ALLIES (3 fixed — one ally per
+row with a `◆` glyph), ACHIEVEMENTS (3 fixed — one achievement per row
+with a `★` glyph). KILLS/PvPs render a sticky column-header row, a
+window of data rows, and a sticky Total row. ALLIES/ACHIEVEMENTS pad
+with blank rows when data is shorter than 3 entries. The per-row
+scrollbar cell sits in the rightmost column of each table.
+
+**KILLS/PvPs auto-fit.** `_compute_kills_pvps_visible()` reads the
+popup height at render time and subtracts `_STATS_FIXED_LINES` (the
+counted overhead of header, dividers, titles, sparklines, XP-linjalen,
+and footer). Both KILLS and PvPs render the same `visible` row count,
+and `Scrollbar.update(total, visible, height=visible)` is called on
+each so the thumb geometry matches. Errs toward fewer rows so the
+footer stays pinned to the bottom of the popup.
+
+**Sort.** KILLS and PvPs have a `(column, direction)` sort state.
+Defaults at frame push: KILLS `("XP tot", "desc")`, PvPs `("XP",
+"desc")`. Clicking a column header toggles direction when the clicked
+column is already active, or switches to it with the column-type
+default (text asc, numeric desc). The active column shows ` ▲` (asc)
+or ` ▼` (desc) after its name. Switching column resets that table's
+scroll offset to 0. ALLIES and ACHIEVEMENTS are fixed (alphabetical /
+chronological) and have no sort UI.
 
 **Focus.** A module-level `_stats_focused` integer (0..3) tracks which
 table receives keyboard scroll. Tab / Shift+Tab cycle. Mouse click
 anywhere in a table (title, header, row, scrollbar) sets focus to that
-table. The focused table's title renders in `C_ACTIVE` (bright white)
-instead of `C_TITLE` (cyan).
+table. The focused table's title renders in `_S_VALUE` (bright white)
+instead of `_S_TITLE` (gold).
+
+**Palette.** The Statistics frame uses its own palette tokens
+(`_S_TITLE`, `_S_DIVIDER`, `_S_VALUE`, `_S_LABEL`, `_S_GAINED`,
+`_S_TP_BAR`, `_S_PVP_X`, `_S_ALLY`, `_S_STAR`, `_S_LEVEL`, `_S_TRACK`,
+`_S_THUMB`, `_S_TOTAL`, `_S_ARROW`, `_S_HINT`) so the main / options /
+scripts frames are unaffected. Section titles are gold with a cyan
+divider rule underneath spanning the column width.
+
+**XP-linjalen.** Three rows: a bracketed-arrow gain label of the form
+`|<──── N XP ────>|` sized to fill the green segment exactly (number
+in `_S_GAINED`, brackets and dashes in `_S_ARROW`); the bar itself
+(`_S_TRACK` for unfilled portions, `_S_GAINED` for the gained
+segment); and level markers in `_S_LEVEL` at segment boundaries.
 
 **Live tick.** When the frame is pushed an `asyncio` task starts; it
-sleeps 60 s, re-invokes `load_current_run_stats(character)`, updates
+sleeps 1 s, re-invokes `load_current_run_stats(character)`, updates
 the scrollbars, and invalidates the app. The task exits when the
 statistics frame is no longer on top of the stack. ESC cancels it
-explicitly.
+explicitly. JSONL re-read is microsecond-range on local disk, so 1 Hz
+keeps the duration counter and live data ticking visibly without
+straining I/O.
 
 **Run-end-mid-view.** If a tick refresh sees `is_active` flip from True
 to False, the run ended while the user was viewing. The cached data
 stays on screen, the tick stops, and the header gets ` · Run ended`
-appended in `C_HINT` dim style. R remains live: it leaves the cached
+appended in `_S_HINT` dim style. R remains live: it leaves the cached
 data in place unless the load returns a new active run (e.g. the
 player reconnected and a new run started), in which case it adopts
 that and restarts the tick.
@@ -160,10 +188,13 @@ Key bindings on the frame:
 - **Tab / Shift+Tab** — cycle focus across the four tables.
 - **R / r** — immediate refresh. Re-invokes the aggregator and re-reads
   `status.state` (or, after run-end, only adopts a freshly active run).
-- **E / e** — placeholder, no-op for now; export run data is parked.
 
-**Parked.** `E` export of the current run to a file; drag-to-scroll on the
-scrollbar track (click-to-jump and keyboard scroll are the supported paths).
+Footer: `ESC Back     ↑↓ Scroll     R Refresh`.
+
+**Parked.** Export of the current run to a file (the placeholder `E`
+keybinding was removed when the feature was cancelled); drag-to-scroll
+on the scrollbar track (click-to-jump and keyboard scroll are the
+supported paths).
 
 The aggregation library backing this frame lives at
 `bridge/launcher/run_stats.py` and is shared with the future launcher
