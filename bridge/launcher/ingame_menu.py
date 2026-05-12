@@ -779,7 +779,54 @@ def _format_pkill_row(name, n, xp, width):
     return f"{name.ljust(name_col)} {n.rjust(n_col)} {xp.rjust(xp_col)}"
 
 
-def _append_xp_bar(frags, stats, status, cols):
+# Cumulative career-XP thresholds, indexed by level - 1 (level 1 → index 0).
+# Mirror of TABLE_XP in lua/core/level_progress.lua; keep in sync.
+# stylua: ignore
+_TABLE_XP = [
+         1,      1000,      3000,      7000,     15000,     30000,     60000,    105000,    165000,    240000,  # 1-10
+    330000,    435000,    555000,    690000,    840000,   1040000,   1290000,   1590000,   1940000,   2340000,  # 11-20
+   2790000,   3290000,   3840000,   4440000,   5090000,   5790000,   6540000,   7340000,   8190000,   9090000,  # 21-30
+  10040000,  11040000,  12090000,  13190000,  14290000,  15390000,  16640000,  17890000,  19145000,  20400000,  # 31-40
+  21700000,  23050000,  24400000,  25750000,  27150000,  28550000,  30000000,  31500000,  33000000,  34550000,  # 41-50
+  36150000,  37750000,  39400000,  41100000,  42850000,  44600000,  46400000,  48250000,  50000000,  52000000,  # 51-60
+  54000000,  56000000,  58000000,  60000000,  62000000,  64000000,  66500000,  68500000,  71000000,  73000000,  # 61-70
+  75500000,  77500000,  80000000,  82500000,  85000000,  87500000,  90000000,  92500000,  95000000,  97500000,  # 71-80
+ 100500000, 103000000, 106000000, 108500000, 111500000, 114000000, 117000000, 120000000, 123000000, 126000000,  # 81-90
+ 129000000, 132000000, 135000000, 138000000, 141500000, 144500000, 148000000, 151000000, 154500000, 158000000,  # 91-100
+]
+
+
+def _level_threshold(level):
+    if level <= 1:
+        return _TABLE_XP[0]
+    if level >= 100:
+        return _TABLE_XP[99]
+    return _TABLE_XP[level - 1]
+
+
+def _xp_to_bar_col(xp, min_lv, hi_lv, bar_w):
+    """Map an absolute career-XP value to a column index in [0, bar_w].
+
+    The bar maps level → column linearly across [min_lv, hi_lv], with XP
+    interpolated linearly within each level interval (matching the
+    level-marker placement)."""
+    span = max(1, hi_lv - min_lv)
+    if xp <= _level_threshold(min_lv):
+        return 0
+    if xp >= _level_threshold(hi_lv):
+        return bar_w
+    L = min_lv
+    while L < hi_lv - 1 and xp >= _level_threshold(L + 1):
+        L += 1
+    lo = _level_threshold(L)
+    hi = _level_threshold(L + 1)
+    frac = (xp - lo) / (hi - lo) if hi > lo else 0.0
+    frac = max(0.0, min(1.0, frac))
+    level_pos = (L - min_lv) + frac
+    return max(0, min(bar_w, int(round(level_pos / span * bar_w))))
+
+
+def _append_xp_bar(frags, stats, cols):
     bar_w = _STAT_BAR_WIDTH
     if stats.min_level is None or stats.current_level is None:
         return
@@ -788,14 +835,10 @@ def _append_xp_bar(frags, stats, status, cols):
     hi_lv  = cur_lv + 2
     span   = max(1, hi_lv - min_lv)
 
-    try:
-        xp_progress = float(status.get("xp_progress") or 0.0)
-    except (TypeError, ValueError):
-        xp_progress = 0.0
-    xp_progress = max(0.0, min(0.999, xp_progress))
-
-    pos_levels = (cur_lv - min_lv) + xp_progress
-    filled = max(0, min(bar_w, int(round(pos_levels / span * bar_w))))
+    start_col = _xp_to_bar_col(stats.xp_at_start, min_lv, hi_lv, bar_w)
+    cur_col   = _xp_to_bar_col(stats.xp_current,  min_lv, hi_lv, bar_w)
+    if cur_col < start_col:
+        cur_col = start_col
 
     margin = max(0, (cols - bar_w) // 2)
     pad    = " " * margin
@@ -806,10 +849,12 @@ def _append_xp_bar(frags, stats, status, cols):
     frags.append(("", "\n"))
 
     frags.append(("", pad))
-    if filled > 0:
-        frags.append((C_GAINED, "█" * filled))
-    if filled < bar_w:
-        frags.append((C_HINT, "░" * (bar_w - filled)))
+    if start_col > 0:
+        frags.append((C_HINT, "░" * start_col))
+    if cur_col > start_col:
+        frags.append((C_GAINED, "█" * (cur_col - start_col)))
+    if cur_col < bar_w:
+        frags.append((C_HINT, "░" * (bar_w - cur_col)))
     frags.append(("", "\n"))
 
     line = [" "] * bar_w
@@ -1016,7 +1061,7 @@ def _statistics_text():
     frags.append((C_TITLE, header))
     frags.append(("", "\n\n"))
 
-    _append_xp_bar(frags, stats, status, cols)
+    _append_xp_bar(frags, stats, cols)
     frags.append(("", "\n\n"))
 
     _append_sparklines(frags, stats, cols)
