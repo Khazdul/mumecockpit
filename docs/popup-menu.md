@@ -149,20 +149,35 @@ chronological) and have no sort UI.
 table receives keyboard scroll. Tab / Shift+Tab cycle. Mouse click
 anywhere in a table (title, header, row, scrollbar) sets focus to that
 table. The focused table's title renders in `_S_VALUE` (bright white)
-instead of `_S_TITLE` (gold).
+instead of `C_SECTION` (cyan).
 
-**Palette.** The Statistics frame uses its own palette tokens
-(`_S_TITLE`, `_S_DIVIDER`, `_S_VALUE`, `_S_LABEL`, `_S_GAINED`,
+**Palette.** The Statistics frame uses `C_HEADER` (gold) only for the
+`◆ RUN STATISTICS …` banner; all six section titles (KILLS, PvPs,
+ALLIES, ACHIEVEMENTS, XP/h, TP/h) use `C_SECTION` — an alias to the
+module-level `C_TITLE` cyan that the popup banner also uses. Divider
+rules under KILLS / PvPs / ALLIES / ACHIEVEMENTS and the sparkline
+axis / bottom rules render in `C_DIVIDER`, a muted gray aliased to
+`C_HINT`. The data-cell palette (`_S_VALUE`, `_S_LABEL`, `_S_GAINED`,
 `_S_TP_BAR`, `_S_PVP_X`, `_S_ALLY`, `_S_STAR`, `_S_LEVEL`, `_S_TRACK`,
-`_S_THUMB`, `_S_TOTAL`, `_S_ARROW`, `_S_HINT`) so the main / options /
-scripts frames are unaffected. Section titles are gold with a cyan
-divider rule underneath spanning the column width.
+`_S_THUMB`, `_S_TOTAL`, `_S_ARROW`, `_S_HINT`) is private to the frame
+so main / options / scripts palettes are unaffected.
 
-**XP-linjalen.** Three rows: a bracketed-arrow gain label of the form
-`|<──── N XP ────>|` sized to fill the green segment exactly (number
-in `_S_GAINED`, brackets and dashes in `_S_ARROW`); the bar itself
-(`_S_TRACK` for unfilled portions, `_S_GAINED` for the gained
-segment); and level markers in `_S_LEVEL` at segment boundaries.
+**Sparklines.** XP/h and TP/h each fill their column above (KILLS and
+PvPs widths respectively). No divider rule under the title; the first
+y-axis row sits directly under the section name. Inside each chart the
+layout is `<y-label>` (right-aligned, 5 cells) · space · `│` · bucket
+columns, then a `└────` bottom rule and a `00:00 … MM:SS` x-axis.
+
+**XP-linjalen.** Four rows. Row 1 is the bracketed gain label
+`│◄── N XP ──►│` with the two `│` glyphs anchored to the green segment's
+start / end columns (number in `_S_GAINED`, brackets and arrow dashes
+in `_S_ARROW`); when the green segment is too narrow to fit the arrows,
+the label falls back to a plain `N XP` centred on the green segment.
+Row 2 is the bar itself (`_S_TRACK` for unfilled, `_S_GAINED` for the
+gained segment). Row 3 is the level markers: `▌<level>` per boundary
+(except the last) and `<level>▐` on the final boundary, all in
+`_S_LEVEL`; the half-block glyph sits on the boundary column and the
+digits flow off it. Row 4 is a trailing blank line.
 
 **Live tick.** When the frame is pushed an `asyncio` task starts; it
 sleeps 1 s, re-invokes `load_current_run_stats(character)`, updates

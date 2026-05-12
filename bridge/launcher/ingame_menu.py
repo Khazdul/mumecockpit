@@ -66,8 +66,9 @@ C_ERR     = "bold fg:#ff5f5f"   # _MR_ERR
 # Statistics-frame palette (mockup-driven; isolated from the other frames so
 # the main/options/scripts palettes are unaffected).
 # ---------------------------------------------------------------------------
-_S_TITLE   = "bold fg:#ffd060"  # section titles
-_S_DIVIDER = "fg:#3fb1d9"       # divider rules, chart axes
+C_HEADER   = "bold fg:#ffd060"  # gold ◆ RUN STATISTICS banner only
+C_SECTION  = C_TITLE            # cyan section titles (KILLS, PvPs, …, XP/h, TP/h)
+C_DIVIDER  = C_HINT             # muted gray section rules and chart frame strokes
 _S_VALUE   = "fg:#ffffff"       # data values, names
 _S_LABEL   = "fg:#909090"       # axis numbers, column headers
 _S_GAINED  = "fg:#6fe060"       # XP bar gained portion, XP/h bars
@@ -724,7 +725,6 @@ def _exit_confirm_text():
 # Statistics frame
 # ---------------------------------------------------------------------------
 _STAT_BAR_WIDTH       = 84
-_STAT_SPARK_WIDTH     = 30      # bucket columns per sparkline
 _STAT_Y_LABEL_W       = 5       # right-aligned y-axis label width
 _STAT_TABLE_LEFT_W    = 40
 _STAT_TABLE_RIGHT_W   = 40
@@ -737,6 +737,8 @@ _ALLIES_ACH_VISIBLE        = 3
 _KILLS_PVPS_MIN_VISIBLE    = 2
 # Fixed lines around the kills/pvps data rows in _statistics_text. Counted to
 # match the actual render output so the footer pins to the bottom of the popup.
+# XP-linjalen's new trailing blank row (+1) is offset by removing the divider
+# under the XP/h and TP/h titles (-1), so the total is unchanged.
 _STATS_FIXED_LINES         = 27
 
 _stats_kills_pvps_visible  = _KILLS_PVPS_MIN_VISIBLE
@@ -986,7 +988,7 @@ def _xp_to_bar_col(xp, min_lv, hi_lv, bar_w):
 
 
 def _append_xp_linjalen(frags, stats, cols):
-    """XP-linjalen: gain label centered above green segment, bar, level markers."""
+    """XP-linjalen: 4 rows — gain bracket, gain bar, level markers, blank."""
     bar_w = _STAT_BAR_WIDTH
     if stats.min_level is None or stats.current_level is None:
         return
@@ -1003,30 +1005,22 @@ def _append_xp_linjalen(frags, stats, cols):
     margin = max(0, (cols - bar_w) // 2)
     pad    = " " * margin
 
-    # Row 1: bracketed-arrow gain label centred above the green segment.
-    green_w = cur_col - start_col
-    n_str   = f"{stats.xp_gained:,}"
-    inner   = f" {n_str} XP "
+    # Row 1: │◄── <N> XP ──►│  — brackets anchored to green-segment boundaries.
+    n_str       = f"{stats.xp_gained:,}"
+    green_w     = cur_col - start_col
+    inner_w     = max(0, green_w - 2)
+    label_min_w = 11 + len(n_str)
     frags.append(("", pad))
-    if green_w >= len(inner) + 4:
+    if inner_w >= label_min_w:
         if start_col > 0:
             frags.append(("", " " * start_col))
-        slack = green_w - len(inner) - 4
-        left  = slack // 2
-        right = slack - left
-        frags.append((_S_ARROW, "|<" + "─" * left))
-        frags.append((_S_GAINED, inner))
-        frags.append((_S_ARROW, "─" * right + ">|"))
-    elif green_w >= len(inner) + 2:
-        if start_col > 0:
-            frags.append(("", " " * start_col))
-        slack = green_w - len(inner) - 2
-        left  = slack // 2
-        right = slack - left
-        frags.append((_S_ARROW, "<" + "─" * left))
-        frags.append((_S_GAINED, inner))
-        frags.append((_S_ARROW, "─" * right + ">"))
-    else:
+        slack = inner_w - label_min_w
+        left  = 2 + slack // 2
+        right = 2 + slack - slack // 2
+        frags.append((_S_ARROW, "│◄" + "─" * left + " "))
+        frags.append((_S_GAINED, n_str))
+        frags.append((_S_ARROW, " XP " + "─" * right + "►│"))
+    elif green_w > 0:
         # Segment too narrow for brackets: centre the plain "<N> XP" label on
         # the green segment's centre point, even if it overflows.
         plain  = f"{n_str} XP"
@@ -1047,69 +1041,79 @@ def _append_xp_linjalen(frags, stats, cols):
         frags.append((_S_TRACK, "░" * (bar_w - cur_col)))
     frags.append(("", "\n"))
 
-    # Row 3: level markers at segment boundaries.
+    # Row 3: ▌<level> at each boundary except the last, <level>▐ on the last.
+    # Half-block glyphs sit on the boundary column itself; digits flow off the
+    # block, not centred on the digit text.
     line = [" "] * bar_w
     for lv_offset in range(span + 1):
-        col = int(round(lv_offset / span * bar_w))
-        label = f"| {min_lv + lv_offset}"
-        if col + len(label) > bar_w:
-            col = bar_w - len(label)
-        if col < 0:
-            col = 0
-        for i, ch in enumerate(label):
-            if 0 <= col + i < bar_w:
-                line[col + i] = ch
+        level   = min_lv + lv_offset
+        digits  = str(level)
+        is_last = (lv_offset == span)
+        if is_last:
+            col = bar_w - 1
+            line[col] = "▐"
+            for i, ch in enumerate(digits):
+                pos = col - len(digits) + i
+                if 0 <= pos < bar_w:
+                    line[pos] = ch
+        else:
+            col = int(round(lv_offset / span * bar_w))
+            if col >= bar_w:
+                col = bar_w - 1
+            line[col] = "▌"
+            for i, ch in enumerate(digits):
+                pos = col + 1 + i
+                if 0 <= pos < bar_w:
+                    line[pos] = ch
     frags.append(("", pad))
     frags.append((_S_LEVEL, "".join(line)))
     frags.append(("", "\n"))
 
-
-def _append_sparklines(frags, stats, cols):
-    n = _STAT_SPARK_WIDTH
-    start    = stats.start_ts
-    end      = max(stats.end_ts, start + 1)
-    duration = end - start
-
-    xp_buckets = _bucket_event_sums(stats.kill_events, n, start, end)
-    tp_buckets = _bucket_event_sums(stats.tp_events,   n, start, end)
-
-    bucket_secs = duration / n if n > 0 else 1
-    if bucket_secs <= 0:
-        bucket_secs = 1
-    xp_rates = [b * 3600.0 / bucket_secs for b in xp_buckets]
-    tp_rates = [b * 3600.0 / bucket_secs for b in tp_buckets]
-
-    xp_max = max(xp_rates) if xp_rates else 0.0
-    tp_max = max(tp_rates) if tp_rates else 0.0
-
-    xp_rows = _sparkline_rows(xp_rates, xp_max, rows=3)
-    tp_rows = _sparkline_rows(tp_rates, tp_max, rows=3)
-
-    label_w = _STAT_Y_LABEL_W
-    # side layout: <label_w>" "<│><n bucket cols>
-    side_w  = label_w + 1 + 1 + n
-    gap     = "    "
-    total_w = side_w * 2 + len(gap)
-    margin  = max(0, (cols - total_w) // 2)
-    pad     = " " * margin
-    chart_indent = " " * (label_w + 1 + 1)   # past label + space + │
-
-    # Title row: XP/h and TP/h in section-title style.
-    frags.append(("", pad))
-    frags.append(("", chart_indent))
-    frags.append((_S_TITLE, "XP/h".ljust(n)))
-    frags.append(("", gap))
-    frags.append(("", chart_indent))
-    frags.append((_S_TITLE, "TP/h".ljust(n)))
+    # Row 4: trailing blank line for breathing space below the linjal.
     frags.append(("", "\n"))
 
-    # Divider row directly under each title (spans the chart column width).
+
+def _append_sparklines(frags, stats, cols):
+    # Each chart fills its column above: XP/h matches KILLS, TP/h matches PvPs.
+    # Chart cells: label_w (rjust) + " " + "│" + bucket_w → chart_w.
+    label_w     = _STAT_Y_LABEL_W
+    left_w      = _STAT_TABLE_LEFT_W
+    right_w     = _STAT_TABLE_RIGHT_W
+    gap         = _STAT_TABLE_GAP
+    n_L         = max(1, left_w  - label_w - 2)
+    n_R         = max(1, right_w - label_w - 2)
+    total_w     = left_w + 1 + len(gap) + right_w + 1
+    margin      = max(0, (cols - total_w) // 2)
+    pad         = " " * margin
+
+    start       = stats.start_ts
+    end         = max(stats.end_ts, start + 1)
+    duration    = end - start
+
+    xp_buckets  = _bucket_event_sums(stats.kill_events, n_L, start, end)
+    tp_buckets  = _bucket_event_sums(stats.tp_events,   n_R, start, end)
+
+    xp_secs     = duration / n_L if n_L > 0 else 1
+    tp_secs     = duration / n_R if n_R > 0 else 1
+    if xp_secs <= 0:
+        xp_secs = 1
+    if tp_secs <= 0:
+        tp_secs = 1
+    xp_rates    = [b * 3600.0 / xp_secs for b in xp_buckets]
+    tp_rates    = [b * 3600.0 / tp_secs for b in tp_buckets]
+
+    xp_max      = max(xp_rates) if xp_rates else 0.0
+    tp_max      = max(tp_rates) if tp_rates else 0.0
+    xp_rows     = _sparkline_rows(xp_rates, xp_max, rows=3)
+    tp_rows     = _sparkline_rows(tp_rates, tp_max, rows=3)
+
+    # Title row (no divider rule beneath — first y-axis label is the top edge).
     frags.append(("", pad))
-    frags.append(("", chart_indent))
-    frags.append((_S_DIVIDER, "─" * n))
+    frags.append((C_SECTION, "XP/h".ljust(left_w)))
+    frags.append(("", " "))
     frags.append(("", gap))
-    frags.append(("", chart_indent))
-    frags.append((_S_DIVIDER, "─" * n))
+    frags.append((C_SECTION, "TP/h".ljust(right_w)))
+    frags.append(("", " "))
     frags.append(("", "\n"))
 
     xp_labels = [_fmt_xp_short(xp_max), _fmt_xp_short(xp_max / 2), "0"]
@@ -1119,36 +1123,43 @@ def _append_sparklines(frags, stats, cols):
         frags.append(("", pad))
         frags.append((_S_LABEL, xp_labels[r].rjust(label_w)))
         frags.append(("", " "))
-        frags.append((_S_DIVIDER, "│"))
+        frags.append((C_DIVIDER, "│"))
         frags.append((_S_GAINED, xp_rows[r]))
+        frags.append(("", " "))
         frags.append(("", gap))
         frags.append((_S_LABEL, tp_labels[r].rjust(label_w)))
         frags.append(("", " "))
-        frags.append((_S_DIVIDER, "│"))
+        frags.append((C_DIVIDER, "│"))
         frags.append((_S_TP_BAR, tp_rows[r]))
+        frags.append(("", " "))
         frags.append(("", "\n"))
 
-    # Bottom rule: └────...
+    # Bottom rule: └────
     axis_indent = " " * (label_w + 1)
     frags.append(("", pad))
     frags.append(("", axis_indent))
-    frags.append((_S_DIVIDER, "└" + "─" * n))
+    frags.append((C_DIVIDER, "└" + "─" * n_L))
+    frags.append(("", " "))
     frags.append(("", gap))
     frags.append(("", axis_indent))
-    frags.append((_S_DIVIDER, "└" + "─" * n))
+    frags.append((C_DIVIDER, "└" + "─" * n_R))
+    frags.append(("", " "))
     frags.append(("", "\n"))
 
-    # X-axis labels (under the chart area).
-    x_left  = "00:00"
-    x_right = _fmt_duration(duration)[:5]
-    fill    = max(1, n - len(x_left) - len(x_right))
-    x_line  = x_left + (" " * fill) + x_right
+    # X-axis labels (00:00 … duration), each sitting under its bucket row.
+    chart_indent = " " * (label_w + 2)
+    x_left       = "00:00"
+    x_right      = _fmt_duration(duration)[:5]
+    fill_L       = max(1, n_L - len(x_left) - len(x_right))
+    fill_R       = max(1, n_R - len(x_left) - len(x_right))
     frags.append(("", pad))
     frags.append(("", chart_indent))
-    frags.append((_S_LABEL, x_line))
+    frags.append((_S_LABEL, x_left + (" " * fill_L) + x_right))
+    frags.append(("", " "))
     frags.append(("", gap))
     frags.append(("", chart_indent))
-    frags.append((_S_LABEL, x_line))
+    frags.append((_S_LABEL, x_left + (" " * fill_R) + x_right))
+    frags.append(("", " "))
     frags.append(("", "\n"))
 
 
@@ -1261,8 +1272,8 @@ def _section_title_pair(frags, left_title, right_title, left_w, right_w, gap, pa
                          left_active=False, right_active=False,
                          left_focus=None, right_focus=None):
     """Two side-by-side section titles, each with a cyan divider rule under it."""
-    l_style = _S_VALUE if left_active else _S_TITLE
-    r_style = _S_VALUE if right_active else _S_TITLE
+    l_style = _S_VALUE if left_active else C_SECTION
+    r_style = _S_VALUE if right_active else C_SECTION
 
     frags.append(("", pad))
     if left_focus:
@@ -1279,10 +1290,10 @@ def _section_title_pair(frags, left_title, right_title, left_w, right_w, gap, pa
     frags.append(("", "\n"))
 
     frags.append(("", pad))
-    frags.append((_S_DIVIDER, "─" * left_w))
+    frags.append((C_DIVIDER, "─" * left_w))
     frags.append(("", " "))
     frags.append(("", gap))
-    frags.append((_S_DIVIDER, "─" * right_w))
+    frags.append((C_DIVIDER, "─" * right_w))
     frags.append(("", " "))
     frags.append(("", "\n"))
 
@@ -1525,7 +1536,7 @@ def _statistics_text():
     suffix = " · Run ended" if _stats_run_ended else ""
     frags.append(("", "\n"))
     frags.append(("", _pad_centre(base_header + suffix, cols)))
-    frags.append((_S_TITLE, base_header))
+    frags.append((C_HEADER, base_header))
     if suffix:
         frags.append((_S_HINT, suffix))
     frags.append(("", "\n\n"))
