@@ -73,8 +73,8 @@ _S_VALUE   = "fg:#ffffff"       # data values, names
 _S_LABEL   = "fg:#909090"       # axis numbers, column headers
 _S_GAINED  = "fg:#6fe060"       # XP bar gained portion, XP/h bars, XP-linjal label
 _S_TP_BAR  = "fg:#ffc847"       # TP/h bars
-_S_TRACK   = "fg:#3a3a3a"       # scrollbar track, untraversed bar (full-block █)
-_S_MARKER  = "fg:#3a3a3a bg:#3a3a3a"  # XP-linjal ▌▐ markers — bg matches row-2 fill
+_S_TRACK   = "fg:#1f1f1f"       # scrollbar track, untraversed bar (full-block █)
+_S_MARKER  = "fg:#1f1f1f bg:#1f1f1f"  # XP-linjal ▌▐ markers — bg matches row-2 fill
 _S_THUMB   = "fg:#707070"       # scrollbar thumb (mid grey)
 _S_TOTAL   = "bold fg:#b0b0b0"  # sticky Total rows
 _S_ARROW   = "fg:#b0b0b0"       # arrow brackets around XP-gain label
@@ -1041,17 +1041,19 @@ def _append_xp_linjalen(frags, stats, cols):
         frags.append((_S_TRACK, "█" * (bar_w - cur_col)))
     frags.append(("", "\n"))
 
-    # Row 3: ▌lvl N at each boundary except the last, lvl N▐ on the last.
+    # Row 3: ▌ N at each boundary except the last, N ▐ on the last.
     # Half-block glyphs sit on the boundary column itself; the label flows off
-    # the block, not centred on the label text.
+    # the block. The space adjacent to the tick lives in the label fragment
+    # (style _S_LABEL or empty), so the marker's dark bg stays one cell wide.
     line = [" "] * bar_w
     for lv_offset in range(span + 1):
         level   = min_lv + lv_offset
-        text    = f"lvl {level}"
+        digits  = str(level)
         is_last = (lv_offset == span)
         if is_last:
             col = bar_w - 1
             line[col] = "▐"
+            text = digits + " "
             for i, ch in enumerate(text):
                 pos = col - len(text) + i
                 if 0 <= pos < bar_w:
@@ -1061,6 +1063,7 @@ def _append_xp_linjalen(frags, stats, cols):
             if col >= bar_w:
                 col = bar_w - 1
             line[col] = "▌"
+            text = " " + digits
             for i, ch in enumerate(text):
                 pos = col + 1 + i
                 if 0 <= pos < bar_w:
@@ -1070,7 +1073,8 @@ def _append_xp_linjalen(frags, stats, cols):
     # which reads visibly lighter than the row-2 full-block track cells. We
     # set both fg AND bg to the track hex (_S_MARKER) so the half-block
     # cell is filled edge-to-edge in the same grey as the row above. The
-    # lvl N labels render in label-gray; spaces are uncoloured. Group
+    # digit labels render in label-gray; spaces are uncoloured (so the
+    # marker's dark bg does not bleed into the adjacent label cell). Group
     # consecutive same-style cells into single fragments to keep the
     # output compact.
     frags.append(("", pad))
