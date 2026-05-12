@@ -67,14 +67,15 @@ C_ERR     = "bold fg:#ff5f5f"   # _MR_ERR
 # the main/options/scripts palettes are unaffected).
 # ---------------------------------------------------------------------------
 C_HEADER   = "bold fg:#ffd060"  # gold ◆ STATISTICS banner only
-C_SECTION  = C_TITLE            # cyan section titles (KILLS, PvPs, …, XP/h, TP/h)
+C_SECTION  = "bold fg:#008787"  # muted cyan section titles (KILLS, PvPs, …, XP/h, TP/h)
 C_DIVIDER  = C_HINT             # muted gray section rules and chart frame strokes
 _S_VALUE   = "fg:#ffffff"       # data values, names
 _S_LABEL   = "fg:#909090"       # axis numbers, column headers
 _S_GAINED  = "fg:#6fe060"       # XP bar gained portion, XP/h bars, XP-linjal label
 _S_TP_BAR  = "fg:#ffc847"       # TP/h bars
-_S_TRACK   = "fg:#3a3a3a"       # scrollbar track, untraversed bar, XP-linjal ▌▐ markers
-_S_THUMB   = "fg:#ffffff"       # scrollbar thumb
+_S_TRACK   = "fg:#3a3a3a"       # scrollbar track, untraversed bar (full-block █)
+_S_MARKER  = "fg:#3a3a3a bg:#3a3a3a"  # XP-linjal ▌▐ markers — bg matches row-2 fill
+_S_THUMB   = "fg:#707070"       # scrollbar thumb (mid grey)
 _S_TOTAL   = "bold fg:#b0b0b0"  # sticky Total rows
 _S_ARROW   = "fg:#b0b0b0"       # arrow brackets around XP-gain label
 _S_HINT    = "fg:#5c5c5c"       # footer hints
@@ -991,7 +992,7 @@ def _append_xp_linjalen(frags, stats, cols):
     bar_w = _STAT_BAR_WIDTH
     if stats.min_level is None or stats.current_level is None:
         return
-    min_lv = max(1, stats.min_level - 1)
+    min_lv = max(1, stats.min_level)
     cur_lv = stats.current_level
     hi_lv  = cur_lv + 1
     span   = max(1, hi_lv - min_lv)
@@ -1028,14 +1029,16 @@ def _append_xp_linjalen(frags, stats, cols):
         frags.append((_S_GAINED, label))
     frags.append(("", "\n"))
 
-    # Row 2: the bar.
+    # Row 2: the bar. Untraversed cells use █ (full-block) in track grey so
+    # they fill the cell entirely — this is what the ▌/▐ markers on row 3
+    # must visually merge with.
     frags.append(("", pad))
     if start_col > 0:
-        frags.append((_S_TRACK, "░" * start_col))
+        frags.append((_S_TRACK, "█" * start_col))
     if cur_col > start_col:
         frags.append((_S_GAINED, "█" * (cur_col - start_col)))
     if cur_col < bar_w:
-        frags.append((_S_TRACK, "░" * (bar_w - cur_col)))
+        frags.append((_S_TRACK, "█" * (bar_w - cur_col)))
     frags.append(("", "\n"))
 
     # Row 3: ▌lvl N at each boundary except the last, lvl N▐ on the last.
@@ -1062,16 +1065,20 @@ def _append_xp_linjalen(frags, stats, cols):
                 pos = col + 1 + i
                 if 0 <= pos < bar_w:
                     line[pos] = ch
-    # Row 3 colouring: ▌ / ▐ render in track-gray so they merge with the
-    # un-traversed bar; the lvl N labels render in label-gray; spaces are
-    # uncoloured. Group consecutive same-style cells into single fragments
-    # to keep the output compact.
+    # Row 3 colouring: ▌ / ▐ are half-block glyphs — setting only fg paints
+    # half the cell and leaves the other half on the terminal default bg,
+    # which reads visibly lighter than the row-2 full-block track cells. We
+    # set both fg AND bg to the track hex (_S_MARKER) so the half-block
+    # cell is filled edge-to-edge in the same grey as the row above. The
+    # lvl N labels render in label-gray; spaces are uncoloured. Group
+    # consecutive same-style cells into single fragments to keep the
+    # output compact.
     frags.append(("", pad))
     buf = ""
     cur_style = None
     for ch in line:
         if ch in ("▌", "▐"):
-            style = _S_TRACK
+            style = _S_MARKER
         elif ch == " ":
             style = ""
         else:
