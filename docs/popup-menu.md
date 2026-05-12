@@ -200,6 +200,21 @@ render in `_S_TRACK` (same dark gray as the untraversed bar segment),
 sitting on the boundary column; the level digits beside them render
 in `_S_LEVEL` and flow off the glyph. Row 4 is a trailing blank line.
 
+**XP-linjalen — negative session gain.** When `xp_current < xp_at_start`
+(typically after a death penalty whose loss exceeds the post-death XP
+gained back), the band's direction is inverted: it runs from the
+post-death XP column up to the pre-run-start XP column. Both endpoints
+are mapped through `_xp_to_bar_col` and the lo/hi columns anchor the
+▌ / ▐ markers the same way as in the positive case, so the band
+occupies the same visual slot regardless of direction. The row 2 band
+cells render in `_S_LOSS` (red) instead of `_S_GAINED`; row 1's bracket
+label flips to `-N XP` (absolute value of the loss in k-formatted form
+with a leading minus and an explicit ` XP` suffix), with the digits
+and the suffix rendered in `_S_LOSS` — brackets, arrowheads, and `▬`
+filler keep `_S_ARROW`. The narrow-band fallback (plain centred label)
+applies symmetrically. Row 3 (level markers) and row 4 (trailing
+blank) are unchanged.
+
 **Live tick.** When the frame is pushed an `asyncio` task starts; it
 sleeps 1 s, re-invokes `load_current_run_stats(character)`, updates
 the scrollbars, and invalidates the app. The task exits when the

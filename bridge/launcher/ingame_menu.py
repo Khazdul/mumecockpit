@@ -72,6 +72,7 @@ C_DIVIDER  = C_HINT             # muted gray section rules and chart frame strok
 _S_VALUE   = "fg:#ffffff"       # data values, names
 _S_LABEL   = "fg:#909090"       # axis numbers, column headers
 _S_GAINED  = "fg:#6fe060"       # XP bar gained portion, XP/h bars, XP-linjal label
+_S_LOSS    = "fg:#e03c3c"       # XP-linjal loss band + bracket label (negative session gain)
 _S_TP_BAR  = "fg:#ffc847"       # TP/h bars
 _S_TRACK   = "fg:#1f1f1f"       # scrollbar track, untraversed bar (full-block █)
 _S_MARKER  = "fg:#1f1f1f bg:#1f1f1f"  # XP-linjal ▌▐ markers — bg matches row-2 fill
@@ -997,48 +998,55 @@ def _append_xp_linjalen(frags, stats, cols):
     hi_lv  = cur_lv + 1
     span   = max(1, hi_lv - min_lv)
 
+    is_loss   = stats.xp_current < stats.xp_at_start
     start_col = _xp_to_bar_col(stats.xp_at_start, min_lv, hi_lv, bar_w)
     cur_col   = _xp_to_bar_col(stats.xp_current,  min_lv, hi_lv, bar_w)
-    if cur_col < start_col:
-        cur_col = start_col
+    lo_col    = min(start_col, cur_col)
+    hi_col    = max(start_col, cur_col)
+    band_w    = hi_col - lo_col
+    band_style = _S_LOSS if is_loss else _S_GAINED
 
     margin = max(0, (cols - bar_w) // 2)
     pad    = " " * margin
 
-    # Row 1: ◄──<label>──► spanning the green segment when wide enough, else
-    # the label alone, centred above the green segment. Arrowheads sit on the
-    # green segment's boundary columns (xp_at_start and xp_current); minimum
-    # arrow form is ◄label►.
-    label   = f"{round(stats.xp_gained / 1000)}k"
-    green_w = cur_col - start_col
+    # Row 1: ◄──<label>──► spanning the band when wide enough, else the label
+    # alone, centred above the band. Arrowheads sit on the band's boundary
+    # columns (▌ on lo_col, ▐ on hi_col); minimum arrow form is ◄label►. On
+    # a net loss the label flips to "-N XP" and renders in _S_LOSS; brackets,
+    # arrowheads, and ▬ filler keep _S_ARROW.
+    if is_loss:
+        label = f"-{abs(round(stats.xp_gained / 1000))}k XP"
+    else:
+        label = f"{round(stats.xp_gained / 1000)}k"
     frags.append(("", pad))
-    if green_w >= len(label) + 2:
-        if start_col > 0:
-            frags.append(("", " " * start_col))
-        slack = green_w - len(label) - 2
+    if band_w >= len(label) + 2:
+        if lo_col > 0:
+            frags.append(("", " " * lo_col))
+        slack = band_w - len(label) - 2
         left  = (slack + 1) // 2
         right = slack // 2
         frags.append((_S_ARROW, "◄" + "─" * left))
-        frags.append((_S_GAINED, label))
+        frags.append((band_style, label))
         frags.append((_S_ARROW, "─" * right + "►"))
-    elif green_w > 0:
-        centre = start_col + green_w // 2
+    elif band_w > 0:
+        centre = lo_col + band_w // 2
         before = max(0, centre - len(label) // 2)
         if before > 0:
             frags.append(("", " " * before))
-        frags.append((_S_GAINED, label))
+        frags.append((band_style, label))
     frags.append(("", "\n"))
 
     # Row 2: the bar. Untraversed cells use █ (full-block) in track grey so
     # they fill the cell entirely — this is what the ▌/▐ markers on row 3
-    # must visually merge with.
+    # must visually merge with. The band (between lo_col and hi_col) renders
+    # in _S_GAINED on net positive sessions, _S_LOSS on net negative.
     frags.append(("", pad))
-    if start_col > 0:
-        frags.append((_S_TRACK, "█" * start_col))
-    if cur_col > start_col:
-        frags.append((_S_GAINED, "█" * (cur_col - start_col)))
-    if cur_col < bar_w:
-        frags.append((_S_TRACK, "█" * (bar_w - cur_col)))
+    if lo_col > 0:
+        frags.append((_S_TRACK, "█" * lo_col))
+    if band_w > 0:
+        frags.append((band_style, "█" * band_w))
+    if hi_col < bar_w:
+        frags.append((_S_TRACK, "█" * (bar_w - hi_col)))
     frags.append(("", "\n"))
 
     # Row 3: ▌ N at each boundary except the last, N ▐ on the last.

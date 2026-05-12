@@ -54,6 +54,7 @@ class RunStats:
     tp_events: list[tuple[int, int]] = field(default_factory=list)
     allies: list[str] = field(default_factory=list)
     achievements: list[tuple[int, str]] = field(default_factory=list)
+    deaths: int = 0
 
 
 # ---------------------------------------------------------------------------
@@ -257,6 +258,15 @@ def _apply_row(stats: RunStats, row: dict, allies: set[str]) -> None:
         delta = _as_int(row.get("tp_delta"))
         stats.tp_current += delta
         stats.tp_events.append((ts, delta))
+    elif event == "xp_loss":
+        # Negative delta; reduces net session XP but does not append to
+        # kill_events — the XP/h sparkline stays gains-only.
+        stats.xp_current += _as_int(row.get("xp_delta"))
+    elif event == "tp_loss":
+        # Negative delta; same rationale as xp_loss for tp_events.
+        stats.tp_current += _as_int(row.get("tp_delta"))
+    elif event == "char_death":
+        stats.deaths += 1
     elif event == "group_changed":
         members = row.get("members")
         if isinstance(members, list):
@@ -267,8 +277,8 @@ def _apply_row(stats: RunStats, row: dict, allies: set[str]) -> None:
         name = row.get("name")
         if isinstance(name, str):
             stats.achievements.append((ts, name))
-    # Unknown event types (including orphan_close, run_end, char_death) are
-    # intentionally ignored for aggregation; their ts still moved end_ts above.
+    # Unknown event types (including orphan_close, run_end) are intentionally
+    # ignored for aggregation; their ts still moved end_ts above.
 
 
 def _apply_run_start_row(stats: RunStats, row: dict, first: bool) -> None:
