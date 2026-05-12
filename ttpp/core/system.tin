@@ -84,7 +84,7 @@
 #nop the connection." text action. See ADR 0061.
 #alias {_save_profile} {
     #gts {
-        #if {"$_profile" != ""} {
+        #if {"$_profile" != "" && $_profile_loaded} {
             #$_profile {
                 #class {$_profile} {write} {ttpp/profiles/$_profile.tin}
             };
@@ -123,6 +123,7 @@
 #nop variables.tin — placeholder
 
 #var {_zapping_intruder} {0}
+#var {_profile_loaded} {0}
 
 #nop ===== EVENTS / TRIGGERS =====
 
@@ -147,7 +148,8 @@
             _register_affect_actions;
             _register_stored_spells_actions;
             _register_run_log_capture %0;
-            #%0 #class {%0} {open}
+            #%0 #class {%0} {open};
+            #var {_profile_loaded} {1}
         }
     }
 }
@@ -161,6 +163,7 @@
         } {
             #showme {[SYSTEM] Session %0 disconnected -- returning to gts};
             #session {gts};
+            #var {_profile_loaded} {0};
             #lua {clear_game_session("%0")}
         }
     } {
@@ -173,6 +176,7 @@
     #if {"%0" != "gts" && "%0" != "lua"} {
         #showme {[SYSTEM] Session %0 timed out -- returning to gts};
         #session {gts};
+        #var {_profile_loaded} {0};
         #lua {clear_game_session("%0")}
     }
 }

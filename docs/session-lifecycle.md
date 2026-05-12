@@ -215,6 +215,19 @@ and state teardown only. All save points call the shared
 All four paths run synchronously against a live game session, so the
 class content is captured before any teardown.
 
+**Load-state guard (`_profile_loaded`).** `_save_profile` checks a
+`_profile_loaded` flag (in gts) in addition to `$_profile` before
+writing. The flag is set to `1` at the end of the SESSION CONNECTED
+load sequence (after the class is reopened), and cleared back to `0`
+in the SESSION DISCONNECTED and SESSION TIMED OUT handlers — after
+`#session {gts}` (so the SESSION DEACTIVATED handler that fires during
+the gts switch still saves correctly) and before the `clear_game_session`
+Lua call. This prevents a failed connect — where the session deactivates
+without ever loading its class — from wiping the on-disk profile with
+an empty `#class write`. The flag also no-ops the redundant
+`_save_profile` call in the MMapper text action once a previous
+disconnect has already cleared it.
+
 **Single definition of the save sequence.** `_save_profile` in
 `ttpp/core/system.tin` is the only place `#class write` + `sanitize_profile.sh`
 appears. It is safe to call from any session context (internal `#gts`)
