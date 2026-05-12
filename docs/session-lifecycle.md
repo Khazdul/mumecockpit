@@ -196,42 +196,72 @@ and state teardown only. All save points call the shared
    confirmation. Works after link loss as well as during a live
    connection (tt++ keeps the disconnected session alive).
 
-2. **Explicit exit — `cp -e`** — runs `_save_profile` before
-   `#$game_session #zap`, while the session class still exists.
+2. **Explicit exit — `cp -e`** — runs `_save_profile` *before* the
+   `#gts;` step, so the save executes in the game session's context
+   where the class and `_profile_loaded` are visible.
 
-3. **SESSION DEACTIVATED handler** (registered in `system.tin`, runs
-   in gts) — fires `_save_profile` whenever a game session
-   deactivates. Covers `#zap` from gts, `cp -e`'s zap step, and the
-   direct-mode SESSION DISCONNECTED → `#session {gts}` chain (which
-   deactivates the game session on its way out).
+3. **SESSION DEACTIVATED handler** (registered in `system.tin`) —
+   fires `_save_profile` whenever a game session deactivates. The
+   event body runs in the deactivating session's context, so
+   `_save_profile` sees the session-scoped `_profile_loaded` flag.
+   Covers `#zap` from gts, `cp -e`'s zap step, and the direct-mode
+   SESSION DISCONNECTED → `#session {gts}` chain (which deactivates
+   the game session on its way out).
 
 4. **MMapper text action — `Status: MUME closed the connection.`** —
    registered against the game session by SESSION CONNECTED. Fires
    `_save_profile` (then calls `mark_mume_disconnected()`) when MMapper
    detects an abrupt MUME-side drop while keeping its own socket alive.
-   Covers the MMapper-mode case where SESSION DEACTIVATED never fires
-   on a game-side `quit` or MMapper-absorbed drop.
+   The action is registered in session scope; its body runs in the
+   session. Covers the MMapper-mode case where SESSION DEACTIVATED
+   never fires on a game-side `quit` or MMapper-absorbed drop.
 
 All four paths run synchronously against a live game session, so the
 class content is captured before any teardown.
 
+### Save call-site invariant
+
+`_save_profile` is **session-context-only**. The profile class lives
+in the session; `#class write` operates on the invoking session's
+classes; and the `_profile_loaded` guard flag is session-scoped.
+Calling `_save_profile` from gts will silently no-op because gts
+sees neither the class nor the flag. Every save call site must
+therefore execute in the session whose class is being written.
+
+In practice this means: invoke from the input pane / popup `tmux
+send-keys` to the cockpit pane (which is focused on the game
+session), from a session-scoped action (the MMapper text trigger),
+from the SESSION DEACTIVATED event body (runs in the deactivating
+session), or from `cp -e` *before* its `#gts;` step. Do not invoke
+from gts directly. Future per-session-state operations that follow
+the same pattern (affects history, run state, etc.) inherit this
+constraint; see ADR 0064.
+
+Residual edge case (documented, not defended): explicit
+`#gts; cp -s` from the input pane skips the actual save (the
+`_profile_loaded` guard fails in gts) while still emitting the
+"Profile saved" `system_ui` line. The normal popup and bare
+`cp -s` paths are unaffected.
+
 **Load-state guard (`_profile_loaded`).** `_save_profile` checks a
-`_profile_loaded` flag (in gts) in addition to `$_profile` before
-writing. The flag is set to `1` at the end of the SESSION CONNECTED
-load sequence (after the class is reopened), and cleared back to `0`
-in the SESSION DISCONNECTED and SESSION TIMED OUT handlers — after
-`#session {gts}` (so the SESSION DEACTIVATED handler that fires during
-the gts switch still saves correctly) and before the `clear_game_session`
-Lua call. This prevents a failed connect — where the session deactivates
-without ever loading its class — from wiping the on-disk profile with
-an empty `#class write`. The flag also no-ops the redundant
+session-scoped `_profile_loaded` flag in addition to `$_profile`
+before writing. The flag is set to `1` at the end of the SESSION
+CONNECTED load sequence (after the class is reopened) and cleared
+back to `0` in the SESSION DISCONNECTED and SESSION TIMED OUT
+handlers — after `#session {gts}` (so the SESSION DEACTIVATED
+handler that fires during the gts switch still sees the flag set
+and saves correctly) and before the `clear_game_session` Lua call.
+This prevents a failed connect — where the session deactivates
+without ever loading its class — from wiping the on-disk profile
+with an empty `#class write`. The flag also no-ops the redundant
 `_save_profile` call in the MMapper text action once a previous
 disconnect has already cleared it.
 
 **Single definition of the save sequence.** `_save_profile` in
-`ttpp/core/system.tin` is the only place `#class write` + `sanitize_profile.sh`
-appears. It is safe to call from any session context (internal `#gts`)
-and no-ops when no profile is loaded.
+`ttpp/core/system.tin` is the only place `#class write` +
+`sanitize_profile.sh` appears. Its body is a direct `#if` block —
+no `#gts {...}` wrapper, no `#$_profile {...}` dispatch — and it
+no-ops when no profile is loaded.
 
 After `#class write`, `sanitize_profile.sh` strips the wrapping lines that
 `#class write` always emits, keeping the at-rest file bare.
@@ -303,10 +333,12 @@ registrations.
 2. `sanitize_profile.sh ttpp/profiles/$_profile.tin` — normalizes the file (strips wrapping and header artifacts)
 
 Call sites of `_save_profile`: `cp -s` (user-triggered), `cp -e` (explicit
-save before zap), the SESSION DEACTIVATED handler (covers `#zap` and the
-direct-mode SESSION DISCONNECTED → `#session {gts}` chain), and the MMapper
-`Status: MUME closed the connection.` text action (covers MMapper-stay-alive
-disconnects). All four fire synchronously against a live game session.
+save before the gts switch), the SESSION DEACTIVATED handler (covers `#zap`
+and the direct-mode SESSION DISCONNECTED → `#session {gts}` chain), and the
+MMapper `Status: MUME closed the connection.` text action (covers
+MMapper-stay-alive disconnects). All four fire synchronously against a live
+game session, and all four run in session context (see "Save call-site
+invariant" above).
 
 **Conventions:**
 - Never hardcode `mume` as the class name in system code — always use

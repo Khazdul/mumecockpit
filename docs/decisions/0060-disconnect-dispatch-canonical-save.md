@@ -1,6 +1,6 @@
 # 0060 — Disconnect dispatch as canonical profile-save point
 
-**Status:** Superseded by [ADR 0061](0061-synchronous-ttpp-save-hooks.md)
+**Status:** Superseded by [ADR 0064](0064-per-session-state-owns-save.md) (via [ADR 0061](0061-synchronous-ttpp-save-hooks.md))
 **Date:** 2026-05-11
 
 Supersedes the auto-save mechanism in ADR 0014.
