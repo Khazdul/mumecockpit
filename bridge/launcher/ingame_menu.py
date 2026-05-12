@@ -73,10 +73,9 @@ _S_VALUE   = "fg:#ffffff"       # data values, names
 _S_LABEL   = "fg:#909090"       # axis numbers, column headers
 _S_GAINED  = "fg:#6fe060"       # XP bar gained portion, XP/h bars, XP-linjal label
 _S_TP_BAR  = "fg:#ffc847"       # TP/h bars
-_S_LEVEL   = "fg:#9fb8ff"       # level markers
-_S_TRACK   = "fg:#3a3a3a"       # scrollbar track, untraversed bar
+_S_TRACK   = "fg:#3a3a3a"       # scrollbar track, untraversed bar, XP-linjal ▌▐ markers
 _S_THUMB   = "fg:#ffffff"       # scrollbar thumb
-_S_TOTAL   = "bold fg:#ffffff"  # sticky Total rows
+_S_TOTAL   = "bold fg:#b0b0b0"  # sticky Total rows
 _S_ARROW   = "fg:#b0b0b0"       # arrow brackets around XP-gain label
 _S_HINT    = "fg:#5c5c5c"       # footer hints
 _S_PVP     = "fg:#ff5f5f"       # ⚔ glyph before PvPs data rows
@@ -992,9 +991,9 @@ def _append_xp_linjalen(frags, stats, cols):
     bar_w = _STAT_BAR_WIDTH
     if stats.min_level is None or stats.current_level is None:
         return
-    min_lv = stats.min_level
+    min_lv = max(1, stats.min_level - 1)
     cur_lv = stats.current_level
-    hi_lv  = cur_lv + 2
+    hi_lv  = cur_lv + 1
     span   = max(1, hi_lv - min_lv)
 
     start_col = _xp_to_bar_col(stats.xp_at_start, min_lv, hi_lv, bar_w)
@@ -1005,21 +1004,22 @@ def _append_xp_linjalen(frags, stats, cols):
     margin = max(0, (cols - bar_w) // 2)
     pad    = " " * margin
 
-    # Row 1: ▌◄──<label>──►▐ when the green segment is wide enough, else the
-    # label alone, centred above the green segment. ▌ and ▐ sit on the green
-    # segment's boundary columns (xp_at_start and xp_current).
+    # Row 1: ◄──<label>──► spanning the green segment when wide enough, else
+    # the label alone, centred above the green segment. Arrowheads sit on the
+    # green segment's boundary columns (xp_at_start and xp_current); minimum
+    # arrow form is ◄label►.
     label   = f"{round(stats.xp_gained / 1000)}k"
     green_w = cur_col - start_col
     frags.append(("", pad))
-    if green_w >= len(label) + 4:
+    if green_w >= len(label) + 2:
         if start_col > 0:
             frags.append(("", " " * start_col))
-        slack = green_w - len(label) - 4
+        slack = green_w - len(label) - 2
         left  = (slack + 1) // 2
         right = slack // 2
-        frags.append((_S_ARROW, "▌◄" + "─" * left))
+        frags.append((_S_ARROW, "◄" + "─" * left))
         frags.append((_S_GAINED, label))
-        frags.append((_S_ARROW, "─" * right + "►▐"))
+        frags.append((_S_ARROW, "─" * right + "►"))
     elif green_w > 0:
         centre = start_col + green_w // 2
         before = max(0, centre - len(label) // 2)
@@ -1038,19 +1038,19 @@ def _append_xp_linjalen(frags, stats, cols):
         frags.append((_S_TRACK, "░" * (bar_w - cur_col)))
     frags.append(("", "\n"))
 
-    # Row 3: ▌<level> at each boundary except the last, <level>▐ on the last.
-    # Half-block glyphs sit on the boundary column itself; digits flow off the
-    # block, not centred on the digit text.
+    # Row 3: ▌lvl N at each boundary except the last, lvl N▐ on the last.
+    # Half-block glyphs sit on the boundary column itself; the label flows off
+    # the block, not centred on the label text.
     line = [" "] * bar_w
     for lv_offset in range(span + 1):
         level   = min_lv + lv_offset
-        digits  = str(level)
+        text    = f"lvl {level}"
         is_last = (lv_offset == span)
         if is_last:
             col = bar_w - 1
             line[col] = "▐"
-            for i, ch in enumerate(digits):
-                pos = col - len(digits) + i
+            for i, ch in enumerate(text):
+                pos = col - len(text) + i
                 if 0 <= pos < bar_w:
                     line[pos] = ch
         else:
@@ -1058,13 +1058,14 @@ def _append_xp_linjalen(frags, stats, cols):
             if col >= bar_w:
                 col = bar_w - 1
             line[col] = "▌"
-            for i, ch in enumerate(digits):
+            for i, ch in enumerate(text):
                 pos = col + 1 + i
                 if 0 <= pos < bar_w:
                     line[pos] = ch
-    # Row 3 colouring: ▌ / ▐ render in track-gray, digits in level-blue,
-    # spaces uncoloured. Group consecutive same-style cells into single
-    # fragments to keep the output compact.
+    # Row 3 colouring: ▌ / ▐ render in track-gray so they merge with the
+    # un-traversed bar; the lvl N labels render in label-gray; spaces are
+    # uncoloured. Group consecutive same-style cells into single fragments
+    # to keep the output compact.
     frags.append(("", pad))
     buf = ""
     cur_style = None
@@ -1074,7 +1075,7 @@ def _append_xp_linjalen(frags, stats, cols):
         elif ch == " ":
             style = ""
         else:
-            style = _S_LEVEL
+            style = _S_LABEL
         if style != cur_style:
             if buf:
                 frags.append((cur_style, buf))
