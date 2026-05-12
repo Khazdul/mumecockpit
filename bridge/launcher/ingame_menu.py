@@ -71,11 +71,8 @@ C_SECTION  = C_TITLE            # cyan section titles (KILLS, PvPs, …, XP/h, T
 C_DIVIDER  = C_HINT             # muted gray section rules and chart frame strokes
 _S_VALUE   = "fg:#ffffff"       # data values, names
 _S_LABEL   = "fg:#909090"       # axis numbers, column headers
-_S_GAINED  = "fg:#6fe060"       # XP bar gained portion, XP/h bars
+_S_GAINED  = "fg:#6fe060"       # XP bar gained portion, XP/h bars, XP-linjal " XP " label
 _S_TP_BAR  = "fg:#ffc847"       # TP/h bars
-_S_PVP_X   = "fg:#ff7060"       # × glyph in PvPs rows
-_S_ALLY    = "fg:#65d5e8"       # ◆ glyph in ALLIES rows
-_S_STAR    = "fg:#ffc847"       # ★ glyph in ACHIEVEMENTS rows
 _S_LEVEL   = "fg:#9fb8ff"       # level markers
 _S_TRACK   = "fg:#3a3a3a"       # scrollbar track, untraversed bar
 _S_THUMB   = "fg:#ffffff"       # scrollbar thumb
@@ -737,8 +734,8 @@ _ALLIES_ACH_VISIBLE        = 3
 _KILLS_PVPS_MIN_VISIBLE    = 2
 # Fixed lines around the kills/pvps data rows in _statistics_text. Counted to
 # match the actual render output so the footer pins to the bottom of the popup.
-# XP-linjalen's new trailing blank row (+1) is offset by removing the divider
-# under the XP/h and TP/h titles (-1), so the total is unchanged.
+# Merging the KILLS/PvPs column-header row into the title row (-1) is offset
+# by the new ──┬── divider under XP/h and TP/h (+1), so the total is unchanged.
 _STATS_FIXED_LINES         = 27
 
 _stats_kills_pvps_visible  = _KILLS_PVPS_MIN_VISIBLE
@@ -1018,8 +1015,8 @@ def _append_xp_linjalen(frags, stats, cols):
         left  = 2 + slack // 2
         right = 2 + slack - slack // 2
         frags.append((_S_ARROW, "│◄" + "─" * left + " "))
-        frags.append((_S_GAINED, n_str))
-        frags.append((_S_ARROW, " XP " + "─" * right + "►│"))
+        frags.append((_S_GAINED, n_str + " XP "))
+        frags.append((_S_ARROW, "─" * right + "►│"))
     elif green_w > 0:
         # Segment too narrow for brackets: centre the plain "<N> XP" label on
         # the green segment's centre point, even if it overflows.
@@ -1065,8 +1062,28 @@ def _append_xp_linjalen(frags, stats, cols):
                 pos = col + 1 + i
                 if 0 <= pos < bar_w:
                     line[pos] = ch
+    # Row 3 colouring: ▌ / ▐ render in track-gray, digits in level-blue,
+    # spaces uncoloured. Group consecutive same-style cells into single
+    # fragments to keep the output compact.
     frags.append(("", pad))
-    frags.append((_S_LEVEL, "".join(line)))
+    buf = ""
+    cur_style = None
+    for ch in line:
+        if ch in ("▌", "▐"):
+            style = _S_TRACK
+        elif ch == " ":
+            style = ""
+        else:
+            style = _S_LEVEL
+        if style != cur_style:
+            if buf:
+                frags.append((cur_style, buf))
+            buf = ch
+            cur_style = style
+        else:
+            buf += ch
+    if buf:
+        frags.append((cur_style, buf))
     frags.append(("", "\n"))
 
     # Row 4: trailing blank line for breathing space below the linjal.
@@ -1107,12 +1124,26 @@ def _append_sparklines(frags, stats, cols):
     xp_rows     = _sparkline_rows(xp_rates, xp_max, rows=3)
     tp_rows     = _sparkline_rows(tp_rates, tp_max, rows=3)
 
-    # Title row (no divider rule beneath — first y-axis label is the top edge).
+    # Title row.
     frags.append(("", pad))
     frags.append((C_SECTION, "XP/h".ljust(left_w)))
     frags.append(("", " "))
     frags.append(("", gap))
     frags.append((C_SECTION, "TP/h".ljust(right_w)))
+    frags.append(("", " "))
+    frags.append(("", "\n"))
+
+    # Divider rule with ┬ at the column where the chart's │ axis sits (and
+    # where the └ on the bottom rule lands), so the chart frame closes
+    # cleanly: ──┬── above, │ down the middle, └── below.
+    junction = label_w + 1
+    left_rule  = "─" * junction + "┬" + "─" * max(0, left_w  - junction - 1)
+    right_rule = "─" * junction + "┬" + "─" * max(0, right_w - junction - 1)
+    frags.append(("", pad))
+    frags.append((C_DIVIDER, left_rule))
+    frags.append(("", " "))
+    frags.append(("", gap))
+    frags.append((C_DIVIDER, right_rule))
     frags.append(("", " "))
     frags.append(("", "\n"))
 
@@ -1271,9 +1302,9 @@ def _header_label(base, is_active, sort_dir, align, width):
 def _section_title_pair(frags, left_title, right_title, left_w, right_w, gap, pad,
                          left_active=False, right_active=False,
                          left_focus=None, right_focus=None):
-    """Two side-by-side section titles, each with a cyan divider rule under it."""
-    l_style = _S_VALUE if left_active else C_SECTION
-    r_style = _S_VALUE if right_active else C_SECTION
+    """Two side-by-side section titles, each with a divider rule under it."""
+    l_style = C_ACTIVE if left_active else C_SECTION
+    r_style = C_ACTIVE if right_active else C_SECTION
 
     frags.append(("", pad))
     if left_focus:
@@ -1310,57 +1341,62 @@ def _append_kills_pvps(frags, stats, cols, visible):
     k_focus = _make_focus_handler(0)
     p_focus = _make_focus_handler(1)
 
-    _section_title_pair(
-        frags, "KILLS", "PvPs", left_w, right_w, gap, pad,
-        left_active=(_stats_focused == 0),
-        right_active=(_stats_focused == 1),
-        left_focus=k_focus, right_focus=p_focus,
-    )
-
-    # Column headers (clickable to sort).
     sort_col_k, sort_dir_k   = _stats_kills_sort
     sort_col_pk, sort_dir_pk = _stats_pkills_sort
 
+    # Column geometry matches _format_kill_row / _format_pkill_row exactly so
+    # title-row labels sit above their data columns.
     n_col, xp_per_col, xp_tot_col = 3, 7, 9
-    k_name_col = max(1, left_w - n_col - xp_per_col - xp_tot_col - 3)
+    k_name_col = max(1, left_w  - n_col - xp_per_col - xp_tot_col - 3)
     pk_xp_col  = 9
-    # PvPs rows carry a leading "× " glyph (2 cells); the header is offset to
-    # match so the columns line up under it.
-    p_name_col = max(1, right_w - 2 - n_col - pk_xp_col - 2)
+    p_name_col = max(1, right_w - n_col - pk_xp_col - 2)
 
-    k_header_cols = [
-        ("Mob",    "left",  k_name_col),
+    k_active = (_stats_focused == 0)
+    p_active = (_stats_focused == 1)
+    k_style  = C_ACTIVE if k_active else C_SECTION
+    p_style  = C_ACTIVE if p_active else C_SECTION
+
+    # Merged title row: section name in the name-column slot (clickable to
+    # sort by name), then N / XP/N / XP tot (or N / XP) in their data-column
+    # positions. The entire row paints en bloc in k_style / p_style; the
+    # active sort indicator just changes the glyph after the label.
+    k_title = _header_label("KILLS", sort_col_k  == "Mob",    sort_dir_k,  "left", k_name_col)
+    p_title = _header_label("PvPs",  sort_col_pk == "Player", sort_dir_pk, "left", p_name_col)
+
+    k_data_cols = [
         ("N",      "right", n_col),
         ("XP/N",   "right", xp_per_col),
         ("XP tot", "right", xp_tot_col),
     ]
-    p_header_cols = [
-        ("Player", "left",  p_name_col),
+    p_data_cols = [
         ("N",      "right", n_col),
         ("XP",     "right", pk_xp_col),
     ]
 
     frags.append(("", pad))
-    for i, (col, align, w) in enumerate(k_header_cols):
-        is_active = (col == sort_col_k)
-        label = _header_label(col, is_active, sort_dir_k, align, w)
+    frags.append((k_style, k_title, _make_kill_header_handler("Mob")))
+    for col, align, w in k_data_cols:
         h     = _make_kill_header_handler(col)
-        style = _S_VALUE if is_active else _S_LABEL
-        frags.append((style, label, h))
-        if i < len(k_header_cols) - 1:
-            frags.append(("", " ", h))
+        label = _header_label(col, col == sort_col_k, sort_dir_k, align, w)
+        frags.append((k_style, " ", h))
+        frags.append((k_style, label, h))
     frags.append(("", " "))
     frags.append(("", gap))
-    # 2-col placeholder under the × glyph column.
-    frags.append(("", "  ", p_focus))
-    for i, (col, align, w) in enumerate(p_header_cols):
-        is_active = (col == sort_col_pk)
-        label = _header_label(col, is_active, sort_dir_pk, align, w)
+    frags.append((p_style, p_title, _make_pkill_header_handler("Player")))
+    for col, align, w in p_data_cols:
         h     = _make_pkill_header_handler(col)
-        style = _S_VALUE if is_active else _S_LABEL
-        frags.append((style, label, h))
-        if i < len(p_header_cols) - 1:
-            frags.append(("", " ", h))
+        label = _header_label(col, col == sort_col_pk, sort_dir_pk, align, w)
+        frags.append((p_style, " ", h))
+        frags.append((p_style, label, h))
+    frags.append(("", " "))
+    frags.append(("", "\n"))
+
+    # Divider rule beneath the title row, full column width.
+    frags.append(("", pad))
+    frags.append((C_DIVIDER, "─" * left_w))
+    frags.append(("", " "))
+    frags.append(("", gap))
+    frags.append((C_DIVIDER, "─" * right_w))
     frags.append(("", " "))
     frags.append(("", "\n"))
 
@@ -1375,7 +1411,6 @@ def _append_kills_pvps(frags, stats, cols, visible):
     k_sb_cells = _scrollbar_row_cells(_kills_sb,  0)
     p_sb_cells = _scrollbar_row_cells(_pkills_sb, 1)
 
-    p_name_w = right_w - 2
     for i in range(visible):
         if i < len(k_view):
             name, agg = k_view[i]
@@ -1385,11 +1420,9 @@ def _append_kills_pvps(frags, stats, cols, visible):
             k_line = " " * left_w
         if i < len(p_view):
             name, agg = p_view[i]
-            p_body  = _format_pkill_row(name, str(agg.count), str(agg.total_xp), p_name_w)
-            has_pvp = True
+            p_line  = _format_pkill_row(name, str(agg.count), str(agg.total_xp), right_w)
         else:
-            p_body  = " " * p_name_w
-            has_pvp = False
+            p_line  = " " * right_w
 
         frags.append(("", pad))
         frags.append((_S_VALUE, k_line, k_focus))
@@ -1398,11 +1431,7 @@ def _append_kills_pvps(frags, stats, cols, visible):
         else:
             frags.append(("", " "))
         frags.append(("", gap))
-        if has_pvp:
-            frags.append((_S_PVP_X, "× ", p_focus))
-        else:
-            frags.append(("", "  ", p_focus))
-        frags.append((_S_VALUE, p_body, p_focus))
+        frags.append((_S_VALUE, p_line, p_focus))
         if i < len(p_sb_cells):
             frags.append(p_sb_cells[i])
         else:
@@ -1417,12 +1446,11 @@ def _append_kills_pvps(frags, stats, cols, visible):
     p_xp  = sum(a.total_xp for a in stats.pkills.values())
 
     k_total  = _format_kill_row("Total",  str(k_cnt), str(k_avg), str(k_xp), left_w)
-    pk_total = _format_pkill_row("Total", str(p_cnt), str(p_xp), p_name_w)
+    pk_total = _format_pkill_row("Total", str(p_cnt), str(p_xp), right_w)
     frags.append(("", pad))
     frags.append((_S_TOTAL, k_total, k_focus))
     frags.append(("", " "))
     frags.append(("", gap))
-    frags.append(("", "  ", p_focus))
     frags.append((_S_TOTAL, pk_total, p_focus))
     frags.append(("", " "))
     frags.append(("", "\n"))
@@ -1457,43 +1485,31 @@ def _append_allies_achievements(frags, stats, cols):
     a_sb_cells = _scrollbar_row_cells(_allies_sb,       2)
     h_sb_cells = _scrollbar_row_cells(_achievements_sb, 3)
 
-    a_name_w = left_w  - 2
-    h_name_w = right_w - 2
+    a_name_w = left_w
+    h_name_w = right_w
     for i in range(_ALLIES_ACH_VISIBLE):
         if i < len(a_view):
             a = a_view[i]
             if len(a) > a_name_w:
                 a = a[:a_name_w - 1] + "…"
             a = a.ljust(a_name_w)
-            a_glyph = True
         else:
             a = " " * a_name_w
-            a_glyph = False
         if i < len(h_view):
             b = h_view[i]
             if len(b) > h_name_w:
                 b = b[:h_name_w - 1] + "…"
             b = b.ljust(h_name_w)
-            h_glyph = True
         else:
             b = " " * h_name_w
-            h_glyph = False
 
         frags.append(("", pad))
-        if a_glyph:
-            frags.append((_S_ALLY, "◆ ", a_focus))
-        else:
-            frags.append(("", "  ", a_focus))
         frags.append((_S_VALUE, a, a_focus))
         if i < len(a_sb_cells):
             frags.append(a_sb_cells[i])
         else:
             frags.append(("", " "))
         frags.append(("", gap))
-        if h_glyph:
-            frags.append((_S_STAR, "★ ", h_focus))
-        else:
-            frags.append(("", "  ", h_focus))
         frags.append((_S_VALUE, b, h_focus))
         if i < len(h_sb_cells):
             frags.append(h_sb_cells[i])

@@ -121,12 +121,14 @@ row · KILLS + PvPs row · sparklines (XP/h + TP/h) · XP-linjalen ·
 footer.
 
 Four tables, each with its own `Scrollbar` instance: KILLS (auto-fit,
-2 minimum), PvPs (same auto-fit count), ALLIES (3 fixed — one ally per
-row with a `◆` glyph), ACHIEVEMENTS (3 fixed — one achievement per row
-with a `★` glyph). KILLS/PvPs render a sticky column-header row, a
-window of data rows, and a sticky Total row. ALLIES/ACHIEVEMENTS pad
-with blank rows when data is shorter than 3 entries. The per-row
-scrollbar cell sits in the rightmost column of each table.
+2 minimum), PvPs (same auto-fit count), ALLIES (3 fixed),
+ACHIEVEMENTS (3 fixed). KILLS/PvPs render a merged title row (section
+name + sort-trigger column labels in their data-column positions), a
+divider rule, a window of data rows, and a sticky Total row.
+ALLIES/ACHIEVEMENTS pad with blank rows when data is shorter than 3
+entries. The per-row scrollbar cell sits in the rightmost column of
+each table. Right-column content (PvPs / ALLIES / ACHIEVEMENTS) renders
+flush with its column boundary — there is no leading-glyph offset.
 
 **KILLS/PvPs auto-fit.** `_compute_kills_pvps_visible()` reads the
 popup height at render time and subtracts `_STATS_FIXED_LINES` (the
@@ -138,46 +140,56 @@ footer stays pinned to the bottom of the popup.
 
 **Sort.** KILLS and PvPs have a `(column, direction)` sort state.
 Defaults at frame push: KILLS `("XP tot", "desc")`, PvPs `("XP",
-"desc")`. Clicking a column header toggles direction when the clicked
-column is already active, or switches to it with the column-type
-default (text asc, numeric desc). The active column shows ` ▲` (asc)
-or ` ▼` (desc) after its name. Switching column resets that table's
-scroll offset to 0. ALLIES and ACHIEVEMENTS are fixed (alphabetical /
-chronological) and have no sort UI.
+"desc")`. Clicking any title-row cell sets focus and updates the sort:
+the section name (KILLS / PvPs) sorts by `Mob` / `Player`, the column
+labels (N / XP/N / XP tot, or N / XP) sort by that column. The clicked
+column toggles direction if it's already active, otherwise switches
+with the column-type default (text asc, numeric desc). The active
+column shows ` ▲` (asc) or ` ▼` (desc) immediately after its label —
+KILLS / PvPs themselves carry the indicator when sorting by name.
+Switching column resets that table's scroll offset to 0. ALLIES and
+ACHIEVEMENTS are fixed (alphabetical / chronological) and have no
+sort UI.
 
 **Focus.** A module-level `_stats_focused` integer (0..3) tracks which
 table receives keyboard scroll. Tab / Shift+Tab cycle. Mouse click
-anywhere in a table (title, header, row, scrollbar) sets focus to that
-table. The focused table's title renders in `_S_VALUE` (bright white)
-instead of `C_SECTION` (cyan).
+anywhere in a table (title, row, scrollbar) sets focus to that table.
+The focused table's title row paints en bloc in `C_ACTIVE` (bold
+white) instead of `C_SECTION` (cyan) — every fragment in the row
+(section name, column headers, sort indicators) switches together.
 
 **Palette.** The Statistics frame uses `C_HEADER` (gold) only for the
 `◆ RUN STATISTICS …` banner; all six section titles (KILLS, PvPs,
 ALLIES, ACHIEVEMENTS, XP/h, TP/h) use `C_SECTION` — an alias to the
-module-level `C_TITLE` cyan that the popup banner also uses. Divider
-rules under KILLS / PvPs / ALLIES / ACHIEVEMENTS and the sparkline
-axis / bottom rules render in `C_DIVIDER`, a muted gray aliased to
-`C_HINT`. The data-cell palette (`_S_VALUE`, `_S_LABEL`, `_S_GAINED`,
-`_S_TP_BAR`, `_S_PVP_X`, `_S_ALLY`, `_S_STAR`, `_S_LEVEL`, `_S_TRACK`,
-`_S_THUMB`, `_S_TOTAL`, `_S_ARROW`, `_S_HINT`) is private to the frame
-so main / options / scripts palettes are unaffected.
+module-level `C_TITLE` cyan that the popup banner also uses. The
+focused KILLS / PvPs / ALLIES / ACHIEVEMENTS title row paints en bloc
+in `C_ACTIVE` (bold white). Divider rules under section titles and
+sparkline frame strokes (`──┬──` under XP/h / TP/h, axis `│`, bottom
+`└──`) render in `C_DIVIDER`, a muted gray aliased to `C_HINT`. The
+data-cell palette (`_S_VALUE`, `_S_LABEL`, `_S_GAINED`, `_S_TP_BAR`,
+`_S_LEVEL`, `_S_TRACK`, `_S_THUMB`, `_S_TOTAL`, `_S_ARROW`, `_S_HINT`)
+is private to the frame so main / options / scripts palettes are
+unaffected.
 
 **Sparklines.** XP/h and TP/h each fill their column above (KILLS and
-PvPs widths respectively). No divider rule under the title; the first
-y-axis row sits directly under the section name. Inside each chart the
-layout is `<y-label>` (right-aligned, 5 cells) · space · `│` · bucket
+PvPs widths respectively). A `──┬──` divider rule sits directly below
+the title, with the `┬` glyph placed at the column where the chart's
+`│` axis and the bottom rule's `└` sit. Inside each chart the layout
+is `<y-label>` (right-aligned, 5 cells) · space · `│` · bucket
 columns, then a `└────` bottom rule and a `00:00 … MM:SS` x-axis.
 
 **XP-linjalen.** Four rows. Row 1 is the bracketed gain label
 `│◄── N XP ──►│` with the two `│` glyphs anchored to the green segment's
-start / end columns (number in `_S_GAINED`, brackets and arrow dashes
-in `_S_ARROW`); when the green segment is too narrow to fit the arrows,
-the label falls back to a plain `N XP` centred on the green segment.
-Row 2 is the bar itself (`_S_TRACK` for unfilled, `_S_GAINED` for the
-gained segment). Row 3 is the level markers: `▌<level>` per boundary
-(except the last) and `<level>▐` on the final boundary, all in
-`_S_LEVEL`; the half-block glyph sits on the boundary column and the
-digits flow off it. Row 4 is a trailing blank line.
+start / end columns. The number and trailing ` XP ` label both render
+in `_S_GAINED` (green); brackets and arrow dashes in `_S_ARROW`. When
+the green segment is too narrow to fit the arrows, the label falls
+back to a plain `N XP` centred on the green segment. Row 2 is the bar
+itself (`_S_TRACK` for unfilled, `_S_GAINED` for the gained segment).
+Row 3 is the level markers: `▌<level>` per boundary (except the last)
+and `<level>▐` on the final boundary. The half-block glyphs `▌` / `▐`
+render in `_S_TRACK` (same dark gray as the untraversed bar segment),
+sitting on the boundary column; the level digits beside them render
+in `_S_LEVEL` and flow off the glyph. Row 4 is a trailing blank line.
 
 **Live tick.** When the frame is pushed an `asyncio` task starts; it
 sleeps 1 s, re-invokes `load_current_run_stats(character)`, updates
