@@ -120,6 +120,15 @@ focus, scrollbar click) using the shared `widgets/scrollbar.py` widget.
 row · KILLS + PvPs row · sparklines (XP/h + TP/h) · XP-linjalen ·
 footer.
 
+**Header line.** `◆ STATISTICS  —  <char>  ·  Lvl N  ·  Run <duration>`.
+`Lvl N` is derived from `stats.xp_current` via `_level_from_xp`
+against `_TABLE_XP` — i.e. the player's actual current level, not
+the peak level reached during the run. It tracks the run symmetrically
+on both positive progression (level-ups) and negative progression
+(death penalty taking the character below the run-start level). When
+`xp_current` is missing or non-positive it falls back to
+`status["level"]` from `bridge/runtime/status.state`.
+
 Four tables, each with its own `Scrollbar` instance: KILLS (auto-fit,
 2 minimum), PvPs (same auto-fit count), ALLIES (3 fixed),
 ACHIEVEMENTS (3 fixed). KILLS/PvPs render a merged title row (section
@@ -198,7 +207,12 @@ Row 3 is the level markers: `▌<level>` per boundary (except the last)
 and `<level>▐` on the final boundary. The half-block glyphs `▌` / `▐`
 render in `_S_TRACK` (same dark gray as the untraversed bar segment),
 sitting on the boundary column; the level digits beside them render
-in `_S_LEVEL` and flow off the glyph. Row 4 is a trailing blank line.
+in `_S_LEVEL` and flow off the glyph. The marker range is
+`[level(min(xp_at_start, xp_current)),
+level(max(xp_at_start, xp_current)) + 1]` — bracketed by the actual
+XP endpoints regardless of direction, derived via `_level_from_xp`
+against `_TABLE_XP`. It does not reflect the peak level reached
+during the run. Row 4 is a trailing blank line.
 
 **XP-linjalen — negative session gain.** When `xp_current < xp_at_start`
 (typically after a death penalty whose loss exceeds the post-death XP

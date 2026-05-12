@@ -966,6 +966,20 @@ def _level_threshold(level):
     return _TABLE_XP[level - 1]
 
 
+def _level_from_xp(xp):
+    """Return the level corresponding to an absolute career-XP value.
+
+    Level L is defined as the highest L in [1, 100] such that
+    xp >= _TABLE_XP[L-1]. Clamped to [1, 100]. Non-positive xp
+    returns 1."""
+    if xp <= 0:
+        return 1
+    L = 1
+    while L < 100 and xp >= _TABLE_XP[L]:
+        L += 1
+    return L
+
+
 def _xp_to_bar_col(xp, min_lv, hi_lv, bar_w):
     """Map an absolute career-XP value to a column index in [0, bar_w].
 
@@ -991,11 +1005,12 @@ def _xp_to_bar_col(xp, min_lv, hi_lv, bar_w):
 def _append_xp_linjalen(frags, stats, cols):
     """XP-linjalen: 4 rows — gain bracket, gain bar, level markers, blank."""
     bar_w = _STAT_BAR_WIDTH
-    if stats.min_level is None or stats.current_level is None:
+    if stats.xp_at_start is None and stats.xp_current is None:
         return
-    min_lv = max(1, stats.min_level)
-    cur_lv = stats.current_level
-    hi_lv  = cur_lv + 1
+    lo_xp  = min(stats.xp_at_start, stats.xp_current)
+    hi_xp  = max(stats.xp_at_start, stats.xp_current)
+    min_lv = max(1,   _level_from_xp(lo_xp))
+    hi_lv  = min(100, _level_from_xp(hi_xp) + 1)
     span   = max(1, hi_lv - min_lv)
 
     is_loss   = stats.xp_current < stats.xp_at_start
@@ -1579,8 +1594,9 @@ def _statistics_text():
 
     frags = []
 
-    cur_lv = stats.current_level
-    if cur_lv is None:
+    if stats.xp_current and stats.xp_current > 0:
+        cur_lv = _level_from_xp(stats.xp_current)
+    else:
         cur_lv = status.get("level", "?")
     base_header = (
         f"◆ STATISTICS  —  {_stats_char}  "
