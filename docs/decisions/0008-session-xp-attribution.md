@@ -75,3 +75,24 @@ than crediting any kill or attempting recovery.
 - **Attribute the whole delta to the most recent death.** Wrong for group fights.
 - **Skip attribution entirely.** Loses the per-mob kill list wanted for future
   features.
+
+## Addendum (2026-05-13): scope of the death rebaseline
+
+The rebaseline-on-negative-delta policy codified above applies to the **fold
+anchor** (`last_fold_xp`, and the equivalent `last_tp` for TP) only. The
+**session anchor** (`xp_baseline`, `tp_baseline`) is immutable within a run;
+that is what the status-pane progress-bar's session-gain segment is anchored
+to.
+
+Splitting the two preserves the fold-attribution behaviour described above —
+the first fold after a death still attributes only the new positive delta,
+not the death penalty — while allowing the progress bar to remain correctly
+anchored across deaths (otherwise a post-death bar collapses to "fraction
+within the post-death level" rather than tracking the true session-from-start
+delta).
+
+`state.run.xp` and `state.run.tp` may now be negative when the player is
+below their session-start XP/TP; downstream consumers must tolerate that.
+The existing `level_progress.compute_xp_baseline` / `compute_tp_baseline`
+helpers already handle `run_value <= 0` correctly (baseline = current
+progress, session-gain segment zero-width).

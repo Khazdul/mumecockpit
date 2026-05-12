@@ -293,7 +293,8 @@ in `lua/core/level_progress.lua` from `xp − run_xp` and `tp − run_tp`.
 |-------------------------------------------|-----------------------------------------------------|-------------------------------------------------------------------------------------|
 | Level-up during session                   | 0 (re-anchored at the new level's start)            | Whole filled region renders in the session-gain colour until the next level-up.     |
 | Disconnect / reconnect                    | `run_xp`/`run_tp` reset to 0 → baseline = current   | Bar reverts to all-baseline colour until the next XP/TP tick.                       |
-| Lost XP this session (negative `run_xp`)  | clamped to current progress                         | Session-gain segment is zero-width; the loss is not separately visualised.          |
+| Lost XP this session (negative `run_xp`)  | current progress within the player's current level  | Whole filled region renders in the baseline colour; session-gain segment is zero-width. Session-gain segment reappears once `state.char.xp` climbs back above the session-start XP. |
+| Death drops the player a level            | current progress within the new lower level         | Bar shows the player's progress within the new lower level, in the baseline colour. Magenta does not return until the player has recovered past the original session-start XP, which may require levelling back up first. |
 
 Troll TP scaling (×0.1) applies identically to both `tp_progress` and
 `tp_progress_baseline`.

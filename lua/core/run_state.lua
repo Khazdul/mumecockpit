@@ -20,12 +20,12 @@ local function fmt_xp(n)
 end
 
 local M = {
-    xp_baseline    = nil,    -- xp at run start; nil = not yet known
-    tp_baseline    = nil,
+    xp_baseline    = nil,    -- xp at session/run start; immutable within a run
+    tp_baseline    = nil,    -- tp at session/run start; immutable within a run
     xp             = 0,
     tp             = 0,
-    last_fold_xp   = nil,    -- xp snapshot at last fold (or run start)
-    last_tp        = nil,    -- tp at last Vitals tick (or run start)
+    last_fold_xp   = nil,    -- xp snapshot used for fold attribution; rebaselines on each fold and on negative-delta Vitals
+    last_tp        = nil,    -- tp snapshot for drop detection; rebaselines on each Vitals tick and on negative-delta Vitals
     pending_kills  = {},     -- mob names awaiting attribution
     kills          = {},     -- append-only per run: { name, xp }
     deaths         = 0,
@@ -59,11 +59,11 @@ events.subscribe("gmcp_char_vitals", function(body)
             M.last_fold_xp = body.xp
             M.xp           = 0
         elseif body.xp < M.last_fold_xp then
-            -- death penalty / level loss → rebaseline, drop pending
+            -- death penalty / level loss: fold anchor rebaselines; session
+            -- anchor stays put so state.run.xp tracks the true session delta
             local delta = body.xp - M.last_fold_xp
-            M.xp_baseline    = body.xp
             M.last_fold_xp   = body.xp
-            M.xp             = 0
+            M.xp             = body.xp - M.xp_baseline
             M.pending_kills  = {}
             M.pending_pkills = {}
             events.emit("xp_loss", { delta = delta })
@@ -77,13 +77,13 @@ events.subscribe("gmcp_char_vitals", function(body)
             M.last_tp     = body.tp
             M.tp          = 0
         elseif body.tp < M.last_tp then
-            -- tp drop → silent rebaseline. Fires for trainer-spend as well
-            -- as death penalty; downstream consumers cannot disambiguate
-            -- the two from GMCP alone.
+            -- tp drop: last_tp rebaselines; session anchor stays put so
+            -- state.run.tp tracks the true session delta. Fires for trainer-
+            -- spend as well as death penalty; downstream consumers cannot
+            -- disambiguate the two from GMCP alone.
             local delta = body.tp - M.last_tp
-            M.tp_baseline = body.tp
             M.last_tp     = body.tp
-            M.tp          = 0
+            M.tp          = body.tp - M.tp_baseline
             events.emit("tp_loss", { delta = delta })
         elseif body.tp > M.last_tp then
             events.emit("tp_gained", { delta = body.tp - M.last_tp })
