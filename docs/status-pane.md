@@ -142,12 +142,12 @@ fields are retained in the payload for use by future rows.
 |------------------|--------------------------------------------------------|----------------------------------------------|
 | `character`      | `Char.Name` → `state.char.name`                        |                                              |
 | `race`           | `Char.StatusVars` → `state.char.race`                  |                                              |
-| `level`          | `Char.StatusVars` → `state.char.level`                 |                                              |
+| `level`          | `Char.Vitals` → `state.char.xp` → `level_progress.level_from_xp` | derived from xp via the canonical threshold table; ignores `state.char.level` because `Char.StatusVars` is not reliably emitted after a death-induced level drop in MUME |
 | `wimpy`          | `Char.Vitals` → `state.char.wimpy`                     | integer; null until first Vitals tick        |
 | `xp`             | `Char.Vitals` → `state.char.xp`                        |                                              |
 | `tp`             | `Char.Vitals` → `state.char.tp`                        |                                              |
-| `xp_progress`    | computed by `level_progress.compute_xp_progress`       | `null` until level + xp both known           |
-| `tp_progress`    | computed by `level_progress.compute_tp_progress`       | `null` until level + tp + race all known; troll scales thresholds ×0.1 |
+| `xp_progress`    | computed by `level_progress.compute_xp_progress`       | `null` until xp known; derives level from xp |
+| `tp_progress`    | computed by `level_progress.compute_tp_progress`       | `null` until xp + tp + race all known; derives level from xp; troll scales thresholds ×0.1 |
 | `mood`           | `Char.Vitals` → `state.char.mood`                      |                                              |
 | `alertness`      | `Char.Vitals` → `state.char.alertness`                 |                                              |
 | `sneak`          | `Char.Vitals` → `state.char.sneak`                     | null→"off", "s"/"S"→"on"                    |
@@ -281,6 +281,11 @@ no SGR.
 - `character` is `null` → `—` centered on row 1.
 - Any data-row value is `null` → empty string; only label text is shown.
 - Any toggle field missing or `null` → rendered as off (no garbled text).
+
+Level is derived from xp at serialise time (`level_progress.level_from_xp`).
+A stale `state.char.level` (e.g. after a death-induced level drop, before the
+next `Char.StatusVars` arrives) does not affect the bars or the `level` field
+in `status.state`.
 
 ### Session-gain visualisation
 

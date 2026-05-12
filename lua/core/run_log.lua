@@ -220,7 +220,12 @@ end)
 
 events.subscribe("char_death", function()
     if not _active then return end
-    local level = state.char and state.char.level
+    local level = nil
+    if state.char and state.char.xp then
+        level = level_progress.level_from_xp(state.char.xp)
+    elseif state.char then
+        level = state.char.level
+    end
     local row = { event = "char_death", ts = os.time() }
     if level then row.level = level end
     _append(row)

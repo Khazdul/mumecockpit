@@ -40,13 +40,25 @@ local function _progress(table, level, value, mult)
     return math.max(0.0, math.min(1.0, (value - base) / (next - base)))
 end
 
-function level_progress.compute_xp_progress(level, xp)
-    return _progress(TABLE_XP, level, xp, 1.0)
+function level_progress.level_from_xp(xp)
+    if xp == nil or xp <= TABLE_XP[1] then return 1 end
+    if xp >= TABLE_XP[100] then return 100 end
+    local L = 1
+    while L < 100 and xp >= TABLE_XP[L + 1] do
+        L = L + 1
+    end
+    return L
 end
 
-function level_progress.compute_tp_progress(level, tp, race)
+function level_progress.compute_xp_progress(xp)
+    if xp == nil then return nil end
+    return _progress(TABLE_XP, level_progress.level_from_xp(xp), xp, 1.0)
+end
+
+function level_progress.compute_tp_progress(xp, tp, race)
+    if xp == nil or tp == nil then return nil end
     local mult = (type(race) == "string" and race:lower() == "troll") and 0.1 or 1.0
-    return _progress(TABLE_TP, level, tp, mult)
+    return _progress(TABLE_TP, level_progress.level_from_xp(xp), tp, mult)
 end
 
 local function _baseline(table, level, value, run_value, mult)
@@ -70,13 +82,13 @@ local function _baseline(table, level, value, run_value, mult)
     return baseline
 end
 
-function level_progress.compute_xp_baseline(level, xp, run_xp)
-    return _baseline(TABLE_XP, level, xp, run_xp, 1.0)
+function level_progress.compute_xp_baseline(xp, run_xp)
+    return _baseline(TABLE_XP, level_progress.level_from_xp(xp), xp, run_xp, 1.0)
 end
 
-function level_progress.compute_tp_baseline(level, tp, run_tp, race)
+function level_progress.compute_tp_baseline(xp, tp, run_tp, race)
     local mult = (type(race) == "string" and race:lower() == "troll") and 0.1 or 1.0
-    return _baseline(TABLE_TP, level, tp, run_tp, mult)
+    return _baseline(TABLE_TP, level_progress.level_from_xp(xp), tp, run_tp, mult)
 end
 
 dbg("[LEVEL_PROGRESS] loaded")
