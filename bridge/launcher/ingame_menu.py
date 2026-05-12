@@ -71,7 +71,7 @@ C_SECTION  = C_TITLE            # cyan section titles (KILLS, PvPs, …, XP/h, T
 C_DIVIDER  = C_HINT             # muted gray section rules and chart frame strokes
 _S_VALUE   = "fg:#ffffff"       # data values, names
 _S_LABEL   = "fg:#909090"       # axis numbers, column headers
-_S_GAINED  = "fg:#6fe060"       # XP bar gained portion, XP/h bars, XP-linjal " XP " label
+_S_GAINED  = "fg:#6fe060"       # XP bar gained portion, XP/h bars, XP-linjal label
 _S_TP_BAR  = "fg:#ffc847"       # TP/h bars
 _S_LEVEL   = "fg:#9fb8ff"       # level markers
 _S_TRACK   = "fg:#3a3a3a"       # scrollbar track, untraversed bar
@@ -1005,31 +1005,27 @@ def _append_xp_linjalen(frags, stats, cols):
     margin = max(0, (cols - bar_w) // 2)
     pad    = " " * margin
 
-    # Row 1: ▌◄▬▬ <N> XP ▬▬►▐  — half-block brackets match the level markers in
-    # row 3; ▬ (U+25AC) filler keeps the row visually aligned with the bar below.
-    n_str       = f"{stats.xp_gained:,}"
-    green_w     = cur_col - start_col
-    inner_w     = max(0, green_w - 2)
-    label_min_w = 11 + len(n_str)
+    # Row 1: ▌◄──<label>──►▐ when the green segment is wide enough, else the
+    # label alone, centred above the green segment. ▌ and ▐ sit on the green
+    # segment's boundary columns (xp_at_start and xp_current).
+    label   = f"{round(stats.xp_gained / 1000)}k"
+    green_w = cur_col - start_col
     frags.append(("", pad))
-    if inner_w >= label_min_w:
+    if green_w >= len(label) + 4:
         if start_col > 0:
             frags.append(("", " " * start_col))
-        slack = inner_w - label_min_w
-        left  = 2 + slack // 2
-        right = 2 + slack - slack // 2
-        frags.append((_S_ARROW, "▌◄" + "▬" * left + " "))
-        frags.append((_S_GAINED, n_str + " XP "))
-        frags.append((_S_ARROW, "▬" * right + "►▐"))
+        slack = green_w - len(label) - 4
+        left  = (slack + 1) // 2
+        right = slack // 2
+        frags.append((_S_ARROW, "▌◄" + "─" * left))
+        frags.append((_S_GAINED, label))
+        frags.append((_S_ARROW, "─" * right + "►▐"))
     elif green_w > 0:
-        # Segment too narrow for brackets: centre the plain "<N> XP" label on
-        # the green segment's centre point, even if it overflows.
-        plain  = f"{n_str} XP"
         centre = start_col + green_w // 2
-        before = max(0, centre - len(plain) // 2)
+        before = max(0, centre - len(label) // 2)
         if before > 0:
             frags.append(("", " " * before))
-        frags.append((_S_GAINED, plain))
+        frags.append((_S_GAINED, label))
     frags.append(("", "\n"))
 
     # Row 2: the bar.
