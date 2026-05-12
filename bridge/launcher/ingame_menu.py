@@ -19,6 +19,7 @@ except ImportError:
 
 import asyncio
 import atexit
+import json
 import os
 import shutil
 import signal
@@ -26,16 +27,21 @@ import subprocess
 import sys
 import time
 
+import run_stats
+
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
 BRIDGE_DIR            = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+PROJECT_DIR           = os.path.dirname(BRIDGE_DIR)
 RUNTIME_DIR           = os.path.join(BRIDGE_DIR, "runtime")
+DATA_RUNS_DIR         = os.path.join(PROJECT_DIR, "data", "runs")
 POPUP_SENTINEL        = os.path.join(RUNTIME_DIR, ".popup_open")
 RETURN_TO_MENU_SENT   = os.path.join(RUNTIME_DIR, ".return_to_menu")
 CONNECTION_STATE_PATH = os.path.join(RUNTIME_DIR, "connection.state")
 PING_CACHE_PATH       = os.path.join(RUNTIME_DIR, "ping.cache")
 STARTUP_CONF_PATH     = os.path.join(RUNTIME_DIR, "startup.conf")
+STATUS_STATE_PATH     = os.path.join(RUNTIME_DIR, "status.state")
 SCRIPTS_CACHE_PATH    = os.path.join(RUNTIME_DIR, "scripts.cache")
 TOGGLE_PANE_SCRIPT    = os.path.join(BRIDGE_DIR, "layout", "toggle_pane.sh")
 
@@ -54,6 +60,7 @@ C_HINT    = "fg:#585858"        # _MR_HINT   — dim, colour 240
 C_ACCENT  = "bold fg:#ffaf00"   # _MR_ACCENT — colour 214, bold
 C_YELLOW  = "bold fg:#ffd75f"   # _MR_YELLOW
 C_ERR     = "bold fg:#ff5f5f"   # _MR_ERR
+C_GAINED  = "fg:#6fe060"        # statistics: traversed XP bar / sparkline bars
 
 # ---------------------------------------------------------------------------
 # ASCII title (mirrors menu_render.sh draw_ascii_title)
@@ -98,6 +105,9 @@ _save_flash_until = 0.0
 _app              = None
 _options_window   = None        # set in main(); referenced for render_info
 _scripts_window   = None        # set in main(); referenced for render_info
+_stats_data       = None        # cached run_stats.RunStats for statistics frame
+_stats_status     = None        # cached status.state dict (xp_progress source)
+_stats_char       = None        # character name driving the statistics view
 
 
 # ---------------------------------------------------------------------------
@@ -146,6 +156,29 @@ def _is_connected():
         return int(ca) > 0
     except (TypeError, ValueError):
         return False
+
+
+def _read_status_state():
+    try:
+        with open(STATUS_STATE_PATH) as fh:
+            data = json.load(fh)
+        if isinstance(data, dict):
+            return data
+    except (OSError, ValueError):
+        pass
+    return {}
+
+
+def _statistics_character():
+    """Return character name if status.state names one AND its current.jsonl
+    exists; otherwise None. Used to gate the Statistics row on the main frame."""
+    status = _read_status_state()
+    char = status.get("character") if status else None
+    if not isinstance(char, str) or not char:
+        return None
+    if not os.path.exists(os.path.join(DATA_RUNS_DIR, char, "current.jsonl")):
+        return None
+    return char
 
 
 def _write_sentinel(path):
@@ -248,22 +281,17 @@ def _pad_centre(text, cols=None):
 # Main frame
 # ---------------------------------------------------------------------------
 def _main_items():
+    items = []
     if _is_connected():
-        return [
-            ("Continue",     "continue"),
-            ("Reconnect",    "reconnect"),
-            ("Save profile", "save"),
-            ("Options",      "options"),
-            ("Scripts",      "scripts"),
-            ("Exit session", "exit"),
-        ]
-    return [
-        ("Reconnect",    "reconnect"),
-        ("Save profile", "save"),
-        ("Options",      "options"),
-        ("Scripts",      "scripts"),
-        ("Exit session", "exit"),
-    ]
+        items.append(("Continue", "continue"))
+    items.append(("Reconnect",    "reconnect"))
+    items.append(("Save profile", "save"))
+    if _statistics_character() is not None:
+        items.append(("Statistics", "statistics"))
+    items.append(("Options",      "options"))
+    items.append(("Scripts",      "scripts"))
+    items.append(("Exit session", "exit"))
+    return items
 
 
 def _activate_main_item(action):
@@ -290,6 +318,11 @@ def _activate_main_item(action):
     elif action == "scripts":
         _scripts_scroll = 0
         _push_frame("scripts")
+    elif action == "statistics":
+        char = _statistics_character()
+        if char:
+            _load_statistics(char)
+            _push_frame("statistics")
     elif action == "exit":
         _push_frame("exit_confirm")
 
@@ -635,6 +668,373 @@ def _exit_confirm_text():
 
 
 # ---------------------------------------------------------------------------
+# Statistics frame (static layout in this commit; sort/focus/scroll lands next)
+# ---------------------------------------------------------------------------
+_STAT_BAR_WIDTH     = 84
+_STAT_SPARK_WIDTH   = 30      # bucket columns per sparkline
+_STAT_Y_LABEL_W     = 5       # right-aligned y-axis label width
+_STAT_TABLE_LEFT_W  = 40
+_STAT_TABLE_RIGHT_W = 40
+_STAT_TABLE_GAP     = "  "
+_STAT_BLOCKS        = "▁▂▃▄▅▆▇█"
+
+
+def _load_statistics(character):
+    global _stats_data, _stats_status, _stats_char
+    _stats_char   = character
+    _stats_status = _read_status_state()
+    try:
+        _stats_data = run_stats.load_current_run_stats(character)
+    except Exception:
+        _stats_data = None
+
+
+def _fmt_xp_short(n):
+    """Mirror of fmt_xp in lua/core/run_state.lua: 1234 → '1.2k', 12345 → '12k'."""
+    try:
+        n = int(n)
+    except (TypeError, ValueError):
+        return "0"
+    if n < 1000:
+        return str(n)
+    if n < 10000:
+        return f"{n / 1000:.1f}k"
+    return f"{n // 1000}k"
+
+
+def _fmt_duration(secs):
+    secs = max(0, int(secs))
+    h, rem = divmod(secs, 3600)
+    m, s   = divmod(rem, 60)
+    return f"{h:02d}:{m:02d}:{s:02d}"
+
+
+def _bucket_event_sums(events, n_buckets, start_ts, end_ts):
+    if n_buckets <= 0 or end_ts <= start_ts:
+        return [0] * max(0, n_buckets)
+    bucket_dur = (end_ts - start_ts) / n_buckets
+    if bucket_dur <= 0:
+        return [0] * n_buckets
+    buckets = [0] * n_buckets
+    for ts, val in events:
+        if ts < start_ts or ts > end_ts:
+            continue
+        idx = int((ts - start_ts) / bucket_dur)
+        if idx >= n_buckets:
+            idx = n_buckets - 1
+        buckets[idx] += val
+    return buckets
+
+
+def _sparkline_rows(values, max_val, rows=3, levels_per_row=8):
+    """Render `values` as `rows` row strings, bottom-up. Each cell contributes
+    up to `levels_per_row` sub-levels per row via the partial block chars."""
+    n = len(values)
+    if rows <= 0 or n == 0:
+        return [""] * max(0, rows)
+    total = rows * levels_per_row
+    if max_val <= 0:
+        cells = [0] * n
+    else:
+        cells = [
+            min(total, max(0, int(round(v / max_val * total))))
+            for v in values
+        ]
+    out = []
+    for r in range(rows - 1, -1, -1):
+        line = []
+        for c in cells:
+            sub = c - r * levels_per_row
+            if sub <= 0:
+                line.append(" ")
+            elif sub >= levels_per_row:
+                line.append("█")
+            else:
+                line.append(_STAT_BLOCKS[sub - 1])
+        out.append("".join(line))
+    return out
+
+
+def _format_kill_row(name, n, xp_per, xp_tot, width):
+    n_col      = 3
+    xp_per_col = 7
+    xp_tot_col = 9
+    name_col   = max(1, width - n_col - xp_per_col - xp_tot_col - 3)
+    if len(name) > name_col:
+        name = name[:name_col - 1] + "…"
+    return (
+        f"{name.ljust(name_col)} "
+        f"{n.rjust(n_col)} "
+        f"{xp_per.rjust(xp_per_col)} "
+        f"{xp_tot.rjust(xp_tot_col)}"
+    )
+
+
+def _format_pkill_row(name, n, xp, width):
+    n_col    = 3
+    xp_col   = 9
+    name_col = max(1, width - n_col - xp_col - 2)
+    if len(name) > name_col:
+        name = name[:name_col - 1] + "…"
+    return f"{name.ljust(name_col)} {n.rjust(n_col)} {xp.rjust(xp_col)}"
+
+
+def _append_xp_bar(frags, stats, status, cols):
+    bar_w = _STAT_BAR_WIDTH
+    if stats.min_level is None or stats.current_level is None:
+        return
+    min_lv = stats.min_level
+    cur_lv = stats.current_level
+    hi_lv  = cur_lv + 2
+    span   = max(1, hi_lv - min_lv)
+
+    try:
+        xp_progress = float(status.get("xp_progress") or 0.0)
+    except (TypeError, ValueError):
+        xp_progress = 0.0
+    xp_progress = max(0.0, min(0.999, xp_progress))
+
+    pos_levels = (cur_lv - min_lv) + xp_progress
+    filled = max(0, min(bar_w, int(round(pos_levels / span * bar_w))))
+
+    margin = max(0, (cols - bar_w) // 2)
+    pad    = " " * margin
+
+    gained_str = f"{stats.xp_gained:,} XP gained"
+    frags.append(("", _pad_centre(gained_str, cols)))
+    frags.append((C_ACCENT, gained_str))
+    frags.append(("", "\n"))
+
+    frags.append(("", pad))
+    if filled > 0:
+        frags.append((C_GAINED, "█" * filled))
+    if filled < bar_w:
+        frags.append((C_HINT, "░" * (bar_w - filled)))
+    frags.append(("", "\n"))
+
+    line = [" "] * bar_w
+    for lv_offset in range(span + 1):
+        col = int(round(lv_offset / span * bar_w))
+        label = f"| {min_lv + lv_offset}"
+        if col + len(label) > bar_w:
+            col = bar_w - len(label)
+        if col < 0:
+            col = 0
+        for i, ch in enumerate(label):
+            if 0 <= col + i < bar_w:
+                line[col + i] = ch
+    frags.append(("", pad))
+    frags.append((C_HINT, "".join(line)))
+
+
+def _append_sparklines(frags, stats, cols):
+    n = _STAT_SPARK_WIDTH
+    start    = stats.start_ts
+    end      = max(stats.end_ts, start + 1)
+    duration = end - start
+
+    xp_buckets = _bucket_event_sums(stats.kill_events, n, start, end)
+    tp_buckets = _bucket_event_sums(stats.tp_events,   n, start, end)
+
+    bucket_secs = duration / n if n > 0 else 1
+    if bucket_secs <= 0:
+        bucket_secs = 1
+    xp_rates = [b * 3600.0 / bucket_secs for b in xp_buckets]
+    tp_rates = [b * 3600.0 / bucket_secs for b in tp_buckets]
+
+    xp_max = max(xp_rates) if xp_rates else 0.0
+    tp_max = max(tp_rates) if tp_rates else 0.0
+
+    xp_rows = _sparkline_rows(xp_rates, xp_max, rows=3)
+    tp_rows = _sparkline_rows(tp_rates, tp_max, rows=3)
+
+    label_w = _STAT_Y_LABEL_W
+    side_w  = label_w + 1 + n
+    gap     = "    "
+    total_w = side_w * 2 + len(gap)
+    margin  = max(0, (cols - total_w) // 2)
+    pad     = " " * margin
+
+    # Title line (above each sparkline)
+    title_xp = "XP/h"
+    title_tp = "TP/h"
+    left_title  = (" " * (label_w + 1)) + title_xp.ljust(n)
+    right_title = (" " * (label_w + 1)) + title_tp.ljust(n)
+    frags.append(("", pad))
+    frags.append((C_BODY, left_title))
+    frags.append(("", gap))
+    frags.append((C_BODY, right_title))
+    frags.append(("", "\n"))
+
+    xp_labels = [_fmt_xp_short(xp_max), _fmt_xp_short(xp_max / 2), "0"]
+    tp_labels = [_fmt_xp_short(tp_max), _fmt_xp_short(tp_max / 2), "0"]
+
+    for r in range(3):
+        frags.append(("", pad))
+        frags.append((C_HINT, xp_labels[r].rjust(label_w) + " "))
+        frags.append((C_GAINED, xp_rows[r]))
+        frags.append(("", gap))
+        frags.append((C_HINT, tp_labels[r].rjust(label_w) + " "))
+        frags.append((C_GAINED, tp_rows[r]))
+        frags.append(("", "\n"))
+
+    x_left  = "00:00"
+    x_right = _fmt_duration(duration)[:5]
+    fill    = max(1, n - len(x_left) - len(x_right))
+    x_line  = (" " * (label_w + 1)) + x_left + (" " * fill) + x_right
+    frags.append(("", pad))
+    frags.append((C_HINT, x_line))
+    frags.append(("", gap))
+    frags.append((C_HINT, x_line))
+
+
+def _append_kills_pkills(frags, stats, cols):
+    left_w  = _STAT_TABLE_LEFT_W
+    right_w = _STAT_TABLE_RIGHT_W
+    gap     = _STAT_TABLE_GAP
+    margin  = max(0, (cols - (left_w + right_w + len(gap))) // 2)
+    pad     = " " * margin
+
+    frags.append(("", pad))
+    frags.append((C_TITLE, "Kills".ljust(left_w)))
+    frags.append(("", gap))
+    frags.append((C_TITLE, "Player Kills".ljust(right_w)))
+    frags.append(("", "\n"))
+
+    k_hdr  = _format_kill_row("Mob", "N", "XP/N", "XP tot", left_w)
+    pk_hdr = _format_pkill_row("Player", "N", "XP", right_w)
+    frags.append(("", pad))
+    frags.append((C_HINT, k_hdr))
+    frags.append(("", gap))
+    frags.append((C_HINT, pk_hdr))
+    frags.append(("", "\n"))
+
+    kills  = sorted(stats.kills.items(),  key=lambda kv: -kv[1].total_xp)[:5]
+    pkills = sorted(stats.pkills.items(), key=lambda kv: -kv[1].total_xp)[:5]
+
+    n_rows = max(len(kills), len(pkills), 1)
+    for i in range(n_rows):
+        if i < len(kills):
+            name, agg = kills[i]
+            avg = agg.total_xp // agg.count if agg.count else 0
+            k_line = _format_kill_row(name, str(agg.count), str(avg), str(agg.total_xp), left_w)
+        else:
+            k_line = " " * left_w
+        if i < len(pkills):
+            name, agg = pkills[i]
+            pk_line = _format_pkill_row(name, str(agg.count), str(agg.total_xp), right_w)
+        else:
+            pk_line = " " * right_w
+        frags.append(("", pad))
+        frags.append((C_ITEM, k_line))
+        frags.append(("", gap))
+        frags.append((C_ITEM, pk_line))
+        frags.append(("", "\n"))
+
+    k_cnt = sum(a.count for a in stats.kills.values())
+    k_xp  = sum(a.total_xp for a in stats.kills.values())
+    k_avg = k_xp // k_cnt if k_cnt else 0
+    p_cnt = sum(a.count for a in stats.pkills.values())
+    p_xp  = sum(a.total_xp for a in stats.pkills.values())
+
+    k_total  = _format_kill_row("Total",  str(k_cnt), str(k_avg), str(k_xp), left_w)
+    pk_total = _format_pkill_row("Total", str(p_cnt), str(p_xp), right_w)
+    frags.append(("", pad))
+    frags.append((C_ACCENT, k_total))
+    frags.append(("", gap))
+    frags.append((C_ACCENT, pk_total))
+    frags.append(("", "\n"))
+
+
+def _append_allies_achievements(frags, stats, cols):
+    left_w  = _STAT_TABLE_LEFT_W
+    right_w = _STAT_TABLE_RIGHT_W
+    gap     = _STAT_TABLE_GAP
+    margin  = max(0, (cols - (left_w + right_w + len(gap))) // 2)
+    pad     = " " * margin
+
+    frags.append(("", pad))
+    frags.append((C_TITLE, "Allies".ljust(left_w)))
+    frags.append(("", gap))
+    frags.append((C_TITLE, "Achievements".ljust(right_w)))
+    frags.append(("", "\n"))
+
+    allies = stats.allies[:6]
+    ally_rows = []
+    for i in range(0, len(allies), 3):
+        ally_rows.append(", ".join(allies[i:i + 3]))
+    while len(ally_rows) < 2:
+        ally_rows.append("")
+    ally_rows = ally_rows[:2]
+
+    ach_rows = [a[1] for a in stats.achievements[:2]]
+    while len(ach_rows) < 2:
+        ach_rows.append("")
+
+    for i in range(2):
+        a = ally_rows[i]
+        if len(a) > left_w:
+            a = a[:left_w - 1] + "…"
+        b = ach_rows[i]
+        if len(b) > right_w:
+            b = b[:right_w - 1] + "…"
+        frags.append(("", pad))
+        frags.append((C_ITEM, a.ljust(left_w)))
+        frags.append(("", gap))
+        frags.append((C_ITEM, b.ljust(right_w)))
+        frags.append(("", "\n"))
+
+
+def _statistics_text():
+    cols   = _term_cols()
+    stats  = _stats_data
+    status = _stats_status or {}
+
+    if stats is None or not _stats_char:
+        msg  = "No run data available."
+        hint = "ESC Back"
+        return [
+            ("", "\n\n"),
+            ("", _pad_centre(msg, cols)),
+            (C_ERR, msg),
+            ("", "\n\n"),
+            ("", _pad_centre(hint, cols)),
+            (C_HINT, hint),
+        ]
+
+    frags = []
+
+    cur_lv = stats.current_level
+    if cur_lv is None:
+        cur_lv = status.get("level", "?")
+    header = (
+        f"◆ RUN STATISTICS  —  {_stats_char}  "
+        f"·  Lv {cur_lv}  ·  Run {_fmt_duration(stats.duration_seconds)}"
+    )
+    frags.append(("", "\n"))
+    frags.append(("", _pad_centre(header, cols)))
+    frags.append((C_TITLE, header))
+    frags.append(("", "\n\n"))
+
+    _append_xp_bar(frags, stats, status, cols)
+    frags.append(("", "\n\n"))
+
+    _append_sparklines(frags, stats, cols)
+    frags.append(("", "\n\n"))
+
+    _append_kills_pkills(frags, stats, cols)
+    frags.append(("", "\n"))
+    _append_allies_achievements(frags, stats, cols)
+
+    frags.append(("", "\n"))
+    footer = "ESC Back     R Refresh     E Export run data"
+    frags.append(("", _pad_centre(footer, cols)))
+    frags.append((C_HINT, footer))
+
+    return frags
+
+
+# ---------------------------------------------------------------------------
 # Scrollable control: handles mouse-wheel SCROLL_UP/SCROLL_DOWN.
 # ---------------------------------------------------------------------------
 class _ScrollControl(FormattedTextControl):
@@ -807,6 +1207,28 @@ def _scr_escape(event):
     _pop_frame()
 
 
+# Statistics frame
+@kb.add("escape", filter=_in_frame("statistics"), eager=True)
+def _stat_escape(event):
+    _pop_frame()
+
+
+@kb.add("r", filter=_in_frame("statistics"))
+@kb.add("R", filter=_in_frame("statistics"))
+def _stat_refresh(event):
+    if _stats_char:
+        _load_statistics(_stats_char)
+    if _app:
+        _app.invalidate()
+
+
+@kb.add("e", filter=_in_frame("statistics"))
+@kb.add("E", filter=_in_frame("statistics"))
+def _stat_export(event):
+    # Placeholder — export lands in a follow-up commit.
+    pass
+
+
 # Exit-confirm frame
 @kb.add("y", filter=_in_frame("exit_confirm"))
 @kb.add("Y", filter=_in_frame("exit_confirm"))
@@ -946,6 +1368,14 @@ def _build_exit_confirm_container():
     )
 
 
+def _build_statistics_container():
+    return Window(
+        content=FormattedTextControl(text=_statistics_text, focusable=False),
+        wrap_lines=False,
+        always_hide_cursor=True,
+    )
+
+
 def main():
     global _app
 
@@ -959,6 +1389,7 @@ def main():
         "main":         _build_main_container(),
         "options":      _build_options_container(),
         "scripts":      _build_scripts_container(),
+        "statistics":   _build_statistics_container(),
         "exit_confirm": _build_exit_confirm_container(),
     }
 

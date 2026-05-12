@@ -15,9 +15,9 @@ wrapper that `exec`s the Python entry; both the tmux root binding and
 the Lua auto-open path in `lua/brain/connection.lua` invoke the wrapper.
 
 The UI is a frame stack: a single `DynamicContainer` swaps between
-`main`, `options`, `scripts`, and `exit_confirm` containers, pushed and
-popped via `_push_frame` / `_pop_frame`. Each frame owns its own
-`KeyBindings` filter so navigation, scroll, and ESC behave per-frame.
+`main`, `options`, `scripts`, `statistics`, and `exit_confirm` containers,
+pushed and popped via `_push_frame` / `_pop_frame`. Each frame owns its
+own `KeyBindings` filter so navigation, scroll, and ESC behave per-frame.
 
 The top menu items are context-aware, rebuilt from `bridge/runtime/connection.state`
 on every render:
@@ -95,6 +95,38 @@ the visible rows. Rendering matches the launcher (A:/S:/H:/B:/M: tags,
 extracted into a shared helper, to keep the launcher's bash renderer stable.
 Not covered: live script state (IDLE/RUNNING/FIRING) and a stop-all-scripts
 button — both parked.
+
+## Statistics frame
+
+A read-only view of the current run, opened from a "Statistics" row on the
+main frame. The row sits between **Save profile** and **Options** and is
+gated on two conditions, re-checked on every render of `_main_items()`:
+
+1. `bridge/runtime/status.state` exists, parses as JSON, and contains a
+   `character` field.
+2. `data/runs/<character>/current.jsonl` exists.
+
+If either disappears mid-session the row vanishes from the main frame.
+
+Selecting the row reads the cached aggregator output via
+`run_stats.load_current_run_stats(character)` once, stores it in
+module-level globals, and pushes the `statistics` frame. The frame
+renders a single `FormattedTextControl` — all sections (header, XP bar,
+sparklines, kill / pkill / allies / achievements tables, footer) emit
+plain styled fragments with no mouse handlers. Per-fragment click
+handlers, click-to-sort, focus, and the scrollbar widget land in a
+follow-up commit.
+
+Key bindings on the frame:
+
+- **ESC** (eager) — pop back to the main frame.
+- **R / r** — re-invokes the aggregator and re-reads `status.state`;
+  the view refreshes via `app.invalidate()`.
+- **E / e** — placeholder, no-op for now; export run data is parked.
+
+Out of scope for this frame (parked for follow-up commits): per-table
+scrollbars and click-to-sort, Tab / Shift+Tab focus traversal, the live
+60 s tick, the `E` export action, and run-end-mid-view detection.
 
 ## Save profile (`cp -s`)
 
