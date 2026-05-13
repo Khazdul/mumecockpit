@@ -4,7 +4,7 @@
 # (runtime open gate). Dependency-free; tmux session is hardcoded
 # `mume:cockpit` as everywhere else.
 
-MIN_PER_PANE=3
+MIN_PER_PANE=2
 TITLE_OVERHEAD=1
 INPUT_RESERVE=1
 
