@@ -60,6 +60,7 @@ chmod +x bridge/layout/apply_layout.sh
 chmod +x bridge/launcher/open_pane.sh
 chmod +x bridge/layout/focus_input.sh
 chmod +x bridge/layout/toggle_pane.sh
+chmod +x bridge/layout/equalize_right_column.sh
 chmod +x bridge/services/read_version.sh
 chmod +x bridge/launcher/build_initial_layout.sh
 chmod +x bridge/launcher/wait_for_layout.sh

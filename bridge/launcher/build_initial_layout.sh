@@ -88,22 +88,7 @@ done
 # Phase 3 — create panes in visual order, then input.
 for pane in "${REQUESTED[@]}"; do
     bash "$HOME/MUME/bridge/launcher/open_pane.sh" "$pane"
-
-    # Equalize current right-column panes so the next split's target
-    # stays above tmux's floor and rc_target_can_be_split's gate.
-    mapfile -t RC_INDICES < <(
-        tmux list-panes -t mume:cockpit -F '#{pane_top} #{pane_index} #{pane_title}' \
-        | awk '$3 ~ /^(status|buffs|group|comm|ui|dev)$/' \
-        | sort -n \
-        | awk '{print $2}'
-    )
-    N_RC=${#RC_INDICES[@]}
-    if [ "$N_RC" -gt 1 ]; then
-        SHARE=$(( (ROWS - INPUT_RESERVE) / N_RC ))
-        for ((i=0; i<N_RC-1; i++)); do
-            tmux resize-pane -t "mume:cockpit.${RC_INDICES[$i]}" -y "$SHARE"
-        done
-    fi
+    bash "$HOME/MUME/bridge/layout/equalize_right_column.sh"
 done
 
 bash "$HOME/MUME/bridge/launcher/open_pane.sh" input
