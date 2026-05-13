@@ -115,6 +115,12 @@ _pkills_sb         = None
 _allies_sb         = None
 _achievements_sb   = None
 
+# Mouse-hover state. Sticky-on-last-cell matches the launcher; mouse motion on
+# a new frame updates it immediately so the stale value is invisible.
+_hover_main        = -1
+_hover_options     = -1
+_stats_hover_sort  = None       # (table_idx, col) for the hovered sort-header cell
+
 
 # ---------------------------------------------------------------------------
 # Terminal dimensions
@@ -294,6 +300,50 @@ def _pop_frame():
 
 
 # ---------------------------------------------------------------------------
+# Hover handling (mirrors launcher.py — see docs/launcher.md)
+# ---------------------------------------------------------------------------
+def _set_hover(frame, idx):
+    """Update hover index for the named frame; invalidate if changed."""
+    # frame in {"main", "options"} — extend if more frames adopt hover.
+    global _hover_main, _hover_options
+    changed = False
+    if frame == "main" and _hover_main != idx:
+        _hover_main = idx
+        changed = True
+    elif frame == "options" and _hover_options != idx:
+        _hover_options = idx
+        changed = True
+    if changed and _app:
+        _app.invalidate()
+
+
+def _row_style(is_active, is_hovered, inactive_style=C_ITEM):
+    if is_active:
+        return C_ACTIVE
+    if is_hovered:
+        return C_HOVER
+    return inactive_style
+
+
+def _set_stats_hover_sort(key):
+    global _stats_hover_sort
+    if _stats_hover_sort != key:
+        _stats_hover_sort = key
+        if _app:
+            _app.invalidate()
+
+
+def _sort_cell_style(table_idx, col, table_active):
+    # Hover override only when the table is not focused (focused → already
+    # C_ACTIVE, which is brighter than the hover tint).
+    if table_active:
+        return C_ACTIVE
+    if _stats_hover_sort == (table_idx, col):
+        return C_HOVER_TITLE
+    return C_SECTION
+
+
+# ---------------------------------------------------------------------------
 # Centering helper
 # ---------------------------------------------------------------------------
 def _pad_centre(text, cols=None):
@@ -419,18 +469,23 @@ def _main_text():
 
     for i, (label, action) in enumerate(items):
         is_active = (i == sel_idx)
+        is_hover  = (i == _hover_main)
         if action == "save" and flash_active:
+            # Save-success flash wins over hover so the C_ACCENT pulse is visible.
             display = "Saved ✓"
             style   = C_ACCENT
         else:
             display = label
-            style   = C_ACTIVE if is_active else C_ITEM
+            style   = _row_style(is_active, is_hover)
         prefix = "<< " if is_active else "   "
         suffix = " >>" if is_active else "   "
         full   = f"{prefix}{display}{suffix}"
 
         def _make_handler(idx=i, act=action):
             def _handler(ev):
+                if ev.event_type == MouseEventType.MOUSE_MOVE:
+                    _set_hover("main", idx)
+                    return
                 if ev.event_type != MouseEventType.MOUSE_DOWN:
                     return
                 global _sel_main
@@ -543,12 +598,16 @@ def _options_content_text():
 
         label    = labels[i]
         is_active = (i == sel_row)
-        style    = C_ACTIVE if is_active else C_ITEM
+        is_hover  = (i == _hover_options)
+        style    = _row_style(is_active, is_hover)
         prefix   = "<< " if is_active else "   "
         suffix   = " >>" if is_active else "   "
 
         def _make_handler(row_idx=i, sel_pos=sel_indices.index(i) if i in sel_indices else 0):
             def _handler(ev):
+                if ev.event_type == MouseEventType.MOUSE_MOVE:
+                    _set_hover("options", row_idx)
+                    return
                 if ev.event_type != MouseEventType.MOUSE_DOWN:
                     return
                 global _sel_options
@@ -1250,6 +1309,9 @@ def _toggle_sort(state_tuple, col):
 
 def _make_kill_header_handler(col):
     def _h(ev):
+        if ev.event_type == MouseEventType.MOUSE_MOVE:
+            _set_stats_hover_sort((0, col))
+            return
         if ev.event_type != MouseEventType.MOUSE_DOWN:
             return
         global _stats_kills_sort, _stats_focused
@@ -1263,6 +1325,9 @@ def _make_kill_header_handler(col):
 
 def _make_pkill_header_handler(col):
     def _h(ev):
+        if ev.event_type == MouseEventType.MOUSE_MOVE:
+            _set_stats_hover_sort((1, col))
+            return
         if ev.event_type != MouseEventType.MOUSE_DOWN:
             return
         global _stats_pkills_sort, _stats_focused
@@ -1360,13 +1425,13 @@ def _append_kills_pvps(frags, stats, cols, visible):
 
     k_active = (_stats_focused == 0)
     p_active = (_stats_focused == 1)
-    k_style  = C_ACTIVE if k_active else C_SECTION
-    p_style  = C_ACTIVE if p_active else C_SECTION
 
     # Merged title row: section name in the name-column slot (clickable to
     # sort by name), then N / XP/N / XP tot (or N / XP) in their data-column
-    # positions. The entire row paints en bloc in k_style / p_style; the
-    # active sort indicator just changes the glyph after the label.
+    # positions. When the table is focused the row paints en bloc in
+    # C_ACTIVE. When unfocused, each cell decides its own style via
+    # _sort_cell_style so a hovered cell can tint to C_HOVER_TITLE without
+    # affecting its neighbours.
     k_title = _header_label("KILLS", sort_col_k  == "Mob",    sort_dir_k,  "left", k_name_col)
     p_title = _header_label("PvPs",  sort_col_pk == "Player", sort_dir_pk, "left", p_name_col)
 
@@ -1381,20 +1446,22 @@ def _append_kills_pvps(frags, stats, cols, visible):
     ]
 
     frags.append(("", pad))
-    frags.append((k_style, k_title, _make_kill_header_handler("Mob")))
+    frags.append((_sort_cell_style(0, "Mob", k_active), k_title, _make_kill_header_handler("Mob")))
     for col, align, w in k_data_cols:
         h     = _make_kill_header_handler(col)
         label = _header_label(col, col == sort_col_k, sort_dir_k, align, w)
-        frags.append((k_style, " ", h))
-        frags.append((k_style, label, h))
+        cell  = _sort_cell_style(0, col, k_active)
+        frags.append((cell, " ", h))
+        frags.append((cell, label, h))
     frags.append(("", " "))
     frags.append(("", gap))
-    frags.append((p_style, p_title, _make_pkill_header_handler("Player")))
+    frags.append((_sort_cell_style(1, "Player", p_active), p_title, _make_pkill_header_handler("Player")))
     for col, align, w in p_data_cols:
         h     = _make_pkill_header_handler(col)
         label = _header_label(col, col == sort_col_pk, sort_dir_pk, align, w)
-        frags.append((p_style, " ", h))
-        frags.append((p_style, label, h))
+        cell  = _sort_cell_style(1, col, p_active)
+        frags.append((cell, " ", h))
+        frags.append((cell, label, h))
     frags.append(("", " "))
     frags.append(("", "\n"))
 

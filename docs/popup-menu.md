@@ -49,6 +49,19 @@ before the disconnect step — see "Auto-open on disconnect" below.
 - **Mouse click** — clicks on a row both select and activate it in a
   single click. Implemented as per-fragment `mouse_handler` callbacks
   on `MouseEventType.MOUSE_DOWN`.
+- **Mouse hover** — main and options rows light up in `C_HOVER` on
+  hover, matching the launcher (see
+  [docs/launcher.md](launcher.md) "Mouse hover / click"). On the
+  statistics frame the KILLS / PvPs sort-header cells (section name
+  and column labels) light up in `C_HOVER_TITLE` — a lighter cyan
+  between `C_SECTION` and `C_ACTIVE` — but only when the cell's
+  table is not focused; the focused table's title row is already at
+  `C_ACTIVE` (brightest) so hover is suppressed there. Hover is
+  best-effort on terminals that report cell-motion mouse events;
+  click-to-activate is the documented fallback. Out of scope:
+  scrollbar cells, ALLIES / ACHIEVEMENTS title rows (no sort UI), the
+  save-success `C_ACCENT` flash (the flash wins over hover for its
+  ~1 s window).
 - **Mouse wheel** — not used inside the popup. See Scope trims.
 
 ## Status header
