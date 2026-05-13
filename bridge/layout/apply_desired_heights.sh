@@ -11,6 +11,7 @@
 
 cd "$HOME/MUME" 2>/dev/null
 
+source "$HOME/MUME/bridge/runtime/startup.conf" 2>/dev/null || true
 LAYOUT_CONF="$HOME/MUME/bridge/runtime/layout.conf"
 [ -f "$LAYOUT_CONF" ] && source "$LAYOUT_CONF"
 source "$HOME/MUME/bridge/layout/right_column_budget.sh"
@@ -27,20 +28,21 @@ done < <(tmux list-panes -t mume:cockpit \
 
 [ "${#REQUESTED[@]}" -eq 0 ] && exit 0
 
-# AVAILABLE = current sum of right-column body rows (excludes title rows).
-# Using tmux as the source of truth keeps us correct under any divider /
-# input-title overhead variant.
+# Map pane title → tmux index for the targeted resize pass.
 declare -A PIDX
-AVAILABLE=0
-while IFS=$'\t' read -r idx title height; do
+while IFS=$'\t' read -r idx title; do
     case "$title" in
         status|buffs|group|comm|ui|dev)
             PIDX[$title]=$idx
-            AVAILABLE=$((AVAILABLE + height))
             ;;
     esac
 done < <(tmux list-panes -t mume:cockpit \
-    -F '#{pane_index}	#{pane_title}	#{pane_height}' 2>/dev/null)
+    -F '#{pane_index}	#{pane_title}' 2>/dev/null)
+
+# AVAILABLE is computed from window height minus right-column overhead
+# (top header, inter-pane borders, input area) — the same formula used
+# by build_initial_layout.sh so cold start and cp -reset-heights agree.
+AVAILABLE=$(rc_available_rows "${#REQUESTED[@]}")
 
 # Resolve DESIRED, clamping below to MIN_HEIGHT so a stale/edited value
 # can never force a pane below its content floor.

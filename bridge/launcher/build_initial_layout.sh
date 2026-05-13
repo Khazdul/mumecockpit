@@ -57,14 +57,15 @@ REQUESTED=()
 [ "$SHOW_DEV"    -eq 1 ] && REQUESTED+=(dev)
 
 # Phase 1 — survivor selection: drop lowest-priority panes until the
-# per-pane MIN_HEIGHT sum (plus title rows and input) fits inside ROWS.
-TITLE=$([ "$SHOW_DIVIDERS" -eq 1 ] && echo 1 || echo 0)
+# per-pane MIN_HEIGHT sum fits inside the right-column body budget
+# (rc_available_rows accounts for the top header, inter-pane borders,
+# and the input area).
 while [ "${#REQUESTED[@]}" -gt 0 ]; do
     NN=${#REQUESTED[@]}
     MIN_SUM=0
     for p in "${REQUESTED[@]}"; do MIN_SUM=$((MIN_SUM + MIN_HEIGHT[$p])); done
-    NEEDED=$((MIN_SUM + NN * TITLE + INPUT_RESERVE))
-    [ "$NEEDED" -le "$ROWS" ] && break
+    AVAILABLE=$(rc_available_rows "$NN")
+    [ "$MIN_SUM" -le "$AVAILABLE" ] && break
     dropped=""
     for victim in "${DROP_ORDER[@]}"; do
         new=()
@@ -77,7 +78,7 @@ while [ "${#REQUESTED[@]}" -gt 0 ]; do
         done
         if [ -n "$dropped" ]; then
             REQUESTED=("${new[@]}")
-            echo "[layout] cold start: skipping $dropped (terminal too short: $ROWS rows, needed $NEEDED)" >> logs/debug.log
+            echo "[layout] cold start: skipping $dropped (terminal too short: need $MIN_SUM body rows, have $AVAILABLE of $ROWS)" >> logs/debug.log
             break
         fi
     done

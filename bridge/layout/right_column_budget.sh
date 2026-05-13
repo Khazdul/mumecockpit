@@ -47,6 +47,25 @@ rc_window_height() {
     tmux display-message -p -t mume:cockpit '#{window_height}' 2>/dev/null
 }
 
+# Compute content rows available for the right column.
+# Overhead accounting:
+#   - Top header row (when show_pane_dividers=1): 1 row
+#   - Inter-pane borders (always present): N - 1 rows
+#   - Input area (input row + divider above it): 2 rows
+#
+# Returns rows available for distribution across right-column pane
+# bodies, exclusive of any overhead.
+rc_available_rows() {
+    local n=$1
+    [ -z "$n" ] || [ "$n" -lt 1 ] && { echo 0; return; }
+    local rows
+    rows=$(rc_window_height)
+    [ -z "$rows" ] && { echo 0; return; }
+    local top_header=0
+    [ "${SHOW_DIVIDERS:-${show_pane_dividers:-1}}" -eq 1 ] && top_header=1
+    echo $(( rows - (n - 1) - top_header - 2 ))
+}
+
 rc_max_panes() {
     local h
     h=$(rc_window_height)
