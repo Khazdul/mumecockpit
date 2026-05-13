@@ -160,6 +160,7 @@ tmux attach -t mume
 # firing cp -e; if set, exec back into the launcher (no extra bash frame).
 if [ -f bridge/runtime/.return_to_menu ]; then
     rm -f bridge/runtime/.return_to_menu
+    printf '\e[?1049h\e[?25l'
     exec bash bridge/launcher/launcher.sh
 fi
 # No sentinel → fall through to shell cleanly.
