@@ -46,6 +46,9 @@ Pure bash + ANSI escapes; no external dependencies beyond coreutils.
 Launcher pages render through `render_frame` in `bridge/launcher/menu_render.sh`.
 Rules are strict — deviations reintroduce flicker or scroll artifacts:
 
+The prompt_toolkit equivalents of these `_MR_*` ANSI constants live in
+`bridge/launcher/palette.py` (shared by the in-game popup and the launcher).
+
 **Semantic colour palette (`bridge/launcher/menu_render.sh`).** All escape codes are
 referenced by role, not raw colour, so visual adjustments stay localised:
 
