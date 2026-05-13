@@ -4,6 +4,11 @@
 # post-attach by build_initial_layout.sh via a one-shot client-attached hook.
 # Called by start.sh (--no-menu / -d / -u) or bridge/launcher/launcher.sh ("Enter game").
 
+# Keep terminal in alt-screen across this script so any incidental output
+# stays hidden from the user's normal terminal buffer. Idempotent if the
+# caller (launcher.py) already entered alt-screen.
+printf '\e[?1049h\e[?25l'
+
 cd "$(dirname "$0")/../.."
 
 # ---------------------------------------------------------------------------

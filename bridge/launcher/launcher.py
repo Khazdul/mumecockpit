@@ -1901,6 +1901,11 @@ def main():
 
     if _deferred_exec is not None:
         cmd, argv = _deferred_exec
+        # Re-enter alt-screen (and hide cursor) before handing off, so the
+        # terminal stays in alt-screen across the gap between prompt_toolkit's
+        # restore and tmux taking over — no flash of the user's normal shell.
+        sys.stdout.write("\x1b[?1049h\x1b[?25l")
+        sys.stdout.flush()
         os.execvp(cmd, argv)
 
 
