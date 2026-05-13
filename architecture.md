@@ -59,8 +59,9 @@ tracking, and UI feedback.
 │
 ├── bridge/
 │   ├── launcher/             # Pre-tmux menu, tmux orchestration, Windows entry
-│   │   ├── launcher.sh       # Pre-tmux startup menu (DOS-style, pure bash)
-│   │   ├── menu_render.sh    # Render/input helpers sourced by launcher.sh + ingame_menu.sh
+│   │   ├── launcher.py       # Pre-tmux startup menu (prompt_toolkit Application)
+│   │   ├── launcher.sh       # Thin exec wrapper for launcher.py
+│   │   ├── palette.py        # Shared prompt_toolkit colour palette (launcher + popup)
 │   │   ├── tmux_start.sh     # tmux session creation, hooks, keybinds
 │   │   ├── ingame_menu.sh    # In-game ESC popup menu
 │   │   ├── run_stats.py      # JSONL run-statistics aggregator — shared by the popup

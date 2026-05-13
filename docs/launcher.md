@@ -26,81 +26,113 @@ No intermediate bash frame — no flash. `tmux_start.sh` also clears any stale
 sentinel at the top of each run so a crash cannot mis-route a subsequent cold
 start.
 
-## Startup menu (`bridge/launcher/launcher.sh`)
+## Startup menu (`bridge/launcher/launcher.py`)
 
-A DOS-style retro menu rendered in the terminal before tmux launches.
-Pure bash + ANSI escapes; no external dependencies beyond coreutils.
+A `prompt_toolkit` full-screen `Application` rendered in the terminal before
+tmux launches. `bridge/launcher/launcher.sh` is a thin wrapper that `exec`s
+the Python entry; every call site (start.sh, the return-to-menu chain in
+`tmux_start.sh`, the Windows shortcut, the update flow's restart path) goes
+through that wrapper unchanged.
+
+The UI is a frame stack: a single `DynamicContainer` swaps between `main`,
+`profile`, `profile_create_name`, `profile_create_choose`,
+`profile_create_copy_picker`, `profile_delete_confirm`, `options`,
+`scripts`, `about`, `update_running`, `update_result`, and `exit_confirm`
+containers, pushed and popped via `_push_frame` / `_pop_frame`. Each frame
+owns its own `KeyBindings` filter (`_in_frame(name)`) so navigation, scroll,
+and ESC behave per-frame. The popup architecture (ADR 0062) is the
+reference; see `bridge/launcher/ingame_menu.py` for the same patterns.
 
 | Feature | Detail |
 |---------|--------|
-| Session detect | `tmux has-session -t mume` + `list-clients` → top item is "Enter game", "Resume game", or "Mirror game (attached elsewhere)" |
+| Session detect | `tmux has-session -t mume` + `list-clients` re-probed on every render → top item is "Enter game", "Resume game", or "Mirror game (attached elsewhere)" |
 | Profile page | Lists `ttpp/profiles/*.tin`; select, create (blank / copy from existing), delete. `default` cannot be deleted. "Create blank" copies from `bridge/launcher/templates/blank_profile.tin` (single source of truth — see ADR 0042). Selected profile is written to `startup.conf` and consumed by `ttpp/core/config.tin` at tt++ startup. |
-| Options page | Toggle Character pane / Buffs pane / Group pane / Comm pane / UI / Dev panes; Pane headers; connection mode; live layout mockup (updates on toggle). Fresh-install defaults: status, buffs, comm, ui on; group, dev off. Content hides progressively at small heights: descriptions → mockup → section headings; menu items always render |
-| Scripts page | Reads `bridge/runtime/scripts.cache`; scrollable |
-| About page | Reads `bridge/launcher/about.txt`; word-wrapped, cached per resize, scrollable |
+| Options page | Toggle Character pane / Buffs pane / Group pane / Comm pane / UI / Dev panes; Pane headers; connection mode. Flat minimalist list — no boxed layout-mockup, no progressive hide. Fresh-install defaults: status, buffs, group, comm, ui on; dev off; pane headers on |
+| Scripts page | Reads `bridge/runtime/scripts.cache`; scrollable via UP/DOWN, PageUp/PageDown |
+| About page | Reads `bridge/launcher/about.txt`; word-wrapped, cached per resize, scrollable. Current version on the right of the title; an "Update available: vX.Y.Z" line appears in `C_ACCENT` when `version.cache` contains a newer tag |
+| Update flow | Selecting "Update" runs `bridge/release/update.sh` in a worker thread; result keyed off update.sh's exit codes (0/10/20/21/22/other → complete/no-update/aborted/failed). rc==0 re-execs `bridge/launcher/launcher.sh` to pick up the new code |
 | Quit | Confirmation prompt; ESC cancels |
-| Persistence | Options saved to `bridge/runtime/startup.conf` on Back / ESC |
+| Persistence | Options saved to `bridge/runtime/startup.conf` on Back / ESC; profile selection saved immediately on Enter |
 
 ## Rendering conventions
 
-Launcher pages render through `render_frame` in `bridge/launcher/menu_render.sh`.
-Rules are strict — deviations reintroduce flicker or scroll artifacts:
+All frames render through `prompt_toolkit` controls. Layout building blocks:
 
-The prompt_toolkit equivalents of these `_MR_*` ANSI constants live in
-`bridge/launcher/palette.py` (shared by the in-game popup and the launcher).
+- **Frame stack** — single `DynamicContainer` whose getter routes
+  `_current_frame` to one of the prebuilt container trees. Each frame's
+  primary `Window` is stored at module level and focused on push so
+  keyboard handlers fire reliably.
+- **Centered frames** — `main`, `profile`, `options`, the profile-create
+  sub-frames, `exit_confirm`, `update_running`, and `update_result` are
+  wrapped in `HSplit([window], align=VerticalAlign.CENTER)` so they stay
+  visually centred at any terminal height above the minimum.
+- **Scrolling frames** — `scripts` and `about` use a three-row split
+  (`title` fixed height, `content` `Dimension(weight=1)`, `footer` fixed
+  height) with the content control slicing by a scroll offset.
+- **Minimum-size gate** — when `cols < 60` or `rows < 18`, the root getter
+  returns a single "Terminal too small" container instead of the active
+  frame. A `<any>`-filter binding swallows key input while the gate is
+  on; Ctrl-C / Ctrl-Q still exit. Resizing past the threshold restores
+  the normal UI transparently because the gate is checked on every
+  render.
+- **Mouse hover / click** — every selectable row carries a per-fragment
+  `mouse_handler`. `MOUSE_DOWN` selects-and-activates in a single click.
+  `MOUSE_MOVE` updates a hover index that paints the row in `C_HOVER`
+  (between `C_ITEM` and `C_ACTIVE`) — best-effort on terminals that
+  report cell-motion mouse events; keyboard navigation is the
+  documented fallback. Keyboard-selected rows keep their `C_ACTIVE`
+  highlight regardless of hover state.
 
-**Semantic colour palette (`bridge/launcher/menu_render.sh`).** All escape codes are
-referenced by role, not raw colour, so visual adjustments stay localised:
+**Colour palette.** All styles live in
+[`bridge/launcher/palette.py`](../bridge/launcher/palette.py) and are
+shared with the in-game popup. Roles:
 
-| Name            | Role                                               |
-|-----------------|----------------------------------------------------|
-| `_MR_TITLE`     | Page banners, ASCII logo, section titles           |
-| `_MR_ACTIVE`    | Focused/selected row, emphasis in prompts          |
-| `_MR_ITEM`      | Inactive selectable menu rows                      |
-| `_MR_SECTION`   | Section headings inside pages (quieter than items) |
-| `_MR_BODY`      | Body text — About prose, script summaries          |
-| `_MR_HINT`      | Footer nav hints, secondary prompt labels          |
-| `_MR_QUOTE`     | Italic quote text on the main menu                 |
-| `_MR_QUOTE_ATTR`| Quote attribution line (sage green)                |
-| `_MR_ACCENT`    | Call-to-action rows, script alias headings         |
-| `_MR_DESC`      | Pane-description text in layout mockup             |
-| `_MR_YELLOW`    | Warnings (non-fatal errors, can't-delete notices)  |
-| `_MR_ERR`       | Hard errors                                        |
+| Name           | Role                                              |
+|----------------|---------------------------------------------------|
+| `C_TITLE`      | Page banners, ASCII logo, section titles          |
+| `C_ACTIVE`     | Focused/selected row, emphasis in prompts         |
+| `C_ITEM`       | Inactive selectable menu rows                     |
+| `C_HOVER`      | Mouse-hovered row (between `C_ITEM` and `C_ACTIVE`) |
+| `C_BODY`       | Body text — About prose, script summaries         |
+| `C_HINT`       | Footer nav hints, secondary prompt labels         |
+| `C_QUOTE`      | Italic quote text on the main menu                |
+| `C_QUOTE_ATTR` | Quote attribution line (sage green)               |
+| `C_ACCENT`     | Call-to-action rows, script alias headings        |
+| `C_YELLOW`     | Warnings (non-fatal errors, can't-delete notices) |
+| `C_ERR`        | Hard errors                                       |
 
-**Alignment convention (Profile / Options pages).** Menu rows are
-left-aligned on a shared column inside a centred block. The widest label
-is found on every render so the block re-centres correctly after terminal
-resize. `draw_menu_item` accepts an optional `pad_override` (third arg) to
-override its default per-row centering, and an optional `inactive_color`
-(fourth arg) to colour a row differently in its inactive state (used for
-the amber "[+] Create new profile" row).
+**Alignment convention (Profile / Options / Scripts pages).** Menu rows
+are left-aligned on a shared column inside a centred block. The widest
+label is computed on every render so the block re-centres after a
+resize.
 
-**About page three-colour scheme.** `_render_about` classifies each wrapped
-line before printing: all-uppercase lines → `_MR_TITLE` (headings); lines
-starting with whitespace → `_MR_ACCENT` (key/command lines such as
-`  cp -e`); all other non-empty lines → `_MR_BODY` (prose). Indented lines
-pass through `wrap_text` unchanged — a leading-whitespace guard flushes the
-current word-wrap buffer and emits the line verbatim, preserving command
-column alignment.
+**About page three-colour scheme.** Each wrapped line is classified
+before printing: all-uppercase lines → `C_TITLE` (headings); lines
+starting with whitespace → `C_ACCENT` (key/command lines such as
+`  cp -e`); all other non-empty lines → `C_BODY` (prose). Indented lines
+pass through `_wrap_text` unchanged.
 
-- **Alt screen buffer.** Enter on launch (`\e[?1049h`), leave on exit. Cleared
-  automatically when tmux attaches.
-- **Cursor hidden** (`\e[?25l`) except during profile name entry.
-- **Mouse + alt-scroll disabled** (`\e[?1000l \e[?1002l \e[?1003l \e[?1006l
-  \e[?1007l`) while launcher is active. Restored on exit.
-- **No full clear between frames.** `render_frame` overwrites cell-by-cell:
-  `\e[H` home, each line followed by `\e[K`, `\e[J` at end. Never `\e[2J`.
-- **No trailing newline** after the last line of any frame — it scrolls the
-  terminal and jitters the title/footer row.
-- **Dirty-flag redraw.** Main loop uses `_DIRTY=1` set by a `WINCH` trap,
-  state-changing key handler, or by the cache-mtime poll when
-  `bridge/runtime/version.cache` is updated mid-session; `read -rsn1 -t 0.2` yields
-  fast enough resize response without a busy loop.
-- **Handoff via `exec`.** Launcher → tmux_start.sh uses `exec bash …`; the
-  tmux session is created and then attached with a plain `tmux attach` (not
-  exec, so the return-to-menu sentinel check can run after attach exits).
-  The launcher → tmux_start handoff itself is exec'd, so there is no
-  intermediate bash flash between menu and cockpit.
+- **Alt screen / cursor / mouse modes.** `Application(full_screen=True,
+  mouse_support=True)` manages alt-screen entry and exit, cursor
+  visibility, and mouse-mode toggles itself. No manual ANSI escape
+  sequences are emitted by the launcher.
+- **Resize.** prompt_toolkit invalidates the layout on SIGWINCH; every
+  text function reads terminal dimensions afresh, so the centred block
+  recentres immediately.
+- **One-second refresh.** `refresh_interval=1.0` drives periodic
+  re-renders so the version-cache mtime check, session-status re-probe,
+  and About update-available line track external state without a
+  keypress.
+- **ttimeoutlen / timeoutlen.** Both lowered to 50 ms so bare ESC fires
+  near-instantly instead of waiting prompt_toolkit's 500 ms
+  disambiguation timeout (same tuning as the popup).
+- **Handoff via `os.execvp`.** The Enter-game dispatch records a
+  deferred exec command, calls `app.exit()`, and then the main entry
+  runs `os.execvp(...)` after `run_async` returns — so prompt_toolkit
+  has a chance to restore the terminal before tmux or the new launcher
+  takes over. The launcher → `tmux_start.sh` handoff itself is
+  `execvp`'d, so there is no intermediate bash flash between menu and
+  cockpit.
 
 **Post-attach layout build.** `bridge/launcher/tmux_start.sh` registers a one-shot `client-attached` hook that fires `bridge/launcher/build_initial_layout.sh` the moment the first client attaches. `build_initial_layout.sh` reads the true terminal width via `tmux display-message -p '#{window_width}'` (authoritative only after attach) and runs all `split-window` / `resize-pane` / `open_pane.sh` calls. When finished it touches `bridge/.layout_ready` and disarms itself with `tmux set-hook -u client-attached`. Meanwhile pane 0 runs `bridge/launcher/wait_for_layout.sh`, which polls `.layout_ready` in a tight loop (50 ms intervals, 2 s timeout) and then execs `tt++`. This sentinel-based handshake replaces the old `sleep 0.3 &&` barrier: tt++ starts only after the layout is in place, so the first lines of tt++/Lua output are never lost into scrollback. See ADR 0041 for the full rationale.
 

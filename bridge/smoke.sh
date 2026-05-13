@@ -111,17 +111,6 @@ else
     fail "core files present (ttpp/main.tin, lua/brain.lua)"
 fi
 
-# --- check 6: menu_render.sh sources cleanly ---
-
-source_err=$(bash -c 'source bridge/launcher/menu_render.sh' 2>&1)
-source_exit=$?
-if [ $source_exit -ne 0 ] || [ -n "$source_err" ]; then
-    fail "menu_render.sh sources cleanly"
-    [ -n "$source_err" ] && echo "       $source_err"
-else
-    pass "menu_render.sh sources cleanly"
-fi
-
 # --- Required files & directories ---
 
 echo ""
