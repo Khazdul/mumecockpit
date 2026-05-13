@@ -76,6 +76,7 @@
 #alias {cp -d} {#system {bash $HOME/MUME/bridge/layout/toggle_pane.sh dev --persist}}
 #alias {cp -c} {#system {bash $HOME/MUME/bridge/layout/toggle_pane.sh status --persist}}
 #alias {cp -h} {#system {bash $HOME/MUME/bridge/layout/toggle_pane.sh headers --persist}}
+#alias {cp -reset-heights} {#system {bash $HOME/MUME/bridge/layout/reset_heights.sh}}
 
 #nop _save_profile — single definition of the profile save sequence
 #nop (#class write + sanitize). Session-context-only by design: must be
