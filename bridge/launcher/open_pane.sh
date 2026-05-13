@@ -1,11 +1,35 @@
 #!/usr/bin/env bash
-TYPE=$1
+# bridge/launcher/open_pane.sh — open a single named pane.
+# Usage: open_pane.sh <type> [--batch]
+#   --batch  Suppress the post-split apply_desired_heights call.
+#            Used by cold-start (build_initial_layout.sh) and narrow-
+#            restore (on_window_resize.sh) loops, which apply once at
+#            the end. Interactive toggles omit --batch so each open
+#            settles to algorithmic ALLOC.
+
 MUME="$HOME/MUME"
 SENTINEL="$HOME/MUME/bridge/runtime/.collapsed_panes"
+
+TYPE=""
+BATCH_MODE=0
+for arg in "$@"; do
+    case "$arg" in
+        --batch) BATCH_MODE=1 ;;
+        *) [ -z "$TYPE" ] && TYPE="$arg" ;;
+    esac
+done
 
 # Bail out silently if the right column is collapsed due to narrow terminal.
 # Pane toggles during the narrow state are no-ops; they auto-restore on widen.
 [ -f "$SENTINEL" ] && exit 0
+
+# Emit an amber WARN line to the UI pane log. Mirrors the format of
+# lua/brain/ui.lua's ui_warn(); no shared shell helper exists yet.
+_warn_pane_too_short() {
+    local type="$1"
+    printf '\033[38;2;255;179;0m⚠ WARN:\033[0m \033[1;97mCannot open %s pane — terminal too short. Close another pane or enlarge the terminal.\033[0m\n' \
+        "$type" >> "$HOME/MUME/logs/ui.log"
+}
 
 # Where focus should return after opening a pane.
 # Prefer input pane (user's command line); fall back to pane 0 (MUME).
@@ -25,12 +49,24 @@ fi
 # Budget gate — refuse to open if the right column is already full.
 # input and unrelated TYPE values are not gated.
 source "$HOME/MUME/bridge/layout/right_column_budget.sh"
+
+# Re-check whether TARGET_IDX has enough body to split, redistributing
+# the current right column to fair share first if needed. In the typical
+# compressed-by-drag case equalize is enough; the gate then passes.
+_can_split_after_equalize() {
+    local target="$1"
+    rc_target_can_be_split "$target" && return 0
+    bash "$HOME/MUME/bridge/layout/equalize_right_column.sh"
+    rc_target_can_be_split "$target"
+}
+
 case "$TYPE" in
     status|buffs|group|comm|ui|dev)
         if ! rc_fits_one_more; then
             echo "[layout] cannot open $TYPE — terminal too short; close another pane first." \
                 >> "$HOME/MUME/logs/debug.log"
-            exit 0
+            _warn_pane_too_short "$TYPE"
+            exit 1
         fi
         ;;
 esac
@@ -79,16 +115,18 @@ if [ -n "$HAS_RIGHT" ]; then
             # status is always at the top of the right column.
             TARGET_IDX=$(_right_pane_at_top)
             SPLIT_DIR="-b"
-            if ! rc_target_can_be_split "$TARGET_IDX"; then
-                echo "[layout] cannot open $TYPE — adjacent pane too short to split; resize or close another pane first." \
+            if ! _can_split_after_equalize "$TARGET_IDX"; then
+                echo "[layout] cannot open $TYPE — terminal too short even after equalize; close another pane or enlarge the terminal." \
                     >> "$HOME/MUME/logs/debug.log"
-                exit 0
+                _warn_pane_too_short "$TYPE"
+                exit 1
             fi
             NEW_INDEX=$(tmux split-window -v $SPLIT_DIR -t mume:cockpit.$TARGET_IDX -P -F '#{pane_index}' "$STATUS_CMD")
             if [ -z "$NEW_INDEX" ]; then
                 echo "[layout] split-window failed for $TYPE (target idx=$TARGET_IDX); aborting open." \
                     >> "$HOME/MUME/logs/debug.log"
-                exit 0
+                _warn_pane_too_short "$TYPE"
+                exit 1
             fi
             tmux select-pane -t mume:cockpit.$NEW_INDEX -T "status"
             tmux select-pane -t mume:cockpit.$NEW_INDEX -P "$PANE_BG"
@@ -128,16 +166,18 @@ if [ -n "$HAS_RIGHT" ]; then
                 # Only empty column — go at top
                 TARGET_IDX=$(_right_pane_at_top); SPLIT_DIR="-b"
             fi
-            if ! rc_target_can_be_split "$TARGET_IDX"; then
-                echo "[layout] cannot open $TYPE — adjacent pane too short to split; resize or close another pane first." \
+            if ! _can_split_after_equalize "$TARGET_IDX"; then
+                echo "[layout] cannot open $TYPE — terminal too short even after equalize; close another pane or enlarge the terminal." \
                     >> "$HOME/MUME/logs/debug.log"
-                exit 0
+                _warn_pane_too_short "$TYPE"
+                exit 1
             fi
             NEW_INDEX=$(tmux split-window -v $SPLIT_DIR -t mume:cockpit.$TARGET_IDX -P -F '#{pane_index}' "$BUFFS_CMD")
             if [ -z "$NEW_INDEX" ]; then
                 echo "[layout] split-window failed for $TYPE (target idx=$TARGET_IDX); aborting open." \
                     >> "$HOME/MUME/logs/debug.log"
-                exit 0
+                _warn_pane_too_short "$TYPE"
+                exit 1
             fi
             tmux select-pane -t mume:cockpit.$NEW_INDEX -T "buffs"
             tmux select-pane -t mume:cockpit.$NEW_INDEX -P "$PANE_BG"
@@ -177,16 +217,18 @@ if [ -n "$HAS_RIGHT" ]; then
                 # Fallback — go at top
                 TARGET_IDX=$(_right_pane_at_top); SPLIT_DIR="-b"
             fi
-            if ! rc_target_can_be_split "$TARGET_IDX"; then
-                echo "[layout] cannot open $TYPE — adjacent pane too short to split; resize or close another pane first." \
+            if ! _can_split_after_equalize "$TARGET_IDX"; then
+                echo "[layout] cannot open $TYPE — terminal too short even after equalize; close another pane or enlarge the terminal." \
                     >> "$HOME/MUME/logs/debug.log"
-                exit 0
+                _warn_pane_too_short "$TYPE"
+                exit 1
             fi
             NEW_INDEX=$(tmux split-window -v $SPLIT_DIR -t mume:cockpit.$TARGET_IDX -P -F '#{pane_index}' "$GROUP_CMD")
             if [ -z "$NEW_INDEX" ]; then
                 echo "[layout] split-window failed for $TYPE (target idx=$TARGET_IDX); aborting open." \
                     >> "$HOME/MUME/logs/debug.log"
-                exit 0
+                _warn_pane_too_short "$TYPE"
+                exit 1
             fi
             tmux select-pane -t mume:cockpit.$NEW_INDEX -T "group"
             tmux select-pane -t mume:cockpit.$NEW_INDEX -P "$PANE_BG"
@@ -226,16 +268,18 @@ if [ -n "$HAS_RIGHT" ]; then
                 # Empty column — go at top
                 TARGET_IDX=$(_right_pane_at_top); SPLIT_DIR="-b"
             fi
-            if ! rc_target_can_be_split "$TARGET_IDX"; then
-                echo "[layout] cannot open $TYPE — adjacent pane too short to split; resize or close another pane first." \
+            if ! _can_split_after_equalize "$TARGET_IDX"; then
+                echo "[layout] cannot open $TYPE — terminal too short even after equalize; close another pane or enlarge the terminal." \
                     >> "$HOME/MUME/logs/debug.log"
-                exit 0
+                _warn_pane_too_short "$TYPE"
+                exit 1
             fi
             NEW_INDEX=$(tmux split-window -v $SPLIT_DIR -t mume:cockpit.$TARGET_IDX -P -F '#{pane_index}' "$COMM_CMD")
             if [ -z "$NEW_INDEX" ]; then
                 echo "[layout] split-window failed for $TYPE (target idx=$TARGET_IDX); aborting open." \
                     >> "$HOME/MUME/logs/debug.log"
-                exit 0
+                _warn_pane_too_short "$TYPE"
+                exit 1
             fi
             tmux select-pane -t mume:cockpit.$NEW_INDEX -T "comm"
             tmux select-pane -t mume:cockpit.$NEW_INDEX -P "$PANE_BG"
@@ -275,16 +319,18 @@ if [ -n "$HAS_RIGHT" ]; then
                 # Only unreachable edge case — go at bottom
                 TARGET_IDX=$(_right_pane_at_bottom); SPLIT_DIR=""
             fi
-            if ! rc_target_can_be_split "$TARGET_IDX"; then
-                echo "[layout] cannot open $TYPE — adjacent pane too short to split; resize or close another pane first." \
+            if ! _can_split_after_equalize "$TARGET_IDX"; then
+                echo "[layout] cannot open $TYPE — terminal too short even after equalize; close another pane or enlarge the terminal." \
                     >> "$HOME/MUME/logs/debug.log"
-                exit 0
+                _warn_pane_too_short "$TYPE"
+                exit 1
             fi
             NEW_INDEX=$(tmux split-window -v $SPLIT_DIR -t mume:cockpit.$TARGET_IDX -P -F '#{pane_index}' "$UI_CMD")
             if [ -z "$NEW_INDEX" ]; then
                 echo "[layout] split-window failed for $TYPE (target idx=$TARGET_IDX); aborting open." \
                     >> "$HOME/MUME/logs/debug.log"
-                exit 0
+                _warn_pane_too_short "$TYPE"
+                exit 1
             fi
             tmux select-pane -t mume:cockpit.$NEW_INDEX -T "ui"
             tmux select-pane -t mume:cockpit.$NEW_INDEX -P "$PANE_BG"
@@ -296,17 +342,19 @@ if [ -n "$HAS_RIGHT" ]; then
             # dev is always at the bottom.
             TARGET_IDX=$(_right_pane_at_bottom)
             SPLIT_DIR=""
-            if ! rc_target_can_be_split "$TARGET_IDX"; then
-                echo "[layout] cannot open $TYPE — adjacent pane too short to split; resize or close another pane first." \
+            if ! _can_split_after_equalize "$TARGET_IDX"; then
+                echo "[layout] cannot open $TYPE — terminal too short even after equalize; close another pane or enlarge the terminal." \
                     >> "$HOME/MUME/logs/debug.log"
-                exit 0
+                _warn_pane_too_short "$TYPE"
+                exit 1
             fi
             NEW_INDEX=$(tmux split-window -v $SPLIT_DIR -t mume:cockpit.$TARGET_IDX -P -F '#{pane_index}' \
                 "bash -c 'stty -isig 2>/dev/null; trap \"\" INT; while true; do tail -f $MUME/logs/debug.log; printf \"\\n[pane kept alive — use cp -d to close]\\n\"; sleep 0.2; done'")
             if [ -z "$NEW_INDEX" ]; then
                 echo "[layout] split-window failed for $TYPE (target idx=$TARGET_IDX); aborting open." \
                     >> "$HOME/MUME/logs/debug.log"
-                exit 0
+                _warn_pane_too_short "$TYPE"
+                exit 1
             fi
             tmux select-pane -t mume:cockpit.$NEW_INDEX -T "dev"
             tmux select-pane -t mume:cockpit.$NEW_INDEX -P "$PANE_BG"
@@ -375,4 +423,11 @@ else
             ;;
     esac
     tmux resize-pane -t mume:cockpit.0 -x "$LEFT"
+fi
+
+# Settle right-column panes to algorithmic ALLOC after a successful
+# split. Suppressed in batch mode — callers (cold-start Phase 3,
+# narrow-restore) apply once at the end of their loop.
+if [ "$BATCH_MODE" -ne 1 ]; then
+    bash "$HOME/MUME/bridge/layout/apply_desired_heights.sh"
 fi

@@ -85,13 +85,15 @@ while [ "${#REQUESTED[@]}" -gt 0 ]; do
     [ -z "$dropped" ] && break
 done
 
-# Phase 3 — create panes in visual order, then input.
+# Phase 3 — create panes in visual order, then input. --batch
+# suppresses the per-call apply_desired_heights inside open_pane.sh;
+# the final pass below settles the geometry once.
 for pane in "${REQUESTED[@]}"; do
-    bash "$HOME/MUME/bridge/launcher/open_pane.sh" "$pane"
+    bash "$HOME/MUME/bridge/launcher/open_pane.sh" "$pane" --batch
     bash "$HOME/MUME/bridge/layout/equalize_right_column.sh"
 done
 
-bash "$HOME/MUME/bridge/launcher/open_pane.sh" input
+bash "$HOME/MUME/bridge/launcher/open_pane.sh" input --batch
 
 # pane-border-status must be set BEFORE apply_desired_heights so the
 # final resize pass operates against tmux's final divider state.

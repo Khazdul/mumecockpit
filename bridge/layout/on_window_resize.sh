@@ -69,8 +69,11 @@ elif [ -f "$SENTINEL" ]; then
             RESTORE_PANES+=("$pname")
         done < "$SENTINEL"
         rm -f "$SENTINEL"   # delete before opening so open_pane.sh sentinel check passes
+        # --batch suppresses the per-call apply_desired_heights inside
+        # open_pane.sh; the final _reapply_desired_heights below settles
+        # the geometry once after all panes are restored.
         for pname in "${RESTORE_PANES[@]}"; do
-            bash "$HOME/MUME/bridge/launcher/open_pane.sh" "$pname"
+            bash "$HOME/MUME/bridge/launcher/open_pane.sh" "$pname" --batch
             bash "$HOME/MUME/bridge/layout/equalize_right_column.sh"
         done
         rm -f "$LOCK"
