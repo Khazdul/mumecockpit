@@ -180,10 +180,12 @@ right panes in any order does not break the vertical order.
 
 ## Default height
 
-`group_height=4` in `bridge/runtime/layout.conf` (documented intent only).
-Per [ADR 0030](decisions/0030-right-column-heights-free.md), right-column
-heights are tmux-managed at creation (equal-share among siblings) and are
-freely user-resizable. No height is enforced on open or apply-layout.
+`desired_group=5` in `bridge/runtime/layout.conf` (content rows, excludes
+title row). Cold start and WINCH size the pane from this value via the
+per-pane allocation algorithm in [ADR 0071](decisions/0071-per-pane-desired-heights.md);
+mid-session drag adjusts the height freely and the new value persists as
+the next `desired_group` via `on_pane_resize.sh`. `cp -reset-heights`
+restores the shipped default.
 
 ## Pane title and border
 

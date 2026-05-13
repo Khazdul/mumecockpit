@@ -107,7 +107,7 @@ tracking, and UI feedback.
 │   │                         #   consumed by tt++ via tintin_read action
 │   ├── runtime/              # All runtime-generated files (ADR 0047; gitignored except .gitkeep)
 │   │   ├── startup.conf      # Persisted startup-menu state
-│   │   ├── layout.conf       # Persisted layout state (keys: ui_width, window_cols)
+│   │   ├── layout.conf       # Persisted layout state (keys: ui_width, window_cols, desired_<pane>)
 │   │   ├── status.state      # Character status JSON written by status_state.lua
 │   │   ├── buffs.state       # Affect grid snapshot written by buffs_state.lua
 │   │   ├── group.state       # Group member vitals JSON written by group_state.lua

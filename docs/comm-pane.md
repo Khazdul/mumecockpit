@@ -558,12 +558,14 @@ is open, ordering is preserved.
 
 ### Height
 
-`comm_height` in `bridge/runtime/layout.conf` (default 10). Unlike `status_height`
-(fixed in phase 1), `comm_height` is user-resizable: dragging the comm↔ui
-border persists the new value to `layout.conf` via `on_pane_resize.sh`.
-
-The status↔comm border drag persists `status_height`. The ui↔dev border
-persists `ui_height`.
+`desired_comm` in `bridge/runtime/layout.conf` (default 10; content rows,
+excludes title row). Cold start and WINCH size the pane from this value via
+the per-pane allocation algorithm in
+[ADR 0071](decisions/0071-per-pane-desired-heights.md); mid-session drag
+adjusts the height freely and the new value persists as the next
+`desired_comm` via `on_pane_resize.sh`. Drags on adjacent borders persist
+the corresponding `desired_<pane>` keys for both neighbours. `cp -reset-heights`
+restores the shipped default.
 
 ### Width
 

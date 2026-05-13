@@ -145,8 +145,15 @@ Right column (top to bottom): `status` → `buffs` → `comm` → `ui` → `dev`
 
 ### Height
 
-`ui_height` in `bridge/runtime/layout.conf`. User-resizable: dragging the ui↔dev
-border persists the new value via `on_pane_resize.sh`.
+`desired_ui` in `bridge/runtime/layout.conf` (default 5; content rows,
+excludes title row). Cold start and WINCH size the pane from this value via
+the per-pane allocation algorithm in
+[ADR 0071](decisions/0071-per-pane-desired-heights.md). As the
+highest-priority survivor (PRIORITY_ORDER head), the ui pane absorbs the
+residual rows when the desired-sum doesn't fill the available budget exactly.
+Mid-session drag adjusts the height freely and the new value persists as the
+next `desired_ui` via `on_pane_resize.sh`. `cp -reset-heights` restores the
+shipped default.
 
 ### Width
 

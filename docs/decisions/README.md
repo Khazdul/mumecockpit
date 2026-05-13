@@ -12,7 +12,9 @@ Active ADRs by area. Click through for context, alternatives, and consequences.
 
 ### Layout & pane geometry
 
-- [ADR 0030](0030-right-column-heights-free.md) — Right-column heights free — pane heights are tmux-managed; `apply_layout.sh` only pins the input row. (supersedes 0004, 0005)
+- [ADR 0071](0071-per-pane-desired-heights.md) — Per-pane desired heights with adaptive cold-start allocation — `desired_<pane>` values in `layout.conf` drive a two-phase cold-start algorithm; drags persist the new desired. (supersedes 0055, partially supersedes 0030)
+- [ADR 0072](0072-toggle-equalize-fallback.md) — Equalize-before-split fallback for runtime opens — `open_pane.sh` redistributes to fair share before refusing a split; non-zero exit prevents `toggle_pane.sh` from persisting an unrealised show flag. (refines 0055)
+- [ADR 0030](0030-right-column-heights-free.md) — Right-column heights free — mid-session pane heights are tmux-managed and user-resizable; cold-start and WINCH re-apply from `desired_<pane>` via ADR 0071. (supersedes 0004, 0005; partially superseded by 0071)
 - [ADR 0006](0006-char-pane-on-top.md) — Char pane on top — right-column order is status → ui → dev, with a single resizable ui↔dev border.
 - [ADR 0023](0023-char-pane-dynamic-width.md) — Char pane adaptive width — the status pane reads its width dynamically; both paired rows and affect cells use a uniform lw+1+rw split.
 - [ADR 0029](0029-input-pane-full-width.md) — Input pane spans full window width — the input pane is a window-level vsplit sibling spanning the full width below the top container.

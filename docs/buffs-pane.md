@@ -237,7 +237,12 @@ vertical order.
 
 ## Default height
 
-`buffs_height=5` in `bridge/runtime/layout.conf`.
+`desired_buffs=5` in `bridge/runtime/layout.conf` (content rows, excludes
+title row). Cold start and WINCH size the pane from this value via the
+per-pane allocation algorithm in [ADR 0071](decisions/0071-per-pane-desired-heights.md);
+mid-session drag adjusts the height freely and the new value persists as
+the next `desired_buffs` via `on_pane_resize.sh`. `cp -reset-heights`
+restores the shipped default.
 
 ## Toggle
 

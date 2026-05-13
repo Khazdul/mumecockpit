@@ -1,7 +1,14 @@
 # 0055 — Right-column cold-start budget and runtime open gate
 
-**Status:** Accepted
+**Status:** Superseded by [ADR 0071](0071-per-pane-desired-heights.md)
 **Date:** 2026-05-10
+
+## Note (2026-05-13)
+
+Drop-and-equalize replaced with min-sum-based drop + scale-to-
+desired allocation. The runtime open gate (`rc_fits_one_more` /
+`rc_target_can_be_split`) is further refined by
+[ADR 0072](0072-toggle-equalize-fallback.md).
 
 ## Context
 

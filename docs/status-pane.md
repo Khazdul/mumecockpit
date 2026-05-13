@@ -319,10 +319,13 @@ of the right column whenever it exists.
 
 ### Pane height
 
-The status pane participates in the right-column equal-share pool (ADR 0055);
-current rendered content is ≤ 6 rows (2 progress-bar rows + 1 toggle row +
-1 blank separator + 2 data rows). Height is tmux-managed and user-resizable
-after cold start (ADR 0030).
+The status pane participates in the right-column per-pane desired-height
+allocation (ADR 0071). Current rendered content is ≤ 6 rows (2 progress-bar
+rows + 1 toggle row + 1 blank separator + 2 data rows). Cold start and WINCH
+size the pane from `desired_status` in `bridge/runtime/layout.conf`
+(default 6; floor `MIN_HEIGHT[status]=2`); mid-session drag adjusts the
+height freely and the new value persists for the next cold start
+(ADR 0030 + ADR 0071).
 
 ### Width constraint
 

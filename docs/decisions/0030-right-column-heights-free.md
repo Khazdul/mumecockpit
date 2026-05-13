@@ -1,6 +1,6 @@
 # 0030 — Right-column pane heights are tmux-managed
 
-**Status:** Accepted
+**Status:** Partially superseded by [ADR 0071](0071-per-pane-desired-heights.md)
 **Date:** 2026-04-30
 
 ## Context
@@ -69,3 +69,9 @@ Supersedes ADR 0004 and ADR 0005 (height authority removed entirely).
 ADR 0006 (column ordering: status → ui → dev) remains Accepted; its ordering
 decision is unchanged. ADR 0006's apply-order and drag-detection
 implementation notes are obsoleted by this decision.
+
+## Note (2026-05-13)
+
+Cold-start and WINCH now drive heights from `desired_<pane>` (ADR
+0071); mid-session drag freedom and `apply_layout.sh`'s single-pane
+scope still stand.
