@@ -7,7 +7,6 @@ try:
     from prompt_toolkit.layout.controls import BufferControl, FormattedTextControl
     from prompt_toolkit.layout.layout import Layout
     from prompt_toolkit.keys import Keys
-    from prompt_toolkit.layout.processors import BeforeInput
     from prompt_toolkit.output import ColorDepth
     from prompt_toolkit.selection import SelectionState
 except ImportError:
@@ -36,6 +35,8 @@ RUNTIME_DIR       = os.path.join(BRIDGE_DIR, "runtime")
 STATUS_STATE_PATH = os.path.join(RUNTIME_DIR, "status.state")
 CLOCK_POLL_MS     = 0.25
 CLOCK_WIDTH       = 7   # 1 gutter + 5 time text + 1 icon
+PROMPT_TEXT       = "> "
+PROMPT_WIDTH      = len(PROMPT_TEXT)
 
 # Sun/Moon colours — source of truth: bridge/panes/status_pane.py C_SUN / C_MOON
 C_SUN_HEX  = "#ffb000"   # \x1b[38;2;255;176;0m
@@ -579,13 +580,14 @@ def main():
     buf = Buffer(name="input")
     buf.on_text_changed += lambda _: _on_text_changed(buf)
 
+    prompt_window = Window(
+        content=FormattedTextControl(text=PROMPT_TEXT, focusable=False),
+        width=PROMPT_WIDTH,
+        height=1,
+    )
+
     input_window = Window(
-        BufferControl(
-            buffer=buf,
-            input_processors=[
-                BeforeInput("> "),
-            ],
-        ),
+        BufferControl(buffer=buf),
         height=1,
     )
 
@@ -597,7 +599,7 @@ def main():
 
     layout = Layout(
         HSplit([
-            VSplit([input_window, clock_window]),
+            VSplit([prompt_window, input_window, clock_window]),
         ])
     )
 

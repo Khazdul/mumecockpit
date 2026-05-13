@@ -232,15 +232,23 @@ remaining width; the clock strip is a fixed-width `VSplit` sibling.
 ```
 HSplit([
     VSplit([
+        prompt_window,   # fixed width = 2 cols ("> "), FormattedTextControl
         input_window,    # flex width — prompt_toolkit BufferControl
         clock_window,    # fixed width = 7 cols, FormattedTextControl
     ]),
 ])
 ```
 
+The `> ` prompt is a structural fixed-width sibling Window — not a
+`BeforeInput` processor inside the BufferControl. Keeping it outside
+the BufferControl's render domain means it cannot be pushed off by
+the buffer's horizontal scroll when typed text exceeds the visible
+input width. See [ADR 0068](decisions/0068-prompt-dedicated-window.md).
+
 `mouse_support=True` is set on the Application — required for cursor
 positioning inside the input buffer (consistent with `comm_pane`). Focus
-never leaves the input buffer — `clock_window` is not focusable.
+never leaves the input buffer — `prompt_window` and `clock_window` are
+both non-focusable.
 
 The clock is rendered at every terminal width; there is no width-dependent
 visibility gate.
