@@ -5,6 +5,15 @@ SENTINEL="$HOME/MUME/bridge/runtime/.collapsed_panes"
 
 [ -f "$LOCK" ] && exit 0
 
+_reapply_desired_heights() {
+    local has_right
+    has_right=$(tmux list-panes -t mume:cockpit -F '#{pane_title}' 2>/dev/null \
+        | grep -E '^(ui|comm|dev|status|buffs|group)$' | head -1)
+    if [ -n "$has_right" ]; then
+        bash "$HOME/MUME/bridge/layout/apply_desired_heights.sh"
+    fi
+}
+
 source "$LAYOUT_CONF"
 COLS=$(tmux display-message -p -t mume:cockpit '#{window_width}')
 
@@ -15,6 +24,7 @@ if [ "$COLS" = "$window_cols" ]; then
       | awk '$2=="input" {print $1}')
     [ -n "$INPUT_INDEX" ] && tmux resize-pane -t "mume:cockpit.$INPUT_INDEX" -y 1
     bash "$HOME/MUME/bridge/layout/apply_layout.sh"
+    _reapply_desired_heights
     exit 0
 fi
 
@@ -61,6 +71,24 @@ elif [ -f "$SENTINEL" ]; then
         rm -f "$SENTINEL"   # delete before opening so open_pane.sh sentinel check passes
         for pname in "${RESTORE_PANES[@]}"; do
             bash "$HOME/MUME/bridge/launcher/open_pane.sh" "$pname"
+
+            # Mirror of build_initial_layout.sh Phase 3: equalize current
+            # right-column panes so the next split's target stays above tmux's
+            # floor and rc_target_can_be_split's gate.
+            mapfile -t RC_INDICES < <(
+                tmux list-panes -t mume:cockpit -F '#{pane_top} #{pane_index} #{pane_title}' \
+                | awk '$3 ~ /^(status|buffs|group|comm|ui|dev)$/' \
+                | sort -n \
+                | awk '{print $2}'
+            )
+            N_RC=${#RC_INDICES[@]}
+            if [ "$N_RC" -gt 1 ]; then
+                ROWS=$(tmux display-message -p -t mume:cockpit '#{window_height}')
+                SHARE=$(( (ROWS - 1) / N_RC ))   # INPUT_RESERVE = 1
+                for ((i=0; i<N_RC-1; i++)); do
+                    tmux resize-pane -t "mume:cockpit.${RC_INDICES[$i]}" -y "$SHARE"
+                done
+            fi
         done
         rm -f "$LOCK"
         # Fall through to normal layout logic below.
@@ -96,6 +124,7 @@ INPUT_INDEX=$(tmux list-panes -t mume:cockpit \
 [ -n "$INPUT_INDEX" ] && tmux resize-pane -t "mume:cockpit.$INPUT_INDEX" -y 1
 
 bash "$HOME/MUME/bridge/layout/apply_layout.sh"
+_reapply_desired_heights
 
 sed -i "s/^window_cols=.*/window_cols=$COLS/" "$LAYOUT_CONF"
 rm -f "$LOCK"
