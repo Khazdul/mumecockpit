@@ -201,9 +201,12 @@ are on (`cp -h`).
 
 ## Persistence key
 
-`show_group` in `bridge/runtime/startup.conf`. Fresh-install default is `0`
-(pane closed). Existing installs without the key fall through to the
-`${show_group:-0}` runtime guard — no migration needed.
+`show_group` in `bridge/runtime/startup.conf`. Fresh-install default is `1`
+(pane open). Existing installs without the key fall through to the
+`${show_group:-1}` runtime guard, so older `startup.conf` files that pre-date
+this key will open the pane on next start. The uniformity is intentional —
+group is a baseline situational-awareness pane and the no-surprise-pane
+principle (see [comm-pane.md](comm-pane.md)) is deliberately waived here.
 
 ---
 Back to [architecture.md](../architecture.md).

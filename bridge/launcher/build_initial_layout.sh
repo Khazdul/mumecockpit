@@ -16,7 +16,7 @@ SHOW_UI="${show_ui:-1}"
 SHOW_DEV="${show_dev:-0}"
 SHOW_STATUS="${show_status:-0}"
 SHOW_BUFFS="${show_buffs:-0}"
-SHOW_GROUP="${show_group:-0}"
+SHOW_GROUP="${show_group:-1}"
 SHOW_COMM="${show_comm:-0}"
 SHOW_DIVIDERS="${show_pane_dividers:-1}"
 
