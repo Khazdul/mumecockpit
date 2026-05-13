@@ -108,16 +108,11 @@ done
 
 bash "$HOME/MUME/bridge/launcher/open_pane.sh" input
 
-# Phase 2 + final resize pass — pin each surviving pane to its desired
-# allocation (linearly scaled when the budget is tight; residual to the
-# highest-priority survivor). Replaces the old equalize pass.
-bash "$HOME/MUME/bridge/layout/apply_desired_heights.sh"
-
-INPUT_INDEX=$(tmux list-panes -t mume:cockpit \
-    -F '#{pane_index} #{pane_title}' \
-    | awk '/^[0-9]+ input$/{print $1}')
-tmux select-pane -t mume:cockpit."$INPUT_INDEX"
-
+# pane-border-status must be set BEFORE apply_desired_heights so the
+# final resize pass operates against tmux's final divider state.
+# Setting it after causes a 1-row drift at the top pane when
+# SHOW_DIVIDERS=1 (tmux reserves the top header row by stealing from
+# whichever pane is topmost AFTER the resize already settled).
 if [ "$SHOW_DIVIDERS" -eq 1 ]; then
     tmux set-option -t mume pane-border-status top
     tmux set-option -t mume pane-border-style        "fg=black bg=black"
@@ -127,6 +122,16 @@ else
     tmux set-option -t mume pane-border-style        "fg=black bg=black"
     tmux set-option -t mume pane-active-border-style "fg=black bg=black"
 fi
+
+# Phase 2 + final resize pass — pin each surviving pane to its desired
+# allocation (linearly scaled when the budget is tight; residual to the
+# highest-priority survivor). Replaces the old equalize pass.
+bash "$HOME/MUME/bridge/layout/apply_desired_heights.sh"
+
+INPUT_INDEX=$(tmux list-panes -t mume:cockpit \
+    -F '#{pane_index} #{pane_title}' \
+    | awk '/^[0-9]+ input$/{print $1}')
+tmux select-pane -t mume:cockpit."$INPUT_INDEX"
 
 touch bridge/runtime/.layout_ready
 tmux set-hook -t mume -u client-attached
