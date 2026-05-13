@@ -4,6 +4,36 @@
 # (runtime open gate). Dependency-free; tmux session is hardcoded
 # `mume:cockpit` as everywhere else.
 
+# Per-pane content-row floor (excludes title row).
+declare -A MIN_HEIGHT=(
+    [status]=2
+    [buffs]=1
+    [group]=1
+    [comm]=1
+    [ui]=1
+    [dev]=1
+)
+
+# Shipped default content-row preferences (excludes title row). Used both as
+# the seed for layout.conf desired_<pane> migration and as the reset target
+# for `cp -reset-heights`.
+declare -A DEFAULT_DESIRED=(
+    [status]=6
+    [buffs]=5
+    [group]=5
+    [comm]=10
+    [ui]=5
+    [dev]=5
+)
+
+# Drop order: lowest priority first. Reversed yields PRIORITY_ORDER —
+# the highest-priority surviving pane absorbs residual rows.
+DROP_ORDER=(dev group buffs comm status ui)
+PRIORITY_ORDER=(ui status comm buffs group dev)
+
+# Deprecated: kept one release for the rc_max_panes / rc_fits_one_more
+# runtime-open gate in open_pane.sh, which is not changed in this PR.
+# Remove after open_pane.sh switches to MIN_HEIGHT-aware sizing.
 MIN_PER_PANE=2
 TITLE_OVERHEAD=1
 INPUT_RESERVE=1
