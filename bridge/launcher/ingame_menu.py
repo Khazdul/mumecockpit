@@ -111,7 +111,7 @@ _PANE_TOGGLES = [
     ("comm",    "Comm pane"),
     ("ui",      "UI pane"),
     ("dev",     "Dev pane"),
-    ("headers", "Pane dividers"),
+    ("headers", "Pane headers"),
 ]
 
 # ---------------------------------------------------------------------------

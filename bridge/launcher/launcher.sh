@@ -301,7 +301,7 @@ _options_menu() {
             "$chk_comm Comm pane"
             "$chk_ui UI pane"
             "$chk_dev Dev pane"
-            "$chk_pdv Pane dividers"
+            "$chk_pdv Pane headers"
             "$r_mm MMapper  (localhost:4242)"
             "$r_di Direct   (mume.org:4242)"
             "    Back"
@@ -329,7 +329,7 @@ _options_menu() {
             _oitem 3 "$chk_comm Comm pane"
             _oitem 4 "$chk_ui UI pane"
             _oitem 5 "$chk_dev Dev pane"
-            _oitem 6 "$chk_pdv Pane dividers"
+            _oitem 6 "$chk_pdv Pane headers"
             printf '\n'
             [ "$show_headings" -eq 1 ] && _section_hdr "Connection"
             _oitem 7 "$r_mm MMapper  (localhost:4242)"

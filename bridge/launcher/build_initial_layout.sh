@@ -95,12 +95,12 @@ tmux select-pane -t mume:cockpit."$INPUT_INDEX"
 
 if [ "$SHOW_DIVIDERS" -eq 1 ]; then
     tmux set-option -t mume pane-border-status top
-    tmux set-option -t mume pane-border-style "fg=colour235"
-    tmux set-option -t mume pane-active-border-style "fg=colour235"
+    tmux set-option -t mume pane-border-style        "fg=black bg=black"
+    tmux set-option -t mume pane-active-border-style "fg=black bg=black"
 else
     tmux set-option -t mume pane-border-status off
-    tmux set-option -t mume pane-border-style "fg=black"
-    tmux set-option -t mume pane-active-border-style "fg=black"
+    tmux set-option -t mume pane-border-style        "fg=black bg=black"
+    tmux set-option -t mume pane-active-border-style "fg=black bg=black"
 fi
 
 touch bridge/runtime/.layout_ready

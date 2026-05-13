@@ -64,7 +64,7 @@ State is re-probed from the files on every render — never cached.
 ## Options submenu
 
 Seven toggles (Character pane / Buffs pane / Group pane / Comm pane / UI pane /
-Dev pane / Pane dividers) + Back. Source of truth is `_PANE_TOGGLES` in
+Dev pane / Pane headers) + Back. Source of truth is `_PANE_TOGGLES` in
 `ingame_menu.py`. State is re-probed from tmux on every render — never
 cached. Toggling calls `toggle_pane.sh --persist` directly; toggles do
 **not** route through tt++ so no `cp -X` lines appear in the game pane.

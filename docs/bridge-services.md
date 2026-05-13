@@ -199,7 +199,7 @@ SCRIPT:autobow
 | `show_ui`         | `1`        | Whether to open the UI pane              |
 | `show_dev`        | `0`        | Whether to open the dev pane             |
 | `show_status`     | `0`        | Whether to open the status pane          |
-| `show_pane_dividers` | `1`     | Whether tmux pane borders and the pane-border-status bar are visible at startup. `cp -h` persists the new state via `toggle_pane.sh headers --persist`. |
+| `show_pane_dividers` | `1`     | Whether the pane-header bar (labels above each right-column pane) is visible at startup. `cp -h` persists the new state via `toggle_pane.sh headers --persist`. Key name retained for backward compatibility. |
 | `profile`         | `default`  | Which file in `ttpp/profiles/` to load; also the tt++ session name |
 
 Toggle panes (with persistence) via `cp -u`, `cp -d`, `cp -m`, `cp -c`, `cp -b`, `cp -h`.

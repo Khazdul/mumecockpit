@@ -143,12 +143,12 @@ case "$TARGET" in
         STATUS=$(tmux show-option -t mume pane-border-status 2>/dev/null | awk '{print $2}')
         if [ "$STATUS" = "off" ]; then
             tmux set-option -t mume pane-border-status top
-            tmux set-option -t mume pane-border-style        fg=colour235
-            tmux set-option -t mume pane-active-border-style fg=colour235
+            tmux set-option -t mume pane-border-style        "fg=black bg=black"
+            tmux set-option -t mume pane-active-border-style "fg=black bg=black"
         else
             tmux set-option -t mume pane-border-status off
-            tmux set-option -t mume pane-border-style        fg=black
-            tmux set-option -t mume pane-active-border-style fg=black
+            tmux set-option -t mume pane-border-style        "fg=black bg=black"
+            tmux set-option -t mume pane-active-border-style "fg=black bg=black"
         fi
         if [ "$PERSIST" -eq 1 ]; then
             NEW_STATUS=$(tmux show-option -t mume pane-border-status 2>/dev/null | awk '{print $2}')
