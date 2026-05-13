@@ -554,6 +554,15 @@ def _activate_main(idx):
             _spawn_ping_monitor()
             _deferred_exec = ("tmux", ["tmux", "attach", "-t", "mume"])
         else:
+            # Cold start: hand the launcher's known terminal dimensions to
+            # tmux_start.sh so it can build the cockpit layout pre-attach.
+            # See docs/launcher.md "Initial layout build".
+            try:
+                size = _app.output.get_size()
+                os.environ["LAUNCHER_COLS"] = str(size.columns)
+                os.environ["LAUNCHER_ROWS"] = str(size.rows)
+            except Exception:
+                pass
             _deferred_exec = ("bash", ["bash", "bridge/launcher/tmux_start.sh"])
         _app.exit()
     elif label == "Update":

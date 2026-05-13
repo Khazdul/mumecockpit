@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # bridge/launcher/tmux_start.sh — creates and attaches to the MUME tmux cockpit session.
-# Session options, hooks, and keybinds are configured here; pane layout is built
-# post-attach by build_initial_layout.sh via a one-shot client-attached hook.
+# Session options, hooks, and keybinds are configured here. Pane layout is built
+# by build_initial_layout.sh in one of two modes (see docs/launcher.md "Initial
+# layout build"): pre-attach when LAUNCHER_COLS/ROWS are provided by launcher.py,
+# post-attach via a one-shot client-attached hook otherwise (ADR 0041 fallback).
 # Called by start.sh (--no-menu / -d / -u) or bridge/launcher/launcher.sh ("Enter game").
 
 # Keep terminal in alt-screen across this script so any incidental output
@@ -10,6 +12,15 @@
 printf '\e[?1049h\e[?25l'
 
 cd "$(dirname "$0")/../.."
+
+# When launched from the prompt_toolkit launcher, LAUNCHER_COLS/ROWS carry
+# the true terminal dimensions. Their presence selects the pre-attach
+# layout build path; absence (--no-menu, Windows shortcut) falls back to
+# the post-attach hook described in ADR 0041.
+PRE_ATTACH_BUILD=0
+if [ -n "${LAUNCHER_COLS:-}" ] && [ -n "${LAUNCHER_ROWS:-}" ]; then
+    PRE_ATTACH_BUILD=1
+fi
 
 # ---------------------------------------------------------------------------
 # 0. One-shot migration: v0.6.x runtime files at bridge/ root → bridge/runtime/
@@ -62,8 +73,14 @@ touch logs/debug.log logs/ui.log
 # ---------------------------------------------------------------------------
 tmux kill-session -t mume 2>/dev/null || true
 
-tmux new-session -d -s mume -n cockpit \
-    "bash $HOME/MUME/bridge/launcher/wait_for_layout.sh"
+if [ "$PRE_ATTACH_BUILD" -eq 1 ]; then
+    tmux new-session -d -x "$LAUNCHER_COLS" -y "$LAUNCHER_ROWS" \
+        -s mume -n cockpit \
+        "bash $HOME/MUME/bridge/launcher/wait_for_layout.sh"
+else
+    tmux new-session -d -s mume -n cockpit \
+        "bash $HOME/MUME/bridge/launcher/wait_for_layout.sh"
+fi
 tmux set-option -t mume status off
 tmux set-option -t mume mouse on
 
@@ -147,11 +164,22 @@ disown
 tmux select-pane -t mume:cockpit.0 -T "MUME"
 sleep 0.2 && tmux select-pane -t mume:cockpit.0 -T "MUME" &
 
-# build_initial_layout.sh fires on first client-attached, reads the true
-# terminal width from tmux, splits panes, and touches .layout_ready so
+# build_initial_layout.sh splits panes, then touches .layout_ready so
 # wait_for_layout.sh unblocks and hands off to tt++.
-tmux set-hook -t mume client-attached \
-    "run-shell 'bash $HOME/MUME/bridge/launcher/build_initial_layout.sh'"
+#
+# Pre-attach build (launcher path): dimensions came in via env vars, the
+# session was created with explicit -x/-y, so we can build synchronously
+# against the detached session and attach to a fully-built cockpit.
+#
+# Post-attach build (--no-menu, Windows shortcut): no reliable
+# dimensions yet — defer to the first client-attached event so tmux can
+# read the true window size. See ADR 0041.
+if [ "$PRE_ATTACH_BUILD" -eq 1 ]; then
+    bash "$HOME/MUME/bridge/launcher/build_initial_layout.sh"
+else
+    tmux set-hook -t mume client-attached \
+        "run-shell 'bash $HOME/MUME/bridge/launcher/build_initial_layout.sh'"
+fi
 
 tmux attach -t mume
 

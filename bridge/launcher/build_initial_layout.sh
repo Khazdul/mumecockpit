@@ -25,14 +25,22 @@ LAYOUT_CONF="bridge/runtime/layout.conf"
 grep -q "^window_cols=" "$LAYOUT_CONF" || echo "window_cols=0" >> "$LAYOUT_CONF"
 source "$LAYOUT_CONF"
 
-COLS=$(tmux display-message -p -t mume:cockpit '#{window_width}')
+# Dimension source: prefer launcher-provided env vars (pre-attach build,
+# detached session has no authoritative window size yet); fall back to
+# tmux display-message in the post-attach hook path.
+if [ -n "${LAUNCHER_COLS:-}" ] && [ -n "${LAUNCHER_ROWS:-}" ]; then
+    COLS="$LAUNCHER_COLS"
+    ROWS="$LAUNCHER_ROWS"
+else
+    COLS=$(tmux display-message -p -t mume:cockpit '#{window_width}')
+    ROWS=$(tmux display-message -p -t mume:cockpit '#{window_height}')
+fi
 sed -i "s/^window_cols=.*/window_cols=$COLS/" "$LAYOUT_CONF"
 
 # Pre-flight: compute the right-column budget, build the requested pane list
 # in visual order, then drop the lowest-priority survivors until they fit.
 # Skipped panes stay enabled in startup.conf — a wider terminal next start
 # gets them back without manual reconfiguration.
-ROWS=$(tmux display-message -p -t mume:cockpit '#{window_height}')
 source bridge/layout/right_column_budget.sh
 MAX=$(rc_max_panes)
 
