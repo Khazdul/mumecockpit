@@ -23,6 +23,17 @@ SHOW_DIVIDERS="${show_pane_dividers:-1}"
 LAYOUT_CONF="bridge/runtime/layout.conf"
 [ -f "$LAYOUT_CONF" ] || printf "ui_width=33\nwindow_cols=0\n" > "$LAYOUT_CONF"
 grep -q "^window_cols=" "$LAYOUT_CONF" || echo "window_cols=0" >> "$LAYOUT_CONF"
+
+source bridge/layout/right_column_budget.sh
+
+# Migration: append any missing desired_<pane> key with the shipped default.
+# Same pattern as the window_cols migration above. Once persisted, drags on
+# vertical right-column borders will update these in place.
+for p in status buffs group comm ui dev; do
+    grep -q "^desired_${p}=" "$LAYOUT_CONF" \
+        || echo "desired_${p}=${DEFAULT_DESIRED[$p]}" >> "$LAYOUT_CONF"
+done
+
 source "$LAYOUT_CONF"
 
 # Dimension source: prefer launcher-provided env vars (pre-attach build,
@@ -37,13 +48,6 @@ else
 fi
 sed -i "s/^window_cols=.*/window_cols=$COLS/" "$LAYOUT_CONF"
 
-# Pre-flight: compute the right-column budget, build the requested pane list
-# in visual order, then drop the lowest-priority survivors until they fit.
-# Skipped panes stay enabled in startup.conf — a wider terminal next start
-# gets them back without manual reconfiguration.
-source bridge/layout/right_column_budget.sh
-MAX=$(rc_max_panes)
-
 REQUESTED=()
 [ "$SHOW_STATUS" -eq 1 ] && REQUESTED+=(status)
 [ "$SHOW_BUFFS"  -eq 1 ] && REQUESTED+=(buffs)
@@ -52,9 +56,15 @@ REQUESTED=()
 [ "$SHOW_UI"     -eq 1 ] && REQUESTED+=(ui)
 [ "$SHOW_DEV"    -eq 1 ] && REQUESTED+=(dev)
 
-# Drop order: lowest priority first. ui is kept last.
-DROP_ORDER=(dev group buffs comm status ui)
-while [ "${#REQUESTED[@]}" -gt "$MAX" ]; do
+# Phase 1 — survivor selection: drop lowest-priority panes until the
+# per-pane MIN_HEIGHT sum (plus title rows and input) fits inside ROWS.
+TITLE=$([ "$SHOW_DIVIDERS" -eq 1 ] && echo 1 || echo 0)
+while [ "${#REQUESTED[@]}" -gt 0 ]; do
+    NN=${#REQUESTED[@]}
+    MIN_SUM=0
+    for p in "${REQUESTED[@]}"; do MIN_SUM=$((MIN_SUM + MIN_HEIGHT[$p])); done
+    NEEDED=$((MIN_SUM + NN * TITLE + INPUT_RESERVE))
+    [ "$NEEDED" -le "$ROWS" ] && break
     dropped=""
     for victim in "${DROP_ORDER[@]}"; do
         new=()
@@ -67,34 +77,24 @@ while [ "${#REQUESTED[@]}" -gt "$MAX" ]; do
         done
         if [ -n "$dropped" ]; then
             REQUESTED=("${new[@]}")
-            echo "[layout] cold start: skipping $dropped (terminal too short: $ROWS rows)" >> logs/debug.log
+            echo "[layout] cold start: skipping $dropped (terminal too short: $ROWS rows, needed $NEEDED)" >> logs/debug.log
             break
         fi
     done
     [ -z "$dropped" ] && break
 done
 
+# Phase 3 — create panes in visual order, then input.
 for pane in "${REQUESTED[@]}"; do
     bash "$HOME/MUME/bridge/launcher/open_pane.sh" "$pane"
 done
 
 bash "$HOME/MUME/bridge/launcher/open_pane.sh" input
 
-# Equalize pass — runs once at cold start; never on resizes or drags (ADR 0030).
-mapfile -t RC_INDICES < <(
-    tmux list-panes -t mume:cockpit -F '#{pane_top} #{pane_index} #{pane_title}' \
-    | awk '$3 ~ /^(status|buffs|group|comm|ui|dev)$/' \
-    | sort -n \
-    | awk '{print $2}'
-)
-N=${#RC_INDICES[@]}
-if [ "$N" -gt 1 ]; then
-    BUDGET=$(( ROWS - INPUT_RESERVE - N ))
-    SHARE=$(( BUDGET / N ))
-    for ((i=0; i<N-1; i++)); do
-        tmux resize-pane -t "mume:cockpit.${RC_INDICES[$i]}" -y "$SHARE"
-    done
-fi
+# Phase 2 + final resize pass — pin each surviving pane to its desired
+# allocation (linearly scaled when the budget is tight; residual to the
+# highest-priority survivor). Replaces the old equalize pass.
+bash "$HOME/MUME/bridge/layout/apply_desired_heights.sh"
 
 INPUT_INDEX=$(tmux list-panes -t mume:cockpit \
     -F '#{pane_index} #{pane_title}' \
