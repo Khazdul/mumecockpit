@@ -2013,6 +2013,15 @@ def _build_statistics_container():
     return _statistics_window
 
 
+async def _tick(app):
+    try:
+        while True:
+            await asyncio.sleep(1.0)
+            app.invalidate()
+    except asyncio.CancelledError:
+        pass
+
+
 def main():
     global _app
 
@@ -2048,8 +2057,19 @@ def main():
     app.timeoutlen  = 0.05
     _app = app
 
+    async def _run():
+        tick_task = asyncio.ensure_future(_tick(app))
+        try:
+            await app.run_async()
+        finally:
+            tick_task.cancel()
+            try:
+                await tick_task
+            except asyncio.CancelledError:
+                pass
+
     try:
-        app.run()
+        asyncio.run(_run())
     finally:
         _cleanup()
 

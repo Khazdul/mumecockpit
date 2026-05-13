@@ -61,6 +61,10 @@ Backed by `bridge/runtime/connection.state` (connection status) and
 
 State is re-probed from the files on every render — never cached.
 
+The popup invalidates itself once per second while open, so the Link readout
+(and any other on-render state like connection mode or the Statistics row's
+visibility) tracks the underlying files without requiring a keypress.
+
 ## Options submenu
 
 Seven toggles (Character pane / Buffs pane / Group pane / Comm pane / UI pane /
