@@ -29,10 +29,10 @@ start.
 ## Startup menu (`bridge/launcher/launcher.py`)
 
 A `prompt_toolkit` full-screen `Application` rendered in the terminal before
-tmux launches. `bridge/launcher/launcher.sh` is a thin wrapper that `exec`s
-the Python entry; every call site (start.sh, the return-to-menu chain in
-`tmux_start.sh`, the Windows shortcut, the update flow's restart path) goes
-through that wrapper unchanged.
+tmux launches (ADR 0069). `bridge/launcher/launcher.sh` is a thin wrapper
+that `exec`s the Python entry; every call site (start.sh, the return-to-menu
+chain in `tmux_start.sh`, the Windows shortcut, the update flow's restart
+path) goes through that wrapper unchanged.
 
 The UI is a frame stack: a single `DynamicContainer` swaps between `main`,
 `profile`, `profile_create_name`, `profile_create_choose`,
@@ -114,8 +114,9 @@ pass through `_wrap_text` unchanged.
 
 - **Alt screen / cursor / mouse modes.** `Application(full_screen=True,
   mouse_support=True)` manages alt-screen entry and exit, cursor
-  visibility, and mouse-mode toggles itself. No manual ANSI escape
-  sequences are emitted by the launcher.
+  visibility, and mouse-mode toggles itself. The launcher emits no
+  manual ANSI escapes for layout or styling; the sole exception is
+  the alt-screen-continuity write at handoff (see below).
 - **Resize.** prompt_toolkit invalidates the layout on SIGWINCH; every
   text function reads terminal dimensions afresh, so the centred block
   recentres immediately.
@@ -133,8 +134,17 @@ pass through `_wrap_text` unchanged.
   takes over. The launcher → `tmux_start.sh` handoff itself is
   `execvp`'d, so there is no intermediate bash flash between menu and
   cockpit.
+- **Alt-screen continuity across the handoff.** Immediately before
+  every `os.execvp`, the launcher writes `\e[?1049h\e[?25l` to stdout
+  to re-enter alt-screen and hide the cursor — bridging the brief gap
+  between prompt_toolkit's terminal restore and the next program
+  taking over. `tmux_start.sh` writes the same sequence at the top of
+  the script and again on the return-to-menu branch (after `tmux
+  attach` returns and before re-execing `launcher.sh`), so the
+  alt-screen stays continuous in both directions and the user never
+  sees a flash of the normal shell.
 
-**Initial layout build.** `bridge/launcher/build_initial_layout.sh` is invoked in one of two modes, chosen by `bridge/launcher/tmux_start.sh` based on whether `LAUNCHER_COLS` / `LAUNCHER_ROWS` are set in the environment. In both modes the script splits panes, applies divider styling, and finally touches `bridge/runtime/.layout_ready`; meanwhile pane 0 runs `bridge/launcher/wait_for_layout.sh`, which polls `.layout_ready` at 50 ms intervals (2 s timeout) and then execs `tt++`. The sentinel handshake guarantees tt++ starts only after the layout is in place, so the first lines of tt++/Lua output are never lost into scrollback.
+**Initial layout build.** `bridge/launcher/build_initial_layout.sh` is invoked in one of two modes (ADR 0070, supplementing ADR 0041), chosen by `bridge/launcher/tmux_start.sh` based on whether `LAUNCHER_COLS` / `LAUNCHER_ROWS` are set in the environment. In both modes the script splits panes, applies divider styling, and finally touches `bridge/runtime/.layout_ready`; meanwhile pane 0 runs `bridge/launcher/wait_for_layout.sh`, which polls `.layout_ready` at 50 ms intervals (2 s timeout) and then execs `tt++`. The sentinel handshake guarantees tt++ starts only after the layout is in place, so the first lines of tt++/Lua output are never lost into scrollback.
 - **Pre-attach build (launcher path).** When `tmux_start.sh` is invoked from `launcher.py` the launcher exports `LAUNCHER_COLS` and `LAUNCHER_ROWS` from `prompt_toolkit`'s known terminal size — it just rendered a full-screen UI, so the dimensions are authoritative. `tmux_start.sh` then creates the detached session with explicit `-x` / `-y`, runs `build_initial_layout.sh` synchronously against the detached session, and only then calls `tmux attach`. The user sees a single frame transition from launcher to a fully-built cockpit — no visible cascade of pane splits.
 - **Post-attach build (fallback).** Without the env vars (`--no-menu`, Windows shortcut → `bridge/launcher/launch.sh`), there is no reliable pre-attach dimension source: `stty size` is stale on terminals that haven't synced their PTY size when bash starts. `tmux_start.sh` registers a one-shot `client-attached` hook that fires `build_initial_layout.sh` after the first client attaches, at which point `tmux display-message -p '#{window_width}'` is authoritative. The script disarms its own hook on completion via `tmux set-hook -u client-attached` (idempotent — a no-op in the pre-attach path). The brief single-pane state after attach is visible but acceptable; see ADR 0041 for the full rationale that still governs this path.
 

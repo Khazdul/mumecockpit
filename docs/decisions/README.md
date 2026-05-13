@@ -75,11 +75,13 @@ Active ADRs by area. Click through for context, alternatives, and consequences.
 - [ADR 0021](0021-stty-over-tput-for-terminal-dimensions.md) — Use stty for terminal dimensions — `stty size </dev/tty` is used instead of `tput cols`, which returns wrong values in macOS non-interactive subshells.
 - [ADR 0039](0039-cp-aliases-persistent.md) — cp -X aliases always persist — all `cp -X` aliases pass `--persist` to `toggle_pane.sh`; every toggle from any entry point writes to `startup.conf`.
 - [ADR 0062](0062-popup-menu-prompt-toolkit.md) — In-game popup rewritten in prompt_toolkit — `ingame_menu.py` is the popup body; `ingame_menu.sh` is a thin exec wrapper. Mouse wheel deliberately not supported (tmux display-popup limitation).
+- [ADR 0069](0069-launcher-prompt-toolkit.md) — Launcher rewritten in prompt_toolkit — `launcher.py` is the menu body; `launcher.sh` is a thin exec wrapper. Frame stack mirrors ADR 0062; colour palette extracted to `palette.py` and shared with the popup.
 
 ### Bridge services & startup
 
 - [ADR 0001](0001-constant-ping-monitor.md) — Constant ping monitor — a single long-lived ping monitor runs for the tmux session and writes to a shared cache file; the popup reads it on demand.
 - [ADR 0041](0041-post-attach-layout-build.md) — Post-attach initial layout build — the initial pane layout is built after the first client attaches, reading tmux's authoritative post-attach window dimensions.
+- [ADR 0070](0070-launcher-pre-attach-layout-build.md) — Two-mode initial layout build — when the launcher provides `LAUNCHER_COLS`/`LAUNCHER_ROWS` the layout is built pre-attach against the detached session; otherwise the ADR 0041 post-attach hook fallback runs. (supplements 0041)
 - [ADR 0045](0045-bridge-role-based-subdirs.md) — bridge/ role-based subdirectories — split bridge/ top-level into launcher/, panes/, layout/, release/, services/ buckets; runtime state stays in bridge/ root; compat shims for launcher.sh and tmux_start.sh.
 - [ADR 0047](0047-bridge-runtime-consolidation.md) — bridge/runtime/ consolidation — all *.state/*.cache/*.conf/dot-sentinels/.update_preserve/ moved from bridge/ root into bridge/runtime/; gitignore collapsed to one block; one-shot startup migration for v0.6.x installs.
 
