@@ -73,15 +73,10 @@ Connection mode (MMapper / Direct) and profile switch are deliberately
 **not** present in the popup Options — they require a restart and are
 launcher-only.
 
-The input-pane menu bar (CHR / BUF / GRP / COM / UI buttons in the bottom row)
-is a sibling surface for the same five pane toggles. Both surfaces write
-`startup.conf` via `toggle_pane.sh --persist`; each reflects changes made by
-the other within ≤ 250 ms.
-
 `cp -u`, `cp -d`, `cp -m`, `cp -c`, `cp -b`, `cp -g`, and `cp -h` are thin wrappers
 around `bridge/layout/toggle_pane.sh`, each passing `--persist`. All toggle paths —
-popup, launcher Options, input-pane menu buttons, and `cp -X` aliases — are
-equivalent and write to `startup.conf`.
+popup, launcher Options, and `cp -X` aliases — are equivalent and write to
+`startup.conf`.
 
 ## Scripts submenu
 

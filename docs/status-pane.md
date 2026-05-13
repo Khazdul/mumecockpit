@@ -8,7 +8,7 @@ layout, or layout integration.
 Two progress-bar rows (XP and TP), a row of four toggle-box cells
 (SNEAK / RIDE / CLIMB / SWIM), a blank separator, and two data rows
 (alertness/position, mood/wimpy) make up the six-row layout. Game time is
-shown in the input-pane menu bar, sourced from the same `status.state`
+shown in the input-pane clock strip, sourced from the same `status.state`
 payload.
 
 ## Architecture

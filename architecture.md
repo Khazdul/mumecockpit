@@ -79,7 +79,7 @@ tracking, and UI feedback.
 │   │   └── widgets/          # Reusable prompt_toolkit widgets for the popup
 │   │                         #   scrollbar.py — click-to-jump scrollbar widget
 │   ├── panes/                # Python prompt_toolkit pane renderers
-│   │   ├── input_pane.py     # Input pane — CLI, forwards to TT++, right-aligned menu bar
+│   │   ├── input_pane.py     # Input pane — CLI, forwards to TT++, right-aligned clock
 │   │   ├── comm_pane.py      # Comm pane — clickable channel-filter header + scrollable history
 │   │   ├── buffs_pane.py     # Buffs pane — affect grid (grouped, bar drain, blink)
 │   │   ├── group_pane.py     # Group pane — member HP/Mana/Moves bars with name overlay
@@ -397,7 +397,7 @@ See the project board on GitHub for active work and parked ideas.
 - [docs/events.md](docs/events.md) — Event bus API and catalogue. Touched when adding a core MUD trigger or subscribing a script to a Lua-side event.
 - [docs/ipc.md](docs/ipc.md) — tt++ ↔ Lua IPC contract, relay actions, startup ordering. Touched when changing how tt++ and Lua communicate.
 - [docs/session-lifecycle.md](docs/session-lifecycle.md) — Session connect/disconnect, connection.state, settings persistence. Touched when changing session handling or startup flow.
-- [docs/input-pane.md](docs/input-pane.md) — Input pane key forwarding, Enter semantics, history navigation, menu bar (clickable pane toggles + clock). Touched when changing input behaviour, forwarded keys, or the menu bar.
+- [docs/input-pane.md](docs/input-pane.md) — Input pane key forwarding, Enter semantics, history navigation, clock strip. Touched when changing input behaviour, forwarded keys, or the clock strip.
 - [docs/tmux-bindings.md](docs/tmux-bindings.md) — tmux root-table bindings, mouse model, clipboard. Touched when changing tmux key bindings or mouse behaviour.
 - [docs/launcher.md](docs/launcher.md) — Pre-tmux startup menu, rendering conventions, exec-chain. Touched when changing launcher pages or startup options.
 - [docs/popup-menu.md](docs/popup-menu.md) — In-game ESC popup: submenus, status header, save-profile flow. Touched when changing the in-game overlay.

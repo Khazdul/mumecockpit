@@ -3,13 +3,11 @@ try:
     from prompt_toolkit.buffer import Buffer
     from prompt_toolkit.document import Document
     from prompt_toolkit.key_binding import KeyBindings
-    from prompt_toolkit.filters import Condition
-    from prompt_toolkit.layout.containers import ConditionalContainer, HSplit, VSplit, Window
+    from prompt_toolkit.layout.containers import HSplit, VSplit, Window
     from prompt_toolkit.layout.controls import BufferControl, FormattedTextControl
     from prompt_toolkit.layout.layout import Layout
     from prompt_toolkit.keys import Keys
     from prompt_toolkit.layout.processors import BeforeInput
-    from prompt_toolkit.mouse_events import MouseEventType
     from prompt_toolkit.output import ColorDepth
     from prompt_toolkit.selection import SelectionState
 except ImportError:
@@ -36,39 +34,18 @@ _PRINTABLE  = [c for c in string.printable if c.isprintable()]
 BRIDGE_DIR        = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RUNTIME_DIR       = os.path.join(BRIDGE_DIR, "runtime")
 STATUS_STATE_PATH = os.path.join(RUNTIME_DIR, "status.state")
-STARTUP_CONF_PATH = os.path.join(RUNTIME_DIR, "startup.conf")
-LAYOUT_CONF_PATH  = os.path.join(RUNTIME_DIR, "layout.conf")
-MENU_POLL_MS      = 0.25
-MENU_WIDTH        = 31
-
-# Layout constants duplicated from bridge/layout/on_window_resize.sh.
-# Keep in sync; see ADR 0031 and ADR 0038.
-MAIN_MIN = 30   # main/tt++ pane floor
-
-# Button colours — toggle-state indicator
-# BTN_BG_ON mirrors C_TP_FG in bridge/panes/status_pane.py — keep coupled on re-theme.
-BTN_BG_ON  = "#002832"   # rgb(0,40,50) — ON state background (matches TP-bar fg)
-BTN_BG_OFF = "#001E28"   # rgb(0,30,40)   — OFF state background
-BTN_FG_ON  = "#C0C0C0"   # ON text — rgb(192,192,192)
-BTN_FG_OFF = "#585858"   # OFF text — rgb(88,88,88)
+CLOCK_POLL_MS     = 0.25
+CLOCK_WIDTH       = 7   # 1 gutter + 5 time text + 1 icon
 
 # Sun/Moon colours — source of truth: bridge/panes/status_pane.py C_SUN / C_MOON
 C_SUN_HEX  = "#ffb000"   # \x1b[38;2;255;176;0m
 C_MOON_HEX = "#4a90e2"   # \x1b[38;2;74;144;226m
 
-# Menu state — updated by _poll_menu asyncio task
-_menu_time_period        = None
-_menu_time_transition_at = None   # float (unix epoch) or None
-_menu_time_precision     = None   # "MINUTE"/"HOUR"/None
-_menu_show_status    = False
-_menu_show_buffs     = False
-_menu_show_group     = False
-_menu_show_comm      = False
-_menu_show_ui        = False
-_menu_ui_width       = 50
-_menu_status_mtime   = None
-_menu_conf_mtime     = None
-_menu_layout_mtime   = None
+# Clock state — updated by _poll_clock asyncio task
+_clock_time_period        = None
+_clock_time_transition_at = None   # float (unix epoch) or None
+_clock_time_precision     = None   # "MINUTE"/"HOUR"/None
+_clock_status_mtime       = None
 
 last_cmd = ""
 history: list = []           # sent commands, oldest -> newest
@@ -484,100 +461,28 @@ def _on_text_changed(buf):
 
 
 # ---------------------------------------------------------------------------
-# Menu bar helpers
+# Clock helpers
 # ---------------------------------------------------------------------------
 
-def _parse_startup_conf(path):
-    conf = {}
-    try:
-        with open(path) as fh:
-            for line in fh:
-                line = line.strip()
-                if "=" not in line or line.startswith("#"):
-                    continue
-                key, _, val = line.partition("=")
-                key = key.strip()
-                if key:
-                    conf[key] = val.strip()
-    except OSError:
-        pass
-    return conf
+def _clock_text():
+    """Fragments for the 7-col right-aligned clock: ' <time><icon>'.
 
-
-def _conf_bool(conf, key):
-    try:
-        return int(conf.get(key, "0")) != 0
-    except (ValueError, TypeError):
-        return False
-
-
-def _make_btn_handler(pane):
-    def _handler(mouse_event):
-        if mouse_event.event_type != MouseEventType.MOUSE_DOWN:
-            return
-        subprocess.Popen([
-            "bash", os.path.join(BRIDGE_DIR, "layout", "toggle_pane.sh"),
-            pane, "--persist",
-        ])
-    return _handler
-
-
-_BTN_STATUS = _make_btn_handler("status")
-_BTN_BUFFS  = _make_btn_handler("buffs")
-_BTN_GROUP  = _make_btn_handler("group")
-_BTN_COMM   = _make_btn_handler("comm")
-_BTN_UI     = _make_btn_handler("ui")
-
-
-def _menu_visible():
-    try:
-        cols = os.get_terminal_size().columns
-    except OSError:
-        return True
-    return (cols - MAIN_MIN - 1) >= _menu_ui_width
-
-
-def _menu_text():
-    """Fragments for the 31-col right-aligned CHR/BUF/GRP/COM/UI/clock menu bar.
-
-    Layout: █CHR▌█BUF▌█GRP▌█COM▌█UI█ <time> <icon>
-    Total = 5+5+5+5+4+1+6 = 31 columns.
+    Layout: 1-col gutter, 5-col left-aligned time text, 1-col day/night icon.
+    Returns six trailing blanks when any of period / transition_at / precision
+    is null.
     """
-    buttons = [
-        ("CHR", _menu_show_status, _BTN_STATUS),
-        ("BUF", _menu_show_buffs,  _BTN_BUFFS),
-        ("GRP", _menu_show_group,  _BTN_GROUP),
-        ("COM", _menu_show_comm,   _BTN_COMM),
-        ("UI",  _menu_show_ui,     _BTN_UI),
-    ]
-    frags    = []
-    last_idx = len(buttons) - 1
-    for i, (label, on, handler) in enumerate(buttons):
-        bg         = BTN_BG_ON  if on else BTN_BG_OFF
-        fg         = BTN_FG_ON  if on else BTN_FG_OFF
-        trail      = "█" if i == last_idx else "▌"
-        btn_style  = f"bg:{bg} fg:{fg}"
-        edge_style = f"fg:{bg}"
-        if handler is not None:
-            frags.append((edge_style, "█", handler))
-            frags.append((btn_style, label, handler))
-            frags.append((edge_style, trail, handler))
-        else:
-            frags.append((edge_style, "█"))
-            frags.append((btn_style, label))
-            frags.append((edge_style, trail))
-    frags.append(("", " "))
-    if (_menu_time_period is not None
-            and _menu_time_transition_at is not None
-            and _menu_time_precision is not None):
-        icon       = "☼" if _menu_time_period == "day" else "☾"
-        icon_style = f"fg:{C_SUN_HEX}" if _menu_time_period == "day" else f"fg:{C_MOON_HEX}"
-        remaining  = max(0.0, _menu_time_transition_at - time.time())
-        if _menu_time_precision == "MINUTE":
+    frags = [("", " ")]  # 1-col leading gutter
+    if (_clock_time_period is not None
+            and _clock_time_transition_at is not None
+            and _clock_time_precision is not None):
+        icon       = "☼" if _clock_time_period == "day" else "☾"
+        icon_style = f"fg:{C_SUN_HEX}" if _clock_time_period == "day" else f"fg:{C_MOON_HEX}"
+        remaining  = max(0.0, _clock_time_transition_at - time.time())
+        if _clock_time_precision == "MINUTE":
             total_min = int(remaining // 60)
             sec       = int(remaining % 60)
             text      = f"{total_min}:{sec:02d}"
-        elif _menu_time_precision == "HOUR":
+        elif _clock_time_precision == "HOUR":
             rem_min = max(1, math.ceil(remaining / 60))
             text    = f"~{rem_min}"
         else:
@@ -591,7 +496,7 @@ def _menu_text():
 
 
 # ---------------------------------------------------------------------------
-# Menu state polling (250 ms asyncio task)
+# Clock state polling (250 ms asyncio task)
 # ---------------------------------------------------------------------------
 
 async def _clock_tick(app):
@@ -604,10 +509,9 @@ async def _clock_tick(app):
         app.invalidate()
 
 
-async def _poll_menu(app):
-    global _menu_time_period, _menu_time_transition_at, _menu_time_precision
-    global _menu_show_status, _menu_show_buffs, _menu_show_group, _menu_show_comm, _menu_show_ui, _menu_ui_width
-    global _menu_status_mtime, _menu_conf_mtime, _menu_layout_mtime
+async def _poll_clock(app):
+    global _clock_time_period, _clock_time_transition_at, _clock_time_precision
+    global _clock_status_mtime
 
     while True:
         changed = False
@@ -618,8 +522,8 @@ async def _poll_menu(app):
         except OSError:
             smtime = None
 
-        if smtime != _menu_status_mtime:
-            _menu_status_mtime = smtime
+        if smtime != _clock_status_mtime:
+            _clock_status_mtime = smtime
             if smtime is not None:
                 try:
                     with open(STATUS_STATE_PATH) as fh:
@@ -627,64 +531,24 @@ async def _poll_menu(app):
                     tp = data.get("time_period")
                     ta = data.get("time_transition_at")
                     pr = data.get("time_precision")
-                    if tp != _menu_time_period or ta != _menu_time_transition_at or pr != _menu_time_precision:
-                        _menu_time_period        = tp
-                        _menu_time_transition_at = ta
-                        _menu_time_precision     = pr
+                    if tp != _clock_time_period or ta != _clock_time_transition_at or pr != _clock_time_precision:
+                        _clock_time_period        = tp
+                        _clock_time_transition_at = ta
+                        _clock_time_precision     = pr
                         changed = True
                 except Exception:
                     pass  # keep last good state; silent recovery
             else:
-                if _menu_time_period is not None or _menu_time_transition_at is not None:
-                    _menu_time_period        = None
-                    _menu_time_transition_at = None
-                    _menu_time_precision     = None
-                    changed = True
-
-        # startup.conf — show_status, show_buffs, show_group, show_comm, show_ui
-        try:
-            cmtime = os.stat(STARTUP_CONF_PATH).st_mtime
-        except OSError:
-            cmtime = None
-
-        if cmtime != _menu_conf_mtime:
-            _menu_conf_mtime = cmtime
-            conf = _parse_startup_conf(STARTUP_CONF_PATH)
-            ss = _conf_bool(conf, "show_status")
-            sb = _conf_bool(conf, "show_buffs")
-            sg = _conf_bool(conf, "show_group")
-            sc = _conf_bool(conf, "show_comm")
-            su = _conf_bool(conf, "show_ui")
-            if ss != _menu_show_status or sb != _menu_show_buffs or sg != _menu_show_group or sc != _menu_show_comm or su != _menu_show_ui:
-                _menu_show_status = ss
-                _menu_show_buffs  = sb
-                _menu_show_group  = sg
-                _menu_show_comm   = sc
-                _menu_show_ui     = su
-                changed = True
-
-        # layout.conf — ui_width (controls menu visibility floor)
-        try:
-            lmtime = os.stat(LAYOUT_CONF_PATH).st_mtime
-        except OSError:
-            lmtime = None
-
-        if lmtime != _menu_layout_mtime:
-            _menu_layout_mtime = lmtime
-            if lmtime is not None:
-                lconf = _parse_startup_conf(LAYOUT_CONF_PATH)
-                try:
-                    uw = int(lconf.get("ui_width", 50))
-                except (ValueError, TypeError):
-                    uw = 50
-                if uw != _menu_ui_width:
-                    _menu_ui_width = uw
+                if _clock_time_period is not None or _clock_time_transition_at is not None:
+                    _clock_time_period        = None
+                    _clock_time_transition_at = None
+                    _clock_time_precision     = None
                     changed = True
 
         if changed:
             app.invalidate()
 
-        await asyncio.sleep(MENU_POLL_MS)
+        await asyncio.sleep(CLOCK_POLL_MS)
 
 
 # ---------------------------------------------------------------------------
@@ -725,20 +589,15 @@ def main():
         height=1,
     )
 
-    menu_window = Window(
-        content=FormattedTextControl(text=_menu_text, focusable=False),
-        width=MENU_WIDTH,
+    clock_window = Window(
+        content=FormattedTextControl(text=_clock_text, focusable=False),
+        width=CLOCK_WIDTH,
         height=1,
-    )
-
-    menu_container = ConditionalContainer(
-        content=menu_window,
-        filter=Condition(_menu_visible),
     )
 
     layout = Layout(
         HSplit([
-            VSplit([input_window, menu_container]),
+            VSplit([input_window, clock_window]),
         ])
     )
 
@@ -752,7 +611,7 @@ def main():
     )
 
     async def _run():
-        poll_task  = asyncio.ensure_future(_poll_menu(app))
+        poll_task  = asyncio.ensure_future(_poll_clock(app))
         clock_task = asyncio.ensure_future(_clock_tick(app))
         try:
             await app.run_async()

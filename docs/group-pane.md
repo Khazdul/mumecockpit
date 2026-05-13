@@ -196,7 +196,6 @@ are on (`cp -h`).
 | Method                  | Mechanism                                        |
 |-------------------------|--------------------------------------------------|
 | `cp -g`                 | `toggle_pane.sh group --persist`                 |
-| GRP button              | `toggle_pane.sh group --persist`                 |
 | Launcher Options        | `_save_conf` → `startup.conf show_group`         |
 | In-game popup → Options | `toggle_pane.sh group --persist`                 |
 

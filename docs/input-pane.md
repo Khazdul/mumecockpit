@@ -219,83 +219,52 @@ not trigger EOFError).
   `docs/tmux-bindings.md` — macOS Terminal.app does not support OSC 52.
   Ctrl+C / Ctrl+X will not reach the system clipboard on that terminal.
 
-## Menu bar
+## Clock strip
 
-A 31-column clickable menu bar occupies the right end of the input pane's
+A 7-column right-aligned clock occupies the rightmost end of the input pane's
 single row, sharing it with the input buffer. The input buffer takes all
-remaining width; the menu strip is a fixed-width `VSplit` sibling.
+remaining width; the clock strip is a fixed-width `VSplit` sibling.
 
 ### Layout
 
-`bridge/panes/input_pane.py` restructures the Application layout to:
+`bridge/panes/input_pane.py` structures the Application layout as:
 
 ```
 HSplit([
     VSplit([
         input_window,    # flex width — prompt_toolkit BufferControl
-        menu_window,     # fixed width = 31 cols, FormattedTextControl
+        clock_window,    # fixed width = 7 cols, FormattedTextControl
     ]),
 ])
 ```
 
-`mouse_support=True` is set on the Application. Clicking inside the input area
-positions the cursor (consistent with `comm_pane`). Focus never leaves the
-input buffer — `menu_window` is not focusable.
+`mouse_support=True` is set on the Application — required for cursor
+positioning inside the input buffer (consistent with `comm_pane`). Focus
+never leaves the input buffer — `clock_window` is not focusable.
+
+The clock is rendered at every terminal width; there is no width-dependent
+visibility gate.
 
 ### Visual layout
 
 ```
-█CHR▌█BUF▌█GRP▌█COM▌█UI█ 4:33 ☼
+> <input flex…> 4:33☼
 ```
 
 | Segment | Cols | Notes |
 |---------|------|-------|
-| `█CHR▌` | 5 | CHR button (status pane) |
-| `█BUF▌` | 5 | BUF button (buffs pane) |
-| `█GRP▌` | 5 | GRP button (group pane) |
-| `█COM▌` | 5 | COM button (comm pane) |
-| `█UI█` | 4 | UI button (full-block right edge) |
-| ` ` | 1 | separator |
-| `<time> <icon>` | 6 | clock (see below) |
+| ` ` | 1 | leading gutter |
+| `<time>` | 5 | left-aligned time text, blank when unavailable |
+| `<icon>` | 1 | day/night icon, blank when unavailable |
 
-Total: 31 columns. The leading `█` of each button and the trailing `▌`/`█`
-are rendered in the button's background colour so they blend visually.
-
-| State | Background | Foreground |
-|-------|------------|------------|
-| ON  | `#002832` (0,40,50) | `#C0C0C0` |
-| OFF | `#001E28` (0,30,40) | `#585858` |
-
-### Click semantics
-
-| Button | Pane target | On click |
-|--------|-------------|----------|
-| CHR    | `status`    | `toggle_pane.sh status --persist` |
-| BUF    | `buffs`     | `toggle_pane.sh buffs --persist`  |
-| GRP    | `group`     | `toggle_pane.sh group --persist`  |
-| COM    | `comm`      | `toggle_pane.sh comm --persist`   |
-| UI     | `ui`        | `toggle_pane.sh ui --persist`     |
-
-Clicks use `MouseEventType.MOUSE_DOWN` and `subprocess.Popen` (fire-and-
-forget). The button state updates within ≤ 250 ms via the polling path.
-
-Each button's full visible region — the leading `█`, the label characters,
-and the trailing `▌` or `█` — is clickable. The click handler is attached to
-every fragment in the button so users don't need to target the label exactly.
-
-### Persistence source
-
-Button toggle state is read from `bridge/runtime/startup.conf` keys `show_status`,
-`show_buffs`, `show_group`, `show_comm`, and `show_ui`. The file is polled every
-250 ms via mtime comparison; toggling via the popup Options menu (which also writes
-`startup.conf` via `toggle_pane.sh --persist`) is therefore reflected in the
-menu bar within one poll tick. The two surfaces are siblings — they share the
-same persistence file with no other synchronisation needed.
+Total: 7 columns. When any of `time_period`, `time_transition_at`, or
+`time_precision` is null, the clock strip renders as the 1-col gutter
+followed by six blank spaces (matching the time+icon slot width).
 
 ### Clock
 
-The clock segment (rightmost 6 columns) renders the time remaining until the
-next day/night transition, sourced from `bridge/runtime/status.state`:
+The clock renders the time remaining until the next day/night transition,
+sourced from `bridge/runtime/status.state`:
 
 | Field | Key in `status.state` |
 |-------|----------------------|
@@ -311,11 +280,10 @@ locally and formats per precision:
 | `"MINUTE"` | `total_min:sec` → `"H:MM"` | `"4:33"`, `"0:05"` |
 | `"HOUR"` | `"~N"` (N = max(1, ceil(remaining/60))) | `"~3"` |
 
-Format: `<text><icon>`, with the icon pinned to the rightmost column and
-`text` left-aligned in the preceding 5 columns, right-padded with spaces.
-E.g. `4:33 ☼` or `15:21☼`. Time text is bold white. The sun icon (☼) is
-rendered in `#ffb000`; the moon icon (☾) in `#4a90e2` — matching the status
-pane's Time row colours.
+The icon is pinned to the rightmost column and `text` is left-aligned in the
+preceding 5 columns, right-padded with spaces. E.g. `4:33 ☼` or `15:21☼`.
+Time text is bold white. The sun icon (☼) is rendered in `#ffb000`; the
+moon icon (☾) in `#4a90e2` — matching the status pane's Time row colours.
 
 When any of `time_period`, `time_transition_at`, or `time_precision` is null
 (precision below HOUR), or when `status.state` is missing or unreadable, the
@@ -323,38 +291,16 @@ clock area renders as six blank spaces. No partial value or lone icon is shown.
 
 The renderer runs two asyncio tasks for clock updates:
 
-- **`_poll_menu`** (250 ms mtime-based) — picks up changes to `time_transition_at`
-  (rare: only on day/night flips or precision upgrades) and all other menu fields.
+- **`_poll_clock`** (250 ms mtime-based) — picks up changes to
+  `time_transition_at` (rare: only on day/night flips or precision upgrades).
 - **`_clock_tick`** (boundary-aligned 1 Hz) — wakes just after each wall-clock
   second boundary and calls `app.invalidate()`, so the countdown decrements at
   uniform cadence regardless of file-poll phase. Same pattern as the buffs blink
   tick in `bridge/panes/buffs_pane.py` (see [docs/buffs-pane.md](buffs-pane.md)).
 
-### Visibility
-
-The menu bar is hidden when the terminal is too narrow to host the right
-column, mirroring the collapse threshold in `bridge/layout/on_window_resize.sh`.
-The menu is visible iff:
-
-```
-available_right = window_cols - MAIN_MIN - 1
-visible         = available_right >= ui_width
-```
-
-Where:
-- `MAIN_MIN = 30` — main/tt++ pane floor (duplicated from `on_window_resize.sh`)
-- `ui_width` — read from `bridge/runtime/layout.conf`; fallback 50 if missing
-- `window_cols` — read live via `os.get_terminal_size().columns`
-
-The `ConditionalContainer` filter evaluates on every redraw. prompt_toolkit
-handles `SIGWINCH` internally and triggers redraws on terminal resize, so no
-explicit signal handler is needed for visibility evaluation. The menu width
-reduction from 36 to 31 columns means the menu fits comfortably at any default
-`ui_width`.
-
-See [ADR 0031](decisions/0031-input-menu-width-threshold.md) for the
-formula-duplication trade-off and [ADR 0038](decisions/0038-drop-right-column-width-floor.md)
-for why the status-branch threshold was removed.
+See [ADR 0067](decisions/0067-remove-input-pane-buttons.md) for the
+removal of the prior CHR/BUF/GRP/COM/UI button strip. Pane toggles are
+covered by the popup Options menu and the `cp -X` aliases.
 
 ---
 Back to [architecture.md](../architecture.md).

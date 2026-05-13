@@ -244,17 +244,12 @@ vertical order.
 | Method                  | Mechanism                                        |
 |-------------------------|--------------------------------------------------|
 | `cp -b`                 | `toggle_pane.sh buffs --persist`                 |
-| BUFFS button            | `toggle_pane.sh buffs --persist`                 |
 | Launcher Options        | `_save_conf` → `startup.conf show_buffs`         |
 | In-game popup → Options | `toggle_pane.sh buffs --persist`                 |
 
 Persistence key: `show_buffs` in `bridge/runtime/startup.conf`. Fresh-install default
 is `0` (pane closed). Existing installs without the key fall through to the
 `${show_buffs:-0}` runtime guard — no change on upgrade.
-
-The BUFFS button in the input-pane menu bar reflects the current pane state
-(ON / OFF colour). Button state is polled from `startup.conf` every 250 ms
-via mtime comparison — the same path as the other menu buttons.
 
 ## Pane title and border
 
