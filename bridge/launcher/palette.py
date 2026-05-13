@@ -6,7 +6,7 @@
 __all__ = [
     "C_TITLE", "C_ACTIVE", "C_ITEM", "C_BODY", "C_HINT", "C_ACCENT",
     "C_YELLOW", "C_ERR",
-    "C_QUOTE", "C_QUOTE_ATTR", "C_HOVER", "C_HOVER_TITLE",
+    "C_QUOTE", "C_QUOTE_ATTR", "C_HOVER",
     "C_HEADER", "C_SECTION", "C_DIVIDER",
     "_S_VALUE", "_S_LABEL", "_S_GAINED", "_S_LOSS", "_S_TP_BAR",
     "_S_TRACK", "_S_MARKER", "_S_THUMB", "_S_TOTAL", "_S_ARROW",
@@ -29,8 +29,6 @@ C_ERR     = "bold fg:#ff5f5f"   # _MR_ERR
 C_QUOTE      = "italic fg:#8a8a8a"  # _MR_QUOTE      — italic, colour 245
 C_QUOTE_ATTR = "fg:#87af87"         # _MR_QUOTE_ATTR — sage green, colour 108
 C_HOVER      = "fg:#dadada"         # between C_ITEM and C_ACTIVE — mouse hover
-C_HOVER_TITLE = "bold fg:#5fffff"   # between C_TITLE and C_ACTIVE
-                                    # — hover variant for title/section cells
 
 # ---------------------------------------------------------------------------
 # Statistics-frame palette (mockup-driven; isolated from the other frames so

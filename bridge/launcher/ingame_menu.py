@@ -119,7 +119,6 @@ _achievements_sb   = None
 # a new frame updates it immediately so the stale value is invisible.
 _hover_main        = -1
 _hover_options     = -1
-_stats_hover_sort  = None       # (table_idx, col) for the hovered sort-header cell
 
 
 # ---------------------------------------------------------------------------
@@ -323,24 +322,6 @@ def _row_style(is_active, is_hovered, inactive_style=C_ITEM):
     if is_hovered:
         return C_HOVER
     return inactive_style
-
-
-def _set_stats_hover_sort(key):
-    global _stats_hover_sort
-    if _stats_hover_sort != key:
-        _stats_hover_sort = key
-        if _app:
-            _app.invalidate()
-
-
-def _sort_cell_style(table_idx, col, table_active):
-    # Hover override only when the table is not focused (focused → already
-    # C_ACTIVE, which is brighter than the hover tint).
-    if table_active:
-        return C_ACTIVE
-    if _stats_hover_sort == (table_idx, col):
-        return C_HOVER_TITLE
-    return C_SECTION
 
 
 # ---------------------------------------------------------------------------
@@ -1309,9 +1290,6 @@ def _toggle_sort(state_tuple, col):
 
 def _make_kill_header_handler(col):
     def _h(ev):
-        if ev.event_type == MouseEventType.MOUSE_MOVE:
-            _set_stats_hover_sort((0, col))
-            return
         if ev.event_type != MouseEventType.MOUSE_DOWN:
             return
         global _stats_kills_sort, _stats_focused
@@ -1325,9 +1303,6 @@ def _make_kill_header_handler(col):
 
 def _make_pkill_header_handler(col):
     def _h(ev):
-        if ev.event_type == MouseEventType.MOUSE_MOVE:
-            _set_stats_hover_sort((1, col))
-            return
         if ev.event_type != MouseEventType.MOUSE_DOWN:
             return
         global _stats_pkills_sort, _stats_focused
@@ -1425,13 +1400,13 @@ def _append_kills_pvps(frags, stats, cols, visible):
 
     k_active = (_stats_focused == 0)
     p_active = (_stats_focused == 1)
+    k_style  = C_ACTIVE if k_active else C_SECTION
+    p_style  = C_ACTIVE if p_active else C_SECTION
 
     # Merged title row: section name in the name-column slot (clickable to
     # sort by name), then N / XP/N / XP tot (or N / XP) in their data-column
-    # positions. When the table is focused the row paints en bloc in
-    # C_ACTIVE. When unfocused, each cell decides its own style via
-    # _sort_cell_style so a hovered cell can tint to C_HOVER_TITLE without
-    # affecting its neighbours.
+    # positions. The entire row paints en bloc in k_style / p_style; the
+    # active sort indicator just changes the glyph after the label.
     k_title = _header_label("KILLS", sort_col_k  == "Mob",    sort_dir_k,  "left", k_name_col)
     p_title = _header_label("PvPs",  sort_col_pk == "Player", sort_dir_pk, "left", p_name_col)
 
@@ -1446,22 +1421,20 @@ def _append_kills_pvps(frags, stats, cols, visible):
     ]
 
     frags.append(("", pad))
-    frags.append((_sort_cell_style(0, "Mob", k_active), k_title, _make_kill_header_handler("Mob")))
+    frags.append((k_style, k_title, _make_kill_header_handler("Mob")))
     for col, align, w in k_data_cols:
         h     = _make_kill_header_handler(col)
         label = _header_label(col, col == sort_col_k, sort_dir_k, align, w)
-        cell  = _sort_cell_style(0, col, k_active)
-        frags.append((cell, " ", h))
-        frags.append((cell, label, h))
+        frags.append((k_style, " ", h))
+        frags.append((k_style, label, h))
     frags.append(("", " "))
     frags.append(("", gap))
-    frags.append((_sort_cell_style(1, "Player", p_active), p_title, _make_pkill_header_handler("Player")))
+    frags.append((p_style, p_title, _make_pkill_header_handler("Player")))
     for col, align, w in p_data_cols:
         h     = _make_pkill_header_handler(col)
         label = _header_label(col, col == sort_col_pk, sort_dir_pk, align, w)
-        cell  = _sort_cell_style(1, col, p_active)
-        frags.append((cell, " ", h))
-        frags.append((cell, label, h))
+        frags.append((p_style, " ", h))
+        frags.append((p_style, label, h))
     frags.append(("", " "))
     frags.append(("", "\n"))
 
