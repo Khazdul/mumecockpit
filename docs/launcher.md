@@ -54,6 +54,135 @@ reference; see `bridge/launcher/ingame_menu.py` for the same patterns.
 | Quit | Confirmation prompt; ESC cancels |
 | Persistence | Options saved to `bridge/runtime/startup.conf` on Back / ESC; profile selection saved immediately on Enter |
 
+## History sub-menu
+
+Two frames: `history` (list) and `history_detail` (per-session
+view). Opened from the main-menu entry "History", inserted between
+"Profile" and "Options". Data is read by
+`bridge/launcher/run_stats.py` — see ADR 0065 for the aggregator,
+ADR 0056 for the stitching primitive.
+
+### `history` frame
+
+Horizontally-centred two-column body:
+
+- **Left sidebar.** First row is the literal `Filter` header
+  (focus-coloured: `C_ACTIVE` when the sidebar is focused,
+  `C_SECTION` otherwise). Below the header: `All`, then one row
+  per character returned by `list_characters_with_runs()`,
+  alphabetical. Characters without sealed JSONLs are excluded.
+  Sidebar width is recomputed on every render from
+  `max(len("Filter"), len("All"), max character-name length) + 2`.
+- **Right table, sortable.** Columns: Char · Date · Time · Dur. ·
+  PK · XP. The header row is click-to-sort; an active column
+  shows ` ▲` / ` ▼` after its label. Default sort `Char asc` with
+  `start_ts desc` as the stable secondary key, so within a tied
+  primary key, newest sessions appear first.
+
+Each row is a stitched chain (one session). Stitching uses the
+default `max_gap_seconds = 3600` from `list_sessions()`. The live
+`current.jsonl` is never listed; only sealed JSONLs.
+
+XP gain is rendered in `_S_GAINED` for positive, `_S_LOSS` for
+negative, `_S_LABEL` for zero or sub-1k magnitudes.
+
+**Focus.** One focusable Window per the focus-on-push contract
+(ADR 0066). `_history_focused: int` routes navigation
+(0 = sidebar, 1 = table). Tab cycles. Each panel header paints
+`C_ACTIVE` when focused, `C_SECTION` otherwise.
+
+**Cursor and hover.** The cursor row in each panel paints
+`C_SELECTED` (black on light grey) in all focus states. Hover
+paints `C_HOVER` on non-cursor rows; hover never overrides
+`C_SELECTED`. Hover clears on `MOUSE_MOVE` over any non-row
+fragment (title, footer, gap, padding, scrollbar track) via a
+per-frame `_hover_at(panel, idx)` helper.
+
+**Keyboard.** Tab / Shift+Tab cycles focus; ↑ / ↓ moves cursor
+(sidebar wraps; table clamps); PgUp / PgDn scrolls by 10;
+Home / End jumps to ends; Enter activates (sidebar: apply filter;
+table: push `history_detail`); ESC pops to main.
+
+**Filter behaviour.** Selecting a sidebar row is immediate
+(cursor equals selection). Filter resets to `All` on every frame
+push. Filter change resets table scroll and cursor to 0; sort
+state is preserved.
+
+**Mouse.** Click activates; wheel scrolls the panel under the
+cursor (`FormattedTextControl` subclass overriding `mouse_handler`,
+same pattern as the popup's `_ScrollControl`); two click-to-jump
+scrollbars use `bridge/launcher/widgets/scrollbar.py`.
+
+**Empty state.** No characters with archived runs → table area
+renders `"No runs recorded yet."` centred; sidebar shows only
+`All`.
+
+### `history_detail` frame
+
+Per-session statistics view. Opened by activating a row in
+`history` (click or Enter). Data is aggregated on push via
+`aggregate(character, summary.run_ids)` and stashed in
+module-level state; the chain is already in `summary.run_ids`,
+so no extra walk.
+
+**Layout** (top to bottom): header line + WATCH LOG button ·
+blank · ALLIES + ACHIEVEMENTS · blank · KILLS + PvPs · blank ·
+sparklines (XP/h + TP/h) · blank · XP-linjal · blank · footer.
+
+**Header.** `◆ Session detail — <Char> · <Date> · <Time> ·
+<Dur.>` centred in `C_HEADER`. The WATCH LOG button is
+right-aligned to the right edge of the table block underneath
+(not the terminal edge), so the button and the tables read as
+one column.
+
+**WATCH LOG.** Appears iff `summary.has_log` is `True`; hidden
+entirely otherwise. Styled `C_WATCH_LOG` idle, `C_WATCH_LOG_HOVER`
+on hover. Both the mouse click handler and the `L` keyboard
+shortcut are no-ops in v1; Phase 3 (a new launcher frame for log
+playback) will wire them. The footer hint segment `L Watch log`
+appears under the same `has_log` condition.
+
+**Section parity with popup Statistics.** ALLIES (`♦` in
+`_S_ALLY`), ACHIEVEMENTS (`★` in `_S_STAR`), KILLS (sortable),
+PvPs (sortable, `⚔` in `_S_PVP`), sparklines, and XP-linjal
+mirror the popup's visual conventions. Sort defaults, focus
+cycling (Tab / Shift+Tab across the four tables,
+`_history_detail_focused: int`), per-table scrollbars, and the
+data-row glyph palette are identical.
+
+**Differences from the popup.**
+
+- **Data-fit KILLS/PvPs sizing.** The section renders
+  `min(max(kills_count, pkills_count), max_available)` data rows;
+  the Total row sits directly under the last data row instead of
+  pinning to the bottom. Sparklines, XP-linjalen, and the footer
+  rise to fill the freed space; any leftover slack lives between
+  the XP-linjal and the footer.
+- **Total per side is hidden when that side's count is 0.** The
+  opposite side's Total still renders if its count > 0; the empty
+  side pads with a blank row so sparkline alignment is preserved.
+- **Row hover on data tables.** ALLIES / ACHIEVEMENTS / KILLS /
+  PvPs data rows paint `C_ROW_HOVER` (a background fill that
+  composes with each cell's foreground colour) under the cursor.
+  The popup intentionally has no row hover.
+
+**Rendering source.** `launcher.py`'s history_detail rendering is
+fresh-written rather than shared with the in-game popup's
+Statistics frame. The two surfaces have different hosts and
+different use cases; the duplication is accepted as recorded
+technical debt. Conditions under which consolidation might later
+become worth doing (Phase 3 Log Player reuse; schema change
+forcing double work; layout overhaul) are recorded in
+[ADR 0073](decisions/0073-statistics-rendering-duplicated.md).
+
+**Footer.**
+
+```
+ESC Back     ↑↓ Scroll     Tab/Shift+Tab Switch table     L Watch log
+```
+
+The `L Watch log` segment is conditional on `has_log`.
+
 ## Rendering conventions
 
 All frames render through `prompt_toolkit` controls. Layout building blocks:
@@ -100,6 +229,10 @@ shared with the in-game popup. Roles:
 | `C_ACCENT`     | Call-to-action rows, script alias headings        |
 | `C_YELLOW`     | Warnings (non-fatal errors, can't-delete notices) |
 | `C_ERR`        | Hard errors                                       |
+| `C_SELECTED`        | History cursor row — black on light-grey background fill (sidebar active filter, table cursor row) |
+| `C_ROW_HOVER`       | History detail data-table row hover — subtle background fill that composes with cell foreground colours |
+| `C_WATCH_LOG`       | WATCH LOG button — black on accent background fill                                                  |
+| `C_WATCH_LOG_HOVER` | WATCH LOG button on hover — lighter accent background variant                                       |
 
 **Alignment convention (Profile / Options / Scripts pages).** Menu rows
 are left-aligned on a shared column inside a centred block. The widest
