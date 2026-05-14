@@ -2897,6 +2897,8 @@ def _history_detail_text():
 
     # --- Footer -----------------------------------------------------------
     footer = "ESC Back     ↑↓ Scroll     Tab/Shift+Tab Switch table"
+    if button_visible:
+        footer += "     L Watch log"
     frags.append(("", _pad_centre(footer, cols), clear))
     frags.append((_S_HINT, footer, clear))
     return frags
@@ -3448,6 +3450,18 @@ def _kb_hd_end(event):
     sb.scroll_to(10**9)
     if _app:
         _app.invalidate()
+
+
+# Gated on has_log: no log file → key is ignored, mirrors button visibility.
+_hd_has_log = Condition(
+    lambda: _history_detail_summary is not None
+    and bool(_history_detail_summary.has_log))
+
+
+@kb.add("l", filter=_in_frame("history_detail") & _hd_has_log)
+@kb.add("L", filter=_in_frame("history_detail") & _hd_has_log)
+def _kb_hd_watch_log(event):
+    pass
 
 
 # Update running — no input
