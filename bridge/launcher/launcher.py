@@ -35,8 +35,10 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from palette import (  # noqa: E402
     C_TITLE, C_ACTIVE, C_ITEM, C_BODY, C_HINT, C_ACCENT,
     C_YELLOW, C_ERR, C_QUOTE, C_QUOTE_ATTR, C_HOVER, C_SELECTED,
-    C_HEADER, C_SECTION, C_WATCH_LOG, C_WATCH_LOG_HOVER,
-    _S_GAINED, _S_LOSS, _S_LABEL, _S_VALUE,
+    C_HEADER, C_SECTION, C_DIVIDER, C_WATCH_LOG, C_WATCH_LOG_HOVER,
+    _S_GAINED, _S_LOSS, _S_LABEL, _S_VALUE, _S_TP_BAR,
+    _S_TRACK, _S_MARKER, _S_THUMB, _S_TOTAL, _S_ARROW,
+    _S_HINT, _S_PVP, _S_ALLY, _S_STAR,
 )
 import run_stats  # noqa: E402
 from widgets.scrollbar import Scrollbar  # noqa: E402
@@ -178,6 +180,15 @@ _history_table_sb        = None
 _history_detail_summary  = None      # SessionSummary pushed into the detail frame
 _history_detail_stats    = None      # aggregated RunStats for that summary
 _history_detail_log_hover = False    # WATCH LOG button hover flag
+# Statistics body — mirrors the popup's _stats_* state.
+_history_detail_kills_sort      = ("XP tot", "desc")
+_history_detail_pkills_sort     = ("XP", "desc")
+_history_detail_focused         = 0  # 0=KILLS, 1=PvPs, 2=ALLIES, 3=ACHIEVEMENTS
+_history_detail_kills_sb        = None
+_history_detail_pkills_sb       = None
+_history_detail_allies_sb       = None
+_history_detail_achievements_sb = None
+_history_detail_kills_pvps_visible = 2  # last computed visible row count
 _history_columns = [
     # (key, base_label, width, align, type)
     ("Char",   "Char",  None, "left",  "text"),
@@ -1718,6 +1729,8 @@ def _history_activate_table_row(idx):
     """Move cursor to idx, aggregate the chain, push history_detail."""
     global _history_table_cursor
     global _history_detail_summary, _history_detail_stats, _history_detail_log_hover
+    global _history_detail_kills_sort, _history_detail_pkills_sort
+    global _history_detail_focused
     if idx < 0 or idx >= len(_history_sessions):
         return
     _history_table_cursor = idx
@@ -1726,9 +1739,16 @@ def _history_activate_table_row(idx):
         stats = run_stats.aggregate(summary.character, summary.run_ids)
     except Exception:
         stats = None
-    _history_detail_summary   = summary
-    _history_detail_stats     = stats
-    _history_detail_log_hover = False
+    _history_detail_summary    = summary
+    _history_detail_stats      = stats
+    _history_detail_log_hover  = False
+    _history_detail_kills_sort  = ("XP tot", "desc")
+    _history_detail_pkills_sort = ("XP", "desc")
+    _history_detail_focused     = 0
+    _hd_ensure_scrollbars()
+    for sb in (_history_detail_kills_sb, _history_detail_pkills_sb,
+               _history_detail_allies_sb, _history_detail_achievements_sb):
+        sb.scroll_to(0)
     _push_frame("history_detail")
 
 
@@ -1991,15 +2011,6 @@ def _hd_fmt_ts(ts, fmt):
         return ""
 
 
-def _hd_fmt_signed(v):
-    v = int(v)
-    if v > 0:
-        return f"+{v}"
-    if v < 0:
-        return str(v)
-    return "0"
-
-
 def _hd_watch_log_handler(ev):
     """WATCH LOG button — MOUSE_MOVE sets hover; MOUSE_DOWN is a no-op in v1
     (Phase 3 will wire it to the log player)."""
@@ -2013,6 +2024,803 @@ def _hd_watch_log_handler(ev):
     if ev.event_type == MouseEventType.MOUSE_DOWN:
         return None
     return NotImplemented
+
+
+# --- Statistics body — adapted from ingame_menu.py (see spec) -------------
+_HD_STAT_BAR_WIDTH       = 84
+_HD_STAT_Y_LABEL_W       = 5
+_HD_STAT_TABLE_LEFT_W    = 40
+_HD_STAT_TABLE_RIGHT_W   = 40
+_HD_STAT_TABLE_GAP       = "  "
+_HD_STAT_BLOCKS          = "▁▂▃▄▅▆▇█"
+
+# ALLIES + ACHIEVEMENTS show a fixed 3 rows each. KILLS + PvPs auto-fit the
+# available frame height (see _hd_compute_kills_pvps_visible) with a 2-row min.
+_HD_ALLIES_ACH_VISIBLE      = 3
+_HD_KILLS_PVPS_MIN_VISIBLE  = 2
+# Fixed lines around the kills/pvps data rows in _history_detail_text:
+# 1 leading "\n" + 1 header row + 1 blank + 5 A/A (title+div+3) + 1 blank
+# + 3 KP fixed (title+div+total) + 1 blank + 7 sparklines + 1 blank
+# + 4 xp-linjal + 1 blank + 1 footer = 27.
+_HD_STATS_FIXED_LINES       = 27
+
+
+def _hd_compute_kills_pvps_visible():
+    available = _term_rows() - _HD_STATS_FIXED_LINES
+    return max(_HD_KILLS_PVPS_MIN_VISIBLE, available)
+
+
+def _hd_ensure_scrollbars():
+    global _history_detail_kills_sb, _history_detail_pkills_sb
+    global _history_detail_allies_sb, _history_detail_achievements_sb
+    if _history_detail_kills_sb is None:
+        _history_detail_kills_sb        = Scrollbar(
+            0, _HD_KILLS_PVPS_MIN_VISIBLE, _HD_KILLS_PVPS_MIN_VISIBLE,
+            thumb_style=_S_THUMB, track_style=_S_TRACK)
+        _history_detail_pkills_sb       = Scrollbar(
+            0, _HD_KILLS_PVPS_MIN_VISIBLE, _HD_KILLS_PVPS_MIN_VISIBLE,
+            thumb_style=_S_THUMB, track_style=_S_TRACK)
+        _history_detail_allies_sb       = Scrollbar(
+            0, _HD_ALLIES_ACH_VISIBLE, _HD_ALLIES_ACH_VISIBLE,
+            thumb_style=_S_THUMB, track_style=_S_TRACK)
+        _history_detail_achievements_sb = Scrollbar(
+            0, _HD_ALLIES_ACH_VISIBLE, _HD_ALLIES_ACH_VISIBLE,
+            thumb_style=_S_THUMB, track_style=_S_TRACK)
+
+
+def _hd_refresh_scrollbars(stats, visible):
+    global _history_detail_kills_pvps_visible
+    if _history_detail_kills_sb is None or stats is None:
+        return
+    _history_detail_kills_pvps_visible = visible
+    _history_detail_kills_sb.update(len(stats.kills),  visible, height=visible)
+    _history_detail_pkills_sb.update(len(stats.pkills), visible, height=visible)
+    _history_detail_allies_sb.update(len(stats.allies),
+                                     _HD_ALLIES_ACH_VISIBLE,
+                                     height=_HD_ALLIES_ACH_VISIBLE)
+    _history_detail_achievements_sb.update(len(stats.achievements),
+                                           _HD_ALLIES_ACH_VISIBLE,
+                                           height=_HD_ALLIES_ACH_VISIBLE)
+
+
+def _hd_focused_scrollbar():
+    return (_history_detail_kills_sb,
+            _history_detail_pkills_sb,
+            _history_detail_allies_sb,
+            _history_detail_achievements_sb)[_history_detail_focused]
+
+
+def _hd_focused_visible_count():
+    if _history_detail_focused < 2:
+        return _history_detail_kills_pvps_visible
+    return _HD_ALLIES_ACH_VISIBLE
+
+
+def _hd_set_focus(idx):
+    global _history_detail_focused
+    if _history_detail_focused == idx:
+        return
+    _history_detail_focused = idx
+    if _app:
+        _app.invalidate()
+
+
+# Cumulative career-XP thresholds, indexed by level - 1. Mirror of
+# lua/core/level_progress.lua's TABLE_XP; keep in sync.
+# stylua: ignore
+_HD_TABLE_XP = [
+         1,      1000,      3000,      7000,     15000,     30000,     60000,    105000,    165000,    240000,  # 1-10
+    330000,    435000,    555000,    690000,    840000,   1040000,   1290000,   1590000,   1940000,   2340000,  # 11-20
+   2790000,   3290000,   3840000,   4440000,   5090000,   5790000,   6540000,   7340000,   8190000,   9090000,  # 21-30
+  10040000,  11040000,  12090000,  13190000,  14290000,  15390000,  16640000,  17890000,  19145000,  20400000,  # 31-40
+  21700000,  23050000,  24400000,  25750000,  27150000,  28550000,  30000000,  31500000,  33000000,  34550000,  # 41-50
+  36150000,  37750000,  39400000,  41100000,  42850000,  44600000,  46400000,  48250000,  50000000,  52000000,  # 51-60
+  54000000,  56000000,  58000000,  60000000,  62000000,  64000000,  66500000,  68500000,  71000000,  73000000,  # 61-70
+  75500000,  77500000,  80000000,  82500000,  85000000,  87500000,  90000000,  92500000,  95000000,  97500000,  # 71-80
+ 100500000, 103000000, 106000000, 108500000, 111500000, 114000000, 117000000, 120000000, 123000000, 126000000,  # 81-90
+ 129000000, 132000000, 135000000, 138000000, 141500000, 144500000, 148000000, 151000000, 154500000, 158000000,  # 91-100
+]
+
+
+def _hd_level_threshold(level):
+    if level <= 1:
+        return _HD_TABLE_XP[0]
+    if level >= 100:
+        return _HD_TABLE_XP[99]
+    return _HD_TABLE_XP[level - 1]
+
+
+def _hd_level_from_xp(xp):
+    if xp <= 0:
+        return 1
+    L = 1
+    while L < 100 and xp >= _HD_TABLE_XP[L]:
+        L += 1
+    return L
+
+
+def _hd_xp_to_bar_col(xp, min_lv, hi_lv, bar_w):
+    span = max(1, hi_lv - min_lv)
+    if xp <= _hd_level_threshold(min_lv):
+        return 0
+    if xp >= _hd_level_threshold(hi_lv):
+        return bar_w
+    L = min_lv
+    while L < hi_lv - 1 and xp >= _hd_level_threshold(L + 1):
+        L += 1
+    lo = _hd_level_threshold(L)
+    hi = _hd_level_threshold(L + 1)
+    frac = (xp - lo) / (hi - lo) if hi > lo else 0.0
+    frac = max(0.0, min(1.0, frac))
+    level_pos = (L - min_lv) + frac
+    return max(0, min(bar_w, int(round(level_pos / span * bar_w))))
+
+
+def _hd_fmt_xp_short(n):
+    try:
+        n = int(n)
+    except (TypeError, ValueError):
+        return "0"
+    if n < 1000:
+        return str(n)
+    if n < 10000:
+        return f"{n / 1000:.1f}k"
+    return f"{n // 1000}k"
+
+
+def _hd_fmt_duration_hms(secs):
+    secs = max(0, int(secs))
+    h, rem = divmod(secs, 3600)
+    m, s   = divmod(rem, 60)
+    return f"{h:02d}:{m:02d}:{s:02d}"
+
+
+def _hd_bucket_event_sums(events, n_buckets, start_ts, end_ts):
+    if n_buckets <= 0 or end_ts <= start_ts:
+        return [0] * max(0, n_buckets)
+    bucket_dur = (end_ts - start_ts) / n_buckets
+    if bucket_dur <= 0:
+        return [0] * n_buckets
+    buckets = [0] * n_buckets
+    for ts, val in events:
+        if ts < start_ts or ts > end_ts:
+            continue
+        idx = int((ts - start_ts) / bucket_dur)
+        if idx >= n_buckets:
+            idx = n_buckets - 1
+        buckets[idx] += val
+    return buckets
+
+
+def _hd_sparkline_rows(values, max_val, rows=3, levels_per_row=8):
+    n = len(values)
+    if rows <= 0 or n == 0:
+        return [""] * max(0, rows)
+    total = rows * levels_per_row
+    if max_val <= 0:
+        cells = [0] * n
+    else:
+        cells = [
+            min(total, max(0, int(round(v / max_val * total))))
+            for v in values
+        ]
+    out = []
+    for r in range(rows - 1, -1, -1):
+        line = []
+        for c in cells:
+            sub = c - r * levels_per_row
+            if sub <= 0:
+                line.append(" ")
+            elif sub >= levels_per_row:
+                line.append("█")
+            else:
+                line.append(_HD_STAT_BLOCKS[sub - 1])
+        out.append("".join(line))
+    return out
+
+
+def _hd_format_kill_row(name, n, xp_per, xp_tot, width):
+    n_col      = 3
+    xp_per_col = 7
+    xp_tot_col = 9
+    name_col   = max(1, width - n_col - xp_per_col - xp_tot_col - 3)
+    if len(name) > name_col:
+        name = name[:name_col - 1] + "…"
+    return (
+        f"{name.ljust(name_col)} "
+        f"{n.rjust(n_col)} "
+        f"{xp_per.rjust(xp_per_col)} "
+        f"{xp_tot.rjust(xp_tot_col)}"
+    )
+
+
+def _hd_format_pkill_row(name, n, xp, width):
+    n_col    = 3
+    xp_col   = 9
+    name_col = max(1, width - n_col - xp_col - 2)
+    if len(name) > name_col:
+        name = name[:name_col - 1] + "…"
+    return f"{name.ljust(name_col)} {n.rjust(n_col)} {xp.rjust(xp_col)}"
+
+
+def _hd_default_sort_dir(col):
+    return "asc" if col in ("Mob", "Player") else "desc"
+
+
+def _hd_toggle_sort(state_tuple, col):
+    cur_col, cur_dir = state_tuple
+    if col == cur_col:
+        return (col, "asc" if cur_dir == "desc" else "desc")
+    return (col, _hd_default_sort_dir(col))
+
+
+def _hd_sorted_kills_items(kills_dict, sort_col, sort_dir):
+    keys = {
+        "Mob":    lambda kv: kv[0].lower(),
+        "N":      lambda kv: kv[1].count,
+        "XP/N":   lambda kv: (kv[1].total_xp // kv[1].count) if kv[1].count else 0,
+        "XP tot": lambda kv: kv[1].total_xp,
+    }
+    items = list(kills_dict.items())
+    items.sort(key=keys.get(sort_col, keys["XP tot"]),
+               reverse=(sort_dir == "desc"))
+    return items
+
+
+def _hd_sorted_pkills_items(pkills_dict, sort_col, sort_dir):
+    keys = {
+        "Player": lambda kv: kv[0].lower(),
+        "N":      lambda kv: kv[1].count,
+        "XP":     lambda kv: kv[1].total_xp,
+    }
+    items = list(pkills_dict.items())
+    items.sort(key=keys.get(sort_col, keys["XP"]),
+               reverse=(sort_dir == "desc"))
+    return items
+
+
+def _hd_header_label(base, is_active, sort_dir, align, width):
+    txt = base
+    if is_active:
+        txt += " ▼" if sort_dir == "desc" else " ▲"
+    if align == "left":
+        return txt[:width].ljust(width)
+    return txt[:width].rjust(width)
+
+
+def _hd_make_focus_handler(idx):
+    """Cell handler: MOUSE_DOWN → set focus; wheel → scroll this table.
+    Other events → NotImplemented so MOUSE_MOVE bubbles to the hover-clear
+    wrapper applied at the end of _history_detail_text."""
+    def _handler(ev):
+        if ev.event_type == MouseEventType.MOUSE_DOWN:
+            _hd_set_focus(idx)
+            return None
+        if ev.event_type == MouseEventType.SCROLL_UP:
+            sb = (_history_detail_kills_sb,
+                  _history_detail_pkills_sb,
+                  _history_detail_allies_sb,
+                  _history_detail_achievements_sb)[idx]
+            if sb is not None:
+                sb.scroll_by(-1)
+                if _app:
+                    _app.invalidate()
+            return None
+        if ev.event_type == MouseEventType.SCROLL_DOWN:
+            sb = (_history_detail_kills_sb,
+                  _history_detail_pkills_sb,
+                  _history_detail_allies_sb,
+                  _history_detail_achievements_sb)[idx]
+            if sb is not None:
+                sb.scroll_by(1)
+                if _app:
+                    _app.invalidate()
+            return None
+        return NotImplemented
+    return _handler
+
+
+def _hd_scrollbar_row_cells(sb, table_idx):
+    """Render `sb` and return one fragment per row (newlines stripped).
+    Wraps each handler so a click also moves keyboard focus to this table.
+    Wheel events scroll this table."""
+    out = []
+    focus_handler = _hd_make_focus_handler(table_idx)
+    for f in sb.render():
+        if len(f) >= 2 and f[1] == "\n":
+            continue
+        if len(f) == 3:
+            style, text, orig = f
+
+            def _wrapped(ev, orig=orig, idx=table_idx):
+                if ev.event_type == MouseEventType.MOUSE_DOWN:
+                    _hd_set_focus(idx)
+                    return orig(ev)
+                if ev.event_type in (MouseEventType.SCROLL_UP,
+                                     MouseEventType.SCROLL_DOWN):
+                    return _hd_make_focus_handler(idx)(ev)
+                return NotImplemented
+
+            out.append((style, text, _wrapped))
+        else:
+            style, text = f[0], f[1]
+            out.append((style, text, focus_handler))
+    return out
+
+
+def _hd_make_kill_header_handler(col):
+    def _h(ev):
+        if ev.event_type != MouseEventType.MOUSE_DOWN:
+            return _hd_make_focus_handler(0)(ev)
+        global _history_detail_kills_sort
+        _hd_set_focus(0)
+        _history_detail_kills_sort = _hd_toggle_sort(
+            _history_detail_kills_sort, col)
+        if _history_detail_kills_sb is not None:
+            _history_detail_kills_sb.scroll_to(0)
+        if _app:
+            _app.invalidate()
+    return _h
+
+
+def _hd_make_pkill_header_handler(col):
+    def _h(ev):
+        if ev.event_type != MouseEventType.MOUSE_DOWN:
+            return _hd_make_focus_handler(1)(ev)
+        global _history_detail_pkills_sort
+        _hd_set_focus(1)
+        _history_detail_pkills_sort = _hd_toggle_sort(
+            _history_detail_pkills_sort, col)
+        if _history_detail_pkills_sb is not None:
+            _history_detail_pkills_sb.scroll_to(0)
+        if _app:
+            _app.invalidate()
+    return _h
+
+
+def _hd_section_title_pair(frags, left_title, right_title,
+                            left_w, right_w, gap, pad,
+                            left_active=False, right_active=False,
+                            left_focus=None, right_focus=None):
+    l_style = C_ACTIVE if left_active  else C_SECTION
+    r_style = C_ACTIVE if right_active else C_SECTION
+
+    frags.append(("", pad))
+    if left_focus:
+        frags.append((l_style, left_title.ljust(left_w), left_focus))
+    else:
+        frags.append((l_style, left_title.ljust(left_w)))
+    frags.append(("", " "))
+    frags.append(("", gap))
+    if right_focus:
+        frags.append((r_style, right_title.ljust(right_w), right_focus))
+    else:
+        frags.append((r_style, right_title.ljust(right_w)))
+    frags.append(("", " "))
+    frags.append(("", "\n"))
+
+    frags.append(("", pad))
+    frags.append((C_DIVIDER, "─" * left_w))
+    frags.append(("", " "))
+    frags.append(("", gap))
+    frags.append((C_DIVIDER, "─" * right_w))
+    frags.append(("", " "))
+    frags.append(("", "\n"))
+
+
+def _hd_append_allies_achievements(frags, stats, cols):
+    left_w  = _HD_STAT_TABLE_LEFT_W
+    right_w = _HD_STAT_TABLE_RIGHT_W
+    gap     = _HD_STAT_TABLE_GAP
+    total_w = left_w + 1 + len(gap) + right_w + 1
+    margin  = max(0, (cols - total_w) // 2)
+    pad     = " " * margin
+
+    a_focus = _hd_make_focus_handler(2)
+    h_focus = _hd_make_focus_handler(3)
+
+    _hd_section_title_pair(
+        frags, "ALLIES", "ACHIEVEMENTS", left_w, right_w, gap, pad,
+        left_active=(_history_detail_focused == 2),
+        right_active=(_history_detail_focused == 3),
+        left_focus=a_focus, right_focus=h_focus,
+    )
+
+    ally_rows = list(stats.allies)
+    ach_rows  = [a[1] for a in stats.achievements]
+
+    a_off = _history_detail_allies_sb.scroll_offset
+    h_off = _history_detail_achievements_sb.scroll_offset
+    a_view = ally_rows[a_off:a_off + _HD_ALLIES_ACH_VISIBLE]
+    h_view = ach_rows[h_off:h_off + _HD_ALLIES_ACH_VISIBLE]
+
+    a_sb_cells = _hd_scrollbar_row_cells(_history_detail_allies_sb, 2)
+    h_sb_cells = _hd_scrollbar_row_cells(_history_detail_achievements_sb, 3)
+
+    a_inner_w = max(1, left_w  - 2)
+    h_inner_w = max(1, right_w - 2)
+    for i in range(_HD_ALLIES_ACH_VISIBLE):
+        frags.append(("", pad))
+        if i < len(a_view):
+            a = a_view[i]
+            if len(a) > a_inner_w:
+                a = a[:a_inner_w - 1] + "…"
+            frags.append((_S_ALLY,  "♦", a_focus))
+            frags.append((_S_VALUE, " " + a.ljust(a_inner_w), a_focus))
+        else:
+            frags.append((_S_VALUE, " " * left_w, a_focus))
+        if i < len(a_sb_cells):
+            frags.append(a_sb_cells[i])
+        else:
+            frags.append(("", " "))
+        frags.append(("", gap))
+        if i < len(h_view):
+            b = h_view[i]
+            if len(b) > h_inner_w:
+                b = b[:h_inner_w - 1] + "…"
+            frags.append((_S_STAR,  "★", h_focus))
+            frags.append((_S_VALUE, " " + b.ljust(h_inner_w), h_focus))
+        else:
+            frags.append((_S_VALUE, " " * right_w, h_focus))
+        if i < len(h_sb_cells):
+            frags.append(h_sb_cells[i])
+        else:
+            frags.append(("", " "))
+        frags.append(("", "\n"))
+
+
+def _hd_append_kills_pvps(frags, stats, cols, visible):
+    left_w  = _HD_STAT_TABLE_LEFT_W
+    right_w = _HD_STAT_TABLE_RIGHT_W
+    gap     = _HD_STAT_TABLE_GAP
+    total_w = left_w + 1 + len(gap) + right_w + 1
+    margin  = max(0, (cols - total_w) // 2)
+    pad     = " " * margin
+
+    k_focus = _hd_make_focus_handler(0)
+    p_focus = _hd_make_focus_handler(1)
+
+    sort_col_k,  sort_dir_k  = _history_detail_kills_sort
+    sort_col_pk, sort_dir_pk = _history_detail_pkills_sort
+
+    n_col, xp_per_col, xp_tot_col = 3, 7, 9
+    k_name_col = max(1, left_w  - n_col - xp_per_col - xp_tot_col - 3)
+    pk_xp_col  = 9
+    p_name_col = max(1, right_w - n_col - pk_xp_col - 2)
+
+    k_active = (_history_detail_focused == 0)
+    p_active = (_history_detail_focused == 1)
+    k_style  = C_ACTIVE if k_active else C_SECTION
+    p_style  = C_ACTIVE if p_active else C_SECTION
+
+    k_title = _hd_header_label("KILLS", sort_col_k  == "Mob",
+                                sort_dir_k,  "left", k_name_col)
+    p_title = _hd_header_label("PvPs",  sort_col_pk == "Player",
+                                sort_dir_pk, "left", p_name_col)
+
+    k_data_cols = [
+        ("N",      "right", n_col),
+        ("XP/N",   "right", xp_per_col),
+        ("XP tot", "right", xp_tot_col),
+    ]
+    p_data_cols = [
+        ("N",      "right", n_col),
+        ("XP",     "right", pk_xp_col),
+    ]
+
+    frags.append(("", pad))
+    frags.append((k_style, k_title, _hd_make_kill_header_handler("Mob")))
+    for col, align, w in k_data_cols:
+        h     = _hd_make_kill_header_handler(col)
+        label = _hd_header_label(col, col == sort_col_k, sort_dir_k, align, w)
+        frags.append((k_style, " ", h))
+        frags.append((k_style, label, h))
+    frags.append(("", " "))
+    frags.append(("", gap))
+    frags.append((p_style, p_title, _hd_make_pkill_header_handler("Player")))
+    for col, align, w in p_data_cols:
+        h     = _hd_make_pkill_header_handler(col)
+        label = _hd_header_label(col, col == sort_col_pk, sort_dir_pk, align, w)
+        frags.append((p_style, " ", h))
+        frags.append((p_style, label, h))
+    frags.append(("", " "))
+    frags.append(("", "\n"))
+
+    frags.append(("", pad))
+    frags.append((C_DIVIDER, "─" * left_w))
+    frags.append(("", " "))
+    frags.append(("", gap))
+    frags.append((C_DIVIDER, "─" * right_w))
+    frags.append(("", " "))
+    frags.append(("", "\n"))
+
+    kills_items  = _hd_sorted_kills_items(stats.kills,   sort_col_k,  sort_dir_k)
+    pkills_items = _hd_sorted_pkills_items(stats.pkills, sort_col_pk, sort_dir_pk)
+
+    k_off  = _history_detail_kills_sb.scroll_offset
+    pk_off = _history_detail_pkills_sb.scroll_offset
+    k_view = kills_items[k_off:k_off + visible]
+    p_view = pkills_items[pk_off:pk_off + visible]
+
+    k_sb_cells = _hd_scrollbar_row_cells(_history_detail_kills_sb,  0)
+    p_sb_cells = _hd_scrollbar_row_cells(_history_detail_pkills_sb, 1)
+
+    pk_n_col      = 3
+    pk_xp_col_w   = 9
+    pk_name_col   = max(1, right_w - pk_n_col - pk_xp_col_w - 2)
+    pk_inner_name = max(1, pk_name_col - 2)
+
+    for i in range(visible):
+        if i < len(k_view):
+            name, agg = k_view[i]
+            avg = agg.total_xp // agg.count if agg.count else 0
+            k_line = _hd_format_kill_row(name, str(agg.count),
+                                          str(avg), str(agg.total_xp), left_w)
+        else:
+            k_line = " " * left_w
+
+        frags.append(("", pad))
+        frags.append((_S_LABEL, k_line, k_focus))
+        if i < len(k_sb_cells):
+            frags.append(k_sb_cells[i])
+        else:
+            frags.append(("", " "))
+        frags.append(("", gap))
+        if i < len(p_view):
+            name, agg = p_view[i]
+            if len(name) > pk_inner_name:
+                name = name[:pk_inner_name - 1] + "…"
+            n_str_pk  = str(agg.count)
+            xp_str_pk = str(agg.total_xp)
+            p_rest    = (
+                f" {name.ljust(pk_inner_name)} "
+                f"{n_str_pk.rjust(pk_n_col)} "
+                f"{xp_str_pk.rjust(pk_xp_col_w)}"
+            )
+            frags.append((_S_PVP,   "⚔", p_focus))
+            frags.append((_S_LABEL, p_rest, p_focus))
+        else:
+            frags.append((_S_LABEL, " " * right_w, p_focus))
+        if i < len(p_sb_cells):
+            frags.append(p_sb_cells[i])
+        else:
+            frags.append(("", " "))
+        frags.append(("", "\n"))
+
+    k_cnt = sum(a.count for a in stats.kills.values())
+    k_xp  = sum(a.total_xp for a in stats.kills.values())
+    k_avg = k_xp // k_cnt if k_cnt else 0
+    p_cnt = sum(a.count for a in stats.pkills.values())
+    p_xp  = sum(a.total_xp for a in stats.pkills.values())
+
+    k_total  = _hd_format_kill_row("Total",  str(k_cnt), str(k_avg),
+                                    str(k_xp), left_w)
+    pk_total = _hd_format_pkill_row("Total", str(p_cnt), str(p_xp), right_w)
+    frags.append(("", pad))
+    frags.append((_S_TOTAL, k_total, k_focus))
+    frags.append(("", " "))
+    frags.append(("", gap))
+    frags.append((_S_TOTAL, pk_total, p_focus))
+    frags.append(("", " "))
+    frags.append(("", "\n"))
+
+
+def _hd_append_sparklines(frags, stats, cols):
+    label_w = _HD_STAT_Y_LABEL_W
+    left_w  = _HD_STAT_TABLE_LEFT_W
+    right_w = _HD_STAT_TABLE_RIGHT_W
+    gap     = _HD_STAT_TABLE_GAP
+    n_L     = max(1, left_w  - label_w - 2)
+    n_R     = max(1, right_w - label_w - 2)
+    total_w = left_w + 1 + len(gap) + right_w + 1
+    margin  = max(0, (cols - total_w) // 2)
+    pad     = " " * margin
+
+    start    = stats.start_ts
+    end      = max(stats.end_ts, start + 1)
+    duration = end - start
+
+    xp_buckets = _hd_bucket_event_sums(stats.kill_events, n_L, start, end)
+    tp_buckets = _hd_bucket_event_sums(stats.tp_events,   n_R, start, end)
+
+    xp_secs = duration / n_L if n_L > 0 else 1
+    tp_secs = duration / n_R if n_R > 0 else 1
+    if xp_secs <= 0:
+        xp_secs = 1
+    if tp_secs <= 0:
+        tp_secs = 1
+    xp_rates = [b * 3600.0 / xp_secs for b in xp_buckets]
+    tp_rates = [b * 3600.0 / tp_secs for b in tp_buckets]
+
+    xp_max  = max(xp_rates) if xp_rates else 0.0
+    tp_max  = max(tp_rates) if tp_rates else 0.0
+    xp_rows = _hd_sparkline_rows(xp_rates, xp_max, rows=3)
+    tp_rows = _hd_sparkline_rows(tp_rates, tp_max, rows=3)
+
+    frags.append(("", pad))
+    frags.append((C_SECTION, "XP/h".ljust(left_w)))
+    frags.append(("", " "))
+    frags.append(("", gap))
+    frags.append((C_SECTION, "TP/h".ljust(right_w)))
+    frags.append(("", " "))
+    frags.append(("", "\n"))
+
+    junction   = label_w + 1
+    left_rule  = "─" * junction + "┬" + "─" * max(0, left_w  - junction - 1)
+    right_rule = "─" * junction + "┬" + "─" * max(0, right_w - junction - 1)
+    frags.append(("", pad))
+    frags.append((C_DIVIDER, left_rule))
+    frags.append(("", " "))
+    frags.append(("", gap))
+    frags.append((C_DIVIDER, right_rule))
+    frags.append(("", " "))
+    frags.append(("", "\n"))
+
+    xp_labels = [_hd_fmt_xp_short(xp_max), _hd_fmt_xp_short(xp_max / 2), "0"]
+    tp_labels = [_hd_fmt_xp_short(tp_max), _hd_fmt_xp_short(tp_max / 2), "0"]
+
+    for r in range(3):
+        frags.append(("", pad))
+        frags.append((_S_LABEL, xp_labels[r].rjust(label_w)))
+        frags.append(("", " "))
+        frags.append((C_DIVIDER, "│"))
+        frags.append((_S_GAINED, xp_rows[r]))
+        frags.append(("", " "))
+        frags.append(("", gap))
+        frags.append((_S_LABEL, tp_labels[r].rjust(label_w)))
+        frags.append(("", " "))
+        frags.append((C_DIVIDER, "│"))
+        frags.append((_S_TP_BAR, tp_rows[r]))
+        frags.append(("", " "))
+        frags.append(("", "\n"))
+
+    axis_indent = " " * (label_w + 1)
+    frags.append(("", pad))
+    frags.append(("", axis_indent))
+    frags.append((C_DIVIDER, "└" + "─" * n_L))
+    frags.append(("", " "))
+    frags.append(("", gap))
+    frags.append(("", axis_indent))
+    frags.append((C_DIVIDER, "└" + "─" * n_R))
+    frags.append(("", " "))
+    frags.append(("", "\n"))
+
+    chart_indent = " " * (label_w + 2)
+    x_left  = "00:00"
+    x_right = _hd_fmt_duration_hms(duration)[:5]
+    fill_L  = max(1, n_L - len(x_left) - len(x_right))
+    fill_R  = max(1, n_R - len(x_left) - len(x_right))
+    frags.append(("", pad))
+    frags.append(("", chart_indent))
+    frags.append((_S_LABEL, x_left + (" " * fill_L) + x_right))
+    frags.append(("", " "))
+    frags.append(("", gap))
+    frags.append(("", chart_indent))
+    frags.append((_S_LABEL, x_left + (" " * fill_R) + x_right))
+    frags.append(("", " "))
+    frags.append(("", "\n"))
+
+
+def _hd_append_xp_linjalen(frags, stats, cols):
+    bar_w = _HD_STAT_BAR_WIDTH
+    if stats.xp_at_start is None and stats.xp_current is None:
+        return
+    lo_xp  = min(stats.xp_at_start, stats.xp_current)
+    hi_xp  = max(stats.xp_at_start, stats.xp_current)
+    min_lv = max(1,   _hd_level_from_xp(lo_xp))
+    hi_lv  = min(100, _hd_level_from_xp(hi_xp) + 1)
+    span   = max(1, hi_lv - min_lv)
+
+    is_loss   = stats.xp_current < stats.xp_at_start
+    start_col = _hd_xp_to_bar_col(stats.xp_at_start, min_lv, hi_lv, bar_w)
+    cur_col   = _hd_xp_to_bar_col(stats.xp_current,  min_lv, hi_lv, bar_w)
+    lo_col    = min(start_col, cur_col)
+    hi_col    = max(start_col, cur_col)
+    band_w    = hi_col - lo_col
+    band_style = _S_LOSS if is_loss else _S_GAINED
+
+    margin = max(0, (cols - bar_w) // 2)
+    pad    = " " * margin
+
+    if is_loss:
+        label = f"-{abs(round(stats.xp_gained / 1000))}k XP"
+    else:
+        label = f"{round(stats.xp_gained / 1000)}k"
+    frags.append(("", pad))
+    if band_w >= len(label) + 2:
+        if lo_col > 0:
+            frags.append(("", " " * lo_col))
+        slack = band_w - len(label) - 2
+        left  = (slack + 1) // 2
+        right = slack // 2
+        frags.append((_S_ARROW, "◄" + "─" * left))
+        frags.append((band_style, label))
+        frags.append((_S_ARROW, "─" * right + "►"))
+    elif band_w > 0:
+        centre = lo_col + band_w // 2
+        before = max(0, centre - len(label) // 2)
+        if before > 0:
+            frags.append(("", " " * before))
+        frags.append((band_style, label))
+    frags.append(("", "\n"))
+
+    frags.append(("", pad))
+    if lo_col > 0:
+        frags.append((_S_TRACK, "█" * lo_col))
+    if band_w > 0:
+        frags.append((band_style, "█" * band_w))
+    if hi_col < bar_w:
+        frags.append((_S_TRACK, "█" * (bar_w - hi_col)))
+    frags.append(("", "\n"))
+
+    line = [" "] * bar_w
+    for lv_offset in range(span + 1):
+        level   = min_lv + lv_offset
+        digits  = str(level)
+        is_last = (lv_offset == span)
+        if is_last:
+            col = bar_w - 1
+            line[col] = "▐"
+            text = digits + " "
+            for i, ch in enumerate(text):
+                pos = col - len(text) + i
+                if 0 <= pos < bar_w:
+                    line[pos] = ch
+        else:
+            col = int(round(lv_offset / span * bar_w))
+            if col >= bar_w:
+                col = bar_w - 1
+            line[col] = "▌"
+            text = " " + digits
+            for i, ch in enumerate(text):
+                pos = col + 1 + i
+                if 0 <= pos < bar_w:
+                    line[pos] = ch
+    frags.append(("", pad))
+    buf = ""
+    cur_style = None
+    for ch in line:
+        if ch in ("▌", "▐"):
+            style = _S_MARKER
+        elif ch == " ":
+            style = ""
+        else:
+            style = _S_LABEL
+        if style != cur_style:
+            if buf:
+                frags.append((cur_style, buf))
+            buf = ch
+            cur_style = style
+        else:
+            buf += ch
+    if buf:
+        frags.append((cur_style, buf))
+    frags.append(("", "\n"))
+
+
+class _HDScrollControl(FormattedTextControl):
+    """Body control: routes mouse-wheel events to the focused table when no
+    cell-level handler consumes them. Cell handlers (KILLS/PvPs/ALLIES/
+    ACHIEVEMENTS rows) already route wheel events to their own table; this
+    is the safety-net path for events that land in gaps/padding."""
+    def mouse_handler(self, ev):
+        result = super().mouse_handler(ev)
+        if result is NotImplemented:
+            if ev.event_type == MouseEventType.SCROLL_UP:
+                sb = _hd_focused_scrollbar()
+                if sb is not None:
+                    sb.scroll_by(-1)
+                    if _app:
+                        _app.invalidate()
+                return None
+            if ev.event_type == MouseEventType.SCROLL_DOWN:
+                sb = _hd_focused_scrollbar()
+                if sb is not None:
+                    sb.scroll_by(1)
+                    if _app:
+                        _app.invalidate()
+                return None
+        return result
 
 
 def _history_detail_text():
@@ -2061,58 +2869,29 @@ def _history_detail_text():
     # --- Blank separator --------------------------------------------------
     frags.append(("", "\n", clear))
 
-    # --- Summary body -----------------------------------------------------
-    started_text = _hd_fmt_ts(summary.start_ts, "%Y-%m-%d %H:%M")
-    ended_text   = _hd_fmt_ts(summary.end_ts,   "%Y-%m-%d %H:%M")
+    # --- Statistics body --------------------------------------------------
+    _hd_ensure_scrollbars()
+    visible = _hd_compute_kills_pvps_visible()
+    _hd_refresh_scrollbars(stats, visible)
 
-    mob_kills = sum(int(k.count) for k in stats.kills.values())
-    pvp_kills = sum(int(p.count) for p in stats.pkills.values())
-    n_allies  = len(stats.allies)
-    n_achv    = len(stats.achievements)
-    n_deaths  = int(stats.deaths)
-    xp_g      = int(stats.xp_gained)
-    tp_g      = int(stats.tp_gained)
+    body = []
+    _hd_append_allies_achievements(body, stats, cols)
+    body.append(("", "\n"))
 
-    if xp_g > 0:
-        xp_style = _S_GAINED
-    elif xp_g < 0:
-        xp_style = _S_LOSS
-    else:
-        xp_style = _S_LABEL
-    tp_style = _S_GAINED if tp_g > 0 else _S_LABEL
+    _hd_append_kills_pvps(body, stats, cols, visible)
+    body.append(("", "\n"))
 
-    rows = [
-        ("Character",    summary.character,    _S_VALUE),
-        ("Started",      started_text,         _S_VALUE),
-        ("Ended",        ended_text,           _S_VALUE),
-        ("Duration",     duration_text,        _S_VALUE),
-        ("XP gained",    _hd_fmt_signed(xp_g), xp_style),
-        ("TP gained",    _hd_fmt_signed(tp_g), tp_style),
-        ("Mob kills",    str(mob_kills),       _S_VALUE),
-        ("PvP kills",    str(pvp_kills),       _S_VALUE),
-        ("Allies",       str(n_allies),        _S_VALUE),
-        ("Achievements", str(n_achv),          _S_VALUE),
-        ("Deaths",       str(n_deaths),        _S_VALUE),
-    ]
+    _hd_append_sparklines(body, stats, cols)
+    body.append(("", "\n"))
 
-    label_w   = max(len(r[0]) for r in rows)
-    label_gap = 8
-    max_value = max(len(r[1]) for r in rows)
-    line_w    = label_w + label_gap + max_value
-    left_pad  = " " * max(0, (cols - line_w) // 2)
+    _hd_append_xp_linjalen(body, stats, cols)
 
-    for label, value, value_style in rows:
-        frags.append(("", left_pad, clear))
-        frags.append((_S_LABEL, label.ljust(label_w), clear))
-        frags.append(("", " " * label_gap, clear))
-        frags.append((value_style, value, clear))
-        frags.append(("", "\n", clear))
+    frags.extend(_hover_clear_frags(body))
 
     # --- Footer -----------------------------------------------------------
-    frags.append(("", "\n", clear))
-    footer = "ESC Back     (full breakdown in next commit)"
+    footer = "ESC Back     ↑↓ Scroll     Tab/Shift+Tab Switch table"
     frags.append(("", _pad_centre(footer, cols), clear))
-    frags.append((C_HINT, footer, clear))
+    frags.append((_S_HINT, footer, clear))
     return frags
 
 
@@ -2588,10 +3367,80 @@ def _kb_hist_escape(event):
     _pop_frame()
 
 
-# History detail (stub)
+# History detail
 @kb.add("escape", filter=_in_frame("history_detail"), eager=True)
 def _kb_hd_escape(event):
     _pop_frame()
+
+
+@kb.add("tab", filter=_in_frame("history_detail"))
+def _kb_hd_tab(event):
+    _hd_set_focus((_history_detail_focused + 1) % 4)
+
+
+@kb.add("s-tab", filter=_in_frame("history_detail"))
+def _kb_hd_stab(event):
+    _hd_set_focus((_history_detail_focused - 1) % 4)
+
+
+@kb.add("up", filter=_in_frame("history_detail"))
+def _kb_hd_up(event):
+    sb = _hd_focused_scrollbar()
+    if sb is None:
+        return
+    sb.scroll_by(-1)
+    if _app:
+        _app.invalidate()
+
+
+@kb.add("down", filter=_in_frame("history_detail"))
+def _kb_hd_down(event):
+    sb = _hd_focused_scrollbar()
+    if sb is None:
+        return
+    sb.scroll_by(1)
+    if _app:
+        _app.invalidate()
+
+
+@kb.add("pageup", filter=_in_frame("history_detail"))
+def _kb_hd_pgup(event):
+    sb = _hd_focused_scrollbar()
+    if sb is None:
+        return
+    sb.scroll_by(-10)
+    if _app:
+        _app.invalidate()
+
+
+@kb.add("pagedown", filter=_in_frame("history_detail"))
+def _kb_hd_pgdn(event):
+    sb = _hd_focused_scrollbar()
+    if sb is None:
+        return
+    sb.scroll_by(10)
+    if _app:
+        _app.invalidate()
+
+
+@kb.add("home", filter=_in_frame("history_detail"))
+def _kb_hd_home(event):
+    sb = _hd_focused_scrollbar()
+    if sb is None:
+        return
+    sb.scroll_to(0)
+    if _app:
+        _app.invalidate()
+
+
+@kb.add("end", filter=_in_frame("history_detail"))
+def _kb_hd_end(event):
+    sb = _hd_focused_scrollbar()
+    if sb is None:
+        return
+    sb.scroll_to(10**9)
+    if _app:
+        _app.invalidate()
 
 
 # Update running — no input
@@ -2762,7 +3611,12 @@ def main():
     _exit_confirm_window,          exit_confirm_frame        = _build_simple(_exit_confirm_text)
     _too_small_window,             too_small_frame           = _build_simple(_too_small_text)
     _history_sidebar_window, _history_table_window, history_frame = _build_history()
-    _history_detail_window,        history_detail_frame      = _build_simple(_history_detail_text)
+    _history_detail_window = Window(
+        content=_HDScrollControl(text=_history_detail_text, focusable=True),
+        wrap_lines=False,
+        always_hide_cursor=True,
+    )
+    history_detail_frame = _centered(_history_detail_window)
 
     frames = {
         "main":                       main_frame,
