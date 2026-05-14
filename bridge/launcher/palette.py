@@ -8,6 +8,7 @@ __all__ = [
     "C_YELLOW", "C_ERR",
     "C_QUOTE", "C_QUOTE_ATTR", "C_HOVER", "C_SELECTED",
     "C_HEADER", "C_SECTION", "C_DIVIDER",
+    "C_WATCH_LOG", "C_WATCH_LOG_HOVER",
     "_S_VALUE", "_S_LABEL", "_S_GAINED", "_S_LOSS", "_S_TP_BAR",
     "_S_TRACK", "_S_MARKER", "_S_THUMB", "_S_TOTAL", "_S_ARROW",
     "_S_HINT", "_S_PVP", "_S_ALLY", "_S_STAR",
@@ -52,3 +53,8 @@ _S_HINT    = "fg:#5c5c5c"       # footer hints
 _S_PVP     = "fg:#ff5f5f"       # ⚔ glyph before PvPs data rows
 _S_ALLY    = "fg:#00d7d7"       # ♦ glyph before ALLIES data rows
 _S_STAR    = "fg:#ffd060"       # ★ glyph before ACHIEVEMENTS data rows
+
+# history_detail WATCH LOG button — black text on a saturated accent fill,
+# lighter accent fill on hover. Accent values mirror C_ACCENT and _S_STAR.
+C_WATCH_LOG       = "fg:#000000 bg:#ffaf00"
+C_WATCH_LOG_HOVER = "fg:#000000 bg:#ffd060"

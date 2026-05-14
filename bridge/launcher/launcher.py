@@ -35,7 +35,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from palette import (  # noqa: E402
     C_TITLE, C_ACTIVE, C_ITEM, C_BODY, C_HINT, C_ACCENT,
     C_YELLOW, C_ERR, C_QUOTE, C_QUOTE_ATTR, C_HOVER, C_SELECTED,
-    C_SECTION, _S_GAINED, _S_LOSS, _S_LABEL,
+    C_HEADER, C_SECTION, C_WATCH_LOG, C_WATCH_LOG_HOVER,
+    _S_GAINED, _S_LOSS, _S_LABEL, _S_VALUE,
 )
 import run_stats  # noqa: E402
 from widgets.scrollbar import Scrollbar  # noqa: E402
@@ -174,7 +175,9 @@ _history_table_scroll    = 0
 _history_focused         = 0         # 0 = sidebar, 1 = table
 _history_hover           = (None, None)   # (panel_idx, row_idx)
 _history_table_sb        = None
-_history_detail_session  = None
+_history_detail_summary  = None      # SessionSummary pushed into the detail frame
+_history_detail_stats    = None      # aggregated RunStats for that summary
+_history_detail_log_hover = False    # WATCH LOG button hover flag
 _history_columns = [
     # (key, base_label, width, align, type)
     ("Char",   "Char",  None, "left",  "text"),
@@ -1667,12 +1670,20 @@ def _history_toggle_focus():
 
 
 def _history_set_hover(panel, row):
-    global _history_hover
+    global _history_hover, _history_detail_log_hover
     new_val = (panel, row)
+    changed = False
     if _history_hover != new_val:
         _history_hover = new_val
-        if _app:
-            _app.invalidate()
+        changed = True
+    # _hover_at(None, None) also drops the WATCH LOG hover style — used by
+    # the surrounding fragments in the history_detail frame so the button's
+    # hover paint clears the moment the cursor leaves it.
+    if new_val == (None, None) and _history_detail_log_hover:
+        _history_detail_log_hover = False
+        changed = True
+    if changed and _app:
+        _app.invalidate()
 
 
 def _hover_at(panel, idx, on_event=None):
@@ -1704,12 +1715,20 @@ def _hover_clear_frags(frags):
 
 
 def _history_activate_table_row(idx):
-    """Move cursor to idx, push history_detail for that session."""
-    global _history_table_cursor, _history_detail_session
+    """Move cursor to idx, aggregate the chain, push history_detail."""
+    global _history_table_cursor
+    global _history_detail_summary, _history_detail_stats, _history_detail_log_hover
     if idx < 0 or idx >= len(_history_sessions):
         return
     _history_table_cursor = idx
-    _history_detail_session = _history_sessions[idx]
+    summary = _history_sessions[idx]
+    try:
+        stats = run_stats.aggregate(summary.character, summary.run_ids)
+    except Exception:
+        stats = None
+    _history_detail_summary   = summary
+    _history_detail_stats     = stats
+    _history_detail_log_hover = False
     _push_frame("history_detail")
 
 
@@ -1964,57 +1983,136 @@ class _HistScrollControl(FormattedTextControl):
         return result
 
 
-# --- history_detail stub ---------------------------------------------------
+# --- history_detail --------------------------------------------------------
+def _hd_fmt_ts(ts, fmt):
+    try:
+        return time.strftime(fmt, time.localtime(int(ts)))
+    except (TypeError, ValueError, OSError):
+        return ""
+
+
+def _hd_fmt_signed(v):
+    v = int(v)
+    if v > 0:
+        return f"+{v}"
+    if v < 0:
+        return str(v)
+    return "0"
+
+
+def _hd_watch_log_handler(ev):
+    """WATCH LOG button — MOUSE_MOVE sets hover; MOUSE_DOWN is a no-op in v1
+    (Phase 3 will wire it to the log player)."""
+    global _history_detail_log_hover
+    if ev.event_type == MouseEventType.MOUSE_MOVE:
+        if not _history_detail_log_hover:
+            _history_detail_log_hover = True
+            if _app:
+                _app.invalidate()
+        return None
+    if ev.event_type == MouseEventType.MOUSE_DOWN:
+        return None
+    return NotImplemented
+
+
 def _history_detail_text():
-    cols = _term_cols()
-    title  = "─── Session detail ───"
-    footer = "ESC Back"
-    sess   = _history_detail_session
-    frags = []
-    frags.append(("", "\n\n"))
-    frags.append(("", _pad_centre(title, cols)))
-    frags.append((C_TITLE, title))
-    frags.append(("", "\n\n"))
+    cols    = _term_cols()
+    summary = _history_detail_summary
+    stats   = _history_detail_stats
+    clear   = _hover_at(None, None)
+    frags   = []
 
-    if sess is None:
+    if summary is None or stats is None:
+        title = "Session detail"
+        frags.append(("", "\n\n", clear))
+        frags.append(("", _pad_centre(title, cols), clear))
+        frags.append((C_HEADER, title, clear))
+        frags.append(("", "\n\n", clear))
         msg = "(no session selected)"
-        frags.append(("", _pad_centre(msg, cols)))
-        frags.append((C_BODY, msg))
-        frags.append(("", "\n\n"))
-    else:
-        started = ""
-        try:
-            started = time.strftime(
-                "%Y-%m-%d %H:%M", time.localtime(int(sess.start_ts))
-            )
-        except (TypeError, ValueError, OSError):
-            started = ""
-        rows = [
-            ("Character:", sess.character),
-            ("Started:",   started),
-            ("Duration:",  _history_fmt_duration(sess.duration_seconds)),
-            ("PvP kills:", str(int(sess.pkill_count or 0))),
-            ("XP gained:", str(int(sess.xp_gained or 0))),
-        ]
-        label_w = max(len(r[0]) for r in rows)
-        # Width of "label  value" pair for centring.
-        max_line = max(label_w + 2 + len(r[1]) for r in rows)
-        margin = max(0, (cols - max_line) // 2)
-        pad = " " * margin
-        for label, value in rows:
-            frags.append(("", pad))
-            frags.append((C_HINT, label.ljust(label_w)))
-            frags.append((C_HINT, "  "))
-            frags.append((C_BODY, value))
-            frags.append(("", "\n"))
-        frags.append(("", "\n"))
-        note = "(Detail view coming in next commit.)"
-        frags.append(("", _pad_centre(note, cols)))
-        frags.append((C_HINT, note))
+        frags.append(("", _pad_centre(msg, cols), clear))
+        frags.append((C_BODY, msg, clear))
+        frags.append(("", "\n\n", clear))
+        footer = "ESC Back"
+        frags.append(("", _pad_centre(footer, cols), clear))
+        frags.append((C_HINT, footer, clear))
+        return frags
 
-    frags.append(("", "\n\n"))
-    frags.append(("", _pad_centre(footer, cols)))
-    frags.append((C_HINT, footer))
+    # --- Header row -------------------------------------------------------
+    date_text     = _hd_fmt_ts(summary.start_ts, "%Y-%m-%d")
+    duration_text = _history_fmt_duration(summary.duration_seconds)
+    title_text    = (f"◆ Session detail  —  {summary.character}"
+                     f"  ·  {date_text}  ·  {duration_text}")
+    button_label  = " WATCH LOG "
+    button_visible = bool(summary.has_log)
+
+    frags.append(("", "\n", clear))
+
+    title_pad = max(0, (cols - len(title_text)) // 2)
+    frags.append(("", " " * title_pad, clear))
+    frags.append((C_HEADER, title_text, clear))
+    used = title_pad + len(title_text)
+    if button_visible:
+        gap = max(1, cols - used - len(button_label))
+        frags.append(("", " " * gap, clear))
+        log_style = C_WATCH_LOG_HOVER if _history_detail_log_hover else C_WATCH_LOG
+        frags.append((log_style, button_label, _hd_watch_log_handler))
+    frags.append(("", "\n", clear))
+
+    # --- Blank separator --------------------------------------------------
+    frags.append(("", "\n", clear))
+
+    # --- Summary body -----------------------------------------------------
+    started_text = _hd_fmt_ts(summary.start_ts, "%Y-%m-%d %H:%M")
+    ended_text   = _hd_fmt_ts(summary.end_ts,   "%Y-%m-%d %H:%M")
+
+    mob_kills = sum(int(k.count) for k in stats.kills.values())
+    pvp_kills = sum(int(p.count) for p in stats.pkills.values())
+    n_allies  = len(stats.allies)
+    n_achv    = len(stats.achievements)
+    n_deaths  = int(stats.deaths)
+    xp_g      = int(stats.xp_gained)
+    tp_g      = int(stats.tp_gained)
+
+    if xp_g > 0:
+        xp_style = _S_GAINED
+    elif xp_g < 0:
+        xp_style = _S_LOSS
+    else:
+        xp_style = _S_LABEL
+    tp_style = _S_GAINED if tp_g > 0 else _S_LABEL
+
+    rows = [
+        ("Character",    summary.character,    _S_VALUE),
+        ("Started",      started_text,         _S_VALUE),
+        ("Ended",        ended_text,           _S_VALUE),
+        ("Duration",     duration_text,        _S_VALUE),
+        ("XP gained",    _hd_fmt_signed(xp_g), xp_style),
+        ("TP gained",    _hd_fmt_signed(tp_g), tp_style),
+        ("Mob kills",    str(mob_kills),       _S_VALUE),
+        ("PvP kills",    str(pvp_kills),       _S_VALUE),
+        ("Allies",       str(n_allies),        _S_VALUE),
+        ("Achievements", str(n_achv),          _S_VALUE),
+        ("Deaths",       str(n_deaths),        _S_VALUE),
+    ]
+
+    label_w   = max(len(r[0]) for r in rows)
+    label_gap = 8
+    max_value = max(len(r[1]) for r in rows)
+    line_w    = label_w + label_gap + max_value
+    left_pad  = " " * max(0, (cols - line_w) // 2)
+
+    for label, value, value_style in rows:
+        frags.append(("", left_pad, clear))
+        frags.append((_S_LABEL, label.ljust(label_w), clear))
+        frags.append(("", " " * label_gap, clear))
+        frags.append((value_style, value, clear))
+        frags.append(("", "\n", clear))
+
+    # --- Footer -----------------------------------------------------------
+    frags.append(("", "\n", clear))
+    footer = "ESC Back     (full breakdown in next commit)"
+    frags.append(("", _pad_centre(footer, cols), clear))
+    frags.append((C_HINT, footer, clear))
     return frags
 
 
