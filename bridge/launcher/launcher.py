@@ -173,7 +173,6 @@ _history_table_cursor    = 0
 _history_table_scroll    = 0
 _history_focused         = 0         # 0 = sidebar, 1 = table
 _history_hover           = (None, None)   # (panel_idx, row_idx)
-_history_sidebar_sb      = None
 _history_table_sb        = None
 _history_detail_session  = None
 _history_columns = [
@@ -1391,8 +1390,19 @@ def _scroll_about(delta):
 # ---------------------------------------------------------------------------
 # History frame
 # ---------------------------------------------------------------------------
-_HISTORY_SIDEBAR_W = 12
-_HISTORY_GAP       = 2
+def _history_sidebar_panel_w():
+    """Sidebar panel width = max("All", longest character name) + 2 for
+    breathing room. Recomputed each render so resizes and roster changes
+    recentre cleanly."""
+    chars = _history_sidebar_items[1:]
+    inner = max(len("All"), max((len(c) for c in chars), default=0))
+    return inner + 2
+
+
+def _history_table_panel_w():
+    """Total width of the table content (column widths + per-gap separators)."""
+    _, total = _history_table_columns_layout()
+    return total
 
 
 def _enter_history_frame():
@@ -1400,7 +1410,7 @@ def _enter_history_frame():
     global _history_sidebar_cursor, _history_sidebar_scroll
     global _history_table_cursor, _history_table_scroll
     global _history_focused, _history_hover
-    global _history_sidebar_sb, _history_table_sb
+    global _history_table_sb
     try:
         chars = run_stats.list_characters_with_runs()
     except Exception:
@@ -1414,10 +1424,6 @@ def _enter_history_frame():
     _history_table_scroll   = 0
     _history_focused        = 1
     _history_hover          = (None, None)
-    _history_sidebar_sb = Scrollbar(
-        len(_history_sidebar_items), _history_sidebar_visible(),
-        _history_sidebar_visible(),
-    )
     _history_table_sb = Scrollbar(
         0, _history_table_visible(), _history_table_visible(),
     )
@@ -1737,11 +1743,8 @@ def _history_sidebar_text():
     global _history_sidebar_scroll
     if _history_sidebar_scroll > mx:
         _history_sidebar_scroll = mx
-    if _history_sidebar_sb is not None:
-        _history_sidebar_sb.update(total, visible, height=visible)
-        _history_sidebar_sb.scroll_to(_history_sidebar_scroll)
 
-    width   = _HISTORY_SIDEBAR_W
+    width   = _history_sidebar_panel_w()
     sliced  = items[_history_sidebar_scroll:_history_sidebar_scroll + visible]
     frags   = []
     hover_panel, hover_row = _history_hover
@@ -1778,12 +1781,6 @@ def _history_sidebar_text():
         frags.append(("", "\n", _hover_at(None, None)))
         frags.append(("", " " * width, _hover_at(None, None)))
     return frags
-
-
-def _history_sidebar_scrollbar_text():
-    if _history_sidebar_sb is None:
-        return []
-    return _hover_clear_frags(_history_sidebar_sb.render())
 
 
 # --- Table render ----------------------------------------------------------
@@ -1834,11 +1831,6 @@ def _history_format_row(session, cols):
 
 def _history_table_text():
     cols_layout, total_w = _history_table_columns_layout()
-    cols    = _term_cols()
-    # Width consumed left of the table: sidebar + sidebar scrollbar + gap.
-    avail   = max(1, cols - _HISTORY_SIDEBAR_W - 1 - _HISTORY_GAP - 1)
-    pad     = max(0, (avail - total_w) // 2)
-    margin  = " " * pad
 
     frags = []
     sort_col, sort_dir = _history_sort
@@ -1852,7 +1844,7 @@ def _history_table_text():
         top_pad = max(0, (visible - 1) // 2)
         for _ in range(top_pad):
             frags.append(("", "\n", clear_hover))
-        frags.append(("", " " * max(0, (avail - len(msg)) // 2), clear_hover))
+        frags.append(("", " " * max(0, (total_w - len(msg)) // 2), clear_hover))
         frags.append((C_BODY, msg, clear_hover))
         bottom = visible - top_pad - 1
         for _ in range(bottom):
@@ -1861,7 +1853,6 @@ def _history_table_text():
 
     # Header row.
     header_style = C_ACTIVE if table_focused else C_SECTION
-    frags.append(("", margin, clear_hover))
     for i, (key, base, width, align, _ctype) in enumerate(cols_layout):
         is_active_sort = (key == sort_col)
         label = _history_header_label(base, is_active_sort, sort_dir, align, width)
@@ -1913,7 +1904,6 @@ def _history_table_text():
         row_handler = _hover_at(1, row_abs, on_event=_click)
 
         row_frags = _history_format_row(session, cols_layout)
-        frags.append(("", margin, clear_hover))
         for i, (txt, default_style) in enumerate(row_frags):
             style = row_bg if row_bg is not None else default_style
             if i > 0:
@@ -2558,7 +2548,7 @@ def _build_scrolling(title_fn, content_fn, footer_fn):
 
 
 def _build_history():
-    """Build the History frame: title + (sidebar | sb | gap | table | sb) + footer."""
+    """Build the History frame: title + centred (sidebar | gap | table | sb) + footer."""
     title  = Window(content=FormattedTextControl(text=_history_title_text, focusable=False),
                     height=3, wrap_lines=False, always_hide_cursor=True)
     footer = Window(content=FormattedTextControl(text=_history_footer_text, focusable=False),
@@ -2567,17 +2557,32 @@ def _build_history():
     sidebar_win = Window(
         content=_HistScrollControl(text=_history_sidebar_text, focusable=True, panel=0),
         wrap_lines=False, always_hide_cursor=True,
-        width=Dimension.exact(_HISTORY_SIDEBAR_W),
+        width=lambda: Dimension.exact(_history_sidebar_panel_w()),
     )
-    sidebar_sb_win = Window(
-        content=FormattedTextControl(text=_history_sidebar_scrollbar_text, focusable=False),
+
+    # Hover-clearing filler for gap and outer spacers. One " " per visible
+    # body row so MOUSE_MOVE over padding fires _hover_at(None, None).
+    def _make_filler_text(width):
+        def _fn():
+            rows = _history_body_rows()
+            clear = _hover_at(None, None)
+            out = []
+            for i in range(rows):
+                out.append(("", " " * width, clear))
+                if i < rows - 1:
+                    out.append(("", "\n", clear))
+            return out
+        return _fn
+
+    gap_win = Window(
+        content=FormattedTextControl(text=_make_filler_text(1), focusable=False),
         wrap_lines=False, always_hide_cursor=True,
         width=Dimension.exact(1),
     )
-    gap_win = Window(width=Dimension.exact(_HISTORY_GAP))
     table_win = Window(
         content=_HistScrollControl(text=_history_table_text, focusable=True, panel=1),
         wrap_lines=False, always_hide_cursor=True,
+        width=lambda: Dimension.exact(_history_table_panel_w()),
         height=Dimension(weight=1),
     )
     table_sb_win = Window(
@@ -2585,8 +2590,20 @@ def _build_history():
         wrap_lines=False, always_hide_cursor=True,
         width=Dimension.exact(1),
     )
+    # Flex spacers on either side centre the block and clear hover when
+    # the mouse drifts into the padding.
+    left_spacer = Window(
+        content=FormattedTextControl(text=_make_filler_text(1), focusable=False),
+        wrap_lines=False, always_hide_cursor=True,
+    )
+    right_spacer = Window(
+        content=FormattedTextControl(text=_make_filler_text(1), focusable=False),
+        wrap_lines=False, always_hide_cursor=True,
+    )
 
-    body = VSplit([sidebar_win, sidebar_sb_win, gap_win, table_win, table_sb_win])
+    body = VSplit(
+        [left_spacer, sidebar_win, gap_win, table_win, table_sb_win, right_spacer],
+    )
     return sidebar_win, table_win, HSplit([title, body, footer])
 
 
