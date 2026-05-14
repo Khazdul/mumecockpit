@@ -40,6 +40,7 @@ from palette import (  # noqa: E402
     _S_TRACK, _S_MARKER, _S_THUMB, _S_TOTAL, _S_ARROW,
     _S_HINT, _S_PVP, _S_ALLY, _S_STAR,
 )
+import log_player  # noqa: E402
 import run_stats  # noqa: E402
 from widgets.scrollbar import Scrollbar  # noqa: E402
 
@@ -189,6 +190,12 @@ _history_detail_pkills_sb       = None
 _history_detail_allies_sb       = None
 _history_detail_achievements_sb = None
 _history_detail_kills_pvps_visible = 2  # last computed visible row count
+
+# log_view (chain log player) — Phase 3 skeleton
+_log_view_playback = None   # log_player.LogPlayback or None
+_log_view_scroll   = 0      # visual-line offset into the rendered buffer
+_log_view_cols     = 0      # last cols used to wrap; invalidates cache on change
+_log_view_lines    = None   # cached visual lines: list[list[(style, run)]]
 _history_columns = [
     # (key, base_label, width, align, type)
     ("Char",   "Char",  None, "left",  "text"),
@@ -220,6 +227,7 @@ _too_small_window      = None
 _history_sidebar_window = None
 _history_table_window   = None
 _history_detail_window  = None
+_log_view_window        = None
 
 _app_loop = None
 
@@ -484,6 +492,7 @@ def _focus_current_frame():
             "update_result":              _update_result_window,
             "exit_confirm":               _exit_confirm_window,
             "history_detail":             _history_detail_window,
+            "log_view":                   _log_view_window,
         }.get(_current_frame)
     if win is None:
         return
@@ -2012,8 +2021,7 @@ def _hd_fmt_ts(ts, fmt):
 
 
 def _hd_watch_log_handler(ev):
-    """WATCH LOG button — MOUSE_MOVE sets hover; MOUSE_DOWN is a no-op in v1
-    (Phase 3 will wire it to the log player)."""
+    """WATCH LOG button — MOUSE_MOVE sets hover; MOUSE_DOWN pushes log_view."""
     global _history_detail_log_hover
     if ev.event_type == MouseEventType.MOUSE_MOVE:
         if not _history_detail_log_hover:
@@ -2022,6 +2030,7 @@ def _hd_watch_log_handler(ev):
                 _app.invalidate()
         return None
     if ev.event_type == MouseEventType.MOUSE_DOWN:
+        _enter_log_view()
         return None
     return NotImplemented
 
@@ -2925,6 +2934,143 @@ def _history_detail_text():
 
 
 # ---------------------------------------------------------------------------
+# log_view (chain log player — Phase 3 skeleton)
+# ---------------------------------------------------------------------------
+def _enter_log_view():
+    """Push log_view for the chain currently in _history_detail_summary.
+
+    Caller is responsible for has_log gating; this is defensive against a
+    chain whose every .log file has vanished between summary build and
+    button activation."""
+    global _log_view_playback, _log_view_scroll, _log_view_cols, _log_view_lines
+    summary = _history_detail_summary
+    if summary is None:
+        return
+    playback = log_player.LogPlayback(summary.character, summary.run_ids)
+    if not playback.events:
+        # Defensive — every run's .log was missing; stay on history_detail.
+        return
+    _log_view_playback = playback
+    _log_view_scroll   = 0
+    _log_view_cols     = 0
+    _log_view_lines    = None
+    _push_frame("log_view")
+
+
+def _exit_log_view():
+    """Pop back to history_detail and drop the playback so the chain's log
+    data can be garbage-collected — chains are re-read from disk on next push."""
+    global _log_view_playback, _log_view_scroll, _log_view_cols, _log_view_lines
+    _log_view_playback = None
+    _log_view_scroll   = 0
+    _log_view_cols     = 0
+    _log_view_lines    = None
+    _pop_frame()
+
+
+def _log_view_visible_rows():
+    return max(1, _term_rows())
+
+
+def _log_view_wrap_fragments(fragments, width):
+    """Split a fragment list at terminal-column boundaries. Returns a list of
+    visual lines, each a list of (style, run) tuples. Empty input produces
+    a single empty line so blank events still occupy a row."""
+    if width <= 0:
+        return [list(fragments)]
+    lines = []
+    cur = []
+    cur_w = 0
+    for style, run in fragments:
+        while run:
+            avail = width - cur_w
+            if avail <= 0:
+                lines.append(cur)
+                cur = []
+                cur_w = 0
+                avail = width
+            if len(run) <= avail:
+                if run:
+                    cur.append((style, run))
+                    cur_w += len(run)
+                run = ""
+            else:
+                cur.append((style, run[:avail]))
+                run = run[avail:]
+                lines.append(cur)
+                cur = []
+                cur_w = 0
+    lines.append(cur)
+    return lines
+
+
+def _log_view_rebuild_if_needed():
+    global _log_view_lines, _log_view_cols
+    if _log_view_playback is None:
+        _log_view_lines = []
+        return
+    cols = _term_cols()
+    if _log_view_lines is not None and cols == _log_view_cols:
+        return
+    visual = []
+    for ev in _log_view_playback.events:
+        visual.extend(_log_view_wrap_fragments(ev.fragments, cols))
+    _log_view_lines = visual
+    _log_view_cols  = cols
+
+
+def _log_view_text():
+    global _log_view_scroll
+    if _log_view_playback is None:
+        return [(C_BODY, "(no log loaded)")]
+    _log_view_rebuild_if_needed()
+    visible = _log_view_visible_rows()
+    total = len(_log_view_lines)
+    mx = max(0, total - visible)
+    if _log_view_scroll > mx:
+        _log_view_scroll = mx
+    if _log_view_scroll < 0:
+        _log_view_scroll = 0
+
+    sliced = _log_view_lines[_log_view_scroll:_log_view_scroll + visible]
+    frags = []
+    for i, line in enumerate(sliced):
+        if line:
+            frags.extend(line)
+        if i < len(sliced) - 1:
+            frags.append(("", "\n"))
+    return frags
+
+
+def _scroll_log_view(delta):
+    global _log_view_scroll
+    if _log_view_playback is None:
+        return
+    _log_view_rebuild_if_needed()
+    visible = _log_view_visible_rows()
+    mx = max(0, len(_log_view_lines) - visible)
+    new_val = max(0, min(mx, _log_view_scroll + delta))
+    if new_val != _log_view_scroll:
+        _log_view_scroll = new_val
+        if _app:
+            _app.invalidate()
+
+
+def _log_view_scroll_to(pos):
+    global _log_view_scroll
+    if _log_view_playback is None:
+        return
+    _log_view_rebuild_if_needed()
+    visible = _log_view_visible_rows()
+    mx = max(0, len(_log_view_lines) - visible)
+    new_val = max(0, min(mx, pos))
+    if new_val != _log_view_scroll:
+        _log_view_scroll = new_val
+        if _app:
+            _app.invalidate()
+
+
+# ---------------------------------------------------------------------------
 # Update flow
 # ---------------------------------------------------------------------------
 def _start_update():
@@ -3481,7 +3627,43 @@ _hd_has_log = Condition(
 @kb.add("l", filter=_in_frame("history_detail") & _hd_has_log)
 @kb.add("L", filter=_in_frame("history_detail") & _hd_has_log)
 def _kb_hd_watch_log(event):
-    pass
+    _enter_log_view()
+
+
+# log_view (chain log player)
+@kb.add("escape", filter=_in_frame("log_view"), eager=True)
+def _kb_log_escape(event):
+    _exit_log_view()
+
+
+@kb.add("up", filter=_in_frame("log_view"))
+def _kb_log_up(event):
+    _scroll_log_view(-1)
+
+
+@kb.add("down", filter=_in_frame("log_view"))
+def _kb_log_down(event):
+    _scroll_log_view(1)
+
+
+@kb.add("pageup", filter=_in_frame("log_view"))
+def _kb_log_pgup(event):
+    _scroll_log_view(-_log_view_visible_rows())
+
+
+@kb.add("pagedown", filter=_in_frame("log_view"))
+def _kb_log_pgdn(event):
+    _scroll_log_view(_log_view_visible_rows())
+
+
+@kb.add("home", filter=_in_frame("log_view"))
+def _kb_log_home(event):
+    _log_view_scroll_to(0)
+
+
+@kb.add("end", filter=_in_frame("log_view"))
+def _kb_log_end(event):
+    _log_view_scroll_to(10**9)
 
 
 # Update running — no input
@@ -3624,6 +3806,7 @@ def main():
     global _update_running_window, _update_result_window
     global _exit_confirm_window, _too_small_window
     global _history_sidebar_window, _history_table_window, _history_detail_window
+    global _log_view_window
 
     os.chdir(PROJECT_DIR)
     _one_shot_migrations()
@@ -3659,6 +3842,13 @@ def main():
     )
     history_detail_frame = _centered(_history_detail_window)
 
+    _log_view_window = Window(
+        content=FormattedTextControl(text=_log_view_text, focusable=True),
+        wrap_lines=False,
+        always_hide_cursor=True,
+    )
+    log_view_frame = _log_view_window
+
     frames = {
         "main":                       main_frame,
         "profile":                    profile_frame,
@@ -3671,6 +3861,7 @@ def main():
         "about":                      about_frame,
         "history":                    history_frame,
         "history_detail":             history_detail_frame,
+        "log_view":                   log_view_frame,
         "update_running":             update_running_frame,
         "update_result":              update_result_frame,
         "exit_confirm":               exit_confirm_frame,

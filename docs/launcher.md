@@ -37,7 +37,8 @@ path) goes through that wrapper unchanged.
 The UI is a frame stack: a single `DynamicContainer` swaps between `main`,
 `profile`, `profile_create_name`, `profile_create_choose`,
 `profile_create_copy_picker`, `profile_delete_confirm`, `options`,
-`scripts`, `about`, `update_running`, `update_result`, and `exit_confirm`
+`scripts`, `about`, `history`, `history_detail`, `log_view`,
+`update_running`, `update_result`, and `exit_confirm`
 containers, pushed and popped via `_push_frame` / `_pop_frame`. Each frame
 owns its own `KeyBindings` filter (`_in_frame(name)`) so navigation, scroll,
 and ESC behave per-frame. The popup architecture (ADR 0062) is the
@@ -137,10 +138,10 @@ one column.
 
 **WATCH LOG.** Appears iff `summary.has_log` is `True`; hidden
 entirely otherwise. Styled `C_WATCH_LOG` idle, `C_WATCH_LOG_HOVER`
-on hover. Both the mouse click handler and the `L` keyboard
-shortcut are no-ops in v1; Phase 3 (a new launcher frame for log
-playback) will wire them. The footer hint segment `L Watch log`
-appears under the same `has_log` condition.
+on hover. Click and the `L` keyboard shortcut both push the
+`log_view` frame (Phase 3 skeleton; playback comes in later
+prompts). The footer hint segment `L Watch log` appears under the
+same `has_log` condition.
 
 **Section parity with popup Statistics.** ALLIES (`♦` in
 `_S_ALLY`), ACHIEVEMENTS (`★` in `_S_STAR`), KILLS (sortable),
@@ -182,6 +183,58 @@ ESC Back     ↑↓ Scroll     Tab/Shift+Tab Switch table     L Watch log
 ```
 
 The `L Watch log` segment is conditional on `has_log`.
+
+### `log_view` frame
+
+Chain log player. Opened from `history_detail` by clicking
+WATCH LOG or pressing `L`. Reads the `.log` siblings of the
+chain's `summary.run_ids` for the current character and renders
+all events as one stacked, scrollable buffer. Phase 3, prompt 1
+ships only the static load + render skeleton; playback clock,
+cursor, run-boundary header, scrubber, and pause-mode highlights
+arrive in later prompts.
+
+**Load.** On push, `_enter_log_view()` builds a
+`log_player.LogPlayback(summary.character, summary.run_ids)`.
+For each `run_id`, the loader tries
+`data/runs/<character>/<run_id>.log`; runs whose `.log` is
+missing are silently skipped. `run_ids` retains the original
+chain ordering so `LogPlayback.run_at(idx)` reports the correct
+`(run_id, run_ordinal, total_runs)` (with `run_ordinal` measured
+against the unfiltered chain — Phase 3 prompt 2 consumes this
+for the run-boundary header). If every `.log` is missing the
+push aborts; `has_log` should prevent that case in practice.
+
+**Event model.** Each parsed line becomes a `LogEvent` with
+`ts_us`, `direction` (`"in"`/`"out"`), `text` (raw body, prefix
+and `> ` stripped, CR trimmed), `run_id`, and pre-parsed
+`fragments`. Inbound lines run through a 16-colour SGR parser
+(plus bold/underline); 256-colour and truecolour escapes are
+dropped so the affected run renders uncoloured rather than
+crashing the player. Outbound lines render as a single fragment
+in `C_LOG_PLAYER_INPUT` (no `>` prefix in the rendered output).
+Events are merged into one list sorted by `ts_us` — within-file
+order is preserved, the cross-file sort defends against clock
+skew on chain rollover.
+
+**Render.** A single focusable `Window` (`_log_view_window`)
+holds a `FormattedTextControl` over the full frame; the visual
+lines are produced by wrapping each event's fragment list at
+the terminal width and concatenating them. The wrapping cache
+re-builds when the terminal width changes. The wrap is a
+fragment-aware split, not `wrap_lines=True`, so style runs
+remain stable across the wrap boundary.
+
+**Keyboard.** ESC pops back to `history_detail` (filter / sort /
+cursor state intact) and clears the playback so it can be
+garbage-collected — chains are re-read on next push.
+PgUp / PgDn scroll by a screen, Home / End jump to ends,
+↑ / ↓ scroll one visual line. No Space / mouse-wheel / overlays
+yet; those land in P2/P3.
+
+**Frame focus.** Per ADR 0066, `_log_view_window` is the primary
+focusable window and is dispatched by `_focus_current_frame()`
+on push.
 
 ## Rendering conventions
 
@@ -233,6 +286,7 @@ shared with the in-game popup. Roles:
 | `C_ROW_HOVER`       | History detail data-table row hover — subtle background fill that composes with cell foreground colours |
 | `C_WATCH_LOG`       | WATCH LOG button — black on accent background fill                                                  |
 | `C_WATCH_LOG_HOVER` | WATCH LOG button on hover — lighter accent background variant                                       |
+| `C_LOG_PLAYER_INPUT`| log_view outbound (player command) lines — muted grey with a faint light-cyan tint                  |
 
 **Alignment convention (Profile / Options / Scripts pages).** Menu rows
 are left-aligned on a shared column inside a centred block. The widest
