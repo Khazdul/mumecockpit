@@ -2860,7 +2860,13 @@ def _history_detail_text():
     frags.append((C_HEADER, title_text, clear))
     used = title_pad + len(title_text)
     if button_visible:
-        gap = max(1, cols - used - len(button_label))
+        # Right edge of the button matches the right edge of the centred stats block.
+        left_w  = _HD_STAT_TABLE_LEFT_W
+        right_w = _HD_STAT_TABLE_RIGHT_W
+        total_w = left_w + 1 + len(_HD_STAT_TABLE_GAP) + right_w + 1
+        block_right = max(0, (cols - total_w) // 2) + total_w
+        button_start = block_right - len(button_label)
+        gap = max(1, button_start - used)
         frags.append(("", " " * gap, clear))
         log_style = C_WATCH_LOG_HOVER if _history_detail_log_hover else C_WATCH_LOG
         frags.append((log_style, button_label, _hd_watch_log_handler))
