@@ -1815,7 +1815,6 @@ def _history_table_text():
 
     frags = []
     sort_col, sort_dir = _history_sort
-    sidebar_focused    = (_history_focused == 0)
     table_focused      = (_history_focused == 1)
 
     # Empty state — render centred message, no header.
@@ -1867,10 +1866,8 @@ def _history_table_text():
         is_cursor = (row_abs == _history_table_cursor)
         is_hover  = (hover_panel == 1 and hover_row == row_abs)
 
-        if is_cursor and table_focused:
-            row_bg = C_ACTIVE
-        elif is_cursor and sidebar_focused:
-            row_bg = C_HOVER
+        if is_cursor:
+            row_bg = C_SELECTED
         elif is_hover:
             row_bg = C_HOVER
         else:
