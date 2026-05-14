@@ -19,6 +19,7 @@ except ImportError:
 
 import asyncio
 import atexit
+import bisect
 import glob
 import os
 import random
@@ -36,6 +37,7 @@ from palette import (  # noqa: E402
     C_TITLE, C_ACTIVE, C_ITEM, C_BODY, C_HINT, C_ACCENT,
     C_YELLOW, C_ERR, C_QUOTE, C_QUOTE_ATTR, C_HOVER, C_SELECTED,
     C_HEADER, C_SECTION, C_DIVIDER, C_WATCH_LOG, C_WATCH_LOG_HOVER,
+    C_LOG_CURSOR,
     _S_GAINED, _S_LOSS, _S_LABEL, _S_VALUE, _S_TP_BAR,
     _S_TRACK, _S_MARKER, _S_THUMB, _S_TOTAL, _S_ARROW,
     _S_HINT, _S_PVP, _S_ALLY, _S_STAR,
@@ -191,11 +193,22 @@ _history_detail_allies_sb       = None
 _history_detail_achievements_sb = None
 _history_detail_kills_pvps_visible = 2  # last computed visible row count
 
-# log_view (chain log player) — Phase 3 skeleton
+# log_view (chain log player) — Phase 3
 _log_view_playback = None   # log_player.LogPlayback or None
 _log_view_scroll   = 0      # visual-line offset into the rendered buffer
 _log_view_cols     = 0      # last cols used to wrap; invalidates cache on change
 _log_view_lines    = None   # cached visual lines: list[list[(style, run)]]
+_log_view_event_rows = None # parallel to events: (visual_start, visual_end_exclusive)
+# Playback engine
+_log_mode                   = "play"   # "play" | "pause"
+_log_play_anchor_wall       = 0.0      # monotonic() at last play-start
+_log_play_anchor_offset_us  = 0        # playback time at last play-start
+_log_paused_offset_us       = 0        # frozen playback time while paused
+_log_cursor_index           = 0        # event index of the cursor (pause mode)
+_log_last_playhead_index    = -1       # last index pushed to renderer (tick dirty-check)
+_log_tick_task              = None     # asyncio.Task driving play-mode redraws
+_LOG_TICK_HZ                = 30
+_LOG_PAGE_STEP              = 20       # PgUp/PgDn cursor delta in pause
 _history_columns = [
     # (key, base_label, width, align, type)
     ("Char",   "Char",  None, "left",  "text"),
@@ -2943,6 +2956,9 @@ def _enter_log_view():
     chain whose every .log file has vanished between summary build and
     button activation."""
     global _log_view_playback, _log_view_scroll, _log_view_cols, _log_view_lines
+    global _log_view_event_rows
+    global _log_mode, _log_play_anchor_wall, _log_play_anchor_offset_us
+    global _log_paused_offset_us, _log_cursor_index, _log_last_playhead_index
     summary = _history_detail_summary
     if summary is None:
         return
@@ -2950,21 +2966,33 @@ def _enter_log_view():
     if not playback.events:
         # Defensive — every run's .log was missing; stay on history_detail.
         return
-    _log_view_playback = playback
-    _log_view_scroll   = 0
-    _log_view_cols     = 0
-    _log_view_lines    = None
+    _log_view_playback        = playback
+    _log_view_scroll          = 0
+    _log_view_cols            = 0
+    _log_view_lines           = None
+    _log_view_event_rows      = None
+    _log_mode                 = "play"
+    _log_play_anchor_wall     = time.monotonic()
+    _log_play_anchor_offset_us = 0
+    _log_paused_offset_us     = 0
+    _log_cursor_index         = 0
+    _log_last_playhead_index  = -1
     _push_frame("log_view")
+    _log_start_tick_task()
 
 
 def _exit_log_view():
     """Pop back to history_detail and drop the playback so the chain's log
     data can be garbage-collected — chains are re-read from disk on next push."""
     global _log_view_playback, _log_view_scroll, _log_view_cols, _log_view_lines
-    _log_view_playback = None
-    _log_view_scroll   = 0
-    _log_view_cols     = 0
-    _log_view_lines    = None
+    global _log_view_event_rows, _log_last_playhead_index
+    _log_cancel_tick_task()
+    _log_view_playback   = None
+    _log_view_scroll     = 0
+    _log_view_cols       = 0
+    _log_view_lines      = None
+    _log_view_event_rows = None
+    _log_last_playhead_index = -1
     _pop_frame()
 
 
@@ -3005,69 +3033,352 @@ def _log_view_wrap_fragments(fragments, width):
 
 
 def _log_view_rebuild_if_needed():
-    global _log_view_lines, _log_view_cols
+    """Rebuild the wrapped-line cache and the parallel event→row map. The map
+    lets pause-mode rendering / clicking translate between event index and
+    visual-row range without re-wrapping on every redraw."""
+    global _log_view_lines, _log_view_cols, _log_view_event_rows
     if _log_view_playback is None:
-        _log_view_lines = []
+        _log_view_lines      = []
+        _log_view_event_rows = []
         return
     cols = _term_cols()
     if _log_view_lines is not None and cols == _log_view_cols:
         return
     visual = []
+    ev_rows = []
     for ev in _log_view_playback.events:
-        visual.extend(_log_view_wrap_fragments(ev.fragments, cols))
-    _log_view_lines = visual
-    _log_view_cols  = cols
+        start = len(visual)
+        wrapped = _log_view_wrap_fragments(ev.fragments, cols)
+        visual.extend(wrapped)
+        ev_rows.append((start, len(visual)))
+    _log_view_lines      = visual
+    _log_view_cols       = cols
+    _log_view_event_rows = ev_rows
 
 
-def _log_view_text():
-    global _log_view_scroll
+# --- Playback time / playhead --------------------------------------------
+def _log_current_playback_us():
+    pb = _log_view_playback
+    if pb is None:
+        return 0
+    if _log_mode == "play":
+        elapsed = int((time.monotonic() - _log_play_anchor_wall) * 1_000_000)
+        cur = _log_play_anchor_offset_us + elapsed
+    else:
+        cur = _log_paused_offset_us
+    if cur < 0:
+        cur = 0
+    if cur > pb.total_duration_us:
+        cur = pb.total_duration_us
+    return cur
+
+
+def _log_playhead_index():
+    pb = _log_view_playback
+    if pb is None or not pb.events:
+        return 0
+    cur = _log_current_playback_us()
+    # Largest i with playback_offset_us[i] <= cur.
+    i = bisect.bisect_right(pb.playback_offset_us, cur) - 1
+    if i < 0:
+        i = 0
+    if i >= len(pb.events):
+        i = len(pb.events) - 1
+    return i
+
+
+# --- Mode transitions ------------------------------------------------------
+def _log_pause():
+    """Freeze playback on the current playhead."""
+    global _log_mode, _log_paused_offset_us, _log_cursor_index
     if _log_view_playback is None:
-        return [(C_BODY, "(no log loaded)")]
-    _log_view_rebuild_if_needed()
+        return
+    _log_paused_offset_us = _log_current_playback_us()
+    _log_cursor_index     = _log_playhead_index()
+    _log_mode             = "pause"
+    _log_cancel_tick_task()
+    _log_ensure_cursor_visible()
+    if _app:
+        _app.invalidate()
+
+
+def _log_resume():
+    """Resume playing from the cursor's event timestamp. Always snaps to the
+    cursor, even when the cursor hasn't moved since the pause."""
+    global _log_mode, _log_play_anchor_wall, _log_play_anchor_offset_us
+    global _log_last_playhead_index
+    pb = _log_view_playback
+    if pb is None or not pb.events:
+        return
+    idx = max(0, min(len(pb.events) - 1, _log_cursor_index))
+    _log_play_anchor_offset_us = pb.playback_offset_us[idx]
+    _log_play_anchor_wall      = time.monotonic()
+    _log_mode                  = "play"
+    _log_last_playhead_index   = -1
+    _log_start_tick_task()
+    if _app:
+        _app.invalidate()
+
+
+def _log_toggle_play_pause():
+    if _log_view_playback is None:
+        return
+    if _log_mode == "play":
+        _log_pause()
+    else:
+        _log_resume()
+
+
+def _log_auto_pause_at_end():
+    """End-of-log auto-pause: cursor on the final event, mode → pause."""
+    global _log_mode, _log_paused_offset_us, _log_cursor_index
+    pb = _log_view_playback
+    if pb is None or not pb.events:
+        return
+    _log_cursor_index     = len(pb.events) - 1
+    _log_paused_offset_us = pb.total_duration_us
+    _log_mode             = "pause"
+    _log_cancel_tick_task()
+    _log_ensure_cursor_visible()
+    if _app:
+        _app.invalidate()
+
+
+# --- Tick task -------------------------------------------------------------
+def _log_cancel_tick_task():
+    global _log_tick_task
+    if _log_tick_task is not None:
+        _log_tick_task.cancel()
+        _log_tick_task = None
+
+
+def _log_start_tick_task():
+    global _log_tick_task
+    _log_cancel_tick_task()
+    if _app_loop is None:
+        return
+    _log_tick_task = _app_loop.create_task(_log_tick_loop())
+
+
+async def _log_tick_loop():
+    """~30 Hz redraw loop while in play mode. Stops as soon as the frame is
+    popped or the mode flips to pause; invalidates only when the playhead
+    crosses to a new event to avoid wasted repaints."""
+    global _log_last_playhead_index
+    interval = 1.0 / _LOG_TICK_HZ
+    try:
+        while True:
+            if (_current_frame != "log_view" or _log_mode != "play"
+                    or _log_view_playback is None):
+                return
+            pb = _log_view_playback
+            if pb.events and _log_current_playback_us() >= pb.total_duration_us:
+                _log_auto_pause_at_end()
+                return
+            idx = _log_playhead_index()
+            if idx != _log_last_playhead_index:
+                _log_last_playhead_index = idx
+                if _app:
+                    _app.invalidate()
+            await asyncio.sleep(interval)
+    except asyncio.CancelledError:
+        return
+
+
+# --- Rendering -------------------------------------------------------------
+def _log_apply_cursor_bg(line):
+    """Compose the cursor bg over an existing wrapped line, preserving each
+    fragment's existing fg/style. Style strings concatenate in prompt_toolkit;
+    later attributes override earlier ones, so appending `bg:` adds the
+    highlight without clobbering fg."""
+    out = []
+    for tup in line:
+        style = tup[0]
+        run   = tup[1]
+        combined = (style + " " + C_LOG_CURSOR).strip() if style else C_LOG_CURSOR
+        out.append((combined, run))
+    return out
+
+
+def _log_clamp_scroll():
+    global _log_view_scroll
     visible = _log_view_visible_rows()
-    total = len(_log_view_lines)
-    mx = max(0, total - visible)
+    mx = max(0, len(_log_view_lines) - visible)
     if _log_view_scroll > mx:
         _log_view_scroll = mx
     if _log_view_scroll < 0:
         _log_view_scroll = 0
 
-    sliced = _log_view_lines[_log_view_scroll:_log_view_scroll + visible]
+
+def _log_ensure_cursor_visible():
+    """Scroll so the cursor event's row range is visible. If the event is
+    taller than the viewport, anchor on its first row."""
+    global _log_view_scroll
+    if _log_view_playback is None:
+        return
+    _log_view_rebuild_if_needed()
+    rows = _log_view_event_rows
+    if not rows:
+        return
+    idx = max(0, min(len(rows) - 1, _log_cursor_index))
+    start, end = rows[idx]
+    visible = _log_view_visible_rows()
+    if end - start >= visible or start < _log_view_scroll:
+        _log_view_scroll = start
+    elif end > _log_view_scroll + visible:
+        _log_view_scroll = end - visible
+    _log_clamp_scroll()
+
+
+def _log_event_row_to_index(row_abs):
+    """Resolve an absolute visual row (0-based, into _log_view_lines) to an
+    event index. Returns None if outside the rendered range."""
+    rows = _log_view_event_rows
+    if not rows:
+        return None
+    # bisect on starts: largest i with start <= row_abs.
+    starts = [r[0] for r in rows]
+    i = bisect.bisect_right(starts, row_abs) - 1
+    if i < 0:
+        return None
+    start, end = rows[i]
+    if row_abs >= end:
+        return None
+    return i
+
+
+def _log_view_text():
+    if _log_view_playback is None:
+        return [(C_BODY, "(no log loaded)")]
+    _log_view_rebuild_if_needed()
+    visible = _log_view_visible_rows()
+    if _log_mode == "play":
+        return _log_view_text_play(visible)
+    return _log_view_text_pause(visible)
+
+
+def _log_view_text_play(visible):
+    """Streaming render: only events up to the playhead, with the latest
+    event sitting at the bottom of the viewport."""
+    global _log_view_scroll
+    pb = _log_view_playback
+    rows = _log_view_event_rows
+    if not rows:
+        return []
+    idx = _log_playhead_index()
+    end_excl = rows[idx][1]  # one past the last visual row of the playhead event
+    start_row = max(0, end_excl - visible)
+    _log_view_scroll = start_row
+    sliced = _log_view_lines[start_row:end_excl]
+    return _log_lines_to_fragments(sliced, sliced_start=start_row, cursor_idx=None)
+
+
+def _log_view_text_pause(visible):
+    """Full-buffer render with a cursor highlight on the cursor event."""
+    _log_clamp_scroll()
+    start_row = _log_view_scroll
+    end_row   = start_row + visible
+    sliced    = _log_view_lines[start_row:end_row]
+    return _log_lines_to_fragments(sliced, sliced_start=start_row,
+                                   cursor_idx=_log_cursor_index)
+
+
+def _log_lines_to_fragments(sliced, sliced_start, cursor_idx):
+    """Flatten a slice of wrapped visual lines into a prompt_toolkit fragment
+    list. When `cursor_idx` is set, rows belonging to that event get the
+    C_LOG_CURSOR bg layered on top of their existing styles."""
+    rows = _log_view_event_rows
+    cursor_start = cursor_end = -1
+    if cursor_idx is not None and rows and 0 <= cursor_idx < len(rows):
+        cursor_start, cursor_end = rows[cursor_idx]
     frags = []
     for i, line in enumerate(sliced):
-        if line:
+        abs_row = sliced_start + i
+        if cursor_start <= abs_row < cursor_end:
+            painted = _log_apply_cursor_bg(line)
+            # Pad to terminal width so the bg highlight spans the whole row,
+            # including the trailing area past the line's text.
+            line_w = sum(len(r) for _, r in line)
+            pad = max(0, _log_view_cols - line_w)
+            if pad:
+                painted.append((C_LOG_CURSOR, " " * pad))
+            frags.extend(painted)
+        elif line:
             frags.extend(line)
         if i < len(sliced) - 1:
             frags.append(("", "\n"))
     return frags
 
 
-def _scroll_log_view(delta):
-    global _log_view_scroll
-    if _log_view_playback is None:
+# --- Cursor / scroll movement (pause mode) --------------------------------
+def _log_move_cursor(delta):
+    """Move cursor by `delta` events; auto-pauses if currently playing.
+    Clamps to [0, last_index] and keeps the cursor row in view."""
+    global _log_cursor_index
+    pb = _log_view_playback
+    if pb is None or not pb.events:
         return
-    _log_view_rebuild_if_needed()
-    visible = _log_view_visible_rows()
-    mx = max(0, len(_log_view_lines) - visible)
-    new_val = max(0, min(mx, _log_view_scroll + delta))
-    if new_val != _log_view_scroll:
-        _log_view_scroll = new_val
-        if _app:
-            _app.invalidate()
+    if _log_mode == "play":
+        _log_pause()
+    n = len(pb.events)
+    new_idx = max(0, min(n - 1, _log_cursor_index + delta))
+    if new_idx == _log_cursor_index:
+        return
+    _log_cursor_index = new_idx
+    _log_ensure_cursor_visible()
+    if _app:
+        _app.invalidate()
 
 
-def _log_view_scroll_to(pos):
-    global _log_view_scroll
-    if _log_view_playback is None:
+def _log_cursor_to(index):
+    global _log_cursor_index
+    pb = _log_view_playback
+    if pb is None or not pb.events:
         return
-    _log_view_rebuild_if_needed()
-    visible = _log_view_visible_rows()
-    mx = max(0, len(_log_view_lines) - visible)
-    new_val = max(0, min(mx, pos))
-    if new_val != _log_view_scroll:
-        _log_view_scroll = new_val
-        if _app:
-            _app.invalidate()
+    if _log_mode == "play":
+        _log_pause()
+    n = len(pb.events)
+    new_idx = max(0, min(n - 1, index))
+    if new_idx == _log_cursor_index:
+        return
+    _log_cursor_index = new_idx
+    _log_ensure_cursor_visible()
+    if _app:
+        _app.invalidate()
+
+
+class _LogViewControl(FormattedTextControl):
+    """Mouse routing for the log_view frame.
+
+    Pause mode:
+      • Wheel up/down moves the cursor by one event (per spec: wheel moves
+        the cursor, not just the viewport, so the resume point stays
+        predictable).
+      • Click on a rendered event row moves the cursor to that event.
+        Does NOT resume playback — Space does.
+
+    Play mode: all mouse input is a no-op here. P3 will wire mouse to the
+    overlay auto-hide logic."""
+    def mouse_handler(self, ev):
+        result = super().mouse_handler(ev)
+        if result is not NotImplemented:
+            return result
+        if _log_view_playback is None or _log_mode != "pause":
+            return None
+        t = ev.event_type
+        if t == MouseEventType.SCROLL_UP:
+            _log_move_cursor(-1)
+            return None
+        if t == MouseEventType.SCROLL_DOWN:
+            _log_move_cursor(1)
+            return None
+        if t == MouseEventType.MOUSE_DOWN:
+            row_abs = _log_view_scroll + ev.position.y
+            idx = _log_event_row_to_index(row_abs)
+            if idx is not None:
+                _log_cursor_to(idx)
+            return None
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -3636,34 +3947,42 @@ def _kb_log_escape(event):
     _exit_log_view()
 
 
+@kb.add("space", filter=_in_frame("log_view"))
+def _kb_log_space(event):
+    _log_toggle_play_pause()
+
+
 @kb.add("up", filter=_in_frame("log_view"))
 def _kb_log_up(event):
-    _scroll_log_view(-1)
+    _log_move_cursor(-1)
 
 
 @kb.add("down", filter=_in_frame("log_view"))
 def _kb_log_down(event):
-    _scroll_log_view(1)
+    _log_move_cursor(1)
 
 
 @kb.add("pageup", filter=_in_frame("log_view"))
 def _kb_log_pgup(event):
-    _scroll_log_view(-_log_view_visible_rows())
+    _log_move_cursor(-_LOG_PAGE_STEP)
 
 
 @kb.add("pagedown", filter=_in_frame("log_view"))
 def _kb_log_pgdn(event):
-    _scroll_log_view(_log_view_visible_rows())
+    _log_move_cursor(_LOG_PAGE_STEP)
 
 
 @kb.add("home", filter=_in_frame("log_view"))
 def _kb_log_home(event):
-    _log_view_scroll_to(0)
+    _log_cursor_to(0)
 
 
 @kb.add("end", filter=_in_frame("log_view"))
 def _kb_log_end(event):
-    _log_view_scroll_to(10**9)
+    pb = _log_view_playback
+    if pb is None or not pb.events:
+        return
+    _log_cursor_to(len(pb.events) - 1)
 
 
 # Update running — no input
@@ -3843,7 +4162,7 @@ def main():
     history_detail_frame = _centered(_history_detail_window)
 
     _log_view_window = Window(
-        content=FormattedTextControl(text=_log_view_text, focusable=True),
+        content=_LogViewControl(text=_log_view_text, focusable=True),
         wrap_lines=False,
         always_hide_cursor=True,
     )

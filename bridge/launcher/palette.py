@@ -9,7 +9,7 @@ __all__ = [
     "C_QUOTE", "C_QUOTE_ATTR", "C_HOVER", "C_SELECTED",
     "C_HEADER", "C_SECTION", "C_DIVIDER",
     "C_WATCH_LOG", "C_WATCH_LOG_HOVER",
-    "C_LOG_PLAYER_INPUT",
+    "C_LOG_PLAYER_INPUT", "C_LOG_CURSOR",
     "_S_VALUE", "_S_LABEL", "_S_GAINED", "_S_LOSS", "_S_TP_BAR",
     "_S_TRACK", "_S_MARKER", "_S_THUMB", "_S_TOTAL", "_S_ARROW",
     "_S_HINT", "_S_PVP", "_S_ALLY", "_S_STAR",
@@ -64,3 +64,7 @@ C_WATCH_LOG_HOVER = "fg:#000000 bg:#ffd060"
 # grey with a faint light-cyan tint so they're visually distinct from
 # server output but never compete with it for attention.
 C_LOG_PLAYER_INPUT = "fg:#86a0a0"
+
+# log_view pause-mode cursor row: subtle background only, no fg. Combined
+# with each fragment's existing fg in the renderer so colours survive.
+C_LOG_CURSOR = "bg:#303030"

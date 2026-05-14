@@ -193,6 +193,11 @@ def _parse_log_file(path: str, run_id: str, out_events: list):
             out_events.append(ev)
 
 
+# Inter-event gaps longer than this collapse to 0 during playback — keeps
+# multi-day chain replays watchable while still respecting natural pacing.
+_PLAYBACK_GAP_CAP_US = 10_000_000
+
+
 class LogPlayback:
     """Loaded chain log: events from all runs in `run_ids` merged in
     microsecond order. Runs whose `.log` file is missing are silently
@@ -217,6 +222,21 @@ class LogPlayback:
         # Stable sort by ts_us; events within a single file are already
         # monotonic, this only matters across files when clocks shift.
         self.events.sort(key=lambda e: e.ts_us)
+
+        # Per-event playback offset (microseconds from event 0). Gaps over
+        # _PLAYBACK_GAP_CAP_US are clamped to 0 so an overnight pause in a
+        # chain doesn't make the player sit silent for hours.
+        self.playback_offset_us: list = []
+        offset = 0
+        prev_ts = None
+        for ev in self.events:
+            if prev_ts is not None:
+                gap = ev.ts_us - prev_ts
+                if 0 < gap <= _PLAYBACK_GAP_CAP_US:
+                    offset += gap
+            self.playback_offset_us.append(offset)
+            prev_ts = ev.ts_us
+        self.total_duration_us = self.playback_offset_us[-1] if self.playback_offset_us else 0
 
     def __bool__(self):
         return bool(self.events)
