@@ -7,7 +7,7 @@ try:
     from prompt_toolkit.filters import Condition
     from prompt_toolkit.key_binding import KeyBindings
     from prompt_toolkit.layout import DynamicContainer, Layout, VerticalAlign
-    from prompt_toolkit.layout.containers import HSplit, Window
+    from prompt_toolkit.layout.containers import HSplit, VSplit, Window
     from prompt_toolkit.layout.controls import FormattedTextControl
     from prompt_toolkit.layout.dimension import Dimension
     from prompt_toolkit.mouse_events import MouseEventType
@@ -27,14 +27,17 @@ import shutil
 import subprocess
 import sys
 import threading
+import time
 
 # Make sibling modules importable when run directly via the wrapper.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from palette import (  # noqa: E402
     C_TITLE, C_ACTIVE, C_ITEM, C_BODY, C_HINT, C_ACCENT,
-    C_YELLOW, C_ERR, C_QUOTE, C_QUOTE_ATTR, C_HOVER,
+    C_YELLOW, C_ERR, C_QUOTE, C_QUOTE_ATTR, C_HOVER, C_SELECTED,
+    C_SECTION, _S_GAINED, _S_LOSS, _S_LABEL,
 )
+import run_stats  # noqa: E402
 from widgets.scrollbar import Scrollbar  # noqa: E402
 
 # ---------------------------------------------------------------------------
@@ -159,6 +162,30 @@ _about_scroll        = 0
 _about_cols          = 0
 _about_sb            = None
 
+# History
+_history_sidebar_items   = []        # ["All", "<char>", ...]
+_history_sessions        = []        # filtered + sorted SessionSummary list
+_history_filter          = "All"
+_history_sort            = ("Char", "asc")
+_history_sidebar_cursor  = 0
+_history_sidebar_scroll  = 0
+_history_table_cursor    = 0
+_history_table_scroll    = 0
+_history_focused         = 0         # 0 = sidebar, 1 = table
+_history_hover           = (None, None)   # (panel_idx, row_idx)
+_history_sidebar_sb      = None
+_history_table_sb        = None
+_history_detail_session  = None
+_history_columns = [
+    # (key, base_label, width, align, type)
+    ("Char",   "Char",  None, "left",  "text"),
+    ("Date",   "Date",  10,   "left",  "text"),
+    ("Time",   "Time",  5,    "left",  "text"),
+    ("Dur.",   "Dur.",  5,    "left",  "numeric"),
+    ("PK",     "PK",    3,    "right", "numeric"),
+    ("XP",     "XP",    7,    "right", "numeric"),
+]
+
 # Update flow
 _update_rc           = None
 _update_output       = ""
@@ -177,6 +204,9 @@ _update_running_window = None
 _update_result_window  = None
 _exit_confirm_window   = None
 _too_small_window      = None
+_history_sidebar_window = None
+_history_table_window   = None
+_history_detail_window  = None
 
 _app_loop = None
 
@@ -424,20 +454,24 @@ def _size_ok():
 def _focus_current_frame():
     if not _app:
         return
-    win = {
-        "main":                       _main_window,
-        "profile":                    _profile_window,
-        "profile_create_name":        _profile_create_name_window,
-        "profile_create_choose":      _profile_create_choose_window,
-        "profile_create_copy_picker": _profile_create_copy_window,
-        "profile_delete_confirm":     _profile_delete_window,
-        "options":                    _options_window,
-        "scripts":                    _scripts_window,
-        "about":                      _about_window,
-        "update_running":             _update_running_window,
-        "update_result":              _update_result_window,
-        "exit_confirm":               _exit_confirm_window,
-    }.get(_current_frame)
+    if _current_frame == "history":
+        win = _history_sidebar_window if _history_focused == 0 else _history_table_window
+    else:
+        win = {
+            "main":                       _main_window,
+            "profile":                    _profile_window,
+            "profile_create_name":        _profile_create_name_window,
+            "profile_create_choose":      _profile_create_choose_window,
+            "profile_create_copy_picker": _profile_create_copy_window,
+            "profile_delete_confirm":     _profile_delete_window,
+            "options":                    _options_window,
+            "scripts":                    _scripts_window,
+            "about":                      _about_window,
+            "update_running":             _update_running_window,
+            "update_result":              _update_result_window,
+            "exit_confirm":               _exit_confirm_window,
+            "history_detail":             _history_detail_window,
+        }.get(_current_frame)
     if win is None:
         return
     try:
@@ -524,7 +558,7 @@ def _rebuild_main_items(*, preserve_label=True):
     items = [first]
     if _update_available():
         items.append("Update")
-    items.extend(["Profile", "Options", "Scripts", "About", "Quit"])
+    items.extend(["Profile", "History", "Options", "Scripts", "About", "Quit"])
     _main_items = items
     if prev and prev in items:
         _sel_main = items.index(prev)
@@ -569,6 +603,8 @@ def _activate_main(idx):
         _start_update()
     elif label == "Profile":
         _enter_profile_frame()
+    elif label == "History":
+        _enter_history_frame()
     elif label == "Options":
         _enter_options_frame()
     elif label == "Scripts":
@@ -1353,6 +1389,602 @@ def _scroll_about(delta):
 
 
 # ---------------------------------------------------------------------------
+# History frame
+# ---------------------------------------------------------------------------
+_HISTORY_SIDEBAR_W = 12
+_HISTORY_GAP       = 2
+
+
+def _enter_history_frame():
+    global _history_sidebar_items, _history_filter, _history_sort
+    global _history_sidebar_cursor, _history_sidebar_scroll
+    global _history_table_cursor, _history_table_scroll
+    global _history_focused, _history_hover
+    global _history_sidebar_sb, _history_table_sb
+    try:
+        chars = run_stats.list_characters_with_runs()
+    except Exception:
+        chars = []
+    _history_sidebar_items  = ["All"] + chars
+    _history_filter         = "All"
+    _history_sort           = ("Char", "asc")
+    _history_sidebar_cursor = 0
+    _history_sidebar_scroll = 0
+    _history_table_cursor   = 0
+    _history_table_scroll   = 0
+    _history_focused        = 1
+    _history_hover          = (None, None)
+    _history_sidebar_sb = Scrollbar(
+        len(_history_sidebar_items), _history_sidebar_visible(),
+        _history_sidebar_visible(),
+    )
+    _history_table_sb = Scrollbar(
+        0, _history_table_visible(), _history_table_visible(),
+    )
+    _history_refresh_sessions()
+    _push_frame("history")
+
+
+def _history_body_rows():
+    # Title (3) + footer (2) = 5 reserved.
+    return max(1, _term_rows() - 5)
+
+
+def _history_sidebar_visible():
+    return _history_body_rows()
+
+
+def _history_table_visible():
+    # One row for the column header.
+    return max(1, _history_body_rows() - 1)
+
+
+def _history_load_sessions_for_filter():
+    if _history_filter == "All":
+        out = []
+        for ch in _history_sidebar_items[1:]:
+            try:
+                out.extend(run_stats.list_sessions(ch))
+            except Exception:
+                pass
+        return out
+    try:
+        return list(run_stats.list_sessions(_history_filter))
+    except Exception:
+        return []
+
+
+def _history_sort_key(col):
+    return {
+        "Char": lambda s: s.character.lower(),
+        "Date": lambda s: s.start_ts,
+        "Time": lambda s: s.start_ts,
+        "Dur.": lambda s: s.duration_seconds,
+        "PK":   lambda s: s.pkill_count,
+        "XP":   lambda s: s.xp_gained,
+    }.get(col, lambda s: s.start_ts)
+
+
+def _history_col_type(col):
+    for key, _label, _w, _align, ctype in _history_columns:
+        if key == col:
+            return ctype
+    return "text"
+
+
+def _history_default_sort_dir(col):
+    return "asc" if _history_col_type(col) == "text" else "desc"
+
+
+def _history_refresh_sessions():
+    """Recompute _history_sessions from filter + sort. Resets table scroll
+    but preserves table cursor index validity."""
+    global _history_sessions, _history_table_scroll, _history_table_cursor
+    sessions = _history_load_sessions_for_filter()
+    sessions.sort(key=lambda s: s.start_ts, reverse=True)
+    col, direction = _history_sort
+    sessions.sort(key=_history_sort_key(col), reverse=(direction == "desc"))
+    _history_sessions = sessions
+    _history_table_scroll = 0
+    if _history_table_cursor >= len(sessions):
+        _history_table_cursor = max(0, len(sessions) - 1)
+
+
+def _history_set_filter(name):
+    """Apply filter; reset table scroll + cursor; preserve sort."""
+    global _history_filter, _history_table_cursor
+    if name not in _history_sidebar_items:
+        return
+    _history_filter       = name
+    _history_table_cursor = 0
+    _history_refresh_sessions()
+    if _app:
+        _app.invalidate()
+
+
+def _history_toggle_sort(col):
+    global _history_sort
+    cur_col, cur_dir = _history_sort
+    if col == cur_col:
+        new_dir = "asc" if cur_dir == "desc" else "desc"
+    else:
+        new_dir = _history_default_sort_dir(col)
+    _history_sort = (col, new_dir)
+    _history_refresh_sessions()
+    if _app:
+        _app.invalidate()
+
+
+def _history_fmt_duration(secs):
+    secs = max(0, int(secs))
+    if secs < 60:
+        return "0 m"
+    minutes = secs // 60
+    if minutes < 60:
+        return f"{minutes} m"
+    hours = minutes // 60
+    return f"{hours} h"
+
+
+def _history_fmt_xp(xp):
+    """Return (text, style) per spec."""
+    try:
+        xp = int(xp)
+    except (TypeError, ValueError):
+        return "0k", _S_LABEL
+    if xp > 0 and xp >= 1000:
+        return f"{round(xp / 1000)}k", _S_GAINED
+    if xp < -999:
+        return f"{-round(-xp / 1000)}k", _S_LOSS
+    return "0k", _S_LABEL
+
+
+def _history_fmt_date(ts):
+    try:
+        return time.strftime("%Y-%m-%d", time.localtime(int(ts)))
+    except (TypeError, ValueError, OSError):
+        return ""
+
+
+def _history_fmt_time(ts):
+    try:
+        return time.strftime("%H:%M", time.localtime(int(ts)))
+    except (TypeError, ValueError, OSError):
+        return ""
+
+
+def _history_char_col_width():
+    base = len("Char ▼")
+    chars = _history_sidebar_items[1:]
+    if chars:
+        base = max(base, max(len(c) for c in chars))
+    return base
+
+
+def _history_header_label(base, is_active, sort_dir, align, width):
+    txt = base
+    if is_active:
+        txt += " ▼" if sort_dir == "desc" else " ▲"
+    if align == "left":
+        return txt[:width].ljust(width)
+    return txt[:width].rjust(width)
+
+
+def _history_scroll_into_view(cursor, scroll, visible):
+    if cursor < scroll:
+        return cursor
+    if cursor >= scroll + visible:
+        return cursor - visible + 1
+    return scroll
+
+
+def _history_move_sidebar(delta):
+    global _history_sidebar_cursor, _history_sidebar_scroll
+    n = len(_history_sidebar_items)
+    if not n:
+        return
+    new_cursor = (_history_sidebar_cursor + delta) % n
+    _history_sidebar_cursor = new_cursor
+    _history_sidebar_scroll = _history_scroll_into_view(
+        new_cursor, _history_sidebar_scroll, _history_sidebar_visible()
+    )
+    _history_set_filter(_history_sidebar_items[new_cursor])
+
+
+def _history_jump_sidebar(target):
+    global _history_sidebar_cursor, _history_sidebar_scroll
+    n = len(_history_sidebar_items)
+    if not n:
+        return
+    new_cursor = max(0, min(n - 1, target))
+    _history_sidebar_cursor = new_cursor
+    _history_sidebar_scroll = _history_scroll_into_view(
+        new_cursor, _history_sidebar_scroll, _history_sidebar_visible()
+    )
+    _history_set_filter(_history_sidebar_items[new_cursor])
+
+
+def _history_move_table(delta):
+    global _history_table_cursor, _history_table_scroll
+    n = len(_history_sessions)
+    if not n:
+        return
+    new_cursor = max(0, min(n - 1, _history_table_cursor + delta))
+    _history_table_cursor = new_cursor
+    _history_table_scroll = _history_scroll_into_view(
+        new_cursor, _history_table_scroll, _history_table_visible()
+    )
+    if _app:
+        _app.invalidate()
+
+
+def _history_jump_table(target):
+    global _history_table_cursor, _history_table_scroll
+    n = len(_history_sessions)
+    if not n:
+        return
+    new_cursor = max(0, min(n - 1, target))
+    _history_table_cursor = new_cursor
+    _history_table_scroll = _history_scroll_into_view(
+        new_cursor, _history_table_scroll, _history_table_visible()
+    )
+    if _app:
+        _app.invalidate()
+
+
+def _history_scroll_panel(panel, delta):
+    """Wheel scroll for panel under cursor. Does NOT move cursor."""
+    global _history_sidebar_scroll, _history_table_scroll
+    if panel == 0:
+        mx = max(0, len(_history_sidebar_items) - _history_sidebar_visible())
+        _history_sidebar_scroll = max(0, min(mx, _history_sidebar_scroll + delta))
+    else:
+        mx = max(0, len(_history_sessions) - _history_table_visible())
+        _history_table_scroll = max(0, min(mx, _history_table_scroll + delta))
+    if _app:
+        _app.invalidate()
+
+
+def _history_set_focus(panel):
+    global _history_focused
+    if _history_focused == panel:
+        return
+    _history_focused = panel
+    _focus_current_frame()
+    if _app:
+        _app.invalidate()
+
+
+def _history_toggle_focus():
+    _history_set_focus(1 - _history_focused)
+
+
+def _history_set_hover(panel, row):
+    global _history_hover
+    new_val = (panel, row)
+    if _history_hover != new_val:
+        _history_hover = new_val
+        if _app:
+            _app.invalidate()
+
+
+def _history_activate_table_row(idx):
+    """Move cursor to idx, push history_detail for that session."""
+    global _history_table_cursor, _history_detail_session
+    if idx < 0 or idx >= len(_history_sessions):
+        return
+    _history_table_cursor = idx
+    _history_detail_session = _history_sessions[idx]
+    _push_frame("history_detail")
+
+
+# --- Title / footer text ---------------------------------------------------
+def _history_title_text():
+    cols = _term_cols()
+    title = "─── History ───"
+    return [
+        ("", "\n"),
+        ("", _pad_centre(title, cols)),
+        (C_TITLE, title),
+        ("", "\n"),
+    ]
+
+
+def _history_footer_text():
+    cols = _term_cols()
+    footer = "↑↓ Navigate · Tab Switch panel · Enter Select · ESC Back"
+    return [
+        ("", "\n"),
+        ("", _pad_centre(footer, cols)),
+        (C_HINT, footer),
+    ]
+
+
+# --- Sidebar render --------------------------------------------------------
+def _history_sidebar_text():
+    visible = _history_sidebar_visible()
+    items   = _history_sidebar_items
+    total   = len(items)
+    mx      = max(0, total - visible)
+    global _history_sidebar_scroll
+    if _history_sidebar_scroll > mx:
+        _history_sidebar_scroll = mx
+    if _history_sidebar_sb is not None:
+        _history_sidebar_sb.update(total, visible, height=visible)
+        _history_sidebar_sb.scroll_to(_history_sidebar_scroll)
+
+    width   = _HISTORY_SIDEBAR_W
+    sliced  = items[_history_sidebar_scroll:_history_sidebar_scroll + visible]
+    frags   = []
+    hover_panel, hover_row = _history_hover
+    for i, label in enumerate(sliced):
+        row_abs   = _history_sidebar_scroll + i
+        is_active = (items[row_abs] == _history_filter)
+        is_hover  = (hover_panel == 0 and hover_row == row_abs)
+
+        if is_active:
+            style = C_SELECTED
+        elif is_hover:
+            style = C_HOVER
+        else:
+            style = C_ITEM
+
+        text = " " + label
+        text = text[:width].ljust(width)
+
+        def _h(ev, row=row_abs):
+            if ev.event_type == MouseEventType.MOUSE_MOVE:
+                _history_set_hover(0, row)
+                return
+            if ev.event_type == MouseEventType.MOUSE_DOWN:
+                _history_set_focus(0)
+                _history_jump_sidebar(row)
+
+        frags.append((style, text, _h))
+        # Pad the rest of the visible area below the last row.
+        if i < len(sliced) - 1:
+            frags.append(("", "\n"))
+
+    # Pad remaining height with blank rows so the panel keeps its shape.
+    blank_rows = visible - len(sliced)
+    for _ in range(blank_rows):
+        frags.append(("", "\n"))
+        frags.append(("", " " * width))
+    return frags
+
+
+def _history_sidebar_scrollbar_text():
+    if _history_sidebar_sb is None:
+        return []
+    return _history_sidebar_sb.render()
+
+
+# --- Table render ----------------------------------------------------------
+def _history_table_columns_layout():
+    """Compute (cols_with_widths, total_width) for current state."""
+    char_w = _history_char_col_width()
+    cols = []
+    total = 0
+    for i, (key, base, w, align, ctype) in enumerate(_history_columns):
+        width = char_w if key == "Char" else w
+        cols.append((key, base, width, align, ctype))
+        total += width
+        if i < len(_history_columns) - 1:
+            total += 1   # one-space gap between columns
+    return cols, total
+
+
+def _history_format_row(session, cols):
+    """Return list of (text, style) per column."""
+    sort_col = _history_sort[0]
+    out = []
+    for (key, _base, width, align, _ctype) in cols:
+        if key == "Char":
+            txt = session.character[:width].ljust(width)
+            style = _S_LABEL
+        elif key == "Date":
+            txt = _history_fmt_date(session.start_ts)[:width].ljust(width)
+            style = _S_LABEL
+        elif key == "Time":
+            txt = _history_fmt_time(session.start_ts)[:width].ljust(width)
+            style = _S_LABEL
+        elif key == "Dur.":
+            txt = _history_fmt_duration(session.duration_seconds)
+            txt = txt[:width].ljust(width)
+            style = _S_LABEL
+        elif key == "PK":
+            txt = str(int(session.pkill_count or 0))[:width].rjust(width)
+            style = _S_LABEL
+        elif key == "XP":
+            short, style = _history_fmt_xp(session.xp_gained)
+            txt = short[:width].rjust(width)
+        else:
+            txt = "".ljust(width)
+            style = _S_LABEL
+        out.append((txt, style))
+    return out
+
+
+def _history_table_text():
+    cols_layout, total_w = _history_table_columns_layout()
+    cols    = _term_cols()
+    # Width consumed left of the table: sidebar + sidebar scrollbar + gap.
+    avail   = max(1, cols - _HISTORY_SIDEBAR_W - 1 - _HISTORY_GAP - 1)
+    pad     = max(0, (avail - total_w) // 2)
+    margin  = " " * pad
+
+    frags = []
+    sort_col, sort_dir = _history_sort
+    sidebar_focused    = (_history_focused == 0)
+    table_focused      = (_history_focused == 1)
+
+    # Empty state — render centred message, no header.
+    if not _history_sessions:
+        msg = "No runs recorded yet."
+        visible = _history_table_visible() + 1  # include header row in the panel
+        top_pad = max(0, (visible - 1) // 2)
+        for _ in range(top_pad):
+            frags.append(("", "\n"))
+        frags.append(("", " " * max(0, (avail - len(msg)) // 2)))
+        frags.append((C_BODY, msg))
+        bottom = visible - top_pad - 1
+        for _ in range(bottom):
+            frags.append(("", "\n"))
+        return frags
+
+    # Header row.
+    header_style = C_ACTIVE if table_focused else C_SECTION
+    frags.append(("", margin))
+    for i, (key, base, width, align, _ctype) in enumerate(cols_layout):
+        is_active_sort = (key == sort_col)
+        label = _history_header_label(base, is_active_sort, sort_dir, align, width)
+
+        def _h(ev, col=key):
+            if ev.event_type == MouseEventType.MOUSE_DOWN:
+                _history_set_focus(1)
+                _history_toggle_sort(col)
+        if i > 0:
+            frags.append((header_style, " ", _h))
+        frags.append((header_style, label, _h))
+    frags.append(("", "\n"))
+
+    # Data rows.
+    visible = _history_table_visible()
+    total   = len(_history_sessions)
+    mx      = max(0, total - visible)
+    global _history_table_scroll
+    if _history_table_scroll > mx:
+        _history_table_scroll = mx
+    if _history_table_sb is not None:
+        _history_table_sb.update(total, visible, height=visible)
+        _history_table_sb.scroll_to(_history_table_scroll)
+
+    sliced = _history_sessions[_history_table_scroll:_history_table_scroll + visible]
+    hover_panel, hover_row = _history_hover
+
+    for vi, session in enumerate(sliced):
+        row_abs   = _history_table_scroll + vi
+        is_cursor = (row_abs == _history_table_cursor)
+        is_hover  = (hover_panel == 1 and hover_row == row_abs)
+
+        if is_cursor and table_focused:
+            row_bg = C_ACTIVE
+        elif is_cursor and sidebar_focused:
+            row_bg = C_HOVER
+        elif is_hover:
+            row_bg = C_HOVER
+        else:
+            row_bg = None
+
+        def _h(ev, row=row_abs):
+            if ev.event_type == MouseEventType.MOUSE_MOVE:
+                _history_set_hover(1, row)
+                return
+            if ev.event_type == MouseEventType.MOUSE_DOWN:
+                _history_set_focus(1)
+                _history_activate_table_row(row)
+
+        row_frags = _history_format_row(session, cols_layout)
+        frags.append(("", margin, _h))
+        for i, (txt, default_style) in enumerate(row_frags):
+            style = row_bg if row_bg is not None else default_style
+            if i > 0:
+                frags.append((style, " ", _h))
+            frags.append((style, txt, _h))
+        if vi < len(sliced) - 1:
+            frags.append(("", "\n"))
+
+    # Trailing blank lines so panel keeps its shape.
+    blank = visible - len(sliced)
+    for _ in range(blank):
+        frags.append(("", "\n"))
+
+    return frags
+
+
+def _history_table_scrollbar_text():
+    if _history_table_sb is None or not _history_sessions:
+        return []
+    # Leave the header row's strip blank, then render scrollbar over the data area.
+    frags = [("", " "), ("", "\n")]
+    bar = _history_table_sb.render()
+    frags.extend(bar)
+    return frags
+
+
+# --- Wheel-scrolling control ----------------------------------------------
+class _HistScrollControl(FormattedTextControl):
+    def __init__(self, *args, panel, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._panel = panel
+
+    def mouse_handler(self, ev):
+        result = super().mouse_handler(ev)
+        if result is NotImplemented:
+            if ev.event_type == MouseEventType.SCROLL_UP:
+                _history_scroll_panel(self._panel, -1)
+                return None
+            if ev.event_type == MouseEventType.SCROLL_DOWN:
+                _history_scroll_panel(self._panel, 1)
+                return None
+        return result
+
+
+# --- history_detail stub ---------------------------------------------------
+def _history_detail_text():
+    cols = _term_cols()
+    title  = "─── Session detail ───"
+    footer = "ESC Back"
+    sess   = _history_detail_session
+    frags = []
+    frags.append(("", "\n\n"))
+    frags.append(("", _pad_centre(title, cols)))
+    frags.append((C_TITLE, title))
+    frags.append(("", "\n\n"))
+
+    if sess is None:
+        msg = "(no session selected)"
+        frags.append(("", _pad_centre(msg, cols)))
+        frags.append((C_BODY, msg))
+        frags.append(("", "\n\n"))
+    else:
+        started = ""
+        try:
+            started = time.strftime(
+                "%Y-%m-%d %H:%M", time.localtime(int(sess.start_ts))
+            )
+        except (TypeError, ValueError, OSError):
+            started = ""
+        rows = [
+            ("Character:", sess.character),
+            ("Started:",   started),
+            ("Duration:",  _history_fmt_duration(sess.duration_seconds)),
+            ("PvP kills:", str(int(sess.pkill_count or 0))),
+            ("XP gained:", str(int(sess.xp_gained or 0))),
+        ]
+        label_w = max(len(r[0]) for r in rows)
+        # Width of "label  value" pair for centring.
+        max_line = max(label_w + 2 + len(r[1]) for r in rows)
+        margin = max(0, (cols - max_line) // 2)
+        pad = " " * margin
+        for label, value in rows:
+            frags.append(("", pad))
+            frags.append((C_HINT, label.ljust(label_w)))
+            frags.append((C_HINT, "  "))
+            frags.append((C_BODY, value))
+            frags.append(("", "\n"))
+        frags.append(("", "\n"))
+        note = "(Detail view coming in next commit.)"
+        frags.append(("", _pad_centre(note, cols)))
+        frags.append((C_HINT, note))
+
+    frags.append(("", "\n\n"))
+    frags.append(("", _pad_centre(footer, cols)))
+    frags.append((C_HINT, footer))
+    return frags
+
+
+# ---------------------------------------------------------------------------
 # Update flow
 # ---------------------------------------------------------------------------
 def _start_update():
@@ -1755,6 +2387,81 @@ def _kb_abt_escape(event):
     _pop_frame()
 
 
+# History frame
+@kb.add("tab", filter=_in_frame("history"))
+@kb.add("s-tab", filter=_in_frame("history"))
+def _kb_hist_tab(event):
+    _history_toggle_focus()
+
+
+@kb.add("up", filter=_in_frame("history"))
+def _kb_hist_up(event):
+    if _history_focused == 0:
+        _history_move_sidebar(-1)
+    else:
+        _history_move_table(-1)
+
+
+@kb.add("down", filter=_in_frame("history"))
+def _kb_hist_down(event):
+    if _history_focused == 0:
+        _history_move_sidebar(1)
+    else:
+        _history_move_table(1)
+
+
+@kb.add("pageup", filter=_in_frame("history"))
+def _kb_hist_pgup(event):
+    if _history_focused == 0:
+        _history_jump_sidebar(_history_sidebar_cursor - 10)
+    else:
+        _history_jump_table(_history_table_cursor - 10)
+
+
+@kb.add("pagedown", filter=_in_frame("history"))
+def _kb_hist_pgdn(event):
+    if _history_focused == 0:
+        _history_jump_sidebar(_history_sidebar_cursor + 10)
+    else:
+        _history_jump_table(_history_table_cursor + 10)
+
+
+@kb.add("home", filter=_in_frame("history"))
+def _kb_hist_home(event):
+    if _history_focused == 0:
+        _history_jump_sidebar(0)
+    else:
+        _history_jump_table(0)
+
+
+@kb.add("end", filter=_in_frame("history"))
+def _kb_hist_end(event):
+    if _history_focused == 0:
+        _history_jump_sidebar(len(_history_sidebar_items) - 1)
+    else:
+        _history_jump_table(len(_history_sessions) - 1)
+
+
+@kb.add("enter", filter=_in_frame("history"))
+def _kb_hist_enter(event):
+    if _history_focused == 0:
+        if 0 <= _history_sidebar_cursor < len(_history_sidebar_items):
+            _history_set_filter(_history_sidebar_items[_history_sidebar_cursor])
+    else:
+        _history_activate_table_row(_history_table_cursor)
+
+
+@kb.add("escape", filter=_in_frame("history"), eager=True)
+def _kb_hist_escape(event):
+    _pop_frame()
+
+
+# History detail (stub)
+@kb.add("escape", filter=_in_frame("history_detail"), eager=True)
+def _kb_hd_escape(event):
+    _pop_frame()
+
+
 # Update running — no input
 @kb.add("<any>", filter=_in_frame("update_running"))
 def _kb_upd_run(event):
@@ -1823,6 +2530,39 @@ def _build_scrolling(title_fn, content_fn, footer_fn):
     return content, HSplit([title, content, footer])
 
 
+def _build_history():
+    """Build the History frame: title + (sidebar | sb | gap | table | sb) + footer."""
+    title  = Window(content=FormattedTextControl(text=_history_title_text, focusable=False),
+                    height=3, wrap_lines=False, always_hide_cursor=True)
+    footer = Window(content=FormattedTextControl(text=_history_footer_text, focusable=False),
+                    height=2, wrap_lines=False, always_hide_cursor=True)
+
+    sidebar_win = Window(
+        content=_HistScrollControl(text=_history_sidebar_text, focusable=True, panel=0),
+        wrap_lines=False, always_hide_cursor=True,
+        width=Dimension.exact(_HISTORY_SIDEBAR_W),
+    )
+    sidebar_sb_win = Window(
+        content=FormattedTextControl(text=_history_sidebar_scrollbar_text, focusable=False),
+        wrap_lines=False, always_hide_cursor=True,
+        width=Dimension.exact(1),
+    )
+    gap_win = Window(width=Dimension.exact(_HISTORY_GAP))
+    table_win = Window(
+        content=_HistScrollControl(text=_history_table_text, focusable=True, panel=1),
+        wrap_lines=False, always_hide_cursor=True,
+        height=Dimension(weight=1),
+    )
+    table_sb_win = Window(
+        content=FormattedTextControl(text=_history_table_scrollbar_text, focusable=False),
+        wrap_lines=False, always_hide_cursor=True,
+        width=Dimension.exact(1),
+    )
+
+    body = VSplit([sidebar_win, sidebar_sb_win, gap_win, table_win, table_sb_win])
+    return sidebar_win, table_win, HSplit([title, body, footer])
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -1834,6 +2574,7 @@ def main():
     global _options_window, _scripts_window, _about_window
     global _update_running_window, _update_result_window
     global _exit_confirm_window, _too_small_window
+    global _history_sidebar_window, _history_table_window, _history_detail_window
 
     os.chdir(PROJECT_DIR)
     _one_shot_migrations()
@@ -1861,6 +2602,8 @@ def main():
     _update_result_window,         update_result_frame       = _build_simple(_update_result_text)
     _exit_confirm_window,          exit_confirm_frame        = _build_simple(_exit_confirm_text)
     _too_small_window,             too_small_frame           = _build_simple(_too_small_text)
+    _history_sidebar_window, _history_table_window, history_frame = _build_history()
+    _history_detail_window,        history_detail_frame      = _build_simple(_history_detail_text)
 
     frames = {
         "main":                       main_frame,
@@ -1872,6 +2615,8 @@ def main():
         "options":                    options_frame,
         "scripts":                    scripts_frame,
         "about":                      about_frame,
+        "history":                    history_frame,
+        "history_detail":             history_detail_frame,
         "update_running":             update_running_frame,
         "update_result":              update_result_frame,
         "exit_confirm":               exit_confirm_frame,
