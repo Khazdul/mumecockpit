@@ -2041,8 +2041,8 @@ _HD_KILLS_PVPS_MIN_VISIBLE  = 2
 # Fixed lines around the kills/pvps data rows in _history_detail_text:
 # 1 leading "\n" + 1 header row + 1 blank + 5 A/A (title+div+3) + 1 blank
 # + 3 KP fixed (title+div+total) + 1 blank + 7 sparklines + 1 blank
-# + 4 xp-linjal + 1 blank + 1 footer = 27.
-_HD_STATS_FIXED_LINES       = 27
+# + 4 xp-linjal + 1 blank + 1 footer = 28.
+_HD_STATS_FIXED_LINES       = 28
 
 
 def _hd_compute_kills_pvps_visible():
@@ -2885,6 +2885,7 @@ def _history_detail_text():
     body.append(("", "\n"))
 
     _hd_append_xp_linjalen(body, stats, cols)
+    body.append(("", "\n"))
 
     frags.extend(_hover_clear_frags(body))
 
