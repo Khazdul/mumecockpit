@@ -2034,8 +2034,10 @@ _HD_STAT_TABLE_RIGHT_W   = 40
 _HD_STAT_TABLE_GAP       = "  "
 _HD_STAT_BLOCKS          = "▁▂▃▄▅▆▇█"
 
-# ALLIES + ACHIEVEMENTS show a fixed 3 rows each. KILLS + PvPs auto-fit the
-# available frame height (see _hd_compute_kills_pvps_visible) with a 2-row min.
+# ALLIES + ACHIEVEMENTS show a fixed 3 rows each. KILLS + PvPs auto-size to
+# their data (capped by _hd_compute_kills_pvps_visible() so the section never
+# overflows the frame). With no data on either side, the section collapses to
+# the title row and divider only.
 _HD_ALLIES_ACH_VISIBLE      = 3
 _HD_KILLS_PVPS_MIN_VISIBLE  = 2
 # Fixed lines around the kills/pvps data rows in _history_detail_text:
@@ -2046,8 +2048,17 @@ _HD_STATS_FIXED_LINES       = 28
 
 
 def _hd_compute_kills_pvps_visible():
+    """Cap on KILLS/PvPs data rows that fit in the frame."""
     available = _term_rows() - _HD_STATS_FIXED_LINES
     return max(_HD_KILLS_PVPS_MIN_VISIBLE, available)
+
+
+def _hd_compute_kills_pvps_data_height(stats):
+    """Data rows rendered: longer of the two sides, clamped by the cap."""
+    if stats is None:
+        return 0
+    return min(max(len(stats.kills), len(stats.pkills)),
+               _hd_compute_kills_pvps_visible())
 
 
 def _hd_ensure_scrollbars():
@@ -2469,7 +2480,7 @@ def _hd_append_allies_achievements(frags, stats, cols):
         frags.append(("", "\n"))
 
 
-def _hd_append_kills_pvps(frags, stats, cols, visible):
+def _hd_append_kills_pvps(frags, stats, cols, data_height):
     left_w  = _HD_STAT_TABLE_LEFT_W
     right_w = _HD_STAT_TABLE_RIGHT_W
     gap     = _HD_STAT_TABLE_GAP
@@ -2537,10 +2548,14 @@ def _hd_append_kills_pvps(frags, stats, cols, visible):
     kills_items  = _hd_sorted_kills_items(stats.kills,   sort_col_k,  sort_dir_k)
     pkills_items = _hd_sorted_pkills_items(stats.pkills, sort_col_pk, sort_dir_pk)
 
+    kills_count  = len(kills_items)
+    pkills_count = len(pkills_items)
+    needs_total  = (kills_count > 0) or (pkills_count > 0)
+
     k_off  = _history_detail_kills_sb.scroll_offset
     pk_off = _history_detail_pkills_sb.scroll_offset
-    k_view = kills_items[k_off:k_off + visible]
-    p_view = pkills_items[pk_off:pk_off + visible]
+    k_view = kills_items[k_off:k_off + data_height]
+    p_view = pkills_items[pk_off:pk_off + data_height]
 
     k_sb_cells = _hd_scrollbar_row_cells(_history_detail_kills_sb,  0)
     p_sb_cells = _hd_scrollbar_row_cells(_history_detail_pkills_sb, 1)
@@ -2550,17 +2565,16 @@ def _hd_append_kills_pvps(frags, stats, cols, visible):
     pk_name_col   = max(1, right_w - pk_n_col - pk_xp_col_w - 2)
     pk_inner_name = max(1, pk_name_col - 2)
 
-    for i in range(visible):
+    for i in range(data_height):
+        frags.append(("", pad))
         if i < len(k_view):
             name, agg = k_view[i]
             avg = agg.total_xp // agg.count if agg.count else 0
             k_line = _hd_format_kill_row(name, str(agg.count),
                                           str(avg), str(agg.total_xp), left_w)
+            frags.append((_S_LABEL, k_line, k_focus))
         else:
-            k_line = " " * left_w
-
-        frags.append(("", pad))
-        frags.append((_S_LABEL, k_line, k_focus))
+            frags.append((_S_LABEL, " " * left_w))
         if i < len(k_sb_cells):
             frags.append(k_sb_cells[i])
         else:
@@ -2580,29 +2594,35 @@ def _hd_append_kills_pvps(frags, stats, cols, visible):
             frags.append((_S_PVP,   "⚔", p_focus))
             frags.append((_S_LABEL, p_rest, p_focus))
         else:
-            frags.append((_S_LABEL, " " * right_w, p_focus))
+            frags.append((_S_LABEL, " " * right_w))
         if i < len(p_sb_cells):
             frags.append(p_sb_cells[i])
         else:
             frags.append(("", " "))
         frags.append(("", "\n"))
 
-    k_cnt = sum(a.count for a in stats.kills.values())
-    k_xp  = sum(a.total_xp for a in stats.kills.values())
-    k_avg = k_xp // k_cnt if k_cnt else 0
-    p_cnt = sum(a.count for a in stats.pkills.values())
-    p_xp  = sum(a.total_xp for a in stats.pkills.values())
-
-    k_total  = _hd_format_kill_row("Total",  str(k_cnt), str(k_avg),
-                                    str(k_xp), left_w)
-    pk_total = _hd_format_pkill_row("Total", str(p_cnt), str(p_xp), right_w)
-    frags.append(("", pad))
-    frags.append((_S_TOTAL, k_total, k_focus))
-    frags.append(("", " "))
-    frags.append(("", gap))
-    frags.append((_S_TOTAL, pk_total, p_focus))
-    frags.append(("", " "))
-    frags.append(("", "\n"))
+    if needs_total:
+        frags.append(("", pad))
+        if kills_count > 0:
+            k_cnt = sum(a.count for a in stats.kills.values())
+            k_xp  = sum(a.total_xp for a in stats.kills.values())
+            k_avg = k_xp // k_cnt if k_cnt else 0
+            k_total = _hd_format_kill_row("Total", str(k_cnt), str(k_avg),
+                                           str(k_xp), left_w)
+            frags.append((_S_TOTAL, k_total, k_focus))
+        else:
+            frags.append((_S_TOTAL, " " * left_w))
+        frags.append(("", " "))
+        frags.append(("", gap))
+        if pkills_count > 0:
+            p_cnt = sum(a.count for a in stats.pkills.values())
+            p_xp  = sum(a.total_xp for a in stats.pkills.values())
+            pk_total = _hd_format_pkill_row("Total", str(p_cnt), str(p_xp), right_w)
+            frags.append((_S_TOTAL, pk_total, p_focus))
+        else:
+            frags.append((_S_TOTAL, " " * right_w))
+        frags.append(("", " "))
+        frags.append(("", "\n"))
 
 
 def _hd_append_sparklines(frags, stats, cols):
@@ -2877,14 +2897,14 @@ def _history_detail_text():
 
     # --- Statistics body --------------------------------------------------
     _hd_ensure_scrollbars()
-    visible = _hd_compute_kills_pvps_visible()
-    _hd_refresh_scrollbars(stats, visible)
+    data_height = _hd_compute_kills_pvps_data_height(stats)
+    _hd_refresh_scrollbars(stats, data_height)
 
     body = []
     _hd_append_allies_achievements(body, stats, cols)
     body.append(("", "\n"))
 
-    _hd_append_kills_pvps(body, stats, cols, visible)
+    _hd_append_kills_pvps(body, stats, cols, data_height)
     body.append(("", "\n"))
 
     _hd_append_sparklines(body, stats, cols)
