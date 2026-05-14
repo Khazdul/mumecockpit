@@ -1668,6 +1668,34 @@ def _history_set_hover(panel, row):
             _app.invalidate()
 
 
+def _hover_at(panel, idx, on_event=None):
+    """Mouse handler factory for the history frame.
+
+    On MOUSE_MOVE, sets _history_hover to (panel, idx) — pass None for
+    either arg to clear hover. Other events are delegated to on_event(ev)
+    if provided. Anything we don't handle returns NotImplemented so that
+    _HistScrollControl still sees scroll-wheel events."""
+    def _handler(ev):
+        if ev.event_type == MouseEventType.MOUSE_MOVE:
+            _history_set_hover(panel, idx)
+            return None
+        if on_event is not None:
+            return on_event(ev)
+        return NotImplemented
+    return _handler
+
+
+def _hover_clear_frags(frags):
+    """Wrap each fragment in `frags` so MOUSE_MOVE clears _history_hover.
+    Existing handlers (e.g. scrollbar MOUSE_DOWN) are preserved."""
+    out = []
+    for f in frags:
+        style, text = f[0], f[1]
+        inner = f[2] if len(f) >= 3 else None
+        out.append((style, text, _hover_at(None, None, on_event=inner)))
+    return out
+
+
 def _history_activate_table_row(idx):
     """Move cursor to idx, push history_detail for that session."""
     global _history_table_cursor, _history_detail_session
@@ -1682,22 +1710,22 @@ def _history_activate_table_row(idx):
 def _history_title_text():
     cols = _term_cols()
     title = "─── History ───"
-    return [
+    return _hover_clear_frags([
         ("", "\n"),
         ("", _pad_centre(title, cols)),
         (C_TITLE, title),
         ("", "\n"),
-    ]
+    ])
 
 
 def _history_footer_text():
     cols = _term_cols()
     footer = "↑↓ Navigate · Tab Switch panel · Enter Select · ESC Back"
-    return [
+    return _hover_clear_frags([
         ("", "\n"),
         ("", _pad_centre(footer, cols)),
         (C_HINT, footer),
-    ]
+    ])
 
 
 # --- Sidebar render --------------------------------------------------------
@@ -1732,31 +1760,30 @@ def _history_sidebar_text():
         text = " " + label
         text = text[:width].ljust(width)
 
-        def _h(ev, row=row_abs):
-            if ev.event_type == MouseEventType.MOUSE_MOVE:
-                _history_set_hover(0, row)
-                return
+        def _click(ev, row=row_abs):
             if ev.event_type == MouseEventType.MOUSE_DOWN:
                 _history_set_focus(0)
                 _history_jump_sidebar(row)
+                return None
+            return NotImplemented
 
-        frags.append((style, text, _h))
+        frags.append((style, text, _hover_at(0, row_abs, on_event=_click)))
         # Pad the rest of the visible area below the last row.
         if i < len(sliced) - 1:
-            frags.append(("", "\n"))
+            frags.append(("", "\n", _hover_at(None, None)))
 
     # Pad remaining height with blank rows so the panel keeps its shape.
     blank_rows = visible - len(sliced)
     for _ in range(blank_rows):
-        frags.append(("", "\n"))
-        frags.append(("", " " * width))
+        frags.append(("", "\n", _hover_at(None, None)))
+        frags.append(("", " " * width, _hover_at(None, None)))
     return frags
 
 
 def _history_sidebar_scrollbar_text():
     if _history_sidebar_sb is None:
         return []
-    return _history_sidebar_sb.render()
+    return _hover_clear_frags(_history_sidebar_sb.render())
 
 
 # --- Table render ----------------------------------------------------------
@@ -1816,6 +1843,7 @@ def _history_table_text():
     frags = []
     sort_col, sort_dir = _history_sort
     table_focused      = (_history_focused == 1)
+    clear_hover        = _hover_at(None, None)
 
     # Empty state — render centred message, no header.
     if not _history_sessions:
@@ -1823,29 +1851,32 @@ def _history_table_text():
         visible = _history_table_visible() + 1  # include header row in the panel
         top_pad = max(0, (visible - 1) // 2)
         for _ in range(top_pad):
-            frags.append(("", "\n"))
-        frags.append(("", " " * max(0, (avail - len(msg)) // 2)))
-        frags.append((C_BODY, msg))
+            frags.append(("", "\n", clear_hover))
+        frags.append(("", " " * max(0, (avail - len(msg)) // 2), clear_hover))
+        frags.append((C_BODY, msg, clear_hover))
         bottom = visible - top_pad - 1
         for _ in range(bottom):
-            frags.append(("", "\n"))
+            frags.append(("", "\n", clear_hover))
         return frags
 
     # Header row.
     header_style = C_ACTIVE if table_focused else C_SECTION
-    frags.append(("", margin))
+    frags.append(("", margin, clear_hover))
     for i, (key, base, width, align, _ctype) in enumerate(cols_layout):
         is_active_sort = (key == sort_col)
         label = _history_header_label(base, is_active_sort, sort_dir, align, width)
 
-        def _h(ev, col=key):
+        def _click(ev, col=key):
             if ev.event_type == MouseEventType.MOUSE_DOWN:
                 _history_set_focus(1)
                 _history_toggle_sort(col)
+                return None
+            return NotImplemented
+        cell_handler = _hover_at(None, None, on_event=_click)
         if i > 0:
-            frags.append((header_style, " ", _h))
-        frags.append((header_style, label, _h))
-    frags.append(("", "\n"))
+            frags.append((header_style, " ", cell_handler))
+        frags.append((header_style, label, cell_handler))
+    frags.append(("", "\n", clear_hover))
 
     # Data rows.
     visible = _history_table_visible()
@@ -1873,28 +1904,28 @@ def _history_table_text():
         else:
             row_bg = None
 
-        def _h(ev, row=row_abs):
-            if ev.event_type == MouseEventType.MOUSE_MOVE:
-                _history_set_hover(1, row)
-                return
+        def _click(ev, row=row_abs):
             if ev.event_type == MouseEventType.MOUSE_DOWN:
                 _history_set_focus(1)
                 _history_activate_table_row(row)
+                return None
+            return NotImplemented
+        row_handler = _hover_at(1, row_abs, on_event=_click)
 
         row_frags = _history_format_row(session, cols_layout)
-        frags.append(("", margin, _h))
+        frags.append(("", margin, clear_hover))
         for i, (txt, default_style) in enumerate(row_frags):
             style = row_bg if row_bg is not None else default_style
             if i > 0:
-                frags.append((style, " ", _h))
-            frags.append((style, txt, _h))
+                frags.append((style, " ", row_handler))
+            frags.append((style, txt, row_handler))
         if vi < len(sliced) - 1:
-            frags.append(("", "\n"))
+            frags.append(("", "\n", clear_hover))
 
     # Trailing blank lines so panel keeps its shape.
     blank = visible - len(sliced)
     for _ in range(blank):
-        frags.append(("", "\n"))
+        frags.append(("", "\n", clear_hover))
 
     return frags
 
@@ -1904,9 +1935,8 @@ def _history_table_scrollbar_text():
         return []
     # Leave the header row's strip blank, then render scrollbar over the data area.
     frags = [("", " "), ("", "\n")]
-    bar = _history_table_sb.render()
-    frags.extend(bar)
-    return frags
+    frags.extend(_history_table_sb.render())
+    return _hover_clear_frags(frags)
 
 
 # --- Wheel-scrolling control ----------------------------------------------
