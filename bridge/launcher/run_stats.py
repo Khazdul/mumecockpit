@@ -57,6 +57,18 @@ class RunStats:
     deaths: int = 0
 
 
+@dataclass
+class SessionSummary:
+    character: str
+    run_ids: list[str]
+    start_ts: int
+    end_ts: int
+    duration_seconds: int
+    pkill_count: int
+    xp_gained: int
+    has_log: bool
+
+
 # ---------------------------------------------------------------------------
 # Path helpers
 # ---------------------------------------------------------------------------
@@ -221,6 +233,83 @@ def load_current_run_stats(character: str) -> RunStats | None:
     return aggregate(character, chain)
 
 
+def list_characters_with_runs() -> list[str]:
+    """Character names with at least one sealed run JSONL, alphabetical."""
+    if not os.path.isdir(_DATA_RUNS_DIR):
+        return []
+    try:
+        entries = os.listdir(_DATA_RUNS_DIR)
+    except OSError:
+        return []
+    out: list[str] = []
+    for name in sorted(entries):
+        char_dir = os.path.join(_DATA_RUNS_DIR, name)
+        if not os.path.isdir(char_dir):
+            continue
+        try:
+            files = os.listdir(char_dir)
+        except OSError:
+            continue
+        for fn in files:
+            if fn.endswith(".jsonl") and fn != "current.jsonl":
+                out.append(name)
+                break
+    return out
+
+
+def list_sessions(character: str, max_gap_seconds: int = 3600) -> list[SessionSummary]:
+    """Stitched sessions for `character`, oldest first. Excludes the active run."""
+    char_dir = _character_dir(character)
+    if not os.path.isdir(char_dir):
+        return []
+    try:
+        files = os.listdir(char_dir)
+    except OSError:
+        return []
+
+    summaries: dict[str, _RunRowSummary] = {}
+    for fn in files:
+        if not fn.endswith(".jsonl") or fn == "current.jsonl":
+            continue
+        path = os.path.join(char_dir, fn)
+        s = _summarize_run(path)
+        if s is not None:
+            summaries[s.run_id] = s
+
+    ordered = sorted(summaries.values(), key=lambda s: s.start_ts)
+
+    chains: list[list[_RunRowSummary]] = []
+    chain_for: dict[str, int] = {}
+    for s in ordered:
+        prev_id = s.previous_run_id
+        if (prev_id is not None
+                and prev_id in chain_for
+                and s.start_ts - summaries[prev_id].last_event_ts < max_gap_seconds):
+            idx = chain_for[prev_id]
+            chains[idx].append(s)
+            chain_for[s.run_id] = idx
+        else:
+            chains.append([s])
+            chain_for[s.run_id] = len(chains) - 1
+
+    sessions: list[SessionSummary] = []
+    for chain in chains:
+        start_ts = chain[0].start_ts
+        end_ts   = chain[-1].end_ts
+        sessions.append(SessionSummary(
+            character=character,
+            run_ids=[r.run_id for r in chain],
+            start_ts=start_ts,
+            end_ts=end_ts,
+            duration_seconds=max(0, end_ts - start_ts),
+            pkill_count=sum(r.pkill_count for r in chain),
+            xp_gained=sum(r.xp_gained_within_run for r in chain),
+            has_log=any(r.has_log_sibling for r in chain),
+        ))
+    sessions.sort(key=lambda s: s.start_ts)
+    return sessions
+
+
 # ---------------------------------------------------------------------------
 # Per-row accumulation
 # ---------------------------------------------------------------------------
@@ -338,3 +427,111 @@ def _as_int_or_none(v) -> int | None:
     if isinstance(v, (int, float)):
         return int(v)
     return None
+
+
+# ---------------------------------------------------------------------------
+# Session enumeration helpers
+# ---------------------------------------------------------------------------
+
+@dataclass
+class _RunRowSummary:
+    run_id: str
+    start_ts: int
+    last_event_ts: int
+    end_ts: int
+    previous_run_id: str | None
+    pkill_count: int
+    xp_gained_within_run: int
+    has_log_sibling: bool
+
+
+def _summarize_run(path: str) -> _RunRowSummary | None:
+    start_ts            = 0
+    last_event_ts       = 0
+    end_ts_run_end:     int | None = None
+    end_ts_orphan_close: int | None = None
+    previous_run_id:    str | None = None
+    pkill_count         = 0
+    xp_gained           = 0
+    seen_run_start      = False
+
+    for row in _iter_rows(path):
+        event = row.get("event")
+        ts    = row.get("ts")
+        ts_i  = int(ts) if isinstance(ts, (int, float)) else None
+        if ts_i is not None:
+            last_event_ts = ts_i
+
+        if event == "run_start":
+            if not seen_run_start:
+                seen_run_start = True
+                if ts_i is not None:
+                    start_ts = ts_i
+                prev = row.get("previous_run_id")
+                if isinstance(prev, str):
+                    previous_run_id = prev
+        elif event == "run_end":
+            if ts_i is not None:
+                end_ts_run_end = ts_i
+        elif event == "orphan_close":
+            if ts_i is not None:
+                end_ts_orphan_close = ts_i
+        elif event == "kill":
+            xp_gained += _as_int(row.get("xp_delta"))
+        elif event == "pkill":
+            pkill_count += 1
+            xp_gained   += _as_int(row.get("xp_delta"))
+        elif event == "xp_loss":
+            xp_gained += _as_int(row.get("xp_delta"))
+
+    if not seen_run_start:
+        return None
+
+    if end_ts_run_end is not None:
+        end_ts = end_ts_run_end
+    elif end_ts_orphan_close is not None:
+        end_ts = end_ts_orphan_close
+    else:
+        end_ts = last_event_ts if last_event_ts else start_ts
+
+    base = os.path.basename(path)
+    run_id = base[:-len(".jsonl")] if base.endswith(".jsonl") else base
+    log_path = (path[:-len(".jsonl")] + ".log") if path.endswith(".jsonl") else path + ".log"
+
+    return _RunRowSummary(
+        run_id=run_id,
+        start_ts=start_ts,
+        last_event_ts=last_event_ts if last_event_ts else start_ts,
+        end_ts=end_ts,
+        previous_run_id=previous_run_id,
+        pkill_count=pkill_count,
+        xp_gained_within_run=xp_gained,
+        has_log_sibling=os.path.exists(log_path),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Smoke entry point
+# ---------------------------------------------------------------------------
+
+def _smoke_main() -> None:
+    import sys
+    args = sys.argv[1:]
+    if not args:
+        for ch in list_characters_with_runs():
+            print(ch)
+        return
+    character = args[0]
+    for s in list_sessions(character):
+        if len(s.run_ids) == 1:
+            rng = s.run_ids[0]
+        else:
+            rng = f"{s.run_ids[0]}..{s.run_ids[-1]}"
+        xp  = f"+{s.xp_gained}" if s.xp_gained >= 0 else str(s.xp_gained)
+        log = "y" if s.has_log else "n"
+        print(f"{rng}  runs={len(s.run_ids)}  dur={s.duration_seconds}s  "
+              f"pkills={s.pkill_count}  xp={xp}  log={log}")
+
+
+if __name__ == "__main__":
+    _smoke_main()
