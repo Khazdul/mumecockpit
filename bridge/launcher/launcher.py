@@ -1391,11 +1391,11 @@ def _scroll_about(delta):
 # History frame
 # ---------------------------------------------------------------------------
 def _history_sidebar_panel_w():
-    """Sidebar panel width = max("All", longest character name) + 2 for
-    breathing room. Recomputed each render so resizes and roster changes
+    """Sidebar panel width = max("Filter", "All", longest character name) + 2
+    for breathing room. Recomputed each render so resizes and roster changes
     recentre cleanly."""
     chars = _history_sidebar_items[1:]
-    inner = max(len("All"), max((len(c) for c in chars), default=0))
+    inner = max(len("Filter"), len("All"), max((len(c) for c in chars), default=0))
     return inner + 2
 
 
@@ -1437,7 +1437,8 @@ def _history_body_rows():
 
 
 def _history_sidebar_visible():
-    return _history_body_rows()
+    # One row for the "Filter" header.
+    return max(1, _history_body_rows() - 1)
 
 
 def _history_table_visible():
@@ -1748,6 +1749,22 @@ def _history_sidebar_text():
     sliced  = items[_history_sidebar_scroll:_history_sidebar_scroll + visible]
     frags   = []
     hover_panel, hover_row = _history_hover
+    sidebar_focused = (_history_focused == 0)
+
+    # Header row: "Filter".
+    header_style = C_ACTIVE if sidebar_focused else C_SECTION
+    header_text  = (" Filter")[:width].ljust(width)
+
+    def _header_click(ev):
+        if ev.event_type == MouseEventType.MOUSE_DOWN:
+            _history_set_focus(0)
+            return None
+        return NotImplemented
+
+    frags.append((header_style, header_text,
+                  _hover_at(None, None, on_event=_header_click)))
+    frags.append(("", "\n", _hover_at(None, None)))
+
     for i, label in enumerate(sliced):
         row_abs   = _history_sidebar_scroll + i
         is_active = (items[row_abs] == _history_filter)
