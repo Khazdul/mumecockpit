@@ -78,6 +78,7 @@ Active ADRs by area. Click through for context, alternatives, and consequences.
 - [ADR 0039](0039-cp-aliases-persistent.md) — cp -X aliases always persist — all `cp -X` aliases pass `--persist` to `toggle_pane.sh`; every toggle from any entry point writes to `startup.conf`.
 - [ADR 0062](0062-popup-menu-prompt-toolkit.md) — In-game popup rewritten in prompt_toolkit — `ingame_menu.py` is the popup body; `ingame_menu.sh` is a thin exec wrapper. Mouse wheel deliberately not supported (tmux display-popup limitation).
 - [ADR 0069](0069-launcher-prompt-toolkit.md) — Launcher rewritten in prompt_toolkit — `launcher.py` is the menu body; `launcher.sh` is a thin exec wrapper. Frame stack mirrors ADR 0062; colour palette extracted to `palette.py` and shared with the popup.
+- [ADR 0073](0073-statistics-rendering-duplicated.md) — Statistics rendering is duplicated between popup and launcher History — the in-game popup Statistics frame and the launcher's History detail frame share data (ADR 0065) but each renders its own. Different hosts and use cases justify the duplication; conditions for future consolidation are recorded.
 
 ### Bridge services & startup
 
