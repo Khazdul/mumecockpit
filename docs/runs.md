@@ -465,5 +465,90 @@ It is a JSONL marker, not a Lua event.
 
 See ADR 0044 §"Orphan current.jsonl handling".
 
+## Meta sidecar (saved runs)
+
+Each preserved run carries an optional sidecar file alongside its
+`.jsonl` and `.log`:
+
+```
+data/runs/<character>/<run-id>.meta.json
+```
+
+```json
+{
+  "schema":   1,
+  "saved":    true,
+  "rating":   3,
+  "saved_ts": 1746644500
+}
+```
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `schema` | integer | Currently `1` |
+| `saved` | bool | Always `true` when the file exists |
+| `rating` | integer | 0..5 inclusive; `0` means "saved, unrated" |
+| `saved_ts` | integer | Unix epoch of the save action |
+
+### Invariants
+
+- **File presence ⇔ saved.** A run with no meta file is unsaved. There
+  is no `"saved": false` — un-save (a future feature) deletes the file.
+- **No meta uses the literal `current.jsonl` name.** The active run's
+  meta uses its computed run-id (`time.strftime("%Y-%m-%dT%H-%M-%S",
+  time.localtime(ts))` of the first row's `ts`, matching the seal
+  filename). This way no rename is needed when the JSONL is sealed.
+- **Atomic write.** Producers write to a temp file and `os.rename` into
+  place to avoid partial-write reads from a concurrent retention sweep.
+- **Granularity.** One sidecar per run. A "Save session" action that
+  the popup will offer in a follow-up writes one sidecar per run in the
+  stitched chain (see [ADR 0056](decisions/0056-previous-run-id-linking.md)
+  for the chain definition).
+
+Writing meta files is not yet wired in; the retention sweep below is
+the first reader.
+
+## Retention
+
+A 14-day retention sweep prunes sealed runs that the player has not
+marked saved.
+
+| Aspect | Value |
+|---|---|
+| TTL | 14 days, measured from the run-id timestamp |
+| Owner | The launcher; one sweep per boot, before the main menu renders |
+| Scope | Every character directory under `data/runs/` |
+
+### Deleted per expired unsaved run
+
+- `<run-id>.jsonl`
+- `<run-id>.log` if present
+- `<run-id>.meta.json` if present (defensive; normally absent)
+
+### Preserved
+
+- Any run whose meta file exists with `"saved": true`
+- `current.jsonl` (excluded by filename)
+- The active run's meta file, if any (matched by computed run-id, not
+  by the literal `current.jsonl` name)
+
+### Orphan meta cleanup
+
+A `<run-id>.meta.json` with no matching `<run-id>.jsonl` is removed.
+
+### Edge cases
+
+- A meta file with malformed JSON or `"saved"` not `true` is treated as
+  unsaved. The sweep is conservative: if it cannot positively confirm
+  `"saved": true`, the run is eligible for deletion on age alone.
+- A run-id that does not parse as `%Y-%m-%dT%H-%M-%S` is skipped
+  defensively; this should not occur for run-ids written by `run_log`.
+- A missing `data/runs/` directory is a no-op.
+- Per-file permission errors are swallowed; the sweep is best-effort
+  and silent in v1.
+
+Implementation: `bridge/launcher/run_retention.py`. Rationale:
+[ADR 0074](decisions/0074-run-retention-and-saved-meta.md).
+
 ---
 Back to [architecture.md](../architecture.md).

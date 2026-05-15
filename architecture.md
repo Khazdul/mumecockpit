@@ -66,6 +66,7 @@ tracking, and UI feedback.
 │   │   ├── ingame_menu.sh    # In-game ESC popup menu
 │   │   ├── run_stats.py      # JSONL run-statistics aggregator — shared by the popup
 │   │   │                     #   Statistics frame and the future launcher run-browser (ADR 0065)
+│   │   ├── run_retention.py  # 14-day retention sweep for run logs (ADR 0074)
 │   │   ├── launch.sh         # Windows shortcut target (ADR 0045)
 │   │   ├── build_initial_layout.sh  # Builds pane layout on first client-attach
 │   │   ├── wait_for_layout.sh       # Blocks tt++ start until layout is ready

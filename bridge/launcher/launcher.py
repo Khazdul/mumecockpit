@@ -48,6 +48,7 @@ from palette import (  # noqa: E402
     _S_HINT, _S_PVP, _S_ALLY, _S_STAR,
 )
 import log_player  # noqa: E402
+import run_retention  # noqa: E402
 import run_stats  # noqa: E402
 from widgets.scrollbar import Scrollbar  # noqa: E402
 
@@ -4610,6 +4611,10 @@ def main():
     os.chdir(PROJECT_DIR)
     _one_shot_migrations()
     _load_conf()
+    try:
+        run_retention.prune_expired_runs()
+    except Exception:
+        pass
     _cockpit_version = _read_version_file()
     _spawn_version_check()
     _load_random_quote()
