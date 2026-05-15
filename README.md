@@ -4,11 +4,12 @@ A fast, terminal-based MUD client built for [MUME](https://mume.org)
 and tuned for fast PvP. TinTin++ owns the socket, triggers, and keybinds
 at the latency floor; a Lua brain runs above it for state, timers, and
 anything that benefits from a real programming language; tmux composes
-game, input, character, comm, and UI panes into one window.
+the game pane, an input pane, and up to six side panes into one window.
 
-<!-- Screenshot goes here once available. Good candidates: the launcher
-     About page, or the four-pane game window with status + comm + ui
-     visible. -->
+<!-- Screenshot goes here. Good candidates: the launcher About page,
+     the full cockpit with the status / buffs / group / comm / ui
+     panes visible, or the in-game ESC popup with the Statistics
+     frame open. -->
 
 ## Install
 
@@ -38,44 +39,75 @@ Full requirements, troubleshooting, and steps for other distros in
 
 ## What's in the box
 
-**GMCP** — full integration. Char, Comm.Channel, Event, and Core modules
-are negotiated at handshake and dispatched into Lua handlers. Background
-collectors populate `state.char`, `state.comm`, and `state.run` as
-messages arrive.
+**GMCP** — full integration. Char, Comm.Channel, Event, Core, and Group
+modules are negotiated at handshake and dispatched to Lua handlers.
+Background collectors populate `state.char`, `state.comm`, `state.world`,
+`state.run`, and `state.group` as messages arrive.
 
-**Panes** — toggleable at runtime:
+**Panes** — six right-column panes, each toggleable at runtime:
 
-- **Character panel** — vitals, position, mood, alertness, affects with
-  observed durations learned per character, in-game time, session XP/TP
-  deltas.
-- **Communication pane** — clickable channel filters, 7-day per-profile
-  history that survives reloads and reconnects.
-- **UI pane** — structured status messages from scripts and core
-  systems (kills, warnings, lifecycle events).
-- **Dedicated input pane** on its own line — repeat-last-on-empty-Enter,
-  full-buffer select with one keystroke, no auto-clear after send.
+- **Character** — vitals, position, mood, alertness, in-game time,
+  session XP/TP deltas with an XP-progress ruler that tracks the
+  current level.
+- **Buffs** — colour-coded grid of active spells, buffs, debuffs,
+  and stored spells. Per-character observed durations are learned
+  over time; expiring entries blink.
+- **Group** — group member vitals with bar fills, threshold colours,
+  and an overflow indicator when the party doesn't fit.
+- **Communication** — clickable channel filters with per-channel
+  colouring; right-click solos a channel. History survives reloads
+  and reconnects.
+- **UI** — structured status messages from scripts and core systems
+  (kills, warnings, lifecycle events).
+- **Developer** — live tail of `debug.log`.
 
-**Scripting** — drop a self-contained `.lua` file in `lua/scripts/`,
+Plus a dedicated **input pane** on its own line at the bottom —
+repeat-last-on-empty-Enter, full-buffer select with one keystroke,
+no auto-clear after send, mouse-click anywhere returns focus.
+
+**Runs and statistics** — Every login starts a run. The cockpit
+writes a per-run JSONL event stream (`run_start`, `kill`, `pkill`,
+`xp_loss`, `level_up`, `achievement`, `group_changed`, `run_end`)
+plus a raw microsecond-timestamped `.log` capture of all server
+output. The in-game **Statistics** frame and the launcher's
+**History** browser aggregate this into kills/PvPs (sortable),
+allies, achievements, XP/h + TP/h sparklines, and an XP-linjal
+showing the level span. A built-in **log player** replays archived
+sessions with play / pause, scrubber, click-to-jump, and a cursor
+in pause mode. Saved runs survive a 14-day retention sweep;
+everything else is pruned automatically.
+
+**In-game ESC popup** — Press ESC anywhere in the cockpit for a
+fast overlay: Continue / Reconnect, Save run with a 0–5 star
+rating, Statistics on the active run, Options (pane visibility,
+pane background colour, scripts), and Exit. Auto-opens on
+disconnect.
+
+**Scripting** — Drop a self-contained `.lua` file in `lua/scripts/`,
 call `register_script()`, and the cockpit auto-loads it at startup,
-registers its commands, and lists it in `cp` help and on the launcher
-Scripts page. Remove the file and the feature is gone — no leftover
-state. Per-profile triggers, aliases, macros, and highlights live in
+registers its commands, and lists it in `cp` help and on the
+launcher Scripts page. Remove the file and the feature is gone —
+no leftover state. Always-on GMCP collectors live in `lua/core/`;
+per-profile triggers, aliases, macros, and highlights live in
 `.tin` files under `ttpp/profiles/`.
 
-**Launcher** — pre-tmux startup menu with profile picker, options, and
-a self-update flow. ESC opens the same menu in-game without leaving
-the prompt.
+**Launcher** — pre-tmux startup menu with profile picker
+(create / copy / delete), per-pane options including background
+colour, connection mode (MMapper / Direct / Custom), a History
+browser for archived sessions, and a self-update flow that tracks
+GitHub release tags.
 
-**MMapper** integration via WSL2 mirrored networking on Windows, or
-plain `localhost` on macOS / Linux. [MMapper][mmapper] is a separate
-graphical companion app — install it and the cockpit routes through it.
+**MMapper** integration via WSL2 mirrored networking on Windows,
+or plain `localhost` on macOS / Linux. [MMapper][mmapper] is a
+separate graphical companion app — install it and the cockpit
+routes through it.
 
 ## Documentation
 
 - [`architecture.md`](architecture.md) — stack, project structure,
   registration functions, design principles, current work.
 - [`docs/`](docs/) — per-area references (GMCP, IPC, launcher, popup
-  menu, session lifecycle, panes, clock, affects, and more).
+  menu, session lifecycle, panes, clock, affects, runs, and more).
 - [`docs/decisions/`](docs/decisions/) — ADRs for non-obvious design
   calls.
 - [`install/README.md`](install/README.md) — install and troubleshooting

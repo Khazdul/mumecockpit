@@ -533,25 +533,26 @@ ESC Back     ↑↓ Scroll     Tab/Shift+Tab Switch table
 
 Chain log player. Opened from `history` (Run log button, or
 Enter / click on a row when `has_log`). Reads the `.log` siblings of the
-chain's `summary.run_ids` for the current character and renders
-all events as one stacked, scrollable buffer. Phase 3, prompt 1
-ships only the static load + render skeleton; playback clock,
-cursor, run-boundary header, scrubber, and pause-mode highlights
-arrive in later prompts.
+chain's `summary.run_ids` for the current character and replays
+them as a single timeline with play / pause, a scrubber, and a
+pause-mode cursor.
 
 **Load.** On push, `_enter_log_view(summary)` builds a
-`log_player.LogPlayback(summary.character, summary.run_ids)`.
-The active summary is stashed on the module-level `_log_view_summary`
-slot so the frame survives independently of the `history_detail`
-state.
+`log_player.LogPlayback(summary.character, summary.run_ids)`,
+initialises the playback engine in pause mode at event 0 with
+overlays visible (so Space, the scrubber, and the buttons are
+discoverable on the first frame), and pushes the frame. The active
+summary is stashed on the module-level `_log_view_summary` slot so
+the frame survives independently of the `history_detail` state.
 For each `run_id`, the loader tries
-`data/runs/<character>/<run_id>.log`; runs whose `.log` is
-missing are silently skipped. `run_ids` retains the original
-chain ordering so `LogPlayback.run_at(idx)` reports the correct
+`data/runs/<character>/<run_id>.log`; runs whose `.log` is missing
+are silently skipped. `run_ids` retains the original chain
+ordering so `LogPlayback.run_at(idx)` reports the correct
 `(run_id, run_ordinal, total_runs)` (with `run_ordinal` measured
-against the unfiltered chain — Phase 3 prompt 2 consumes this
-for the run-boundary header). If every `.log` is missing the
-push aborts; `has_log` should prevent that case in practice.
+against the unfiltered chain — consumed by the top header). If
+every `.log` is missing the push aborts defensively; the
+`has_log` gating on the `history` row normally prevents that
+case.
 
 **Event model.** Each parsed line becomes a `LogEvent` with
 `ts_us`, `direction` (`"in"`/`"out"`), `text` (raw body, prefix
@@ -566,20 +567,107 @@ order is preserved, the cross-file sort defends against clock
 skew on chain rollover.
 
 **Render.** A single focusable `Window` (`_log_view_window`)
-holds a `FormattedTextControl` over the full frame; the visual
-lines are produced by wrapping each event's fragment list at
-the terminal width and concatenating them. The wrapping cache
-re-builds when the terminal width changes. The wrap is a
-fragment-aware split, not `wrap_lines=True`, so style runs
-remain stable across the wrap boundary.
+holds a `_LogViewControl` (a `FormattedTextControl` subclass)
+over the full frame. The visual lines are produced by wrapping
+each event's fragment list at the terminal width and
+concatenating them; the wrap is a fragment-aware split, not
+`wrap_lines=True`, so style runs remain stable across the wrap
+boundary. The wrapping cache re-builds when the terminal width
+changes, alongside the parallel `_log_view_event_rows` map
+(event index → `(visual_start, visual_end_exclusive)`) used by
+pause-mode cursor painting and click-to-cursor row resolution.
+In **play** mode the view auto-scrolls so the playhead event
+sits at the bottom of the viewport (`_log_view_text_play`
+slices `_log_view_lines[start_row:end_excl]` with
+`end_excl = rows[playhead][1]`). In **pause** mode
+(`_log_view_text_pause`) the view renders the full buffer at
+`_log_view_scroll` with a `C_LOG_CURSOR` background highlight
+on every visual row in the cursor event's row range — each
+painted row is padded to `_log_view_cols` so the highlight spans
+the trailing area past the line's text.
 
-**Keyboard.** ESC pops back to the previous frame — typically
-`history` (filter / sort / table cursor / Options cursor state
-intact) — and clears the playback so it can be garbage-collected.
-Chains are re-read on next push.
-PgUp / PgDn scroll by a screen, Home / End jump to ends,
-↑ / ↓ scroll one visual line. No Space / mouse-wheel / overlays
-yet; those land in P2/P3.
+**Playback engine.** Two modes: `play` and `pause`.
+
+- **Play** uses a monotonic anchor plus an offset:
+  `_log_play_anchor_wall = monotonic()` at the last play-start
+  and `_log_play_anchor_offset_us` the playback time at that
+  moment. `_log_current_playback_us()` returns
+  `anchor_offset + (monotonic() - anchor_wall) * 1e6`, clamped to
+  `[0, total_duration_us]`. A 30 Hz asyncio tick task
+  (`_LOG_TICK_HZ`, started by `_log_start_tick_task` /
+  cancelled by `_log_cancel_tick_task`) invalidates the frame
+  only when `_log_playhead_index()` advances to a new event or
+  when the overlay hide-deadline expires; on reaching
+  `total_duration_us` it calls `_log_auto_pause_at_end()` to
+  park the cursor on the final event.
+- **Pause** freezes the playback clock at
+  `_log_paused_offset_us` and snaps `_log_cursor_index` to the
+  current playhead. Resume (`_log_resume`) always snaps to the
+  cursor's event timestamp — even if the cursor hasn't moved
+  since the pause — by setting
+  `_log_play_anchor_offset_us = pb.playback_offset_us[cursor]`
+  and re-anchoring `_log_play_anchor_wall`.
+
+**Overlays.** Two row-tall overlays float over the log: the top
+header (`_LOG_OVERLAY_HEADER_W = 80` inner cells, centred)
+showing `<character> (L<level>)  ·  Run X of Y  ·  YYYY-MM-DD HH:MM
+·  <elapsed>` on the left and `ESC to return` on the right, and
+the bottom controls (`_LOG_OVERLAY_CONTROLS_W = 70` inner cells,
+centred) carrying a rewind button, a play/pause button (icon
+reflects the action a click would take), a 30-cell scrubber
+(`_LOG_OVERLAY_SCRUBBER_W`) with filled / thumb / empty
+segments, and a `MM:SS / MM:SS` time field. `_log_format_mmss`
+emits minutes verbatim and does not wrap to hours, so a
+78-minute chain reads `78:34`. Overlays are permanent in pause
+mode; in play they auto-hide after `_LOG_OVERLAY_HIDE_DELAY =
+3.0` seconds. Any mouse activity in the frame calls
+`_log_touch_overlays()` to re-arm the deadline and re-reveal
+overlays if they had faded. The overlay palette
+(`C_LOG_OVERLAY_BG` / `C_LOG_OVERLAY_FG` / `C_LOG_OVERLAY_HINT`,
+`C_LOG_SCRUBBER_FILLED` / `_EMPTY` / `_THUMB`,
+`C_LOG_BUTTON_IDLE` / `_HOVER`) lives in
+[`palette.py`](../bridge/launcher/palette.py).
+
+**Keyboard.**
+
+- `ESC` — pop back to the previous frame (typically `history`,
+  with filter / sort / table cursor / Options cursor state
+  intact) and clear the playback so the chain's parsed events
+  can be garbage-collected. Chains are re-read on next push.
+- `Space` — toggle play / pause.
+- `↑ / ↓` — move the cursor by one event (routes through
+  `_log_move_cursor`, which auto-pauses first if currently
+  playing, then routes through `_log_set_cursor` for clamping
+  and scrubber/time sync).
+- `PgUp / PgDn` — move the cursor by `_LOG_PAGE_STEP = 20`
+  events; same auto-pause behaviour.
+- `Home / End` — jump the cursor to the first / last event;
+  same auto-pause behaviour.
+
+Every binding calls `_log_touch_overlays()` first so the
+controls flash back into view on any keypress in play mode.
+
+**Mouse.** Routed through `_LogViewControl.mouse_handler`.
+
+- **Pause mode:** wheel up/down moves the cursor by one event
+  (per spec — wheel moves the cursor, not just the viewport, so
+  the resume point stays predictable). MOUSE_DOWN on a rendered
+  event row sets the cursor to that event via
+  `_log_event_row_to_index(_log_view_scroll + ev.position.y)`;
+  it does **not** resume playback (Space is the resume action).
+- **Play mode:** wheel and click on log content refresh the
+  overlay-visibility timer only — they do not move the cursor or
+  switch modes.
+- **Scrubber drag:** MOUSE_DOWN on any scrubber cell sets
+  `_log_dragging_scrubber = True` and performs the initial seek.
+  While the flag is set, `_log_maybe_handle_drag` intercepts
+  every mouse event anywhere in the frame — MOUSE_MOVE seeks
+  (`_log_handle_drag_event` maps `ev.position.x - _log_scrubber_left`
+  to a cell index against `_log_scrubber_width`, both published
+  by `_log_controls_text` on each render), MOUSE_UP or a
+  MOUSE_MOVE with the button released ends the drag. The
+  rightmost scrubber cell maps exactly to `total_duration_us` so
+  end-of-session click/drag triggers `_log_auto_pause_at_end`.
 
 **Frame focus.** Per ADR 0066, `_log_view_window` is the primary
 focusable window and is dispatched by `_focus_current_frame()`
