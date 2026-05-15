@@ -38,7 +38,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from palette import (  # noqa: E402
     C_TITLE, C_ACTIVE, C_ITEM, C_BODY, C_HINT, C_ACCENT,
     C_YELLOW, C_ERR, C_QUOTE, C_QUOTE_ATTR, C_HOVER, C_SELECTED,
-    C_HEADER, C_SECTION, C_DIVIDER, C_WATCH_LOG, C_WATCH_LOG_HOVER,
+    C_HEADER, C_SECTION, C_DIVIDER,
     C_BUTTON, C_BUTTON_HOVER, C_BUTTON_DISABLED,
     C_LOG_CURSOR,
     C_LOG_OVERLAY_BG, C_LOG_OVERLAY_FG, C_LOG_OVERLAY_HINT,
@@ -200,7 +200,6 @@ _history_rate_summary    = None      # SessionSummary being rated
 _history_delete_summary  = None      # SessionSummary the confirm frame targets
 _history_detail_summary  = None      # SessionSummary pushed into the detail frame
 _history_detail_stats    = None      # aggregated RunStats for that summary
-_history_detail_log_hover = False    # WATCH LOG button hover flag
 # Statistics body — mirrors the popup's _stats_* state.
 _history_detail_kills_sort      = ("XP tot", "desc")
 _history_detail_pkills_sort     = ("XP", "desc")
@@ -212,6 +211,7 @@ _history_detail_achievements_sb = None
 _history_detail_kills_pvps_visible = 2  # last computed visible row count
 
 # log_view (chain log player) — Phase 3
+_log_view_summary  = None   # SessionSummary currently being played
 _log_view_playback = None   # log_player.LogPlayback or None
 _log_view_scroll   = 0      # visual-line offset into the rendered buffer
 _log_view_cols     = 0      # last cols used to wrap; invalidates cache on change
@@ -1464,14 +1464,12 @@ def _scroll_about(delta):
 # ---------------------------------------------------------------------------
 
 # Options widget buttons. (label, action_id). Order matters: cursor moves
-# top-to-bottom and ↑/↓ skips disabled rows. Run log is parked pending
-# log-player wiring — see _hd_watch_log_handler / _kb_hd_watch_log in the
-# history_detail frame for the existing integration target. Back is the
-# keyboard ESC made clickable; always enabled.
+# top-to-bottom and ↑/↓ skips disabled rows. Back is the keyboard ESC made
+# clickable; always enabled.
 _HISTORY_BUTTONS = [
+    ("Run log", "run_log"),
     ("Stats",   "statistics"),
     ("Rate",    "rate"),
-    ("Run log", "run_log"),
     ("Save",    "save"),
     ("Export",  "export"),
     ("Delete",  "delete"),
@@ -1529,19 +1527,19 @@ def _enter_history_frame():
     _push_frame("history")
 
 
-def _history_body_rows():
-    # Title (3) + footer (2) = 5 reserved.
-    return max(1, _term_rows() - 5)
-
-
 def _history_table_visible():
-    """Visible data rows in the table.
+    """Visible data rows in the table — data-fit, with a floor so the Options
+    column never clips.
 
-    Body height minus the fixed-height neighbours that stack vertically:
-    filter header (1) + pill row (1) + blank above table (1) + feedback
-    rows below table (2) = 5, and one more for the table's own header row."""
-    body = _history_body_rows()
-    return max(1, body - 5 - 1)
+    Outer chrome (title 3 + footer 2 = 5) plus inner chrome (filter header 1 +
+    pill row 1 + blank above table 1 + feedback row 1 + table header row 1
+    = 5) reserves 10 terminal rows. Options is 1 header + N buttons; the
+    table window is `visible + 1` rows (header + data), so visible must be
+    at least len(_HISTORY_BUTTONS) for the Options widget to render in
+    full."""
+    max_by_terminal = max(1, _term_rows() - 3 - 2 - 5)
+    options_min = len(_HISTORY_BUTTONS)
+    return min(max_by_terminal, max(options_min, len(_history_sessions)))
 
 
 def _history_table_window_h():
@@ -1784,19 +1782,12 @@ def _history_cycle_focus(delta):
 
 
 def _history_set_hover(panel, row):
-    global _history_hover, _history_detail_log_hover
+    global _history_hover
     new_val = (panel, row)
-    changed = False
-    if _history_hover != new_val:
-        _history_hover = new_val
-        changed = True
-    # _hover_at(None, None) also drops the WATCH LOG hover style — used by
-    # the surrounding fragments in the history_detail frame so the button's
-    # hover paint clears the moment the cursor leaves it.
-    if new_val == (None, None) and _history_detail_log_hover:
-        _history_detail_log_hover = False
-        changed = True
-    if changed and _app:
+    if _history_hover == new_val:
+        return
+    _history_hover = new_val
+    if _app:
         _app.invalidate()
 
 
@@ -1830,7 +1821,7 @@ def _hover_clear_frags(frags):
 
 def _history_open_detail_for(summary):
     """Aggregate the chain and push the history_detail frame for `summary`."""
-    global _history_detail_summary, _history_detail_stats, _history_detail_log_hover
+    global _history_detail_summary, _history_detail_stats
     global _history_detail_kills_sort, _history_detail_pkills_sort
     global _history_detail_focused
     try:
@@ -1839,7 +1830,6 @@ def _history_open_detail_for(summary):
         stats = None
     _history_detail_summary    = summary
     _history_detail_stats      = stats
-    _history_detail_log_hover  = False
     _history_detail_kills_sort  = ("XP tot", "desc")
     _history_detail_pkills_sort = ("XP", "desc")
     _history_detail_focused     = 0
@@ -1851,12 +1841,16 @@ def _history_open_detail_for(summary):
 
 
 def _history_activate_table_row(idx):
-    """Move cursor to idx and push history_detail (Statistics shortcut)."""
+    """Move cursor to idx and open log_view when the row has a log.
+    No-op when the row has no log — Stats has its own Options button now."""
     global _history_table_cursor
     if idx < 0 or idx >= len(_history_sessions):
         return
     _history_table_cursor = idx
-    _history_open_detail_for(_history_sessions[idx])
+    summary = _history_sessions[idx]
+    if not summary.has_log:
+        return
+    _history_play_log(summary)
 
 
 def _history_refresh_summary_meta(summary):
@@ -1890,16 +1884,13 @@ def _history_current_summary():
 def _history_menu_actions():
     """Return [(label, action_id, enabled), ...] for the current selection.
 
-    Order matches _HISTORY_BUTTONS so cursor indices line up. Run log is
-    always disabled in v1; wire it to the log-player frame in a follow-up.
-    The existing log-player entry points live alongside the WATCH LOG button
-    on history_detail — see _hd_watch_log_handler / _kb_hd_watch_log."""
+    Order matches _HISTORY_BUTTONS so cursor indices line up."""
     summary = _history_current_summary()
     has = summary is not None
     return [
+        ("Run log", "run_log",    has and bool(summary.has_log)),
         ("Stats",   "statistics", has),
         ("Rate",    "rate",       has),
-        ("Run log", "run_log",    False),
         ("Save",    "save",       has and not summary.saved),
         ("Export",  "export",     has and bool(summary.has_log)),
         ("Delete",  "delete",     has),
@@ -1947,13 +1938,14 @@ def _history_menu_activate(idx):
         _history_action_rate()
     elif action == "statistics":
         _history_action_statistics()
+    elif action == "run_log":
+        _history_action_run_log()
     elif action == "export":
         _history_action_export()
     elif action == "delete":
         _history_action_delete()
     elif action == "back":
         _pop_frame()
-    # "run_log" stays a no-op (parked, see _history_menu_actions docstring).
 
 
 def _history_action_save():
@@ -1979,6 +1971,19 @@ def _history_action_statistics():
     if summary is None:
         return
     _history_open_detail_for(summary)
+
+
+def _history_action_run_log():
+    summary = _history_current_summary()
+    if summary is None or not summary.has_log:
+        return
+    _history_play_log(summary)
+
+
+def _history_play_log(summary):
+    """Open log_view directly for `summary` without routing through
+    history_detail. has_log gating is the caller's responsibility."""
+    _enter_log_view(summary)
 
 
 # --- Export action ---------------------------------------------------------
@@ -2382,22 +2387,22 @@ def _history_options_text():
     return frags
 
 
-def _history_feedback_text_fn():
-    """Two rows below the package: blank row, then a centred feedback line.
-    Centring is over the package width (not the terminal width), so the
-    message visually belongs to the package above it. Both rows render empty
-    when no feedback is flashing."""
+def _history_feedback_or_blank_text():
+    """Single row directly below the package, doubling as the spacing row
+    above the footer. Renders the centred feedback message when one is
+    flashing, otherwise empty. Centring is over the package width (not the
+    terminal width) so the message visually belongs to the package above it."""
     clear_hover = _hover_at(None, None)
-    frags = [("", "\n", clear_hover)]  # blank row directly below the package
     if not _history_feedback_text:
-        return frags
+        return [("", "", clear_hover)]
     text = _history_feedback_text
     pkg_w  = _history_package_width()
     inner  = max(0, (pkg_w - len(text)) // 2)
     pad_l  = _history_left_pad() + inner
-    frags.append(("", " " * pad_l, clear_hover))
-    frags.append((_history_feedback_style, text, clear_hover))
-    return frags
+    return [
+        ("", " " * pad_l, clear_hover),
+        (_history_feedback_style, text, clear_hover),
+    ]
 
 
 # --- Wheel-scrolling control ----------------------------------------------
@@ -2571,21 +2576,6 @@ def _hd_fmt_ts(ts, fmt):
         return time.strftime(fmt, time.localtime(int(ts)))
     except (TypeError, ValueError, OSError):
         return ""
-
-
-def _hd_watch_log_handler(ev):
-    """WATCH LOG button — MOUSE_MOVE sets hover; MOUSE_DOWN pushes log_view."""
-    global _history_detail_log_hover
-    if ev.event_type == MouseEventType.MOUSE_MOVE:
-        if not _history_detail_log_hover:
-            _history_detail_log_hover = True
-            if _app:
-                _app.invalidate()
-        return None
-    if ev.event_type == MouseEventType.MOUSE_DOWN:
-        _enter_log_view()
-        return None
-    return NotImplemented
 
 
 # --- Statistics body — adapted from ingame_menu.py (see spec) -------------
@@ -3432,26 +3422,12 @@ def _history_detail_text():
     duration_text = _history_fmt_duration(summary.duration_seconds)
     title_text    = (f"◆ Session detail  —  {summary.character}"
                      f"  ·  {date_text}  ·  {duration_text}")
-    button_label  = " WATCH LOG "
-    button_visible = bool(summary.has_log)
 
     frags.append(("", "\n", clear))
 
     title_pad = max(0, (cols - len(title_text)) // 2)
     frags.append(("", " " * title_pad, clear))
     frags.append((C_HEADER, title_text, clear))
-    used = title_pad + len(title_text)
-    if button_visible:
-        # Right edge of the button matches the right edge of the centred stats block.
-        left_w  = _HD_STAT_TABLE_LEFT_W
-        right_w = _HD_STAT_TABLE_RIGHT_W
-        total_w = left_w + 1 + len(_HD_STAT_TABLE_GAP) + right_w + 1
-        block_right = max(0, (cols - total_w) // 2) + total_w
-        button_start = block_right - len(button_label)
-        gap = max(1, button_start - used)
-        frags.append(("", " " * gap, clear))
-        log_style = C_WATCH_LOG_HOVER if _history_detail_log_hover else C_WATCH_LOG
-        frags.append((log_style, button_label, _hd_watch_log_handler))
     frags.append(("", "\n", clear))
 
     # --- Blank separator --------------------------------------------------
@@ -3479,8 +3455,6 @@ def _history_detail_text():
 
     # --- Footer -----------------------------------------------------------
     footer = "ESC Back     ↑↓ Scroll     Tab/Shift+Tab Switch table"
-    if button_visible:
-        footer += "     L Watch log"
     frags.append(("", _pad_centre(footer, cols), clear))
     frags.append((_S_HINT, footer, clear))
     return frags
@@ -3489,8 +3463,9 @@ def _history_detail_text():
 # ---------------------------------------------------------------------------
 # log_view (chain log player — Phase 3 skeleton)
 # ---------------------------------------------------------------------------
-def _enter_log_view():
-    """Push log_view for the chain currently in _history_detail_summary.
+def _enter_log_view(summary=None):
+    """Push log_view for the chain in `summary` (or _history_detail_summary
+    when called with no arg, for back-compat).
 
     Caller is responsible for has_log gating; this is defensive against a
     chain whose every .log file has vanished between summary build and
@@ -3500,13 +3475,16 @@ def _enter_log_view():
     global _log_mode, _log_play_anchor_wall, _log_play_anchor_offset_us
     global _log_paused_offset_us, _log_cursor_index, _log_last_playhead_index
     global _log_overlays_visible, _log_overlays_hide_at, _log_overlay_hover
-    summary = _history_detail_summary
+    global _log_view_summary
+    if summary is None:
+        summary = _history_detail_summary
     if summary is None:
         return
     playback = log_player.LogPlayback(summary.character, summary.run_ids)
     if not playback.events:
         # Defensive — every run's .log was missing; stay on history_detail.
         return
+    _log_view_summary         = summary
     _log_view_playback        = playback
     _log_view_scroll          = 0
     _log_view_cols            = 0
@@ -3528,13 +3506,15 @@ def _enter_log_view():
 
 
 def _exit_log_view():
-    """Pop back to history_detail and drop the playback so the chain's log
+    """Pop back to the previous frame and drop the playback so the chain's log
     data can be garbage-collected — chains are re-read from disk on next push."""
-    global _log_view_playback, _log_view_scroll, _log_view_cols, _log_view_lines
+    global _log_view_summary, _log_view_playback
+    global _log_view_scroll, _log_view_cols, _log_view_lines
     global _log_view_event_rows, _log_last_playhead_index
     global _log_overlays_visible, _log_overlays_hide_at, _log_overlay_hover
     global _log_dragging_scrubber
     _log_cancel_tick_task()
+    _log_view_summary    = None
     _log_view_playback   = None
     _log_view_scroll     = 0
     _log_view_cols       = 0
@@ -4992,18 +4972,6 @@ def _kb_hd_end(event):
         _app.invalidate()
 
 
-# Gated on has_log: no log file → key is ignored, mirrors button visibility.
-_hd_has_log = Condition(
-    lambda: _history_detail_summary is not None
-    and bool(_history_detail_summary.has_log))
-
-
-@kb.add("l", filter=_in_frame("history_detail") & _hd_has_log)
-@kb.add("L", filter=_in_frame("history_detail") & _hd_has_log)
-def _kb_hd_watch_log(event):
-    _enter_log_view()
-
-
 # log_view (chain log player)
 @kb.add("escape", filter=_in_frame("log_view"), eager=True)
 def _kb_log_escape(event):
@@ -5209,12 +5177,13 @@ def _build_history():
         height=lambda: Dimension.exact(_history_table_window_h()),
     )
 
-    # Feedback rows — blank row immediately below the package, then a
-    # second row holding the centred feedback message (or blank). Two rows
-    # so the message visually detaches from the package above it.
+    # Single-row feedback slot — doubles as the spacing row between the
+    # table package and the footer. Renders empty when no message is
+    # flashing.
     feedback_win = Window(
-        content=FormattedTextControl(text=_history_feedback_text_fn, focusable=False),
-        height=2, wrap_lines=False, always_hide_cursor=True,
+        content=FormattedTextControl(text=_history_feedback_or_blank_text,
+                                     focusable=False),
+        height=1, wrap_lines=False, always_hide_cursor=True,
     )
 
     body = HSplit([
@@ -5224,8 +5193,12 @@ def _build_history():
         table_row,
         feedback_win,
     ])
+    # flex_spacer sits below the footer and absorbs leftover terminal rows
+    # so the footer hint sits one row below the table package instead of
+    # pinning to the terminal's last row.
+    flex_spacer = Window()
     return (filter_pills_win, table_win, options_win,
-            HSplit([title, body, footer]))
+            HSplit([title, body, footer, flex_spacer]))
 
 
 def _build_history_rate():

@@ -9,7 +9,6 @@ __all__ = [
     "C_QUOTE", "C_QUOTE_ATTR", "C_HOVER", "C_SELECTED",
     "C_HEADER", "C_SECTION", "C_DIVIDER",
     "C_BUTTON", "C_BUTTON_HOVER", "C_BUTTON_DISABLED",
-    "C_WATCH_LOG", "C_WATCH_LOG_HOVER",
     "C_LOG_PLAYER_INPUT", "C_LOG_CURSOR",
     "C_LOG_OVERLAY_BG", "C_LOG_OVERLAY_FG", "C_LOG_OVERLAY_HINT",
     "C_LOG_SCRUBBER_FILLED", "C_LOG_SCRUBBER_EMPTY", "C_LOG_SCRUBBER_THUMB",
@@ -67,11 +66,6 @@ _S_HINT    = "fg:#5c5c5c"       # footer hints
 _S_PVP     = "fg:#ff5f5f"       # ⚔ glyph before PvPs data rows
 _S_ALLY    = "fg:#00d7d7"       # ♦ glyph before ALLIES data rows
 _S_STAR    = "fg:#ffd060"       # ★ glyph before ACHIEVEMENTS data rows
-
-# history_detail WATCH LOG button — black text on a saturated accent fill,
-# lighter accent fill on hover. Accent values mirror C_ACCENT and _S_STAR.
-C_WATCH_LOG       = "fg:#000000 bg:#ffaf00"
-C_WATCH_LOG_HOVER = "fg:#000000 bg:#ffd060"
 
 # log_view (chain log player) — player commands rendered in a quiet
 # grey with a faint light-cyan tint so they're visually distinct from

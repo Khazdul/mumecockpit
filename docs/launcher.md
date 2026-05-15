@@ -99,18 +99,22 @@ Top-to-bottom:
    - **Gap.** 1 space of visual breathing room between the table's
      scrollbar column and the Options widget's left edge.
    - **Options widget.** Vertical column of 7 connected flat buttons
-     (no inter-button gap, no border): Stats, Rate, Run log, Save,
+     (no inter-button gap, no border): Run log, Stats, Rate, Save,
      Export, Delete, Back. Column width = longest button label + 2
      cells of padding (longest label: `Run log`, 7 chars).
      A centred `Options` header sits on the same line as the runs-
      table header row, painted `C_SECTION` when the widget is
      unfocused / `C_ACTIVE` when focused.
-5. **Feedback rows** — two rows below the package. The first row is
-   always blank (separator). The second row holds the Export action's
-   transient `Saved to ~/<file>` (`C_ACCENT`) or `Export failed: …`
-   (`C_HINT`) message centred on the package width for ~3 s, blank
+5. **Feedback row** — single row directly below the package, doubling
+   as the spacing row between the table and the footer. Holds the
+   Save / Rate / Export / Delete transient feedback message
+   (`Saved to ~/<file>` in `C_ACCENT`, `Export failed: …` in
+   `C_HINT`, etc.) centred on the package width for ~3 s, blank
    otherwise.
-6. Footer hint line.
+6. Footer hint line. Sits one row below the feedback row; any
+   remaining vertical space lives below the footer via a flex
+   spacer, not above it, so the footer hint is anchored to the
+   package and rises/falls with the data-fit table.
 
 Each row is a stitched chain (one session). Stitching uses the default
 `max_gap_seconds = 3600` from `list_sessions()`. The live
@@ -163,11 +167,12 @@ hover highlight.
 
 **Disabled rules.**
 
+- **Run log** — disabled when `summary.has_log` is false. Otherwise
+  pushes `log_view` for the selected chain directly (no detour
+  through `history_detail`). Primary action on the surface — the
+  same destination as activating the row from the runs table.
 - **Stats** — always enabled (no-op when the table has no row).
 - **Rate** — always enabled (no-op when the table has no row).
-- **Run log** — always disabled in v1. Parked pending log-player
-  wiring; the existing target lives alongside the WATCH LOG button
-  on `history_detail` (`_hd_watch_log_handler` / `_kb_hd_watch_log`).
 - **Save** — disabled when `summary.saved` is true.
 - **Export** — disabled when `summary.has_log` is false.
 - **Delete** — always enabled when a row is selected. Saved sessions
@@ -188,7 +193,7 @@ landing spot even with an empty table.
 | table   | ↑/↓                | move cursor row (clamp)               |
 | table   | PgUp/PgDn          | scroll 10                             |
 | table   | Home/End           | jump to ends                          |
-| table   | Enter / Space      | activate Stats for selected row       |
+| table   | Enter / Space      | open Run log when row has a log; otherwise no-op |
 | options | ↑/↓                | move cursor button (skip disabled)    |
 | options | Enter / Space      | activate selected button              |
 | any     | Tab / Shift+Tab    | cycle focus (filter → table → options)|
@@ -199,7 +204,11 @@ cursor with ←/→ or clicking a pill re-filters immediately. Filter
 resets to `All` on every frame push. Filter change resets table scroll
 and cursor to 0; sort state is preserved.
 
-**Mouse.** Click activates (and switches focus to that panel). Wheel
+**Mouse.** Click activates (and switches focus to that panel).
+Clicking a runs-table row with `has_log` true opens `log_view` for
+that chain (same destination as Enter / Space on the row, or the
+Run log Options button); clicking a row with no log moves the
+cursor only — Stats is reachable from the Options widget. Wheel
 scrolls the table when hovered (`_HistScrollControl`, the same
 `FormattedTextControl` subclass that intercepts `SCROLL_UP` /
 `SCROLL_DOWN`); wheel over filter row or menu is a no-op. The table's
@@ -209,9 +218,11 @@ click-to-jump scrollbar uses `bridge/launcher/widgets/scrollbar.py`.
 cursor (`_history_sessions[_history_table_cursor]`). With no row,
 every action is disabled.
 
-- **Stats** — pushes `history_detail` for the selected session. Same
-  destination as pressing Enter on the table row.
-- **Run log** — parked placeholder; always disabled in v1.
+- **Run log** — disabled when `summary.has_log` is false. Opens
+  `log_view` for the chain (`_enter_log_view(summary)`), bypassing
+  `history_detail`. Same destination as Enter / Space / click on the
+  runs-table row when `has_log` is true.
+- **Stats** — pushes `history_detail` for the selected session.
 - **Save** — disabled when `summary.saved`. Otherwise calls
   `run_meta.save_run_chain(character, run_ids, 0)`, then re-reads each
   run's meta sidecar to refresh `summary.saved` / `summary.rating` in
@@ -344,28 +355,21 @@ Window` for the focus contract.
 
 ### `history_detail` frame
 
-Per-session statistics view. Opened by activating a row in
-`history` (click or Enter). Data is aggregated on push via
+Per-session statistics view. Opened from the `history` frame via
+the **Stats** Options button. The Run log entry point lives on the
+`history` frame (Run log Options button, or Enter / click on a row
+when `has_log`) — there is no log-player surface on
+history_detail. Data is aggregated on push via
 `aggregate(character, summary.run_ids)` and stashed in
 module-level state; the chain is already in `summary.run_ids`,
 so no extra walk.
 
-**Layout** (top to bottom): header line + WATCH LOG button ·
-blank · ALLIES + ACHIEVEMENTS · blank · KILLS + PvPs · blank ·
-sparklines (XP/h + TP/h) · blank · XP-linjal · blank · footer.
+**Layout** (top to bottom): header line · blank · ALLIES +
+ACHIEVEMENTS · blank · KILLS + PvPs · blank · sparklines (XP/h +
+TP/h) · blank · XP-linjal · blank · footer.
 
 **Header.** `◆ Session detail — <Char> · <Date> · <Time> ·
-<Dur.>` centred in `C_HEADER`. The WATCH LOG button is
-right-aligned to the right edge of the table block underneath
-(not the terminal edge), so the button and the tables read as
-one column.
-
-**WATCH LOG.** Appears iff `summary.has_log` is `True`; hidden
-entirely otherwise. Styled `C_WATCH_LOG` idle, `C_WATCH_LOG_HOVER`
-on hover. Click and the `L` keyboard shortcut both push the
-`log_view` frame (Phase 3 skeleton; playback comes in later
-prompts). The footer hint segment `L Watch log` appears under the
-same `has_log` condition.
+<Dur.>` centred in `C_HEADER`.
 
 **Section parity with popup Statistics.** ALLIES (`♦` in
 `_S_ALLY`), ACHIEVEMENTS (`★` in `_S_STAR`), KILLS (sortable),
@@ -403,23 +407,24 @@ forcing double work; layout overhaul) are recorded in
 **Footer.**
 
 ```
-ESC Back     ↑↓ Scroll     Tab/Shift+Tab Switch table     L Watch log
+ESC Back     ↑↓ Scroll     Tab/Shift+Tab Switch table
 ```
-
-The `L Watch log` segment is conditional on `has_log`.
 
 ### `log_view` frame
 
-Chain log player. Opened from `history_detail` by clicking
-WATCH LOG or pressing `L`. Reads the `.log` siblings of the
+Chain log player. Opened from `history` (Run log button, or
+Enter / click on a row when `has_log`). Reads the `.log` siblings of the
 chain's `summary.run_ids` for the current character and renders
 all events as one stacked, scrollable buffer. Phase 3, prompt 1
 ships only the static load + render skeleton; playback clock,
 cursor, run-boundary header, scrubber, and pause-mode highlights
 arrive in later prompts.
 
-**Load.** On push, `_enter_log_view()` builds a
+**Load.** On push, `_enter_log_view(summary)` builds a
 `log_player.LogPlayback(summary.character, summary.run_ids)`.
+The active summary is stashed on the module-level `_log_view_summary`
+slot so the frame survives independently of the `history_detail`
+state.
 For each `run_id`, the loader tries
 `data/runs/<character>/<run_id>.log`; runs whose `.log` is
 missing are silently skipped. `run_ids` retains the original
@@ -449,9 +454,10 @@ re-builds when the terminal width changes. The wrap is a
 fragment-aware split, not `wrap_lines=True`, so style runs
 remain stable across the wrap boundary.
 
-**Keyboard.** ESC pops back to `history_detail` (filter / sort /
-cursor state intact) and clears the playback so it can be
-garbage-collected — chains are re-read on next push.
+**Keyboard.** ESC pops back to the previous frame — typically
+`history` (filter / sort / table cursor / Options cursor state
+intact) — and clears the playback so it can be garbage-collected.
+Chains are re-read on next push.
 PgUp / PgDn scroll by a screen, Home / End jump to ends,
 ↑ / ↓ scroll one visual line. No Space / mouse-wheel / overlays
 yet; those land in P2/P3.
@@ -508,8 +514,6 @@ shared with the in-game popup. Roles:
 | `C_ERR`        | Hard errors                                       |
 | `C_SELECTED`        | History cursor row — black on light-grey background fill (sidebar active filter, table cursor row) |
 | `C_ROW_HOVER`       | History detail data-table row hover — subtle background fill that composes with cell foreground colours |
-| `C_WATCH_LOG`       | WATCH LOG button — black on accent background fill                                                  |
-| `C_WATCH_LOG_HOVER` | WATCH LOG button on hover — lighter accent background variant                                       |
 | `C_LOG_PLAYER_INPUT`| log_view outbound (player command) lines — muted grey with a faint light-cyan tint                  |
 
 **Alignment convention (Profile / Options / Scripts pages).** Menu rows
