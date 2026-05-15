@@ -37,8 +37,8 @@ path) goes through that wrapper unchanged.
 The UI is a frame stack: a single `DynamicContainer` swaps between `main`,
 `profile`, `profile_create_name`, `profile_create_choose`,
 `profile_create_copy_picker`, `profile_delete_confirm`, `options`,
-`scripts`, `about`, `history`, `history_detail`, `log_view`,
-`update_running`, `update_result`, and `exit_confirm`
+`scripts`, `about`, `history`, `history_detail`, `history_rate`,
+`log_view`, `update_running`, `update_result`, and `exit_confirm`
 containers, pushed and popped via `_push_frame` / `_pop_frame`. Each frame
 owns its own `KeyBindings` filter (`_in_frame(name)`) so navigation, scroll,
 and ESC behave per-frame. The popup architecture (ADR 0062) is the
@@ -57,66 +57,186 @@ reference; see `bridge/launcher/ingame_menu.py` for the same patterns.
 
 ## History sub-menu
 
-Two frames: `history` (list) and `history_detail` (per-session
-view). Opened from the main-menu entry "History", inserted between
-"Profile" and "Options". Data is read by
+Three frames: `history` (list + actions), `history_detail` (per-session
+view), and `history_rate` (star picker). Opened from the main-menu entry
+"History", inserted between "Profile" and "Options". Data is read by
 `bridge/launcher/run_stats.py` — see ADR 0065 for the aggregator,
 ADR 0056 for the stitching primitive.
 
+`SessionSummary` carries the per-chain saved state used by the History
+surfaces: `saved` is true iff any run in the chain has a
+`<run-id>.meta.json` with `"saved": true`; `rating` is the maximum
+rating across saved runs in the chain (chain-consensus rule, locks in
+"max" so a future divergent case shows the best rating the user ever
+gave the session). Both fields are `None`/`False` when no meta sidecar
+is present. See [docs/runs.md](runs.md#meta-sidecar-saved-runs) for the
+sidecar schema.
+
 ### `history` frame
 
-Horizontally-centred two-column body:
+Top-to-bottom, horizontally centred:
 
-- **Left sidebar.** First row is the literal `Filter` header
-  (focus-coloured: `C_ACTIVE` when the sidebar is focused,
-  `C_SECTION` otherwise). Below the header: `All`, then one row
-  per character returned by `list_characters_with_runs()`,
-  alphabetical. Characters without sealed JSONLs are excluded.
-  Sidebar width is recomputed on every render from
-  `max(len("Filter"), len("All"), max character-name length) + 2`.
-- **Right table, sortable.** Columns: Char · Date · Time · Dur. ·
-  PK · XP. The header row is click-to-sort; an active column
-  shows ` ▲` / ` ▼` after its label. Default sort `Char asc` with
-  `start_ts desc` as the stable secondary key, so within a tied
-  primary key, newest sessions appear first.
+1. Title row.
+2. `Filter` header label (`C_ACTIVE` when the filter row is focused,
+   `C_SECTION` otherwise).
+3. **Filter pill row.** `All` followed by one pill per character
+   returned by `list_characters_with_runs()` (alphabetical).
+   Characters without sealed JSONLs are excluded. Each pill is
+   `  <name>  ` (2-cell padding each side); pills are joined by a
+   2-space separator. The cursor pill paints `C_SELECTED`. Hover
+   paints `C_HOVER` on non-cursor pills; hover never overrides
+   cursor. Cursor equals the active filter — moving the cursor with
+   ←/→ re-filters immediately.
+4. **Runs table, sortable.** Columns: Char · Date · Time · Dur. ·
+   Expires · Rating. The header row is click-to-sort; an active
+   column shows ` ▲` / ` ▼` after its label. Default sort `Char asc`
+   with `start_ts desc` as the stable secondary key.
+5. **Action menu** in a single-line bordered box (`┌─┐│└┘`). Centred
+   horizontally; inner column width = longest label (`Watch log`) + 2
+   padding cells on each side. Items, top to bottom:
+   `Save`, `Rate`, `Statistics`, `Watch log`, blank, `Back`.
+6. Footer hint line.
 
-Each row is a stitched chain (one session). Stitching uses the
-default `max_gap_seconds = 3600` from `list_sessions()`. The live
+Each row is a stitched chain (one session). Stitching uses the default
+`max_gap_seconds = 3600` from `list_sessions()`. The live
 `current.jsonl` is never listed; only sealed JSONLs.
 
-XP gain is rendered in `_S_GAINED` for positive, `_S_LOSS` for
-negative, `_S_LABEL` for zero or sub-1k magnitudes.
+**Expires cell.** `"Saved"` in `C_ACCENT` (gold) when `summary.saved`,
+otherwise `"<N> days"` in `_S_LABEL` where `N = ceil((oldest_run_start_ts
++ 14*86400 - now) / 86400)`, floored at 0. The oldest run is
+`run_ids[0]` (`list_sessions` returns the chain oldest-first). `0 days`
+renders literally — the run is in its last day before the next launcher
+boot prunes it.
 
-**Focus.** One focusable Window per the focus-on-push contract
-(ADR 0066). `_history_focused: int` routes navigation
-(0 = sidebar, 1 = table). Tab cycles. Each panel header paints
-`C_ACTIVE` when focused, `C_SECTION` otherwise.
+**Rating cell.** `summary.rating` ★ glyphs in `_S_STAR` (gold),
+left-aligned. Blank when `summary.saved` is false or rating is 0.
 
-**Cursor and hover.** The cursor row in each panel paints
-`C_SELECTED` (black on light grey) in all focus states. Hover
-paints `C_HOVER` on non-cursor rows; hover never overrides
-`C_SELECTED`. Hover clears on `MOUSE_MOVE` over any non-row
-fragment (title, footer, gap, padding, scrollbar track) via a
-per-frame `_hover_at(panel, idx)` helper.
+**Sort defaults.** Expires and Rating both default to numeric desc.
+Sorting either column groups Saved sessions above any "N days" value
+in either direction (stable: Saved sessions stay together, then
+numerics order normally within the unsaved group).
 
-**Keyboard.** Tab / Shift+Tab cycles focus; ↑ / ↓ moves cursor
-(sidebar wraps; table clamps); PgUp / PgDn scrolls by 10;
-Home / End jumps to ends; Enter activates (sidebar: apply filter;
-table: push `history_detail`); ESC pops to main.
+**Focus.** Three focusable Windows per the focus-on-push contract
+(ADR 0066): `_history_filter_window` (pill row),
+`_history_table_window`, `_history_menu_window`. `_history_focused:
+int` (0/1/2) routes navigation. Tab / Shift+Tab cycles forward /
+backward; `_focus_current_frame()` re-focuses the right window after
+push/pop and on focus changes within the frame.
 
-**Filter behaviour.** Selecting a sidebar row is immediate
-(cursor equals selection). Filter resets to `All` on every frame
-push. Filter change resets table scroll and cursor to 0; sort
-state is preserved.
+**Cursor and hover.** The cursor element in each panel paints
+`C_SELECTED` (black on light grey) in all focus states. Hover paints
+`C_HOVER` on non-cursor selectable elements; hover never overrides
+`C_SELECTED`. Hover clears on `MOUSE_MOVE` over any non-row fragment
+(title, footer, gap, padding, scrollbar track, in-box blank, menu
+border, disabled menu row) via the per-frame `_hover_at(panel, idx)`
+helper.
 
-**Mouse.** Click activates; wheel scrolls the panel under the
-cursor (`FormattedTextControl` subclass overriding `mouse_handler`,
-same pattern as the popup's `_ScrollControl`); two click-to-jump
-scrollbars use `bridge/launcher/widgets/scrollbar.py`.
+**Action menu styling.** Item rows: `C_ITEM` normal, `C_SELECTED` for
+the menu cursor (when the menu is focused), `C_HOVER` on non-cursor
+hover. **Disabled** rows paint `C_HINT` with no click handler and no
+hover highlight: `Save` greys when `summary.saved` is true; `Watch log`
+greys when `summary.has_log` is false; all items except `Back` grey
+when no row is selected in the table (empty table or no cursor). The
+cursor can land on a disabled row (e.g. after a Save flips `Save` to
+disabled) but Enter on a disabled row is a no-op. The box border
+paints `C_SECTION` when the menu is unfocused, `C_ACTIVE` when focused.
 
-**Empty state.** No characters with archived runs → table area
-renders `"No runs recorded yet."` centred; sidebar shows only
-`All`.
+**Keyboard.**
+
+| Focus  | Key                | Action                                |
+|--------|--------------------|---------------------------------------|
+| filter | ←/→                | move cursor pill (wrap)               |
+| filter | ↑/↓                | no-op                                 |
+| filter | Enter / Space      | re-apply cursor pill's filter         |
+| table  | ↑/↓                | move cursor row (clamp)               |
+| table  | PgUp/PgDn          | scroll 10                             |
+| table  | Home/End           | jump to ends                          |
+| table  | Enter / Space      | activate Statistics for selected row  |
+| menu   | ↑/↓                | move cursor row (skip disabled rows)  |
+| menu   | Enter / Space      | activate selected row                 |
+| any    | Tab / Shift+Tab    | cycle focus (filter → table → menu)   |
+| any    | ESC                | pop to main menu                      |
+
+**Filter behaviour.** Cursor equals the active filter; moving the
+cursor with ←/→ or clicking a pill re-filters immediately. Filter
+resets to `All` on every frame push. Filter change resets table scroll
+and cursor to 0; sort state is preserved.
+
+**Mouse.** Click activates (and switches focus to that panel). Wheel
+scrolls the table when hovered (`_HistScrollControl`, the same
+`FormattedTextControl` subclass that intercepts `SCROLL_UP` /
+`SCROLL_DOWN`); wheel over filter row or menu is a no-op. The table's
+click-to-jump scrollbar uses `bridge/launcher/widgets/scrollbar.py`.
+
+**Action handlers.** All operate on the row currently under the table
+cursor (`_history_sessions[_history_table_cursor]`). With no row, every
+action except `Back` is disabled.
+
+- **Save** — disabled when `summary.saved`. Otherwise calls
+  `run_meta.save_run_chain(character, run_ids, 0)`, then re-reads each
+  run's meta sidecar to refresh `summary.saved` / `summary.rating` in
+  place so the row's Expires cell flips to `Saved` and `Save` greys
+  immediately.
+- **Rate** — pushes the `history_rate` frame for the selected session
+  (always enabled when a row is selected).
+- **Statistics** — pushes `history_detail` for the selected session.
+  Same destination as pressing Enter on the table row.
+- **Watch log** — disabled when `summary.has_log` is false. When
+  enabled, no-op for now: log player wiring lands in Phase 3.
+- **Back** — `_pop_frame()`.
+
+Saving / re-rating writes meta files for **every** run-id in the
+stitched chain, matching the popup's chain-save semantics
+(`docs/popup-menu.md`#chain-save-semantics). After the write the row's
+saved/rating fields are recomputed from disk rather than locally
+mutated, so the row stays in sync with the meta sidecar truth.
+
+**Empty state.** No characters with archived runs → table area renders
+`"No runs recorded yet."` centred; the filter row shows only the `All`
+pill; the action menu shows only `Back` enabled.
+
+### `history_rate` frame
+
+Star-picker for setting / changing the rating on a session's chain.
+Modeled on the popup's `rate_session` (`docs/popup-menu.md`#rate-session-frame):
+same `★` widget, same key bindings (`0..5`, ←/→, Enter, ESC), same
+gold (`_S_STAR`) / grey (`C_HINT`) contrast.
+
+**Title.** `─── Rate the session ───` — matches the popup string so the
+two surfaces read consistently.
+
+**Initial rating.**
+
+- `summary.rating` if the session is already saved (re-rate starts at
+  the current value).
+- `0` if not yet saved.
+
+**Key bindings** (filter: `_in_frame("history_rate")`):
+
+| Key      | Action                                                    |
+|----------|-----------------------------------------------------------|
+| `0`..`5` | Set `_history_rate_rating` to that value                  |
+| `Left`   | `rating = max(0, rating - 1)`                             |
+| `Right`  | `rating = min(5, rating + 1)`                             |
+| `Enter`  | Save and pop back to history                              |
+| `Space`  | Save and pop back to history                              |
+| `ESC`    | Pop back to history without saving                        |
+
+Mouse: clicking star N (1-indexed) sets the rating to N.
+
+**Save.** Walks the session's `summary.run_ids` and calls
+`run_meta.save_run_chain(character, run_ids, rating)`, refreshes the
+row's `saved` / `rating` from disk, then pops. The `history` row's
+Expires and Rating cells repaint on the next render. Re-rating an
+already-saved session updates only `rating` + `saved_ts` in the meta
+files; `saved` stays true.
+
+**Module state.** `_history_rate_rating: int` (0..5),
+`_history_rate_window: Window` (focus-on-push), and
+`_history_rate_summary: SessionSummary | None` set on push and cleared
+on pop. The frame builder follows ADR 0066: the single focusable
+Window is registered in `_focus_current_frame()` so per-star click
+handlers route correctly.
 
 ### `history_detail` frame
 

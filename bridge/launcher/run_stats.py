@@ -69,6 +69,8 @@ class SessionSummary:
     pkill_count: int
     xp_gained: int
     has_log: bool
+    saved: bool = False
+    rating: int | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -305,19 +307,38 @@ def list_sessions(character: str, max_gap_seconds: int = 3600) -> list[SessionSu
             chains.append([s])
             chain_for[s.run_id] = len(chains) - 1
 
+    import run_meta
     sessions: list[SessionSummary] = []
     for chain in chains:
         start_ts = chain[0].start_ts
         end_ts   = chain[-1].end_ts
+        run_ids  = [r.run_id for r in chain]
+
+        saved = False
+        best_rating: int | None = None
+        for run_id in run_ids:
+            meta = run_meta.read_meta(character, run_id)
+            if not meta or meta.get("saved") is not True:
+                continue
+            saved = True
+            try:
+                rating = max(0, min(5, int(meta.get("rating", 0))))
+            except (TypeError, ValueError):
+                rating = 0
+            if best_rating is None or rating > best_rating:
+                best_rating = rating
+
         sessions.append(SessionSummary(
             character=character,
-            run_ids=[r.run_id for r in chain],
+            run_ids=run_ids,
             start_ts=start_ts,
             end_ts=end_ts,
             duration_seconds=max(0, end_ts - start_ts),
             pkill_count=sum(r.pkill_count for r in chain),
             xp_gained=sum(r.xp_gained_within_run for r in chain),
             has_log=any(r.has_log_sibling for r in chain),
+            saved=saved,
+            rating=best_rating if saved else None,
         ))
     sessions.sort(key=lambda s: s.start_ts)
     return sessions
