@@ -222,6 +222,10 @@ _LOG_OVERLAY_HIDE_DELAY     = 3.0
 _LOG_OVERLAY_HEADER_W       = 80
 _LOG_OVERLAY_CONTROLS_W     = 70
 _LOG_OVERLAY_SCRUBBER_W     = 30
+# Scrubber drag capture
+_log_dragging_scrubber      = False    # True between MOUSE_DOWN on scrubber and release
+_log_scrubber_left          = 0        # absolute column of the scrubber's first cell
+_log_scrubber_width         = 0        # number of scrubber cells in the current render
 _history_columns = [
     # (key, base_label, width, align, type)
     ("Char",   "Char",  None, "left",  "text"),
@@ -3006,6 +3010,7 @@ def _exit_log_view():
     global _log_view_playback, _log_view_scroll, _log_view_cols, _log_view_lines
     global _log_view_event_rows, _log_last_playhead_index
     global _log_overlays_visible, _log_overlays_hide_at, _log_overlay_hover
+    global _log_dragging_scrubber
     _log_cancel_tick_task()
     _log_view_playback   = None
     _log_view_scroll     = 0
@@ -3016,6 +3021,7 @@ def _exit_log_view():
     _log_overlays_visible    = True
     _log_overlays_hide_at    = None
     _log_overlay_hover       = None
+    _log_dragging_scrubber   = False
     _pop_frame()
 
 
@@ -3450,6 +3456,10 @@ class _LogViewControl(FormattedTextControl):
             return result
         if _log_view_playback is None:
             return None
+        # A scrubber drag captures all mouse events anywhere in log_view —
+        # MOUSE_MOVE seeks, MOUSE_UP / button-released-during-move ends.
+        if _log_maybe_handle_drag(ev):
+            return None
         t = ev.event_type
         # Clear button hover whenever the mouse drifts back onto the log
         # control — the buttons reset their own hover on direct hits.
@@ -3503,7 +3513,11 @@ def _log_current_run_index():
 
 def _log_overlay_inert_handler(ev):
     """MOUSE_MOVE on an overlay area not bound to a control: refresh the
-    timer and clear any stale button hover so it doesn't linger."""
+    timer and clear any stale button hover so it doesn't linger. While a
+    scrubber drag is in progress, route the event to the seek dispatcher
+    so a drag that drifts onto overlay padding keeps tracking."""
+    if _log_maybe_handle_drag(ev):
+        return
     if ev.event_type == MouseEventType.MOUSE_MOVE:
         _log_set_overlay_hover(None)
     _log_touch_overlays()
@@ -3633,8 +3647,13 @@ def _log_scrubber_seek(target_us):
 
 
 def _log_make_button_handler(name, on_click):
-    """Build a fragment mouse handler for a named overlay button."""
+    """Build a fragment mouse handler for a named overlay button. While a
+    scrubber drag is in progress, hover is NOT updated (so buttons the
+    pointer crosses mid-drag don't flicker) and the event is routed to
+    the seek dispatcher instead of the button's normal handling."""
     def _h(ev):
+        if _log_maybe_handle_drag(ev):
+            return
         if ev.event_type == MouseEventType.MOUSE_MOVE:
             _log_set_overlay_hover(name)
             _log_touch_overlays()
@@ -3648,26 +3667,97 @@ def _log_make_button_handler(name, on_click):
     return _h
 
 
+def _log_seek_to_cell(cell, total_cells):
+    """Map a scrubber cell index (0-based) to a playback offset and seek
+    there. Uses c / (W - 1) so c=0 lands exactly at 0 and c=W-1 lands
+    exactly at total_duration_us — the rightmost cell must be reachable
+    so end-of-session click/drag can trigger auto-pause. No-op when the
+    chain has no duration."""
+    pb = _log_view_playback
+    if pb is None or pb.total_duration_us <= 0 or total_cells <= 0:
+        return
+    c = max(0, min(total_cells - 1, int(cell)))
+    if total_cells == 1:
+        target = 0
+    else:
+        target = int(c / (total_cells - 1) * pb.total_duration_us)
+    _log_scrubber_seek(target)
+
+
+def _log_handle_drag_event(ev):
+    """Route a mouse event from any log_view control to the scrubber-seek
+    logic. The scrubber column is derived from the event's absolute column
+    relative to the last rendered scrubber's left edge (the overlays all
+    span the full width, so ev.position.x is absolute). Clamps to
+    [0, W-1] so drift past either end pins to the corresponding endpoint."""
+    if _log_scrubber_width <= 0:
+        return
+    col = ev.position.x - _log_scrubber_left
+    _log_seek_to_cell(col, _log_scrubber_width)
+
+
+def _log_end_drag():
+    """Clear the scrubber-drag capture flag and force a redraw so any
+    stale state (e.g. the playhead position at release) is rendered."""
+    global _log_dragging_scrubber
+    if not _log_dragging_scrubber:
+        return
+    _log_dragging_scrubber = False
+    if _app:
+        _app.invalidate()
+
+
+def _log_maybe_handle_drag(ev):
+    """If a scrubber drag is in progress, consume `ev` according to its
+    type and return True. Returns False otherwise so the caller falls
+    through to normal handling. MOUSE_DOWN always ends any stale drag
+    but is not consumed — the receiving handler (which may be the
+    scrubber itself, re-arming the flag) still runs."""
+    if not _log_dragging_scrubber:
+        return False
+    t = ev.event_type
+    if t == MouseEventType.MOUSE_MOVE:
+        if getattr(ev, "button", MouseButton.NONE) == MouseButton.NONE:
+            # Button was released somewhere we didn't observe MOUSE_UP for.
+            _log_end_drag()
+            return True
+        _log_handle_drag_event(ev)
+        return True
+    if t == MouseEventType.MOUSE_UP:
+        _log_end_drag()
+        return True
+    if t == MouseEventType.MOUSE_DOWN:
+        _log_end_drag()
+        return False
+    return False
+
+
 def _log_make_scrubber_handler(cell_index, total_cells):
-    """Per-cell scrubber mouse handler. Treats MOUSE_DOWN and
-    MOUSE_MOVE-while-button-held (drag) as seek events using the same
-    cell→time mapping, so click and click-and-drag both scrub. Drag
-    works in both modes — pause moves the cursor through events,
-    play continues playing from the dragged offset. Release ends the
-    drag naturally (no MOUSE_DOWN, no held button). No-op when the
-    chain has no duration (single-event log)."""
+    """Per-cell scrubber mouse handler. MOUSE_DOWN sets the drag-capture
+    flag (so subsequent MOUSE_MOVE events on any control are routed back
+    to the seek dispatcher) and performs the initial seek. In-row drag
+    is normally consumed by `_log_maybe_handle_drag` before this branch
+    runs; the local `is_drag` branch is a defensive fallback that uses
+    the per-cell index directly, in case the absolute-column mapping is
+    ever out of date. Release ends the drag through
+    `_log_maybe_handle_drag` on any log_view control."""
     def _h(ev):
+        if _log_maybe_handle_drag(ev):
+            return
+        global _log_dragging_scrubber
         t = ev.event_type
         is_drag = (t == MouseEventType.MOUSE_MOVE
                    and getattr(ev, "button", MouseButton.NONE) != MouseButton.NONE)
-        if t == MouseEventType.MOUSE_DOWN or is_drag:
+        if t == MouseEventType.MOUSE_DOWN:
+            _log_dragging_scrubber = True
             _log_set_overlay_hover(None)
             _log_touch_overlays()
-            pb = _log_view_playback
-            if pb is None or pb.total_duration_us <= 0 or total_cells <= 0:
-                return
-            target = int(cell_index / total_cells * pb.total_duration_us)
-            _log_scrubber_seek(target)
+            _log_seek_to_cell(cell_index, total_cells)
+            return
+        if is_drag:
+            _log_set_overlay_hover(None)
+            _log_touch_overlays()
+            _log_seek_to_cell(cell_index, total_cells)
             return
         if t == MouseEventType.MOUSE_MOVE:
             _log_set_overlay_hover(None)
@@ -3679,10 +3769,16 @@ def _log_make_scrubber_handler(cell_index, total_cells):
 
 def _log_controls_text():
     """Build the bottom controls overlay row (rewind / play-pause /
-    scrubber / time). The whole row is filled with the overlay bg."""
+    scrubber / time). The whole row is filled with the overlay bg.
+    Also publishes the scrubber's absolute column range into
+    `_log_scrubber_left` / `_log_scrubber_width` for the drag
+    dispatcher (see `_log_handle_drag_event`)."""
+    global _log_scrubber_left, _log_scrubber_width
     pb = _log_view_playback
     cols = max(1, _term_cols())
     if pb is None or not pb.events:
+        _log_scrubber_left  = 0
+        _log_scrubber_width = 0
         return [(C_LOG_OVERLAY_BG, " " * cols, _log_overlay_inert_handler)]
 
     # Button glyphs. play_glyph reflects the ACTION a click would take —
@@ -3725,6 +3821,13 @@ def _log_controls_text():
                   _log_make_button_handler("playpause", _log_toggle_play_pause)))
 
     frags.append((C_LOG_OVERLAY_BG, gap, _log_overlay_inert_handler))
+
+    # Record the scrubber's absolute left edge + width so a drag that
+    # drifts off the scrubber row can still map ev.position.x → cell.
+    # The bottom overlay Float spans full width with left=0, so the
+    # accumulated "side + buttons + gap" column count is absolute.
+    _log_scrubber_left  = side + len(rewind_label) + len(pp_label) + len(gap)
+    _log_scrubber_width = scrubber_w
 
     if pb.total_duration_us > 0:
         thumb_cell = int(_log_current_playback_us() / pb.total_duration_us * scrubber_w)
