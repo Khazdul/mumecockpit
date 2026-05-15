@@ -28,6 +28,13 @@
 #nop never fires in the lua #run session, where every #lua{...} call
 #nop would otherwise count as sent output and self-amplify. See
 #nop docs/ipc.md for the recursion caveat.
+#nop
+#nop The handler body is wrapped in an IAC gate: outbound telnet
+#nop subnegotiations (NAWS resize updates, GMCP) fire SENT OUTPUT with
+#nop a leading 0xFF byte, which is noise for both the .log capture
+#nop (player-replay) and any USER_INPUT: consumer. Events whose first
+#nop byte of %0 is 0xFF skip both branches entirely. See
+#nop docs/decisions/0076-run-log-iac-filter.md.
 
 #alias {_register_run_log_capture %1} {
     #if {"%1" != ""} {
@@ -45,14 +52,19 @@
             }
         };
         #%1 #event {SENT OUTPUT} {
-            #if {&_run_log_path} {
-                #class {core} {open};
-                #format _ts {%%U};
-                #format _sent {%%p} {%%0};
-                #class {core} {close};
-                #line log $_run_log_path {$_ts > $_sent}
-            };
-            #if {"%%0" != ""} {#lua {USER_INPUT:%%0}}
+            #class {core} {open};
+            #format _first {%%.1s} {%%0};
+            #class {core} {close};
+            #if {"$_first" != "\xFF"} {
+                #if {&_run_log_path} {
+                    #class {core} {open};
+                    #format _ts {%%U};
+                    #format _sent {%%p} {%%0};
+                    #class {core} {close};
+                    #line log $_run_log_path {$_ts > $_sent}
+                };
+                #if {"%%0" != ""} {#lua {USER_INPUT:%%0}}
+            }
         };
         #%1 #class {core} {close}
     }

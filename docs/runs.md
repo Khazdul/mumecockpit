@@ -384,6 +384,15 @@ subscriber is the only one besides the run-log) must add its branch to
 this handler rather than registering a competing one. See
 [ADR 0059](decisions/0059-canonical-sent-output-handler.md).
 
+Both branches sit behind a leading-byte IAC gate: `SENT OUTPUT` fires
+on every `#send`, including outbound telnet subnegotiations (NAWS
+pane-resize updates, GMCP `Core.Hello` / `Core.Supports.Set`), whose
+payloads start with the IAC byte `0xFF`. Such events are dropped
+before either the `.log` write or the `USER_INPUT` dispatch, keeping
+the player-replay capture honest and ensuring no `user_input`
+subscriber ever sees protocol bytes as input. See
+[ADR 0076](decisions/0076-run-log-iac-filter.md).
+
 **Lifecycle.** Armed on the first `Char.Vitals` tick after login (parallel to
 the `run_start` JSONL row), disarmed on `run_ending` (after the `run_end`
 row is written). There is a short login-screen gap before arming — same as
