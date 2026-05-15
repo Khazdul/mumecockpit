@@ -98,12 +98,13 @@ Top-to-bottom:
      `start_ts desc` as the stable secondary key.
    - **Gap.** 1 space of visual breathing room between the table's
      scrollbar column and the Options widget's left edge.
-   - **Options widget.** Vertical column of 6 connected flat buttons
-     (no inter-button gap, no border): Stats, Run log, Save, Rate,
-     Export, Back. Column width = longest button label + 2 cells of
-     padding. A centred `Options` header sits on the same line as
-     the runs-table header row, painted `C_SECTION` when the widget
-     is unfocused / `C_ACTIVE` when focused.
+   - **Options widget.** Vertical column of 7 connected flat buttons
+     (no inter-button gap, no border): Stats, Rate, Run log, Save,
+     Export, Delete, Back. Column width = longest button label + 2
+     cells of padding (longest label: `Run log`, 7 chars).
+     A centred `Options` header sits on the same line as the runs-
+     table header row, painted `C_SECTION` when the widget is
+     unfocused / `C_ACTIVE` when focused.
 5. **Feedback rows** — two rows below the package. The first row is
    always blank (separator). The second row holds the Export action's
    transient `Saved to ~/<file>` (`C_ACCENT`) or `Export failed: …`
@@ -163,12 +164,14 @@ hover highlight.
 **Disabled rules.**
 
 - **Stats** — always enabled (no-op when the table has no row).
+- **Rate** — always enabled (no-op when the table has no row).
 - **Run log** — always disabled in v1. Parked pending log-player
   wiring; the existing target lives alongside the WATCH LOG button
   on `history_detail` (`_hd_watch_log_handler` / `_kb_hd_watch_log`).
 - **Save** — disabled when `summary.saved` is true.
-- **Rate** — always enabled (no-op when the table has no row).
 - **Export** — disabled when `summary.has_log` is false.
+- **Delete** — always enabled when a row is selected. Saved sessions
+  are not gated; the `history_delete_confirm` frame is the safety net.
 - **Back** — always enabled. Pops to the launcher main menu (same
   effect as ESC).
 
@@ -227,6 +230,16 @@ every action is disabled.
   feedback row two lines below the package: `Saved to ~/<file>` in
   `C_ACCENT` on success, `Export failed: <reason>` in `C_HINT` on
   `OSError`.
+- **Delete** — pushes `history_delete_confirm` anchored to the
+  cursor row. On `Y` the chain's `.jsonl` / `.log` / `.meta.json`
+  files are removed (per-file `OSError` swallowed; no rollback on
+  partial failure), the session list is rebuilt via
+  `_history_refresh_sessions()`, and `_history_table_cursor` is held
+  at the deleted row's index (clamped to `max(0, len(sessions) - 1)`
+  if the chain was at the end). The Options widget keeps focus after
+  pop. Any other key cancels without touching files. Saved sessions
+  are deletable through the same flow — the confirm frame is the
+  only safety net (see ADR 0075).
 - **Back** — pops to the launcher main menu. Same effect as ESC.
 
 ESC is the keyboard back-out path from any of the three panels and is
@@ -284,6 +297,50 @@ files; `saved` stays true.
 on pop. The frame builder follows ADR 0066: the single focusable
 Window is registered in `_focus_current_frame()` so per-star click
 handlers route correctly.
+
+### `history_delete_confirm` frame
+
+Modal confirmation pushed by the Options widget's Delete button (see
+ADR 0075). Centred, single focusable Window built via `_centered`,
+registered in `_focus_current_frame()` per ADR 0066. Anchored to the
+session under `_history_table_cursor` at push time.
+
+**Body** (top to bottom):
+
+- Title `─── Delete session ───` in `C_HEADER`.
+- A label/value block (labels `C_HINT`, values `C_ITEM`): Character,
+  Date, Time, Duration, Runs (`len(summary.run_ids)`).
+- `Saved: yes — ★★★★★` painted `C_ACCENT` (gold) — only present when
+  `summary.saved` is true; the stars repeat `summary.rating` times.
+  Omitted entirely when the session is unsaved.
+- Two warning lines in `C_HINT`:
+  `This will permanently delete the session's logs and run data.` /
+  `This cannot be undone.`
+- Footer `Y  Delete       Any other key  Cancel` in `C_HINT`.
+
+**Key bindings** (filter: `_in_frame("history_delete_confirm")`):
+
+| Key            | Action                                       |
+|----------------|----------------------------------------------|
+| `y` / `Y`      | Confirm — delete + refresh + pop             |
+| `escape`       | Cancel (eager) — pop, no files touched       |
+| `<any>`        | Cancel — any other key pops the frame        |
+
+Mirrors the `exit_confirm` and `update_result` patterns.
+
+**Confirm.** `_history_delete_confirm_yes()` calls
+`_history_delete_session(summary)` (removes `.jsonl` / `.log` /
+`.meta.json` for every `run_id` in the chain; per-file `OSError`
+swallowed), then `_history_refresh_sessions()` and clamps the table
+cursor so it lands on a sensible row. The frame pops and focus
+returns to the Options widget (`_history_focused == 2`).
+
+**Cancel.** `_history_delete_confirm_cancel()` clears
+`_history_delete_summary` and pops. No filesystem side-effects.
+
+**Module state.** `_history_delete_summary: SessionSummary | None`
+(set on push, cleared on pop), `_history_delete_confirm_window:
+Window` for the focus contract.
 
 ### `history_detail` frame
 

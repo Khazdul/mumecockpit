@@ -196,6 +196,8 @@ _history_feedback_handle = None
 # Rate-session frame (history surface)
 _history_rate_rating     = 0         # 0..5
 _history_rate_summary    = None      # SessionSummary being rated
+# Delete-session confirm frame (history surface)
+_history_delete_summary  = None      # SessionSummary the confirm frame targets
 _history_detail_summary  = None      # SessionSummary pushed into the detail frame
 _history_detail_stats    = None      # aggregated RunStats for that summary
 _history_detail_log_hover = False    # WATCH LOG button hover flag
@@ -270,6 +272,7 @@ _history_table_window   = None
 _history_options_window = None
 _history_detail_window  = None
 _history_rate_window    = None
+_history_delete_confirm_window = None
 _log_view_window        = None
 
 _app_loop = None
@@ -537,6 +540,7 @@ def _focus_current_frame():
             "exit_confirm":               _exit_confirm_window,
             "history_detail":             _history_detail_window,
             "history_rate":               _history_rate_window,
+            "history_delete_confirm":     _history_delete_confirm_window,
             "log_view":                   _log_view_window,
         }.get(_current_frame)
     if win is None:
@@ -1466,10 +1470,11 @@ def _scroll_about(delta):
 # keyboard ESC made clickable; always enabled.
 _HISTORY_BUTTONS = [
     ("Stats",   "statistics"),
+    ("Rate",    "rate"),
     ("Run log", "run_log"),
     ("Save",    "save"),
-    ("Rate",    "rate"),
     ("Export",  "export"),
+    ("Delete",  "delete"),
     ("Back",    "back"),
 ]
 # Button column width: longest label + 1 cell of padding on each side.
@@ -1893,10 +1898,11 @@ def _history_menu_actions():
     has = summary is not None
     return [
         ("Stats",   "statistics", has),
+        ("Rate",    "rate",       has),
         ("Run log", "run_log",    False),
         ("Save",    "save",       has and not summary.saved),
-        ("Rate",    "rate",       has),
         ("Export",  "export",     has and bool(summary.has_log)),
+        ("Delete",  "delete",     has),
         ("Back",    "back",       True),
     ]
 
@@ -1943,6 +1949,8 @@ def _history_menu_activate(idx):
         _history_action_statistics()
     elif action == "export":
         _history_action_export()
+    elif action == "delete":
+        _history_action_delete()
     elif action == "back":
         _pop_frame()
     # "run_log" stays a no-op (parked, see _history_menu_actions docstring).
@@ -2031,6 +2039,31 @@ def _history_action_export():
     if dest.startswith(home + os.sep):
         pretty = "~" + dest[len(home):]
     _history_set_feedback(f"Saved to {pretty}", C_ACCENT)
+
+
+# --- Delete action ---------------------------------------------------------
+def _history_action_delete():
+    """Push the delete-confirm frame anchored to the cursor row."""
+    summary = _history_current_summary()
+    if summary is None:
+        return
+    _enter_history_delete_confirm_frame(summary)
+
+
+def _history_delete_session(summary):
+    """Remove every .jsonl / .log / .meta.json for the chain's run_ids.
+
+    Per-file OSError is swallowed — best-effort cleanup, matches the
+    retention sweep's defensive style. Bypasses summary.saved (the
+    confirm frame is the safety net; see ADR 0075)."""
+    char_dir = os.path.join(PROJECT_DIR, "data", "runs", summary.character)
+    for run_id in summary.run_ids:
+        for ext in (".jsonl", ".log", ".meta.json"):
+            path = os.path.join(char_dir, run_id + ext)
+            try:
+                os.remove(path)
+            except OSError:
+                pass
 
 
 def _history_set_feedback(text, style, ttl_seconds=3.0):
@@ -2445,6 +2478,88 @@ def _history_rate_text():
     frags.append(("", "\n\n"))
 
     footer = "0-5 Set · ← → Adjust · Enter Save · ESC Cancel"
+    frags.append(("", _pad_centre(footer, cols)))
+    frags.append((C_HINT, footer))
+    return frags
+
+
+# --- history_delete_confirm frame -----------------------------------------
+def _enter_history_delete_confirm_frame(summary):
+    global _history_delete_summary
+    _history_delete_summary = summary
+    _push_frame("history_delete_confirm")
+
+
+def _history_delete_confirm_yes():
+    """Delete the chain's files, refresh the session list, pop frame."""
+    global _history_delete_summary
+    summary = _history_delete_summary
+    _history_delete_summary = None
+    if summary is None:
+        _pop_frame()
+        return
+    _history_delete_session(summary)
+    # _history_refresh_sessions() clamps _history_table_cursor when the
+    # deleted row was at the end; otherwise the same index now points at
+    # what was the next row, which is the desired "land on a sensible
+    # neighbour" behaviour.
+    _history_refresh_sessions()
+    _pop_frame()
+
+
+def _history_delete_confirm_cancel():
+    global _history_delete_summary
+    _history_delete_summary = None
+    _pop_frame()
+
+
+def _history_delete_confirm_text():
+    cols = _term_cols()
+    frags = []
+    summary = _history_delete_summary
+    if summary is None:
+        return frags
+
+    title = "─── Delete session ───"
+    frags.append(("", "\n\n"))
+    frags.append(("", _pad_centre(title, cols)))
+    frags.append((C_HEADER, title))
+    frags.append(("", "\n\n"))
+
+    runs = len(summary.run_ids)
+    rows = [
+        ("Character:",  summary.character,                          C_ITEM),
+        ("Date:",       _history_fmt_date(summary.start_ts),        C_ITEM),
+        ("Time:",       _history_fmt_time(summary.start_ts),        C_ITEM),
+        ("Duration:",   _history_fmt_duration(summary.duration_seconds), C_ITEM),
+        ("Runs:",       str(runs),                                  C_ITEM),
+    ]
+    if summary.saved:
+        stars = "★" * max(0, min(5, summary.rating or 0))
+        saved_text = f"yes — {stars}" if stars else "yes"
+        rows.append(("Saved:", saved_text, C_ACCENT))
+
+    label_w = max(len(lbl) for lbl, _, _ in rows)
+    value_w = max(len(val) for _, val, _ in rows)
+    line_w  = label_w + 2 + value_w
+    indent  = max(0, (cols - line_w) // 2)
+    for label, value, val_style in rows:
+        frags.append(("", " " * indent))
+        frags.append((C_HINT, label.ljust(label_w)))
+        frags.append(("", "  "))
+        frags.append((val_style, value))
+        frags.append(("", "\n"))
+
+    frags.append(("", "\n"))
+    warn1 = "This will permanently delete the session's logs and run data."
+    warn2 = "This cannot be undone."
+    for line in (warn1, warn2):
+        frags.append(("", _pad_centre(line, cols)))
+        frags.append((C_HINT, line))
+        frags.append(("", "\n"))
+
+    frags.append(("", "\n"))
+    footer = "Y  Delete       Any other key  Cancel"
     frags.append(("", _pad_centre(footer, cols)))
     frags.append((C_HINT, footer))
     return frags
@@ -4784,6 +4899,23 @@ def _kb_hr_escape(event):
     _history_rate_cancel()
 
 
+# History delete confirm
+@kb.add("y", filter=_in_frame("history_delete_confirm"))
+@kb.add("Y", filter=_in_frame("history_delete_confirm"))
+def _kb_hdc_yes(event):
+    _history_delete_confirm_yes()
+
+
+@kb.add("escape", filter=_in_frame("history_delete_confirm"), eager=True)
+def _kb_hdc_escape(event):
+    _history_delete_confirm_cancel()
+
+
+@kb.add("<any>", filter=_in_frame("history_delete_confirm"))
+def _kb_hdc_any(event):
+    _history_delete_confirm_cancel()
+
+
 # History detail
 @kb.add("escape", filter=_in_frame("history_detail"), eager=True)
 def _kb_hd_escape(event):
@@ -5119,6 +5251,7 @@ def main():
     global _exit_confirm_window, _too_small_window
     global _history_filter_window, _history_table_window, _history_options_window
     global _history_detail_window, _history_rate_window
+    global _history_delete_confirm_window
     global _log_view_window
 
     os.chdir(PROJECT_DIR)
@@ -5160,6 +5293,12 @@ def main():
     )
     history_detail_frame = _centered(_history_detail_window)
     _history_rate_window, history_rate_frame = _build_history_rate()
+    _history_delete_confirm_window = Window(
+        content=FormattedTextControl(text=_history_delete_confirm_text,
+                                     focusable=True),
+        wrap_lines=False, always_hide_cursor=True,
+    )
+    history_delete_confirm_frame = _centered(_history_delete_confirm_window)
 
     _log_view_window = Window(
         content=_LogViewControl(text=_log_view_text, focusable=True),
@@ -5204,6 +5343,7 @@ def main():
         "history":                    history_frame,
         "history_detail":             history_detail_frame,
         "history_rate":               history_rate_frame,
+        "history_delete_confirm":     history_delete_confirm_frame,
         "log_view":                   log_view_frame,
         "update_running":             update_running_frame,
         "update_result":              update_result_frame,
