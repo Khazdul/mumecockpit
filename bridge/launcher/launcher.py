@@ -1462,18 +1462,20 @@ def _scroll_about(delta):
 # Options widget buttons. (label, action_id). Order matters: cursor moves
 # top-to-bottom and ↑/↓ skips disabled rows. Run log is parked pending
 # log-player wiring — see _hd_watch_log_handler / _kb_hd_watch_log in the
-# history_detail frame for the existing integration target.
+# history_detail frame for the existing integration target. Back is the
+# keyboard ESC made clickable; always enabled.
 _HISTORY_BUTTONS = [
     ("Stats",   "statistics"),
     ("Run log", "run_log"),
     ("Save",    "save"),
     ("Rate",    "rate"),
     ("Export",  "export"),
+    ("Back",    "back"),
 ]
 # Button column width: longest label + 1 cell of padding on each side.
 _HISTORY_BUTTON_W = max(len(lbl) for lbl, _ in _HISTORY_BUTTONS) + 2
-# 2-cell gap between the table's scrollbar column and the buttons.
-_HISTORY_OPTIONS_GAP = 2
+# 1-cell gap between the table's scrollbar column and the buttons.
+_HISTORY_OPTIONS_GAP = 1
 
 
 def _history_table_panel_w():
@@ -1531,10 +1533,10 @@ def _history_table_visible():
     """Visible data rows in the table.
 
     Body height minus the fixed-height neighbours that stack vertically:
-    filter header (1) + pill row (1) + blank above table (1) + feedback row
-    below table (1) = 4, and one more for the table's own header row."""
+    filter header (1) + pill row (1) + blank above table (1) + feedback
+    rows below table (2) = 5, and one more for the table's own header row."""
     body = _history_body_rows()
-    return max(1, body - 4 - 1)
+    return max(1, body - 5 - 1)
 
 
 def _history_table_window_h():
@@ -1895,6 +1897,7 @@ def _history_menu_actions():
         ("Save",    "save",       has and not summary.saved),
         ("Rate",    "rate",       has),
         ("Export",  "export",     has and bool(summary.has_log)),
+        ("Back",    "back",       True),
     ]
 
 
@@ -1940,6 +1943,8 @@ def _history_menu_activate(idx):
         _history_action_statistics()
     elif action == "export":
         _history_action_export()
+    elif action == "back":
+        _pop_frame()
     # "run_log" stays a no-op (parked, see _history_menu_actions docstring).
 
 
@@ -2345,13 +2350,20 @@ def _history_options_text():
 
 
 def _history_feedback_text_fn():
-    """Inline feedback line below the Options widget. Always renders a single
-    line; empty payload when no feedback is flashing."""
-    pad_left = _history_left_pad() + _history_table_panel_w() + 1 + _HISTORY_OPTIONS_GAP
+    """Two rows below the package: blank row, then a centred feedback line.
+    Centring is over the package width (not the terminal width), so the
+    message visually belongs to the package above it. Both rows render empty
+    when no feedback is flashing."""
     clear_hover = _hover_at(None, None)
-    frags = [("", " " * pad_left, clear_hover)]
-    if _history_feedback_text:
-        frags.append((_history_feedback_style, _history_feedback_text, clear_hover))
+    frags = [("", "\n", clear_hover)]  # blank row directly below the package
+    if not _history_feedback_text:
+        return frags
+    text = _history_feedback_text
+    pkg_w  = _history_package_width()
+    inner  = max(0, (pkg_w - len(text)) // 2)
+    pad_l  = _history_left_pad() + inner
+    frags.append(("", " " * pad_l, clear_hover))
+    frags.append((_history_feedback_style, text, clear_hover))
     return frags
 
 
@@ -5065,10 +5077,12 @@ def _build_history():
         height=lambda: Dimension.exact(_history_table_window_h()),
     )
 
-    # Feedback line — sits directly below the Options column, same left edge.
+    # Feedback rows — blank row immediately below the package, then a
+    # second row holding the centred feedback message (or blank). Two rows
+    # so the message visually detaches from the package above it.
     feedback_win = Window(
         content=FormattedTextControl(text=_history_feedback_text_fn, focusable=False),
-        height=1, wrap_lines=False, always_hide_cursor=True,
+        height=2, wrap_lines=False, always_hide_cursor=True,
     )
 
     body = HSplit([

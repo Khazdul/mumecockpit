@@ -96,17 +96,19 @@ Top-to-bottom:
      Rating. The header row is click-to-sort; an active column shows
      ` ▲` / ` ▼` after its label. Default sort `Char asc` with
      `start_ts desc` as the stable secondary key.
-   - **Gap.** 2 spaces of visual breathing room between the table's
+   - **Gap.** 1 space of visual breathing room between the table's
      scrollbar column and the Options widget's left edge.
-   - **Options widget.** Vertical column of 5 connected flat buttons
-     (no inter-button gap, no border). Column width = longest button
-     label + 2 cells of padding. A centred `Options` header sits on
-     the same line as the runs-table header row, painted `C_SECTION`
-     when the widget is unfocused / `C_ACTIVE` when focused.
-5. **Inline feedback line** — single row directly below the Options
-   widget at the same horizontal left edge. Holds the Export action's
+   - **Options widget.** Vertical column of 6 connected flat buttons
+     (no inter-button gap, no border): Stats, Run log, Save, Rate,
+     Export, Back. Column width = longest button label + 2 cells of
+     padding. A centred `Options` header sits on the same line as
+     the runs-table header row, painted `C_SECTION` when the widget
+     is unfocused / `C_ACTIVE` when focused.
+5. **Feedback rows** — two rows below the package. The first row is
+   always blank (separator). The second row holds the Export action's
    transient `Saved to ~/<file>` (`C_ACCENT`) or `Export failed: …`
-   (`C_HINT`) message for ~3 s, blank otherwise.
+   (`C_HINT`) message centred on the package width for ~3 s, blank
+   otherwise.
 6. Footer hint line.
 
 Each row is a stitched chain (one session). Stitching uses the default
@@ -145,16 +147,18 @@ the per-frame `_hover_at(panel, idx)` helper.
 **Options widget styling.** Flat-button style — no border; the
 background colour distinguishes each button from surrounding space.
 
-| State                    | Style                                  |
-|--------------------------|----------------------------------------|
-| Normal                   | `C_BUTTON` — mid-grey bg               |
-| Hover (non-cursor)       | `C_BUTTON_HOVER` — lighter grey bg     |
-| Cursor (widget focused)  | `C_SELECTED` — black on light-grey bg  |
-| Disabled                 | `C_BUTTON_DISABLED` — dim grey on dim bg |
+| State                    | Style                                       |
+|--------------------------|---------------------------------------------|
+| Normal                   | `C_BUTTON` — near-black bg, just above bg   |
+| Hover (non-cursor)       | `C_BUTTON_HOVER` — subtle lift over normal  |
+| Cursor (widget focused)  | `C_SELECTED` — black on light-grey bg       |
+| Disabled                 | `C_BUTTON_DISABLED` — dim fg, near-bg fill  |
 
 `C_BUTTON`, `C_BUTTON_HOVER`, and `C_BUTTON_DISABLED` are defined in
-`palette.py`. Cursor state takes precedence over hover. Disabled
-buttons take no click and no hover highlight.
+`palette.py`. The widget is intentionally subdued so the surrounding
+backdrop dominates; only `C_SELECTED` is allowed to pop. Cursor state
+takes precedence over hover. Disabled buttons take no click and no
+hover highlight.
 
 **Disabled rules.**
 
@@ -165,10 +169,12 @@ buttons take no click and no hover highlight.
 - **Save** — disabled when `summary.saved` is true.
 - **Rate** — always enabled (no-op when the table has no row).
 - **Export** — disabled when `summary.has_log` is false.
+- **Back** — always enabled. Pops to the launcher main menu (same
+  effect as ESC).
 
 The Options cursor moves through enabled buttons only (↑/↓ skips
-disabled). When every button is disabled (empty table) the cursor
-lands on the first row and Enter is a no-op.
+disabled). Back is always enabled, so the cursor always has a
+landing spot even with an empty table.
 
 **Keyboard.**
 
@@ -217,12 +223,14 @@ every action is disabled.
   outbound marker, and any ANSI SGR escape (`\x1b\[[0-9;]*m`). One
   blank line separates successive run logs. Writes to
   `~/mume-<character>-<first-run-id>.txt`, with `-2.txt` / `-3.txt`
-  suffixes on collision. Result flashes for ~3 s in the inline
-  feedback line directly below the Options widget: `Saved to ~/<file>`
-  in `C_ACCENT` on success, `Export failed: <reason>` in `C_HINT` on
+  suffixes on collision. Result flashes for ~3 s on the centred
+  feedback row two lines below the package: `Saved to ~/<file>` in
+  `C_ACCENT` on success, `Export failed: <reason>` in `C_HINT` on
   `OSError`.
+- **Back** — pops to the launcher main menu. Same effect as ESC.
 
-ESC is the back-out path from any of the three panels.
+ESC is the keyboard back-out path from any of the three panels and is
+equivalent to activating the Back button.
 
 Saving / re-rating writes meta files for **every** run-id in the
 stitched chain, matching the popup's chain-save semantics
@@ -232,7 +240,7 @@ mutated, so the row stays in sync with the meta sidecar truth.
 
 **Empty state.** No characters with archived runs → table area renders
 `"No runs recorded yet."` centred; the filter row shows only the `All`
-pill; every Options button is disabled.
+pill; every Options button except Back is disabled.
 
 ### `history_rate` frame
 

@@ -38,11 +38,13 @@ C_HOVER      = "fg:#dadada"         # between C_ITEM and C_ACTIVE — mouse hove
 C_SELECTED   = "fg:#000000 bg:#bcbcbc"   # active sidebar filter — black on light grey
 
 # Flat-button states. Backgrounds are the distinguishing element (no border),
-# matching the History → Options widget design. Lightness steps roughly:
-# disabled ~20% · normal ~30% · hover ~45%. Cursor state reuses C_SELECTED.
-C_BUTTON          = "fg:#bcbcbc bg:#4a4a4a"   # normal flat button
-C_BUTTON_HOVER    = "fg:#bcbcbc bg:#6e6e6e"   # mouse-hover, non-cursor
-C_BUTTON_DISABLED = "fg:#585858 bg:#303030"   # disabled — dim grey on dim bg
+# matching the History → Options widget design. Kept near-black so the widget
+# blends into the launcher backdrop; only the cursor state (C_SELECTED) is
+# allowed to pop. Hover is a subtle lift over normal; disabled is barely
+# distinguishable from the surrounding empty space.
+C_BUTTON          = "fg:#bcbcbc bg:#1a1a1a"   # normal flat button
+C_BUTTON_HOVER    = "fg:#bcbcbc bg:#2a2a2a"   # mouse-hover, non-cursor
+C_BUTTON_DISABLED = "fg:#585858 bg:#0f0f0f"   # disabled — dim grey on near-bg
 
 # ---------------------------------------------------------------------------
 # Statistics-frame palette (mockup-driven; isolated from the other frames so
