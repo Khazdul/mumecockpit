@@ -15,9 +15,10 @@ wrapper that `exec`s the Python entry; both the tmux root binding and
 the Lua auto-open path in `lua/brain/connection.lua` invoke the wrapper.
 
 The UI is a frame stack: a single `DynamicContainer` swaps between
-`main`, `options`, `scripts`, `statistics`, and `exit_confirm` containers,
-pushed and popped via `_push_frame` / `_pop_frame`. Each frame owns its
-own `KeyBindings` filter so navigation, scroll, and ESC behave per-frame.
+`main`, `panes`, `pane`, `scripts`, `statistics`, and `exit_confirm`
+containers, pushed and popped via `_push_frame` / `_pop_frame`. Each
+frame owns its own `KeyBindings` filter so navigation, scroll, and ESC
+behave per-frame.
 
 The top menu items are context-aware, rebuilt from `bridge/runtime/connection.state`
 on every render:
@@ -37,10 +38,10 @@ before the disconnect step — see "Auto-open on disconnect" below.
 ## Input
 
 - **ESC** — on the main frame, dismisses the popup. On any submenu
-  (`options`, `scripts`, `exit_confirm`), pops one frame back toward
-  `main`. ESC bindings use `eager=True` to bypass prompt_toolkit's
-  key-disambiguation timeout; `app.ttimeoutlen` / `app.timeoutlen` are
-  also lowered to 50 ms so bare ESC feels instant.
+  (`panes`, `pane`, `scripts`, `exit_confirm`), pops one frame back
+  toward `main`. ESC bindings use `eager=True` to bypass
+  prompt_toolkit's key-disambiguation timeout; `app.ttimeoutlen` /
+  `app.timeoutlen` are also lowered to 50 ms so bare ESC feels instant.
 - **Arrow keys** — navigate within the current frame's selectable rows
   (wrap-around). PageUp/PageDown in the Scripts frame scrolls by ten
   rows.
@@ -49,7 +50,7 @@ before the disconnect step — see "Auto-open on disconnect" below.
 - **Mouse click** — clicks on a row both select and activate it in a
   single click. Implemented as per-fragment `mouse_handler` callbacks
   on `MouseEventType.MOUSE_DOWN`.
-- **Mouse hover** — main and options rows light up in `C_HOVER` on
+- **Mouse hover** — main, panes, and per-pane rows light up in `C_HOVER` on
   hover, matching the launcher (see
   [docs/launcher.md](launcher.md) "Mouse hover / click"). Best-effort
   on terminals that report cell-motion mouse events; click-to-activate
@@ -71,22 +72,62 @@ The popup invalidates itself once per second while open, so the Link readout
 (and any other on-render state like connection mode or the Statistics row's
 visibility) tracks the underlying files without requiring a keypress.
 
-## Options submenu
+## Panes submenu
 
-Seven toggles (Character pane / Buffs pane / Group pane / Comm pane / UI pane /
-Dev pane / Pane headers) + Back. Source of truth is `_PANE_TOGGLES` in
-`ingame_menu.py`. State is re-probed from tmux on every render — never
-cached. Toggling calls `toggle_pane.sh --persist` directly; toggles do
-**not** route through tt++ so no `cp -X` lines appear in the game pane.
+The main-menu entry between **Save session** (when present) and
+**Scripts** is **Panes** — it replaces the previous Options entry
+because the popup no longer carries any non-pane settings. Source of
+truth is `_PANE_TARGETS` in `ingame_menu.py`.
 
-Connection mode (MMapper / Direct) and profile switch are deliberately
-**not** present in the popup Options — they require a restart and are
-launcher-only.
+The `panes` frame lists the six right-column panes (Character / Buffs /
+Group / Communication / UI / Developer) followed by a blank row, a
+`[x] Display pane headers` toggle, and Back. The headers toggle routes
+through `toggle_pane.sh headers --persist` (live tmux border status +
+`show_pane_dividers` in `startup.conf`); enabled-state for each pane row
+is re-probed from tmux on every render.
+
+Selecting a pane row pushes its `pane` subframe — same shape for all
+six panes:
+
+```
+--- Character ---
+[x] Enabled
+                                  (blank row)
+Pane color
+( ) Black   ███
+( ) Red     ███
+( ) Green   ███
+( ) Blue    ███
+( ) Grey    ███
+( ) Orange  ███
+( ) Purple  ███
+                                  (blank row)
+Back
+```
+
+`[x] Enabled` toggles the pane via `toggle_pane.sh <target> --persist`,
+so the pane opens/closes immediately and `show_<pane>` in
+`startup.conf` updates in step. The seven colour radios write
+`pane_color_<target>=<name>` directly to `bridge/runtime/startup.conf`
+(in-place edit, not the launcher's whole-file rewrite) and **live
+re-tint** the open pane via `tmux select-pane -t <idx> -P
+bg=<hex|default>`. If the pane is currently closed the new colour
+persists only — it takes effect the next time the pane is opened, since
+`bridge/launcher/open_pane.sh` reads the same key via `_pane_bg_for` on
+every cold start. Each radio row trails three full-block glyphs painted
+with the target hex so the swatch previews the actual pane background;
+Black renders with no tmux bg override.
+
+Connection mode (MMapper / Direct / Custom) and profile switch are
+deliberately **not** present in the popup — they require a restart and
+are launcher-only.
 
 `cp -u`, `cp -d`, `cp -m`, `cp -c`, `cp -b`, `cp -g`, and `cp -h` are thin wrappers
 around `bridge/layout/toggle_pane.sh`, each passing `--persist`. All toggle paths —
 popup, launcher Options, and `cp -X` aliases — are equivalent and write to
-`startup.conf`.
+`startup.conf`. Colour selections do **not** have `cp -X` equivalents
+today — they are reachable from the launcher Options page and the
+popup's Panes submenu only.
 
 ## Scripts submenu
 
@@ -104,7 +145,7 @@ button — both parked.
 ## Statistics frame
 
 A read-only view of the current run, opened from a "Statistics" row on the
-main frame. The row sits between **Save session** and **Options** and is
+main frame. The row sits between **Save session** and **Panes** and is
 gated on two conditions, re-checked on every render of `_main_items()`:
 
 1. `bridge/runtime/status.state` exists, parses as JSON, and contains a
@@ -203,7 +244,7 @@ aggregate; ALLIES / ACHIEVEMENTS data rows stay in `_S_VALUE`. The
 data-cell palette (`_S_VALUE`, `_S_LABEL`, `_S_GAINED`, `_S_TP_BAR`,
 `_S_LEVEL`, `_S_TRACK`, `_S_THUMB`, `_S_TOTAL`, `_S_ARROW`, `_S_HINT`,
 `_S_PVP`, `_S_ALLY`, `_S_STAR`) is private to the frame so main /
-options / scripts palettes are unaffected.
+panes / scripts palettes are unaffected.
 
 **Sparklines.** XP/h and TP/h each fill their column above (KILLS and
 PvPs widths respectively). A `──┬──` divider rule sits directly below
@@ -422,8 +463,9 @@ The popup is a frame stack pushed and popped through `_push_frame` /
 one contract for mouse routing to work:
 
 1. **Each frame builder constructs at least one focusable `Window` and
-   stores it at module level.** Today: `_main_window`, `_options_window`,
-   `_scripts_window`, `_statistics_window`, `_exit_confirm_window`. The
+   stores it at module level.** Today: `_main_window`, `_panes_window`,
+   `_pane_window`, `_scripts_window`, `_statistics_window`,
+   `_exit_confirm_window`, `_rate_session_window`. The
    "primary" window of a frame is the one that receives keyboard focus
    while that frame is on top of the stack — usually the window whose
    control owns the frame's mouse handlers.

@@ -16,6 +16,7 @@ __all__ = [
     "_S_VALUE", "_S_LABEL", "_S_GAINED", "_S_LOSS", "_S_TP_BAR",
     "_S_TRACK", "_S_MARKER", "_S_THUMB", "_S_TOTAL", "_S_ARROW",
     "_S_HINT", "_S_PVP", "_S_ALLY", "_S_STAR",
+    "PANE_COLORS", "PANE_COLOR_ORDER", "pane_color_hex",
 ]
 
 # ---------------------------------------------------------------------------
@@ -93,3 +94,31 @@ C_LOG_SCRUBBER_THUMB  = "bold fg:#ffffff bg:#101418"
 # Rewind / play-pause buttons.
 C_LOG_BUTTON_IDLE  = "fg:#dadada bg:#101418"
 C_LOG_BUTTON_HOVER = "bold fg:#ffffff bg:#1c2228"
+
+# ---------------------------------------------------------------------------
+# Per-pane background palette
+# ---------------------------------------------------------------------------
+# Named tints for the cockpit's right-column panes. Selected per pane in the
+# launcher Options (Panes submenu) and the in-game popup. Stored by name in
+# bridge/runtime/startup.conf under pane_color_<name>. None means "no bg
+# override" — the terminal default shows through.
+#
+# Keep this mirrored with the case statement in
+# bridge/launcher/open_pane.sh `_pane_bg_for`.
+PANE_COLORS = {
+    "black":  None,        # terminal default, no tmux bg override
+    "red":    "#1A0E0E",
+    "green":  "#0E1A0E",
+    "blue":   "#0E141C",
+    "grey":   "#161616",
+    "orange": "#1C140A",
+    "purple": "#16101C",
+}
+# Stable presentation order for radio rows.
+PANE_COLOR_ORDER = ["black", "red", "green", "blue", "grey", "orange", "purple"]
+
+
+def pane_color_hex(name):
+    """Resolve a pane-colour name to its hex string, or None for the terminal
+    default. Unknown names fall back to black (i.e. None)."""
+    return PANE_COLORS.get(name, None) if name in PANE_COLORS else None

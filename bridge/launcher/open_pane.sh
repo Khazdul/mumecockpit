@@ -97,7 +97,36 @@ _right_pane_at_bottom() {
 # Pane background (per-pane tmux style; cells the renderer doesn't paint
 # fall through to this bg). Applied to status/buffs/group/comm/ui/dev only —
 # game and input panes keep terminal default.
-PANE_BG="bg=#0E141C"
+#
+# Per-pane colour names are stored in bridge/runtime/startup.conf under
+# pane_color_<name>; resolution is the case statement below. Keep this list
+# mirrored with PANE_COLORS in bridge/launcher/palette.py.
+STARTUP_CONF="$HOME/MUME/bridge/runtime/startup.conf"
+if [ -f "$STARTUP_CONF" ]; then
+    # shellcheck disable=SC1090
+    . "$STARTUP_CONF"
+fi
+
+_pane_bg_for() {
+    local pane="$1"
+    local var="pane_color_${pane}"
+    local name="${!var:-}"
+    case "$name" in
+        black)  echo "bg=default" ;;
+        red)    echo "bg=#1A0E0E" ;;
+        green)  echo "bg=#0E1A0E" ;;
+        blue)   echo "bg=#0E141C" ;;
+        grey)   echo "bg=#161616" ;;
+        orange) echo "bg=#1C140A" ;;
+        purple) echo "bg=#16101C" ;;
+        "")     echo "bg=default" ;;
+        *)
+            echo "[layout] unknown pane_color_${pane}='${name}', falling back to black" \
+                >> "$HOME/MUME/logs/debug.log"
+            echo "bg=default"
+            ;;
+    esac
+}
 
 # Pane commands
 STATUS_CMD="bash -c 'stty -isig 2>/dev/null; trap \"\" INT; while true; do python3 $MUME/bridge/panes/status_pane.py; printf \"\\n[pane kept alive — use cp -c to close]\\n\"; sleep 0.2; done'"
@@ -129,7 +158,7 @@ if [ -n "$HAS_RIGHT" ]; then
                 exit 1
             fi
             tmux select-pane -t mume:cockpit.$NEW_INDEX -T "status"
-            tmux select-pane -t mume:cockpit.$NEW_INDEX -P "$PANE_BG"
+            tmux select-pane -t mume:cockpit.$NEW_INDEX -P "$(_pane_bg_for status)"
             tmux select-pane -t "$(resolve_focus_target)"
             bash "$MUME/bridge/layout/apply_layout.sh"
             ;;
@@ -180,7 +209,7 @@ if [ -n "$HAS_RIGHT" ]; then
                 exit 1
             fi
             tmux select-pane -t mume:cockpit.$NEW_INDEX -T "buffs"
-            tmux select-pane -t mume:cockpit.$NEW_INDEX -P "$PANE_BG"
+            tmux select-pane -t mume:cockpit.$NEW_INDEX -P "$(_pane_bg_for buffs)"
             tmux select-pane -t "$(resolve_focus_target)"
             bash "$MUME/bridge/layout/apply_layout.sh"
             ;;
@@ -231,7 +260,7 @@ if [ -n "$HAS_RIGHT" ]; then
                 exit 1
             fi
             tmux select-pane -t mume:cockpit.$NEW_INDEX -T "group"
-            tmux select-pane -t mume:cockpit.$NEW_INDEX -P "$PANE_BG"
+            tmux select-pane -t mume:cockpit.$NEW_INDEX -P "$(_pane_bg_for group)"
             tmux select-pane -t "$(resolve_focus_target)"
             bash "$MUME/bridge/layout/apply_layout.sh"
             ;;
@@ -282,7 +311,7 @@ if [ -n "$HAS_RIGHT" ]; then
                 exit 1
             fi
             tmux select-pane -t mume:cockpit.$NEW_INDEX -T "comm"
-            tmux select-pane -t mume:cockpit.$NEW_INDEX -P "$PANE_BG"
+            tmux select-pane -t mume:cockpit.$NEW_INDEX -P "$(_pane_bg_for comm)"
             tmux select-pane -t "$(resolve_focus_target)"
             bash "$MUME/bridge/layout/apply_layout.sh"
             ;;
@@ -333,7 +362,7 @@ if [ -n "$HAS_RIGHT" ]; then
                 exit 1
             fi
             tmux select-pane -t mume:cockpit.$NEW_INDEX -T "ui"
-            tmux select-pane -t mume:cockpit.$NEW_INDEX -P "$PANE_BG"
+            tmux select-pane -t mume:cockpit.$NEW_INDEX -P "$(_pane_bg_for ui)"
             tmux select-pane -t "$(resolve_focus_target)"
             bash "$MUME/bridge/layout/apply_layout.sh"
             ;;
@@ -357,7 +386,7 @@ if [ -n "$HAS_RIGHT" ]; then
                 exit 1
             fi
             tmux select-pane -t mume:cockpit.$NEW_INDEX -T "dev"
-            tmux select-pane -t mume:cockpit.$NEW_INDEX -P "$PANE_BG"
+            tmux select-pane -t mume:cockpit.$NEW_INDEX -P "$(_pane_bg_for dev)"
             tmux select-pane -t "$(resolve_focus_target)"
             bash "$MUME/bridge/layout/apply_layout.sh"
             ;;
@@ -376,35 +405,35 @@ else
         status)
             NEW_INDEX=$(tmux split-window -h -t mume:cockpit.0 -P -F '#{pane_index}' "$STATUS_CMD")
             tmux select-pane -t mume:cockpit.$NEW_INDEX -T "status"
-            tmux select-pane -t mume:cockpit.$NEW_INDEX -P "$PANE_BG"
+            tmux select-pane -t mume:cockpit.$NEW_INDEX -P "$(_pane_bg_for status)"
             tmux select-pane -t "$(resolve_focus_target)"
             bash "$MUME/bridge/layout/apply_layout.sh"
             ;;
         buffs)
             NEW_INDEX=$(tmux split-window -h -t mume:cockpit.0 -P -F '#{pane_index}' "$BUFFS_CMD")
             tmux select-pane -t mume:cockpit.$NEW_INDEX -T "buffs"
-            tmux select-pane -t mume:cockpit.$NEW_INDEX -P "$PANE_BG"
+            tmux select-pane -t mume:cockpit.$NEW_INDEX -P "$(_pane_bg_for buffs)"
             tmux select-pane -t "$(resolve_focus_target)"
             bash "$MUME/bridge/layout/apply_layout.sh"
             ;;
         group)
             NEW_INDEX=$(tmux split-window -h -t mume:cockpit.0 -P -F '#{pane_index}' "$GROUP_CMD")
             tmux select-pane -t mume:cockpit.$NEW_INDEX -T "group"
-            tmux select-pane -t mume:cockpit.$NEW_INDEX -P "$PANE_BG"
+            tmux select-pane -t mume:cockpit.$NEW_INDEX -P "$(_pane_bg_for group)"
             tmux select-pane -t "$(resolve_focus_target)"
             bash "$MUME/bridge/layout/apply_layout.sh"
             ;;
         comm)
             NEW_INDEX=$(tmux split-window -h -t mume:cockpit.0 -P -F '#{pane_index}' "$COMM_CMD")
             tmux select-pane -t mume:cockpit.$NEW_INDEX -T "comm"
-            tmux select-pane -t mume:cockpit.$NEW_INDEX -P "$PANE_BG"
+            tmux select-pane -t mume:cockpit.$NEW_INDEX -P "$(_pane_bg_for comm)"
             tmux select-pane -t "$(resolve_focus_target)"
             bash "$MUME/bridge/layout/apply_layout.sh"
             ;;
         ui)
             NEW_INDEX=$(tmux split-window -h -t mume:cockpit.0 -P -F '#{pane_index}' "$UI_CMD")
             tmux select-pane -t mume:cockpit.$NEW_INDEX -T "ui"
-            tmux select-pane -t mume:cockpit.$NEW_INDEX -P "$PANE_BG"
+            tmux select-pane -t mume:cockpit.$NEW_INDEX -P "$(_pane_bg_for ui)"
             tmux select-pane -t "$(resolve_focus_target)"
             bash "$MUME/bridge/layout/apply_layout.sh"
             ;;
@@ -412,7 +441,7 @@ else
             NEW_INDEX=$(tmux split-window -h -t mume:cockpit.0 -P -F '#{pane_index}' \
                 "bash -c 'stty -isig 2>/dev/null; trap \"\" INT; while true; do tail -f $MUME/logs/debug.log; printf \"\\n[pane kept alive — use cp -d to close]\\n\"; sleep 0.2; done'")
             tmux select-pane -t mume:cockpit.$NEW_INDEX -T "dev"
-            tmux select-pane -t mume:cockpit.$NEW_INDEX -P "$PANE_BG"
+            tmux select-pane -t mume:cockpit.$NEW_INDEX -P "$(_pane_bg_for dev)"
             tmux select-pane -t "$(resolve_focus_target)"
             bash "$MUME/bridge/layout/apply_layout.sh"
             ;;

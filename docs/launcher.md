@@ -37,18 +37,20 @@ path) goes through that wrapper unchanged.
 The UI is a frame stack: a single `DynamicContainer` swaps between `main`,
 `profile`, `profile_create_name`, `profile_create_choose`,
 `profile_create_copy_picker`, `profile_delete_confirm`, `options`,
-`scripts`, `about`, `history`, `history_detail`, `history_rate`,
-`log_view`, `update_running`, `update_result`, and `exit_confirm`
-containers, pushed and popped via `_push_frame` / `_pop_frame`. Each frame
-owns its own `KeyBindings` filter (`_in_frame(name)`) so navigation, scroll,
-and ESC behave per-frame. The popup architecture (ADR 0062) is the
-reference; see `bridge/launcher/ingame_menu.py` for the same patterns.
+`options_panes`, `options_pane`, `options_connection`,
+`options_connection_custom`, `options_coming_soon`, `scripts`, `about`,
+`history`, `history_detail`, `history_rate`, `log_view`,
+`update_running`, `update_result`, and `exit_confirm` containers, pushed
+and popped via `_push_frame` / `_pop_frame`. Each frame owns its own
+`KeyBindings` filter (`_in_frame(name)`) so navigation, scroll, and ESC
+behave per-frame. The popup architecture (ADR 0062) is the reference;
+see `bridge/launcher/ingame_menu.py` for the same patterns.
 
 | Feature | Detail |
 |---------|--------|
 | Session detect | `tmux has-session -t mume` + `list-clients` re-probed on every render → top item is "Enter game", "Resume game", or "Mirror game (attached elsewhere)" |
 | Profile page | Lists `ttpp/profiles/*.tin`; select, create (blank / copy from existing), delete. `default` cannot be deleted. "Create blank" copies from `bridge/launcher/templates/blank_profile.tin` (single source of truth — see ADR 0042). Selected profile is written to `startup.conf` and consumed by `ttpp/core/config.tin` at tt++ startup. |
-| Options page | Toggle Character pane / Buffs pane / Group pane / Comm pane / UI / Dev panes; Pane headers; connection mode. Flat minimalist list — no boxed layout-mockup, no progressive hide. Fresh-install defaults: status, buffs, group, comm, ui on; dev off; pane headers on |
+| Options page | Three submenus + Back. **Panes** opens a list of the six right-column panes (Character / Buffs / Group / Comm / UI / Dev) plus a `Display pane headers` toggle; selecting a pane opens its subframe with an `Enabled` toggle and a 7-colour radio (Black / Red / Green / Blue / Grey / Orange / Purple) — each radio row trails three full-block glyphs painted with the colour's hex so the swatch previews the actual tmux pane background. Selecting `Black` clears the override (terminal default shows through). **Game text-layout** is a greyed placeholder for a future colour/description-profile feature; Enter pushes a "coming soon" frame, any key returns. **Connection** offers MMapper / Direct / Custom radios; Custom opens a host:port input frame validated against 1–65535. All Options changes persist to `bridge/runtime/startup.conf` on Back / ESC. Fresh-install defaults: status, buffs, group, comm, ui on; dev off; pane headers on; pane colours status=black, buffs=red, group=green, comm=blue, ui=black, dev=grey; connection_host=localhost, connection_port=4242. |
 | Scripts page | Reads `bridge/runtime/scripts.cache`; scrollable via UP/DOWN, PageUp/PageDown |
 | About page | Reads `bridge/launcher/about.txt`; word-wrapped, cached per resize, scrollable. Current version on the right of the title; an "Update available: vX.Y.Z" line appears in `C_ACCENT` when `version.cache` contains a newer tag |
 | Update flow | Selecting "Update" runs `bridge/release/update.sh` in a worker thread; result keyed off update.sh's exit codes (0/10/20/21/22/other → complete/no-update/aborted/failed). rc==0 re-execs `bridge/launcher/launcher.sh` to pick up the new code |

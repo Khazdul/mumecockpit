@@ -47,6 +47,7 @@ from palette import (  # noqa: E402
     _S_GAINED, _S_LOSS, _S_LABEL, _S_VALUE, _S_TP_BAR,
     _S_TRACK, _S_MARKER, _S_THUMB, _S_TOTAL, _S_ARROW,
     _S_HINT, _S_PVP, _S_ALLY, _S_STAR,
+    PANE_COLORS, PANE_COLOR_ORDER,
 )
 import log_player  # noqa: E402
 import run_retention  # noqa: E402
@@ -97,22 +98,29 @@ _COCKPIT_LINES = [
 # ---------------------------------------------------------------------------
 # Options layout
 # ---------------------------------------------------------------------------
-_OPT_TOGGLES = [
-    ("show_status",         "Character pane"),
-    ("show_buffs",          "Buffs pane"),
-    ("show_group",          "Group pane"),
-    ("show_comm",           "Comm pane"),
-    ("show_ui",             "UI pane"),
-    ("show_dev",            "Dev pane"),
-    ("show_pane_dividers",  "Pane headers"),
+# Per-pane list shared by the Panes submenu (top-level) and the six per-pane
+# subframes. (key, label, conf_show_key, conf_color_key) — conf_show_key is
+# the startup.conf flag flipped by the Enabled toggle, conf_color_key is the
+# startup.conf entry written by the colour radios.
+_PANE_OPTIONS = [
+    ("status", "Character",     "show_status", "pane_color_status"),
+    ("buffs",  "Buffs",         "show_buffs",  "pane_color_buffs"),
+    ("group",  "Group",         "show_group",  "pane_color_group"),
+    ("comm",   "Communication", "show_comm",   "pane_color_comm"),
+    ("ui",     "UI",            "show_ui",     "pane_color_ui"),
+    ("dev",    "Developer",     "show_dev",    "pane_color_dev"),
 ]
-_OPT_RADIOS = [
-    ("mmapper", "MMapper  (localhost:4242)"),
-    ("direct",  "Direct   (mume.org:4242)"),
+
+_CONNECTION_MODES = [
+    ("mmapper", "MMapper", "(localhost:4242)"),
+    ("direct",  "Direct",  "(mume.org:4242)"),
+    ("custom",  "Custom",  None),   # detail filled in at render time from conf
 ]
 
 _CONF_DEFAULTS = {
     "connection_mode":    "mmapper",
+    "connection_host":    "localhost",
+    "connection_port":    "4242",
     "show_status":        "1",
     "show_buffs":         "1",
     "show_group":         "1",
@@ -120,6 +128,12 @@ _CONF_DEFAULTS = {
     "show_ui":            "1",
     "show_dev":           "0",
     "show_pane_dividers": "1",
+    "pane_color_status":  "black",
+    "pane_color_buffs":   "red",
+    "pane_color_group":   "green",
+    "pane_color_comm":    "blue",
+    "pane_color_ui":      "black",
+    "pane_color_dev":     "grey",
     "profile":            "default",
 }
 
@@ -160,9 +174,26 @@ _new_profile_name    = ""
 _delete_target       = ""
 _delete_locked       = False   # True when target is "default" (info screen)
 
-# Options
-_sel_options         = 0
-_hover_options       = -1
+# Options — top-level (Panes / Game text-layout / Connection / Back)
+_sel_options              = 0
+_hover_options            = -1
+# Options — Panes submenu (Character / Buffs / Group / Comm / UI / Dev / blank /
+# Display pane headers / Back)
+_sel_options_panes        = 0
+_hover_options_panes      = -1
+# Options — per-pane subframe (Enabled / blank / Pane color label / 7 colours /
+# blank / Back). Single shared cursor since only one is rendered at a time.
+_sel_options_pane         = 0
+_hover_options_pane       = -1
+_options_pane_target      = "status"   # which pane the subframe is currently editing
+# Options — Connection submenu (MMapper / Direct / Custom / Back)
+_sel_options_connection   = 0
+_hover_options_connection = -1
+# Options — Connection custom host:port input
+_conn_host_buf            = ""
+_conn_port_buf            = ""
+_conn_field               = 0          # 0 = host, 1 = port
+_conn_err                 = ""
 
 # Scripts
 _scripts_lines       = []
@@ -260,7 +291,12 @@ _profile_create_name_window      = None
 _profile_create_choose_window    = None
 _profile_create_copy_window      = None
 _profile_delete_window           = None
-_options_window      = None
+_options_window                  = None
+_options_panes_window            = None
+_options_pane_window             = None
+_options_connection_window       = None
+_options_connection_custom_window = None
+_options_coming_soon_window      = None
 _scripts_window      = None
 _about_window        = None
 _update_running_window = None
@@ -360,8 +396,12 @@ def _save_conf():
         with open(CONF_PATH, "w") as fh:
             fh.write("# Phase 1 cosmetic options — launcher display only\n")
             for key in (
-                "connection_mode", "show_status", "show_buffs", "show_group",
-                "show_comm", "show_ui", "show_dev", "show_pane_dividers", "profile",
+                "connection_mode", "connection_host", "connection_port",
+                "show_status", "show_buffs", "show_group",
+                "show_comm", "show_ui", "show_dev", "show_pane_dividers",
+                "pane_color_status", "pane_color_buffs", "pane_color_group",
+                "pane_color_comm", "pane_color_ui", "pane_color_dev",
+                "profile",
             ):
                 fh.write(f"{key}={_conf.get(key, _CONF_DEFAULTS[key])}\n")
     except OSError:
@@ -533,6 +573,11 @@ def _focus_current_frame():
             "profile_create_copy_picker": _profile_create_copy_window,
             "profile_delete_confirm":     _profile_delete_window,
             "options":                    _options_window,
+            "options_panes":              _options_panes_window,
+            "options_pane":               _options_pane_window,
+            "options_connection":         _options_connection_window,
+            "options_connection_custom":  _options_connection_custom_window,
+            "options_coming_soon":        _options_coming_soon_window,
             "scripts":                    _scripts_window,
             "about":                      _about_window,
             "update_running":             _update_running_window,
@@ -593,6 +638,7 @@ def _pad_centre(text, cols=None):
 def _set_hover(frame, idx):
     """Set hover index for the named frame; invalidate if changed."""
     global _hover_main, _hover_profile, _hover_options, _hover_copy
+    global _hover_options_panes, _hover_options_pane, _hover_options_connection
     changed = False
     if frame == "main" and _hover_main != idx:
         _hover_main = idx; changed = True
@@ -600,6 +646,12 @@ def _set_hover(frame, idx):
         _hover_profile = idx; changed = True
     elif frame == "options" and _hover_options != idx:
         _hover_options = idx; changed = True
+    elif frame == "options_panes" and _hover_options_panes != idx:
+        _hover_options_panes = idx; changed = True
+    elif frame == "options_pane" and _hover_options_pane != idx:
+        _hover_options_pane = idx; changed = True
+    elif frame == "options_connection" and _hover_options_connection != idx:
+        _hover_options_connection = idx; changed = True
     elif frame == "profile_create_copy_picker" and _hover_copy != idx:
         _hover_copy = idx; changed = True
     if changed and _app:
@@ -1106,10 +1158,14 @@ def _profile_delete_text():
 
 
 # ---------------------------------------------------------------------------
-# Options frame
+# Options frame — top level (Panes / Game text-layout / Connection / Back)
 # ---------------------------------------------------------------------------
-def _options_count():
-    return len(_OPT_TOGGLES) + len(_OPT_RADIOS) + 1  # +Back
+_OPTIONS_ROWS = [
+    ("panes",          "Panes"),
+    ("text_layout",    "Game text-layout"),
+    ("connection",     "Connection"),
+    ("back",           "Back"),
+]
 
 
 def _enter_options_frame():
@@ -1119,43 +1175,30 @@ def _enter_options_frame():
 
 
 def _activate_option(idx):
-    global _sel_options
-    if idx < 0 or idx >= _options_count():
+    global _sel_options, _sel_options_panes, _sel_options_connection
+    if idx < 0 or idx >= len(_OPTIONS_ROWS):
         return
     _sel_options = idx
-    if idx < len(_OPT_TOGGLES):
-        key, _ = _OPT_TOGGLES[idx]
-        _conf[key] = "0" if _conf.get(key) == "1" else "1"
-        if _app:
-            _app.invalidate()
-        return
-    r = idx - len(_OPT_TOGGLES)
-    if r < len(_OPT_RADIOS):
-        mode, _ = _OPT_RADIOS[r]
-        _conf["connection_mode"] = mode
-        if _app:
-            _app.invalidate()
-        return
-    _save_conf()
-    _pop_frame()
+    action, _label = _OPTIONS_ROWS[idx]
+    if action == "panes":
+        _sel_options_panes = 0
+        _push_frame("options_panes")
+    elif action == "text_layout":
+        _push_frame("options_coming_soon")
+    elif action == "connection":
+        _sel_options_connection = _current_connection_index()
+        _push_frame("options_connection")
+    elif action == "back":
+        _save_conf()
+        _pop_frame()
 
 
 def _options_text():
-    cols = _term_cols()
+    cols   = _term_cols()
     title  = "─── Options ───"
-    footer = "↑↓ Navigate · Enter/Space Toggle · ESC Back"
+    footer = "↑↓ Navigate · Enter Select · ESC Back"
 
-    rows = []  # (label, kind)
-    for key, label in _OPT_TOGGLES:
-        box = "[x]" if _conf.get(key) == "1" else "[ ]"
-        rows.append((f"{box} {label}", "toggle"))
-    cur_mode = _conf.get("connection_mode", "mmapper")
-    for mode, label in _OPT_RADIOS:
-        dot = "(•)" if cur_mode == mode else "( )"
-        rows.append((f"{dot} {label}", "radio"))
-    rows.append(("    Back", "back"))
-
-    maxw = max(len(r[0]) for r in rows)
+    maxw = max(len(label) for _, label in _OPTIONS_ROWS)
     pad  = max(0, (cols - (maxw + 6)) // 2)
 
     frags = []
@@ -1164,18 +1207,18 @@ def _options_text():
     frags.append((C_TITLE, title))
     frags.append(("", "\n\n"))
 
-    radio_start = len(_OPT_TOGGLES)
-    back_idx    = _options_count() - 1
+    back_idx = len(_OPTIONS_ROWS) - 1
 
-    for i, (label, _) in enumerate(rows):
-        if i == radio_start or i == back_idx:
-            frags.append(("", "\n"))   # blank before radios / before Back
+    for i, (action, label) in enumerate(_OPTIONS_ROWS):
+        if i == back_idx:
+            frags.append(("", "\n"))  # blank before Back
 
         is_active = (i == _sel_options)
         is_hover  = (i == _hover_options)
-        style = _row_style(is_active, is_hover)
-        prefix = "<< " if is_active else "   "
-        suffix = " >>" if is_active else "   "
+        inactive  = C_BUTTON_DISABLED if action == "text_layout" else C_ITEM
+        style     = _row_style(is_active, is_hover, inactive)
+        prefix    = "<< " if is_active else "   "
+        suffix    = " >>" if is_active else "   "
 
         def _make_handler(row=i):
             def _h(ev):
@@ -1193,6 +1236,519 @@ def _options_text():
         frags.append((style, suffix, h))
         frags.append(("", "\n"))
 
+    frags.append(("", "\n"))
+    frags.append(("", _pad_centre(footer, cols)))
+    frags.append((C_HINT, footer))
+    return frags
+
+
+# ---------------------------------------------------------------------------
+# Options — Panes submenu
+# ---------------------------------------------------------------------------
+# Rows produced as (kind, payload):
+#   "pane"    payload=(pane_target, label)
+#   "sep"
+#   "headers"
+#   "back"
+def _options_panes_rows():
+    rows = []
+    for target, label, _, _ in _PANE_OPTIONS:
+        rows.append(("pane", (target, label)))
+    rows.append(("sep", None))
+    rows.append(("headers", None))
+    rows.append(("back", None))
+    return rows
+
+
+def _options_panes_selectable_indices():
+    return [i for i, (k, _) in enumerate(_options_panes_rows()) if k != "sep"]
+
+
+def _enter_options_pane_frame(target):
+    """Push the per-pane subframe for `target` (status/buffs/...)."""
+    global _options_pane_target, _sel_options_pane
+    _options_pane_target = target
+    _sel_options_pane = 0
+    _push_frame("options_pane")
+
+
+def _options_panes_activate(row_idx):
+    rows = _options_panes_rows()
+    if not (0 <= row_idx < len(rows)):
+        return
+    kind, payload = rows[row_idx]
+    if kind == "pane":
+        target, _ = payload
+        _enter_options_pane_frame(target)
+    elif kind == "headers":
+        key = "show_pane_dividers"
+        _conf[key] = "0" if _conf.get(key) == "1" else "1"
+        if _app:
+            _app.invalidate()
+    elif kind == "back":
+        _save_conf()
+        _pop_frame()
+
+
+def _options_panes_text():
+    cols   = _term_cols()
+    title  = "─── Panes ───"
+    footer = "↑↓ Navigate · Enter Select · ESC Back"
+
+    rows = _options_panes_rows()
+    sel_indices = _options_panes_selectable_indices()
+    sel_pos = (_sel_options_panes
+               if 0 <= _sel_options_panes < len(sel_indices)
+               else 0)
+    sel_row = sel_indices[sel_pos] if sel_indices else -1
+
+    # Pre-compute labels for width measurement.
+    labels = []
+    for kind, payload in rows:
+        if kind == "pane":
+            _, lbl = payload
+            labels.append(lbl)
+        elif kind == "sep":
+            labels.append("")
+        elif kind == "headers":
+            box = "[x]" if _conf.get("show_pane_dividers") == "1" else "[ ]"
+            labels.append(f"{box} Display pane headers")
+        elif kind == "back":
+            labels.append("Back")
+    maxw = max((len(l) for l in labels), default=0)
+    pad  = max(0, (cols - (maxw + 6)) // 2)
+
+    frags = []
+    frags.append(("", "\n\n"))
+    frags.append(("", _pad_centre(title, cols)))
+    frags.append((C_TITLE, title))
+    frags.append(("", "\n\n"))
+
+    for i, (kind, payload) in enumerate(rows):
+        if kind == "sep":
+            frags.append(("", "\n"))
+            continue
+
+        label = labels[i]
+        if kind == "back":
+            label = "Back"
+        is_active = (i == sel_row)
+        is_hover  = (i == _hover_options_panes)
+        style     = _row_style(is_active, is_hover)
+        prefix    = "<< " if is_active else "   "
+        suffix    = " >>" if is_active else "   "
+
+        def _make_handler(row=i, pos=(sel_indices.index(i) if i in sel_indices else 0)):
+            def _h(ev):
+                global _sel_options_panes
+                if ev.event_type == MouseEventType.MOUSE_MOVE:
+                    _set_hover("options_panes", row)
+                    return
+                if ev.event_type == MouseEventType.MOUSE_DOWN:
+                    _sel_options_panes = pos
+                    _options_panes_activate(row)
+            return _h
+
+        h = _make_handler()
+        frags.append(("", " " * pad))
+        frags.append((style, prefix, h))
+        frags.append((style, label, h))
+        frags.append((style, suffix, h))
+        frags.append(("", "\n"))
+
+    frags.append(("", "\n"))
+    frags.append(("", _pad_centre(footer, cols)))
+    frags.append((C_HINT, footer))
+    return frags
+
+
+# ---------------------------------------------------------------------------
+# Options — per-pane subframe (Enabled + colour radios + Back)
+# ---------------------------------------------------------------------------
+# Row layout:
+#   0  Enabled toggle
+#   1  blank
+#   2  "Pane color" section label   (non-selectable)
+#   3..9  colour radios (7)
+#   10 blank
+#   11 Back
+_PANE_FRAME_ENABLED   = 0
+_PANE_FRAME_SECTION   = 2
+_PANE_FRAME_COLOR_LO  = 3
+_PANE_FRAME_COLOR_HI  = _PANE_FRAME_COLOR_LO + len(PANE_COLOR_ORDER) - 1
+_PANE_FRAME_BACK      = _PANE_FRAME_COLOR_HI + 2
+_PANE_FRAME_TOTAL     = _PANE_FRAME_BACK + 1
+
+
+def _options_pane_selectable_indices():
+    out = [_PANE_FRAME_ENABLED]
+    out.extend(range(_PANE_FRAME_COLOR_LO, _PANE_FRAME_COLOR_HI + 1))
+    out.append(_PANE_FRAME_BACK)
+    return out
+
+
+def _current_pane_meta():
+    for target, label, show_key, color_key in _PANE_OPTIONS:
+        if target == _options_pane_target:
+            return target, label, show_key, color_key
+    # fallback — should not happen
+    return _PANE_OPTIONS[0]
+
+
+def _options_pane_activate(row_idx):
+    target, _label, show_key, color_key = _current_pane_meta()
+    if row_idx == _PANE_FRAME_ENABLED:
+        _conf[show_key] = "0" if _conf.get(show_key) == "1" else "1"
+        if _app:
+            _app.invalidate()
+        return
+    if _PANE_FRAME_COLOR_LO <= row_idx <= _PANE_FRAME_COLOR_HI:
+        name = PANE_COLOR_ORDER[row_idx - _PANE_FRAME_COLOR_LO]
+        _conf[color_key] = name
+        if _app:
+            _app.invalidate()
+        return
+    if row_idx == _PANE_FRAME_BACK:
+        _save_conf()
+        _pop_frame()
+
+
+def _options_pane_text():
+    cols = _term_cols()
+    target, label, show_key, color_key = _current_pane_meta()
+    title  = f"─── {label} ───"
+    footer = "↑↓ Navigate · Enter Select · ESC Back"
+
+    enabled = (_conf.get(show_key) == "1")
+    cur_color = _conf.get(color_key, "black")
+
+    # Build labels and inactive styles per row index.
+    rows = []  # (label_text, kind)
+    enabled_label = ("[x] Enabled" if enabled else "[ ] Enabled")
+    rows.append((enabled_label, "toggle"))
+    rows.append(("", "sep"))
+    rows.append(("Pane color", "section"))
+    for name in PANE_COLOR_ORDER:
+        dot = "(•)" if cur_color == name else "( )"
+        rows.append((f"{dot} {name.capitalize()}", "radio"))
+    rows.append(("", "sep"))
+    rows.append(("Back", "back"))
+
+    # Width of the longest left-block label (enabled / radios / Back / section).
+    # Colour swatch (3 cells) plus separator are added in their own fragments.
+    label_w = max(len(r[0]) for r in rows if r[1] != "sep")
+
+    # Compute centring pad. The visible row width is:
+    #   prefix(3) + label_w + suffix(3)             (toggle / section / back)
+    #   prefix(3) + label_w + "  " + 3 swatches(3)  (radio)
+    # Use the wider of the two so the column stays aligned.
+    radio_extra = 2 + 3  # "  " gap + 3-cell swatch
+    block_w = max(label_w + 6, label_w + 6 + radio_extra)
+    pad = max(0, (cols - block_w) // 2)
+
+    sel = _sel_options_pane
+    sel_indices = _options_pane_selectable_indices()
+    if not (0 <= sel < len(sel_indices)):
+        sel = 0
+    sel_row = sel_indices[sel]
+
+    frags = []
+    frags.append(("", "\n\n"))
+    frags.append(("", _pad_centre(title, cols)))
+    frags.append((C_TITLE, title))
+    frags.append(("", "\n\n"))
+
+    for i, (text, kind) in enumerate(rows):
+        if kind == "sep":
+            frags.append(("", "\n"))
+            continue
+
+        if kind == "section":
+            # Non-selectable section label, no prefix/suffix decoration.
+            frags.append(("", " " * (pad + 3)))
+            frags.append((C_SECTION, text))
+            frags.append(("", "\n"))
+            continue
+
+        is_active = (i == sel_row)
+        is_hover  = (i == _hover_options_pane)
+        style     = _row_style(is_active, is_hover)
+        prefix    = "<< " if is_active else "   "
+        suffix    = " >>" if is_active else "   "
+
+        # Per-row sel_pos for the click handler.
+        try:
+            sel_pos = sel_indices.index(i)
+        except ValueError:
+            sel_pos = 0
+
+        def _make_handler(row=i, pos=sel_pos):
+            def _h(ev):
+                global _sel_options_pane
+                if ev.event_type == MouseEventType.MOUSE_MOVE:
+                    _set_hover("options_pane", row)
+                    return
+                if ev.event_type == MouseEventType.MOUSE_DOWN:
+                    _sel_options_pane = pos
+                    _options_pane_activate(row)
+            return _h
+
+        h = _make_handler()
+
+        # Left padding to centre the block. For radio rows, pad so the label
+        # column lines up with toggle/back (which have no swatch). Both block
+        # widths share the same left edge — pad is the block-centring offset.
+        frags.append(("", " " * pad))
+        frags.append((style, prefix, h))
+        # Label, left-aligned in a fixed-width column.
+        padded_label = text + " " * max(0, label_w - len(text))
+        frags.append((style, padded_label, h))
+
+        if kind == "radio":
+            # Trailing colour swatch: 3 full-block glyphs painted with bg=<hex>.
+            color_name = PANE_COLOR_ORDER[i - _PANE_FRAME_COLOR_LO]
+            hex_color  = PANE_COLORS.get(color_name)
+            frags.append((style, "  ", h))
+            if hex_color is None:
+                # Black → no bg override; the empty cells show the terminal default.
+                # Render the three glyphs with a hint colour so the cell is visible.
+                frags.append((f"fg:#3a3a3a", "███", h))
+            else:
+                frags.append((f"fg:{hex_color} bg:{hex_color}", "███", h))
+
+        frags.append((style, suffix, h))
+        frags.append(("", "\n"))
+
+    frags.append(("", "\n"))
+    frags.append(("", _pad_centre(footer, cols)))
+    frags.append((C_HINT, footer))
+    return frags
+
+
+# ---------------------------------------------------------------------------
+# Options — Connection submenu
+# ---------------------------------------------------------------------------
+def _current_connection_index():
+    cur = _conf.get("connection_mode", "mmapper")
+    for i, (mode, _label, _detail) in enumerate(_CONNECTION_MODES):
+        if mode == cur:
+            return i
+    return 0
+
+
+def _options_connection_activate(idx):
+    global _sel_options_connection
+    n = len(_CONNECTION_MODES) + 1  # + Back
+    if not (0 <= idx < n):
+        return
+    _sel_options_connection = idx
+    if idx == len(_CONNECTION_MODES):
+        # Back
+        _save_conf()
+        _pop_frame()
+        return
+    mode, _label, _detail = _CONNECTION_MODES[idx]
+    _conf["connection_mode"] = mode
+    if _app:
+        _app.invalidate()
+    if mode == "custom":
+        _enter_options_connection_custom_frame()
+
+
+def _options_connection_text():
+    cols   = _term_cols()
+    title  = "─── Connection ───"
+    footer = "↑↓ Navigate · Enter Select · ESC Back"
+
+    cur = _conf.get("connection_mode", "mmapper")
+    host = _conf.get("connection_host", "localhost")
+    port = _conf.get("connection_port", "4242")
+    custom_detail = f"<{host}>:<{port}>"
+
+    rows = []
+    for mode, lbl, detail in _CONNECTION_MODES:
+        dot = "(•)" if cur == mode else "( )"
+        if mode == "custom":
+            rows.append((f"{dot} {lbl}", custom_detail, mode))
+        else:
+            rows.append((f"{dot} {lbl}", detail, mode))
+    rows.append(("Back", None, None))
+
+    # Width: left label + 2-space gap + widest detail
+    label_w  = max(len(r[0]) for r in rows)
+    detail_w = max((len(r[1]) for r in rows if r[1]), default=0)
+    block_w  = label_w + (2 + detail_w if detail_w else 0) + 6  # +6 for << / >>
+    pad      = max(0, (cols - block_w) // 2)
+
+    frags = []
+    frags.append(("", "\n\n"))
+    frags.append(("", _pad_centre(title, cols)))
+    frags.append((C_TITLE, title))
+    frags.append(("", "\n\n"))
+
+    back_idx = len(rows) - 1
+
+    for i, (left, detail, mode) in enumerate(rows):
+        if i == back_idx:
+            frags.append(("", "\n"))
+
+        is_active = (i == _sel_options_connection)
+        is_hover  = (i == _hover_options_connection)
+        style     = _row_style(is_active, is_hover)
+        prefix    = "<< " if is_active else "   "
+        suffix    = " >>" if is_active else "   "
+
+        def _make_handler(row=i):
+            def _h(ev):
+                global _sel_options_connection
+                if ev.event_type == MouseEventType.MOUSE_MOVE:
+                    _set_hover("options_connection", row)
+                    return
+                if ev.event_type == MouseEventType.MOUSE_DOWN:
+                    _sel_options_connection = row
+                    _options_connection_activate(row)
+            return _h
+
+        h = _make_handler()
+
+        frags.append(("", " " * pad))
+        frags.append((style, prefix, h))
+
+        padded_left = left + " " * max(0, label_w - len(left))
+        frags.append((style, padded_left, h))
+
+        if detail is not None:
+            frags.append((style, "  ", h))
+            # Highlight Custom's host:port string in C_ACTIVE-ish when active,
+            # otherwise dim C_HINT.
+            if mode == "custom" and cur == "custom":
+                frags.append((C_ACCENT, detail, h))
+            else:
+                frags.append((C_HINT, detail, h))
+
+        frags.append((style, suffix, h))
+        frags.append(("", "\n"))
+
+    frags.append(("", "\n"))
+    frags.append(("", _pad_centre(footer, cols)))
+    frags.append((C_HINT, footer))
+    return frags
+
+
+# ---------------------------------------------------------------------------
+# Options — Connection custom host:port input frame
+# ---------------------------------------------------------------------------
+def _enter_options_connection_custom_frame():
+    global _conn_host_buf, _conn_port_buf, _conn_field, _conn_err
+    _conn_host_buf = _conf.get("connection_host", "localhost") or "localhost"
+    _conn_port_buf = _conf.get("connection_port", "4242") or "4242"
+    _conn_field    = 0
+    _conn_err      = ""
+    _push_frame("options_connection_custom")
+
+
+def _validate_connection_custom():
+    host = _conn_host_buf.strip()
+    port = _conn_port_buf.strip()
+    if not host:
+        return "Host cannot be empty."
+    if not port.isdigit():
+        return "Port must be numeric."
+    p = int(port)
+    if p < 1 or p > 65535:
+        return "Port must be between 1 and 65535."
+    return ""
+
+
+def _options_connection_custom_save():
+    global _conn_err
+    err = _validate_connection_custom()
+    if err:
+        _conn_err = err
+        if _app:
+            _app.invalidate()
+        return
+    _conf["connection_host"] = _conn_host_buf.strip()
+    _conf["connection_port"] = _conn_port_buf.strip()
+    _conf["connection_mode"] = "custom"
+    _save_conf()
+    _pop_frame()
+
+
+def _options_connection_custom_text():
+    cols   = _term_cols()
+    title  = "─── Custom Connection ───"
+    hint   = "Tab to switch field · Enter to save · ESC to cancel"
+
+    host_label = "Host: "
+    port_label = "Port: "
+    host_line  = f"{host_label}{_conn_host_buf}"
+    port_line  = f"{port_label}{_conn_port_buf}"
+
+    frags = []
+    frags.append(("", "\n\n"))
+    frags.append(("", _pad_centre(title, cols)))
+    frags.append((C_TITLE, title))
+    frags.append(("", "\n\n\n"))
+
+    # Host field
+    cursor_host = "_" if _conn_field == 0 else ""
+    full_host = f"{host_label}{_conn_host_buf}{cursor_host}"
+    frags.append(("", _pad_centre(full_host, cols)))
+    frags.append((C_HINT, host_label))
+    frags.append((C_ACTIVE if _conn_field == 0 else C_ITEM, _conn_host_buf))
+    if _conn_field == 0:
+        frags.append((C_HINT, "_"))
+    frags.append(("", "\n\n"))
+
+    # Port field
+    cursor_port = "_" if _conn_field == 1 else ""
+    full_port = f"{port_label}{_conn_port_buf}{cursor_port}"
+    frags.append(("", _pad_centre(full_port, cols)))
+    frags.append((C_HINT, port_label))
+    frags.append((C_ACTIVE if _conn_field == 1 else C_ITEM, _conn_port_buf))
+    if _conn_field == 1:
+        frags.append((C_HINT, "_"))
+    frags.append(("", "\n"))
+
+    if _conn_err:
+        frags.append(("", "\n"))
+        frags.append(("", _pad_centre(_conn_err, cols)))
+        frags.append((C_ERR, _conn_err))
+        frags.append(("", "\n"))
+
+    frags.append(("", "\n"))
+    frags.append(("", _pad_centre(hint, cols)))
+    frags.append((C_HINT, hint))
+    return frags
+
+
+# ---------------------------------------------------------------------------
+# Options — "Coming soon" placeholder for Game text-layout
+# ---------------------------------------------------------------------------
+_COMING_SOON_BODY = (
+    "Game text-layout — coming soon. Will let you choose colour and "
+    "description profiles (PK / Minimalistic / Role-play) and configure "
+    "text substitutions. Font cannot be changed."
+)
+
+
+def _options_coming_soon_text():
+    cols = _term_cols()
+    title  = "─── Game text-layout ───"
+    footer = "Any key to return"
+    body_w = max(20, min(72, cols - 4))
+    wrapped = _wrap_text(_COMING_SOON_BODY, body_w)
+
+    frags = []
+    frags.append(("", "\n\n"))
+    frags.append(("", _pad_centre(title, cols)))
+    frags.append((C_TITLE, title))
+    frags.append(("", "\n\n"))
+    for line in wrapped:
+        frags.append(("", _pad_centre(line, cols)))
+        frags.append((C_BODY, line))
+        frags.append(("", "\n"))
     frags.append(("", "\n"))
     frags.append(("", _pad_centre(footer, cols)))
     frags.append((C_HINT, footer))
@@ -4679,11 +5235,11 @@ def _kb_pd_any(event):
     _pop_frame()
 
 
-# Options
+# Options — top level
 @kb.add("up", filter=_in_frame("options"))
 def _kb_opt_up(event):
     global _sel_options
-    n = _options_count()
+    n = len(_OPTIONS_ROWS)
     if n:
         _sel_options = (_sel_options - 1) % n
 
@@ -4691,7 +5247,7 @@ def _kb_opt_up(event):
 @kb.add("down", filter=_in_frame("options"))
 def _kb_opt_down(event):
     global _sel_options
-    n = _options_count()
+    n = len(_OPTIONS_ROWS)
     if n:
         _sel_options = (_sel_options + 1) % n
 
@@ -4705,6 +5261,162 @@ def _kb_opt_select(event):
 @kb.add("escape", filter=_in_frame("options"), eager=True)
 def _kb_opt_escape(event):
     _save_conf()
+    _pop_frame()
+
+
+# Options — Panes submenu
+@kb.add("up", filter=_in_frame("options_panes"))
+def _kb_optp_up(event):
+    global _sel_options_panes
+    n = len(_options_panes_selectable_indices())
+    if n:
+        _sel_options_panes = (_sel_options_panes - 1) % n
+
+
+@kb.add("down", filter=_in_frame("options_panes"))
+def _kb_optp_down(event):
+    global _sel_options_panes
+    n = len(_options_panes_selectable_indices())
+    if n:
+        _sel_options_panes = (_sel_options_panes + 1) % n
+
+
+@kb.add("enter", filter=_in_frame("options_panes"))
+@kb.add(" ",     filter=_in_frame("options_panes"))
+def _kb_optp_select(event):
+    sel = _options_panes_selectable_indices()
+    if not sel:
+        return
+    idx = _sel_options_panes if _sel_options_panes < len(sel) else len(sel) - 1
+    _options_panes_activate(sel[idx])
+
+
+@kb.add("escape", filter=_in_frame("options_panes"), eager=True)
+def _kb_optp_escape(event):
+    _save_conf()
+    _pop_frame()
+
+
+# Options — per-pane subframe
+@kb.add("up", filter=_in_frame("options_pane"))
+def _kb_optpp_up(event):
+    global _sel_options_pane
+    n = len(_options_pane_selectable_indices())
+    if n:
+        _sel_options_pane = (_sel_options_pane - 1) % n
+
+
+@kb.add("down", filter=_in_frame("options_pane"))
+def _kb_optpp_down(event):
+    global _sel_options_pane
+    n = len(_options_pane_selectable_indices())
+    if n:
+        _sel_options_pane = (_sel_options_pane + 1) % n
+
+
+@kb.add("enter", filter=_in_frame("options_pane"))
+@kb.add(" ",     filter=_in_frame("options_pane"))
+def _kb_optpp_select(event):
+    sel = _options_pane_selectable_indices()
+    if not sel:
+        return
+    idx = _sel_options_pane if _sel_options_pane < len(sel) else len(sel) - 1
+    _options_pane_activate(sel[idx])
+
+
+@kb.add("escape", filter=_in_frame("options_pane"), eager=True)
+def _kb_optpp_escape(event):
+    _save_conf()
+    _pop_frame()
+
+
+# Options — Connection submenu
+@kb.add("up", filter=_in_frame("options_connection"))
+def _kb_optc_up(event):
+    global _sel_options_connection
+    n = len(_CONNECTION_MODES) + 1
+    if n:
+        _sel_options_connection = (_sel_options_connection - 1) % n
+
+
+@kb.add("down", filter=_in_frame("options_connection"))
+def _kb_optc_down(event):
+    global _sel_options_connection
+    n = len(_CONNECTION_MODES) + 1
+    if n:
+        _sel_options_connection = (_sel_options_connection + 1) % n
+
+
+@kb.add("enter", filter=_in_frame("options_connection"))
+@kb.add(" ",     filter=_in_frame("options_connection"))
+def _kb_optc_select(event):
+    _options_connection_activate(_sel_options_connection)
+
+
+@kb.add("escape", filter=_in_frame("options_connection"), eager=True)
+def _kb_optc_escape(event):
+    _save_conf()
+    _pop_frame()
+
+
+# Options — Connection custom host:port input
+@kb.add("escape", filter=_in_frame("options_connection_custom"), eager=True)
+def _kb_optcc_escape(event):
+    _pop_frame()
+
+
+@kb.add("tab", filter=_in_frame("options_connection_custom"))
+@kb.add("s-tab", filter=_in_frame("options_connection_custom"))
+def _kb_optcc_tab(event):
+    global _conn_field, _conn_err
+    _conn_field = 1 - _conn_field
+    _conn_err = ""
+
+
+@kb.add("enter", filter=_in_frame("options_connection_custom"))
+def _kb_optcc_enter(event):
+    _options_connection_custom_save()
+
+
+@kb.add("backspace", filter=_in_frame("options_connection_custom"))
+def _kb_optcc_backspace(event):
+    global _conn_host_buf, _conn_port_buf, _conn_err
+    if _conn_field == 0:
+        if _conn_host_buf:
+            _conn_host_buf = _conn_host_buf[:-1]
+    else:
+        if _conn_port_buf:
+            _conn_port_buf = _conn_port_buf[:-1]
+    _conn_err = ""
+
+
+@kb.add("<any>", filter=_in_frame("options_connection_custom"))
+def _kb_optcc_any(event):
+    global _conn_host_buf, _conn_port_buf, _conn_err
+    data = event.data or ""
+    if len(data) != 1 or not data.isprintable():
+        return
+    if _conn_field == 0:
+        if len(_conn_host_buf) >= 64:
+            return
+        _conn_host_buf += data
+    else:
+        if not data.isdigit():
+            return
+        if len(_conn_port_buf) >= 5:
+            return
+        _conn_port_buf += data
+    _conn_err = ""
+
+
+# Options — Coming-soon placeholder (any key returns)
+@kb.add("escape", filter=_in_frame("options_coming_soon"), eager=True)
+def _kb_optcs_escape(event):
+    _pop_frame()
+
+
+@kb.add("<any>", filter=_in_frame("options_coming_soon"))
+def _kb_optcs_any(event):
     _pop_frame()
 
 
@@ -5219,7 +5931,10 @@ def main():
     global _main_window, _profile_window
     global _profile_create_name_window, _profile_create_choose_window
     global _profile_create_copy_window, _profile_delete_window
-    global _options_window, _scripts_window, _about_window
+    global _options_window, _options_panes_window, _options_pane_window
+    global _options_connection_window, _options_connection_custom_window
+    global _options_coming_soon_window
+    global _scripts_window, _about_window
     global _update_running_window, _update_result_window
     global _exit_confirm_window, _too_small_window
     global _history_filter_window, _history_table_window, _history_options_window
@@ -5246,7 +5961,12 @@ def main():
     _profile_create_choose_window, pcc_frame                 = _build_simple(_profile_create_choose_text)
     _profile_create_copy_window,   pcp_frame                 = _build_simple(_profile_create_copy_text)
     _profile_delete_window,        pd_frame                  = _build_simple(_profile_delete_text)
-    _options_window,               options_frame             = _build_simple(_options_text)
+    _options_window,                    options_frame                  = _build_simple(_options_text)
+    _options_panes_window,              options_panes_frame            = _build_simple(_options_panes_text)
+    _options_pane_window,               options_pane_frame             = _build_simple(_options_pane_text)
+    _options_connection_window,         options_connection_frame       = _build_simple(_options_connection_text)
+    _options_connection_custom_window,  options_connection_custom_frame = _build_simple(_options_connection_custom_text)
+    _options_coming_soon_window,        options_coming_soon_frame      = _build_simple(_options_coming_soon_text)
     _scripts_window,               scripts_frame             = _build_scrolling(
         _scripts_title_text, _scripts_content_text, _scripts_footer_text
     )
@@ -5311,6 +6031,11 @@ def main():
         "profile_create_copy_picker": pcp_frame,
         "profile_delete_confirm":     pd_frame,
         "options":                    options_frame,
+        "options_panes":              options_panes_frame,
+        "options_pane":               options_pane_frame,
+        "options_connection":         options_connection_frame,
+        "options_connection_custom":  options_connection_custom_frame,
+        "options_coming_soon":        options_coming_soon_frame,
         "scripts":                    scripts_frame,
         "about":                      about_frame,
         "history":                    history_frame,

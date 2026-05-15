@@ -193,21 +193,32 @@ SCRIPT:autobow
 
 ## startup.conf keys (`bridge/runtime/startup.conf`, gitignored)
 
-| Key               | Default    | Description                              |
-|-------------------|------------|------------------------------------------|
-| `connection_mode` | `mmapper`  | `mmapper` (localhost:4242) or `direct` (mume.org:4242) |
-| `show_ui`         | `1`        | Whether to open the UI pane              |
-| `show_dev`        | `0`        | Whether to open the dev pane             |
-| `show_status`     | `0`        | Whether to open the status pane          |
-| `show_pane_dividers` | `1`     | Whether the pane-header bar (labels above each right-column pane) is visible at startup. `cp -h` persists the new state via `toggle_pane.sh headers --persist`. Key name retained for backward compatibility. |
-| `profile`         | `default`  | Which file in `ttpp/profiles/` to load; also the tt++ session name |
+| Key                  | Default     | Description                              |
+|----------------------|-------------|------------------------------------------|
+| `connection_mode`    | `mmapper`   | `mmapper` (localhost:4242), `direct` (mume.org:4242, TLS), or `custom` (uses `connection_host`/`connection_port`, plain telnet) |
+| `connection_host`    | `localhost` | Host consulted when `connection_mode=custom`. Editable from the launcher Options → Connection → Custom subframe. |
+| `connection_port`    | `4242`      | Port consulted when `connection_mode=custom`. Numeric 1–65535, validated by the input subframe. |
+| `show_ui`            | `1`         | Whether to open the UI pane              |
+| `show_dev`           | `0`         | Whether to open the dev pane             |
+| `show_status`        | `0`         | Whether to open the status pane          |
+| `show_pane_dividers` | `1`         | Whether the pane-header bar (labels above each right-column pane) is visible at startup. `cp -h` persists the new state via `toggle_pane.sh headers --persist`. Key name retained for backward compatibility. |
+| `pane_color_status`  | `black`     | Per-pane background colour (name). Resolved to a hex by `PANE_COLORS` in `bridge/launcher/palette.py` and mirrored as a case in `bridge/launcher/open_pane.sh` `_pane_bg_for`. `black` clears the tmux bg override so the terminal default shows through. Unknown values fall back to `black`. |
+| `pane_color_buffs`   | `red`       | Per-pane background colour for the buffs pane. |
+| `pane_color_group`   | `green`     | Per-pane background colour for the group pane. |
+| `pane_color_comm`    | `blue`      | Per-pane background colour for the comm pane. |
+| `pane_color_ui`      | `black`     | Per-pane background colour for the UI pane. |
+| `pane_color_dev`     | `grey`      | Per-pane background colour for the dev pane. |
+| `profile`            | `default`   | Which file in `ttpp/profiles/` to load; also the tt++ session name |
 
 Toggle panes (with persistence) via `cp -u`, `cp -d`, `cp -m`, `cp -c`, `cp -b`, `cp -g`, `cp -h`. Reset right-column heights to shipped defaults via `cp -reset-heights`.
 
-`profile` and `connection_mode` are read by `ttpp/core/config.tin` at tt++
-startup via `bridge/launcher/read_config.sh`, which materialises the `_profile`,
+`profile`, `connection_mode`, `connection_host`, and `connection_port` are
+read by `ttpp/core/config.tin` at tt++ startup via
+`bridge/launcher/read_config.sh`, which materialises the `_profile`,
 `_host`, `_port`, and `_ses_cmd` tt++ variables used by the `connect` alias.
-`_ses_cmd` is `ses` for mmapper mode and `ssl` for direct mode (TLS).
+`_ses_cmd` is `ses` for mmapper and custom modes and `ssl` for direct mode
+(TLS); the custom mode reads `_host` / `_port` from `connection_host` /
+`connection_port`.
 
 ## Layout system (`bridge/runtime/layout.conf`, gitignored)
 
