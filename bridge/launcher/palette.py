@@ -8,6 +8,7 @@ __all__ = [
     "C_YELLOW", "C_ERR",
     "C_QUOTE", "C_QUOTE_ATTR", "C_HOVER", "C_SELECTED",
     "C_HEADER", "C_SECTION", "C_DIVIDER",
+    "C_BUTTON", "C_BUTTON_HOVER", "C_BUTTON_DISABLED",
     "C_WATCH_LOG", "C_WATCH_LOG_HOVER",
     "C_LOG_PLAYER_INPUT", "C_LOG_CURSOR",
     "C_LOG_OVERLAY_BG", "C_LOG_OVERLAY_FG", "C_LOG_OVERLAY_HINT",
@@ -35,6 +36,13 @@ C_QUOTE      = "italic fg:#8a8a8a"  # _MR_QUOTE      — italic, colour 245
 C_QUOTE_ATTR = "fg:#87af87"         # _MR_QUOTE_ATTR — sage green, colour 108
 C_HOVER      = "fg:#dadada"         # between C_ITEM and C_ACTIVE — mouse hover
 C_SELECTED   = "fg:#000000 bg:#bcbcbc"   # active sidebar filter — black on light grey
+
+# Flat-button states. Backgrounds are the distinguishing element (no border),
+# matching the History → Options widget design. Lightness steps roughly:
+# disabled ~20% · normal ~30% · hover ~45%. Cursor state reuses C_SELECTED.
+C_BUTTON          = "fg:#bcbcbc bg:#4a4a4a"   # normal flat button
+C_BUTTON_HOVER    = "fg:#bcbcbc bg:#6e6e6e"   # mouse-hover, non-cursor
+C_BUTTON_DISABLED = "fg:#585858 bg:#303030"   # disabled — dim grey on dim bg
 
 # ---------------------------------------------------------------------------
 # Statistics-frame palette (mockup-driven; isolated from the other frames so

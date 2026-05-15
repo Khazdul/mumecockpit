@@ -74,27 +74,39 @@ sidecar schema.
 
 ### `history` frame
 
-Top-to-bottom, horizontally centred:
+Top-to-bottom:
 
 1. Title row.
 2. `Filter` header label (`C_ACTIVE` when the filter row is focused,
-   `C_SECTION` otherwise).
+   `C_SECTION` otherwise) — left-aligned with the runs table's
+   leftmost cell.
 3. **Filter pill row.** `All` followed by one pill per character
    returned by `list_characters_with_runs()` (alphabetical).
    Characters without sealed JSONLs are excluded. Each pill is
-   `  <name>  ` (2-cell padding each side); pills are joined by a
-   2-space separator. The cursor pill paints `C_SELECTED`. Hover
-   paints `C_HOVER` on non-cursor pills; hover never overrides
-   cursor. Cursor equals the active filter — moving the cursor with
-   ←/→ re-filters immediately.
-4. **Runs table, sortable.** Columns: Char · Date · Time · Dur. ·
-   Expires · Rating. The header row is click-to-sort; an active
-   column shows ` ▲` / ` ▼` after its label. Default sort `Char asc`
-   with `start_ts desc` as the stable secondary key.
-5. **Action menu** in a single-line bordered box (`┌─┐│└┘`). Centred
-   horizontally; inner column width = longest label (`Watch log`) + 2
-   padding cells on each side. Items, top to bottom:
-   `Save`, `Rate`, `Statistics`, `Watch log`, blank, `Back`.
+   `" <name> "` (single-cell padding each side); pills are adjacent
+   with no extra spacer between them. The cursor pill paints
+   `C_SELECTED`. Hover paints `C_HOVER` on non-cursor pills; hover
+   never overrides cursor. The pill row's leftmost cell sits flush
+   with the runs table's leftmost column.
+4. **Centred package: `[ runs table | scrollbar | gap | Options widget ]`.**
+   Horizontally centred as one unit. The package is what drives all
+   left/right positions on the frame — the filter header and pill row
+   align flush with the package's left edge.
+   - **Runs table.** Columns: Char · Date · Time · Dur. · Expires ·
+     Rating. The header row is click-to-sort; an active column shows
+     ` ▲` / ` ▼` after its label. Default sort `Char asc` with
+     `start_ts desc` as the stable secondary key.
+   - **Gap.** 2 spaces of visual breathing room between the table's
+     scrollbar column and the Options widget's left edge.
+   - **Options widget.** Vertical column of 5 connected flat buttons
+     (no inter-button gap, no border). Column width = longest button
+     label + 2 cells of padding. A centred `Options` header sits on
+     the same line as the runs-table header row, painted `C_SECTION`
+     when the widget is unfocused / `C_ACTIVE` when focused.
+5. **Inline feedback line** — single row directly below the Options
+   widget at the same horizontal left edge. Holds the Export action's
+   transient `Saved to ~/<file>` (`C_ACCENT`) or `Export failed: …`
+   (`C_HINT`) message for ~3 s, blank otherwise.
 6. Footer hint line.
 
 Each row is a stitched chain (one session). Stitching uses the default
@@ -118,44 +130,60 @@ numerics order normally within the unsaved group).
 
 **Focus.** Three focusable Windows per the focus-on-push contract
 (ADR 0066): `_history_filter_window` (pill row),
-`_history_table_window`, `_history_menu_window`. `_history_focused:
-int` (0/1/2) routes navigation. Tab / Shift+Tab cycles forward /
-backward; `_focus_current_frame()` re-focuses the right window after
-push/pop and on focus changes within the frame.
+`_history_table_window`, `_history_options_window` (button column).
+`_history_focused: int` (0/1/2) routes navigation. Tab / Shift+Tab
+cycles forward / backward; `_focus_current_frame()` re-focuses the
+right window after push/pop and on focus changes within the frame.
 
 **Cursor and hover.** The cursor element in each panel paints
 `C_SELECTED` (black on light grey) in all focus states. Hover paints
 `C_HOVER` on non-cursor selectable elements; hover never overrides
 `C_SELECTED`. Hover clears on `MOUSE_MOVE` over any non-row fragment
-(title, footer, gap, padding, scrollbar track, in-box blank, menu
-border, disabled menu row) via the per-frame `_hover_at(panel, idx)`
-helper.
+(title, footer, gap, padding, scrollbar track, disabled button) via
+the per-frame `_hover_at(panel, idx)` helper.
 
-**Action menu styling.** Item rows: `C_ITEM` normal, `C_SELECTED` for
-the menu cursor (when the menu is focused), `C_HOVER` on non-cursor
-hover. **Disabled** rows paint `C_HINT` with no click handler and no
-hover highlight: `Save` greys when `summary.saved` is true; `Watch log`
-greys when `summary.has_log` is false; all items except `Back` grey
-when no row is selected in the table (empty table or no cursor). The
-cursor can land on a disabled row (e.g. after a Save flips `Save` to
-disabled) but Enter on a disabled row is a no-op. The box border
-paints `C_SECTION` when the menu is unfocused, `C_ACTIVE` when focused.
+**Options widget styling.** Flat-button style — no border; the
+background colour distinguishes each button from surrounding space.
+
+| State                    | Style                                  |
+|--------------------------|----------------------------------------|
+| Normal                   | `C_BUTTON` — mid-grey bg               |
+| Hover (non-cursor)       | `C_BUTTON_HOVER` — lighter grey bg     |
+| Cursor (widget focused)  | `C_SELECTED` — black on light-grey bg  |
+| Disabled                 | `C_BUTTON_DISABLED` — dim grey on dim bg |
+
+`C_BUTTON`, `C_BUTTON_HOVER`, and `C_BUTTON_DISABLED` are defined in
+`palette.py`. Cursor state takes precedence over hover. Disabled
+buttons take no click and no hover highlight.
+
+**Disabled rules.**
+
+- **Stats** — always enabled (no-op when the table has no row).
+- **Run log** — always disabled in v1. Parked pending log-player
+  wiring; the existing target lives alongside the WATCH LOG button
+  on `history_detail` (`_hd_watch_log_handler` / `_kb_hd_watch_log`).
+- **Save** — disabled when `summary.saved` is true.
+- **Rate** — always enabled (no-op when the table has no row).
+- **Export** — disabled when `summary.has_log` is false.
+
+The Options cursor moves through enabled buttons only (↑/↓ skips
+disabled). When every button is disabled (empty table) the cursor
+lands on the first row and Enter is a no-op.
 
 **Keyboard.**
 
-| Focus  | Key                | Action                                |
-|--------|--------------------|---------------------------------------|
-| filter | ←/→                | move cursor pill (wrap)               |
-| filter | ↑/↓                | no-op                                 |
-| filter | Enter / Space      | re-apply cursor pill's filter         |
-| table  | ↑/↓                | move cursor row (clamp)               |
-| table  | PgUp/PgDn          | scroll 10                             |
-| table  | Home/End           | jump to ends                          |
-| table  | Enter / Space      | activate Statistics for selected row  |
-| menu   | ↑/↓                | move cursor row (skip disabled rows)  |
-| menu   | Enter / Space      | activate selected row                 |
-| any    | Tab / Shift+Tab    | cycle focus (filter → table → menu)   |
-| any    | ESC                | pop to main menu                      |
+| Focus   | Key                | Action                                |
+|---------|--------------------|---------------------------------------|
+| filter  | ←/→                | move cursor pill (wrap)               |
+| filter  | Enter / Space      | re-apply cursor pill's filter         |
+| table   | ↑/↓                | move cursor row (clamp)               |
+| table   | PgUp/PgDn          | scroll 10                             |
+| table   | Home/End           | jump to ends                          |
+| table   | Enter / Space      | activate Stats for selected row       |
+| options | ↑/↓                | move cursor button (skip disabled)    |
+| options | Enter / Space      | activate selected button              |
+| any     | Tab / Shift+Tab    | cycle focus (filter → table → options)|
+| any     | ESC                | pop to main menu                      |
 
 **Filter behaviour.** Cursor equals the active filter; moving the
 cursor with ←/→ or clicking a pill re-filters immediately. Filter
@@ -169,9 +197,12 @@ scrolls the table when hovered (`_HistScrollControl`, the same
 click-to-jump scrollbar uses `bridge/launcher/widgets/scrollbar.py`.
 
 **Action handlers.** All operate on the row currently under the table
-cursor (`_history_sessions[_history_table_cursor]`). With no row, every
-action except `Back` is disabled.
+cursor (`_history_sessions[_history_table_cursor]`). With no row,
+every action is disabled.
 
+- **Stats** — pushes `history_detail` for the selected session. Same
+  destination as pressing Enter on the table row.
+- **Run log** — parked placeholder; always disabled in v1.
 - **Save** — disabled when `summary.saved`. Otherwise calls
   `run_meta.save_run_chain(character, run_ids, 0)`, then re-reads each
   run's meta sidecar to refresh `summary.saved` / `summary.rating` in
@@ -179,11 +210,19 @@ action except `Back` is disabled.
   immediately.
 - **Rate** — pushes the `history_rate` frame for the selected session
   (always enabled when a row is selected).
-- **Statistics** — pushes `history_detail` for the selected session.
-  Same destination as pressing Enter on the table row.
-- **Watch log** — disabled when `summary.has_log` is false. When
-  enabled, no-op for now: log player wiring lands in Phase 3.
-- **Back** — `_pop_frame()`.
+- **Export** — disabled when `summary.has_log` is false. Concatenates
+  `data/runs/<character>/<run-id>.log` for each `run_id` in
+  `summary.run_ids` (chronological; missing files are skipped). Per
+  line: strips the `^\d+ ` timestamp prefix, the leading `> `
+  outbound marker, and any ANSI SGR escape (`\x1b\[[0-9;]*m`). One
+  blank line separates successive run logs. Writes to
+  `~/mume-<character>-<first-run-id>.txt`, with `-2.txt` / `-3.txt`
+  suffixes on collision. Result flashes for ~3 s in the inline
+  feedback line directly below the Options widget: `Saved to ~/<file>`
+  in `C_ACCENT` on success, `Export failed: <reason>` in `C_HINT` on
+  `OSError`.
+
+ESC is the back-out path from any of the three panels.
 
 Saving / re-rating writes meta files for **every** run-id in the
 stitched chain, matching the popup's chain-save semantics
@@ -193,7 +232,7 @@ mutated, so the row stays in sync with the meta sidecar truth.
 
 **Empty state.** No characters with archived runs → table area renders
 `"No runs recorded yet."` centred; the filter row shows only the `All`
-pill; the action menu shows only `Back` enabled.
+pill; every Options button is disabled.
 
 ### `history_rate` frame
 

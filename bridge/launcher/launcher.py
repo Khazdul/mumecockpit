@@ -39,6 +39,7 @@ from palette import (  # noqa: E402
     C_TITLE, C_ACTIVE, C_ITEM, C_BODY, C_HINT, C_ACCENT,
     C_YELLOW, C_ERR, C_QUOTE, C_QUOTE_ATTR, C_HOVER, C_SELECTED,
     C_HEADER, C_SECTION, C_DIVIDER, C_WATCH_LOG, C_WATCH_LOG_HOVER,
+    C_BUTTON, C_BUTTON_HOVER, C_BUTTON_DISABLED,
     C_LOG_CURSOR,
     C_LOG_OVERLAY_BG, C_LOG_OVERLAY_FG, C_LOG_OVERLAY_HINT,
     C_LOG_SCRUBBER_FILLED, C_LOG_SCRUBBER_EMPTY, C_LOG_SCRUBBER_THUMB,
@@ -182,10 +183,16 @@ _history_sort            = ("Char", "asc")
 _history_filter_cursor   = 0         # cursor pill index
 _history_table_cursor    = 0
 _history_table_scroll    = 0
-_history_menu_cursor     = 0         # cursor row in action menu
-_history_focused         = 1         # 0 = filter, 1 = table, 2 = menu
+_history_menu_cursor     = 0         # cursor row in Options widget
+_history_focused         = 1         # 0 = filter, 1 = table, 2 = options
 _history_hover           = (None, None)   # (panel_idx, row_idx)
 _history_table_sb        = None
+# Inline feedback shown directly below the Options widget after Export. Plain
+# string (or None) and a style tuple. `_history_feedback_handle` is the
+# asyncio TimerHandle scheduled to clear the line after ~3 s.
+_history_feedback_text   = None
+_history_feedback_style  = ""
+_history_feedback_handle = None
 # Rate-session frame (history surface)
 _history_rate_rating     = 0         # 0..5
 _history_rate_summary    = None      # SessionSummary being rated
@@ -260,7 +267,7 @@ _exit_confirm_window   = None
 _too_small_window      = None
 _history_filter_window  = None
 _history_table_window   = None
-_history_menu_window    = None
+_history_options_window = None
 _history_detail_window  = None
 _history_rate_window    = None
 _log_view_window        = None
@@ -513,7 +520,7 @@ def _focus_current_frame():
         return
     if _current_frame == "history":
         win = (_history_filter_window, _history_table_window,
-               _history_menu_window)[_history_focused]
+               _history_options_window)[_history_focused]
     else:
         win = {
             "main":                       _main_window,
@@ -1452,25 +1459,38 @@ def _scroll_about(delta):
 # History frame
 # ---------------------------------------------------------------------------
 
-# Action menu rows. (label, action_id). label=None marks an in-box blank row.
-_HISTORY_MENU_ROWS = [
-    ("Save",       "save"),
-    ("Rate",       "rate"),
-    ("Statistics", "statistics"),
-    ("Watch log",  "watch_log"),
-    (None,         None),
-    ("Back",       "back"),
+# Options widget buttons. (label, action_id). Order matters: cursor moves
+# top-to-bottom and ↑/↓ skips disabled rows. Run log is parked pending
+# log-player wiring — see _hd_watch_log_handler / _kb_hd_watch_log in the
+# history_detail frame for the existing integration target.
+_HISTORY_BUTTONS = [
+    ("Stats",   "statistics"),
+    ("Run log", "run_log"),
+    ("Save",    "save"),
+    ("Rate",    "rate"),
+    ("Export",  "export"),
 ]
-# Inner width: longest label + 2 padding cells on each side.
-_HISTORY_MENU_INNER_W = max(len(lbl) for lbl, _ in _HISTORY_MENU_ROWS if lbl) + 4
-# Total height: top border + rows + bottom border.
-_HISTORY_MENU_HEIGHT  = len(_HISTORY_MENU_ROWS) + 2
+# Button column width: longest label + 1 cell of padding on each side.
+_HISTORY_BUTTON_W = max(len(lbl) for lbl, _ in _HISTORY_BUTTONS) + 2
+# 2-cell gap between the table's scrollbar column and the buttons.
+_HISTORY_OPTIONS_GAP = 2
 
 
 def _history_table_panel_w():
     """Total width of the table content (column widths + per-gap separators)."""
     _, total = _history_table_columns_layout()
     return total
+
+
+def _history_package_width():
+    """Width of the centred [table | scrollbar | gap | options] package."""
+    # scrollbar(1) + gap(_HISTORY_OPTIONS_GAP) + button column(_HISTORY_BUTTON_W).
+    return _history_table_panel_w() + 1 + _HISTORY_OPTIONS_GAP + _HISTORY_BUTTON_W
+
+
+def _history_left_pad():
+    """Left padding (cells) that centres the package on the current terminal."""
+    return max(0, (_term_cols() - _history_package_width()) // 2)
 
 
 def _enter_history_frame():
@@ -1496,6 +1516,7 @@ def _enter_history_frame():
         0, _history_table_visible(), _history_table_visible(),
     )
     _history_refresh_sessions()
+    _history_clear_feedback()
     enabled = _history_menu_enabled_indices()
     _history_menu_cursor = enabled[0] if enabled else 0
     _push_frame("history")
@@ -1510,10 +1531,10 @@ def _history_table_visible():
     """Visible data rows in the table.
 
     Body height minus the fixed-height neighbours that stack vertically:
-    filter header (1) + pill row (1) + blank (1) + blank (1) + menu (8) = 12,
-    and one more for the table's own header row."""
+    filter header (1) + pill row (1) + blank above table (1) + feedback row
+    below table (1) = 4, and one more for the table's own header row."""
     body = _history_body_rows()
-    return max(1, body - 12 - 1)
+    return max(1, body - 4 - 1)
 
 
 def _history_table_window_h():
@@ -1860,16 +1881,20 @@ def _history_current_summary():
 
 
 def _history_menu_actions():
-    """Return [(label, action_id, enabled), ...] for the current selection."""
+    """Return [(label, action_id, enabled), ...] for the current selection.
+
+    Order matches _HISTORY_BUTTONS so cursor indices line up. Run log is
+    always disabled in v1; wire it to the log-player frame in a follow-up.
+    The existing log-player entry points live alongside the WATCH LOG button
+    on history_detail — see _hd_watch_log_handler / _kb_hd_watch_log."""
     summary = _history_current_summary()
     has = summary is not None
     return [
-        ("Save",       "save",       has and not summary.saved),
-        ("Rate",       "rate",       has),
-        ("Statistics", "statistics", has),
-        ("Watch log",  "watch_log",  has and bool(summary.has_log)),
-        (None,         None,         False),
-        ("Back",       "back",       True),
+        ("Stats",   "statistics", has),
+        ("Run log", "run_log",    False),
+        ("Save",    "save",       has and not summary.saved),
+        ("Rate",    "rate",       has),
+        ("Export",  "export",     has and bool(summary.has_log)),
     ]
 
 
@@ -1878,7 +1903,7 @@ def _history_menu_enabled_indices():
 
 
 def _history_menu_move(delta):
-    """Move menu cursor through enabled rows. Wraps."""
+    """Move Options cursor through enabled buttons. Wraps."""
     global _history_menu_cursor
     enabled = _history_menu_enabled_indices()
     if not enabled:
@@ -1887,7 +1912,6 @@ def _history_menu_move(delta):
         idx = enabled.index(_history_menu_cursor)
         new_idx = (idx + delta) % len(enabled)
     else:
-        # Cursor on disabled / blank row — pick nearest enabled in the move direction.
         if delta >= 0:
             new_idx = next((j for j, ei in enumerate(enabled)
                             if ei > _history_menu_cursor), 0)
@@ -1901,11 +1925,11 @@ def _history_menu_move(delta):
 
 
 def _history_menu_activate(idx):
-    """Run the action for menu row `idx` if enabled."""
+    """Run the action for Options button `idx` if enabled."""
     actions = _history_menu_actions()
     if not (0 <= idx < len(actions)):
         return
-    label, action, enabled = actions[idx]
+    _label, action, enabled = actions[idx]
     if not enabled:
         return
     if action == "save":
@@ -1914,10 +1938,9 @@ def _history_menu_activate(idx):
         _history_action_rate()
     elif action == "statistics":
         _history_action_statistics()
-    elif action == "watch_log":
-        _history_action_watch_log()
-    elif action == "back":
-        _pop_frame()
+    elif action == "export":
+        _history_action_export()
+    # "run_log" stays a no-op (parked, see _history_menu_actions docstring).
 
 
 def _history_action_save():
@@ -1945,11 +1968,93 @@ def _history_action_statistics():
     _history_open_detail_for(summary)
 
 
-def _history_action_watch_log():
-    # Phase 3 placeholder. The Watch log entry is grey when has_log is False;
-    # when enabled, activation is intentionally a no-op until the launcher
-    # log player is wired in here. See docs/launcher.md "log_view frame".
-    pass
+# --- Export action ---------------------------------------------------------
+_HISTORY_ANSI_SGR_RE = re.compile(r"\x1b\[[0-9;]*m")
+_HISTORY_LOG_LINE_RE = re.compile(r"^\d+\s")
+
+
+def _history_export_clean_line(line):
+    """Strip the `\\d+ ` timestamp prefix, leading `> ` outbound marker, and
+    any ANSI SGR escapes. Returns the cleaned line without a trailing
+    newline."""
+    line = line.rstrip("\n")
+    line = _HISTORY_LOG_LINE_RE.sub("", line, count=1)
+    if line.startswith("> "):
+        line = line[2:]
+    return _HISTORY_ANSI_SGR_RE.sub("", line)
+
+
+def _history_export_dest_path(character, first_run_id):
+    home = os.path.expanduser("~")
+    base = f"mume-{character}-{first_run_id}"
+    candidate = os.path.join(home, base + ".txt")
+    suffix = 2
+    while os.path.exists(candidate):
+        candidate = os.path.join(home, f"{base}-{suffix}.txt")
+        suffix += 1
+    return candidate
+
+
+def _history_action_export():
+    """Concatenate all .log files for the cursor session's chain, strip
+    timestamp/outbound/ANSI noise, and write to ~/mume-<char>-<first>.txt."""
+    summary = _history_current_summary()
+    if summary is None or not summary.has_log:
+        return
+    if not summary.run_ids:
+        return
+    char_dir = os.path.join(PROJECT_DIR, "data", "runs", summary.character)
+    dest = _history_export_dest_path(summary.character, summary.run_ids[0])
+    try:
+        with open(dest, "w", encoding="utf-8") as out:
+            first_chunk = True
+            for run_id in summary.run_ids:
+                log_path = os.path.join(char_dir, run_id + ".log")
+                if not os.path.exists(log_path):
+                    continue
+                if not first_chunk:
+                    out.write("\n")
+                first_chunk = False
+                with open(log_path, "r", encoding="utf-8", errors="replace") as f:
+                    for raw in f:
+                        out.write(_history_export_clean_line(raw) + "\n")
+    except OSError as exc:
+        _history_set_feedback(f"Export failed: {exc.strerror or exc}", C_HINT)
+        return
+    home = os.path.expanduser("~")
+    pretty = dest
+    if dest.startswith(home + os.sep):
+        pretty = "~" + dest[len(home):]
+    _history_set_feedback(f"Saved to {pretty}", C_ACCENT)
+
+
+def _history_set_feedback(text, style, ttl_seconds=3.0):
+    """Flash an inline feedback message below the Options widget."""
+    global _history_feedback_text, _history_feedback_style
+    global _history_feedback_handle
+    _history_feedback_text  = text
+    _history_feedback_style = style
+    if _history_feedback_handle is not None:
+        try:
+            _history_feedback_handle.cancel()
+        except Exception:
+            pass
+        _history_feedback_handle = None
+    if _app_loop is not None:
+        _history_feedback_handle = _app_loop.call_later(
+            ttl_seconds, _history_clear_feedback)
+    if _app:
+        _app.invalidate()
+
+
+def _history_clear_feedback():
+    global _history_feedback_text, _history_feedback_style
+    global _history_feedback_handle
+    _history_feedback_text  = None
+    _history_feedback_style = ""
+    _history_feedback_handle = None
+    if _app:
+        _app.invalidate()
 
 
 # --- Title / footer text ---------------------------------------------------
@@ -1976,24 +2081,20 @@ def _history_footer_text():
 
 # --- Filter row (header + pills) ------------------------------------------
 def _history_filter_header_text():
-    cols = _term_cols()
+    pad_left = _history_left_pad()
     label = "Filter"
     style = C_ACTIVE if _history_focused == 0 else C_SECTION
     return _hover_clear_frags([
-        ("", _pad_centre(label, cols)),
+        ("", " " * pad_left),
         (style, label),
     ])
 
 
 def _history_filter_pills_text():
-    cols  = _term_cols()
     items = _history_filter_items
     if not items:
         return [("", "")]
-    # Each pill is "  <label>  ", joined by a 2-space separator.
-    pill_widths = [len(it) + 4 for it in items]
-    total_w = sum(pill_widths) + 2 * (len(items) - 1)
-    pad_left = max(0, (cols - total_w) // 2)
+    pad_left = _history_left_pad()
 
     hover_panel, hover_row = _history_hover
     frags = [("", " " * pad_left, _hover_at(None, None))]
@@ -2015,10 +2116,9 @@ def _history_filter_pills_text():
                 return None
             return NotImplemented
 
-        pill_text = "  " + label + "  "
+        # Pills are adjacent — leading + trailing single space of padding.
+        pill_text = " " + label + " "
         frags.append((style, pill_text, _hover_at(0, i, on_event=_click)))
-        if i < len(items) - 1:
-            frags.append(("", "  ", _hover_at(None, None)))
     return frags
 
 
@@ -2177,77 +2277,81 @@ def _history_table_scrollbar_text():
     return _hover_clear_frags(frags)
 
 
-# --- Action menu render ----------------------------------------------------
-def _history_menu_text():
-    cols    = _term_cols()
-    inner_w = _HISTORY_MENU_INNER_W
-    outer_w = inner_w + 2
-    pad_left = max(0, (cols - outer_w) // 2)
-
+# --- Options widget render (right side of the runs table) ------------------
+def _history_options_text():
+    """Render the Options column: 'Options' header + 5 flat buttons stacked
+    with no inter-button gap. Trailing blanks pad the column down to the
+    table_row height so the VSplit cell is opaque."""
+    inner_w = _HISTORY_BUTTON_W
     actions = _history_menu_actions()
-    menu_focused = (_history_focused == 2)
-    border_style = C_ACTIVE if menu_focused else C_SECTION
+    options_focused = (_history_focused == 2)
+    header_style = C_ACTIVE if options_focused else C_SECTION
     hover_panel, hover_row = _history_hover
     clear_hover = _hover_at(None, None)
 
-    def _border_handler():
-        return _hover_at(None, None, on_event=lambda ev: (
-            _history_set_focus(2) or None
-        ) if ev.event_type == MouseEventType.MOUSE_DOWN else NotImplemented)
-
     frags = []
 
-    # Top border.
-    frags.append(("", " " * pad_left, clear_hover))
-    frags.append((border_style, "┌" + "─" * inner_w + "┐", _border_handler()))
+    # Header — "Options" centred within the button-column width.
+    header_label = "Options"
+    pad_l = max(0, (inner_w - len(header_label)) // 2)
+    pad_r = max(0, inner_w - len(header_label) - pad_l)
+    frags.append(("", " " * pad_l, clear_hover))
+    frags.append((header_style, header_label, clear_hover))
+    frags.append(("", " " * pad_r, clear_hover))
     frags.append(("", "\n", clear_hover))
 
-    # Item rows.
-    for i, (label, action, enabled) in enumerate(actions):
-        frags.append(("", " " * pad_left, clear_hover))
-        frags.append((border_style, "│", _border_handler()))
-
-        if label is None:
-            # In-box blank row — clears hover, no click handler.
-            frags.append(("", " " * inner_w, clear_hover))
+    # Buttons — fixed-width, flat backgrounds, no inter-button gap.
+    for i, (label, _action, enabled) in enumerate(actions):
+        is_cursor = (i == _history_menu_cursor)
+        is_hover  = (hover_panel == 2 and hover_row == i and enabled
+                     and not is_cursor)
+        if not enabled:
+            style = C_BUTTON_DISABLED
+        elif is_cursor:
+            style = C_SELECTED
+        elif is_hover:
+            style = C_BUTTON_HOVER
         else:
-            is_cursor = (i == _history_menu_cursor)
-            is_hover  = (hover_panel == 2 and hover_row == i and enabled
-                         and not is_cursor)
-            if not enabled:
-                style = C_HINT
-            elif is_cursor:
-                style = C_SELECTED
-            elif is_hover:
-                style = C_HOVER
-            else:
-                style = C_ITEM
+            style = C_BUTTON
 
-            # Centre label within inner_w cells.
-            pad_l = (inner_w - len(label)) // 2
-            pad_r = inner_w - len(label) - pad_l
-            cell_text = " " * pad_l + label + " " * pad_r
+        pad_l = max(0, (inner_w - len(label)) // 2)
+        pad_r = max(0, inner_w - len(label) - pad_l)
+        cell_text = " " * pad_l + label + " " * pad_r
 
-            if enabled:
-                def _click(ev, idx=i):
-                    if ev.event_type == MouseEventType.MOUSE_DOWN:
-                        _history_set_focus(2)
-                        global _history_menu_cursor
-                        _history_menu_cursor = idx
-                        _history_menu_activate(idx)
-                        return None
-                    return NotImplemented
-                frags.append((style, cell_text, _hover_at(2, i, on_event=_click)))
-            else:
-                # Disabled rows: no hover, no click.
-                frags.append((style, cell_text, clear_hover))
-
-        frags.append((border_style, "│", _border_handler()))
+        if enabled:
+            def _click(ev, idx=i):
+                if ev.event_type == MouseEventType.MOUSE_DOWN:
+                    _history_set_focus(2)
+                    global _history_menu_cursor
+                    _history_menu_cursor = idx
+                    _history_menu_activate(idx)
+                    return None
+                return NotImplemented
+            frags.append((style, cell_text, _hover_at(2, i, on_event=_click)))
+        else:
+            frags.append((style, cell_text, clear_hover))
         frags.append(("", "\n", clear_hover))
 
-    # Bottom border.
-    frags.append(("", " " * pad_left, clear_hover))
-    frags.append((border_style, "└" + "─" * inner_w + "┘", _border_handler()))
+    # Pad trailing blank lines so the column fills the table_row height.
+    # _history_table_window_h() = visible + 1 (header row). The widget body
+    # already used 1 (header) + len(actions) lines.
+    used = 1 + len(actions)
+    blanks = max(0, _history_table_window_h() - used)
+    for r in range(blanks):
+        frags.append(("", " " * inner_w, clear_hover))
+        if r < blanks - 1:
+            frags.append(("", "\n", clear_hover))
+    return frags
+
+
+def _history_feedback_text_fn():
+    """Inline feedback line below the Options widget. Always renders a single
+    line; empty payload when no feedback is flashing."""
+    pad_left = _history_left_pad() + _history_table_panel_w() + 1 + _HISTORY_OPTIONS_GAP
+    clear_hover = _hover_at(None, None)
+    frags = [("", " " * pad_left, clear_hover)]
+    if _history_feedback_text:
+        frags.append((_history_feedback_style, _history_feedback_text, clear_hover))
     return frags
 
 
@@ -4877,8 +4981,8 @@ def _build_scrolling(title_fn, content_fn, footer_fn):
 
 def _build_history():
     """Build the History frame:
-        title · filter header · pill row · blank · table row · blank · menu · footer.
-    Returns the three focusable windows (filter / table / menu) plus the frame."""
+        title · filter header · pill row · blank · [table + options] · feedback · footer.
+    Returns the three focusable windows (filter / table / options) plus the frame."""
     title  = Window(content=FormattedTextControl(text=_history_title_text, focusable=False),
                     height=3, wrap_lines=False, always_hide_cursor=True)
     footer = Window(content=FormattedTextControl(text=_history_footer_text, focusable=False),
@@ -4911,14 +5015,15 @@ def _build_history():
         content=FormattedTextControl(text=_make_filler_text(1), focusable=False),
         height=1, wrap_lines=False, always_hide_cursor=True,
     )
-    blank_below_table = Window(
-        content=FormattedTextControl(text=_make_filler_text(1), focusable=False),
-        height=1, wrap_lines=False, always_hide_cursor=True,
-    )
 
-    # Table row — VSplit with flex spacers on either side to centre the
-    # table block + scrollbar horizontally. Table window height matches
-    # _history_table_visible() + 1 (header row) so the math is deterministic.
+    # Centred package: [left_spacer | table | scrollbar | gap | options | right_spacer]
+    # Width contract:
+    #   table_left_spacer = _history_left_pad()
+    #   table_win         = _history_table_panel_w()
+    #   table_sb_win      = 1
+    #   gap_win           = _HISTORY_OPTIONS_GAP
+    #   options_win       = _HISTORY_BUTTON_W
+    #   table_right_spacer = remainder (flex)
     table_win = Window(
         content=_HistScrollControl(text=_history_table_text, focusable=True, panel=1),
         wrap_lines=False, always_hide_cursor=True,
@@ -4934,6 +5039,19 @@ def _build_history():
             text=_make_filler_text(1, rows_fn=_history_table_window_h),
             focusable=False),
         wrap_lines=False, always_hide_cursor=True,
+        width=lambda: Dimension.exact(_history_left_pad()),
+    )
+    gap_win = Window(
+        content=FormattedTextControl(
+            text=_make_filler_text(1, rows_fn=_history_table_window_h),
+            focusable=False),
+        wrap_lines=False, always_hide_cursor=True,
+        width=Dimension.exact(_HISTORY_OPTIONS_GAP),
+    )
+    options_win = Window(
+        content=FormattedTextControl(text=_history_options_text, focusable=True),
+        wrap_lines=False, always_hide_cursor=True,
+        width=Dimension.exact(_HISTORY_BUTTON_W),
     )
     table_right_spacer = Window(
         content=FormattedTextControl(
@@ -4942,13 +5060,15 @@ def _build_history():
         wrap_lines=False, always_hide_cursor=True,
     )
     table_row = VSplit(
-        [table_left_spacer, table_win, table_sb_win, table_right_spacer],
+        [table_left_spacer, table_win, table_sb_win, gap_win, options_win,
+         table_right_spacer],
         height=lambda: Dimension.exact(_history_table_window_h()),
     )
 
-    menu_win = Window(
-        content=FormattedTextControl(text=_history_menu_text, focusable=True),
-        height=_HISTORY_MENU_HEIGHT, wrap_lines=False, always_hide_cursor=True,
+    # Feedback line — sits directly below the Options column, same left edge.
+    feedback_win = Window(
+        content=FormattedTextControl(text=_history_feedback_text_fn, focusable=False),
+        height=1, wrap_lines=False, always_hide_cursor=True,
     )
 
     body = HSplit([
@@ -4956,10 +5076,9 @@ def _build_history():
         filter_pills_win,
         blank_above_table,
         table_row,
-        blank_below_table,
-        menu_win,
+        feedback_win,
     ])
-    return (filter_pills_win, table_win, menu_win,
+    return (filter_pills_win, table_win, options_win,
             HSplit([title, body, footer]))
 
 
@@ -4984,7 +5103,7 @@ def main():
     global _options_window, _scripts_window, _about_window
     global _update_running_window, _update_result_window
     global _exit_confirm_window, _too_small_window
-    global _history_filter_window, _history_table_window, _history_menu_window
+    global _history_filter_window, _history_table_window, _history_options_window
     global _history_detail_window, _history_rate_window
     global _log_view_window
 
@@ -5018,7 +5137,7 @@ def main():
     _update_result_window,         update_result_frame       = _build_simple(_update_result_text)
     _exit_confirm_window,          exit_confirm_frame        = _build_simple(_exit_confirm_text)
     _too_small_window,             too_small_frame           = _build_simple(_too_small_text)
-    (_history_filter_window, _history_table_window, _history_menu_window,
+    (_history_filter_window, _history_table_window, _history_options_window,
      history_frame) = _build_history()
     _history_detail_window = Window(
         content=_HDScrollControl(text=_history_detail_text, focusable=True),
