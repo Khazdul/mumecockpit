@@ -25,8 +25,8 @@ import shutil
 import signal
 import subprocess
 import sys
-import time
 
+import run_meta
 import run_stats
 from widgets.scrollbar import Scrollbar
 
@@ -95,13 +95,14 @@ _sel_main         = 0
 _sel_options      = 0
 _options_scroll   = 0
 _scripts_scroll   = 0
-_save_flash_until = 0.0
+_rate_session_rating = 0        # 0..5; reset on every push of the rate_session frame
 _app                 = None
 _main_window         = None     # set in main(); referenced for focus
 _options_window      = None     # set in main(); referenced for render_info / focus
 _scripts_window      = None     # set in main(); referenced for render_info / focus
 _statistics_window   = None     # set in main(); referenced for focus
 _exit_confirm_window = None     # set in main(); referenced for focus
+_rate_session_window = None     # set in main(); referenced for focus
 _stats_data       = None        # cached run_stats.RunStats for statistics frame
 _stats_status     = None        # cached status.state dict (xp_progress source)
 _stats_char       = None        # character name driving the statistics view
@@ -269,6 +270,7 @@ def _focus_current_frame():
         "scripts":      _scripts_window,
         "statistics":   _statistics_window,
         "exit_confirm": _exit_confirm_window,
+        "rate_session": _rate_session_window,
     }.get(_current_frame)
     if win is None:
         return
@@ -337,37 +339,69 @@ def _pad_centre(text, cols=None):
 # ---------------------------------------------------------------------------
 # Main frame
 # ---------------------------------------------------------------------------
+def _save_session_state():
+    """Return (rating, character, run_id) when the active run is already
+    saved, else (None, character, run_id_or_None). character is None when
+    no active run is being tracked — i.e. the row should not appear."""
+    char = _statistics_character()
+    if char is None:
+        return None, None, None
+    run_id = run_stats.current_run_id_for(char)
+    if run_id is None:
+        return None, char, None
+    if not run_meta.is_saved(char, run_id):
+        return None, char, run_id
+    meta   = run_meta.read_meta(char, run_id) or {}
+    rating = meta.get("rating", 0)
+    try:
+        rating = int(rating)
+    except (TypeError, ValueError):
+        rating = 0
+    return max(0, min(5, rating)), char, run_id
+
+
 def _main_items():
+    """Rows on the main frame.
+
+    Each entry is (label, action, kind, payload):
+      kind == "normal"  → selectable, normal handlers attached
+      kind == "saved"   → dead-grey, no handlers, payload is the rating int
+    """
     items = []
     if _is_connected():
-        items.append(("Continue", "continue"))
-    items.append(("Reconnect",    "reconnect"))
-    items.append(("Save profile", "save"))
-    if _statistics_character() is not None:
-        items.append(("Statistics", "statistics"))
-    items.append(("Options",      "options"))
-    items.append(("Scripts",      "scripts"))
-    items.append(("Exit session", "exit"))
+        items.append(("Continue", "continue", "normal", None))
+    items.append(("Reconnect", "reconnect", "normal", None))
+
+    rating, char, _ = _save_session_state()
+    if char is not None:
+        if rating is None:
+            items.append(("Save session", "save_session", "normal", None))
+        else:
+            items.append(("Save session", "save_session_dead", "saved", rating))
+        items.append(("Statistics", "statistics", "normal", None))
+
+    items.append(("Options",      "options",  "normal", None))
+    items.append(("Scripts",      "scripts",  "normal", None))
+    items.append(("Exit session", "exit",     "normal", None))
     return items
 
 
+def _main_selectable_indices():
+    return [i for i, t in enumerate(_main_items()) if t[2] != "saved"]
+
+
 def _activate_main_item(action):
-    global _save_flash_until, _scripts_scroll, _options_scroll, _sel_options
+    global _scripts_scroll, _options_scroll, _sel_options, _rate_session_rating
     if action == "continue":
         _app.exit()
     elif action == "reconnect":
         _send_to_game("reconnect")
         _app.exit()
-    elif action == "save":
-        _send_to_game("cp -s")
-        _save_flash_until = time.monotonic() + 1.0
-        if _app:
-            _app.invalidate()
-            try:
-                loop = asyncio.get_running_loop()
-                loop.call_later(1.05, _app.invalidate)
-            except RuntimeError:
-                pass
+    elif action == "save_session":
+        _rate_session_rating = 0
+        _push_frame("rate_session")
+    elif action == "save_session_dead":
+        pass  # dead row; defensive no-op (keyboard nav already skips it)
     elif action == "options":
         _options_scroll = 0
         _sel_options = 0
@@ -385,23 +419,8 @@ def _activate_main_item(action):
         _push_frame("exit_confirm")
 
 
-def _main_text():
-    cols  = _term_cols()
-    frags = []
-
-    # ASCII title
-    frags.append(("", "\n"))
-    for line in _MUME_LINES:
-        frags.append(("", _pad_centre(line, cols)))
-        frags.append((C_TITLE, line))
-        frags.append(("", "\n"))
-    for line in _COCKPIT_LINES:
-        frags.append(("", _pad_centre(line, cols)))
-        frags.append((C_TITLE, line))
-        frags.append(("", "\n"))
-    frags.append(("", "\n"))
-
-    # Status header
+def _append_status_header(frags, cols):
+    """Centred Profile · Mode · Link line. Same form on main and rate_session."""
     conf = _parse_keyval(STARTUP_CONF_PATH)
     profile    = conf.get("profile") or "default"
     conn_mode  = conf.get("connection_mode") or "mmapper"
@@ -439,6 +458,25 @@ def _main_text():
             frags.append((C_BODY, " ("))
             frags.append((q_style, quality))
             frags.append((C_BODY, ")"))
+
+
+def _main_text():
+    cols  = _term_cols()
+    frags = []
+
+    # ASCII title
+    frags.append(("", "\n"))
+    for line in _MUME_LINES:
+        frags.append(("", _pad_centre(line, cols)))
+        frags.append((C_TITLE, line))
+        frags.append(("", "\n"))
+    for line in _COCKPIT_LINES:
+        frags.append(("", _pad_centre(line, cols)))
+        frags.append((C_TITLE, line))
+        frags.append(("", "\n"))
+    frags.append(("", "\n"))
+
+    _append_status_header(frags, cols)
     frags.append(("", "\n\n"))
 
     # Menu rows
@@ -446,21 +484,36 @@ def _main_text():
     sel_idx = _sel_main
     if sel_idx >= len(items):
         sel_idx = len(items) - 1
-    flash_active = time.monotonic() < _save_flash_until
 
-    for i, (label, action) in enumerate(items):
+    for i, (label, action, kind, payload) in enumerate(items):
+        if kind == "saved":
+            # Dead-grey one-shot row: "Save session  ★★★★★" with the first
+            # `payload` stars in gold, remainder in grey. No handlers (clicks
+            # and Enter are no-ops; keyboard navigation skips this index).
+            rating = int(payload) if isinstance(payload, int) else 0
+            rating = max(0, min(5, rating))
+            prefix = "   "
+            suffix = "   "
+            stars  = "★" * 5
+            full   = f"{prefix}{label}  {stars}{suffix}"
+            frags.append(("", _pad_centre(full, cols)))
+            frags.append((C_HINT, prefix))
+            frags.append((C_HINT, label + "  "))
+            if rating > 0:
+                frags.append((_S_STAR, "★" * rating))
+            if rating < 5:
+                frags.append((C_HINT, "★" * (5 - rating)))
+            frags.append((C_HINT, suffix))
+            frags.append(("", "\n"))
+            continue
+
         is_active = (i == sel_idx)
         is_hover  = (i == _hover_main)
-        if action == "save" and flash_active:
-            # Save-success flash wins over hover so the C_ACCENT pulse is visible.
-            display = "Saved ✓"
-            style   = C_ACCENT
-        else:
-            display = label
-            style   = _row_style(is_active, is_hover)
-        prefix = "<< " if is_active else "   "
-        suffix = " >>" if is_active else "   "
-        full   = f"{prefix}{display}{suffix}"
+        display = label
+        style   = _row_style(is_active, is_hover)
+        prefix  = "<< " if is_active else "   "
+        suffix  = " >>" if is_active else "   "
+        full    = f"{prefix}{display}{suffix}"
 
         def _make_handler(idx=i, act=action):
             def _handler(ev):
@@ -732,6 +785,74 @@ def _exit_confirm_text():
         ("", _pad_centre(hint, cols)),
         (C_HINT, hint),
     ]
+
+
+# ---------------------------------------------------------------------------
+# Rate-session frame (popup "Save session" → 0..5 star rating + save)
+# ---------------------------------------------------------------------------
+def _rate_session_text():
+    cols  = _term_cols()
+    frags = []
+
+    frags.append(("", "\n\n"))
+    _append_status_header(frags, cols)
+    frags.append(("", "\n\n"))
+
+    title = "─── Rate the session ───"
+    frags.append(("", _pad_centre(title, cols)))
+    frags.append((C_TITLE, title))
+    frags.append(("", "\n\n"))
+
+    # Star row: ★ ★ ★ ★ ★ (single-space separators). First `rating` stars
+    # paint in gold (_S_STAR), the rest in dim grey (C_HINT). Visual width
+    # is 9 cells: 5 stars + 4 spaces.
+    rating = max(0, min(5, _rate_session_rating))
+    frags.append(("", _pad_centre("★ ★ ★ ★ ★", cols)))
+    for i in range(5):
+        if i > 0:
+            frags.append(("", " "))
+        style = _S_STAR if i < rating else C_HINT
+
+        def _make_star_handler(val=i + 1):
+            def _h(ev):
+                if ev.event_type != MouseEventType.MOUSE_DOWN:
+                    return
+                global _rate_session_rating
+                _rate_session_rating = val
+                if _app:
+                    _app.invalidate()
+            return _h
+
+        frags.append((style, "★", _make_star_handler()))
+    frags.append(("", "\n\n"))
+
+    footer = "0-5 Set · ← → Adjust · Enter Save · ESC Cancel"
+    frags.append(("", _pad_centre(footer, cols)))
+    frags.append((C_HINT, footer))
+
+    return frags
+
+
+def _rate_session_save():
+    global _sel_main
+    char = _statistics_character()
+    if char is None:
+        _pop_frame()
+        return
+    run_id = run_stats.current_run_id_for(char)
+    if run_id is None:
+        _pop_frame()
+        return
+    chain = run_stats.previous_run_chain(char, run_id)
+    run_meta.save_run_chain(char, chain, _rate_session_rating)
+    # The row at _sel_main just turned into the dead "saved" row. Move
+    # the cursor to the next selectable index so the <<>> decoration
+    # doesn't vanish silently on the post-pop main frame.
+    sel = _main_selectable_indices()
+    if _sel_main not in sel:
+        forward = [i for i in sel if i > _sel_main]
+        _sel_main = forward[0] if forward else (sel[0] if sel else 0)
+    _pop_frame()
 
 
 # ---------------------------------------------------------------------------
@@ -1728,24 +1849,31 @@ kb = KeyBindings()
 @kb.add("up", filter=_in_frame("main"))
 def _main_up(event):
     global _sel_main
-    n = len(_main_items())
-    if n:
-        _sel_main = (_sel_main - 1) % n
+    sel = _main_selectable_indices()
+    if not sel:
+        return
+    pos = sel.index(_sel_main) if _sel_main in sel else 0
+    _sel_main = sel[(pos - 1) % len(sel)]
 
 
 @kb.add("down", filter=_in_frame("main"))
 def _main_down(event):
     global _sel_main
-    n = len(_main_items())
-    if n:
-        _sel_main = (_sel_main + 1) % n
+    sel = _main_selectable_indices()
+    if not sel:
+        return
+    pos = sel.index(_sel_main) if _sel_main in sel else 0
+    _sel_main = sel[(pos + 1) % len(sel)]
 
 
 @kb.add("enter", filter=_in_frame("main"))
 @kb.add(" ",     filter=_in_frame("main"))
 def _main_select(event):
     items = _main_items()
-    idx   = _sel_main if _sel_main < len(items) else len(items) - 1
+    sel   = _main_selectable_indices()
+    if not sel:
+        return
+    idx = _sel_main if _sel_main in sel else sel[0]
     if 0 <= idx < len(items):
         _activate_main_item(items[idx][1])
 
@@ -1870,6 +1998,46 @@ def _stat_stab(event):
     _stats_focused = (_stats_focused - 1) % 4
     if _app:
         _app.invalidate()
+
+
+# Rate-session frame
+for _n in range(6):
+    def _make_rs_digit(val=_n):
+        def _h(event):
+            global _rate_session_rating
+            _rate_session_rating = val
+            if _app:
+                _app.invalidate()
+        return _h
+    kb.add(str(_n), filter=_in_frame("rate_session"))(_make_rs_digit())
+del _n
+
+
+@kb.add("left", filter=_in_frame("rate_session"))
+def _rs_left(event):
+    global _rate_session_rating
+    _rate_session_rating = max(0, _rate_session_rating - 1)
+    if _app:
+        _app.invalidate()
+
+
+@kb.add("right", filter=_in_frame("rate_session"))
+def _rs_right(event):
+    global _rate_session_rating
+    _rate_session_rating = min(5, _rate_session_rating + 1)
+    if _app:
+        _app.invalidate()
+
+
+@kb.add("enter", filter=_in_frame("rate_session"))
+@kb.add(" ",     filter=_in_frame("rate_session"))
+def _rs_save(event):
+    _rate_session_save()
+
+
+@kb.add("escape", filter=_in_frame("rate_session"), eager=True)
+def _rs_escape(event):
+    _pop_frame()
 
 
 # Exit-confirm frame
@@ -2025,6 +2193,16 @@ def _build_statistics_container():
     return _statistics_window
 
 
+def _build_rate_session_container():
+    global _rate_session_window
+    _rate_session_window = Window(
+        content=FormattedTextControl(text=_rate_session_text, focusable=True),
+        wrap_lines=False,
+        always_hide_cursor=True,
+    )
+    return _rate_session_window
+
+
 async def _tick(app):
     try:
         while True:
@@ -2049,6 +2227,7 @@ def main():
         "scripts":      _build_scripts_container(),
         "statistics":   _build_statistics_container(),
         "exit_confirm": _build_exit_confirm_container(),
+        "rate_session": _build_rate_session_container(),
     }
 
     root   = DynamicContainer(lambda: frames[_current_frame])

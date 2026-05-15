@@ -104,7 +104,7 @@ button — both parked.
 ## Statistics frame
 
 A read-only view of the current run, opened from a "Statistics" row on the
-main frame. The row sits between **Save profile** and **Options** and is
+main frame. The row sits between **Save session** and **Options** and is
 gated on two conditions, re-checked on every render of `_main_items()`:
 
 1. `bridge/runtime/status.state` exists, parses as JSON, and contains a
@@ -271,21 +271,77 @@ The aggregation library backing this frame lives at
 run-browser. See [ADR 0065](decisions/0065-run-stats-python-aggregator.md)
 for the rationale.
 
-## Save profile (`cp -s`)
+## Save session
 
-The "Save profile" row is always visible — save works even after link loss,
-since tt++ keeps the disconnected session alive. Selecting it triggers
-`cp -s` via `tmux send-keys`; an inline "Saved ✓" flashes in `C_ACCENT`
-for ~1 s (a `loop.call_later` re-invalidates the app at the end of the
-flash window).
+A "Save session" row sits above Statistics on the main frame, gated on the
+same `_statistics_character()` check as the Statistics row: it appears
+only while an active run is being tracked (`status.state` names a
+character and `data/runs/<character>/current.jsonl` exists). When no
+active run is being tracked the row is not emitted at all.
 
-`cp -s` runs `#class {$_profile} {write} {ttpp/profiles/$_profile.tin}`
-inside the profile's tt++ session via a `#gts { #$_profile { ... } }`
-wrapper. Uses `$_profile` (stable, set once at tt++ startup from
-`startup.conf`) rather than `$game_session` (cleared on disconnect) so
-save works after link loss as well as during a live connection. Success
-and error messages are routed to the UI pane via `#lua {system_ui(...)}`
-and `#lua {ui_err(...)}` respectively, not `#showme` to the game pane.
+The row is one-shot per active run and has two visual states, decided on
+every render from the meta sidecar:
+
+- **Not saved** — normal `C_ITEM` style, selectable; activation (Enter /
+  Space / click) pushes the `rate_session` frame.
+- **Saved** — dead-grey: the label `"Save session"` plus a 5-cell star
+  decoration (`★★★★★`) painted in two spans — gold (`_S_STAR`) for the
+  first `rating` stars, dim grey (`C_HINT`) for the rest. The entire row
+  paints in `C_HINT` (no `<<>>` decoration, no hover highlight); no
+  mouse handlers are attached, and keyboard navigation
+  (`_main_selectable_indices`) skips the index, so Enter and click are
+  both no-ops. The saved state is read fresh on each render from
+  `data/runs/<character>/<run-id>.meta.json` (`run_meta.is_saved`), so
+  closing and reopening the popup within the same run preserves the
+  dead state.
+
+### Rate-session frame
+
+Pushing the row presents `─── Rate the session ───` over the same
+Profile · Mode · Link status header used on the main frame, a centred
+row of five `★` glyphs (single-space separated; gold for the first
+`_rate_session_rating` stars, grey for the rest), and the footer
+`0-5 Set · ← → Adjust · Enter Save · ESC Cancel`. The frame follows
+the focus-on-push contract (ADR 0066): `_rate_session_window` is
+registered in `_focus_current_frame()` so per-star click handlers
+route correctly.
+
+`_rate_session_rating` resets to `0` on every push of the frame —
+unrated by default — so opening the rating screen never carries over
+a prior session's stars.
+
+Key bindings (filter: `_in_frame("rate_session")`):
+
+| Key      | Action                                                    |
+|----------|-----------------------------------------------------------|
+| `0`..`5` | Set `_rate_session_rating` to that value                  |
+| `Left`   | `rating = max(0, rating - 1)`                             |
+| `Right`  | `rating = min(5, rating + 1)`                             |
+| `Enter`  | Save and pop back to main                                 |
+| `Space`  | Save and pop back to main                                 |
+| `ESC`    | Pop back to main without saving                           |
+
+Mouse: clicking star N (1-indexed) sets the rating to N.
+
+### Chain save semantics
+
+Enter walks the stitched run chain via
+`run_stats.previous_run_chain(character, current_run_id)` (the
+[ADR 0056](decisions/0056-previous-run-id-linking.md) definition,
+default `max_gap_seconds=3600`) and calls
+`run_meta.save_run_chain(character, chain, rating)`, which writes one
+atomic `<run-id>.meta.json` sidecar per run in the chain — including
+the current (still-`current.jsonl`) run, whose meta uses its computed
+run-id. There is no on-screen confirmation flash or banner; the
+re-rendered main frame's dead-grey "Save session" row with the gold
+stars is the user-visible confirmation.
+
+The keyboard alias `cp -s` (profile save) is independent of the popup
+row and unchanged: it still runs
+`#class {$_profile} {write} {ttpp/profiles/$_profile.tin}` inside the
+profile's tt++ session and works after link loss. The popup's
+"Save session" is a separate concept — saving the *play session*'s
+run logs from the 14-day retention sweep, not saving the tt++ profile.
 
 ## Auto-open on disconnect
 

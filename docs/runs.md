@@ -500,13 +500,18 @@ data/runs/<character>/<run-id>.meta.json
   filename). This way no rename is needed when the JSONL is sealed.
 - **Atomic write.** Producers write to a temp file and `os.rename` into
   place to avoid partial-write reads from a concurrent retention sweep.
-- **Granularity.** One sidecar per run. A "Save session" action that
-  the popup will offer in a follow-up writes one sidecar per run in the
-  stitched chain (see [ADR 0056](decisions/0056-previous-run-id-linking.md)
-  for the chain definition).
+- **Granularity.** One sidecar per run. The popup's "Save session"
+  action writes one sidecar per run in the stitched chain — the
+  current run plus every linked predecessor — so a session split by
+  link loss preserves as a single unit. See
+  [docs/popup-menu.md](popup-menu.md#save-session) for the UX and
+  [ADR 0056](decisions/0056-previous-run-id-linking.md) for the chain
+  definition.
 
-Writing meta files is not yet wired in; the retention sweep below is
-the first reader.
+The writer lives at `bridge/launcher/run_meta.py`
+(`save_run_chain` / `is_saved` / `read_meta`); the popup invokes it
+on Enter in the rate-session frame, and the retention sweep below
+reads it.
 
 ## Retention
 

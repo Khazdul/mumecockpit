@@ -13,6 +13,7 @@ import json
 import os
 import time
 
+import run_meta
 from run_stats import _DATA_RUNS_DIR, _character_dir, _run_id_from_ts
 
 RETENTION_TTL_SECONDS = 14 * 86400
@@ -52,14 +53,14 @@ def prune_expired_runs(ttl_seconds: int = RETENTION_TTL_SECONDS,
         char_dir = _character_dir(name)
         if not os.path.isdir(char_dir):
             continue
-        _prune_character_dir(char_dir, cutoff)
+        _prune_character_dir(name, char_dir, cutoff)
 
 
 # ---------------------------------------------------------------------------
 # Per-character sweep
 # ---------------------------------------------------------------------------
 
-def _prune_character_dir(char_dir: str, cutoff: float) -> None:
+def _prune_character_dir(character: str, char_dir: str, cutoff: float) -> None:
     try:
         files = os.listdir(char_dir)
     except OSError:
@@ -88,12 +89,11 @@ def _prune_character_dir(char_dir: str, cutoff: float) -> None:
             continue
         if ts >= cutoff:
             continue
-        meta_path = os.path.join(char_dir, run_id + ".meta.json")
-        if _is_saved(meta_path):
+        if run_meta.is_saved(character, run_id):
             continue
         _safe_remove(os.path.join(char_dir, run_id + ".jsonl"))
         _safe_remove(os.path.join(char_dir, run_id + ".log"))
-        _safe_remove(meta_path)
+        _safe_remove(os.path.join(char_dir, run_id + ".meta.json"))
         surviving_jsonl.discard(run_id)
 
     # 2) Orphan meta cleanup — meta with no surviving .jsonl, excluding
@@ -135,17 +135,6 @@ def _run_id_to_epoch(run_id: str) -> float | None:
         return time.mktime(time.strptime(run_id, _RUN_ID_FMT))
     except (ValueError, OverflowError):
         return None
-
-
-def _is_saved(meta_path: str) -> bool:
-    try:
-        with open(meta_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-    except (OSError, ValueError):
-        return False
-    if not isinstance(data, dict):
-        return False
-    return data.get("saved") is True
 
 
 def _safe_remove(path: str) -> None:
