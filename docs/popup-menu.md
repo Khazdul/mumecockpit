@@ -216,18 +216,17 @@ on both positive progression (level-ups) and negative progression
 `xp_current` is missing or non-positive it falls back to
 `status["level"]` from `bridge/runtime/status.state`.
 
-When `stats.saved` is true, a right-aligned `Rating: <stars>` element
-sits on the same header row in `C_HEADER` (gold). The stars are
-exactly `stats.rating` `★` glyphs; a 0-rating saved run renders just
-`Rating:` with no trailing space or glyphs. The element is omitted
-entirely for unsaved runs. Layout: the centred title is emitted as
-before, the rating element is right-aligned at the popup-body's right
-edge, and a 2-column safety margin separates the two; if the
-terminal is too narrow to satisfy the margin, the rating element is
-dropped (title wins). `stats.saved` / `stats.rating` are read on every
-tick from the meta sidecar via `run_meta.read_meta(character,
-run_ids[-1])`, so saving the session while Statistics is open paints
-the Rating element on the next tick.
+When `stats.saved` is true and `stats.rating` is non-zero, the stars
+are appended to the header as the last `·`-separated field in
+`C_HEADER` (gold): `◆ STATISTICS — <char> · Lvl N · Run <duration> ·
+★★★`. The stars are exactly `stats.rating` `★` glyphs. Unsaved runs
+and 0-rating saved runs omit the trailing ` · ` and stars entirely —
+no `Rating:` label, no placeholder glyphs, no floating right-edge
+element. The whole header is a single left-padded centred line.
+`stats.saved` / `stats.rating` are read on every tick from the meta
+sidecar via `run_meta.read_meta(character, run_ids[-1])`, so saving
+the session while Statistics is open paints the stars on the next
+tick.
 
 Four tables, each with its own `Scrollbar` instance: KILLS (auto-fit,
 2 minimum), PvPs (same auto-fit count), ALLIES (3 fixed),
@@ -429,7 +428,8 @@ the current (still-`current.jsonl`) run, whose meta uses its computed
 run-id. There is no on-screen confirmation flash or banner; the
 re-rendered main frame's dead-grey "Save run" row is the
 user-visible confirmation. The chosen rating surfaces on the
-Statistics frame's header (`Rating: <stars>`, right-aligned).
+Statistics frame's header as an inline ` · <stars>` field at the end
+of the centred header line.
 
 The keyboard alias `cp -s` (profile save) is independent of the popup
 row and unchanged: it still runs

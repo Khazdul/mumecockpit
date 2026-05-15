@@ -588,10 +588,10 @@ def _options_title_text():
     cols  = _term_cols()
     title = "─── Options ───"
     return [
-        ("", "\n\n"),
+        ("", "\n"),
         ("", _pad_centre(title, cols)),
         (C_TITLE, title),
-        ("", "\n\n"),
+        ("", "\n"),
     ]
 
 
@@ -697,10 +697,10 @@ def _panes_title_text():
     cols  = _term_cols()
     title = "─── Panes ───"
     return [
-        ("", "\n\n"),
+        ("", "\n"),
         ("", _pad_centre(title, cols)),
         (C_TITLE, title),
-        ("", "\n\n"),
+        ("", "\n"),
     ]
 
 
@@ -884,10 +884,10 @@ def _pane_title_text():
     _target, label, _color_key = _current_pane_meta()
     title = f"─── {label} pane ───"
     return [
-        ("", "\n\n"),
+        ("", "\n"),
         ("", _pad_centre(title, cols)),
         (C_TITLE, title),
-        ("", "\n\n"),
+        ("", "\n"),
     ]
 
 
@@ -2054,25 +2054,23 @@ def _statistics_text():
         f"·  Lvl {cur_lv}  ·  Run {_fmt_duration(stats.duration_seconds)}"
     )
     suffix = " · Run ended" if _stats_run_ended else ""
-    title_for_centering = base_header + suffix
 
-    rating_text = ""
+    stars = ""
     if stats.saved and stats.rating is not None:
         r = max(0, min(5, stats.rating))
-        rating_text = "Rating:" if r == 0 else f"Rating: {'★' * r}"
+        if r > 0:
+            stars = "★" * r
 
-    left_pad = _pad_centre(title_for_centering, cols)
-    title_end_col = len(left_pad) + len(title_for_centering)
-    gap = cols - title_end_col - len(rating_text)
+    rating_sep  = " · " if stars else ""
+    title_for_centering = base_header + suffix + rating_sep + stars
 
     frags.append(("", "\n"))
-    frags.append(("", left_pad))
+    frags.append(("", _pad_centre(title_for_centering, cols)))
     frags.append((C_HEADER, base_header))
     if suffix:
         frags.append((_S_HINT, suffix))
-    if rating_text and gap >= 2:
-        frags.append(("", " " * gap))
-        frags.append((C_HEADER, rating_text))
+    if stars:
+        frags.append((C_HEADER, rating_sep + stars))
     frags.append(("", "\n\n"))
 
     _append_allies_achievements(frags, stats, cols)
@@ -2522,6 +2520,7 @@ def _build_options_container():
             get_max=_panes_max_scroll,
         ),
         wrap_lines=False,
+        always_hide_cursor=True,
         get_vertical_scroll=lambda w: min(_panes_scroll, _window_max_scroll(w)),
     )
     footer_window = Window(
@@ -2562,6 +2561,7 @@ def _build_panes_container():
             get_max=_panes_max_scroll,
         ),
         wrap_lines=False,
+        always_hide_cursor=True,
         get_vertical_scroll=lambda w: min(_panes_scroll, _window_max_scroll(w)),
     )
     footer_window = Window(
@@ -2602,6 +2602,7 @@ def _build_pane_container():
             get_max=_pane_max_scroll,
         ),
         wrap_lines=False,
+        always_hide_cursor=True,
         get_vertical_scroll=lambda w: min(_panes_scroll, _window_max_scroll(w)),
     )
     footer_window = Window(
@@ -2644,6 +2645,7 @@ def _build_scripts_container():
             get_max=_scripts_max_scroll,
         ),
         wrap_lines=False,
+        always_hide_cursor=True,
     )
     footer_window = Window(
         content=_ScrollControl(
@@ -2665,6 +2667,7 @@ def _build_exit_confirm_container():
     _exit_confirm_window = Window(
         content=FormattedTextControl(text=_exit_confirm_text, focusable=True),
         wrap_lines=False,
+        always_hide_cursor=True,
     )
     return _exit_confirm_window
 
