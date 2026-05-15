@@ -12,7 +12,7 @@ try:
     )
     from prompt_toolkit.layout.controls import FormattedTextControl
     from prompt_toolkit.layout.dimension import Dimension
-    from prompt_toolkit.mouse_events import MouseEventType
+    from prompt_toolkit.mouse_events import MouseButton, MouseEventType
     from prompt_toolkit.output import ColorDepth
 except ImportError:
     print("Error: prompt_toolkit is not installed.")
@@ -2985,19 +2985,19 @@ def _enter_log_view():
     _log_view_cols            = 0
     _log_view_lines           = None
     _log_view_event_rows      = None
-    _log_mode                 = "play"
+    # Start paused at event 0 with overlays visible so Space, the
+    # scrubber, and the buttons are discoverable on the first frame.
+    # Space begins playback.
+    _log_mode                 = "pause"
     _log_play_anchor_wall     = time.monotonic()
     _log_play_anchor_offset_us = 0
     _log_paused_offset_us     = 0
     _log_cursor_index         = 0
     _log_last_playhead_index  = -1
-    # Overlays start hidden so the first rendered frame is true
-    # fullscreen — user activity reveals them.
-    _log_overlays_visible     = False
+    _log_overlays_visible     = True
     _log_overlays_hide_at     = None
     _log_overlay_hover        = None
     _push_frame("log_view")
-    _log_start_tick_task()
 
 
 def _exit_log_view():
@@ -3390,40 +3390,46 @@ def _log_lines_to_fragments(sliced, sliced_start, cursor_idx):
 
 
 # --- Cursor / scroll movement (pause mode) --------------------------------
+def _log_set_cursor(new_index):
+    """Pause-mode cursor mutation. Clamps to [0, last_index] and snaps
+    `_log_paused_offset_us` to the cursor event's start time so the
+    scrubber thumb and the MM:SS / MM:SS elapsed display follow the
+    cursor on the same render pass."""
+    global _log_cursor_index, _log_paused_offset_us
+    pb = _log_view_playback
+    if pb is None or not pb.events:
+        return
+    n = len(pb.events)
+    clamped = max(0, min(n - 1, int(new_index)))
+    if clamped == _log_cursor_index:
+        return
+    _log_cursor_index     = clamped
+    _log_paused_offset_us = pb.playback_offset_us[clamped]
+    _log_ensure_cursor_visible()
+    _log_touch_overlays()
+    if _app:
+        _app.invalidate()
+
+
 def _log_move_cursor(delta):
     """Move cursor by `delta` events; auto-pauses if currently playing.
-    Clamps to [0, last_index] and keeps the cursor row in view."""
-    global _log_cursor_index
+    Routes through `_log_set_cursor` for clamping + scrubber/time sync."""
     pb = _log_view_playback
     if pb is None or not pb.events:
         return
     if _log_mode == "play":
         _log_pause()
-    n = len(pb.events)
-    new_idx = max(0, min(n - 1, _log_cursor_index + delta))
-    if new_idx == _log_cursor_index:
-        return
-    _log_cursor_index = new_idx
-    _log_ensure_cursor_visible()
-    if _app:
-        _app.invalidate()
+    _log_set_cursor(_log_cursor_index + delta)
 
 
 def _log_cursor_to(index):
-    global _log_cursor_index
+    """Move cursor to an absolute event index; auto-pauses if playing."""
     pb = _log_view_playback
     if pb is None or not pb.events:
         return
     if _log_mode == "play":
         _log_pause()
-    n = len(pb.events)
-    new_idx = max(0, min(n - 1, index))
-    if new_idx == _log_cursor_index:
-        return
-    _log_cursor_index = new_idx
-    _log_ensure_cursor_visible()
-    if _app:
-        _app.invalidate()
+    _log_set_cursor(index)
 
 
 class _LogViewControl(FormattedTextControl):
@@ -3643,14 +3649,18 @@ def _log_make_button_handler(name, on_click):
 
 
 def _log_make_scrubber_handler(cell_index, total_cells):
-    """Per-cell scrubber click handler. Falls back to a no-op when the
+    """Per-cell scrubber mouse handler. Treats MOUSE_DOWN and
+    MOUSE_MOVE-while-button-held (drag) as seek events using the same
+    cell→time mapping, so click and click-and-drag both scrub. Drag
+    works in both modes — pause moves the cursor through events,
+    play continues playing from the dragged offset. Release ends the
+    drag naturally (no MOUSE_DOWN, no held button). No-op when the
     chain has no duration (single-event log)."""
     def _h(ev):
-        if ev.event_type == MouseEventType.MOUSE_MOVE:
-            _log_set_overlay_hover(None)
-            _log_touch_overlays()
-            return
-        if ev.event_type == MouseEventType.MOUSE_DOWN:
+        t = ev.event_type
+        is_drag = (t == MouseEventType.MOUSE_MOVE
+                   and getattr(ev, "button", MouseButton.NONE) != MouseButton.NONE)
+        if t == MouseEventType.MOUSE_DOWN or is_drag:
             _log_set_overlay_hover(None)
             _log_touch_overlays()
             pb = _log_view_playback
@@ -3658,6 +3668,10 @@ def _log_make_scrubber_handler(cell_index, total_cells):
                 return
             target = int(cell_index / total_cells * pb.total_duration_us)
             _log_scrubber_seek(target)
+            return
+        if t == MouseEventType.MOUSE_MOVE:
+            _log_set_overlay_hover(None)
+            _log_touch_overlays()
             return
         _log_touch_overlays()
     return _h
