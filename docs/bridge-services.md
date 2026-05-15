@@ -198,9 +198,12 @@ SCRIPT:autobow
 | `connection_mode`    | `mmapper`   | `mmapper` (localhost:4242), `direct` (mume.org:4242, TLS), or `custom` (uses `connection_host`/`connection_port`, plain telnet) |
 | `connection_host`    | `localhost` | Host consulted when `connection_mode=custom`. Editable from the launcher Options → Connection → Custom subframe. |
 | `connection_port`    | `4242`      | Port consulted when `connection_mode=custom`. Numeric 1–65535, validated by the input subframe. |
+| `show_status`        | `1`         | Whether to open the Character (status) pane |
+| `show_buffs`         | `1`         | Whether to open the buffs pane           |
+| `show_group`         | `1`         | Whether to open the group pane           |
+| `show_comm`          | `1`         | Whether to open the comm pane            |
 | `show_ui`            | `1`         | Whether to open the UI pane              |
 | `show_dev`           | `0`         | Whether to open the dev pane             |
-| `show_status`        | `0`         | Whether to open the status pane          |
 | `show_pane_dividers` | `1`         | Whether the pane-header bar (labels above each right-column pane) is visible at startup. `cp -h` persists the new state via `toggle_pane.sh headers --persist`. Key name retained for backward compatibility. |
 | `pane_color_status`  | `black`     | Per-pane background colour (name). Resolved to a hex by `PANE_COLORS` in `bridge/launcher/palette.py` and mirrored as a case in `bridge/launcher/open_pane.sh` `_pane_bg_for`. `black` clears the tmux bg override so the terminal default shows through. Unknown values fall back to `black`. |
 | `pane_color_buffs`   | `red`       | Per-pane background colour for the buffs pane. |
@@ -219,6 +222,15 @@ read by `ttpp/core/config.tin` at tt++ startup via
 `_ses_cmd` is `ses` for mmapper and custom modes and `ssl` for direct mode
 (TLS); the custom mode reads `_host` / `_port` from `connection_host` /
 `connection_port`.
+
+**Persistence asymmetry between surfaces.** The launcher Options page
+batches every edit and writes to `startup.conf` on Back / ESC; visible
+effect (pane open/close, pane background tint, connection mode) lands
+on the next cockpit start. The in-game popup Panes submenu writes each
+toggle / colour selection immediately and re-tints the open pane
+on the spot via `tmux select-pane -P bg=…` /
+`toggle_pane.sh <pane> --persist`. Both surfaces ultimately write the
+same keys.
 
 ## Layout system (`bridge/runtime/layout.conf`, gitignored)
 

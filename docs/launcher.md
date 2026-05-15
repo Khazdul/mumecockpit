@@ -39,23 +39,138 @@ The UI is a frame stack: a single `DynamicContainer` swaps between `main`,
 `profile_create_copy_picker`, `profile_delete_confirm`, `options`,
 `options_panes`, `options_pane`, `options_connection`,
 `options_connection_custom`, `options_coming_soon`, `scripts`, `about`,
-`history`, `history_detail`, `history_rate`, `log_view`,
-`update_running`, `update_result`, and `exit_confirm` containers, pushed
-and popped via `_push_frame` / `_pop_frame`. Each frame owns its own
-`KeyBindings` filter (`_in_frame(name)`) so navigation, scroll, and ESC
-behave per-frame. The popup architecture (ADR 0062) is the reference;
-see `bridge/launcher/ingame_menu.py` for the same patterns.
+`history`, `history_detail`, `history_rate`, `history_delete_confirm`,
+`log_view`, `update_running`, `update_result`, and `exit_confirm`
+containers, pushed and popped via `_push_frame` / `_pop_frame`. Each
+frame owns its own `KeyBindings` filter (`_in_frame(name)`) so
+navigation, scroll, and ESC behave per-frame. The popup architecture
+(ADR 0062) is the reference; see `bridge/launcher/ingame_menu.py` for
+the same patterns. There is one shared `options_pane` frame (the
+target pane is selected via module state on push); per-pane subframes
+do not have distinct names.
 
 | Feature | Detail |
 |---------|--------|
 | Session detect | `tmux has-session -t mume` + `list-clients` re-probed on every render → top item is "Enter MUME", "Resume MUME", or "Mirror MUME (attached elsewhere)" |
 | Profile page | Lists `ttpp/profiles/*.tin`; select, create (blank / copy from existing), delete. `default` cannot be deleted. "Create blank" copies from `bridge/launcher/templates/blank_profile.tin` (single source of truth — see ADR 0042). Selected profile is written to `startup.conf` and consumed by `ttpp/core/config.tin` at tt++ startup. |
-| Options page | Four submenus + Back. **Panes** opens a list of the six right-column panes (Character / Buffs / Group / Comm / UI / Dev) followed by a blank row, a `Display pane headers` toggle, another blank row, and Back; selecting a pane opens its subframe (title `--- <Name> pane ---`) with an `Enabled` toggle and a 7-colour radio (Black / Red / Green / Blue / Grey / Orange / Purple). Each radio row trails three full-block glyphs as a colour swatch rendered with solid `bg=<hex>` fill; the `Black` entry uses `bg=fg=#000000`, so the swatch reads as solid black even though selecting `Black` still clears the tmux bg override at the pane level. **Scripts** opens the Scripts page (see row below); ESC returns to Options. **Text layout** is a placeholder row rendered with a dim grey foreground (`C_HINT`, no bg fill); Enter pushes a "coming soon" frame, any key returns. **Connection** offers MMapper / Direct / Custom radios; Custom opens a host:port input frame validated against 1–65535. All Options changes persist to `bridge/runtime/startup.conf` on Back / ESC. Fresh-install defaults: status, buffs, group, comm, ui on; dev off; pane headers on; pane colours status=black, buffs=red, group=green, comm=blue, ui=black, dev=grey; connection_host=localhost, connection_port=4242. |
+| Options page | Navigation hub: **Panes**, **Scripts**, **Text layout** (placeholder), **Connection**, blank row, **Back**. See the [Options sub-menu](#options-sub-menu) section below for each child frame. All Options changes persist to `bridge/runtime/startup.conf` on Back / ESC. |
 | Scripts page | Opened from Options → Scripts. Reads `bridge/runtime/scripts.cache`; scrollable via UP/DOWN, PageUp/PageDown |
 | About page | Reads `bridge/launcher/about.txt`; word-wrapped, cached per resize, scrollable. Current version on the right of the title; an "Update available: vX.Y.Z" line appears in `C_ACCENT` when `version.cache` contains a newer tag |
 | Update flow | Selecting "Update" runs `bridge/release/update.sh` in a worker thread; result keyed off update.sh's exit codes (0/10/20/21/22/other → complete/no-update/aborted/failed). rc==0 re-execs `bridge/launcher/launcher.sh` to pick up the new code |
 | Quit | Confirmation prompt; ESC cancels |
 | Persistence | Options saved to `bridge/runtime/startup.conf` on Back / ESC; profile selection saved immediately on Enter |
+
+## Options sub-menu
+
+Navigation hub pushed by activating "Options" on the main frame. Children:
+
+- **Panes** → `options_panes` — per-pane enable/disable + colour selection.
+- **Scripts** → `scripts` — opens the same Scripts frame documented in the
+  feature table above. ESC returns to `options`.
+- **Text layout** → `options_coming_soon` — placeholder for future
+  layout/typography options. The row paints in `C_HINT` (dim grey) in its
+  inactive state to signal "not ready yet"; active and hover states look
+  normal.
+- **Connection** → `options_connection` — MMapper / Direct / Custom
+  selector; Custom pushes a host/port input subframe.
+
+ESC inside `options` saves any pending edits to `bridge/runtime/startup.conf`
+and pops back to `main`.
+
+### `options_panes` frame
+
+Lists the six right-column panes (Character / Buffs / Group /
+Communication / UI / Developer), then a blank row, then a `Display pane
+headers` toggle (`[x]` when on), then a blank row, then `Back`. Selecting
+a pane row pushes the per-pane subframe (`options_pane`) with the chosen
+target stashed on `_options_pane_target`.
+
+The headers toggle flips `show_pane_dividers` in `startup.conf` and is
+read by the cockpit's tmux border-status setup at next start. It does
+not call `toggle_pane.sh` from the launcher — the change is deferred-
+persistence only, in line with the rest of the launcher Options.
+
+### `options_pane` frame
+
+One shared frame, re-rendered per render against
+`_options_pane_target`. Title takes the form `─── <Name> pane ───`
+(e.g. `─── Character pane ───`). Content (top-to-bottom):
+
+- `[x] Enabled` — toggles the pane's `show_<key>` value in
+  `startup.conf`. Effect is deferred — the new state takes hold on next
+  cockpit start; nothing live happens at the launcher.
+- blank row
+- `Pane color` section label (`C_SECTION`)
+- Seven radio rows: `( ) Black`, `Red`, `Green`, `Blue`, `Grey`,
+  `Orange`, `Purple`. The current selection is rendered with `(•)`. Each
+  row trails three full-block glyphs (`███`) as a colour swatch.
+- blank row
+- `Back`
+
+Swatch styling: tinted entries paint `bg:<hex> fg:<hex>` so the cells
+fill solid; `Black` paints `bg:#000000 fg:#000000` — solid black even on
+a black terminal. The swatch reflects the actual pane bg one would get
+on next start — except for `Black`, where the runtime mapping is
+`bg=default` (the terminal background shows through, not literal
+`#000000`). Selecting a colour writes `pane_color_<key>` to
+`startup.conf` on Back / ESC; nothing live happens at the launcher
+(the popup's per-pane subframe re-tints live — see
+[docs/popup-menu.md](popup-menu.md#panes-submenu)).
+
+### Per-pane colour palette
+
+Source of truth: `PANE_COLORS` in `bridge/launcher/palette.py`.
+Mirrored in `_pane_bg_for` in `bridge/launcher/open_pane.sh` (the cold-
+start path that applies the colour to a freshly opened tmux pane). The
+two lists must stay in sync; an unknown name in `startup.conf` falls
+back to `bg=default` and logs a debug line.
+
+| Name     | Hex       | tmux bg          |
+|----------|-----------|------------------|
+| `black`  | —         | `bg=default`     |
+| `red`    | `#1a0e0e` | `bg=#1A0E0E`     |
+| `green`  | `#0e1a0e` | `bg=#0E1A0E`     |
+| `blue`   | `#0e141c` | `bg=#0E141C`     |
+| `grey`   | `#161616` | `bg=#161616`     |
+| `orange` | `#1c140a` | `bg=#1C140A`     |
+| `purple` | `#16101c` | `bg=#16101C`     |
+
+`PANE_COLOR_ORDER` in `palette.py` defines the radio presentation order.
+
+### `options_connection` frame
+
+Three radios — MMapper (`localhost:4242`), Direct (`mume.org:4242`,
+TLS), Custom — followed by `Back`. The active radio reflects the
+current `connection_mode` in `startup.conf`. Selecting MMapper or
+Direct writes `connection_mode` and pops on Back/ESC. Selecting Custom
+writes `connection_mode=custom` and pushes `options_connection_custom`.
+
+`bridge/launcher/read_config.sh` consumes the resulting keys at tt++
+startup and produces the `_host`, `_port`, `_ses_cmd` tt++ variables
+(MMapper and Custom use `ses` / plain telnet; Direct uses `ssl` / TLS).
+
+### `options_connection_custom` frame
+
+Two-field input (Host, Port). Tab / Shift+Tab cycles fields; backspace
+edits; Enter saves; ESC cancels. Port is validated against 1–65535;
+invalid input keeps the frame open with the field highlighted. On
+save, writes `connection_host` / `connection_port` to `startup.conf`
+and pops back to `options_connection`.
+
+### `options_coming_soon` frame
+
+Single-message placeholder pushed by Text layout. Any key (or ESC)
+returns to `options`.
+
+### Persistence asymmetry vs. the popup
+
+Launcher Options writes to `startup.conf` on Back / ESC (deferred,
+batch-saved). Cockpit panes are unaffected during the edit — changes
+take effect on next cockpit start. The popup's equivalent submenus
+(see [docs/popup-menu.md](popup-menu.md)) write each change immediately
+and live re-tint the open pane via `tmux select-pane -P bg=<…>` /
+`toggle_pane.sh <pane> --persist` so the player sees the result without
+restarting. Both surfaces ultimately write the same keys.
 
 ## History sub-menu
 
@@ -478,10 +593,13 @@ All frames render through `prompt_toolkit` controls. Layout building blocks:
   `_current_frame` to one of the prebuilt container trees. Each frame's
   primary `Window` is stored at module level and focused on push so
   keyboard handlers fire reliably.
-- **Centered frames** — `main`, `profile`, `options`, the profile-create
-  sub-frames, `exit_confirm`, `update_running`, and `update_result` are
-  wrapped in `HSplit([window], align=VerticalAlign.CENTER)` so they stay
-  visually centred at any terminal height above the minimum.
+- **Centered frames** — `main`, `profile`, the profile-create sub-frames,
+  `profile_delete_confirm`, `options`, `options_panes`, `options_pane`,
+  `options_connection`, `options_connection_custom`, `options_coming_soon`,
+  `history_detail`, `history_rate`, `history_delete_confirm`,
+  `update_running`, `update_result`, and `exit_confirm` are wrapped in
+  `HSplit([window], align=VerticalAlign.CENTER)` so they stay visually
+  centred at any terminal height above the minimum.
 - **Scrolling frames** — `scripts` and `about` use a three-row split
   (`title` fixed height, `content` `Dimension(weight=1)`, `footer` fixed
   height) with the content control slicing by a scroll offset.
@@ -546,7 +664,7 @@ pass through `_wrap_text` unchanged.
 - **ttimeoutlen / timeoutlen.** Both lowered to 50 ms so bare ESC fires
   near-instantly instead of waiting prompt_toolkit's 500 ms
   disambiguation timeout (same tuning as the popup).
-- **Handoff via `os.execvp`.** The Enter-game dispatch records a
+- **Handoff via `os.execvp`.** The Enter-MUME dispatch records a
   deferred exec command, calls `app.exit()`, and then the main entry
   runs `os.execvp(...)` after `run_async` returns — so prompt_toolkit
   has a chance to restore the terminal before tmux or the new launcher

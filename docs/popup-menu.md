@@ -15,10 +15,12 @@ wrapper that `exec`s the Python entry; both the tmux root binding and
 the Lua auto-open path in `lua/brain/connection.lua` invoke the wrapper.
 
 The UI is a frame stack: a single `DynamicContainer` swaps between
-`main`, `options`, `panes`, `pane`, `scripts`, `statistics`, and
-`exit_confirm` containers, pushed and popped via `_push_frame` /
-`_pop_frame`. Each frame owns its own `KeyBindings` filter so
-navigation, scroll, and ESC behave per-frame.
+`main`, `options`, `panes`, `pane`, `scripts`, `statistics`,
+`rate_session`, and `exit_confirm` containers, pushed and popped via
+`_push_frame` / `_pop_frame`. Each frame owns its own `KeyBindings`
+filter so navigation, scroll, and ESC behave per-frame. There is one
+shared `pane` subframe — the target pane is selected via
+`_panes_target` on push; per-pane subframes do not have distinct names.
 
 The top menu items are context-aware, rebuilt from `bridge/runtime/connection.state`
 on every render:
@@ -38,10 +40,11 @@ before the disconnect step — see "Auto-open on disconnect" below.
 ## Input
 
 - **ESC** — on the main frame, dismisses the popup. On any submenu
-  (`options`, `panes`, `pane`, `scripts`, `exit_confirm`), pops one
-  frame back toward `main`. The frame stack is honoured: ESC inside
-  `panes` or `scripts` returns to `options`, ESC inside `options`
-  returns to `main`. ESC bindings use `eager=True` to bypass
+  (`options`, `panes`, `pane`, `scripts`, `statistics`, `rate_session`,
+  `exit_confirm`), pops one frame back toward `main`. The frame stack
+  is honoured: ESC inside `pane` returns to `panes`, ESC inside `panes`
+  or `scripts` returns to `options`, ESC inside `options` returns to
+  `main`. ESC bindings use `eager=True` to bypass
   prompt_toolkit's key-disambiguation timeout; `app.ttimeoutlen` /
   `app.timeoutlen` are also lowered to 50 ms so bare ESC feels instant.
 - **Arrow keys** — navigate within the current frame's selectable rows
@@ -96,6 +99,10 @@ versions). ESC inside `options` pops back to `main`; ESC inside
 `panes` or `scripts` pops back to `options`. Source of truth is
 `_OPTIONS_ROWS` in `ingame_menu.py`.
 
+Frame titles in `options`, `panes`, and the per-pane subframe now
+emit a blank row between the centred title and the first content row,
+matching the launcher's title spacing.
+
 ## Panes submenu
 
 `Options → Panes`. Source of truth is `_PANE_TARGETS` in
@@ -134,14 +141,23 @@ so the pane opens/closes immediately and `show_<pane>` in
 `startup.conf` updates in step. The seven colour radios write
 `pane_color_<target>=<name>` directly to `bridge/runtime/startup.conf`
 (in-place edit, not the launcher's whole-file rewrite) and **live
-re-tint** the open pane via `tmux select-pane -t <idx> -P
+re-tint** the open pane via `tmux select-pane -t mume:cockpit.<idx> -P
 bg=<hex|default>`. If the pane is currently closed the new colour
 persists only — it takes effect the next time the pane is opened, since
 `bridge/launcher/open_pane.sh` reads the same key via `_pane_bg_for` on
 every cold start. Each radio row trails three full-block glyphs rendered
 with a solid `bg=<hex>` fill; the `Black` entry uses `bg=fg=#000000`, so
 the swatch reads as solid black even though the actual pane behaviour
-for `Black` is still no tmux bg override.
+for `Black` is still no tmux bg override. The colour name → hex mapping
+lives in `PANE_COLORS` (`bridge/launcher/palette.py`); see the table in
+[docs/launcher.md](launcher.md#per-pane-colour-palette) for the values
+and the `palette.py` ↔ `open_pane.sh` mirror convention.
+
+This is the persistence asymmetry vs. the launcher: the popup writes
+each toggle / colour choice immediately and re-tints the open pane on
+the spot, while the launcher Options batches writes to Back/ESC and
+defers visible effect to the next cockpit start. Both surfaces write
+the same `startup.conf` keys.
 
 Connection mode (MMapper / Direct / Custom) and profile switch are
 deliberately **not** present in the popup — they require a restart and
