@@ -4,7 +4,7 @@
 # by build_initial_layout.sh in one of two modes (see docs/launcher.md "Initial
 # layout build"): pre-attach when LAUNCHER_COLS/ROWS are provided by launcher.py,
 # post-attach via a one-shot client-attached hook otherwise (ADR 0041 fallback).
-# Called by start.sh (--no-menu / -d / -u) or bridge/launcher/launcher.sh ("Enter game").
+# Called by start.sh (--no-menu / -d / -u) or bridge/launcher/launcher.sh ("Enter MUME").
 
 # Keep terminal in alt-screen across this script so any incidental output
 # stays hidden from the user's normal terminal buffer. Idempotent if the

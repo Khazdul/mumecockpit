@@ -47,7 +47,7 @@ from palette import (  # noqa: E402
     _S_GAINED, _S_LOSS, _S_LABEL, _S_VALUE, _S_TP_BAR,
     _S_TRACK, _S_MARKER, _S_THUMB, _S_TOTAL, _S_ARROW,
     _S_HINT, _S_PVP, _S_ALLY, _S_STAR,
-    PANE_COLORS, PANE_COLOR_ORDER, PANE_PREVIEW_BLACK_FG,
+    PANE_COLORS, PANE_COLOR_ORDER,
 )
 import log_player  # noqa: E402
 import run_retention  # noqa: E402
@@ -675,13 +675,13 @@ def _rebuild_main_items(*, preserve_label=True):
             if preserve_label and 0 <= _sel_main < len(_main_items)
             else _last_main_label)
     if _has_session():
-        first = "Resume game" if _attached_count() == 0 else "Mirror game (attached elsewhere)"
+        first = "Resume MUME" if _attached_count() == 0 else "Mirror MUME (attached elsewhere)"
     else:
-        first = "Enter game"
+        first = "Enter MUME"
     items = [first]
     if _update_available():
         items.append("Update")
-    items.extend(["Profile", "History", "Options", "Scripts", "About", "Quit"])
+    items.extend(["History", "Profile", "Options", "About", "Quit"])
     _main_items = items
     if prev and prev in items:
         _sel_main = items.index(prev)
@@ -706,7 +706,7 @@ def _activate_main(idx):
         return
     _sel_main = idx
     label = _main_items[idx]
-    if label in ("Enter game", "Resume game", "Mirror game (attached elsewhere)"):
+    if label in ("Enter MUME", "Resume MUME", "Mirror MUME (attached elsewhere)"):
         if _has_session():
             _spawn_ping_monitor()
             _deferred_exec = ("tmux", ["tmux", "attach", "-t", "mume"])
@@ -730,8 +730,6 @@ def _activate_main(idx):
         _enter_history_frame()
     elif label == "Options":
         _enter_options_frame()
-    elif label == "Scripts":
-        _enter_scripts_frame()
     elif label == "About":
         _enter_about_frame()
     elif label == "Quit":
@@ -1158,10 +1156,11 @@ def _profile_delete_text():
 
 
 # ---------------------------------------------------------------------------
-# Options frame — top level (Panes / Game text-layout / Connection / Back)
+# Options frame — top level (Panes / Scripts / Text layout / Connection / Back)
 # ---------------------------------------------------------------------------
 _OPTIONS_ROWS = [
     ("panes",          "Panes"),
+    ("scripts",        "Scripts"),
     ("text_layout",    "Text layout"),
     ("connection",     "Connection"),
     ("back",           "Back"),
@@ -1183,6 +1182,8 @@ def _activate_option(idx):
     if action == "panes":
         _sel_options_panes = 0
         _push_frame("options_panes")
+    elif action == "scripts":
+        _enter_scripts_frame()
     elif action == "text_layout":
         _push_frame("options_coming_soon")
     elif action == "connection":
@@ -1510,15 +1511,15 @@ def _options_pane_text():
 
         if kind == "radio":
             # Trailing colour swatch: 3 full-block glyphs. Solid fill for
-            # tinted entries; Black gets a dim grey fg only so the cell stays
-            # visible on a black terminal (see PANE_PREVIEW_BLACK_FG).
+            # every entry; Black is a true #000000 swatch even though the
+            # actual pane keeps the terminal default bg.
             color_name = PANE_COLOR_ORDER[i - _PANE_FRAME_COLOR_LO]
             hex_color  = PANE_COLORS.get(color_name)
             frags.append((style, "  ", h))
             if hex_color is None:
-                frags.append((f"fg:{PANE_PREVIEW_BLACK_FG}", "███", h))
+                frags.append(("bg:#000000 fg:#000000", "███", h))
             else:
-                frags.append((f"fg:{hex_color} bg:{hex_color}", "███", h))
+                frags.append((f"bg:{hex_color} fg:{hex_color}", "███", h))
 
         frags.append((style, suffix, h))
         frags.append(("", "\n"))

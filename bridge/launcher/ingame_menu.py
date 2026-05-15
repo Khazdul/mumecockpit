@@ -591,7 +591,7 @@ def _options_title_text():
         ("", "\n\n"),
         ("", _pad_centre(title, cols)),
         (C_TITLE, title),
-        ("", "\n"),
+        ("", "\n\n"),
     ]
 
 
@@ -700,7 +700,7 @@ def _panes_title_text():
         ("", "\n\n"),
         ("", _pad_centre(title, cols)),
         (C_TITLE, title),
-        ("", "\n"),
+        ("", "\n\n"),
     ]
 
 
@@ -887,7 +887,7 @@ def _pane_title_text():
         ("", "\n\n"),
         ("", _pad_centre(title, cols)),
         (C_TITLE, title),
-        ("", "\n"),
+        ("", "\n\n"),
     ]
 
 
@@ -969,9 +969,9 @@ def _pane_content_text():
             hex_color = PANE_COLORS.get(name)
             frags.append((style, "  ", h))
             if hex_color is None:
-                frags.append((f"fg:{PANE_PREVIEW_BLACK_FG}", "███", h))
+                frags.append(("bg:#000000 fg:#000000", "███", h))
             else:
-                frags.append((f"fg:{hex_color} bg:{hex_color}", "███", h))
+                frags.append((f"bg:{hex_color} fg:{hex_color}", "███", h))
 
         frags.append((style, suffix, h))
         frags.append(("", "\n"))
@@ -1116,7 +1116,7 @@ def _rate_session_text():
     _append_status_header(frags, cols)
     frags.append(("", "\n\n"))
 
-    title = "─── Rate the session ───"
+    title = "─── Rate the run ───"
     frags.append(("", _pad_centre(title, cols)))
     frags.append((C_TITLE, title))
     frags.append(("", "\n\n"))

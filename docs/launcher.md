@@ -48,10 +48,10 @@ see `bridge/launcher/ingame_menu.py` for the same patterns.
 
 | Feature | Detail |
 |---------|--------|
-| Session detect | `tmux has-session -t mume` + `list-clients` re-probed on every render → top item is "Enter game", "Resume game", or "Mirror game (attached elsewhere)" |
+| Session detect | `tmux has-session -t mume` + `list-clients` re-probed on every render → top item is "Enter MUME", "Resume MUME", or "Mirror MUME (attached elsewhere)" |
 | Profile page | Lists `ttpp/profiles/*.tin`; select, create (blank / copy from existing), delete. `default` cannot be deleted. "Create blank" copies from `bridge/launcher/templates/blank_profile.tin` (single source of truth — see ADR 0042). Selected profile is written to `startup.conf` and consumed by `ttpp/core/config.tin` at tt++ startup. |
-| Options page | Three submenus + Back. **Panes** opens a list of the six right-column panes (Character / Buffs / Group / Comm / UI / Dev) followed by a blank row, a `Display pane headers` toggle, another blank row, and Back; selecting a pane opens its subframe (title `--- <Name> pane ---`) with an `Enabled` toggle and a 7-colour radio (Black / Red / Green / Blue / Grey / Orange / Purple). Each radio row trails three full-block glyphs as a colour swatch: tinted entries render with solid `bg=<hex>` fill; the `Black` entry renders with a dim grey `fg` (`PANE_PREVIEW_BLACK_FG = #3a3a3a`) on the terminal default — visualisation only, since selecting `Black` still clears the tmux bg override at the pane level. **Text layout** is a placeholder row rendered with a dim grey foreground (`C_HINT`, no bg fill); Enter pushes a "coming soon" frame, any key returns. **Connection** offers MMapper / Direct / Custom radios; Custom opens a host:port input frame validated against 1–65535. All Options changes persist to `bridge/runtime/startup.conf` on Back / ESC. Fresh-install defaults: status, buffs, group, comm, ui on; dev off; pane headers on; pane colours status=black, buffs=red, group=green, comm=blue, ui=black, dev=grey; connection_host=localhost, connection_port=4242. |
-| Scripts page | Reads `bridge/runtime/scripts.cache`; scrollable via UP/DOWN, PageUp/PageDown |
+| Options page | Four submenus + Back. **Panes** opens a list of the six right-column panes (Character / Buffs / Group / Comm / UI / Dev) followed by a blank row, a `Display pane headers` toggle, another blank row, and Back; selecting a pane opens its subframe (title `--- <Name> pane ---`) with an `Enabled` toggle and a 7-colour radio (Black / Red / Green / Blue / Grey / Orange / Purple). Each radio row trails three full-block glyphs as a colour swatch rendered with solid `bg=<hex>` fill; the `Black` entry uses `bg=fg=#000000`, so the swatch reads as solid black even though selecting `Black` still clears the tmux bg override at the pane level. **Scripts** opens the Scripts page (see row below); ESC returns to Options. **Text layout** is a placeholder row rendered with a dim grey foreground (`C_HINT`, no bg fill); Enter pushes a "coming soon" frame, any key returns. **Connection** offers MMapper / Direct / Custom radios; Custom opens a host:port input frame validated against 1–65535. All Options changes persist to `bridge/runtime/startup.conf` on Back / ESC. Fresh-install defaults: status, buffs, group, comm, ui on; dev off; pane headers on; pane colours status=black, buffs=red, group=green, comm=blue, ui=black, dev=grey; connection_host=localhost, connection_port=4242. |
+| Scripts page | Opened from Options → Scripts. Reads `bridge/runtime/scripts.cache`; scrollable via UP/DOWN, PageUp/PageDown |
 | About page | Reads `bridge/launcher/about.txt`; word-wrapped, cached per resize, scrollable. Current version on the right of the title; an "Update available: vX.Y.Z" line appears in `C_ACCENT` when `version.cache` contains a newer tag |
 | Update flow | Selecting "Update" runs `bridge/release/update.sh` in a worker thread; result keyed off update.sh's exit codes (0/10/20/21/22/other → complete/no-update/aborted/failed). rc==0 re-execs `bridge/launcher/launcher.sh` to pick up the new code |
 | Quit | Confirmation prompt; ESC cancels |
@@ -61,7 +61,8 @@ see `bridge/launcher/ingame_menu.py` for the same patterns.
 
 Three frames: `history` (list + actions), `history_detail` (per-session
 view), and `history_rate` (star picker). Opened from the main-menu entry
-"History", inserted between "Profile" and "Options". Data is read by
+"History", which sits immediately after the dynamic Enter/Resume/Mirror
+row (or the optional "Update" row). Data is read by
 `bridge/launcher/run_stats.py` — see ADR 0065 for the aggregator,
 ADR 0056 for the stitching primitive.
 
@@ -275,8 +276,9 @@ Modeled on the popup's `rate_session` (`docs/popup-menu.md`#rate-session-frame):
 same `★` widget, same key bindings (`0..5`, ←/→, Enter, ESC), same
 gold (`_S_STAR`) / grey (`C_HINT`) contrast.
 
-**Title.** `─── Rate the session ───` — matches the popup string so the
-two surfaces read consistently.
+**Title.** `─── Rate the session ───`. The popup's equivalent reads
+"Rate the run" — different scope (popup rates the just-finished run;
+the launcher rates a saved session's chain).
 
 **Initial rating.**
 

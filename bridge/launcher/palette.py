@@ -17,7 +17,6 @@ __all__ = [
     "_S_TRACK", "_S_MARKER", "_S_THUMB", "_S_TOTAL", "_S_ARROW",
     "_S_HINT", "_S_PVP", "_S_ALLY", "_S_STAR",
     "PANE_COLORS", "PANE_COLOR_ORDER", "pane_color_hex",
-    "PANE_PREVIEW_BLACK_FG",
 ]
 
 # ---------------------------------------------------------------------------
@@ -117,12 +116,6 @@ PANE_COLORS = {
 }
 # Stable presentation order for radio rows.
 PANE_COLOR_ORDER = ["black", "red", "green", "blue", "grey", "orange", "purple"]
-
-# Visualisation fallback for the Black option's preview cells.
-# Black-on-black would be invisible, so the radio preview substitutes a dim
-# grey foreground (no bg) for this entry only. Distinct from the grey palette
-# entry's #161616 so the two options never read as the same swatch.
-PANE_PREVIEW_BLACK_FG = "#3a3a3a"
 
 
 def pane_color_hex(name):

@@ -83,6 +83,7 @@ the main menu stays short.
 
 ```
 --- Options ---
+                   (blank row)
 Panes
 Scripts
                    (blank row)
@@ -113,6 +114,7 @@ six panes (title takes the form `--- <Name> pane ---`):
 
 ```
 --- Character pane ---
+                                  (blank row)
 [x] Enabled
                                   (blank row)
 Pane color
@@ -136,11 +138,10 @@ re-tint** the open pane via `tmux select-pane -t <idx> -P
 bg=<hex|default>`. If the pane is currently closed the new colour
 persists only — it takes effect the next time the pane is opened, since
 `bridge/launcher/open_pane.sh` reads the same key via `_pane_bg_for` on
-every cold start. Each radio row trails three full-block glyphs: tinted
-entries render with a solid `bg=<hex>` fill; the `Black` entry renders
-with a dim grey `fg` (`PANE_PREVIEW_BLACK_FG = #3a3a3a`) so the swatch
-stays visible on a black terminal — the actual pane behaviour for
-`Black` is still no tmux bg override.
+every cold start. Each radio row trails three full-block glyphs rendered
+with a solid `bg=<hex>` fill; the `Black` entry uses `bg=fg=#000000`, so
+the swatch reads as solid black even though the actual pane behaviour
+for `Black` is still no tmux bg override.
 
 Connection mode (MMapper / Direct / Custom) and profile switch are
 deliberately **not** present in the popup — they require a restart and
@@ -374,7 +375,7 @@ every render from the meta sidecar:
 
 ### Rate-session frame
 
-Pushing the row presents `─── Rate the session ───` over the same
+Pushing the row presents `─── Rate the run ───` over the same
 Profile · Mode · Link status header used on the main frame, a centred
 row of five `★` glyphs (single-space separated; gold for the first
 `_rate_session_rating` stars, grey for the rest), and the footer
