@@ -55,6 +55,8 @@ class RunStats:
     allies: list[str] = field(default_factory=list)
     achievements: list[tuple[int, str]] = field(default_factory=list)
     deaths: int = 0
+    saved: bool = False
+    rating: int | None = None
 
 
 @dataclass
@@ -221,6 +223,17 @@ def aggregate(character: str, run_ids: list[str]) -> RunStats:
 
     if stats.start_ts and stats.end_ts:
         stats.duration_seconds = max(0, stats.end_ts - stats.start_ts)
+
+    if run_ids:
+        import run_meta
+        meta = run_meta.read_meta(character, run_ids[-1])
+        if meta and meta.get("saved") is True:
+            stats.saved = True
+            raw = meta.get("rating", 0)
+            try:
+                stats.rating = max(0, min(5, int(raw)))
+            except (TypeError, ValueError):
+                stats.rating = 0
 
     return stats
 

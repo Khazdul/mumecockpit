@@ -134,6 +134,19 @@ on both positive progression (level-ups) and negative progression
 `xp_current` is missing or non-positive it falls back to
 `status["level"]` from `bridge/runtime/status.state`.
 
+When `stats.saved` is true, a right-aligned `Rating: <stars>` element
+sits on the same header row in `C_HEADER` (gold). The stars are
+exactly `stats.rating` `★` glyphs; a 0-rating saved run renders just
+`Rating:` with no trailing space or glyphs. The element is omitted
+entirely for unsaved runs. Layout: the centred title is emitted as
+before, the rating element is right-aligned at the popup-body's right
+edge, and a 2-column safety margin separates the two; if the
+terminal is too narrow to satisfy the margin, the rating element is
+dropped (title wins). `stats.saved` / `stats.rating` are read on every
+tick from the meta sidecar via `run_meta.read_meta(character,
+run_ids[-1])`, so saving the session while Statistics is open paints
+the Rating element on the next tick.
+
 Four tables, each with its own `Scrollbar` instance: KILLS (auto-fit,
 2 minimum), PvPs (same auto-fit count), ALLIES (3 fixed),
 ACHIEVEMENTS (3 fixed). KILLS/PvPs render a merged title row (section
@@ -284,13 +297,12 @@ every render from the meta sidecar:
 
 - **Not saved** — normal `C_ITEM` style, selectable; activation (Enter /
   Space / click) pushes the `rate_session` frame.
-- **Saved** — dead-grey: the label `"Save session"` plus a 5-cell star
-  decoration (`★★★★★`) painted in two spans — gold (`_S_STAR`) for the
-  first `rating` stars, dim grey (`C_HINT`) for the rest. The entire row
-  paints in `C_HINT` (no `<<>>` decoration, no hover highlight); no
-  mouse handlers are attached, and keyboard navigation
+- **Saved** — dead-grey: just the label `"Save session"` painted in
+  `C_HINT` (no `<<>>` decoration, no star suffix, no hover highlight);
+  no mouse handlers are attached, and keyboard navigation
   (`_main_selectable_indices`) skips the index, so Enter and click are
-  both no-ops. The saved state is read fresh on each render from
+  both no-ops. The rating itself surfaces on the Statistics header,
+  not this row. The saved state is read fresh on each render from
   `data/runs/<character>/<run-id>.meta.json` (`run_meta.is_saved`), so
   closing and reopening the popup within the same run preserves the
   dead state.
@@ -333,8 +345,9 @@ default `max_gap_seconds=3600`) and calls
 atomic `<run-id>.meta.json` sidecar per run in the chain — including
 the current (still-`current.jsonl`) run, whose meta uses its computed
 run-id. There is no on-screen confirmation flash or banner; the
-re-rendered main frame's dead-grey "Save session" row with the gold
-stars is the user-visible confirmation.
+re-rendered main frame's dead-grey "Save session" row is the
+user-visible confirmation. The chosen rating surfaces on the
+Statistics frame's header (`Rating: <stars>`, right-aligned).
 
 The keyboard alias `cp -s` (profile save) is independent of the popup
 row and unchanged: it still runs

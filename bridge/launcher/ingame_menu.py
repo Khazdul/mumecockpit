@@ -365,7 +365,7 @@ def _main_items():
 
     Each entry is (label, action, kind, payload):
       kind == "normal"  → selectable, normal handlers attached
-      kind == "saved"   → dead-grey, no handlers, payload is the rating int
+      kind == "saved"   → dead-grey, no handlers
     """
     items = []
     if _is_connected():
@@ -377,7 +377,7 @@ def _main_items():
         if rating is None:
             items.append(("Save session", "save_session", "normal", None))
         else:
-            items.append(("Save session", "save_session_dead", "saved", rating))
+            items.append(("Save session", "save_session_dead", "saved", None))
         items.append(("Statistics", "statistics", "normal", None))
 
     items.append(("Options",      "options",  "normal", None))
@@ -487,23 +487,13 @@ def _main_text():
 
     for i, (label, action, kind, payload) in enumerate(items):
         if kind == "saved":
-            # Dead-grey one-shot row: "Save session  ★★★★★" with the first
-            # `payload` stars in gold, remainder in grey. No handlers (clicks
-            # and Enter are no-ops; keyboard navigation skips this index).
-            rating = int(payload) if isinstance(payload, int) else 0
-            rating = max(0, min(5, rating))
+            # Dead-grey one-shot row: just the label, no handlers (clicks and
+            # Enter are no-ops; keyboard navigation skips this index).
             prefix = "   "
             suffix = "   "
-            stars  = "★" * 5
-            full   = f"{prefix}{label}  {stars}{suffix}"
+            full   = f"{prefix}{label}{suffix}"
             frags.append(("", _pad_centre(full, cols)))
-            frags.append((C_HINT, prefix))
-            frags.append((C_HINT, label + "  "))
-            if rating > 0:
-                frags.append((_S_STAR, "★" * rating))
-            if rating < 5:
-                frags.append((C_HINT, "★" * (5 - rating)))
-            frags.append((C_HINT, suffix))
+            frags.append((C_HINT, full))
             frags.append(("", "\n"))
             continue
 
@@ -1736,11 +1726,25 @@ def _statistics_text():
         f"·  Lvl {cur_lv}  ·  Run {_fmt_duration(stats.duration_seconds)}"
     )
     suffix = " · Run ended" if _stats_run_ended else ""
+    title_for_centering = base_header + suffix
+
+    rating_text = ""
+    if stats.saved and stats.rating is not None:
+        r = max(0, min(5, stats.rating))
+        rating_text = "Rating:" if r == 0 else f"Rating: {'★' * r}"
+
+    left_pad = _pad_centre(title_for_centering, cols)
+    title_end_col = len(left_pad) + len(title_for_centering)
+    gap = cols - title_end_col - len(rating_text)
+
     frags.append(("", "\n"))
-    frags.append(("", _pad_centre(base_header + suffix, cols)))
+    frags.append(("", left_pad))
     frags.append((C_HEADER, base_header))
     if suffix:
         frags.append((_S_HINT, suffix))
+    if rating_text and gap >= 2:
+        frags.append(("", " " * gap))
+        frags.append((C_HEADER, rating_text))
     frags.append(("", "\n\n"))
 
     _append_allies_achievements(frags, stats, cols)
