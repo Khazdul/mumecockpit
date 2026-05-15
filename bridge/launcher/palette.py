@@ -10,6 +10,9 @@ __all__ = [
     "C_HEADER", "C_SECTION", "C_DIVIDER",
     "C_WATCH_LOG", "C_WATCH_LOG_HOVER",
     "C_LOG_PLAYER_INPUT", "C_LOG_CURSOR",
+    "C_LOG_OVERLAY_BG", "C_LOG_OVERLAY_FG", "C_LOG_OVERLAY_HINT",
+    "C_LOG_SCRUBBER_FILLED", "C_LOG_SCRUBBER_EMPTY", "C_LOG_SCRUBBER_THUMB",
+    "C_LOG_BUTTON_IDLE", "C_LOG_BUTTON_HOVER",
     "_S_VALUE", "_S_LABEL", "_S_GAINED", "_S_LOSS", "_S_TP_BAR",
     "_S_TRACK", "_S_MARKER", "_S_THUMB", "_S_TOTAL", "_S_ARROW",
     "_S_HINT", "_S_PVP", "_S_ALLY", "_S_STAR",
@@ -68,3 +71,21 @@ C_LOG_PLAYER_INPUT = "fg:#86a0a0"
 # log_view pause-mode cursor row: subtle background only, no fg. Combined
 # with each fragment's existing fg in the renderer so colours survive.
 C_LOG_CURSOR = "bg:#303030"
+
+# log_view floating overlays (top header + bottom controls). Dark
+# translucent-feeling fill so the underlying log dims without losing
+# context; ESC hint is dimmer than the regular foreground.
+C_LOG_OVERLAY_BG     = "bg:#101418"
+C_LOG_OVERLAY_FG     = "fg:#dadada bg:#101418"
+C_LOG_OVERLAY_HINT   = "fg:#6c6c6c bg:#101418"
+
+# Scrubber: filled stretch before the playhead, single-cell thumb at the
+# playhead, empty stretch after. All share the overlay bg so the bar
+# blends into the controls row.
+C_LOG_SCRUBBER_FILLED = "fg:#ffaf00 bg:#101418"
+C_LOG_SCRUBBER_EMPTY  = "fg:#3a3a3a bg:#101418"
+C_LOG_SCRUBBER_THUMB  = "bold fg:#ffffff bg:#101418"
+
+# Rewind / play-pause buttons.
+C_LOG_BUTTON_IDLE  = "fg:#dadada bg:#101418"
+C_LOG_BUTTON_HOVER = "bold fg:#ffffff bg:#1c2228"

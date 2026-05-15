@@ -7,7 +7,9 @@ try:
     from prompt_toolkit.filters import Condition
     from prompt_toolkit.key_binding import KeyBindings
     from prompt_toolkit.layout import DynamicContainer, Layout, VerticalAlign
-    from prompt_toolkit.layout.containers import HSplit, VSplit, Window
+    from prompt_toolkit.layout.containers import (
+        ConditionalContainer, Float, FloatContainer, HSplit, VSplit, Window,
+    )
     from prompt_toolkit.layout.controls import FormattedTextControl
     from prompt_toolkit.layout.dimension import Dimension
     from prompt_toolkit.mouse_events import MouseEventType
@@ -38,6 +40,9 @@ from palette import (  # noqa: E402
     C_YELLOW, C_ERR, C_QUOTE, C_QUOTE_ATTR, C_HOVER, C_SELECTED,
     C_HEADER, C_SECTION, C_DIVIDER, C_WATCH_LOG, C_WATCH_LOG_HOVER,
     C_LOG_CURSOR,
+    C_LOG_OVERLAY_BG, C_LOG_OVERLAY_FG, C_LOG_OVERLAY_HINT,
+    C_LOG_SCRUBBER_FILLED, C_LOG_SCRUBBER_EMPTY, C_LOG_SCRUBBER_THUMB,
+    C_LOG_BUTTON_IDLE, C_LOG_BUTTON_HOVER,
     _S_GAINED, _S_LOSS, _S_LABEL, _S_VALUE, _S_TP_BAR,
     _S_TRACK, _S_MARKER, _S_THUMB, _S_TOTAL, _S_ARROW,
     _S_HINT, _S_PVP, _S_ALLY, _S_STAR,
@@ -209,6 +214,14 @@ _log_last_playhead_index    = -1       # last index pushed to renderer (tick dir
 _log_tick_task              = None     # asyncio.Task driving play-mode redraws
 _LOG_TICK_HZ                = 30
 _LOG_PAGE_STEP              = 20       # PgUp/PgDn cursor delta in pause
+# Floating overlays (top header + bottom controls)
+_log_overlays_visible       = True     # forced True in pause; auto-hidden after 3 s in play
+_log_overlays_hide_at       = None     # monotonic() deadline; None disables timer
+_log_overlay_hover          = None     # "rewind" | "playpause" | None
+_LOG_OVERLAY_HIDE_DELAY     = 3.0
+_LOG_OVERLAY_HEADER_W       = 80
+_LOG_OVERLAY_CONTROLS_W     = 70
+_LOG_OVERLAY_SCRUBBER_W     = 30
 _history_columns = [
     # (key, base_label, width, align, type)
     ("Char",   "Char",  None, "left",  "text"),
@@ -2959,6 +2972,7 @@ def _enter_log_view():
     global _log_view_event_rows
     global _log_mode, _log_play_anchor_wall, _log_play_anchor_offset_us
     global _log_paused_offset_us, _log_cursor_index, _log_last_playhead_index
+    global _log_overlays_visible, _log_overlays_hide_at, _log_overlay_hover
     summary = _history_detail_summary
     if summary is None:
         return
@@ -2977,6 +2991,11 @@ def _enter_log_view():
     _log_paused_offset_us     = 0
     _log_cursor_index         = 0
     _log_last_playhead_index  = -1
+    # Overlays start hidden so the first rendered frame is true
+    # fullscreen — user activity reveals them.
+    _log_overlays_visible     = False
+    _log_overlays_hide_at     = None
+    _log_overlay_hover        = None
     _push_frame("log_view")
     _log_start_tick_task()
 
@@ -2986,6 +3005,7 @@ def _exit_log_view():
     data can be garbage-collected — chains are re-read from disk on next push."""
     global _log_view_playback, _log_view_scroll, _log_view_cols, _log_view_lines
     global _log_view_event_rows, _log_last_playhead_index
+    global _log_overlays_visible, _log_overlays_hide_at, _log_overlay_hover
     _log_cancel_tick_task()
     _log_view_playback   = None
     _log_view_scroll     = 0
@@ -2993,6 +3013,9 @@ def _exit_log_view():
     _log_view_lines      = None
     _log_view_event_rows = None
     _log_last_playhead_index = -1
+    _log_overlays_visible    = True
+    _log_overlays_hide_at    = None
+    _log_overlay_hover       = None
     _pop_frame()
 
 
@@ -3091,11 +3114,15 @@ def _log_playhead_index():
 def _log_pause():
     """Freeze playback on the current playhead."""
     global _log_mode, _log_paused_offset_us, _log_cursor_index
+    global _log_overlays_visible, _log_overlays_hide_at
     if _log_view_playback is None:
         return
     _log_paused_offset_us = _log_current_playback_us()
     _log_cursor_index     = _log_playhead_index()
     _log_mode             = "pause"
+    # Overlays become permanent while paused.
+    _log_overlays_visible = True
+    _log_overlays_hide_at = None
     _log_cancel_tick_task()
     _log_ensure_cursor_visible()
     if _app:
@@ -3107,6 +3134,7 @@ def _log_resume():
     cursor, even when the cursor hasn't moved since the pause."""
     global _log_mode, _log_play_anchor_wall, _log_play_anchor_offset_us
     global _log_last_playhead_index
+    global _log_overlays_visible, _log_overlays_hide_at
     pb = _log_view_playback
     if pb is None or not pb.events:
         return
@@ -3115,6 +3143,11 @@ def _log_resume():
     _log_play_anchor_wall      = time.monotonic()
     _log_mode                  = "play"
     _log_last_playhead_index   = -1
+    # Don't yank overlays away on pause→play. Show them and schedule a
+    # 3 s hide so the controls fade out only after the user stops
+    # interacting.
+    _log_overlays_visible = True
+    _log_overlays_hide_at = time.monotonic() + _LOG_OVERLAY_HIDE_DELAY
     _log_start_tick_task()
     if _app:
         _app.invalidate()
@@ -3132,14 +3165,56 @@ def _log_toggle_play_pause():
 def _log_auto_pause_at_end():
     """End-of-log auto-pause: cursor on the final event, mode → pause."""
     global _log_mode, _log_paused_offset_us, _log_cursor_index
+    global _log_overlays_visible, _log_overlays_hide_at
     pb = _log_view_playback
     if pb is None or not pb.events:
         return
     _log_cursor_index     = len(pb.events) - 1
     _log_paused_offset_us = pb.total_duration_us
     _log_mode             = "pause"
+    _log_overlays_visible = True
+    _log_overlays_hide_at = None
     _log_cancel_tick_task()
     _log_ensure_cursor_visible()
+    if _app:
+        _app.invalidate()
+
+
+# --- Overlay visibility ----------------------------------------------------
+def _log_touch_overlays():
+    """Mark overlay activity. Reveals overlays and (re)arms the 3 s hide
+    timer in play mode. No-op in pause mode (overlays are permanent)."""
+    global _log_overlays_visible, _log_overlays_hide_at
+    if _log_view_playback is None or _log_mode != "play":
+        return
+    _log_overlays_hide_at = time.monotonic() + _LOG_OVERLAY_HIDE_DELAY
+    if not _log_overlays_visible:
+        _log_overlays_visible = True
+        if _app:
+            _app.invalidate()
+
+
+def _log_tick_overlay_visibility():
+    """Called from the play-mode tick. Hides overlays once the deadline
+    expires; returns True iff visibility actually changed (caller invalidates)."""
+    global _log_overlays_visible, _log_overlays_hide_at
+    if _log_mode != "play":
+        return False
+    if not _log_overlays_visible or _log_overlays_hide_at is None:
+        return False
+    if time.monotonic() < _log_overlays_hide_at:
+        return False
+    _log_overlays_visible = False
+    _log_overlays_hide_at = None
+    return True
+
+
+def _log_set_overlay_hover(name):
+    """Update the hovered overlay control id, invalidating only on change."""
+    global _log_overlay_hover
+    if name == _log_overlay_hover:
+        return
+    _log_overlay_hover = name
     if _app:
         _app.invalidate()
 
@@ -3163,7 +3238,7 @@ def _log_start_tick_task():
 async def _log_tick_loop():
     """~30 Hz redraw loop while in play mode. Stops as soon as the frame is
     popped or the mode flips to pause; invalidates only when the playhead
-    crosses to a new event to avoid wasted repaints."""
+    crosses to a new event or the overlay hide-deadline expires."""
     global _log_last_playhead_index
     interval = 1.0 / _LOG_TICK_HZ
     try:
@@ -3175,11 +3250,15 @@ async def _log_tick_loop():
             if pb.events and _log_current_playback_us() >= pb.total_duration_us:
                 _log_auto_pause_at_end()
                 return
+            dirty = False
             idx = _log_playhead_index()
             if idx != _log_last_playhead_index:
                 _log_last_playhead_index = idx
-                if _app:
-                    _app.invalidate()
+                dirty = True
+            if _log_tick_overlay_visibility():
+                dirty = True
+            if dirty and _app:
+                _app.invalidate()
             await asyncio.sleep(interval)
     except asyncio.CancelledError:
         return
@@ -3357,15 +3436,28 @@ class _LogViewControl(FormattedTextControl):
       • Click on a rendered event row moves the cursor to that event.
         Does NOT resume playback — Space does.
 
-    Play mode: all mouse input is a no-op here. P3 will wire mouse to the
-    overlay auto-hide logic."""
+    Play mode: MOUSE_MOVE, click, and wheel refresh the overlay
+    visibility timer; otherwise no-op on the log content."""
     def mouse_handler(self, ev):
         result = super().mouse_handler(ev)
         if result is not NotImplemented:
             return result
-        if _log_view_playback is None or _log_mode != "pause":
+        if _log_view_playback is None:
             return None
         t = ev.event_type
+        # Clear button hover whenever the mouse drifts back onto the log
+        # control — the buttons reset their own hover on direct hits.
+        if t == MouseEventType.MOUSE_MOVE:
+            _log_set_overlay_hover(None)
+            _log_touch_overlays()
+            return None
+        if _log_mode == "play":
+            # In play, any wheel/click on the log content just refreshes
+            # the overlay timer — no cursor activation.
+            _log_touch_overlays()
+            return None
+        # Pause mode: original wheel + click-to-cursor behaviour.
+        _log_touch_overlays()
         if t == MouseEventType.SCROLL_UP:
             _log_move_cursor(-1)
             return None
@@ -3379,6 +3471,270 @@ class _LogViewControl(FormattedTextControl):
                 _log_cursor_to(idx)
             return None
         return None
+
+
+# ---------------------------------------------------------------------------
+# log_view overlays — top header + bottom controls (Phase 3, prompt 3)
+# ---------------------------------------------------------------------------
+def _log_format_mmss(us):
+    """Format a microsecond duration as MM:SS. Allows minutes to exceed
+    59 (so a 78-minute chain reads "78:34" rather than collapsing into
+    hours) — matches the launcher.md spec for the overlay time fields."""
+    s = max(0, int(us // 1_000_000))
+    return f"{s // 60:02d}:{s % 60:02d}"
+
+
+def _log_current_run_index():
+    """Event index whose run we attribute to the current overlay state:
+    the playhead while playing, the cursor while paused."""
+    pb = _log_view_playback
+    if pb is None or not pb.events:
+        return 0
+    if _log_mode == "play":
+        return _log_playhead_index()
+    return max(0, min(len(pb.events) - 1, _log_cursor_index))
+
+
+def _log_overlay_inert_handler(ev):
+    """MOUSE_MOVE on an overlay area not bound to a control: refresh the
+    timer and clear any stale button hover so it doesn't linger."""
+    if ev.event_type == MouseEventType.MOUSE_MOVE:
+        _log_set_overlay_hover(None)
+    _log_touch_overlays()
+
+
+def _log_pad(width, handler=None):
+    """Build a horizontal padding fragment of `width` spaces using the
+    overlay bg, optionally with a mouse handler."""
+    if width <= 0:
+        return None
+    if handler is None:
+        return (C_LOG_OVERLAY_BG, " " * width, _log_overlay_inert_handler)
+    return (C_LOG_OVERLAY_BG, " " * width, handler)
+
+
+# --- Top header ------------------------------------------------------------
+def _log_header_text():
+    """Build the top header overlay row. Always returns one row's worth
+    of fragments, sized to the terminal width."""
+    pb = _log_view_playback
+    cols = max(1, _term_cols())
+    if pb is None or not pb.events:
+        return [(C_LOG_OVERLAY_BG, " " * cols, _log_overlay_inert_handler)]
+
+    idx = _log_current_run_index()
+    run_id, run_ord, run_total = pb.run_at(idx)
+    info = pb.run_info(run_id)
+
+    name  = info.get("character") or pb.character
+    level = info.get("start_level")
+    char_part = f"{name} (L{level})" if isinstance(level, int) else name
+    run_part  = f"Run {run_ord} of {run_total}"
+    ts        = info.get("start_ts")
+    when_part = time.strftime("%Y-%m-%d %H:%M", time.localtime(ts)) if isinstance(ts, int) else ""
+
+    elapsed = _log_format_mmss(_log_current_playback_us())
+    at_end = (_log_mode == "pause"
+              and _log_current_playback_us() >= pb.total_duration_us
+              and pb.total_duration_us > 0)
+    if at_end:
+        elapsed_part = f"{elapsed} · End of session"
+    else:
+        elapsed_part = elapsed
+
+    hint = "ESC to return"
+
+    left_pieces = [char_part, run_part]
+    if when_part:
+        left_pieces.append(when_part)
+    left_pieces.append(elapsed_part)
+    left_text = "  ·  ".join(left_pieces)
+
+    # Inner block: ~80 cols when the terminal is wider, else full width.
+    inner_w = min(_LOG_OVERLAY_HEADER_W, cols)
+    gap = max(1, inner_w - len(left_text) - len(hint))
+    body = left_text + (" " * gap) + hint
+    if len(body) > inner_w:
+        overflow = len(body) - inner_w
+        trimmed_left = left_text[: max(0, len(left_text) - overflow)]
+        body = trimmed_left + " " + hint
+        if len(body) > inner_w:
+            body = body[:inner_w]
+    body_len = len(body)
+    body_hint = body[body_len - len(hint):] if body_len >= len(hint) else hint
+    body_left = body[: body_len - len(body_hint)] if body_len > len(body_hint) else ""
+
+    side = max(0, (cols - inner_w) // 2)
+    right_side = max(0, cols - inner_w - side)
+
+    frags = []
+    pad = _log_pad(side)
+    if pad:
+        frags.append(pad)
+    if body_left:
+        frags.append((C_LOG_OVERLAY_FG, body_left, _log_overlay_inert_handler))
+    if body_hint:
+        frags.append((C_LOG_OVERLAY_HINT, body_hint, _log_overlay_inert_handler))
+    pad = _log_pad(right_side)
+    if pad:
+        frags.append(pad)
+    return frags
+
+
+# --- Bottom controls -------------------------------------------------------
+def _log_rewind_click():
+    """Jump to event 0, preserving the current mode."""
+    global _log_play_anchor_offset_us, _log_play_anchor_wall
+    global _log_paused_offset_us, _log_cursor_index, _log_last_playhead_index
+    pb = _log_view_playback
+    if pb is None or not pb.events:
+        return
+    if _log_mode == "play":
+        _log_play_anchor_offset_us = 0
+        _log_play_anchor_wall      = time.monotonic()
+        _log_last_playhead_index   = -1
+    else:
+        _log_paused_offset_us = 0
+        _log_cursor_index     = 0
+        _log_ensure_cursor_visible()
+    if _app:
+        _app.invalidate()
+
+
+def _log_scrubber_seek(target_us):
+    """Seek to `target_us`, preserving the current mode."""
+    global _log_play_anchor_offset_us, _log_play_anchor_wall
+    global _log_paused_offset_us, _log_cursor_index, _log_last_playhead_index
+    pb = _log_view_playback
+    if pb is None or not pb.events:
+        return
+    target = max(0, min(pb.total_duration_us, int(target_us)))
+    if _log_mode == "play":
+        _log_play_anchor_offset_us = target
+        _log_play_anchor_wall      = time.monotonic()
+        _log_last_playhead_index   = -1
+    else:
+        i = bisect.bisect_right(pb.playback_offset_us, target) - 1
+        if i < 0:
+            i = 0
+        if i >= len(pb.events):
+            i = len(pb.events) - 1
+        _log_cursor_index     = i
+        _log_paused_offset_us = target
+        _log_ensure_cursor_visible()
+    if _app:
+        _app.invalidate()
+
+
+def _log_make_button_handler(name, on_click):
+    """Build a fragment mouse handler for a named overlay button."""
+    def _h(ev):
+        if ev.event_type == MouseEventType.MOUSE_MOVE:
+            _log_set_overlay_hover(name)
+            _log_touch_overlays()
+            return
+        if ev.event_type == MouseEventType.MOUSE_DOWN:
+            _log_set_overlay_hover(name)
+            _log_touch_overlays()
+            on_click()
+            return
+        _log_touch_overlays()
+    return _h
+
+
+def _log_make_scrubber_handler(cell_index, total_cells):
+    """Per-cell scrubber click handler. Falls back to a no-op when the
+    chain has no duration (single-event log)."""
+    def _h(ev):
+        if ev.event_type == MouseEventType.MOUSE_MOVE:
+            _log_set_overlay_hover(None)
+            _log_touch_overlays()
+            return
+        if ev.event_type == MouseEventType.MOUSE_DOWN:
+            _log_set_overlay_hover(None)
+            _log_touch_overlays()
+            pb = _log_view_playback
+            if pb is None or pb.total_duration_us <= 0 or total_cells <= 0:
+                return
+            target = int(cell_index / total_cells * pb.total_duration_us)
+            _log_scrubber_seek(target)
+            return
+        _log_touch_overlays()
+    return _h
+
+
+def _log_controls_text():
+    """Build the bottom controls overlay row (rewind / play-pause /
+    scrubber / time). The whole row is filled with the overlay bg."""
+    pb = _log_view_playback
+    cols = max(1, _term_cols())
+    if pb is None or not pb.events:
+        return [(C_LOG_OVERLAY_BG, " " * cols, _log_overlay_inert_handler)]
+
+    # Button glyphs. play_glyph reflects the ACTION a click would take —
+    # standard video-player convention: play icon while paused, pause
+    # icon while playing.
+    rewind_label = " ⏮ Rewind "
+    if _log_mode == "play":
+        pp_label = " ⏸ Pause "
+    else:
+        pp_label = " ▶ Play  "
+
+    elapsed = _log_format_mmss(_log_current_playback_us())
+    total   = _log_format_mmss(pb.total_duration_us)
+    time_label = f" {elapsed} / {total} "
+
+    scrubber_w = _LOG_OVERLAY_SCRUBBER_W
+    gap = "  "
+    inner_w = len(rewind_label) + len(pp_label) + len(gap) + scrubber_w + len(gap) + len(time_label)
+    inner_w = min(inner_w, _LOG_OVERLAY_CONTROLS_W, cols)
+
+    overflow = (len(rewind_label) + len(pp_label) + len(gap)
+                + scrubber_w + len(gap) + len(time_label)) - inner_w
+    if overflow > 0:
+        scrubber_w = max(4, scrubber_w - overflow)
+
+    side = max(0, (cols - inner_w) // 2)
+    right_side = max(0, cols - inner_w - side)
+
+    frags = []
+    pad = _log_pad(side)
+    if pad:
+        frags.append(pad)
+
+    rewind_style = C_LOG_BUTTON_HOVER if _log_overlay_hover == "rewind" else C_LOG_BUTTON_IDLE
+    frags.append((rewind_style, rewind_label,
+                  _log_make_button_handler("rewind", _log_rewind_click)))
+
+    pp_style = C_LOG_BUTTON_HOVER if _log_overlay_hover == "playpause" else C_LOG_BUTTON_IDLE
+    frags.append((pp_style, pp_label,
+                  _log_make_button_handler("playpause", _log_toggle_play_pause)))
+
+    frags.append((C_LOG_OVERLAY_BG, gap, _log_overlay_inert_handler))
+
+    if pb.total_duration_us > 0:
+        thumb_cell = int(_log_current_playback_us() / pb.total_duration_us * scrubber_w)
+        if thumb_cell >= scrubber_w:
+            thumb_cell = scrubber_w - 1
+    else:
+        thumb_cell = 0
+    for c in range(scrubber_w):
+        if c < thumb_cell:
+            style, glyph = C_LOG_SCRUBBER_FILLED, "━"
+        elif c == thumb_cell:
+            style, glyph = C_LOG_SCRUBBER_THUMB, "●"
+        else:
+            style, glyph = C_LOG_SCRUBBER_EMPTY, "─"
+        frags.append((style, glyph, _log_make_scrubber_handler(c, scrubber_w)))
+
+    frags.append((C_LOG_OVERLAY_BG, gap, _log_overlay_inert_handler))
+
+    frags.append((C_LOG_OVERLAY_FG, time_label, _log_overlay_inert_handler))
+
+    pad = _log_pad(right_side)
+    if pad:
+        frags.append(pad)
+    return frags
 
 
 # ---------------------------------------------------------------------------
@@ -3949,36 +4305,43 @@ def _kb_log_escape(event):
 
 @kb.add("space", filter=_in_frame("log_view"))
 def _kb_log_space(event):
+    _log_touch_overlays()
     _log_toggle_play_pause()
 
 
 @kb.add("up", filter=_in_frame("log_view"))
 def _kb_log_up(event):
+    _log_touch_overlays()
     _log_move_cursor(-1)
 
 
 @kb.add("down", filter=_in_frame("log_view"))
 def _kb_log_down(event):
+    _log_touch_overlays()
     _log_move_cursor(1)
 
 
 @kb.add("pageup", filter=_in_frame("log_view"))
 def _kb_log_pgup(event):
+    _log_touch_overlays()
     _log_move_cursor(-_LOG_PAGE_STEP)
 
 
 @kb.add("pagedown", filter=_in_frame("log_view"))
 def _kb_log_pgdn(event):
+    _log_touch_overlays()
     _log_move_cursor(_LOG_PAGE_STEP)
 
 
 @kb.add("home", filter=_in_frame("log_view"))
 def _kb_log_home(event):
+    _log_touch_overlays()
     _log_cursor_to(0)
 
 
 @kb.add("end", filter=_in_frame("log_view"))
 def _kb_log_end(event):
+    _log_touch_overlays()
     pb = _log_view_playback
     if pb is None or not pb.events:
         return
@@ -4166,7 +4529,30 @@ def main():
         wrap_lines=False,
         always_hide_cursor=True,
     )
-    log_view_frame = _log_view_window
+    log_header_win = Window(
+        content=FormattedTextControl(text=_log_header_text, focusable=False),
+        height=1, wrap_lines=False, always_hide_cursor=True,
+    )
+    log_controls_win = Window(
+        content=FormattedTextControl(text=_log_controls_text, focusable=False),
+        height=1, wrap_lines=False, always_hide_cursor=True,
+    )
+    _log_overlays_filter = Condition(lambda: _log_overlays_visible)
+    log_view_frame = FloatContainer(
+        content=_log_view_window,
+        floats=[
+            Float(
+                top=0, left=0, right=0, height=1,
+                content=ConditionalContainer(content=log_header_win,
+                                             filter=_log_overlays_filter),
+            ),
+            Float(
+                bottom=0, left=0, right=0, height=1,
+                content=ConditionalContainer(content=log_controls_win,
+                                             filter=_log_overlays_filter),
+            ),
+        ],
+    )
 
     frames = {
         "main":                       main_frame,

@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 from dataclasses import dataclass, field
@@ -210,6 +211,7 @@ class LogPlayback:
         self.run_ids = list(run_ids)
         self._runs_dir = runs_dir if runs_dir is not None else _DATA_RUNS_DIR
         self._ordinal = {rid: i + 1 for i, rid in enumerate(self.run_ids)}
+        self._run_info_cache: dict = {}  # run_id -> dict | None (None = missing)
         self.loaded_run_ids: list = []  # subset that actually had a .log
         self.events: list = []
         for rid in self.run_ids:
@@ -254,3 +256,38 @@ class LogPlayback:
             raise IndexError(event_index)
         ev = self.events[event_index]
         return (ev.run_id, self._ordinal[ev.run_id], len(self.run_ids))
+
+    def run_info(self, run_id: str) -> dict:
+        """Return `{character, start_level, start_ts}` for a run, parsed
+        from the sealed `<run_id>.jsonl`'s first `run_start` row.
+
+        Cached on first access. Missing or unreadable files cache an
+        empty dict so subsequent calls don't re-touch the disk. Returned
+        dict keys may be absent when the source row lacked them.
+        """
+        cached = self._run_info_cache.get(run_id)
+        if cached is not None:
+            return cached
+        info: dict = {}
+        path = os.path.join(self._runs_dir, self.character, run_id + ".jsonl")
+        try:
+            f = open(path, "r", encoding="utf-8", errors="replace")
+        except OSError:
+            self._run_info_cache[run_id] = info
+            return info
+        with f:
+            first = f.readline()
+        if first:
+            try:
+                row = json.loads(first)
+            except ValueError:
+                row = None
+            if isinstance(row, dict) and row.get("event") == "run_start":
+                if isinstance(row.get("character"), str):
+                    info["character"] = row["character"]
+                if isinstance(row.get("level"), int):
+                    info["start_level"] = row["level"]
+                if isinstance(row.get("ts"), (int, float)):
+                    info["start_ts"] = int(row["ts"])
+        self._run_info_cache[run_id] = info
+        return info
