@@ -93,6 +93,7 @@ _PANE_TARGETS = [
 _current_frame    = "main"
 _frame_stack      = []          # navigation stack: [(frame, ...) for ancestor frames]
 _sel_main         = 0
+_sel_options      = 0           # cursor within the popup Options grouping (Panes / Scripts / Back)
 _sel_panes        = 0           # cursor within the Panes submenu (selectable rows)
 _sel_pane         = 0           # cursor within a per-pane subframe (selectable rows)
 _panes_target     = "status"    # which pane is currently being edited
@@ -100,6 +101,7 @@ _scripts_scroll   = 0
 _rate_session_rating = 0        # 0..5; reset on every push of the rate_session frame
 _app                 = None
 _main_window         = None     # set in main(); referenced for focus
+_options_window      = None     # set in main(); referenced for focus
 _panes_window        = None     # set in main(); referenced for focus
 _pane_window         = None     # set in main(); referenced for focus
 _scripts_window      = None     # set in main(); referenced for render_info / focus
@@ -122,6 +124,7 @@ _achievements_sb   = None
 # Mouse-hover state. Sticky-on-last-cell matches the launcher; mouse motion on
 # a new frame updates it immediately so the stale value is invisible.
 _hover_main        = -1
+_hover_options     = -1
 _hover_panes       = -1
 _hover_pane        = -1
 
@@ -270,6 +273,7 @@ def _focus_current_frame():
         return
     win = {
         "main":         _main_window,
+        "options":      _options_window,
         "panes":        _panes_window,
         "pane":         _pane_window,
         "scripts":      _scripts_window,
@@ -310,10 +314,13 @@ def _pop_frame():
 # ---------------------------------------------------------------------------
 def _set_hover(frame, idx):
     """Update hover index for the named frame; invalidate if changed."""
-    global _hover_main, _hover_panes, _hover_pane
+    global _hover_main, _hover_options, _hover_panes, _hover_pane
     changed = False
     if frame == "main" and _hover_main != idx:
         _hover_main = idx
+        changed = True
+    elif frame == "options" and _hover_options != idx:
+        _hover_options = idx
         changed = True
     elif frame == "panes" and _hover_panes != idx:
         _hover_panes = idx
@@ -382,13 +389,12 @@ def _main_items():
     rating, char, _ = _save_session_state()
     if char is not None:
         if rating is None:
-            items.append(("Save session", "save_session", "normal", None))
+            items.append(("Save run", "save_session", "normal", None))
         else:
-            items.append(("Save session", "save_session_dead", "saved", None))
+            items.append(("Save run", "save_session_dead", "saved", None))
         items.append(("Statistics", "statistics", "normal", None))
 
-    items.append(("Panes",        "panes",    "normal", None))
-    items.append(("Scripts",      "scripts",  "normal", None))
+    items.append(("Options",      "options",  "normal", None))
     items.append(("Exit session", "exit",     "normal", None))
     return items
 
@@ -398,7 +404,7 @@ def _main_selectable_indices():
 
 
 def _activate_main_item(action):
-    global _scripts_scroll, _sel_panes, _rate_session_rating
+    global _scripts_scroll, _sel_panes, _sel_options, _rate_session_rating
     if action == "continue":
         _app.exit()
     elif action == "reconnect":
@@ -409,9 +415,9 @@ def _activate_main_item(action):
         _push_frame("rate_session")
     elif action == "save_session_dead":
         pass  # dead row; defensive no-op (keyboard nav already skips it)
-    elif action == "panes":
-        _sel_panes = 0
-        _push_frame("panes")
+    elif action == "options":
+        _sel_options = 0
+        _push_frame("options")
     elif action == "scripts":
         _scripts_scroll = 0
         _push_frame("scripts")
@@ -546,9 +552,112 @@ def _main_text():
 
 
 # ---------------------------------------------------------------------------
-# Panes submenu (replaces the old Options frame; see docs/popup-menu.md).
-# Mirrors the launcher's Options → Panes submenu layout. Six per-pane rows,
-# blank, then "Display pane headers" and Back.
+# Options grouping (popup-only): a thin index frame that holds Panes and
+# Scripts. See docs/popup-menu.md. Mirrors the popup's behaviour from before
+# the per-pane-colour PR — the only thing under it now is the launcher-shape
+# Panes submenu.
+# ---------------------------------------------------------------------------
+_OPTIONS_ROWS = [
+    ("panes",   "Panes"),
+    ("scripts", "Scripts"),
+    ("sep",     ""),
+    ("back",    "Back"),
+]
+
+
+def _options_selectable_indices():
+    return [i for i, (k, _) in enumerate(_OPTIONS_ROWS) if k != "sep"]
+
+
+def _options_activate(row_idx):
+    global _sel_panes, _scripts_scroll
+    if not (0 <= row_idx < len(_OPTIONS_ROWS)):
+        return
+    action, _label = _OPTIONS_ROWS[row_idx]
+    if action == "panes":
+        _sel_panes = 0
+        _push_frame("panes")
+    elif action == "scripts":
+        _scripts_scroll = 0
+        _push_frame("scripts")
+    elif action == "back":
+        _pop_frame()
+
+
+def _options_title_text():
+    cols  = _term_cols()
+    title = "─── Options ───"
+    return [
+        ("", "\n\n"),
+        ("", _pad_centre(title, cols)),
+        (C_TITLE, title),
+        ("", "\n"),
+    ]
+
+
+def _options_content_text():
+    cols = _term_cols()
+    sel_indices = _options_selectable_indices()
+    sel = _sel_options
+    if sel >= len(sel_indices):
+        sel = len(sel_indices) - 1
+    sel_row = sel_indices[sel] if sel_indices else -1
+
+    labels = [lbl if kind != "sep" else "" for kind, lbl in _OPTIONS_ROWS]
+    maxw   = max((len(l) for l in labels), default=0)
+    pad    = max(0, (cols - (maxw + 6)) // 2)
+
+    frags = []
+    for i, (kind, label) in enumerate(_OPTIONS_ROWS):
+        if kind == "sep":
+            frags.append(("", "\n"))
+            continue
+
+        is_active = (i == sel_row)
+        is_hover  = (i == _hover_options)
+        style    = _row_style(is_active, is_hover)
+        prefix   = "<< " if is_active else "   "
+        suffix   = " >>" if is_active else "   "
+
+        def _make_handler(row_idx=i, sel_pos=sel_indices.index(i) if i in sel_indices else 0):
+            def _handler(ev):
+                if ev.event_type == MouseEventType.MOUSE_MOVE:
+                    _set_hover("options", row_idx)
+                    return
+                if ev.event_type != MouseEventType.MOUSE_DOWN:
+                    return
+                global _sel_options
+                _sel_options = sel_pos
+                _options_activate(row_idx)
+                if _app:
+                    _app.invalidate()
+            return _handler
+
+        h = _make_handler()
+        frags.append(("", " " * pad))
+        frags.append((style, prefix, h))
+        frags.append((style, label, h))
+        frags.append((style, suffix, h))
+        frags.append(("", "\n"))
+
+    return frags
+
+
+def _options_footer_text():
+    cols   = _term_cols()
+    footer = "↑↓ Navigate · Enter Select · ESC Back"
+    return [
+        ("", "\n"),
+        ("", _pad_centre(footer, cols)),
+        (C_HINT, footer),
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Panes submenu (Options → Panes). Mirrors the launcher's per-pane list with
+# a trailing "Display pane headers" toggle and Back. Per-pane state is read
+# live from tmux; colour writes route through _persist_conf_key in the
+# per-pane subframe below.
 # ---------------------------------------------------------------------------
 def _panes_rows():
     rows = []
@@ -556,6 +665,7 @@ def _panes_rows():
         rows.append(("pane", (target, label)))
     rows.append(("sep", None))
     rows.append(("headers", None))
+    rows.append(("sep", None))
     rows.append(("back", None))
     return rows
 
@@ -772,7 +882,7 @@ def _pane_activate(row_idx):
 def _pane_title_text():
     cols = _term_cols()
     _target, label, _color_key = _current_pane_meta()
-    title = f"─── {label} ───"
+    title = f"─── {label} pane ───"
     return [
         ("", "\n\n"),
         ("", _pad_centre(title, cols)),
@@ -859,7 +969,7 @@ def _pane_content_text():
             hex_color = PANE_COLORS.get(name)
             frags.append((style, "  ", h))
             if hex_color is None:
-                frags.append(("fg:#3a3a3a", "███", h))
+                frags.append((f"fg:{PANE_PREVIEW_BLACK_FG}", "███", h))
             else:
                 frags.append((f"fg:{hex_color} bg:{hex_color}", "███", h))
 
@@ -996,7 +1106,7 @@ def _exit_confirm_text():
 
 
 # ---------------------------------------------------------------------------
-# Rate-session frame (popup "Save session" → 0..5 star rating + save)
+# Rate-session frame (popup "Save run" → 0..5 star rating + save)
 # ---------------------------------------------------------------------------
 def _rate_session_text():
     cols  = _term_cols()
@@ -2115,6 +2225,38 @@ def _main_escape(event):
     event.app.exit()
 
 
+# Options frame (Panes / Scripts / Back)
+@kb.add("up", filter=_in_frame("options"))
+def _opt_up(event):
+    global _sel_options
+    n = len(_options_selectable_indices())
+    if n:
+        _sel_options = (_sel_options - 1) % n
+
+
+@kb.add("down", filter=_in_frame("options"))
+def _opt_down(event):
+    global _sel_options
+    n = len(_options_selectable_indices())
+    if n:
+        _sel_options = (_sel_options + 1) % n
+
+
+@kb.add("enter", filter=_in_frame("options"))
+@kb.add(" ",     filter=_in_frame("options"))
+def _opt_select(event):
+    sel_indices = _options_selectable_indices()
+    if not sel_indices:
+        return
+    idx = _sel_options if _sel_options < len(sel_indices) else len(sel_indices) - 1
+    _options_activate(sel_indices[idx])
+
+
+@kb.add("escape", filter=_in_frame("options"), eager=True)
+def _opt_escape(event):
+    _pop_frame()
+
+
 # Panes frame
 @kb.add("up", filter=_in_frame("panes"))
 def _panes_up(event):
@@ -2357,6 +2499,46 @@ def _build_main_container():
     return _main_window
 
 
+def _build_options_container():
+    global _options_window
+
+    title_window = Window(
+        content=_ScrollControl(
+            text=_options_title_text,
+            focusable=False,
+            get_scroll=_get_panes_scroll,
+            set_scroll=_set_panes_scroll,
+            get_max=_panes_max_scroll,
+        ),
+        height=3,
+        wrap_lines=False,
+    )
+    content_window = Window(
+        content=_ScrollControl(
+            text=_options_content_text,
+            focusable=True,
+            get_scroll=_get_panes_scroll,
+            set_scroll=_set_panes_scroll,
+            get_max=_panes_max_scroll,
+        ),
+        wrap_lines=False,
+        get_vertical_scroll=lambda w: min(_panes_scroll, _window_max_scroll(w)),
+    )
+    footer_window = Window(
+        content=_ScrollControl(
+            text=_options_footer_text,
+            focusable=False,
+            get_scroll=_get_panes_scroll,
+            set_scroll=_set_panes_scroll,
+            get_max=_panes_max_scroll,
+        ),
+        height=2,
+        wrap_lines=False,
+    )
+    _options_window = content_window
+    return HSplit([title_window, content_window, footer_window])
+
+
 def _build_panes_container():
     global _panes_window
 
@@ -2527,6 +2709,7 @@ def main():
 
     frames = {
         "main":         _build_main_container(),
+        "options":      _build_options_container(),
         "panes":        _build_panes_container(),
         "pane":         _build_pane_container(),
         "scripts":      _build_scripts_container(),

@@ -15,10 +15,10 @@ wrapper that `exec`s the Python entry; both the tmux root binding and
 the Lua auto-open path in `lua/brain/connection.lua` invoke the wrapper.
 
 The UI is a frame stack: a single `DynamicContainer` swaps between
-`main`, `panes`, `pane`, `scripts`, `statistics`, and `exit_confirm`
-containers, pushed and popped via `_push_frame` / `_pop_frame`. Each
-frame owns its own `KeyBindings` filter so navigation, scroll, and ESC
-behave per-frame.
+`main`, `options`, `panes`, `pane`, `scripts`, `statistics`, and
+`exit_confirm` containers, pushed and popped via `_push_frame` /
+`_pop_frame`. Each frame owns its own `KeyBindings` filter so
+navigation, scroll, and ESC behave per-frame.
 
 The top menu items are context-aware, rebuilt from `bridge/runtime/connection.state`
 on every render:
@@ -38,8 +38,10 @@ before the disconnect step — see "Auto-open on disconnect" below.
 ## Input
 
 - **ESC** — on the main frame, dismisses the popup. On any submenu
-  (`panes`, `pane`, `scripts`, `exit_confirm`), pops one frame back
-  toward `main`. ESC bindings use `eager=True` to bypass
+  (`options`, `panes`, `pane`, `scripts`, `exit_confirm`), pops one
+  frame back toward `main`. The frame stack is honoured: ESC inside
+  `panes` or `scripts` returns to `options`, ESC inside `options`
+  returns to `main`. ESC bindings use `eager=True` to bypass
   prompt_toolkit's key-disambiguation timeout; `app.ttimeoutlen` /
   `app.timeoutlen` are also lowered to 50 ms so bare ESC feels instant.
 - **Arrow keys** — navigate within the current frame's selectable rows
@@ -50,7 +52,7 @@ before the disconnect step — see "Auto-open on disconnect" below.
 - **Mouse click** — clicks on a row both select and activate it in a
   single click. Implemented as per-fragment `mouse_handler` callbacks
   on `MouseEventType.MOUSE_DOWN`.
-- **Mouse hover** — main, panes, and per-pane rows light up in `C_HOVER` on
+- **Mouse hover** — main, options, panes, and per-pane rows light up in `C_HOVER` on
   hover, matching the launcher (see
   [docs/launcher.md](launcher.md) "Mouse hover / click"). Best-effort
   on terminals that report cell-motion mouse events; click-to-activate
@@ -72,25 +74,45 @@ The popup invalidates itself once per second while open, so the Link readout
 (and any other on-render state like connection mode or the Statistics row's
 visibility) tracks the underlying files without requiring a keypress.
 
+## Options grouping
+
+The main-menu entry between **Save run** (when present) and
+**Exit session** is **Options**. It pushes a thin index frame whose
+sole purpose is to group **Panes** and **Scripts** under one slot, so
+the main menu stays short.
+
+```
+--- Options ---
+Panes
+Scripts
+                   (blank row)
+Back
+```
+
+`Options → Panes` reaches the Panes submenu described below; `Options
+→ Scripts` reaches the Scripts frame (unchanged from previous
+versions). ESC inside `options` pops back to `main`; ESC inside
+`panes` or `scripts` pops back to `options`. Source of truth is
+`_OPTIONS_ROWS` in `ingame_menu.py`.
+
 ## Panes submenu
 
-The main-menu entry between **Save session** (when present) and
-**Scripts** is **Panes** — it replaces the previous Options entry
-because the popup no longer carries any non-pane settings. Source of
-truth is `_PANE_TARGETS` in `ingame_menu.py`.
+`Options → Panes`. Source of truth is `_PANE_TARGETS` in
+`ingame_menu.py`.
 
 The `panes` frame lists the six right-column panes (Character / Buffs /
 Group / Communication / UI / Developer) followed by a blank row, a
-`[x] Display pane headers` toggle, and Back. The headers toggle routes
-through `toggle_pane.sh headers --persist` (live tmux border status +
-`show_pane_dividers` in `startup.conf`); enabled-state for each pane row
-is re-probed from tmux on every render.
+`[x] Display pane headers` toggle, another blank row, and Back. The
+headers toggle routes through `toggle_pane.sh headers --persist` (live
+tmux border status + `show_pane_dividers` in `startup.conf`);
+enabled-state for each pane row is re-probed from tmux on every
+render.
 
 Selecting a pane row pushes its `pane` subframe — same shape for all
-six panes:
+six panes (title takes the form `--- <Name> pane ---`):
 
 ```
---- Character ---
+--- Character pane ---
 [x] Enabled
                                   (blank row)
 Pane color
@@ -114,9 +136,11 @@ re-tint** the open pane via `tmux select-pane -t <idx> -P
 bg=<hex|default>`. If the pane is currently closed the new colour
 persists only — it takes effect the next time the pane is opened, since
 `bridge/launcher/open_pane.sh` reads the same key via `_pane_bg_for` on
-every cold start. Each radio row trails three full-block glyphs painted
-with the target hex so the swatch previews the actual pane background;
-Black renders with no tmux bg override.
+every cold start. Each radio row trails three full-block glyphs: tinted
+entries render with a solid `bg=<hex>` fill; the `Black` entry renders
+with a dim grey `fg` (`PANE_PREVIEW_BLACK_FG = #3a3a3a`) so the swatch
+stays visible on a black terminal — the actual pane behaviour for
+`Black` is still no tmux bg override.
 
 Connection mode (MMapper / Direct / Custom) and profile switch are
 deliberately **not** present in the popup — they require a restart and
@@ -145,7 +169,7 @@ button — both parked.
 ## Statistics frame
 
 A read-only view of the current run, opened from a "Statistics" row on the
-main frame. The row sits between **Save session** and **Panes** and is
+main frame. The row sits between **Save run** and **Options** and is
 gated on two conditions, re-checked on every render of `_main_items()`:
 
 1. `bridge/runtime/status.state` exists, parses as JSON, and contains a
@@ -325,9 +349,9 @@ The aggregation library backing this frame lives at
 run-browser. See [ADR 0065](decisions/0065-run-stats-python-aggregator.md)
 for the rationale.
 
-## Save session
+## Save run
 
-A "Save session" row sits above Statistics on the main frame, gated on the
+A "Save run" row sits above Statistics on the main frame, gated on the
 same `_statistics_character()` check as the Statistics row: it appears
 only while an active run is being tracked (`status.state` names a
 character and `data/runs/<character>/current.jsonl` exists). When no
@@ -338,7 +362,7 @@ every render from the meta sidecar:
 
 - **Not saved** — normal `C_ITEM` style, selectable; activation (Enter /
   Space / click) pushes the `rate_session` frame.
-- **Saved** — dead-grey: just the label `"Save session"` painted in
+- **Saved** — dead-grey: just the label `"Save run"` painted in
   `C_HINT` (no `<<>>` decoration, no star suffix, no hover highlight);
   no mouse handlers are attached, and keyboard navigation
   (`_main_selectable_indices`) skips the index, so Enter and click are
@@ -386,7 +410,7 @@ default `max_gap_seconds=3600`) and calls
 atomic `<run-id>.meta.json` sidecar per run in the chain — including
 the current (still-`current.jsonl`) run, whose meta uses its computed
 run-id. There is no on-screen confirmation flash or banner; the
-re-rendered main frame's dead-grey "Save session" row is the
+re-rendered main frame's dead-grey "Save run" row is the
 user-visible confirmation. The chosen rating surfaces on the
 Statistics frame's header (`Rating: <stars>`, right-aligned).
 
@@ -394,7 +418,7 @@ The keyboard alias `cp -s` (profile save) is independent of the popup
 row and unchanged: it still runs
 `#class {$_profile} {write} {ttpp/profiles/$_profile.tin}` inside the
 profile's tt++ session and works after link loss. The popup's
-"Save session" is a separate concept — saving the *play session*'s
+"Save run" is a separate concept — saving the *play session*'s
 run logs from the 14-day retention sweep, not saving the tt++ profile.
 
 ## Auto-open on disconnect
@@ -463,9 +487,10 @@ The popup is a frame stack pushed and popped through `_push_frame` /
 one contract for mouse routing to work:
 
 1. **Each frame builder constructs at least one focusable `Window` and
-   stores it at module level.** Today: `_main_window`, `_panes_window`,
-   `_pane_window`, `_scripts_window`, `_statistics_window`,
-   `_exit_confirm_window`, `_rate_session_window`. The
+   stores it at module level.** Today: `_main_window`, `_options_window`,
+   `_panes_window`, `_pane_window`, `_scripts_window`,
+   `_statistics_window`, `_exit_confirm_window`, `_rate_session_window`.
+   The
    "primary" window of a frame is the one that receives keyboard focus
    while that frame is on top of the stack — usually the window whose
    control owns the frame's mouse handlers.

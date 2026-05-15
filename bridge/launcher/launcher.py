@@ -47,7 +47,7 @@ from palette import (  # noqa: E402
     _S_GAINED, _S_LOSS, _S_LABEL, _S_VALUE, _S_TP_BAR,
     _S_TRACK, _S_MARKER, _S_THUMB, _S_TOTAL, _S_ARROW,
     _S_HINT, _S_PVP, _S_ALLY, _S_STAR,
-    PANE_COLORS, PANE_COLOR_ORDER,
+    PANE_COLORS, PANE_COLOR_ORDER, PANE_PREVIEW_BLACK_FG,
 )
 import log_player  # noqa: E402
 import run_retention  # noqa: E402
@@ -1162,7 +1162,7 @@ def _profile_delete_text():
 # ---------------------------------------------------------------------------
 _OPTIONS_ROWS = [
     ("panes",          "Panes"),
-    ("text_layout",    "Game text-layout"),
+    ("text_layout",    "Text layout"),
     ("connection",     "Connection"),
     ("back",           "Back"),
 ]
@@ -1215,7 +1215,10 @@ def _options_text():
 
         is_active = (i == _sel_options)
         is_hover  = (i == _hover_options)
-        inactive  = C_BUTTON_DISABLED if action == "text_layout" else C_ITEM
+        # Text layout is a placeholder row — render its inactive state in
+        # C_HINT (no bg fill) so it reads as "not ready yet" without the
+        # disabled-button look. Active / hover still use the normal styles.
+        inactive  = C_HINT if action == "text_layout" else C_ITEM
         style     = _row_style(is_active, is_hover, inactive)
         prefix    = "<< " if is_active else "   "
         suffix    = " >>" if is_active else "   "
@@ -1256,6 +1259,7 @@ def _options_panes_rows():
         rows.append(("pane", (target, label)))
     rows.append(("sep", None))
     rows.append(("headers", None))
+    rows.append(("sep", None))
     rows.append(("back", None))
     return rows
 
@@ -1416,7 +1420,7 @@ def _options_pane_activate(row_idx):
 def _options_pane_text():
     cols = _term_cols()
     target, label, show_key, color_key = _current_pane_meta()
-    title  = f"─── {label} ───"
+    title  = f"─── {label} pane ───"
     footer = "↑↓ Navigate · Enter Select · ESC Back"
 
     enabled = (_conf.get(show_key) == "1")
@@ -1505,14 +1509,14 @@ def _options_pane_text():
         frags.append((style, padded_label, h))
 
         if kind == "radio":
-            # Trailing colour swatch: 3 full-block glyphs painted with bg=<hex>.
+            # Trailing colour swatch: 3 full-block glyphs. Solid fill for
+            # tinted entries; Black gets a dim grey fg only so the cell stays
+            # visible on a black terminal (see PANE_PREVIEW_BLACK_FG).
             color_name = PANE_COLOR_ORDER[i - _PANE_FRAME_COLOR_LO]
             hex_color  = PANE_COLORS.get(color_name)
             frags.append((style, "  ", h))
             if hex_color is None:
-                # Black → no bg override; the empty cells show the terminal default.
-                # Render the three glyphs with a hint colour so the cell is visible.
-                frags.append((f"fg:#3a3a3a", "███", h))
+                frags.append((f"fg:{PANE_PREVIEW_BLACK_FG}", "███", h))
             else:
                 frags.append((f"fg:{hex_color} bg:{hex_color}", "███", h))
 
@@ -1727,7 +1731,7 @@ def _options_connection_custom_text():
 # Options — "Coming soon" placeholder for Game text-layout
 # ---------------------------------------------------------------------------
 _COMING_SOON_BODY = (
-    "Game text-layout — coming soon. Will let you choose colour and "
+    "Text layout — coming soon. Will let you choose colour and "
     "description profiles (PK / Minimalistic / Role-play) and configure "
     "text substitutions. Font cannot be changed."
 )
@@ -1735,7 +1739,7 @@ _COMING_SOON_BODY = (
 
 def _options_coming_soon_text():
     cols = _term_cols()
-    title  = "─── Game text-layout ───"
+    title  = "─── Text layout ───"
     footer = "Any key to return"
     body_w = max(20, min(72, cols - 4))
     wrapped = _wrap_text(_COMING_SOON_BODY, body_w)
