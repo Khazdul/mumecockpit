@@ -35,7 +35,7 @@ chain in `tmux_start.sh`, the Windows shortcut, the update flow's restart
 path) goes through that wrapper unchanged.
 
 The UI is a frame stack: a single `DynamicContainer` swaps between `main`,
-`profile`, `profile_create_name`, `profile_create_choose`,
+`profile`, `profile_rename`, `profile_create_name`, `profile_create_choose`,
 `profile_create_copy_picker`, `profile_delete_confirm`, `options`,
 `options_panes`, `options_pane`, `options_connection`,
 `options_connection_custom`, `options_coming_soon`, `scripts`, `about`,
@@ -52,13 +52,138 @@ do not have distinct names.
 | Feature | Detail |
 |---------|--------|
 | Session detect | `tmux has-session -t mume` + `list-clients` re-probed on every render → top item is "Enter MUME", "Resume MUME", or "Mirror MUME (attached elsewhere)" |
-| Profile page | Lists `ttpp/profiles/*.tin`; select, create (blank / copy from existing), delete. `default` cannot be deleted. "Create blank" copies from `bridge/launcher/templates/blank_profile.tin` (single source of truth — see ADR 0042). Selected profile is written to `startup.conf` and consumed by `ttpp/core/config.tin` at tt++ startup. |
+| Profile page | Sortable table of `ttpp/profiles/*.tin` (Name + Selected columns) paired with a centred Options widget — Select, New, Edit, Rename, Delete, Export, Back. See the [Profile sub-menu](#profile-sub-menu) section below. `default` cannot be renamed or deleted. "Create blank" copies from `bridge/launcher/templates/blank_profile.tin` (single source of truth — see ADR 0042). The active profile is written to `startup.conf` and consumed by `ttpp/core/config.tin` at tt++ startup. |
 | Options page | Navigation hub: **Panes**, **Scripts**, **Text layout** (placeholder), **Connection**, blank row, **Back**. See the [Options sub-menu](#options-sub-menu) section below for each child frame. All Options changes persist to `bridge/runtime/startup.conf` on Back / ESC. |
 | Scripts page | Opened from Options → Scripts. Reads `bridge/runtime/scripts.cache`; scrollable via UP/DOWN, PageUp/PageDown |
 | About page | Reads `bridge/launcher/about.txt`; word-wrapped, cached per resize, scrollable. Current version on the right of the title; an "Update available: vX.Y.Z" line appears in `C_ACCENT` when `version.cache` contains a newer tag |
 | Update flow | Selecting "Update" runs `bridge/release/update.sh` in a worker thread; result keyed off update.sh's exit codes (0/10/20/21/22/other → complete/no-update/aborted/failed). rc==0 re-execs `bridge/launcher/launcher.sh` to pick up the new code |
 | Quit | Confirmation prompt; ESC cancels |
 | Persistence | Options saved to `bridge/runtime/startup.conf` on Back / ESC; profile selection saved immediately on Enter |
+
+## Profile sub-menu
+
+Two interactive frames: `profile` (table + actions) and `profile_rename`
+(name-entry sub-frame). Reuses the existing create / delete frames
+(`profile_create_name`, `profile_create_choose`,
+`profile_create_copy_picker`, `profile_delete_confirm`) unchanged.
+
+### `profile` frame
+
+Top-to-bottom:
+
+1. Title row.
+2. **Centred package: `[ profile table | scrollbar | gap | Options widget ]`.**
+   Horizontally centred as one unit; the package drives all left/right
+   positions on the frame and recentres on terminal resize.
+   - **Profile table.** Two columns:
+     - `Name` — dynamic width (longest profile name, floor = header
+       width 4), left-aligned. Sortable: click toggles direction;
+       default `Name ▲ asc`.
+     - `Selected` — fixed width 8, centred. `✓` in `C_ACCENT` (gold)
+       on the active profile, blank otherwise. Header is not
+       clickable and shows no sort indicator.
+     - One-space gap between columns.
+   - **Gap.** 1 space between the table's scrollbar column and the
+     Options widget's left edge.
+   - **Options widget.** Vertical column of 7 connected flat buttons
+     (no inter-button gap, no border): Select, New, Edit, Rename,
+     Delete, Export, Back. Column width = longest button label + 2
+     cells of padding. A centred `Options` header sits on the same
+     line as the table header, painted `C_SECTION` when the widget
+     is unfocused / `C_ACTIVE` when focused. Styling and state
+     palette match the History → Options widget; see that section
+     for the full state table.
+3. **Feedback row** — single row directly below the package; doubles
+   as the spacing row above the footer. Holds transient feedback
+   from Edit / Rename / Export (`Exported to ~/<name>.tin.` and
+   `Renamed to "<new>".` in `C_ACCENT`, `Editor coming soon.` and
+   `Export failed: …` in `C_HINT`) centred on the package width for
+   ~3 s. Select does not flash — the ✓ in the Selected column is the
+   confirmation.
+4. Footer hint: `↑↓ Cursor · Tab/←→ Cycle · Enter Activate · ESC Back`.
+   A flex spacer below the footer absorbs leftover terminal rows.
+
+**Focus.** Two focusable Windows per the focus-on-push contract
+(ADR 0066): `_profile_table_window`, `_profile_options_window`.
+`_profile_focused: int` (0/1) routes navigation. Tab / Shift+Tab
+cycles between them (modulo 2). In addition, `→` focuses options
+and `←` focuses the table — non-wrapping (← on table and → on
+options are no-ops).
+
+**Cursor and hover.** The cursor element in each panel paints
+`C_SELECTED` in all focus states. Hover paints `C_HOVER` on
+non-cursor selectable elements; hover never overrides `C_SELECTED`.
+
+**Disabled rules.**
+
+- **Select** — disabled when the cursor row is already the active profile.
+- **Rename**, **Delete** — disabled when the cursor row is `default`.
+- **Edit**, **New**, **Export**, **Back** — always enabled.
+
+The Options cursor moves through enabled buttons only (↑/↓ skips
+disabled), matching the History widget.
+
+**Keyboard.**
+
+| Focus   | Key                | Action                                  |
+|---------|--------------------|-----------------------------------------|
+| table   | ↑/↓                | move cursor row (clamp)                 |
+| table   | PgUp/PgDn          | scroll 10                               |
+| table   | Home/End           | jump to ends                            |
+| table   | Enter / Space      | invoke Select (no-op if disabled)       |
+| table   | →                  | focus options (no-op when on options)   |
+| options | ↑/↓                | move cursor button (skip disabled)      |
+| options | Enter / Space      | activate selected button                |
+| options | ←                  | focus table (no-op when on table)       |
+| any     | Tab / Shift+Tab    | cycle focus (table ↔ options)           |
+| any     | ESC                | pop to main menu                        |
+
+**Mouse.** Click activates (and switches focus to that panel).
+Clicking a table row moves the cursor and focuses the table. Clicking
+the `Name` header toggles sort direction. Clicking a button focuses
+the Options widget and activates the button. The wheel scrolls the
+table without moving the cursor (`_WheelScrollControl`, shared with
+the History table); wheel over the gap / scrollbar / Options column
+is a no-op.
+
+**Action handlers.**
+
+- **Select** — writes `_conf["profile"]` and re-renders so the ✓ in
+  the Selected column moves to the new row. No feedback flash — the
+  ✓ is the visual confirmation.
+- **New** — pushes the existing `profile_create_name` chain
+  (validation → blank-vs-copy choice → optional copy picker). The
+  ADR 0042 blank-template seeding is unchanged.
+- **Edit** — flashes `Editor coming soon.` in `C_HINT` for ~3 s and
+  pushes no frame (placeholder until the editor frame ships).
+- **Rename** — pushes `profile_rename` (see below). Disabled on
+  `default`.
+- **Delete** — pushes the existing `profile_delete_confirm` frame.
+  Disabled on `default`.
+- **Export** — copies `ttpp/profiles/<name>.tin` to `~/<name>.tin`,
+  overwriting without confirmation. On success flashes
+  `Exported to ~/<name>.tin.` in `C_ACCENT`; on `OSError` flashes
+  `Export failed: <reason>` in `C_HINT`.
+- **Back** — pops to the launcher main menu (same effect as ESC).
+
+### `profile_rename` frame
+
+Single-input sub-frame pushed by the Rename Options button. Mirrors
+the shape of `profile_create_name`: title `─── Profile ───`,
+`Rename "<old>" to:` head, single-line input prompt, inline error
+on validation failure, footer `Enter  Confirm · ESC  Cancel`.
+
+- Input is validated with `_validate_profile_name` — same rules as
+  Create (must start with a letter; letters, digits, `_` only; max
+  32 chars; no collision with an existing `.tin`).
+- If the new name equals the old, the frame pops silently (no-op).
+- On confirm: renames the `.tin` file in `ttpp/profiles/`. If the
+  renamed profile was the active one in `startup.conf`, the conf
+  is rewritten with the new name. The table re-sorts and the
+  cursor re-anchors to the renamed row's new index. The frame
+  pops and the profile frame flashes `Renamed to "<new>".` in
+  `C_ACCENT`.
+- ESC cancels without touching files.
 
 ## Options sub-menu
 
@@ -327,9 +452,10 @@ Clicking a runs-table row with `has_log` true opens `log_view` for
 that chain (same destination as Enter / Space on the row, or the
 Run log Options button); clicking a row with no log moves the
 cursor only — Stats is reachable from the Options widget. Wheel
-scrolls the table when hovered (`_HistScrollControl`, the same
+scrolls the table when hovered (`_WheelScrollControl`, the shared
 `FormattedTextControl` subclass that intercepts `SCROLL_UP` /
-`SCROLL_DOWN`); wheel over filter row or menu is a no-op. The table's
+`SCROLL_DOWN` and forwards them to a per-frame callback); wheel
+over filter row or menu is a no-op. The table's
 click-to-jump scrollbar uses `bridge/launcher/widgets/scrollbar.py`.
 
 **Action handlers.** All operate on the row currently under the table
@@ -681,13 +807,19 @@ All frames render through `prompt_toolkit` controls. Layout building blocks:
   `_current_frame` to one of the prebuilt container trees. Each frame's
   primary `Window` is stored at module level and focused on push so
   keyboard handlers fire reliably.
-- **Centered frames** — `main`, `profile`, the profile-create sub-frames,
-  `profile_delete_confirm`, `options`, `options_panes`, `options_pane`,
-  `options_connection`, `options_connection_custom`, `options_coming_soon`,
-  `history_detail`, `history_rate`, `history_delete_confirm`,
-  `update_running`, `update_result`, and `exit_confirm` are wrapped in
+- **Centered frames** — `main`, `profile_rename`, the profile-create
+  sub-frames, `profile_delete_confirm`, `options`, `options_panes`,
+  `options_pane`, `options_connection`, `options_connection_custom`,
+  `options_coming_soon`, `history_detail`, `history_rate`,
+  `history_delete_confirm`, `update_running`, `update_result`, and
+  `exit_confirm` are wrapped in
   `HSplit([window], align=VerticalAlign.CENTER)` so they stay visually
   centred at any terminal height above the minimum.
+- **Package-layout frames** — `history` and `profile` use a centred
+  `[ table | scrollbar | gap | Options ]` package anchored at the top
+  with a feedback row and footer below; a flex spacer absorbs leftover
+  rows so the package, feedback row, and footer hug together at the top
+  of the frame.
 - **Scrolling frames** — `scripts` and `about` use a three-row split
   (`title` fixed height, `content` `Dimension(weight=1)`, `footer` fixed
   height) with the content control slicing by a scroll offset.

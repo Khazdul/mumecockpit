@@ -159,9 +159,23 @@ _hover_main      = -1
 _last_main_label = None
 
 # Profile frame
-_profiles            = []
-_sel_profile         = 0
-_hover_profile       = -1
+_profiles               = []
+_profile_table_cursor   = 0
+_profile_table_scroll   = 0
+_profile_menu_cursor    = 0
+_profile_focused        = 0          # 0 = table, 1 = options
+_profile_hover          = (None, None)   # (panel_idx, row_idx)
+_profile_sort           = ("Name", "asc")
+_profile_table_sb       = None
+# Inline feedback shown directly below the Options widget after a Select /
+# Edit / Rename / Export action. Same contract as the history twin.
+_profile_feedback_text   = None
+_profile_feedback_style  = ""
+_profile_feedback_handle = None
+# Profile rename
+_rename_old_name     = ""
+_rename_name_buf     = ""
+_rename_name_err     = ""
 # Profile create
 _create_name_buf     = ""
 _create_name_err     = ""
@@ -286,7 +300,9 @@ _update_output       = ""
 
 # Windows
 _main_window         = None
-_profile_window      = None
+_profile_table_window            = None
+_profile_options_window          = None
+_profile_rename_window           = None
 _profile_create_name_window      = None
 _profile_create_choose_window    = None
 _profile_create_copy_window      = None
@@ -564,14 +580,16 @@ def _focus_current_frame():
     if _current_frame == "history":
         win = (_history_filter_window, _history_table_window,
                _history_options_window)[_history_focused]
+    elif _current_frame == "profile":
+        win = (_profile_table_window, _profile_options_window)[_profile_focused]
     else:
         win = {
             "main":                       _main_window,
-            "profile":                    _profile_window,
             "profile_create_name":        _profile_create_name_window,
             "profile_create_choose":      _profile_create_choose_window,
             "profile_create_copy_picker": _profile_create_copy_window,
             "profile_delete_confirm":     _profile_delete_window,
+            "profile_rename":             _profile_rename_window,
             "options":                    _options_window,
             "options_panes":              _options_panes_window,
             "options_pane":               _options_pane_window,
@@ -637,13 +655,11 @@ def _pad_centre(text, cols=None):
 # ---------------------------------------------------------------------------
 def _set_hover(frame, idx):
     """Set hover index for the named frame; invalidate if changed."""
-    global _hover_main, _hover_profile, _hover_options, _hover_copy
+    global _hover_main, _hover_options, _hover_copy
     global _hover_options_panes, _hover_options_pane, _hover_options_connection
     changed = False
     if frame == "main" and _hover_main != idx:
         _hover_main = idx; changed = True
-    elif frame == "profile" and _hover_profile != idx:
-        _hover_profile = idx; changed = True
     elif frame == "options" and _hover_options != idx:
         _hover_options = idx; changed = True
     elif frame == "options_panes" and _hover_options_panes != idx:
@@ -804,95 +820,676 @@ def _main_text():
 # ---------------------------------------------------------------------------
 # Profile frame
 # ---------------------------------------------------------------------------
+_PROFILE_BUTTONS = [
+    ("Select", "select"),
+    ("New",    "new"),
+    ("Edit",   "edit"),
+    ("Rename", "rename"),
+    ("Delete", "delete"),
+    ("Export", "export"),
+    ("Back",   "back"),
+]
+_PROFILE_BUTTON_W   = max(len(lbl) for lbl, _ in _PROFILE_BUTTONS) + 2
+_PROFILE_OPTIONS_GAP = 1
+
+
+def _profile_table_panel_w():
+    """Total width of the table content (column widths + per-gap separators)."""
+    _, total = _profile_table_columns_layout()
+    return total
+
+
+def _profile_package_width():
+    """Width of the centred [table | scrollbar | gap | options] package."""
+    return _profile_table_panel_w() + 1 + _PROFILE_OPTIONS_GAP + _PROFILE_BUTTON_W
+
+
+def _profile_left_pad():
+    """Left padding (cells) that centres the package on the current terminal."""
+    return max(0, (_term_cols() - _profile_package_width()) // 2)
+
+
 def _enter_profile_frame():
-    global _profiles, _sel_profile
+    global _profiles, _profile_table_cursor, _profile_table_scroll
+    global _profile_menu_cursor, _profile_focused, _profile_hover
+    global _profile_table_sb
     _profiles = _list_profiles()
+    _profile_apply_sort()
     cur = _conf.get("profile", "default")
-    _sel_profile = 0
+    _profile_table_cursor = 0
     for i, name in enumerate(_profiles):
         if name == cur:
-            _sel_profile = i
+            _profile_table_cursor = i
             break
+    _profile_table_scroll = 0
+    _profile_focused      = 0
+    _profile_hover        = (None, None)
+    _profile_table_sb = Scrollbar(
+        0, _profile_table_visible(), _profile_table_visible(),
+    )
+    _profile_clear_feedback()
+    enabled = _profile_menu_enabled_indices()
+    _profile_menu_cursor = enabled[0] if enabled else 0
     _push_frame("profile")
 
 
-def _profile_total():
-    return len(_profiles) + 2   # profiles + Create + Back
+def _profile_table_visible():
+    """Visible data rows in the table — data-fit, with a floor so the Options
+    column never clips.
+
+    Outer chrome (title 3 + footer 2 = 5) plus inner chrome (feedback row 1 +
+    table header row 1 = 2) reserves 7 terminal rows. Options is 1 header +
+    N buttons; the table window is `visible + 1` rows (header + data), so
+    visible must be at least len(_PROFILE_BUTTONS) for the Options widget to
+    render in full."""
+    max_by_terminal = max(1, _term_rows() - 3 - 2 - 2)
+    options_min = len(_PROFILE_BUTTONS)
+    return min(max_by_terminal, max(options_min, len(_profiles)))
 
 
-def _activate_profile(idx):
-    global _sel_profile
-    if idx < 0 or idx >= _profile_total():
+def _profile_table_window_h():
+    """Table window height = data rows + 1 header row."""
+    return _profile_table_visible() + 1
+
+
+def _profile_apply_sort():
+    """Re-sort _profiles in place per _profile_sort. Only Name is sortable
+    today; default is asc."""
+    global _profiles
+    _col, direction = _profile_sort
+    _profiles = sorted(_profiles, key=lambda n: n.lower(),
+                       reverse=(direction == "desc"))
+
+
+def _profile_toggle_sort(col):
+    """Click handler for the Name header — flips direction. Other columns are
+    not sortable."""
+    global _profile_sort, _profile_table_cursor, _profile_table_scroll
+    if col != "Name":
         return
-    _sel_profile = idx
-    if idx < len(_profiles):
-        _conf["profile"] = _profiles[idx]
-        _save_conf()
-        if _app:
-            _app.invalidate()
-    elif idx == len(_profiles):
-        _enter_profile_create_name()
+    cur_name = (_profiles[_profile_table_cursor]
+                if 0 <= _profile_table_cursor < len(_profiles) else None)
+    _col, cur_dir = _profile_sort
+    _profile_sort = ("Name", "asc" if cur_dir == "desc" else "desc")
+    _profile_apply_sort()
+    if cur_name is not None and cur_name in _profiles:
+        _profile_table_cursor = _profiles.index(cur_name)
+    _profile_table_scroll = _profile_scroll_into_view(
+        _profile_table_cursor, _profile_table_scroll, _profile_table_visible()
+    )
+    if _app:
+        _app.invalidate()
+
+
+def _profile_scroll_into_view(cursor, scroll, visible):
+    if cursor < scroll:
+        return cursor
+    if cursor >= scroll + visible:
+        return cursor - visible + 1
+    return scroll
+
+
+def _profile_move_table(delta):
+    global _profile_table_cursor, _profile_table_scroll
+    n = len(_profiles)
+    if not n:
+        return
+    new_cursor = max(0, min(n - 1, _profile_table_cursor + delta))
+    _profile_table_cursor = new_cursor
+    _profile_table_scroll = _profile_scroll_into_view(
+        new_cursor, _profile_table_scroll, _profile_table_visible()
+    )
+    if _app:
+        _app.invalidate()
+
+
+def _profile_jump_table(target):
+    global _profile_table_cursor, _profile_table_scroll
+    n = len(_profiles)
+    if not n:
+        return
+    new_cursor = max(0, min(n - 1, target))
+    _profile_table_cursor = new_cursor
+    _profile_table_scroll = _profile_scroll_into_view(
+        new_cursor, _profile_table_scroll, _profile_table_visible()
+    )
+    if _app:
+        _app.invalidate()
+
+
+def _profile_scroll_table(delta):
+    """Wheel scroll on the table — moves the viewport without moving the
+    cursor."""
+    global _profile_table_scroll
+    mx = max(0, len(_profiles) - _profile_table_visible())
+    _profile_table_scroll = max(0, min(mx, _profile_table_scroll + delta))
+    if _app:
+        _app.invalidate()
+
+
+def _profile_set_focus(panel):
+    global _profile_focused
+    if _profile_focused == panel:
+        return
+    _profile_focused = panel
+    _focus_current_frame()
+    if _app:
+        _app.invalidate()
+
+
+def _profile_cycle_focus(delta):
+    _profile_set_focus((_profile_focused + delta) % 2)
+
+
+def _profile_set_hover(panel, row):
+    global _profile_hover
+    new_val = (panel, row)
+    if _profile_hover == new_val:
+        return
+    _profile_hover = new_val
+    if _app:
+        _app.invalidate()
+
+
+def _profile_hover_at(panel, idx, on_event=None):
+    """Mouse handler factory for the profile frame — mirrors `_hover_at`
+    but writes to `_profile_hover`."""
+    def _handler(ev):
+        if ev.event_type == MouseEventType.MOUSE_MOVE:
+            _profile_set_hover(panel, idx)
+            return None
+        if on_event is not None:
+            return on_event(ev)
+        return NotImplemented
+    return _handler
+
+
+def _profile_hover_clear_frags(frags):
+    """Wrap each fragment in `frags` so MOUSE_MOVE clears _profile_hover.
+    Existing handlers are preserved."""
+    out = []
+    for f in frags:
+        style, text = f[0], f[1]
+        inner = f[2] if len(f) >= 3 else None
+        out.append((style, text, _profile_hover_at(None, None, on_event=inner)))
+    return out
+
+
+def _profile_current_name():
+    if 0 <= _profile_table_cursor < len(_profiles):
+        return _profiles[_profile_table_cursor]
+    return None
+
+
+# --- Action menu state -----------------------------------------------------
+def _profile_menu_actions():
+    """Return [(label, action_id, enabled), ...] for the current selection."""
+    name   = _profile_current_name()
+    has    = name is not None
+    active = _conf.get("profile", "default")
+    is_default = (name == "default")
+    return [
+        ("Select", "select", has and name != active),
+        ("New",    "new",    True),
+        ("Edit",   "edit",   has),
+        ("Rename", "rename", has and not is_default),
+        ("Delete", "delete", has and not is_default),
+        ("Export", "export", has),
+        ("Back",   "back",   True),
+    ]
+
+
+def _profile_menu_enabled_indices():
+    return [i for i, (_, _, en) in enumerate(_profile_menu_actions()) if en]
+
+
+def _profile_menu_move(delta):
+    """Move Options cursor through enabled buttons. Wraps."""
+    global _profile_menu_cursor
+    enabled = _profile_menu_enabled_indices()
+    if not enabled:
+        return
+    if _profile_menu_cursor in enabled:
+        idx = enabled.index(_profile_menu_cursor)
+        new_idx = (idx + delta) % len(enabled)
     else:
+        if delta >= 0:
+            new_idx = next((j for j, ei in enumerate(enabled)
+                            if ei > _profile_menu_cursor), 0)
+        else:
+            forward = [j for j, ei in enumerate(enabled)
+                       if ei < _profile_menu_cursor]
+            new_idx = forward[-1] if forward else len(enabled) - 1
+    _profile_menu_cursor = enabled[new_idx]
+    if _app:
+        _app.invalidate()
+
+
+def _profile_menu_activate(idx):
+    """Run the action for Options button `idx` if enabled."""
+    actions = _profile_menu_actions()
+    if not (0 <= idx < len(actions)):
+        return
+    _label, action, enabled = actions[idx]
+    if not enabled:
+        return
+    if action == "select":
+        _profile_action_select()
+    elif action == "new":
+        _profile_action_new()
+    elif action == "edit":
+        _profile_action_edit()
+    elif action == "rename":
+        _profile_action_rename()
+    elif action == "delete":
+        _profile_action_delete()
+    elif action == "export":
+        _profile_action_export()
+    elif action == "back":
         _pop_frame()
 
 
-def _profile_text():
+def _profile_action_select():
+    name = _profile_current_name()
+    if name is None or name == _conf.get("profile"):
+        return
+    _conf["profile"] = name
+    _save_conf()
+    if _app:
+        _app.invalidate()
+
+
+def _profile_action_new():
+    _enter_profile_create_name()
+
+
+def _profile_action_edit():
+    _profile_set_feedback("Editor coming soon.", C_HINT)
+
+
+def _profile_action_rename():
+    name = _profile_current_name()
+    if name is None or name == "default":
+        return
+    _enter_profile_rename()
+
+
+def _profile_action_delete():
+    name = _profile_current_name()
+    if name is None or name == "default":
+        return
+    _enter_profile_delete_confirm()
+
+
+def _profile_action_export():
+    name = _profile_current_name()
+    if name is None:
+        return
+    src = os.path.join(PROFILES_DIR, f"{name}.tin")
+    dst = os.path.expanduser(f"~/{name}.tin")
+    try:
+        shutil.copyfile(src, dst)
+    except OSError as exc:
+        _profile_set_feedback(f"Export failed: {exc.strerror or exc}", C_HINT)
+        return
+    _profile_set_feedback(f"Exported to ~/{name}.tin.", C_ACCENT)
+
+
+def _profile_set_feedback(text, style, ttl_seconds=3.0):
+    """Flash an inline feedback message below the Options widget."""
+    global _profile_feedback_text, _profile_feedback_style
+    global _profile_feedback_handle
+    _profile_feedback_text  = text
+    _profile_feedback_style = style
+    if _profile_feedback_handle is not None:
+        try:
+            _profile_feedback_handle.cancel()
+        except Exception:
+            pass
+        _profile_feedback_handle = None
+    if _app_loop is not None:
+        _profile_feedback_handle = _app_loop.call_later(
+            ttl_seconds, _profile_clear_feedback)
+    if _app:
+        _app.invalidate()
+
+
+def _profile_clear_feedback():
+    global _profile_feedback_text, _profile_feedback_style
+    global _profile_feedback_handle
+    _profile_feedback_text  = None
+    _profile_feedback_style = ""
+    _profile_feedback_handle = None
+    if _app:
+        _app.invalidate()
+
+
+# --- Title / footer text ---------------------------------------------------
+def _profile_title_text():
     cols = _term_cols()
     title = "─── Profile ───"
-    footer = "↑↓ Navigate · Enter Select · D Delete · ESC Back"
-    cur = _conf.get("profile", "default")
-    create_label = "[+] Create new profile"
-    back_label   = "    Back"
+    return _profile_hover_clear_frags([
+        ("", "\n"),
+        ("", _pad_centre(title, cols)),
+        (C_TITLE, title),
+        ("", "\n"),
+    ])
 
-    labels = []
-    for name in _profiles:
-        labels.append(f"({'•' if name == cur else ' '}) {name}")
-    labels.append(create_label)
-    labels.append(back_label)
-    maxw = max((len(l) for l in labels), default=0)
-    pad = max(0, (cols - (maxw + 6)) // 2)
 
+def _profile_footer_text():
+    cols = _term_cols()
+    footer = "↑↓ Cursor · Tab/←→ Cycle · Enter Activate · ESC Back"
+    return _profile_hover_clear_frags([
+        ("", "\n"),
+        ("", _pad_centre(footer, cols)),
+        (C_HINT, footer),
+    ])
+
+
+# --- Table render ----------------------------------------------------------
+def _profile_name_col_width():
+    base = len("Name ▼")
+    if _profiles:
+        base = max(base, max(len(n) for n in _profiles))
+    return base
+
+
+def _profile_table_columns_layout():
+    """Compute (cols_with_widths, total_width) for current state."""
+    name_w = _profile_name_col_width()
+    cols = [
+        ("Name",     "Name",     name_w, "left",   True),
+        ("Selected", "Selected", 8,      "centre", False),
+    ]
+    total = name_w + 1 + 8
+    return cols, total
+
+
+def _profile_header_label(base, is_active_sort, sort_dir, align, width):
+    txt = base
+    if is_active_sort:
+        txt += " ▼" if sort_dir == "desc" else " ▲"
+    if align == "centre":
+        pad = max(0, width - len(txt))
+        l = pad // 2
+        r = pad - l
+        return " " * l + txt[:width] + " " * r
+    return txt[:width].ljust(width)
+
+
+def _profile_format_row(name, cols, active_name):
+    """Return list of (text, style) per column."""
+    out = []
+    for (key, _base, width, align, _sortable) in cols:
+        if key == "Name":
+            txt = name[:width].ljust(width)
+            style = _S_LABEL
+        elif key == "Selected":
+            if name == active_name:
+                glyph = "✓"
+                pad = max(0, width - 1)
+                l = pad // 2
+                r = pad - l
+                txt = " " * l + glyph + " " * r
+                style = C_ACCENT
+            else:
+                txt = " " * width
+                style = _S_LABEL
+        else:
+            txt = "".ljust(width)
+            style = _S_LABEL
+        out.append((txt, style))
+    return out
+
+
+def _profile_table_text():
+    cols_layout, total_w = _profile_table_columns_layout()
+    sort_col, sort_dir   = _profile_sort
+    table_focused        = (_profile_focused == 0)
+    active_name          = _conf.get("profile", "default")
+    clear_hover          = _profile_hover_at(None, None)
+    frags = []
+
+    # Header row.
+    header_style = C_ACTIVE if table_focused else C_SECTION
+    for i, (key, base, width, align, sortable) in enumerate(cols_layout):
+        is_active_sort = sortable and (key == sort_col)
+        label = _profile_header_label(base, is_active_sort, sort_dir, align, width)
+
+        if sortable:
+            def _click(ev, col=key):
+                if ev.event_type == MouseEventType.MOUSE_DOWN:
+                    _profile_set_focus(0)
+                    _profile_toggle_sort(col)
+                    return None
+                return NotImplemented
+            cell_handler = _profile_hover_at(None, None, on_event=_click)
+        else:
+            cell_handler = clear_hover
+
+        if i > 0:
+            frags.append((header_style, " ", cell_handler))
+        frags.append((header_style, label, cell_handler))
+    frags.append(("", "\n", clear_hover))
+
+    # Data rows.
+    visible = _profile_table_visible()
+    total   = len(_profiles)
+    mx      = max(0, total - visible)
+    global _profile_table_scroll
+    if _profile_table_scroll > mx:
+        _profile_table_scroll = mx
+    if _profile_table_sb is not None:
+        _profile_table_sb.update(total, visible, height=visible)
+        _profile_table_sb.scroll_to(_profile_table_scroll)
+
+    sliced = _profiles[_profile_table_scroll:_profile_table_scroll + visible]
+    hover_panel, hover_row = _profile_hover
+
+    for vi, name in enumerate(sliced):
+        row_abs   = _profile_table_scroll + vi
+        is_cursor = (row_abs == _profile_table_cursor)
+        is_hover  = (hover_panel == 0 and hover_row == row_abs)
+
+        if is_cursor:
+            row_bg = C_SELECTED
+        elif is_hover:
+            row_bg = C_HOVER
+        else:
+            row_bg = None
+
+        def _click(ev, row=row_abs):
+            if ev.event_type == MouseEventType.MOUSE_DOWN:
+                _profile_set_focus(0)
+                global _profile_table_cursor
+                _profile_table_cursor = row
+                if _app:
+                    _app.invalidate()
+                return None
+            return NotImplemented
+        row_handler = _profile_hover_at(0, row_abs, on_event=_click)
+
+        row_frags = _profile_format_row(name, cols_layout, active_name)
+        for i, (txt, default_style) in enumerate(row_frags):
+            style = row_bg if row_bg is not None else default_style
+            if i > 0:
+                frags.append((style, " ", row_handler))
+            frags.append((style, txt, row_handler))
+        if vi < len(sliced) - 1:
+            frags.append(("", "\n", clear_hover))
+
+    # Trailing blank lines so panel keeps its shape.
+    blank = visible - len(sliced)
+    for _ in range(blank):
+        frags.append(("", "\n", clear_hover))
+
+    return frags
+
+
+def _profile_table_scrollbar_text():
+    if _profile_table_sb is None or not _profiles:
+        return []
+    # Leave the header row's strip blank, then render scrollbar over data.
+    frags = [("", " "), ("", "\n")]
+    frags.extend(_profile_table_sb.render())
+    return _profile_hover_clear_frags(frags)
+
+
+# --- Options widget render (right side of the profile table) --------------
+def _profile_options_text():
+    """Render the Options column: 'Options' header + flat buttons stacked
+    with no inter-button gap."""
+    inner_w = _PROFILE_BUTTON_W
+    actions = _profile_menu_actions()
+    options_focused = (_profile_focused == 1)
+    header_style = C_ACTIVE if options_focused else C_SECTION
+    hover_panel, hover_row = _profile_hover
+    clear_hover = _profile_hover_at(None, None)
+
+    frags = []
+
+    # Header — "Options" centred within the button-column width.
+    header_label = "Options"
+    pad_l = max(0, (inner_w - len(header_label)) // 2)
+    pad_r = max(0, inner_w - len(header_label) - pad_l)
+    frags.append(("", " " * pad_l, clear_hover))
+    frags.append((header_style, header_label, clear_hover))
+    frags.append(("", " " * pad_r, clear_hover))
+    frags.append(("", "\n", clear_hover))
+
+    for i, (label, _action, enabled) in enumerate(actions):
+        is_cursor = (i == _profile_menu_cursor)
+        is_hover  = (hover_panel == 1 and hover_row == i and enabled
+                     and not is_cursor)
+        if not enabled:
+            style = C_BUTTON_DISABLED
+        elif is_cursor:
+            style = C_SELECTED
+        elif is_hover:
+            style = C_BUTTON_HOVER
+        else:
+            style = C_BUTTON
+
+        pad_l = max(0, (inner_w - len(label)) // 2)
+        pad_r = max(0, inner_w - len(label) - pad_l)
+        cell_text = " " * pad_l + label + " " * pad_r
+
+        if enabled:
+            def _click(ev, idx=i):
+                if ev.event_type == MouseEventType.MOUSE_DOWN:
+                    _profile_set_focus(1)
+                    global _profile_menu_cursor
+                    _profile_menu_cursor = idx
+                    _profile_menu_activate(idx)
+                    return None
+                return NotImplemented
+            frags.append((style, cell_text, _profile_hover_at(1, i, on_event=_click)))
+        else:
+            frags.append((style, cell_text, clear_hover))
+        frags.append(("", "\n", clear_hover))
+
+    # Pad trailing blank lines so the column fills the table_row height.
+    used = 1 + len(actions)
+    blanks = max(0, _profile_table_window_h() - used)
+    for r in range(blanks):
+        frags.append(("", " " * inner_w, clear_hover))
+        if r < blanks - 1:
+            frags.append(("", "\n", clear_hover))
+    return frags
+
+
+def _profile_feedback_or_blank_text():
+    """Single row directly below the package; doubles as the spacing row
+    above the footer. Centred on package width when a message is flashing."""
+    clear_hover = _profile_hover_at(None, None)
+    if not _profile_feedback_text:
+        return [("", "", clear_hover)]
+    text = _profile_feedback_text
+    pkg_w  = _profile_package_width()
+    inner  = max(0, (pkg_w - len(text)) // 2)
+    pad_l  = _profile_left_pad() + inner
+    return [
+        ("", " " * pad_l, clear_hover),
+        (_profile_feedback_style, text, clear_hover),
+    ]
+
+
+# --- Profile rename --------------------------------------------------------
+def _enter_profile_rename():
+    global _rename_old_name, _rename_name_buf, _rename_name_err
+    name = _profile_current_name()
+    if name is None or name == "default":
+        return
+    _rename_old_name = name
+    _rename_name_buf = ""
+    _rename_name_err = ""
+    _push_frame("profile_rename")
+
+
+def _profile_rename_text():
+    cols = _term_cols()
+    title  = "─── Profile ───"
+    head   = f'Rename "{_rename_old_name}" to:'
+    hint   = "letters and _ only · must start with a letter · max 32"
+    footer = "Enter  Confirm · ESC  Cancel"
+    line   = f"> {_rename_name_buf}_"
     frags = []
     frags.append(("", "\n\n"))
     frags.append(("", _pad_centre(title, cols)))
     frags.append((C_TITLE, title))
     frags.append(("", "\n\n"))
-
-    total = _profile_total()
-    create_idx = len(_profiles)
-    back_idx   = create_idx + 1
-
-    for i, label in enumerate(labels):
-        if i == create_idx or i == back_idx:
-            frags.append(("", "\n"))   # blank line before Create / before Back
-
-        is_active = (i == _sel_profile)
-        is_hover  = (i == _hover_profile)
-        inactive  = C_ACCENT if i == create_idx else C_ITEM
-        style = _row_style(is_active, is_hover, inactive)
-        prefix = "<< " if is_active else "   "
-        suffix = " >>" if is_active else "   "
-
-        def _make_handler(row=i):
-            def _h(ev):
-                if ev.event_type == MouseEventType.MOUSE_MOVE:
-                    _set_hover("profile", row)
-                    return
-                if ev.event_type == MouseEventType.MOUSE_DOWN:
-                    _activate_profile(row)
-            return _h
-
-        h = _make_handler()
-        frags.append(("", " " * pad))
-        frags.append((style, prefix, h))
-        frags.append((style, label, h))
-        frags.append((style, suffix, h))
-        frags.append(("", "\n"))
-
-    frags.append(("", "\n"))
+    frags.append(("", _pad_centre(head, cols)))
+    frags.append((C_HINT, head))
+    frags.append(("", "\n\n"))
+    frags.append(("", _pad_centre(line, cols)))
+    frags.append((C_HINT, "> "))
+    frags.append((C_ACTIVE, _rename_name_buf))
+    frags.append((C_HINT, "_"))
+    frags.append(("", "\n\n"))
+    frags.append(("", _pad_centre(hint, cols)))
+    frags.append((C_HINT, hint))
+    if _rename_name_err:
+        frags.append(("", "\n\n"))
+        frags.append(("", _pad_centre(_rename_name_err, cols)))
+        frags.append((C_YELLOW, _rename_name_err))
+    frags.append(("", "\n\n"))
     frags.append(("", _pad_centre(footer, cols)))
     frags.append((C_HINT, footer))
     return frags
+
+
+def _profile_rename_confirm():
+    """Validate _rename_name_buf and perform the file rename. Pops on success,
+    sets _rename_name_err and stays open on validation failure."""
+    global _rename_name_err, _profiles, _profile_table_cursor
+    new_name = _rename_name_buf
+    if new_name == _rename_old_name:
+        _pop_frame()
+        return
+    err = _validate_profile_name(new_name)
+    if err:
+        _rename_name_err = err
+        if _app:
+            _app.invalidate()
+        return
+    src = os.path.join(PROFILES_DIR, f"{_rename_old_name}.tin")
+    dst = os.path.join(PROFILES_DIR, f"{new_name}.tin")
+    try:
+        os.rename(src, dst)
+    except OSError as exc:
+        _rename_name_err = f"Rename failed: {exc.strerror or exc}"
+        if _app:
+            _app.invalidate()
+        return
+    if _conf.get("profile") == _rename_old_name:
+        _conf["profile"] = new_name
+        _save_conf()
+    _profiles = _list_profiles()
+    _profile_apply_sort()
+    if new_name in _profiles:
+        _profile_table_cursor = _profiles.index(new_name)
+    _pop_frame()
+    _profile_set_feedback(f'Renamed to "{new_name}".', C_ACCENT)
 
 
 # ---------------------------------------------------------------------------
@@ -991,19 +1588,20 @@ def _profile_create_finish_blank():
 
 
 def _reset_to_profile_after_create():
-    """Pop create frames and refresh the profile list/selection."""
-    global _profiles, _sel_profile, _frame_stack, _current_frame
+    """Pop create frames and refresh the profile list/cursor."""
+    global _profiles, _profile_table_cursor, _frame_stack, _current_frame
     while _frame_stack and _current_frame.startswith("profile_create"):
         _current_frame = _frame_stack.pop()
     if _current_frame != "profile":
         # Defensive — collapse anything stale back to main.
         _current_frame = "profile"
     _profiles = _list_profiles()
+    _profile_apply_sort()
     cur = _conf.get("profile", "default")
-    _sel_profile = 0
+    _profile_table_cursor = 0
     for i, name in enumerate(_profiles):
         if name == cur:
-            _sel_profile = i
+            _profile_table_cursor = i
             break
     _focus_current_frame()
     if _app:
@@ -1104,16 +1702,16 @@ def _profile_create_copy_text():
 # ---------------------------------------------------------------------------
 def _enter_profile_delete_confirm():
     global _delete_target, _delete_locked
-    if _sel_profile >= len(_profiles):
+    name = _profile_current_name()
+    if name is None:
         return
-    name = _profiles[_sel_profile]
     _delete_target = name
     _delete_locked = (name == "default")
     _push_frame("profile_delete_confirm")
 
 
 def _confirm_profile_delete():
-    global _profiles, _sel_profile
+    global _profiles, _profile_table_cursor
     if _delete_locked:
         return
     target = os.path.join(PROFILES_DIR, f"{_delete_target}.tin")
@@ -1125,9 +1723,9 @@ def _confirm_profile_delete():
         _conf["profile"] = "default"
         _save_conf()
     _profiles = _list_profiles()
-    total = len(_profiles) + 2
-    if _sel_profile >= total:
-        _sel_profile = total - 1
+    _profile_apply_sort()
+    if _profile_table_cursor >= len(_profiles):
+        _profile_table_cursor = max(0, len(_profiles) - 1)
     _pop_frame()
 
 
@@ -2358,7 +2956,7 @@ def _hover_at(panel, idx, on_event=None):
     On MOUSE_MOVE, sets _history_hover to (panel, idx) — pass None for
     either arg to clear hover. Other events are delegated to on_event(ev)
     if provided. Anything we don't handle returns NotImplemented so that
-    _HistScrollControl still sees scroll-wheel events."""
+    _WheelScrollControl still sees scroll-wheel events."""
     def _handler(ev):
         if ev.event_type == MouseEventType.MOUSE_MOVE:
             _history_set_hover(panel, idx)
@@ -2967,19 +3565,21 @@ def _history_feedback_or_blank_text():
 
 
 # --- Wheel-scrolling control ----------------------------------------------
-class _HistScrollControl(FormattedTextControl):
-    def __init__(self, *args, panel, **kwargs):
+class _WheelScrollControl(FormattedTextControl):
+    """FormattedTextControl that forwards wheel events to a supplied
+    `on_scroll(delta)` callback. Used by history and profile tables alike."""
+    def __init__(self, *args, on_scroll, **kwargs):
         super().__init__(*args, **kwargs)
-        self._panel = panel
+        self._on_scroll = on_scroll
 
     def mouse_handler(self, ev):
         result = super().mouse_handler(ev)
         if result is NotImplemented:
             if ev.event_type == MouseEventType.SCROLL_UP:
-                _history_scroll_panel(self._panel, -1)
+                self._on_scroll(-1)
                 return None
             if ev.event_type == MouseEventType.SCROLL_DOWN:
-                _history_scroll_panel(self._panel, 1)
+                self._on_scroll(1)
                 return None
         return result
 
@@ -5087,38 +5687,117 @@ def _kb_main_escape(event):
 
 
 # Profile frame
+@kb.add("tab", filter=_in_frame("profile"))
+def _kb_profile_tab(event):
+    _profile_cycle_focus(1)
+
+
+@kb.add("s-tab", filter=_in_frame("profile"))
+def _kb_profile_stab(event):
+    _profile_cycle_focus(-1)
+
+
+@kb.add("right", filter=_in_frame("profile"))
+def _kb_profile_right(event):
+    # Spatial Tab — table → options. No-op when already on options.
+    if _profile_focused == 0:
+        _profile_set_focus(1)
+
+
+@kb.add("left", filter=_in_frame("profile"))
+def _kb_profile_left(event):
+    # Spatial Shift+Tab — options → table. No-op when already on table.
+    if _profile_focused == 1:
+        _profile_set_focus(0)
+
+
 @kb.add("up", filter=_in_frame("profile"))
 def _kb_profile_up(event):
-    global _sel_profile
-    n = _profile_total()
-    if n:
-        _sel_profile = (_sel_profile - 1) % n
+    if _profile_focused == 0:
+        _profile_move_table(-1)
+    else:
+        _profile_menu_move(-1)
 
 
 @kb.add("down", filter=_in_frame("profile"))
 def _kb_profile_down(event):
-    global _sel_profile
-    n = _profile_total()
-    if n:
-        _sel_profile = (_sel_profile + 1) % n
+    if _profile_focused == 0:
+        _profile_move_table(1)
+    else:
+        _profile_menu_move(1)
+
+
+@kb.add("pageup", filter=_in_frame("profile"))
+def _kb_profile_pgup(event):
+    if _profile_focused == 0:
+        _profile_jump_table(_profile_table_cursor - 10)
+
+
+@kb.add("pagedown", filter=_in_frame("profile"))
+def _kb_profile_pgdn(event):
+    if _profile_focused == 0:
+        _profile_jump_table(_profile_table_cursor + 10)
+
+
+@kb.add("home", filter=_in_frame("profile"))
+def _kb_profile_home(event):
+    if _profile_focused == 0:
+        _profile_jump_table(0)
+
+
+@kb.add("end", filter=_in_frame("profile"))
+def _kb_profile_end(event):
+    if _profile_focused == 0:
+        _profile_jump_table(len(_profiles) - 1)
 
 
 @kb.add("enter", filter=_in_frame("profile"))
 @kb.add(" ",     filter=_in_frame("profile"))
 def _kb_profile_select(event):
-    _activate_profile(_sel_profile)
-
-
-@kb.add("d", filter=_in_frame("profile"))
-@kb.add("D", filter=_in_frame("profile"))
-def _kb_profile_delete(event):
-    if _sel_profile < len(_profiles):
-        _enter_profile_delete_confirm()
+    if _profile_focused == 0:
+        # Enter on a table row triggers Select (no-op if disabled).
+        actions = _profile_menu_actions()
+        # Select is index 0.
+        if actions and actions[0][2]:
+            _profile_menu_activate(0)
+    else:
+        _profile_menu_activate(_profile_menu_cursor)
 
 
 @kb.add("escape", filter=_in_frame("profile"), eager=True)
 def _kb_profile_escape(event):
     _pop_frame()
+
+
+# Profile rename
+@kb.add("escape", filter=_in_frame("profile_rename"), eager=True)
+def _kb_pren_escape(event):
+    _pop_frame()
+
+
+@kb.add("enter", filter=_in_frame("profile_rename"))
+def _kb_pren_enter(event):
+    _profile_rename_confirm()
+
+
+@kb.add("backspace", filter=_in_frame("profile_rename"))
+def _kb_pren_backspace(event):
+    global _rename_name_buf, _rename_name_err
+    if _rename_name_buf:
+        _rename_name_buf = _rename_name_buf[:-1]
+        _rename_name_err = ""
+
+
+@kb.add("<any>", filter=_in_frame("profile_rename"))
+def _kb_pren_any(event):
+    global _rename_name_buf, _rename_name_err
+    data = event.data or ""
+    if len(data) != 1 or not data.isprintable():
+        return
+    if len(_rename_name_buf) >= 32:
+        return
+    _rename_name_buf += data
+    _rename_name_err = ""
 
 
 # Profile create — name
@@ -5854,7 +6533,8 @@ def _build_history():
     #   options_win       = _HISTORY_BUTTON_W
     #   table_right_spacer = remainder (flex)
     table_win = Window(
-        content=_HistScrollControl(text=_history_table_text, focusable=True, panel=1),
+        content=_WheelScrollControl(text=_history_table_text, focusable=True,
+                                    on_scroll=lambda d: _history_scroll_panel(1, d)),
         wrap_lines=False, always_hide_cursor=True,
         width=lambda: Dimension.exact(_history_table_panel_w()),
     )
@@ -5918,6 +6598,84 @@ def _build_history():
             HSplit([title, body, footer, flex_spacer]))
 
 
+def _build_profile():
+    """Build the Profile frame:
+        title · [table + options] · feedback · footer.
+    Returns the two focusable windows (table / options) plus the frame."""
+    title  = Window(content=FormattedTextControl(text=_profile_title_text, focusable=False),
+                    height=3, wrap_lines=False, always_hide_cursor=True)
+    footer = Window(content=FormattedTextControl(text=_profile_footer_text, focusable=False),
+                    height=2, wrap_lines=False, always_hide_cursor=True)
+
+    def _make_filler_text(width, rows_fn=None):
+        def _fn():
+            rows = rows_fn() if rows_fn else 1
+            clear = _profile_hover_at(None, None)
+            out = []
+            for i in range(rows):
+                out.append(("", " " * width, clear))
+                if i < rows - 1:
+                    out.append(("", "\n", clear))
+            return out
+        return _fn
+
+    table_win = Window(
+        content=_WheelScrollControl(text=_profile_table_text, focusable=True,
+                                    on_scroll=_profile_scroll_table),
+        wrap_lines=False, always_hide_cursor=True,
+        width=lambda: Dimension.exact(_profile_table_panel_w()),
+    )
+    table_sb_win = Window(
+        content=FormattedTextControl(text=_profile_table_scrollbar_text, focusable=False),
+        wrap_lines=False, always_hide_cursor=True,
+        width=Dimension.exact(1),
+    )
+    table_left_spacer = Window(
+        content=FormattedTextControl(
+            text=_make_filler_text(1, rows_fn=_profile_table_window_h),
+            focusable=False),
+        wrap_lines=False, always_hide_cursor=True,
+        width=lambda: Dimension.exact(_profile_left_pad()),
+    )
+    gap_win = Window(
+        content=FormattedTextControl(
+            text=_make_filler_text(1, rows_fn=_profile_table_window_h),
+            focusable=False),
+        wrap_lines=False, always_hide_cursor=True,
+        width=Dimension.exact(_PROFILE_OPTIONS_GAP),
+    )
+    options_win = Window(
+        content=FormattedTextControl(text=_profile_options_text, focusable=True),
+        wrap_lines=False, always_hide_cursor=True,
+        width=Dimension.exact(_PROFILE_BUTTON_W),
+    )
+    table_right_spacer = Window(
+        content=FormattedTextControl(
+            text=_make_filler_text(1, rows_fn=_profile_table_window_h),
+            focusable=False),
+        wrap_lines=False, always_hide_cursor=True,
+    )
+    table_row = VSplit(
+        [table_left_spacer, table_win, table_sb_win, gap_win, options_win,
+         table_right_spacer],
+        height=lambda: Dimension.exact(_profile_table_window_h()),
+    )
+
+    feedback_win = Window(
+        content=FormattedTextControl(text=_profile_feedback_or_blank_text,
+                                     focusable=False),
+        height=1, wrap_lines=False, always_hide_cursor=True,
+    )
+
+    body = HSplit([
+        table_row,
+        feedback_win,
+    ])
+    flex_spacer = Window()
+    return (table_win, options_win,
+            HSplit([title, body, footer, flex_spacer]))
+
+
 def _build_history_rate():
     """Build the History rate-session frame — single centred Window with the
     star widget and footer hint. Mirrors the popup's rate_session shape."""
@@ -5933,7 +6691,8 @@ def _build_history_rate():
 # ---------------------------------------------------------------------------
 def main():
     global _app, _app_loop, _cockpit_version, _cache_mtime
-    global _main_window, _profile_window
+    global _main_window
+    global _profile_table_window, _profile_options_window, _profile_rename_window
     global _profile_create_name_window, _profile_create_choose_window
     global _profile_create_copy_window, _profile_delete_window
     global _options_window, _options_panes_window, _options_pane_window
@@ -5961,7 +6720,9 @@ def main():
     _rebuild_main_items(preserve_label=False)
 
     _main_window,                  main_frame                = _build_simple(_main_text)
-    _profile_window,               profile_frame             = _build_simple(_profile_text)
+    (_profile_table_window, _profile_options_window,
+     profile_frame)                                          = _build_profile()
+    _profile_rename_window,        profile_rename_frame      = _build_simple(_profile_rename_text)
     _profile_create_name_window,   pcn_frame                 = _build_simple(_profile_create_name_text)
     _profile_create_choose_window, pcc_frame                 = _build_simple(_profile_create_choose_text)
     _profile_create_copy_window,   pcp_frame                 = _build_simple(_profile_create_copy_text)
@@ -6031,6 +6792,7 @@ def main():
     frames = {
         "main":                       main_frame,
         "profile":                    profile_frame,
+        "profile_rename":             profile_rename_frame,
         "profile_create_name":        pcn_frame,
         "profile_create_choose":      pcc_frame,
         "profile_create_copy_picker": pcp_frame,
