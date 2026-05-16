@@ -995,7 +995,10 @@ overlays if they had faded. The overlay palette
 (`C_LOG_OVERLAY_BG` / `C_LOG_OVERLAY_FG` / `C_LOG_OVERLAY_HINT`,
 `C_LOG_SCRUBBER_FILLED` / `_EMPTY` / `_THUMB`,
 `C_LOG_BUTTON_IDLE` / `_HOVER`) lives in
-[`palette.py`](../bridge/launcher/palette.py).
+[`palette.py`](../bridge/launcher/palette.py). The overlay bg is a
+deep-shadow variant of the spotlight box hue (`C_SPOTLIGHT_BOX_BG`),
+so both bars read as part of the same theme family in spotlight mode
+and in chain mode from history.
 
 **Keyboard.**
 

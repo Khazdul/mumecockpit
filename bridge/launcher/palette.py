@@ -79,23 +79,28 @@ C_LOG_PLAYER_INPUT = "fg:#86a0a0"
 # with each fragment's existing fg in the renderer so colours survive.
 C_LOG_CURSOR = "bg:#303030"
 
-# log_view floating overlays (top header + bottom controls). Dark
-# translucent-feeling fill so the underlying log dims without losing
-# context; ESC hint is dimmer than the regular foreground.
-C_LOG_OVERLAY_BG     = "bg:#101418"
-C_LOG_OVERLAY_FG     = "fg:#dadada bg:#101418"
-C_LOG_OVERLAY_HINT   = "fg:#6c6c6c bg:#101418"
+# log_view floating overlays (top header + bottom controls). Very dark
+# cyan-leaning fill — a deep-shadow variant of the spotlight box's
+# banner hue (C_SPOTLIGHT_BOX_BG = #00d7d7), so both overlay bars read
+# as part of the same theme family. Light enough behind the foreground
+# text to keep C_LOG_OVERLAY_FG and the dimmer C_LOG_OVERLAY_HINT
+# clearly legible.
+C_LOG_OVERLAY_BG     = "bg:#091e22"
+C_LOG_OVERLAY_FG     = "fg:#dadada bg:#091e22"
+C_LOG_OVERLAY_HINT   = "fg:#6c6c6c bg:#091e22"
 
 # Scrubber: filled stretch before the playhead, single-cell thumb at the
 # playhead, empty stretch after. All share the overlay bg so the bar
-# blends into the controls row.
-C_LOG_SCRUBBER_FILLED = "fg:#ffaf00 bg:#101418"
-C_LOG_SCRUBBER_EMPTY  = "fg:#3a3a3a bg:#101418"
-C_LOG_SCRUBBER_THUMB  = "bold fg:#ffffff bg:#101418"
+# blends into the controls row. _EMPTY shifts to a cyan-tinted dim grey
+# so it stays distinct against the deepened bg.
+C_LOG_SCRUBBER_FILLED = "fg:#ffaf00 bg:#091e22"
+C_LOG_SCRUBBER_EMPTY  = "fg:#2c4448 bg:#091e22"
+C_LOG_SCRUBBER_THUMB  = "bold fg:#ffffff bg:#091e22"
 
-# Rewind / play-pause buttons.
-C_LOG_BUTTON_IDLE  = "fg:#dadada bg:#101418"
-C_LOG_BUTTON_HOVER = "bold fg:#ffffff bg:#1c2228"
+# Rewind / play-pause buttons. Hover bg is a one-step lift on the cyan
+# axis so the button reads as raised without leaving the family.
+C_LOG_BUTTON_IDLE  = "fg:#dadada bg:#091e22"
+C_LOG_BUTTON_HOVER = "bold fg:#ffffff bg:#143038"
 
 # Spotlight info box (log_view spotlight-mode floating overlay). Bright
 # banner-hue fill anchored on C_TITLE (#00d7d7) so the box pops as a
