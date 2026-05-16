@@ -301,7 +301,7 @@ _log_scrubber_width         = 0        # number of scrubber cells in the current
 # plays a SpotlightReel via SpotlightPlayback. The playback is set on
 # `_log_view_playback` in both modes (interface-compatible); spotlight mode
 # additionally stashes the playback on `_log_view_reel` so the header,
-# overlay, and N/P seek handlers can reach spotlight-specific accessors
+# overlay, and ←/→ seek handlers can reach spotlight-specific accessors
 # without down-casting.
 _log_view_mode              = "chain"
 _log_view_reel              = None     # SpotlightPlayback | None
@@ -5269,7 +5269,7 @@ def _log_toggle_play_pause():
 def _log_spotlight_jump_to_credits():
     """Cancel spotlight playback, pop log_view, and push the credits
     frame for the active reel. Shared by the end-of-reel auto-pause path
-    and the discoverable "advance past the last spotlight" path (N key
+    and the discoverable "advance past the last spotlight" path (→ key
     / ► click at the last spotlight) so both routes use one transition."""
     reel = _log_view_reel
     spotlights_list = list(reel.spotlights) if reel is not None else []
@@ -5795,7 +5795,7 @@ def _log_spotlight_header_text(cols):
     spotlight's first-event date instead of the run's run_start ts.
     Trims the clock/elapsed segment that chain mode shows — the
     nav row inside the floating info box surfaces position within
-    the reel, and the freed space holds the N/P hint."""
+    the reel, and the freed space holds the ←/→ hint."""
     info = _log_spotlight_current()
     if info is None:
         return [(C_LOG_OVERLAY_BG, " " * cols, _log_overlay_inert_handler)]
@@ -5815,7 +5815,7 @@ def _log_spotlight_header_text(cols):
     first_ts = spot.events[0].ts
     when_part = time.strftime("%Y-%m-%d", time.localtime(first_ts))
 
-    hint = "ESC Back  ·  N/P Next/prev"
+    hint = "ESC Back  ·  ←/→ Prev/next"
     left_text = "  ·  ".join([char_part, n_part, when_part])
 
     inner_w = min(_LOG_OVERLAY_HEADER_W, cols)
@@ -6067,7 +6067,7 @@ def _log_spotlight_empty_box(box_w, inner):
 
 
 def _log_spotlight_seek_relative(delta_spotlights):
-    """N / P seek: jump to the start of an adjacent spotlight. With
+    """← / → seek: jump to the start of an adjacent spotlight. With
     `delta_spotlights == -1` and we're more than ~1.5 s into the current
     spotlight, restart the current one first (standard media-player feel).
     Stepping past the last spotlight (`delta_spotlights >= 1` at the
@@ -6133,7 +6133,7 @@ def _log_scrubber_seek(target_us):
             i = 0
         if i >= len(pb.events):
             i = len(pb.events) - 1
-        # Snap past a phantom-block landing (e.g. an N/P seek to a
+        # Snap past a phantom-block landing (e.g. an ←/→ seek to a
         # spotlight boundary, or a drag that drops inside a wipe).
         i = _log_skip_phantoms(i, prefer_forward=True)
         _log_cursor_index     = i
@@ -7303,11 +7303,10 @@ def _kb_credits_escape(event):
     _credits_finish()
 
 
-# Spotlight-mode N / P seeks between spotlights. The bindings are added
+# Spotlight-mode ← / → seek between spotlights. The bindings are added
 # unconditionally; a `_log_view_mode != "spotlight"` guard inside the
 # handler makes them no-ops in chain mode.
-@kb.add("n", filter=_in_frame("log_view"))
-@kb.add("N", filter=_in_frame("log_view"))
+@kb.add("right", filter=_in_frame("log_view"))
 def _kb_log_next_spotlight(event):
     if _log_view_mode != "spotlight":
         return
@@ -7315,8 +7314,7 @@ def _kb_log_next_spotlight(event):
     _log_spotlight_seek_relative(1)
 
 
-@kb.add("p", filter=_in_frame("log_view"))
-@kb.add("P", filter=_in_frame("log_view"))
+@kb.add("left", filter=_in_frame("log_view"))
 def _kb_log_prev_spotlight(event):
     if _log_view_mode != "spotlight":
         return

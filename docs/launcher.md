@@ -843,7 +843,7 @@ mode's `HH:MM` and `<elapsed>` segments are intentionally dropped in
 spotlight mode: the floating info box already surfaces the active
 spotlight's countdown and the freed left-side budget makes room for
 the keyboard hint on the right). The right-aligned hint is
-`ESC Back  ·  N/P Next/prev`.
+`ESC Back  ·  ←/→ Prev/next`.
 
 **Floating info box (top-right).** A 30×8 framed rectangle pinned to
 `top=2, right=2` — a 2-cell margin from both the top and right edges
@@ -880,7 +880,7 @@ Row layout (8 rows: 2 frame + 6 interior):
   `C_SPOTLIGHT_TEXT_PRIMARY`. Built as separate fragments by
   `_log_spotlight_nav_row` so `◄` and `►` each carry a mouse handler
   over a 3-cell click region (` ◄ ` / ` ► `); the index text in
-  between is inert. Click semantics mirror the `P` and `N` keys:
+  between is inert. Click semantics mirror the `←` and `→` keys:
   `◄` calls `_log_spotlight_seek_relative(-1)` (restart-vs-previous
   follows the 1.5 s rule); `►` calls `_log_spotlight_seek_relative(1)`,
   which at the last spotlight delegates to
@@ -937,7 +937,7 @@ playback-clock freeze: the first real event of a fresh spotlight fires
 exactly `_PRE_ROLL_S` seconds after the spotlight begins, identical to
 the no-transition case.
 
-`N` / `P` seeks target spotlight start offsets, which sit at the end of
+`←` / `→` seeks target spotlight start offsets, which sit at the end of
 a phantom block, so the wipe occurs automatically on those seeks.
 
 **Pause mode.** Scrolling backwards through a boundary reveals the
@@ -956,8 +956,8 @@ behaviour). Two spotlight-mode-only additions:
 
 | Key   | Action                                                          |
 |-------|-----------------------------------------------------------------|
-| `n`/`N` | Seek to next spotlight start; **at the last spotlight, jump straight into credits** (same transition `_log_auto_pause_at_end` uses) |
-| `p`/`P` | Seek to previous spotlight start; if `> ~1.5 s` into current, restart current; at the first spotlight, restart it |
+| `→`   | Seek to next spotlight start; **at the last spotlight, jump straight into credits** (same transition `_log_auto_pause_at_end` uses) |
+| `←`   | Seek to previous spotlight start; if `> ~1.5 s` into current, restart current; at the first spotlight, restart it |
 
 Both route through `_log_spotlight_seek_relative`; intermediate seeks
 go through `_log_scrubber_seek` targeting
@@ -971,14 +971,14 @@ the `◄` / `►` glyphs in the info box's top nav row.
 scrub the entire reel timeline (each spotlight is ~15 s, so the global
 scrubber stays usable). A per-spotlight scrubber was considered but
 rejected for v1: the rotation already chunks playback into discrete
-spotlights, and N/P provides per-spotlight seeking.
+spotlights, and ←/→ provides per-spotlight seeking.
 
 **End of reel.** At `total_duration_us` the existing
 `_log_auto_pause_at_end()` hook fires. In chain mode it parks on the
 final event and flips to pause; in spotlight mode it delegates to
 `_log_spotlight_jump_to_credits()` which cancels playback, pops
 `log_view`, and pushes the `credits` frame with the reel's spotlight
-list. The keyboard `N` and the info-box `►` click at the last
+list. The keyboard `→` and the info-box `►` click at the last
 spotlight take the same path — see the
 [`credits` frame section](#credits-frame) below and
 [ADR 0080](decisions/0080-end-of-reel-credits.md).
