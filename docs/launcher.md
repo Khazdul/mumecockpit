@@ -785,42 +785,51 @@ event whose JSONL row carried a `level` field. Date is
 `spotlight.events[0].ts` formatted as local time. `ESC to return` sits
 right-aligned as in chain mode.
 
-**Floating info box (top-right).** A 30×7 flat rectangle pinned to
+**Floating info box (top-right).** A 30×7 framed rectangle pinned to
 `top=2, right=2` — a 2-cell margin from both the top and right edges
-of `log_view`. No drawn frame glyphs: the box is a single uniform fill
-of `C_SPOTLIGHT_BOX_BG` with text on three of its rows. Palette:
+of `log_view`. The frame is the half-block outline `█▀▄▌▐` rendered in
+black on the bright cyan BG: top row `█` + `▀` × `interior_width` +
+`█`, bottom row `█` + `▄` × `interior_width` + `█`, side columns `▌`
+(left) and `▐` (right) on each of the 5 interior rows. Interior width
+is `_SPOTLIGHT_BOX_W - 2 = 28`. Palette:
 
 - `C_SPOTLIGHT_BOX_BG` — bright banner-hue fill (same hue as `C_TITLE`)
   painted under every cell of the box.
+- `C_SPOTLIGHT_FRAME` — black on the BG, for the `█▀▄▌▐` outline
+  glyphs.
 - `C_SPOTLIGHT_TEXT_PRIMARY` — near-black, on the BG. Used for the
   character name and the event label.
-- `C_SPOTLIGHT_TEXT_SECONDARY` — medium grey, on the BG. Lighter than
-  primary, visibly muted vs. it on the bright BG. Used for the date
-  and the countdown.
+- `C_SPOTLIGHT_TEXT_SECONDARY` — muted grey, on the BG. Lighter than
+  primary, visibly subordinate. Used for the countdown.
 
-Row layout (7 rows, full box width — no side columns):
+Row layout (7 rows: 2 frame + 5 interior):
 
 ```
-                              
-        BERIT 2026-04-16      
-                              
-        Reached level 3       
-                              
-        In 8 seconds..        
-                              
+█▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀█
+▌           BERIT            ▐
+▌                            ▐
+▌      Reached level 3       ▐
+▌                            ▐
+▌       In 8 seconds..       ▐
+█▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█
 ```
 
-- Row 1: blank.
-- Row 2: `<CHAR> <YYYY-MM-DD>` — centred as a single block. Character
-  name uppercased and rendered in `C_SPOTLIGHT_TEXT_PRIMARY`; one
-  single-space separator; date in `C_SPOTLIGHT_TEXT_SECONDARY`.
+- Frame rows: top and bottom — black `█▀▄` outline on the BG.
+- Row 2: `<CHAR>` — uppercased character name, centred,
+  `C_SPOTLIGHT_TEXT_PRIMARY`. (The date used to live here; it's been
+  dropped — the top header still carries it.)
 - Row 3: blank.
-- Row 4: event label, centred, `C_SPOTLIGHT_TEXT_PRIMARY`.
-- Row 5: blank.
+- Row 4: event label (or its first wrapped line), centred,
+  `C_SPOTLIGHT_TEXT_PRIMARY`.
+- Row 5: blank when the event label fits on row 4; the wrapped
+  continuation of the event label when it doesn't (centred, primary
+  text). Wrapping uses `textwrap.wrap(..., break_long_words=False,
+  break_on_hyphens=False)` so words stay intact. Labels that wrap to
+  three or more lines have their second line ellipsised (`…`) — rare
+  for the event-label phrases we surface.
 - Row 6: countdown — `In <N> seconds..` while counting down (two
   trailing periods), `C_SPOTLIGHT_TEXT_SECONDARY`, centred. Collapses
   to a blank row when no next event remains in this spotlight.
-- Row 7: blank.
 
 The "SPOTLIGHT N" line is not rendered inside the box — that
 information lives in the top header.

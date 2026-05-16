@@ -13,7 +13,7 @@ __all__ = [
     "C_LOG_OVERLAY_BG", "C_LOG_OVERLAY_FG", "C_LOG_OVERLAY_HINT",
     "C_LOG_SCRUBBER_FILLED", "C_LOG_SCRUBBER_EMPTY", "C_LOG_SCRUBBER_THUMB",
     "C_LOG_BUTTON_IDLE", "C_LOG_BUTTON_HOVER",
-    "C_SPOTLIGHT_BOX_BG",
+    "C_SPOTLIGHT_BOX_BG", "C_SPOTLIGHT_FRAME",
     "C_SPOTLIGHT_TEXT_PRIMARY", "C_SPOTLIGHT_TEXT_SECONDARY",
     "_S_VALUE", "_S_LABEL", "_S_GAINED", "_S_LOSS", "_S_TP_BAR",
     "_S_TRACK", "_S_MARKER", "_S_THUMB", "_S_TOTAL", "_S_ARROW",
@@ -99,15 +99,18 @@ C_LOG_BUTTON_HOVER = "bold fg:#ffffff bg:#1c2228"
 
 # Spotlight info box (log_view spotlight-mode floating overlay). Bright
 # banner-hue fill anchored on C_TITLE (#00d7d7) so the box pops as a
-# title card against the dark log. Three roles:
+# title card against the dark log. Four roles:
 #   • C_SPOTLIGHT_BOX_BG         — bright banner-hue fill under every cell.
+#   • C_SPOTLIGHT_FRAME          — black on the BG for the half-block
+#                                  ▀▄▌▐ + corner █ outline glyphs.
 #   • C_SPOTLIGHT_TEXT_PRIMARY   — near-black body text (char name, label).
-#   • C_SPOTLIGHT_TEXT_SECONDARY — medium grey (date, countdown). Lighter
-#                                  than primary, but visibly muted on the
-#                                  bright BG.
+#   • C_SPOTLIGHT_TEXT_SECONDARY — muted grey (countdown). Lighter than
+#                                  primary, but visibly subordinate on
+#                                  the bright BG.
 C_SPOTLIGHT_BOX_BG         = "bg:#00d7d7"
+C_SPOTLIGHT_FRAME          = "fg:#000000 bg:#00d7d7"
 C_SPOTLIGHT_TEXT_PRIMARY   = "fg:#000000 bg:#00d7d7"
-C_SPOTLIGHT_TEXT_SECONDARY = "fg:#525252 bg:#00d7d7"
+C_SPOTLIGHT_TEXT_SECONDARY = "fg:#606060 bg:#00d7d7"
 
 # ---------------------------------------------------------------------------
 # Per-pane background palette
