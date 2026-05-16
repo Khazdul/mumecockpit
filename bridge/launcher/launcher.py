@@ -52,6 +52,7 @@ from palette import (  # noqa: E402
 import log_player  # noqa: E402
 import run_retention  # noqa: E402
 import run_stats  # noqa: E402
+import spotlights  # noqa: E402
 from widgets.scrollbar import Scrollbar  # noqa: E402
 
 # ---------------------------------------------------------------------------
@@ -284,6 +285,19 @@ _LOG_OVERLAY_SCRUBBER_W     = 30
 _log_dragging_scrubber      = False    # True between MOUSE_DOWN on scrubber and release
 _log_scrubber_left          = 0        # absolute column of the scrubber's first cell
 _log_scrubber_width         = 0        # number of scrubber cells in the current render
+
+# log_view mode: "chain" plays a SessionSummary's stitched chain; "spotlight"
+# plays a SpotlightReel via SpotlightPlayback. The playback is set on
+# `_log_view_playback` in both modes (interface-compatible); spotlight mode
+# additionally stashes the playback on `_log_view_reel` so the header,
+# overlay, and N/P seek handlers can reach spotlight-specific accessors
+# without down-casting.
+_log_view_mode              = "chain"
+_log_view_reel              = None     # SpotlightPlayback | None
+# Floating spotlight info overlay state (top-right): None means no hover-
+# touch yet; otherwise the time.monotonic() deadline for auto-hide in
+# play mode. Pause is permanent.
+_log_spotlight_overlay_hide_at = None
 _history_columns = [
     # (key, base_label, width, align, type)
     ("Char",    "Char",     None, "left",  "text"),
@@ -313,6 +327,7 @@ _options_pane_window             = None
 _options_connection_window       = None
 _options_connection_custom_window = None
 _options_coming_soon_window      = None
+_spotlights_empty_window         = None
 _scripts_window      = None
 _about_window        = None
 _update_running_window = None
@@ -596,6 +611,7 @@ def _focus_current_frame():
             "options_connection":         _options_connection_window,
             "options_connection_custom":  _options_connection_custom_window,
             "options_coming_soon":        _options_coming_soon_window,
+            "spotlights_empty":           _spotlights_empty_window,
             "scripts":                    _scripts_window,
             "about":                      _about_window,
             "update_running":             _update_running_window,
@@ -697,7 +713,7 @@ def _rebuild_main_items(*, preserve_label=True):
     items = [first]
     if _update_available():
         items.append("Update")
-    items.extend(["History", "Profile", "Options", "About", "Quit"])
+    items.extend(["History", "Spotlights", "Profile", "Options", "About", "Quit"])
     _main_items = items
     if prev and prev in items:
         _sel_main = items.index(prev)
@@ -744,6 +760,8 @@ def _activate_main(idx):
         _enter_profile_frame()
     elif label == "History":
         _enter_history_frame()
+    elif label == "Spotlights":
+        _enter_spotlights()
     elif label == "Options":
         _enter_options_frame()
     elif label == "About":
@@ -2334,6 +2352,34 @@ _COMING_SOON_BODY = (
     "description profiles (PK / Minimalistic / Role-play) and configure "
     "text substitutions. Font cannot be changed."
 )
+
+
+_SPOTLIGHTS_EMPTY_BODY = (
+    "No spotlights yet. Play a session and your highlights — kills, deaths, "
+    "level-ups, and achievements — will be captured here, ready to replay."
+)
+
+
+def _spotlights_empty_text():
+    cols = _term_cols()
+    title  = "─── Spotlights ───"
+    footer = "Any key to return"
+    body_w = max(20, min(72, cols - 4))
+    wrapped = _wrap_text(_SPOTLIGHTS_EMPTY_BODY, body_w)
+
+    frags = []
+    frags.append(("", "\n\n"))
+    frags.append(("", _pad_centre(title, cols)))
+    frags.append((C_TITLE, title))
+    frags.append(("", "\n\n"))
+    for line in wrapped:
+        frags.append(("", _pad_centre(line, cols)))
+        frags.append((C_BODY, line))
+        frags.append(("", "\n"))
+    frags.append(("", "\n"))
+    frags.append(("", _pad_centre(footer, cols)))
+    frags.append((C_HINT, footer))
+    return frags
 
 
 def _options_coming_soon_text():
@@ -4622,6 +4668,36 @@ def _history_detail_text():
 
 
 # ---------------------------------------------------------------------------
+# Spotlights — cross-character reel of significant events
+# ---------------------------------------------------------------------------
+def _enter_spotlights():
+    """Aggregate spotlights from every character's sealed runs and either
+    push the empty-state frame or eagerly load + play the reel through
+    log_view in spotlight mode."""
+    reel = spotlights.aggregate_spotlights()
+    if reel.total_count == 0:
+        _push_frame("spotlights_empty")
+        return
+
+    cache: dict = {}
+    playable = []
+    for spot in reel.spotlights:
+        spotlights.load_spotlight_log_events(spot, cache)
+        if spot.log_events:
+            playable.append(spot)
+    if not playable:
+        _push_frame("spotlights_empty")
+        return
+
+    playback = spotlights.SpotlightPlayback(playable)
+    if not playback.events:
+        _push_frame("spotlights_empty")
+        return
+
+    _enter_log_view_spotlight(playback)
+
+
+# ---------------------------------------------------------------------------
 # log_view (chain log player — Phase 3 skeleton)
 # ---------------------------------------------------------------------------
 def _enter_log_view(summary=None):
@@ -4636,7 +4712,7 @@ def _enter_log_view(summary=None):
     global _log_mode, _log_play_anchor_wall, _log_play_anchor_offset_us
     global _log_paused_offset_us, _log_cursor_index, _log_last_playhead_index
     global _log_overlays_visible, _log_overlays_hide_at, _log_overlay_hover
-    global _log_view_summary
+    global _log_view_summary, _log_view_mode, _log_view_reel
     if summary is None:
         summary = _history_detail_summary
     if summary is None:
@@ -4645,6 +4721,8 @@ def _enter_log_view(summary=None):
     if not playback.events:
         # Defensive — every run's .log was missing; stay on history_detail.
         return
+    _log_view_mode            = "chain"
+    _log_view_reel            = None
     _log_view_summary         = summary
     _log_view_playback        = playback
     _log_view_scroll          = 0
@@ -4666,6 +4744,37 @@ def _enter_log_view(summary=None):
     _push_frame("log_view")
 
 
+def _enter_log_view_spotlight(playback):
+    """Push log_view in spotlight mode. `playback` is a SpotlightPlayback
+    built by `_enter_spotlights` from a non-empty SpotlightReel."""
+    global _log_view_playback, _log_view_scroll, _log_view_cols, _log_view_lines
+    global _log_view_event_rows
+    global _log_mode, _log_play_anchor_wall, _log_play_anchor_offset_us
+    global _log_paused_offset_us, _log_cursor_index, _log_last_playhead_index
+    global _log_overlays_visible, _log_overlays_hide_at, _log_overlay_hover
+    global _log_view_summary, _log_view_mode, _log_view_reel
+    global _log_spotlight_overlay_hide_at
+    _log_view_mode            = "spotlight"
+    _log_view_reel            = playback
+    _log_view_summary         = None
+    _log_view_playback        = playback
+    _log_view_scroll          = 0
+    _log_view_cols            = 0
+    _log_view_lines           = None
+    _log_view_event_rows      = None
+    _log_mode                 = "pause"
+    _log_play_anchor_wall     = time.monotonic()
+    _log_play_anchor_offset_us = 0
+    _log_paused_offset_us     = 0
+    _log_cursor_index         = 0
+    _log_last_playhead_index  = -1
+    _log_overlays_visible     = True
+    _log_overlays_hide_at     = None
+    _log_overlay_hover        = None
+    _log_spotlight_overlay_hide_at = None
+    _push_frame("log_view")
+
+
 def _exit_log_view():
     """Pop back to the previous frame and drop the playback so the chain's log
     data can be garbage-collected — chains are re-read from disk on next push."""
@@ -4674,9 +4783,12 @@ def _exit_log_view():
     global _log_view_event_rows, _log_last_playhead_index
     global _log_overlays_visible, _log_overlays_hide_at, _log_overlay_hover
     global _log_dragging_scrubber
+    global _log_view_mode, _log_view_reel, _log_spotlight_overlay_hide_at
     _log_cancel_tick_task()
     _log_view_summary    = None
     _log_view_playback   = None
+    _log_view_reel       = None
+    _log_view_mode       = "chain"
     _log_view_scroll     = 0
     _log_view_cols       = 0
     _log_view_lines      = None
@@ -4686,6 +4798,7 @@ def _exit_log_view():
     _log_overlays_hide_at    = None
     _log_overlay_hover       = None
     _log_dragging_scrubber   = False
+    _log_spotlight_overlay_hide_at = None
     _pop_frame()
 
 
@@ -5206,6 +5319,9 @@ def _log_header_text():
     if pb is None or not pb.events:
         return [(C_LOG_OVERLAY_BG, " " * cols, _log_overlay_inert_handler)]
 
+    if _log_view_mode == "spotlight":
+        return _log_spotlight_header_text(cols)
+
     idx = _log_current_run_index()
     run_id, run_ord, run_total = pb.run_at(idx)
     info = pb.run_info(run_id)
@@ -5263,6 +5379,177 @@ def _log_header_text():
     if pad:
         frags.append(pad)
     return frags
+
+
+# --- Spotlight-mode helpers (header + floating overlay + seek) ------------
+def _log_spotlight_current():
+    """Return (spotlight, spotlight_idx, offset_within_spotlight_us) for the
+    current playback position in spotlight mode. Returns None when the
+    reel is empty or we're not in spotlight mode."""
+    reel = _log_view_reel
+    if reel is None or not reel.spotlights:
+        return None
+    cur_us = _log_current_playback_us()
+    spot_idx = reel.spotlight_at_offset(cur_us)
+    spot = reel.spotlights[spot_idx]
+    start = reel.spotlight_start_offsets_us[spot_idx]
+    offset_within = max(0, cur_us - start)
+    return (spot, spot_idx, offset_within)
+
+
+def _log_spotlight_header_text(cols):
+    """Top header for spotlight mode. Replaces the chain-mode header's
+    "Run X of Y" with "SPOTLIGHT N / TOTAL" and uses the active
+    spotlight's first-event date instead of the run's run_start ts."""
+    info = _log_spotlight_current()
+    if info is None:
+        return [(C_LOG_OVERLAY_BG, " " * cols, _log_overlay_inert_handler)]
+    spot, spot_idx, _ = info
+    reel = _log_view_reel
+
+    char_part = spot.character
+    death_level = None
+    for ev in spot.events:
+        if ev.kind == "death" and isinstance(ev.extra.get("level"), int):
+            death_level = ev.extra["level"]
+            break
+    if death_level is not None:
+        char_part = f"{spot.character} (L{death_level})"
+
+    n_part   = f"SPOTLIGHT {spot_idx + 1} / {reel.total_count}"
+    first_ts = spot.events[0].ts
+    when_part = time.strftime("%Y-%m-%d %H:%M", time.localtime(first_ts))
+
+    elapsed = _log_format_mmss(_log_current_playback_us())
+    at_end = (_log_mode == "pause"
+              and _log_current_playback_us() >= reel.total_duration_us
+              and reel.total_duration_us > 0)
+    elapsed_part = f"{elapsed} · End of reel" if at_end else elapsed
+
+    hint = "ESC to return"
+    left_text = "  ·  ".join([char_part, n_part, when_part, elapsed_part])
+
+    inner_w = min(_LOG_OVERLAY_HEADER_W, cols)
+    gap = max(1, inner_w - len(left_text) - len(hint))
+    body = left_text + (" " * gap) + hint
+    if len(body) > inner_w:
+        overflow = len(body) - inner_w
+        trimmed_left = left_text[: max(0, len(left_text) - overflow)]
+        body = trimmed_left + " " + hint
+        if len(body) > inner_w:
+            body = body[:inner_w]
+    body_len  = len(body)
+    body_hint = body[body_len - len(hint):] if body_len >= len(hint) else hint
+    body_left = body[: body_len - len(body_hint)] if body_len > len(body_hint) else ""
+
+    side = max(0, (cols - inner_w) // 2)
+    right_side = max(0, cols - inner_w - side)
+
+    frags = []
+    pad = _log_pad(side)
+    if pad:
+        frags.append(pad)
+    if body_left:
+        frags.append((C_LOG_OVERLAY_FG, body_left, _log_overlay_inert_handler))
+    if body_hint:
+        frags.append((C_LOG_OVERLAY_HINT, body_hint, _log_overlay_inert_handler))
+    pad = _log_pad(right_side)
+    if pad:
+        frags.append(pad)
+    return frags
+
+
+_SPOTLIGHT_OVERLAY_W = 36
+_SPOTLIGHT_OVERLAY_H = 4
+
+
+def _log_spotlight_overlay_visible():
+    """Mirror the bottom-controls overlay visibility (permanent in pause,
+    auto-hide in play after the same delay) so the spotlight info pane
+    appears and disappears in sync with the rest of the UI."""
+    if _log_view_mode != "spotlight":
+        return False
+    if _log_view_reel is None or not _log_view_reel.spotlights:
+        return False
+    return _log_overlays_visible
+
+
+def _log_spotlight_overlay_text():
+    """Build the 4-row floating spotlight info overlay (top-right).
+    Returns a flat fragment list with embedded "\\n" separators — the
+    enclosing Float gives it explicit width / height."""
+    info = _log_spotlight_current()
+    if info is None:
+        return [(C_LOG_OVERLAY_BG, " " * _SPOTLIGHT_OVERLAY_W)]
+    spot, spot_idx, offset_within = info
+    reel = _log_view_reel
+
+    inner = max(2, _SPOTLIGHT_OVERLAY_W - 2)
+    # Centre column padding via a single leading + trailing space cell so
+    # the text doesn't hug the bg edge.
+    def _row(text, style):
+        text = text[:inner]
+        pad = inner - len(text)
+        return [(C_LOG_OVERLAY_BG, " "),
+                (style, text),
+                (C_LOG_OVERLAY_BG, " " * (1 + pad))]
+
+    title = f"SPOTLIGHT {spot_idx + 1}"
+    labels = " · ".join(ev.label for ev in spot.events)
+    line2 = f"{spot.character} — {labels}"
+    line3 = time.strftime("%Y-%m-%d %H:%M:%S",
+                          time.localtime(spot.events[0].ts))
+
+    _, seconds_to_next = reel.event_progress(spot, offset_within)
+    if seconds_to_next is None:
+        line4 = ""
+    else:
+        # Round up so "0 seconds" doesn't sit for almost a full second.
+        s = int(seconds_to_next) if seconds_to_next == int(seconds_to_next) \
+            else int(seconds_to_next) + 1
+        if s <= 0:
+            line4 = "In 0 seconds."
+        elif s == 1:
+            line4 = "In 1 second."
+        else:
+            line4 = f"In {s} seconds."
+
+    rows = [
+        _row(title, C_LOG_OVERLAY_FG),
+        _row(line2, C_LOG_OVERLAY_FG),
+        _row(line3, C_LOG_OVERLAY_HINT),
+        _row(line4, C_LOG_OVERLAY_HINT) if line4 else _row("", C_LOG_OVERLAY_BG),
+    ]
+    frags = []
+    for i, row in enumerate(rows):
+        frags.extend(row)
+        if i < len(rows) - 1:
+            frags.append(("", "\n"))
+    return frags
+
+
+def _log_spotlight_seek_relative(delta_spotlights):
+    """N / P seek: jump to the start of an adjacent spotlight. With
+    `delta_spotlights == -1` and we're more than ~1.5 s into the current
+    spotlight, restart the current one first (standard media-player feel).
+    No-op past the ends."""
+    reel = _log_view_reel
+    if reel is None or not reel.spotlights:
+        return
+    info = _log_spotlight_current()
+    if info is None:
+        return
+    _, spot_idx, offset_within = info
+    target_idx = spot_idx + delta_spotlights
+    if delta_spotlights < 0 and offset_within > 1_500_000 and spot_idx >= 0:
+        # Less than 1.5 s elapsed → step to the previous spotlight.
+        # Otherwise restart the current one.
+        target_idx = spot_idx
+    if target_idx < 0:
+        target_idx = 0
+    if target_idx >= len(reel.spotlights):
+        return
+    _log_scrubber_seek(reel.spotlight_start_offsets_us[target_idx])
 
 
 # --- Bottom controls -------------------------------------------------------
@@ -6104,6 +6391,17 @@ def _kb_optcs_any(event):
     _pop_frame()
 
 
+# Spotlights — empty-state placeholder (any key returns)
+@kb.add("escape", filter=_in_frame("spotlights_empty"), eager=True)
+def _kb_spemp_escape(event):
+    _pop_frame()
+
+
+@kb.add("<any>", filter=_in_frame("spotlights_empty"))
+def _kb_spemp_any(event):
+    _pop_frame()
+
+
 # Scripts
 @kb.add("up", filter=_in_frame("scripts"))
 def _kb_scr_up(event):
@@ -6419,6 +6717,27 @@ def _kb_log_end(event):
     _log_cursor_to(len(pb.events) - 1)
 
 
+# Spotlight-mode N / P seeks between spotlights. The bindings are added
+# unconditionally; a `_log_view_mode != "spotlight"` guard inside the
+# handler makes them no-ops in chain mode.
+@kb.add("n", filter=_in_frame("log_view"))
+@kb.add("N", filter=_in_frame("log_view"))
+def _kb_log_next_spotlight(event):
+    if _log_view_mode != "spotlight":
+        return
+    _log_touch_overlays()
+    _log_spotlight_seek_relative(1)
+
+
+@kb.add("p", filter=_in_frame("log_view"))
+@kb.add("P", filter=_in_frame("log_view"))
+def _kb_log_prev_spotlight(event):
+    if _log_view_mode != "spotlight":
+        return
+    _log_touch_overlays()
+    _log_spotlight_seek_relative(-1)
+
+
 # Update running — no input
 @kb.add("<any>", filter=_in_frame("update_running"))
 def _kb_upd_run(event):
@@ -6697,7 +7016,7 @@ def main():
     global _profile_create_copy_window, _profile_delete_window
     global _options_window, _options_panes_window, _options_pane_window
     global _options_connection_window, _options_connection_custom_window
-    global _options_coming_soon_window
+    global _options_coming_soon_window, _spotlights_empty_window
     global _scripts_window, _about_window
     global _update_running_window, _update_result_window
     global _exit_confirm_window, _too_small_window
@@ -6733,6 +7052,7 @@ def main():
     _options_connection_window,         options_connection_frame       = _build_simple(_options_connection_text)
     _options_connection_custom_window,  options_connection_custom_frame = _build_simple(_options_connection_custom_text)
     _options_coming_soon_window,        options_coming_soon_frame      = _build_simple(_options_coming_soon_text)
+    _spotlights_empty_window,           spotlights_empty_frame         = _build_simple(_spotlights_empty_text)
     _scripts_window,               scripts_frame             = _build_scrolling(
         _scripts_title_text, _scripts_content_text, _scripts_footer_text
     )
@@ -6772,7 +7092,15 @@ def main():
         content=FormattedTextControl(text=_log_controls_text, focusable=False),
         height=1, wrap_lines=False, always_hide_cursor=True,
     )
+    log_spotlight_win = Window(
+        content=FormattedTextControl(text=_log_spotlight_overlay_text,
+                                     focusable=False),
+        width=_SPOTLIGHT_OVERLAY_W,
+        height=_SPOTLIGHT_OVERLAY_H,
+        wrap_lines=False, always_hide_cursor=True,
+    )
     _log_overlays_filter = Condition(lambda: _log_overlays_visible)
+    _log_spotlight_overlay_filter = Condition(_log_spotlight_overlay_visible)
     log_view_frame = FloatContainer(
         content=_log_view_window,
         floats=[
@@ -6780,6 +7108,15 @@ def main():
                 top=0, left=0, right=0, height=1,
                 content=ConditionalContainer(content=log_header_win,
                                              filter=_log_overlays_filter),
+            ),
+            # Top-right floating info pane (spotlight mode only). Sits one
+            # row below the header so it does not overlap the centred 80-cell
+            # header band.
+            Float(
+                top=1, right=2,
+                width=_SPOTLIGHT_OVERLAY_W, height=_SPOTLIGHT_OVERLAY_H,
+                content=ConditionalContainer(content=log_spotlight_win,
+                                             filter=_log_spotlight_overlay_filter),
             ),
             Float(
                 bottom=0, left=0, right=0, height=1,
@@ -6803,6 +7140,7 @@ def main():
         "options_connection":         options_connection_frame,
         "options_connection_custom":  options_connection_custom_frame,
         "options_coming_soon":        options_coming_soon_frame,
+        "spotlights_empty":           spotlights_empty_frame,
         "scripts":                    scripts_frame,
         "about":                      about_frame,
         "history":                    history_frame,

@@ -40,8 +40,9 @@ The UI is a frame stack: a single `DynamicContainer` swaps between `main`,
 `options_panes`, `options_pane`, `options_connection`,
 `options_connection_custom`, `options_coming_soon`, `scripts`, `about`,
 `history`, `history_detail`, `history_rate`, `history_delete_confirm`,
-`log_view`, `update_running`, `update_result`, and `exit_confirm`
-containers, pushed and popped via `_push_frame` / `_pop_frame`. Each
+`log_view`, `spotlights_empty`, `update_running`, `update_result`, and
+`exit_confirm` containers, pushed and popped via `_push_frame` /
+`_pop_frame`. Each
 frame owns its own `KeyBindings` filter (`_in_frame(name)`) so
 navigation, scroll, and ESC behave per-frame. The popup architecture
 (ADR 0062) is the reference; see `bridge/launcher/ingame_menu.py` for
@@ -55,6 +56,7 @@ do not have distinct names.
 | Profile page | Sortable table of `ttpp/profiles/*.tin` (Name + Selected columns) paired with a centred Options widget — Select, New, Edit, Rename, Delete, Export, Back. See the [Profile sub-menu](#profile-sub-menu) section below. `default` cannot be renamed or deleted. "Create blank" copies from `bridge/launcher/templates/blank_profile.tin` (single source of truth — see ADR 0042). The active profile is written to `startup.conf` and consumed by `ttpp/core/config.tin` at tt++ startup. |
 | Options page | Navigation hub: **Panes**, **Scripts**, **Text layout** (placeholder), **Connection**, blank row, **Back**. See the [Options sub-menu](#options-sub-menu) section below for each child frame. All Options changes persist to `bridge/runtime/startup.conf` on Back / ESC. |
 | Scripts page | Opened from Options → Scripts. Reads `bridge/runtime/scripts.cache`; scrollable via UP/DOWN, PageUp/PageDown |
+| Spotlights | Cross-character reel of deaths, level-ups, pvp-kills, and achievements aggregated from every character's sealed runs. Opens `log_view` in spotlight mode; empty-state frame when nothing has been captured yet. See the [Spotlights sub-menu](#spotlights-sub-menu) section. |
 | About page | Reads `bridge/launcher/about.txt`; word-wrapped, cached per resize, scrollable. Current version on the right of the title; an "Update available: vX.Y.Z" line appears in `C_ACCENT` when `version.cache` contains a newer tag |
 | Update flow | Selecting "Update" runs `bridge/release/update.sh` in a worker thread; result keyed off update.sh's exit codes (0/10/20/21/22/other → complete/no-update/aborted/failed). rc==0 re-execs `bridge/launcher/launcher.sh` to pick up the new code |
 | Quit | Confirmation prompt; ESC cancels |
@@ -654,6 +656,146 @@ forcing double work; layout overhaul) are recorded in
 ```
 ESC Back     ↑↓ Scroll     Tab/Shift+Tab Switch table
 ```
+
+## Spotlights sub-menu
+
+Cross-character reel of significant events. The launcher main menu entry
+sits between `History` and `Profile`. Two surfaces:
+
+- `spotlights_empty` — shown when no spotlights have been captured yet
+  (fresh install or every character's sealed runs lack tracked events).
+- `log_view` in spotlight mode — the reel itself, sharing the chain log
+  player's playback engine, overlays, and scrubber.
+
+The data layer lives in `bridge/launcher/spotlights.py`:
+`aggregate_spotlights()` walks `data/runs/<character>/*.jsonl` for every
+character (skipping `current.jsonl` and runs without a sibling `.log`),
+extracts the four tracked event kinds (`char_death`, `level_up`, `pkill`,
+`achievement`), and builds a list of `Spotlight`s per run. Two
+neighbouring events from the same run merge into one multi-event
+spotlight when they fall within 5 s of each other (the post-roll
+window). Each spotlight gets a nominal `[first_event - 10 s,
+last_event + 5 s]` window — clamped to the `.log`'s actual `ts_us`
+range at lazy load time.
+
+**Rotation.** Per-character queues are sorted newest-first
+(`spotlight.events[0].ts` descending). The interleaving algorithm picks
+the queue whose head spotlight has the most recent first-event
+timestamp, but skips the just-picked character when an alternative
+exists — so no two adjacent spotlights share a character unless only
+one character has remaining entries at that point.
+
+**Lazy log loading.** Each `.log` is parsed exactly once via
+`log_player._parse_log_file` (wrapped to return the full event list);
+the parsed list is cached in a dict keyed by `log_path` so a chain of
+spotlights sharing a run share the parse. `load_spotlight_log_events`
+slices the cached events to the spotlight's clamped window, populates
+`spotlight.event_offsets_us` (each event's offset from
+`window_start_us`, clamped to `>= 0` when clamping cut into the
+pre-roll), and is idempotent.
+
+**SpotlightPlayback.** A `LogPlayback`-compatible adapter over a list
+of loaded spotlights. Concatenates every spotlight's `log_events` into
+a single timeline; per-event `playback_offset_us` is computed
+explicitly so each spotlight starts immediately after the previous
+spotlight ends (zero inter-spotlight gap — the chain-mode
+`_PLAYBACK_GAP_CAP_US` gap-collapsing logic is not used). Exposes
+`run_at(idx)` returning `(spotlight, ordinal, total)` — the header
+renderer's only entry point — plus spotlight-specific lookups
+(`spotlight_at_offset`, `spotlight_start_offsets_us`,
+`event_progress`).
+
+`_enter_spotlights()` is the launcher entry point. It aggregates the
+reel, eagerly loads every spotlight's log events (acceptable: total
+volume is bounded — N spotlights × ~15 s each), drops spotlights whose
+clamped window left zero log events, and either pushes
+`spotlights_empty` (zero playable spotlights) or pushes `log_view` in
+spotlight mode via `_enter_log_view_spotlight(playback)`.
+
+### `spotlights_empty` frame
+
+Single-message placeholder pushed when the aggregator returns an empty
+reel. Mirrors the layout of `options_coming_soon`: title `─── Spotlights
+───`, centred body text in `C_BODY`, `Any key to return` footer in
+`C_HINT`. Any key (or ESC) pops back to the launcher main menu.
+
+Body text:
+
+> No spotlights yet. Play a session and your highlights — kills,
+> deaths, level-ups, and achievements — will be captured here, ready to
+> replay.
+
+### `log_view` in spotlight mode
+
+A second mode of the same `log_view` frame, selected by the module
+state `_log_view_mode == "spotlight"` and reading its playback from
+`_log_view_reel` (a `SpotlightPlayback`). The chain-mode entry point
+is `_enter_log_view(summary)`; the spotlight-mode entry point is
+`_enter_log_view_spotlight(playback)`. Both share the same
+`_log_view_window`, the same playback engine (anchor + offset,
+auto-pause-at-end, 30 Hz tick task), the same bottom controls overlay,
+and the same scrubber drag plumbing.
+
+**Header.** When in spotlight mode `_log_header_text` dispatches to
+`_log_spotlight_header_text`. The centre/left section reads:
+
+```
+<active_spotlight.character>[ (L<level>)]  ·  SPOTLIGHT <N> / <TOTAL>
+  ·  <YYYY-MM-DD HH:MM>  ·  <elapsed>
+```
+
+`L<level>` appears only when the active spotlight contains a `death`
+event whose JSONL row carried a `level` field. Date is
+`spotlight.events[0].ts` formatted as local time. `ESC to return` sits
+right-aligned as in chain mode.
+
+**Floating info overlay (top-right).** A 36×4 floating window pinned
+to `top=1, right=2` (one row below the centred 80-cell header band, so
+the two never visually collide on common widths). Visible whenever the
+bottom controls overlay is visible (permanent in pause, auto-hides
+after `_LOG_OVERLAY_HIDE_DELAY` in play, re-arms on any mouse
+activity). Content per row:
+
+```
+ SPOTLIGHT <N>
+ <character> — <event label 1> · <event label 2> · …
+ <YYYY-MM-DD HH:MM:SS>
+ In <X> seconds.
+```
+
+Line 4 is blanked when `event_progress` reports no further events
+remain in the active spotlight (the countdown went past the last
+event). For multi-event spotlights, the countdown re-targets each
+successive event as the playhead crosses the previous one. Palette
+reuses `C_LOG_OVERLAY_BG` / `_FG` / `_HINT` — no new colours.
+
+**Keybinds.** All chain-mode keys still apply (`Space` play/pause,
+`ESC` return, `↑/↓/PgUp/PgDn/Home/End` cursor — chain-mode pause-mode
+behaviour). Two spotlight-mode-only additions:
+
+| Key   | Action                                                          |
+|-------|-----------------------------------------------------------------|
+| `n`/`N` | Seek to next spotlight start (no-op past last spotlight)        |
+| `p`/`P` | Seek to previous spotlight start; if `> ~1.5 s` into current, restart current; at the first spotlight, restart it |
+
+Both route through `_log_scrubber_seek` targeting
+`reel.spotlight_start_offsets_us[idx]`, so the play/pause mode and
+overlay timer behave as for any other seek.
+
+**Scrubber scope.** The bottom-controls scrubber drag continues to
+scrub the entire reel timeline (each spotlight is ~15 s, so the global
+scrubber stays usable). A per-spotlight scrubber was considered but
+rejected for v1: the rotation already chunks playback into discrete
+spotlights, and N/P provides per-spotlight seeking.
+
+**End of reel.** At `total_duration_us` the existing
+`_log_auto_pause_at_end()` hook fires, parking on the final event and
+flipping to pause — identical to chain-mode behaviour. End-of-reel
+scrolling credits are deferred to a follow-up PR.
+
+**ESC.** Returns to the launcher main menu (Spotlights is pushed from
+`main`, not from `history`, so the frame stack's previous entry is
+`main`).
 
 ### `log_view` frame
 
