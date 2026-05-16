@@ -330,8 +330,9 @@ restarting. Both surfaces ultimately write the same keys.
 
 Three frames: `history` (list + actions), `history_detail` (per-session
 view), and `history_rate` (star picker). Opened from the main-menu entry
-"History", which sits immediately after the dynamic Enter/Resume/Mirror
-row (or the optional "Update" row). Data is read by
+"History", which sits below `Profile` and `Options` and above
+`Spotlights` (the dynamic Enter/Resume/Mirror row, and the optional
+"Update" row when present, remain at the top of the menu). Data is read by
 `bridge/launcher/run_stats.py` — see ADR 0065 for the aggregator,
 ADR 0056 for the stitching primitive.
 
@@ -687,7 +688,7 @@ ESC Back     ↑↓ Scroll     Tab/Shift+Tab Switch table
 ## Spotlights sub-menu
 
 Cross-character reel of significant events. The launcher main menu entry
-sits between `History` and `Profile`. Two surfaces:
+sits between `History` and `About`. Two surfaces:
 
 - `spotlights_empty` — shown when no spotlights have been captured yet
   (fresh install or every character's sealed runs lack tracked events).

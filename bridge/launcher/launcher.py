@@ -743,7 +743,7 @@ def _rebuild_main_items(*, preserve_label=True):
     items = [first]
     if _update_available():
         items.append("Update")
-    items.extend(["History", "Spotlights", "Profile", "Options", "About", "Quit"])
+    items.extend(["Profile", "Options", "History", "Spotlights", "About", "Quit"])
     _main_items = items
     if prev and prev in items:
         _sel_main = items.index(prev)
