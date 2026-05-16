@@ -54,7 +54,7 @@ do not have distinct names.
 |---------|--------|
 | Session detect | `tmux has-session -t mume` + `list-clients` re-probed on every render → top item is "Enter MUME", "Resume MUME", or "Mirror MUME (attached elsewhere)" |
 | Profile page | Sortable table of `ttpp/profiles/*.tin` (Name + Selected columns) paired with a centred Options widget — Select, New, Edit, Rename, Delete, Export, Back. See the [Profile sub-menu](#profile-sub-menu) section below. `default` cannot be renamed or deleted. "Create blank" copies from `bridge/launcher/templates/blank_profile.tin` (single source of truth — see ADR 0042). The active profile is written to `startup.conf` and consumed by `ttpp/core/config.tin` at tt++ startup. |
-| Options page | Navigation hub: **Panes**, **Scripts**, **Text layout** (placeholder), **Connection**, blank row, **Back**. See the [Options sub-menu](#options-sub-menu) section below for each child frame. All Options changes persist to `bridge/runtime/startup.conf` on Back / ESC. |
+| Options page | Navigation hub: **Panes**, **Scripts**, **Spotlights**, **Text layout** (placeholder), **Connection**, blank row, **Back**. See the [Options sub-menu](#options-sub-menu) section below for each child frame. All Options changes persist to `bridge/runtime/startup.conf` on Back / ESC. |
 | Scripts page | Opened from Options → Scripts. Reads `bridge/runtime/scripts.cache`; scrollable via UP/DOWN, PageUp/PageDown |
 | Spotlights | Cross-character reel of deaths, level-ups, pvp-kills, and achievements aggregated from every character's sealed runs. Opens `log_view` in spotlight mode; empty-state frame when nothing has been captured yet. See the [Spotlights sub-menu](#spotlights-sub-menu) section and ADR 0077. |
 | About page | Reads `bridge/launcher/about.txt`; word-wrapped, cached per resize, scrollable. Current version on the right of the title; an "Update available: vX.Y.Z" line appears in `C_ACCENT` when `version.cache` contains a newer tag |
@@ -194,6 +194,8 @@ Navigation hub pushed by activating "Options" on the main frame. Children:
 - **Panes** → `options_panes` — per-pane enable/disable + colour selection.
 - **Scripts** → `scripts` — opens the same Scripts frame documented in the
   feature table above. ESC returns to `options`.
+- **Spotlights** → `options_spotlights` — per-kind toggles for the
+  Spotlights reel (deaths, level-ups, PvP kills, achievements).
 - **Text layout** → `options_coming_soon` — placeholder for future
   layout/typography options. The row paints in `C_HINT` (dim grey) in its
   inactive state to signal "not ready yet"; active and hover states look
@@ -283,6 +285,31 @@ edits; Enter saves; ESC cancels. Port is validated against 1–65535;
 invalid input keeps the frame open with the field highlighted. On
 save, writes `connection_host` / `connection_port` to `startup.conf`
 and pops back to `options_connection`.
+
+### `options_spotlights` frame
+
+Per-kind toggles for the [Spotlights reel](#spotlights-sub-menu). Four
+`[x]` / `[ ]` rows followed by a blank row and `Back`, styled identically
+to the `Display pane headers` toggle in `options_panes`. Enter / Space /
+click flips the row; ESC or `Back` saves and pops back to `options`.
+
+| Row              | `startup.conf` key                | JSONL `event`  |
+|------------------|-----------------------------------|----------------|
+| `Deaths`         | `spotlights_show_deaths`          | `char_death`   |
+| `Level-ups`      | `spotlights_show_levelups`        | `level_up`     |
+| `PvP kills`      | `spotlights_show_pvp`             | `pkill`        |
+| `Achievements`   | `spotlights_show_achievements`    | `achievement`  |
+
+All four keys default to `1` (enabled) when absent — fresh installs and
+pre-feature `startup.conf` files behave as before. A value of `0`
+disables the kind; anything else reads as enabled.
+
+`bridge/launcher/spotlights.py:load_filter_settings()` returns the
+`{event_name: bool}` dict at the start of each `aggregate_spotlights()`
+call, and `_extract_events()` drops disabled kinds during the JSONL
+walk — before spotlight construction, rotation, and per-character
+grouping. The [`credits` frame](#credits-frame) inherits the filter
+automatically since it consumes the same reel.
 
 ### `options_coming_soon` frame
 
@@ -747,11 +774,33 @@ reel. Mirrors the layout of `options_coming_soon`: title `─── Spotlights
 ───`, centred body text in `C_BODY`, `Any key to return` footer in
 `C_HINT`. Any key (or ESC) pops back to the launcher main menu.
 
-Body text:
+The body has two variants, picked by `_enter_spotlights()` before the
+frame is pushed and stored on `_spotlights_empty_reason`:
 
-> No spotlights yet. Play a session and your highlights — kills,
-> deaths, level-ups, and achievements — will be captured here, ready to
-> replay.
+- **`"no_data"`** — all four
+  [Options → Spotlights](#options_spotlights-frame) toggles are
+  enabled. The reel is empty because no character has yet produced any
+  tracked event.
+
+  > No spotlights yet. Play a session and your highlights — kills,
+  > deaths, level-ups, and achievements — will be captured here, ready
+  > to replay.
+
+- **`"filtered"`** — at least one per-kind toggle is `0`. The user is
+  pointed at the toggle frame as the likely fix:
+
+  > All matching event kinds are disabled. Enable some in Options →
+  > Spotlights to see content here.
+
+The branch uses the cheap "any toggle is off → filtered copy"
+shortcut documented in the FEAT spec — a user could have all kinds
+enabled and still no data (correctly handled), or have some kinds
+disabled but the remaining enabled kinds produce no data either
+(falls into the filtered-copy branch, which is mildly less precise
+but still nudges them toward the right place). The precise
+"unfiltered would have content" check is intentionally not run, since
+a second full JSONL walk for a marginal copy improvement isn't
+worthwhile.
 
 ### `log_view` in spotlight mode
 
@@ -836,7 +885,12 @@ Row layout (8 rows: 2 frame + 6 interior):
   follows the 1.5 s rule); `►` calls `_log_spotlight_seek_relative(1)`,
   which at the last spotlight delegates to
   `_log_spotlight_jump_to_credits()` — the same transition
-  `_log_auto_pause_at_end()` uses.
+  `_log_auto_pause_at_end()` uses. On the last spotlight the row
+  reads `◄ <idx> of <total> ► CREDITS` (the suffix in the same
+  primary style) to surface that altered destination; the
+  next-click handler covers the full ` ► CREDITS` fragment so
+  clicking the label triggers the same jump. The centring
+  recomputes per spotlight so the row stays balanced in both modes.
 - Row 3: `<CHAR>` — uppercased character name, centred,
   `C_SPOTLIGHT_TEXT_PRIMARY`. (The date used to live here; it's been
   dropped — the top header still carries it.)

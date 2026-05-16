@@ -23,6 +23,17 @@ from log_player import LogEvent
 _BRIDGE_DIR    = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _PROJECT_DIR   = os.path.dirname(_BRIDGE_DIR)
 _DATA_RUNS_DIR = os.path.join(_PROJECT_DIR, "data", "runs")
+_CONF_PATH     = os.path.join(_BRIDGE_DIR, "runtime", "startup.conf")
+
+# startup.conf key → JSONL `event` name for the per-kind filter. Missing
+# keys default to enabled ("1") so fresh installs and pre-feature configs
+# behave as before.
+_FILTER_KEYS = {
+    "char_death":  "spotlights_show_deaths",
+    "level_up":    "spotlights_show_levelups",
+    "pkill":       "spotlights_show_pvp",
+    "achievement": "spotlights_show_achievements",
+}
 
 # Window around a spotlight, in seconds. One event per spotlight: the
 # pre-roll window starts `_PRE_ROLL_S` seconds before the event and the
@@ -117,6 +128,29 @@ _TRACKED = {
 
 
 # ---------------------------------------------------------------------------
+# startup.conf filter — which event kinds to include
+# ---------------------------------------------------------------------------
+
+def load_filter_settings(conf_path: str | None = None) -> dict:
+    """Return `{jsonl_event_name: bool}` for the four tracked event kinds.
+    A missing or non-numeric value is treated as enabled — the contract
+    is that any value other than literal `"0"` means the kind is on."""
+    path = conf_path if conf_path is not None else _CONF_PATH
+    raw: dict = {}
+    try:
+        with open(path) as fh:
+            for line in fh:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                k, _, v = line.partition("=")
+                raw[k.strip()] = v.strip()
+    except OSError:
+        pass
+    return {event: (raw.get(key, "1") != "0") for event, key in _FILTER_KEYS.items()}
+
+
+# ---------------------------------------------------------------------------
 # JSONL reading (tolerant of malformed/partial lines)
 # ---------------------------------------------------------------------------
 
@@ -138,13 +172,18 @@ def _iter_rows(path: str):
                 yield row
 
 
-def _extract_events(path: str) -> list:
-    """Return the spotlight-eligible events in a sealed JSONL, in file order."""
+def _extract_events(path: str, allow: dict | None = None) -> list:
+    """Return the spotlight-eligible events in a sealed JSONL, in file order.
+    When `allow` is provided, events whose JSONL `event` name maps to
+    `False` are skipped — the same filter the Options → Spotlights toggles
+    write to `startup.conf`."""
     out: list = []
     for row in _iter_rows(path):
         ev = row.get("event")
         spec = _TRACKED.get(ev)
         if spec is None:
+            continue
+        if allow is not None and not allow.get(ev, True):
             continue
         ts = row.get("ts")
         if not isinstance(ts, (int, float)):
@@ -215,10 +254,22 @@ def _rotate(per_char_groups: dict) -> list:
 # Aggregation entry point
 # ---------------------------------------------------------------------------
 
-def aggregate_spotlights(runs_dir: str | None = None) -> SpotlightReel:
+def aggregate_spotlights(
+    runs_dir: str | None = None,
+    allow: dict | None = None,
+) -> SpotlightReel:
     """Walk every character directory, extract tracked events from sealed
     runs that have a paired .log, build one spotlight per event, and
-    interleave them into a SpotlightReel."""
+    interleave them into a SpotlightReel.
+
+    `allow` is a `{jsonl_event_name: bool}` dict used to skip disabled
+    event kinds before spotlight construction. When omitted, the per-kind
+    filter is read fresh from `startup.conf` so the call always reflects
+    the user's current Options → Spotlights selection. Pass `allow={}` or
+    a fully-True dict to disable filtering."""
+    if allow is None:
+        allow = load_filter_settings()
+
     base = runs_dir if runs_dir is not None else _DATA_RUNS_DIR
     if not os.path.isdir(base):
         return SpotlightReel(spotlights=[], total_count=0)
@@ -247,7 +298,7 @@ def aggregate_spotlights(runs_dir: str | None = None) -> SpotlightReel:
             if not os.path.exists(log_path):
                 continue
             jsonl_path = os.path.join(char_dir, fn)
-            events = _extract_events(jsonl_path)
+            events = _extract_events(jsonl_path, allow=allow)
             if not events:
                 continue
             char_spotlights.extend(_build_spotlights_for_run(

@@ -140,6 +140,10 @@ _CONF_DEFAULTS = {
     "pane_color_ui":      "black",
     "pane_color_dev":     "grey",
     "profile":            "default",
+    "spotlights_show_deaths":       "1",
+    "spotlights_show_levelups":     "1",
+    "spotlights_show_pvp":          "1",
+    "spotlights_show_achievements": "1",
 }
 
 # ---------------------------------------------------------------------------
@@ -208,6 +212,9 @@ _options_pane_target      = "status"   # which pane the subframe is currently ed
 # Options — Connection submenu (MMapper / Direct / Custom / Back)
 _sel_options_connection   = 0
 _hover_options_connection = -1
+# Options — Spotlights submenu (4 per-kind toggles + Back)
+_sel_options_spotlights   = 0
+_hover_options_spotlights = -1
 # Options — Connection custom host:port input
 _conn_host_buf            = ""
 _conn_port_buf            = ""
@@ -341,6 +348,7 @@ _options_pane_window             = None
 _options_connection_window       = None
 _options_connection_custom_window = None
 _options_coming_soon_window      = None
+_options_spotlights_window       = None
 _spotlights_empty_window         = None
 _scripts_window      = None
 _about_window        = None
@@ -448,6 +456,8 @@ def _save_conf():
                 "pane_color_status", "pane_color_buffs", "pane_color_group",
                 "pane_color_comm", "pane_color_ui", "pane_color_dev",
                 "profile",
+                "spotlights_show_deaths", "spotlights_show_levelups",
+                "spotlights_show_pvp", "spotlights_show_achievements",
             ):
                 fh.write(f"{key}={_conf.get(key, _CONF_DEFAULTS[key])}\n")
     except OSError:
@@ -626,6 +636,7 @@ def _focus_current_frame():
             "options_connection":         _options_connection_window,
             "options_connection_custom":  _options_connection_custom_window,
             "options_coming_soon":        _options_coming_soon_window,
+            "options_spotlights":         _options_spotlights_window,
             "spotlights_empty":           _spotlights_empty_window,
             "scripts":                    _scripts_window,
             "about":                      _about_window,
@@ -689,6 +700,7 @@ def _set_hover(frame, idx):
     """Set hover index for the named frame; invalidate if changed."""
     global _hover_main, _hover_options, _hover_copy
     global _hover_options_panes, _hover_options_pane, _hover_options_connection
+    global _hover_options_spotlights
     changed = False
     if frame == "main" and _hover_main != idx:
         _hover_main = idx; changed = True
@@ -700,6 +712,8 @@ def _set_hover(frame, idx):
         _hover_options_pane = idx; changed = True
     elif frame == "options_connection" and _hover_options_connection != idx:
         _hover_options_connection = idx; changed = True
+    elif frame == "options_spotlights" and _hover_options_spotlights != idx:
+        _hover_options_spotlights = idx; changed = True
     elif frame == "profile_create_copy_picker" and _hover_copy != idx:
         _hover_copy = idx; changed = True
     if changed and _app:
@@ -1793,6 +1807,7 @@ def _profile_delete_text():
 _OPTIONS_ROWS = [
     ("panes",          "Panes"),
     ("scripts",        "Scripts"),
+    ("spotlights",     "Spotlights"),
     ("text_layout",    "Text layout"),
     ("connection",     "Connection"),
     ("back",           "Back"),
@@ -1807,6 +1822,7 @@ def _enter_options_frame():
 
 def _activate_option(idx):
     global _sel_options, _sel_options_panes, _sel_options_connection
+    global _sel_options_spotlights
     if idx < 0 or idx >= len(_OPTIONS_ROWS):
         return
     _sel_options = idx
@@ -1816,6 +1832,9 @@ def _activate_option(idx):
         _push_frame("options_panes")
     elif action == "scripts":
         _enter_scripts_frame()
+    elif action == "spotlights":
+        _sel_options_spotlights = 0
+        _push_frame("options_spotlights")
     elif action == "text_layout":
         _push_frame("options_coming_soon")
     elif action == "connection":
@@ -2361,6 +2380,113 @@ def _options_connection_custom_text():
 
 
 # ---------------------------------------------------------------------------
+# Options — Spotlights submenu
+# ---------------------------------------------------------------------------
+# Per-kind toggles for the spotlight reel. (conf_key, label) — flipping a
+# toggle writes "0" / "1" into startup.conf; the spotlight aggregator reads
+# the same keys and skips disabled JSONL event kinds before building the
+# reel. Missing keys default to enabled ("1").
+_SPOTLIGHT_TOGGLES = [
+    ("spotlights_show_deaths",       "Deaths"),
+    ("spotlights_show_levelups",     "Level-ups"),
+    ("spotlights_show_pvp",          "PvP kills"),
+    ("spotlights_show_achievements", "Achievements"),
+]
+
+
+# Rows: ("toggle", conf_key, label) | ("sep", None, None) | ("back", None, None)
+def _options_spotlights_rows():
+    rows = [("toggle", key, label) for key, label in _SPOTLIGHT_TOGGLES]
+    rows.append(("sep",  None, None))
+    rows.append(("back", None, None))
+    return rows
+
+
+def _options_spotlights_selectable_indices():
+    return [i for i, (k, _, _) in enumerate(_options_spotlights_rows()) if k != "sep"]
+
+
+def _options_spotlights_activate(row_idx):
+    rows = _options_spotlights_rows()
+    if not (0 <= row_idx < len(rows)):
+        return
+    kind, key, _label = rows[row_idx]
+    if kind == "toggle":
+        _conf[key] = "0" if _conf.get(key) == "1" else "1"
+        if _app:
+            _app.invalidate()
+    elif kind == "back":
+        _save_conf()
+        _pop_frame()
+
+
+def _options_spotlights_text():
+    cols   = _term_cols()
+    title  = "─── Spotlights ───"
+    footer = "↑↓ Navigate · Enter Select · ESC Back"
+
+    rows = _options_spotlights_rows()
+    sel_indices = _options_spotlights_selectable_indices()
+    sel_pos = (_sel_options_spotlights
+               if 0 <= _sel_options_spotlights < len(sel_indices)
+               else 0)
+    sel_row = sel_indices[sel_pos] if sel_indices else -1
+
+    labels = []
+    for kind, key, label in rows:
+        if kind == "toggle":
+            box = "[x]" if _conf.get(key) == "1" else "[ ]"
+            labels.append(f"{box} {label}")
+        elif kind == "sep":
+            labels.append("")
+        elif kind == "back":
+            labels.append("Back")
+    maxw = max((len(l) for l in labels), default=0)
+    pad  = max(0, (cols - (maxw + 6)) // 2)
+
+    frags = []
+    frags.append(("", "\n\n"))
+    frags.append(("", _pad_centre(title, cols)))
+    frags.append((C_TITLE, title))
+    frags.append(("", "\n\n"))
+
+    for i, (kind, _key, _label) in enumerate(rows):
+        if kind == "sep":
+            frags.append(("", "\n"))
+            continue
+
+        label = labels[i]
+        is_active = (i == sel_row)
+        is_hover  = (i == _hover_options_spotlights)
+        style     = _row_style(is_active, is_hover)
+        prefix    = "<< " if is_active else "   "
+        suffix    = " >>" if is_active else "   "
+
+        def _make_handler(row=i, pos=(sel_indices.index(i) if i in sel_indices else 0)):
+            def _h(ev):
+                global _sel_options_spotlights
+                if ev.event_type == MouseEventType.MOUSE_MOVE:
+                    _set_hover("options_spotlights", row)
+                    return
+                if ev.event_type == MouseEventType.MOUSE_DOWN:
+                    _sel_options_spotlights = pos
+                    _options_spotlights_activate(row)
+            return _h
+
+        h = _make_handler()
+        frags.append(("", " " * pad))
+        frags.append((style, prefix, h))
+        frags.append((style, label, h))
+        frags.append((style, suffix, h))
+        frags.append(("", "\n"))
+
+    frags.append(("", "\n"))
+    frags.append(("", _pad_centre(footer, cols)))
+    frags.append((C_HINT, footer))
+    return frags
+
+
+# ---------------------------------------------------------------------------
 # Options — "Coming soon" placeholder for Game text-layout
 # ---------------------------------------------------------------------------
 _COMING_SOON_BODY = (
@@ -2374,6 +2500,17 @@ _SPOTLIGHTS_EMPTY_BODY = (
     "No spotlights yet. Play a session and your highlights — kills, deaths, "
     "level-ups, and achievements — will be captured here, ready to replay."
 )
+_SPOTLIGHTS_EMPTY_FILTERED_BODY = (
+    "All matching event kinds are disabled. Enable some in Options → "
+    "Spotlights to see content here."
+)
+
+# Set by _enter_spotlights to pick which empty-state copy to render.
+# "no_data" — original message (no events of any kind anywhere).
+# "filtered" — at least one per-kind toggle is off (cheap shortcut: the
+# user may actually have no data either, but the filtered copy still
+# nudges them toward Options → Spotlights, which is the useful pointer).
+_spotlights_empty_reason = "no_data"
 
 
 def _spotlights_empty_text():
@@ -2381,7 +2518,10 @@ def _spotlights_empty_text():
     title  = "─── Spotlights ───"
     footer = "Any key to return"
     body_w = max(20, min(72, cols - 4))
-    wrapped = _wrap_text(_SPOTLIGHTS_EMPTY_BODY, body_w)
+    body = (_SPOTLIGHTS_EMPTY_FILTERED_BODY
+            if _spotlights_empty_reason == "filtered"
+            else _SPOTLIGHTS_EMPTY_BODY)
+    wrapped = _wrap_text(body, body_w)
 
     frags = []
     frags.append(("", "\n\n"))
@@ -4690,6 +4830,17 @@ def _enter_spotlights():
     """Aggregate spotlights from every character's sealed runs and either
     push the empty-state frame or eagerly load + play the reel through
     log_view in spotlight mode."""
+    global _spotlights_empty_reason
+    # Cheap shortcut for the empty-state branch: if any per-kind toggle
+    # is off, attribute an empty reel to the filter and nudge the user
+    # toward Options → Spotlights. Otherwise it's a genuine "no data"
+    # state. See docs/launcher.md "Spotlights empty-state copy".
+    any_disabled = any(
+        _conf.get(key) == "0"
+        for key, _label in _SPOTLIGHT_TOGGLES
+    )
+    _spotlights_empty_reason = "filtered" if any_disabled else "no_data"
+
     reel = spotlights.aggregate_spotlights()
     if reel.total_count == 0:
         _push_frame("spotlights_empty")
@@ -5854,13 +6005,25 @@ def _log_spotlight_nav_row(spot_idx, total, inner):
     """Render the clickable nav row at the top of the spotlight info box:
     `◄ <idx> of <total> ►`, centred, with each arrow carrying its own
     mouse handler. The arrows are padded with single spaces (e.g. ` ◄ `)
-    so the click target is 3 cells wide rather than a single glyph."""
+    so the click target is 3 cells wide rather than a single glyph.
+
+    On the last spotlight the `►` glyph no longer seeks to a next
+    spotlight — it jumps straight into credits — so we append a
+    ` CREDITS` label after `►` to surface that altered destination.
+    The next-click handler then covers the whole ` ► CREDITS` fragment
+    so clicking the label triggers the same action."""
     if total <= 0:
         return [(C_SPOTLIGHT_BOX_BG, " " * inner)]
-    idx_text    = f"{spot_idx + 1} of {total}"
-    left_arrow  = " ◄ "
-    right_arrow = " ► "
-    used = len(left_arrow) + len(idx_text) + len(right_arrow)
+    idx_text     = f"{spot_idx + 1} of {total}"
+    left_arrow   = " ◄ "
+    is_last      = (spot_idx >= total - 1)
+    right_chunk  = " ► CREDITS" if is_last else " ► "
+    used = len(left_arrow) + len(idx_text) + len(right_chunk)
+    if used > inner and is_last:
+        # Pathologically narrow interior for the CREDITS label — drop it
+        # rather than the arrow, so the row stays usable.
+        right_chunk = " ► "
+        used = len(left_arrow) + len(idx_text) + len(right_chunk)
     if used > inner:
         return [(C_SPOTLIGHT_BOX_BG, " " * inner)]
     pad_total = inner - used
@@ -5880,7 +6043,7 @@ def _log_spotlight_nav_row(spot_idx, total, inner):
         frags.append((C_SPOTLIGHT_BOX_BG, " " * pad_l))
     frags.append((C_SPOTLIGHT_TEXT_PRIMARY, left_arrow, _prev_click))
     frags.append((C_SPOTLIGHT_TEXT_PRIMARY, idx_text))
-    frags.append((C_SPOTLIGHT_TEXT_PRIMARY, right_arrow, _next_click))
+    frags.append((C_SPOTLIGHT_TEXT_PRIMARY, right_chunk, _next_click))
     if pad_r:
         frags.append((C_SPOTLIGHT_BOX_BG, " " * pad_r))
     return frags
@@ -6684,6 +6847,39 @@ def _kb_optpp_escape(event):
     _pop_frame()
 
 
+# Options — Spotlights submenu
+@kb.add("up", filter=_in_frame("options_spotlights"))
+def _kb_opts_up(event):
+    global _sel_options_spotlights
+    n = len(_options_spotlights_selectable_indices())
+    if n:
+        _sel_options_spotlights = (_sel_options_spotlights - 1) % n
+
+
+@kb.add("down", filter=_in_frame("options_spotlights"))
+def _kb_opts_down(event):
+    global _sel_options_spotlights
+    n = len(_options_spotlights_selectable_indices())
+    if n:
+        _sel_options_spotlights = (_sel_options_spotlights + 1) % n
+
+
+@kb.add("enter", filter=_in_frame("options_spotlights"))
+@kb.add(" ",     filter=_in_frame("options_spotlights"))
+def _kb_opts_select(event):
+    sel = _options_spotlights_selectable_indices()
+    if not sel:
+        return
+    idx = _sel_options_spotlights if _sel_options_spotlights < len(sel) else len(sel) - 1
+    _options_spotlights_activate(sel[idx])
+
+
+@kb.add("escape", filter=_in_frame("options_spotlights"), eager=True)
+def _kb_opts_escape(event):
+    _save_conf()
+    _pop_frame()
+
+
 # Options — Connection submenu
 @kb.add("up", filter=_in_frame("options_connection"))
 def _kb_optc_up(event):
@@ -7406,7 +7602,8 @@ def main():
     global _profile_create_copy_window, _profile_delete_window
     global _options_window, _options_panes_window, _options_pane_window
     global _options_connection_window, _options_connection_custom_window
-    global _options_coming_soon_window, _spotlights_empty_window
+    global _options_coming_soon_window, _options_spotlights_window
+    global _spotlights_empty_window
     global _scripts_window, _about_window
     global _update_running_window, _update_result_window
     global _exit_confirm_window, _too_small_window
@@ -7443,6 +7640,7 @@ def main():
     _options_connection_window,         options_connection_frame       = _build_simple(_options_connection_text)
     _options_connection_custom_window,  options_connection_custom_frame = _build_simple(_options_connection_custom_text)
     _options_coming_soon_window,        options_coming_soon_frame      = _build_simple(_options_coming_soon_text)
+    _options_spotlights_window,         options_spotlights_frame       = _build_simple(_options_spotlights_text)
     _spotlights_empty_window,           spotlights_empty_frame         = _build_simple(_spotlights_empty_text)
     _scripts_window,               scripts_frame             = _build_scrolling(
         _scripts_title_text, _scripts_content_text, _scripts_footer_text
@@ -7561,6 +7759,7 @@ def main():
         "options_connection":         options_connection_frame,
         "options_connection_custom":  options_connection_custom_frame,
         "options_coming_soon":        options_coming_soon_frame,
+        "options_spotlights":         options_spotlights_frame,
         "spotlights_empty":           spotlights_empty_frame,
         "scripts":                    scripts_frame,
         "about":                      about_frame,
