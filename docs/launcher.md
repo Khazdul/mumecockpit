@@ -40,9 +40,9 @@ The UI is a frame stack: a single `DynamicContainer` swaps between `main`,
 `options_panes`, `options_pane`, `options_connection`,
 `options_connection_custom`, `options_coming_soon`, `scripts`, `about`,
 `history`, `history_detail`, `history_rate`, `history_delete_confirm`,
-`log_view`, `spotlights_empty`, `update_running`, `update_result`, and
-`exit_confirm` containers, pushed and popped via `_push_frame` /
-`_pop_frame`. Each
+`log_view`, `spotlights_empty`, `credits`, `update_running`,
+`update_result`, and `exit_confirm` containers, pushed and popped via
+`_push_frame` / `_pop_frame`. Each
 frame owns its own `KeyBindings` filter (`_in_frame(name)`) so
 navigation, scroll, and ESC behave per-frame. The popup architecture
 (ADR 0062) is the reference; see `bridge/launcher/ingame_menu.py` for
@@ -784,21 +784,24 @@ visible at all times — that rule is unchanged.
 `_log_spotlight_header_text`. The centre/left section reads:
 
 ```
-<active_spotlight.character>[ (L<level>)]  ·  SPOTLIGHT <N> / <TOTAL>
-  ·  <YYYY-MM-DD HH:MM>  ·  <elapsed>
+<active_spotlight.character>[ (L<level>)]  ·  SPOTLIGHT <N> / <TOTAL>  ·  <YYYY-MM-DD>
 ```
 
 `L<level>` appears only when the active spotlight contains a `death`
 event whose JSONL row carried a `level` field. Date is
-`spotlight.events[0].ts` formatted as local time. `ESC to return` sits
-right-aligned as in chain mode.
+`spotlight.events[0].ts` formatted as local time (date only — chain
+mode's `HH:MM` and `<elapsed>` segments are intentionally dropped in
+spotlight mode: the floating info box already surfaces the active
+spotlight's countdown and the freed left-side budget makes room for
+the keyboard hint on the right). The right-aligned hint is
+`ESC Back  ·  N/P Next/prev`.
 
-**Floating info box (top-right).** A 30×7 framed rectangle pinned to
+**Floating info box (top-right).** A 30×8 framed rectangle pinned to
 `top=2, right=2` — a 2-cell margin from both the top and right edges
 of `log_view`. The frame is the half-block outline `█▀▄▌▐` rendered in
 black on the bright cyan BG: top row `█` + `▀` × `interior_width` +
 `█`, bottom row `█` + `▄` × `interior_width` + `█`, side columns `▌`
-(left) and `▐` (right) on each of the 5 interior rows. Interior width
+(left) and `▐` (right) on each of the 6 interior rows. Interior width
 is `_SPOTLIGHT_BOX_W - 2 = 28`. Palette:
 
 - `C_SPOTLIGHT_BOX_BG` — bright banner-hue fill (same hue as `C_TITLE`)
@@ -806,14 +809,15 @@ is `_SPOTLIGHT_BOX_W - 2 = 28`. Palette:
 - `C_SPOTLIGHT_FRAME` — black on the BG, for the `█▀▄▌▐` outline
   glyphs.
 - `C_SPOTLIGHT_TEXT_PRIMARY` — near-black, on the BG. Used for the
-  character name and the event label.
+  nav row, the character name, and the event label.
 - `C_SPOTLIGHT_TEXT_SECONDARY` — muted grey, on the BG. Lighter than
   primary, visibly subordinate. Used for the countdown.
 
-Row layout (7 rows: 2 frame + 5 interior):
+Row layout (8 rows: 2 frame + 6 interior):
 
 ```
 █▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀█
+▌         ◄ 1 of 3 ►         ▐
 ▌           BERIT            ▐
 ▌                            ▐
 ▌      Reached level 3       ▐
@@ -823,24 +827,35 @@ Row layout (7 rows: 2 frame + 5 interior):
 ```
 
 - Frame rows: top and bottom — black `█▀▄` outline on the BG.
-- Row 2: `<CHAR>` — uppercased character name, centred,
+- Row 2: nav row — `◄ <idx> of <total> ►`, centred,
+  `C_SPOTLIGHT_TEXT_PRIMARY`. Built as separate fragments by
+  `_log_spotlight_nav_row` so `◄` and `►` each carry a mouse handler
+  over a 3-cell click region (` ◄ ` / ` ► `); the index text in
+  between is inert. Click semantics mirror the `P` and `N` keys:
+  `◄` calls `_log_spotlight_seek_relative(-1)` (restart-vs-previous
+  follows the 1.5 s rule); `►` calls `_log_spotlight_seek_relative(1)`,
+  which at the last spotlight delegates to
+  `_log_spotlight_jump_to_credits()` — the same transition
+  `_log_auto_pause_at_end()` uses.
+- Row 3: `<CHAR>` — uppercased character name, centred,
   `C_SPOTLIGHT_TEXT_PRIMARY`. (The date used to live here; it's been
   dropped — the top header still carries it.)
-- Row 3: blank.
-- Row 4: event label (or its first wrapped line), centred,
+- Row 4: blank.
+- Row 5: event label (or its first wrapped line), centred,
   `C_SPOTLIGHT_TEXT_PRIMARY`.
-- Row 5: blank when the event label fits on row 4; the wrapped
+- Row 6: blank when the event label fits on row 5; the wrapped
   continuation of the event label when it doesn't (centred, primary
   text). Wrapping uses `textwrap.wrap(..., break_long_words=False,
   break_on_hyphens=False)` so words stay intact. Labels that wrap to
   three or more lines have their second line ellipsised (`…`) — rare
   for the event-label phrases we surface.
-- Row 6: countdown — `In <N> seconds..` while counting down (two
+- Row 7: countdown — `In <N> seconds..` while counting down (two
   trailing periods), `C_SPOTLIGHT_TEXT_SECONDARY`, centred. Collapses
   to a blank row when no next event remains in this spotlight.
 
 The "SPOTLIGHT N" line is not rendered inside the box — that
-information lives in the top header.
+information lives in the top header (the in-box nav row uses the
+shorter `<idx> of <total>` form).
 
 **Visibility.** The spotlight info box stays visible at all times in
 spotlight mode — it does **not** participate in the top header / bottom
@@ -887,12 +902,16 @@ behaviour). Two spotlight-mode-only additions:
 
 | Key   | Action                                                          |
 |-------|-----------------------------------------------------------------|
-| `n`/`N` | Seek to next spotlight start (no-op past last spotlight)        |
+| `n`/`N` | Seek to next spotlight start; **at the last spotlight, jump straight into credits** (same transition `_log_auto_pause_at_end` uses) |
 | `p`/`P` | Seek to previous spotlight start; if `> ~1.5 s` into current, restart current; at the first spotlight, restart it |
 
-Both route through `_log_scrubber_seek` targeting
+Both route through `_log_spotlight_seek_relative`; intermediate seeks
+go through `_log_scrubber_seek` targeting
 `reel.spotlight_start_offsets_us[idx]`, so the play/pause mode and
-overlay timer behave as for any other seek.
+overlay timer behave as for any other seek. The "next past the last"
+branch calls `_log_spotlight_jump_to_credits()` directly (cancel
+playback, pop `log_view`, push `credits`). The mouse equivalents are
+the `◄` / `►` glyphs in the info box's top nav row.
 
 **Scrubber scope.** The bottom-controls scrubber drag continues to
 scrub the entire reel timeline (each spotlight is ~15 s, so the global
@@ -901,13 +920,75 @@ rejected for v1: the rotation already chunks playback into discrete
 spotlights, and N/P provides per-spotlight seeking.
 
 **End of reel.** At `total_duration_us` the existing
-`_log_auto_pause_at_end()` hook fires, parking on the final event and
-flipping to pause — identical to chain-mode behaviour. End-of-reel
-scrolling credits are deferred to a follow-up PR.
+`_log_auto_pause_at_end()` hook fires. In chain mode it parks on the
+final event and flips to pause; in spotlight mode it delegates to
+`_log_spotlight_jump_to_credits()` which cancels playback, pops
+`log_view`, and pushes the `credits` frame with the reel's spotlight
+list. The keyboard `N` and the info-box `►` click at the last
+spotlight take the same path — see the
+[`credits` frame section](#credits-frame) below and
+[ADR 0080](decisions/0080-end-of-reel-credits.md).
 
 **ESC.** Returns to the launcher main menu (Spotlights is pushed from
 `main`, not from `history`, so the frame stack's previous entry is
 `main`).
+
+### `credits` frame
+
+End-of-reel scrolling chronicle. Pushed automatically by
+`_log_auto_pause_at_end()` when the spotlight reel finishes
+([ADR 0080](decisions/0080-end-of-reel-credits.md)). Full-screen,
+black canvas (`bg:#000000`); narrative lines scroll bottom-to-top with
+linear fade bands at the top and bottom of the viewport.
+
+**Content.** Built once on frame entry by
+`bridge/launcher/credits.py`:
+`generate_credits_lines(spotlights, text_width) -> list[str]`. Each
+spotlight event becomes one complete narrative sentence chosen
+deterministically from a per-kind template list (PvP, death,
+level-up, achievement); the same event reads the same way across
+multiple runs of the credits, because template selection hashes
+`(character, run_id, event.ts, event.kind)` modulo the list length.
+Events are grouped by character with a chapter header per character
+(also deterministic on character name); characters appear in
+oldest-first order. Dates render as `"<ordinal> of <Month>, <Year>"`
+(e.g. `"first of May, 2026"`). Fixed opening (`Herein are recorded
+the deeds of your characters.`) and closing (`The End.`) lines bracket
+the content with 5 blank-row pads. `text_width = min(60, max(40,
+term_cols - 8))` keeps the centred column readable on wide
+terminals; `textwrap.wrap(..., break_long_words=False,
+break_on_hyphens=False)` preserves word boundaries.
+
+**Scroll mechanics.** `_CREDITS_SCROLL_ROWS_PER_SEC = 1.0` row/sec;
+the integer scroll offset is `int((monotonic() - start) *
+_CREDITS_SCROLL_ROWS_PER_SEC)`, so the visible step advances once
+per second. The redraw tick runs at `_CREDITS_TICK_HZ = 15` — well
+above the visible step rate, so the integer-row transition is
+observed promptly on every terminal. Auto-exit fires when
+`offset_floor >= len(_credits_lines) + term_rows`; the trailing pad
+of `term_rows` blank rows appended at frame-entry time is what
+guarantees the closing line clears the top before the frame pops.
+
+**Fade bands.** `_CREDITS_FADE_BAND_FRAC = 0.35`. Bottom 35% of the
+viewport ramps brightness from 0 to 1 (`tr / fb`); top 35% ramps
+from 1 to 0 (`(n - 1 - tr) / fb`); middle ~30% is solid white.
+Brightness is collapsed to a hex `#vvvvvv` SGR string per row by
+`_credits_brightness_to_hex`; the same hex is reused as both fg and
+bg-companion fg in `fg:<hex> bg:#000000`. Combined with the
+1 row/sec scroll, each row spends ~35% × `term_rows` seconds in each
+band — long enough for the gradient to read as cinematic rather than
+as a sharp cutoff.
+
+**`Escape to exit` hint.** Rendered as a Float above the scroll
+content, pinned at `top=1, right=2`, `fg:#555555 bg:#000000`. Not
+affected by the fade band — the float paints above the scroll text so
+a credit line in row 0 doesn't clobber it.
+
+**Input.** ESC pops back to the launcher main menu (via
+`_reset_to_main()` — the previous frame stack entry is `main` because
+`_log_auto_pause_at_end()` pops `log_view` before pushing `credits`).
+Mouse activity does nothing — the credits control has no mouse
+handler. No other keys are bound.
 
 ### `log_view` frame
 

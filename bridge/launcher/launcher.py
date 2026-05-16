@@ -52,6 +52,7 @@ from palette import (  # noqa: E402
     _S_HINT, _S_PVP, _S_ALLY, _S_STAR,
     PANE_COLORS, PANE_COLOR_ORDER,
 )
+import credits  # noqa: E402
 import log_player  # noqa: E402
 import run_retention  # noqa: E402
 import run_stats  # noqa: E402
@@ -297,6 +298,20 @@ _log_scrubber_width         = 0        # number of scrubber cells in the current
 # without down-casting.
 _log_view_mode              = "chain"
 _log_view_reel              = None     # SpotlightPlayback | None
+
+# End-of-reel scrolling credits. Pushed after the spotlight reel finishes;
+# black canvas, narrative lines scroll bottom-to-top with fade bands at
+# the top and bottom. See ADR 0080 and docs/launcher.md "credits frame".
+_credits_lines: list             = []
+_credits_start_monotonic: float  = 0.0
+_credits_term_rows: int          = 0
+_credits_term_cols: int          = 0
+_credits_text_width: int         = 0
+_credits_tick_task               = None  # asyncio.Task | None
+_CREDITS_SCROLL_ROWS_PER_SEC     = 1.0
+_CREDITS_FADE_BAND_FRAC          = 0.35
+_CREDITS_TICK_HZ                 = 15
+
 _history_columns = [
     # (key, base_label, width, align, type)
     ("Char",    "Char",     None, "left",  "text"),
@@ -340,6 +355,7 @@ _history_detail_window  = None
 _history_rate_window    = None
 _history_delete_confirm_window = None
 _log_view_window        = None
+_credits_window         = None
 
 _app_loop = None
 
@@ -620,6 +636,7 @@ def _focus_current_frame():
             "history_rate":               _history_rate_window,
             "history_delete_confirm":     _history_delete_confirm_window,
             "log_view":                   _log_view_window,
+            "credits":                    _credits_window,
         }.get(_current_frame)
     if win is None:
         return
@@ -4810,6 +4827,146 @@ def _exit_log_view():
     _pop_frame()
 
 
+# ---------------------------------------------------------------------------
+# Credits — end-of-reel scrolling chronicle
+# ---------------------------------------------------------------------------
+def _credits_cancel_tick_task():
+    global _credits_tick_task
+    if _credits_tick_task is not None:
+        _credits_tick_task.cancel()
+        _credits_tick_task = None
+
+
+def _credits_start_tick_task():
+    global _credits_tick_task
+    _credits_cancel_tick_task()
+    if _app_loop is None:
+        return
+    _credits_tick_task = _app_loop.create_task(_credits_tick_loop())
+
+
+async def _credits_tick_loop():
+    """Lightweight redraw loop. The animation is row-quantised (at
+    1 row/s a new offset appears once per second), so most ticks just
+    confirm the current frame is still valid; we invalidate
+    unconditionally at _CREDITS_TICK_HZ which is comfortably above the
+    visible step rate."""
+    interval = 1.0 / _CREDITS_TICK_HZ
+    try:
+        while True:
+            if _current_frame != "credits":
+                return
+            if _credits_check_finished():
+                return
+            if _app:
+                _app.invalidate()
+            await asyncio.sleep(interval)
+    except asyncio.CancelledError:
+        pass
+
+
+def _credits_check_finished() -> bool:
+    """Return True (and trigger auto-exit) when the last credit line has
+    scrolled clear of the top of the viewport."""
+    if not _credits_lines or _credits_term_rows <= 0:
+        return False
+    offset_floor = int(
+        (time.monotonic() - _credits_start_monotonic) * _CREDITS_SCROLL_ROWS_PER_SEC
+    )
+    if offset_floor >= len(_credits_lines) + _credits_term_rows:
+        _credits_finish()
+        return True
+    return False
+
+
+def _enter_credits(spotlights_list):
+    """Push the credits frame, snapshotting terminal size and generating
+    the wrapped narrative content from `spotlights_list` (a list of
+    Spotlight objects, typically the reel's `.spotlights`)."""
+    global _credits_lines, _credits_start_monotonic
+    global _credits_term_rows, _credits_term_cols, _credits_text_width
+    term_rows = max(1, _term_rows())
+    term_cols = max(1, _term_cols())
+    text_width = min(60, max(40, term_cols - 8))
+    _credits_term_rows = term_rows
+    _credits_term_cols = term_cols
+    _credits_text_width = text_width
+    _credits_lines = credits.generate_credits_lines(spotlights_list, text_width)
+    # Trailing pad: enough blank rows after the closing line so it
+    # scrolls fully off the top before the auto-exit fires. The module
+    # adds a small baseline buffer; we top it up with `term_rows` here
+    # now that we know the viewport height.
+    _credits_lines = _credits_lines + [""] * term_rows
+    _credits_start_monotonic = time.monotonic()
+    _push_frame("credits")
+    _credits_start_tick_task()
+
+
+def _credits_finish():
+    """Stop the tick, clear state, and return to the launcher main menu."""
+    global _credits_lines, _credits_start_monotonic
+    global _credits_term_rows, _credits_term_cols, _credits_text_width
+    _credits_cancel_tick_task()
+    _credits_lines = []
+    _credits_start_monotonic = 0.0
+    _credits_term_rows = 0
+    _credits_term_cols = 0
+    _credits_text_width = 0
+    if _current_frame == "credits":
+        _reset_to_main()
+
+
+def _credits_row_brightness(tr: int, n: int, fb: int) -> float:
+    """Fade-band brightness for terminal row `tr` (0..n-1).
+    Linear ramp up across the bottom `fb` rows, full white in the
+    middle, linear ramp down across the top `fb` rows."""
+    fb = max(1, fb)
+    if tr < fb:
+        return tr / fb
+    if tr >= n - fb:
+        return (n - 1 - tr) / fb
+    return 1.0
+
+
+def _credits_brightness_to_hex(b: float) -> str:
+    v = max(0, min(255, int(round(b * 255))))
+    return f"#{v:02x}{v:02x}{v:02x}"
+
+
+def _credits_text():
+    """Build the credits scroll as a fragment list. One fragment per
+    terminal row: a centred credit line painted on a black background,
+    with brightness from the fade-band formula."""
+    if not _credits_lines or _credits_term_rows <= 0:
+        return [("bg:#000000", " " * max(1, _term_cols()))]
+    n = _credits_term_rows
+    cols = max(1, _term_cols())
+    fb = max(1, int(n * _CREDITS_FADE_BAND_FRAC))
+    offset_floor = int(
+        (time.monotonic() - _credits_start_monotonic) * _CREDITS_SCROLL_ROWS_PER_SEC
+    )
+    blank_row = " " * cols
+    frags = []
+    for tr in range(n):
+        strip_row = tr + offset_floor - n
+        if 0 <= strip_row < len(_credits_lines):
+            line = _credits_lines[strip_row].center(cols)
+        else:
+            line = blank_row
+        brightness = _credits_row_brightness(tr, n, fb)
+        style = f"fg:{_credits_brightness_to_hex(brightness)} bg:#000000"
+        frags.append((style, line))
+        if tr < n - 1:
+            frags.append(("", "\n"))
+    return frags
+
+
+def _credits_hint_text():
+    """Top-right exit hint, rendered as a Float above the scroll. Dim
+    grey on the same black canvas, unaffected by the fade band."""
+    return [("fg:#555555 bg:#000000", "Escape to exit")]
+
+
 def _log_view_visible_rows():
     return max(1, _term_rows())
 
@@ -4958,12 +5115,32 @@ def _log_toggle_play_pause():
         _log_resume()
 
 
+def _log_spotlight_jump_to_credits():
+    """Cancel spotlight playback, pop log_view, and push the credits
+    frame for the active reel. Shared by the end-of-reel auto-pause path
+    and the discoverable "advance past the last spotlight" path (N key
+    / ► click at the last spotlight) so both routes use one transition."""
+    reel = _log_view_reel
+    spotlights_list = list(reel.spotlights) if reel is not None else []
+    _log_cancel_tick_task()
+    _exit_log_view()
+    if spotlights_list:
+        _enter_credits(spotlights_list)
+
+
 def _log_auto_pause_at_end():
-    """End-of-log auto-pause: cursor on the final event, mode → pause."""
+    """End-of-log auto-pause. In chain mode this parks on the final
+    event and flips to pause. In spotlight mode the reel is finished, so
+    we cancel the playback, pop log_view, and roll the credits frame —
+    no hold delay (the last spotlight's content naturally fades out as
+    credits scroll up)."""
     global _log_mode, _log_paused_offset_us, _log_cursor_index
     global _log_overlays_visible, _log_overlays_hide_at
     pb = _log_view_playback
     if pb is None or not pb.events:
+        return
+    if _log_view_mode == "spotlight":
+        _log_spotlight_jump_to_credits()
         return
     _log_cursor_index     = len(pb.events) - 1
     _log_paused_offset_us = pb.total_duration_us
@@ -5464,7 +5641,10 @@ def _log_spotlight_current():
 def _log_spotlight_header_text(cols):
     """Top header for spotlight mode. Replaces the chain-mode header's
     "Run X of Y" with "SPOTLIGHT N / TOTAL" and uses the active
-    spotlight's first-event date instead of the run's run_start ts."""
+    spotlight's first-event date instead of the run's run_start ts.
+    Trims the clock/elapsed segment that chain mode shows — the
+    nav row inside the floating info box surfaces position within
+    the reel, and the freed space holds the N/P hint."""
     info = _log_spotlight_current()
     if info is None:
         return [(C_LOG_OVERLAY_BG, " " * cols, _log_overlay_inert_handler)]
@@ -5482,16 +5662,10 @@ def _log_spotlight_header_text(cols):
 
     n_part   = f"SPOTLIGHT {spot_idx + 1} / {reel.total_count}"
     first_ts = spot.events[0].ts
-    when_part = time.strftime("%Y-%m-%d %H:%M", time.localtime(first_ts))
+    when_part = time.strftime("%Y-%m-%d", time.localtime(first_ts))
 
-    elapsed = _log_format_mmss(_log_current_playback_us())
-    at_end = (_log_mode == "pause"
-              and _log_current_playback_us() >= reel.total_duration_us
-              and reel.total_duration_us > 0)
-    elapsed_part = f"{elapsed} · End of reel" if at_end else elapsed
-
-    hint = "ESC to return"
-    left_text = "  ·  ".join([char_part, n_part, when_part, elapsed_part])
+    hint = "ESC Back  ·  N/P Next/prev"
+    left_text = "  ·  ".join([char_part, n_part, when_part])
 
     inner_w = min(_LOG_OVERLAY_HEADER_W, cols)
     gap = max(1, inner_w - len(left_text) - len(hint))
@@ -5523,14 +5697,14 @@ def _log_spotlight_header_text(cols):
     return frags
 
 
-# Floating spotlight info box. A 30×7 framed rectangle: top/bottom rows
-# are the half-block frame (`█▀▄▌▐` in black on the cyan BG), 5 interior
+# Floating spotlight info box. A 30×8 framed rectangle: top/bottom rows
+# are the half-block frame (`█▀▄▌▐` in black on the cyan BG), 6 interior
 # rows of `interior_width = _SPOTLIGHT_BOX_W - 2 = 28` cells flanked by
 # `▌` / `▐` side glyphs. The 2-cell top/right margin lives in the Float
 # positioning (top=2, right=2); the narrow-terminal suppression
 # threshold is box width + 4 (margin + box + breathing room).
 _SPOTLIGHT_BOX_W      = 30
-_SPOTLIGHT_BOX_H      = 7
+_SPOTLIGHT_BOX_H      = 8
 _SPOTLIGHT_BOX_MARGIN = 2
 
 
@@ -5551,15 +5725,19 @@ def _log_spotlight_overlay_visible():
 def _log_spotlight_overlay_text():
     """Build the spotlight info box (top-right floating overlay).
 
-    30×7 framed rectangle: top/bottom rows are the `█▀▄▌▐` outline in
-    black on the cyan BG; 5 interior rows of `interior_width` cells
+    30×8 framed rectangle: top/bottom rows are the `█▀▄▌▐` outline in
+    black on the cyan BG; 6 interior rows of `interior_width` cells
     flanked by `▌`/`▐` side glyphs.
 
-      • Row 2: <CHAR>           — centred, primary text.
-      • Row 3: blank.
-      • Row 4: event label l1   — centred, primary text.
-      • Row 5: event label l2   — centred, primary; blank when label fits row 4.
-      • Row 6: In <N> seconds.. — centred, secondary text. Collapses to
+      • Row 2: ◄ N of TOTAL ►   — centred nav row; ◄ / ► carry mouse
+        handlers that seek to the adjacent spotlight (◄ at spotlight 1
+        restarts current under the same 1.5 s rule as the keyboard
+        path; ► at the last spotlight jumps straight into credits).
+      • Row 3: <CHAR>           — centred, primary text.
+      • Row 4: blank.
+      • Row 5: event label l1   — centred, primary text.
+      • Row 6: event label l2   — centred, primary; blank when label fits row 5.
+      • Row 7: In <N> seconds.. — centred, secondary text. Collapses to
         a blank row when no next event remains in this spotlight.
     """
     box_w = _SPOTLIGHT_BOX_W
@@ -5567,7 +5745,7 @@ def _log_spotlight_overlay_text():
     info = _log_spotlight_current()
     if info is None:
         return _log_spotlight_empty_box(box_w, inner)
-    spot, _spot_idx, offset_within = info
+    spot, spot_idx, offset_within = info
     reel = _log_view_reel
 
     char  = spot.character.upper()
@@ -5589,7 +5767,9 @@ def _log_spotlight_overlay_text():
 
     label_l1, label_l2 = _log_spotlight_wrap_label(label, inner)
 
+    nav_frags = _log_spotlight_nav_row(spot_idx, reel.total_count, inner)
     interior_rows = [
+        ("nav",              nav_frags),
         ("centre",           char),
         ("blank",            ""),
         ("centre",           label_l1),
@@ -5603,7 +5783,10 @@ def _log_spotlight_overlay_text():
     frags.append(("", "\n"))
     for kind, payload in interior_rows:
         frags.append((C_SPOTLIGHT_FRAME, "▌"))
-        frags.extend(_log_spotlight_box_row(payload, kind, inner))
+        if kind == "nav":
+            frags.extend(payload)
+        else:
+            frags.extend(_log_spotlight_box_row(payload, kind, inner))
         frags.append((C_SPOTLIGHT_FRAME, "▐"))
         frags.append(("", "\n"))
     # Bottom frame row: █ + ▄ × inner + █
@@ -5667,6 +5850,42 @@ def _log_spotlight_box_row(text, kind, width):
     return frags
 
 
+def _log_spotlight_nav_row(spot_idx, total, inner):
+    """Render the clickable nav row at the top of the spotlight info box:
+    `◄ <idx> of <total> ►`, centred, with each arrow carrying its own
+    mouse handler. The arrows are padded with single spaces (e.g. ` ◄ `)
+    so the click target is 3 cells wide rather than a single glyph."""
+    if total <= 0:
+        return [(C_SPOTLIGHT_BOX_BG, " " * inner)]
+    idx_text    = f"{spot_idx + 1} of {total}"
+    left_arrow  = " ◄ "
+    right_arrow = " ► "
+    used = len(left_arrow) + len(idx_text) + len(right_arrow)
+    if used > inner:
+        return [(C_SPOTLIGHT_BOX_BG, " " * inner)]
+    pad_total = inner - used
+    pad_l = pad_total // 2
+    pad_r = pad_total - pad_l
+
+    def _prev_click(ev):
+        if ev.event_type == MouseEventType.MOUSE_DOWN:
+            _log_spotlight_seek_relative(-1)
+
+    def _next_click(ev):
+        if ev.event_type == MouseEventType.MOUSE_DOWN:
+            _log_spotlight_seek_relative(1)
+
+    frags = []
+    if pad_l:
+        frags.append((C_SPOTLIGHT_BOX_BG, " " * pad_l))
+    frags.append((C_SPOTLIGHT_TEXT_PRIMARY, left_arrow, _prev_click))
+    frags.append((C_SPOTLIGHT_TEXT_PRIMARY, idx_text))
+    frags.append((C_SPOTLIGHT_TEXT_PRIMARY, right_arrow, _next_click))
+    if pad_r:
+        frags.append((C_SPOTLIGHT_BOX_BG, " " * pad_r))
+    return frags
+
+
 def _log_spotlight_empty_box(box_w, inner):
     """Defensive fallback for the rare case where the overlay renders
     before a spotlight is selectable. Paints an empty framed box so the
@@ -5688,7 +5907,10 @@ def _log_spotlight_seek_relative(delta_spotlights):
     """N / P seek: jump to the start of an adjacent spotlight. With
     `delta_spotlights == -1` and we're more than ~1.5 s into the current
     spotlight, restart the current one first (standard media-player feel).
-    No-op past the ends."""
+    Stepping past the last spotlight (`delta_spotlights >= 1` at the
+    final entry) rolls straight into the end-of-reel credits — the same
+    transition `_log_auto_pause_at_end` uses, so "jump to credits" is a
+    discoverable action rather than a passive end behaviour."""
     reel = _log_view_reel
     if reel is None or not reel.spotlights:
         return
@@ -5704,6 +5926,8 @@ def _log_spotlight_seek_relative(delta_spotlights):
     if target_idx < 0:
         target_idx = 0
     if target_idx >= len(reel.spotlights):
+        if delta_spotlights > 0:
+            _log_spotlight_jump_to_credits()
         return
     _log_scrubber_seek(reel.spotlight_start_offsets_us[target_idx])
 
@@ -6876,6 +7100,13 @@ def _kb_log_end(event):
     _log_cursor_to(len(pb.events) - 1)
 
 
+# Credits (end-of-reel scrolling chronicle). ESC exits immediately;
+# all other input is ignored (mouse + keys).
+@kb.add("escape", filter=_in_frame("credits"), eager=True)
+def _kb_credits_escape(event):
+    _credits_finish()
+
+
 # Spotlight-mode N / P seeks between spotlights. The bindings are added
 # unconditionally; a `_log_view_mode != "spotlight"` guard inside the
 # handler makes them no-ops in chain mode.
@@ -7183,6 +7414,7 @@ def main():
     global _history_detail_window, _history_rate_window
     global _history_delete_confirm_window
     global _log_view_window
+    global _credits_window
 
     os.chdir(PROJECT_DIR)
     _one_shot_migrations()
@@ -7288,6 +7520,33 @@ def main():
         ],
     )
 
+    # Credits frame — scrolling end-of-reel chronicle on a black canvas.
+    # Mouse is intentionally not bound (no handler on the control); only
+    # ESC exits early. The dim "Escape to exit" hint floats top-right.
+    _credits_window = Window(
+        content=FormattedTextControl(text=_credits_text, focusable=True),
+        wrap_lines=False,
+        always_hide_cursor=True,
+        style="bg:#000000",
+    )
+    credits_hint_win = Window(
+        content=FormattedTextControl(text=_credits_hint_text, focusable=False),
+        width=len("Escape to exit"),
+        height=1,
+        wrap_lines=False,
+        always_hide_cursor=True,
+    )
+    credits_frame = FloatContainer(
+        content=_credits_window,
+        floats=[
+            Float(
+                top=1, right=2,
+                width=len("Escape to exit"), height=1,
+                content=credits_hint_win,
+            ),
+        ],
+    )
+
     frames = {
         "main":                       main_frame,
         "profile":                    profile_frame,
@@ -7310,6 +7569,7 @@ def main():
         "history_rate":               history_rate_frame,
         "history_delete_confirm":     history_delete_confirm_frame,
         "log_view":                   log_view_frame,
+        "credits":                    credits_frame,
         "update_running":             update_running_frame,
         "update_result":              update_result_frame,
         "exit_confirm":               exit_confirm_frame,

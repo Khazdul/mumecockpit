@@ -68,6 +68,7 @@ tracking, and UI feedback.
 │   │   │                     #   Statistics frame and the future launcher run-browser (ADR 0065)
 │   │   ├── spotlights.py     # Cross-character spotlight reel aggregator + playback
 │   │   │                     #   adapter for log_view spotlight mode (ADR 0077)
+│   │   ├── credits.py        # End-of-reel scrolling credits content generator (ADR 0080)
 │   │   ├── run_retention.py  # 14-day retention sweep for run logs (ADR 0074)
 │   │   ├── launch.sh         # Windows shortcut target (ADR 0045)
 │   │   ├── build_initial_layout.sh  # Builds pane layout on first client-attach
@@ -394,8 +395,9 @@ implementations, `cp -s` internals, and toggle-pane persistence details.
 
 See the project board on GitHub for active work and parked ideas. The
 cross-character Spotlights feature (launcher main menu → Spotlights,
-ADR 0077–0079) is in. The only pending spotlight-scope item is the
-end-of-reel scrolling credits, deferred to a follow-up PR.
+ADR 0077–0080) is complete: rotation/per-event windows, scroll-clear
+transitions, pre-roll trim, and the end-of-reel scrolling credits all
+shipped.
 
 ## See also
 
@@ -406,7 +408,7 @@ end-of-reel scrolling credits, deferred to a follow-up PR.
 - [docs/session-lifecycle.md](docs/session-lifecycle.md) — Session connect/disconnect, connection.state, settings persistence. Touched when changing session handling or startup flow.
 - [docs/input-pane.md](docs/input-pane.md) — Input pane key forwarding, Enter semantics, history navigation, clock strip. Touched when changing input behaviour, forwarded keys, or the clock strip.
 - [docs/tmux-bindings.md](docs/tmux-bindings.md) — tmux root-table bindings, mouse model, clipboard. Touched when changing tmux key bindings or mouse behaviour.
-- [docs/launcher.md](docs/launcher.md) — Pre-tmux startup menu, rendering conventions, exec-chain. Touched when changing launcher pages or startup options. The [Spotlights sub-menu](docs/launcher.md#spotlights-sub-menu) section covers the cross-character highlights reel; see [ADR 0077](docs/decisions/0077-spotlight-reel-scope-rotation-per-event.md) (scope/rotation/per-event), [ADR 0078](docs/decisions/0078-spotlight-scroll-clear-via-phantom-rows.md) (scroll-clear transitions), and [ADR 0079](docs/decisions/0079-spotlight-pre-roll-trim-post-roll-unclamped.md) (pre-roll trim, unclamped post-roll).
+- [docs/launcher.md](docs/launcher.md) — Pre-tmux startup menu, rendering conventions, exec-chain. Touched when changing launcher pages or startup options. The [Spotlights sub-menu](docs/launcher.md#spotlights-sub-menu) section covers the cross-character highlights reel; see [ADR 0077](docs/decisions/0077-spotlight-reel-scope-rotation-per-event.md) (scope/rotation/per-event), [ADR 0078](docs/decisions/0078-spotlight-scroll-clear-via-phantom-rows.md) (scroll-clear transitions), [ADR 0079](docs/decisions/0079-spotlight-pre-roll-trim-post-roll-unclamped.md) (pre-roll trim, unclamped post-roll), and [ADR 0080](docs/decisions/0080-end-of-reel-credits.md) (end-of-reel scrolling credits).
 - [docs/popup-menu.md](docs/popup-menu.md) — In-game ESC popup: submenus, status header, save-profile flow. Touched when changing the in-game overlay.
 - [docs/bridge-services.md](docs/bridge-services.md) — Ping monitor, version check, self-update, layout and config file formats. Touched when changing background services or persisted config.
 - [docs/release-process.md](docs/release-process.md) — Release runbook: version bump, tagging, GitHub release. Touched when changing the release process.
