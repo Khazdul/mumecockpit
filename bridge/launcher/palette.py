@@ -13,6 +13,8 @@ __all__ = [
     "C_LOG_OVERLAY_BG", "C_LOG_OVERLAY_FG", "C_LOG_OVERLAY_HINT",
     "C_LOG_SCRUBBER_FILLED", "C_LOG_SCRUBBER_EMPTY", "C_LOG_SCRUBBER_THUMB",
     "C_LOG_BUTTON_IDLE", "C_LOG_BUTTON_HOVER",
+    "C_SPOTLIGHT_BOX_BG", "C_SPOTLIGHT_BOX_FG", "C_SPOTLIGHT_BOX_BORDER",
+    "C_SPOTLIGHT_BLACK",
     "_S_VALUE", "_S_LABEL", "_S_GAINED", "_S_LOSS", "_S_TP_BAR",
     "_S_TRACK", "_S_MARKER", "_S_THUMB", "_S_TOTAL", "_S_ARROW",
     "_S_HINT", "_S_PVP", "_S_ALLY", "_S_STAR",
@@ -94,6 +96,23 @@ C_LOG_SCRUBBER_THUMB  = "bold fg:#ffffff bg:#101418"
 # Rewind / play-pause buttons.
 C_LOG_BUTTON_IDLE  = "fg:#dadada bg:#101418"
 C_LOG_BUTTON_HOVER = "bold fg:#ffffff bg:#1c2228"
+
+# Spotlight info box (log_view spotlight-mode floating overlay). Three
+# tints anchored on the banner hue (C_TITLE = #00d7d7): very dark
+# navy/teal BG painted under every cell of the box, a lighter banner-hue
+# fg for the half-block ▀▄▌▐ frame glyphs, and a dark-grey body fg with
+# just enough contrast (~3:1) against the BG to stay legible without
+# popping. The box should feel subdued — a title card on a moodlit set,
+# not a HUD readout.
+C_SPOTLIGHT_BOX_BG     = "bg:#001A2A"
+C_SPOTLIGHT_BOX_FG     = "fg:#3a3a3a bg:#001A2A"
+C_SPOTLIGHT_BOX_BORDER = "fg:#00a8b8 bg:#001A2A"
+
+# Pure-black backdrop for the inter-spotlight transition frame. Painted
+# across the entire log content area while the playback clock is frozen
+# between scenes; the info box renders on top with the upcoming
+# spotlight's card already populated (title-card effect).
+C_SPOTLIGHT_BLACK      = "bg:#000000"
 
 # ---------------------------------------------------------------------------
 # Per-pane background palette

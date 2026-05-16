@@ -736,6 +736,12 @@ is `_enter_log_view(summary)`; the spotlight-mode entry point is
 auto-pause-at-end, 30 Hz tick task), the same bottom controls overlay,
 and the same scrubber drag plumbing.
 
+Unlike chain mode the spotlight entry point auto-plays: it initialises
+state then calls `_log_resume()` so the reel starts rolling immediately
+on push. The first ~500 ms is the black title-card frame (see below),
+so the user sees the upcoming spotlight's info box on a pure-black
+backdrop before content begins — no Space needed.
+
 **Header.** When in spotlight mode `_log_header_text` dispatches to
 `_log_spotlight_header_text`. The centre/left section reads:
 
@@ -749,25 +755,88 @@ event whose JSONL row carried a `level` field. Date is
 `spotlight.events[0].ts` formatted as local time. `ESC to return` sits
 right-aligned as in chain mode.
 
-**Floating info overlay (top-right).** A 36×4 floating window pinned
-to `top=1, right=2` (one row below the centred 80-cell header band, so
-the two never visually collide on common widths). Visible whenever the
-bottom controls overlay is visible (permanent in pause, auto-hides
-after `_LOG_OVERLAY_HIDE_DELAY` in play, re-arms on any mouse
-activity). Content per row:
+**Floating info box (top-right).** A 36×9 framed window pinned to
+`top=4, right=4` — a 4-cell margin from both the top and right edges
+of `log_view`. The frame is built from half-block glyphs on a very
+dark banner-hue fill:
+
+- Top row: `▀` × box width (corners included — `▀` wins at the top corners)
+- Bottom row: `▄` × box width (`▄` wins at the bottom corners)
+- Left column: `▌` on each interior row
+- Right column: `▐` on each interior row
+
+The side columns start on the first interior row, so each corner reads
+as the horizontal-edge glyph (`▀` at the top, `▄` at the bottom) —
+intentional step-pattern that makes the frame feel designed rather
+than a CP437 imitation. Palette:
+
+- `C_SPOTLIGHT_BOX_BG` — very dark banner-hue fill painted under every
+  cell of the box (border glyphs included).
+- `C_SPOTLIGHT_BOX_FG` — near-black body text (~3:1 contrast against
+  the BG; subdued, not screaming).
+- `C_SPOTLIGHT_BOX_BORDER` — lighter banner-hue, used for the `▀▄▌▐`
+  glyphs only.
+
+Interior layout (top → bottom, with one row of vertical padding inside
+the top and bottom borders so text doesn't kiss the frame):
 
 ```
- SPOTLIGHT <N>
- <character> — <event label 1> · <event label 2> · …
- <YYYY-MM-DD HH:MM:SS>
- In <X> seconds.
+SPOTLIGHT <N>                 ← centred within interior width
+
+<character> — <event label 1> · <event label 2> · …
+<YYYY-MM-DD>
+In <X> seconds.
 ```
 
-Line 4 is blanked when `event_progress` reports no further events
-remain in the active spotlight (the countdown went past the last
-event). For multi-event spotlights, the countdown re-targets each
-successive event as the playhead crosses the previous one. Palette
-reuses `C_LOG_OVERLAY_BG` / `_FG` / `_HINT` — no new colours.
+The date line is `YYYY-MM-DD` only (no time). The countdown line
+collapses to a blank when `event_progress` reports no further events
+remain in the active spotlight. For multi-event spotlights the
+countdown re-targets each successive event as the playhead crosses the
+previous one.
+
+**Visibility.** The spotlight info box stays visible at all times in
+spotlight mode — it does **not** participate in the top header / bottom
+controls auto-hide. The only fallback is narrow terminals: if
+`cols < _SPOTLIGHT_BOX_W + _SPOTLIGHT_BOX_MARGIN * 2` (i.e. the box
+plus its 4-cell margin doesn't fit), `_log_spotlight_overlay_visible()`
+returns False and the box is suppressed for that frame; playback
+continues without it.
+
+**Black title-card transitions.** Every spotlight transition — initial
+entry, auto-advance to the next spotlight, OR a manual N/P seek into a
+different spotlight — is preceded by a brief all-black frame of
+`_LOG_SPOTLIGHT_BLACK_MS = 500` ms. During the black phase:
+
+- The content area renders as a pure-black blank
+  (`C_SPOTLIGHT_BLACK`), one fragment per row.
+- The info box renders **on top** with the upcoming spotlight's card
+  already populated (character, events, date, "In 10 seconds." — the
+  full pre-roll). This is what gives the transition its title-card
+  feel.
+- The top header and bottom controls render as usual (subject to
+  their own visibility rules).
+- The playback clock is frozen: `_log_current_playback_us()` returns
+  the captured freeze offset until the deadline passes. On the first
+  call past the deadline it lazily re-anchors
+  `_log_play_anchor_wall` / `_log_play_anchor_offset_us` so playback
+  resumes from the freeze with zero accumulated drift — the first
+  event of a 10 s-pre-roll spotlight fires exactly 10 s after black
+  clears, not 9.5 s.
+
+The state machine lives on the existing 30 Hz tick task. Each tick:
+
+1. Read `cur_us = _log_current_playback_us()` (returns freeze during black).
+2. If we're not currently in a black phase and the spotlight at
+   `cur_us` differs from `_log_last_spotlight_idx`, freeze at `cur_us`
+   and arm `_log_spotlight_black_until = monotonic() + 500 ms`. Update
+   `_log_last_spotlight_idx`.
+3. If we just exited the black phase this tick, invalidate the app so
+   the box flips from title-card to live content.
+
+Within-spotlight seeks keep `_log_last_spotlight_idx` unchanged → no
+black. Entry primes the state in `_enter_log_view_spotlight()` (freeze
+at offset 0, `_log_last_spotlight_idx = 0`) so the first tick sees an
+already-active deadline and doesn't re-trigger.
 
 **Keybinds.** All chain-mode keys still apply (`Space` play/pause,
 `ESC` return, `↑/↓/PgUp/PgDn/Home/End` cursor — chain-mode pause-mode
