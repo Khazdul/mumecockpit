@@ -56,7 +56,7 @@ do not have distinct names.
 | Profile page | Sortable table of `ttpp/profiles/*.tin` (Name + Selected columns) paired with a centred Options widget — Select, New, Edit, Rename, Delete, Export, Back. See the [Profile sub-menu](#profile-sub-menu) section below. `default` cannot be renamed or deleted. "Create blank" copies from `bridge/launcher/templates/blank_profile.tin` (single source of truth — see ADR 0042). The active profile is written to `startup.conf` and consumed by `ttpp/core/config.tin` at tt++ startup. |
 | Options page | Navigation hub: **Panes**, **Scripts**, **Text layout** (placeholder), **Connection**, blank row, **Back**. See the [Options sub-menu](#options-sub-menu) section below for each child frame. All Options changes persist to `bridge/runtime/startup.conf` on Back / ESC. |
 | Scripts page | Opened from Options → Scripts. Reads `bridge/runtime/scripts.cache`; scrollable via UP/DOWN, PageUp/PageDown |
-| Spotlights | Cross-character reel of deaths, level-ups, pvp-kills, and achievements aggregated from every character's sealed runs. Opens `log_view` in spotlight mode; empty-state frame when nothing has been captured yet. See the [Spotlights sub-menu](#spotlights-sub-menu) section. |
+| Spotlights | Cross-character reel of deaths, level-ups, pvp-kills, and achievements aggregated from every character's sealed runs. Opens `log_view` in spotlight mode; empty-state frame when nothing has been captured yet. See the [Spotlights sub-menu](#spotlights-sub-menu) section and ADR 0077. |
 | About page | Reads `bridge/launcher/about.txt`; word-wrapped, cached per resize, scrollable. Current version on the right of the title; an "Update available: vX.Y.Z" line appears in `C_ACCENT` when `version.cache` contains a newer tag |
 | Update flow | Selecting "Update" runs `bridge/release/update.sh` in a worker thread; result keyed off update.sh's exit codes (0/10/20/21/22/other → complete/no-update/aborted/failed). rc==0 re-execs `bridge/launcher/launcher.sh` to pick up the new code |
 | Quit | Confirmation prompt; ESC cancels |
@@ -671,14 +671,19 @@ The data layer lives in `bridge/launcher/spotlights.py`:
 `aggregate_spotlights()` walks `data/runs/<character>/*.jsonl` for every
 character (skipping `current.jsonl` and runs without a sibling `.log`),
 extracts the four tracked event kinds (`char_death`, `level_up`, `pkill`,
-`achievement`), and builds one `Spotlight` per event. Each spotlight
-gets a nominal `[event - 10 s, event + 5 s]` window — clamped to the
-`.log`'s actual `ts_us` range at lazy load time, then pre-roll-trimmed
-to the first log line within the window (see "Lazy log loading" below).
-Two close events from the same character produce two back-to-back
-spotlights for that character when no other character has a more
-recent pending spotlight; the rotation algorithm handles that
-gracefully.
+`achievement`), and builds one `Spotlight` per event
+([ADR 0077](decisions/0077-spotlight-reel-scope-rotation-per-event.md)
+covers the cross-character aggregation scope, the newest-first
+round-robin rotation, and why each event is its own spotlight rather
+than being merged with nearby ones). Each spotlight gets a nominal
+`[event - 10 s, event + 5 s]` window — clamped to the `.log`'s actual
+`ts_us` range at lazy load time, then pre-roll-trimmed to the first log
+line within the window (see "Lazy log loading" below and
+[ADR 0079](decisions/0079-spotlight-pre-roll-trim-post-roll-unclamped.md)
+for why the post-roll is deliberately not clamped). Two close events
+from the same character produce two back-to-back spotlights for that
+character when no other character has a more recent pending spotlight;
+the rotation algorithm handles that gracefully.
 
 **Rotation.** Per-character queues are sorted newest-first
 (`spotlight.events[0].ts` descending). The interleaving algorithm picks
@@ -721,9 +726,12 @@ wraps to exactly one blank visual row; all phantoms in a transition
 share the same `playback_offset_us` (the boundary offset) and consume
 zero playback time. This is what gives spotlight transitions their
 scroll-clear feel — see the "Scroll-clear transitions" section under
-`log_view` in spotlight mode. `phantom_event_indices` (a set) and
-`is_phantom(idx)` (the helper used by the launcher's cursor
-navigation) identify these events.
+`log_view` in spotlight mode and
+[ADR 0078](decisions/0078-spotlight-scroll-clear-via-phantom-rows.md)
+for the design rationale (including the rejected black-frame flash
+alternative). `phantom_event_indices` (a set) and `is_phantom(idx)`
+(the helper used by the launcher's cursor navigation) identify these
+events.
 
 `_enter_spotlights()` is the launcher entry point. It aggregates the
 reel, eagerly loads every spotlight's log events (acceptable: total
@@ -846,7 +854,10 @@ suppressed for that frame; playback continues without it.
 entry into the reel) use a scroll-clear approach: 100 phantom blank
 events are inserted at every boundary by `SpotlightPlayback`. Each
 phantom wraps to one blank visual row, carries zero playback duration,
-and shares the boundary's `playback_offset_us`.
+and shares the boundary's `playback_offset_us`. See
+[ADR 0078](decisions/0078-spotlight-scroll-clear-via-phantom-rows.md)
+for the rationale behind the phantom model (and the rejected
+black-frame flash that preceded it).
 
 The play-mode auto-scroll places the playhead event at the bottom of
 the viewport. When the playhead crosses onto a new spotlight, the 100
@@ -1103,6 +1114,11 @@ shared with the in-game popup. Roles:
 | `C_SELECTED`        | History cursor row — black on light-grey background fill (sidebar active filter, table cursor row) |
 | `C_ROW_HOVER`       | History detail data-table row hover — subtle background fill that composes with cell foreground colours |
 | `C_LOG_PLAYER_INPUT`| log_view outbound (player command) lines — muted grey with a faint light-cyan tint                  |
+| `C_LOG_OVERLAY_BG`  | log_view top header + bottom controls fill — deep-shadow variant of the spotlight box hue so chain and spotlight modes read as one theme family |
+| `C_SPOTLIGHT_BOX_BG`         | Spotlight info-box fill — bright banner hue (same as `C_TITLE`) painted under every cell of the floating overlay |
+| `C_SPOTLIGHT_FRAME`          | Spotlight info-box outline glyphs (`█▀▄▌▐`) — black on the box bg |
+| `C_SPOTLIGHT_TEXT_PRIMARY`   | Spotlight info-box primary text — near-black on box bg (character name, event label) |
+| `C_SPOTLIGHT_TEXT_SECONDARY` | Spotlight info-box secondary text — muted grey on box bg (countdown), visibly subordinate |
 
 **Alignment convention (Profile / Options / Scripts pages).** Menu rows
 are left-aligned on a shared column inside a centred block. The widest
