@@ -360,6 +360,7 @@ class SpotlightPlayback:
 
     def __init__(self, spotlights: list):
         self.spotlights: list = list(spotlights)
+        self.total_count: int = len(self.spotlights)
         self.character: str = ""
 
         events: list = []
