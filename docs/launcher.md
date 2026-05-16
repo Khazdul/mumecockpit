@@ -671,12 +671,14 @@ The data layer lives in `bridge/launcher/spotlights.py`:
 `aggregate_spotlights()` walks `data/runs/<character>/*.jsonl` for every
 character (skipping `current.jsonl` and runs without a sibling `.log`),
 extracts the four tracked event kinds (`char_death`, `level_up`, `pkill`,
-`achievement`), and builds a list of `Spotlight`s per run. Two
-neighbouring events from the same run merge into one multi-event
-spotlight when they fall within 5 s of each other (the post-roll
-window). Each spotlight gets a nominal `[first_event - 10 s,
-last_event + 5 s]` window — clamped to the `.log`'s actual `ts_us`
-range at lazy load time.
+`achievement`), and builds one `Spotlight` per event. Each spotlight
+gets a nominal `[event - 10 s, event + 5 s]` window — clamped to the
+`.log`'s actual `ts_us` range at lazy load time, then pre-roll-trimmed
+to the first log line within the window (see "Lazy log loading" below).
+Two close events from the same character produce two back-to-back
+spotlights for that character when no other character has a more
+recent pending spotlight; the rotation algorithm handles that
+gracefully.
 
 **Rotation.** Per-character queues are sorted newest-first
 (`spotlight.events[0].ts` descending). The interleaving algorithm picks
@@ -689,10 +691,16 @@ one character has remaining entries at that point.
 `log_player._parse_log_file` (wrapped to return the full event list);
 the parsed list is cached in a dict keyed by `log_path` so a chain of
 spotlights sharing a run share the parse. `load_spotlight_log_events`
-slices the cached events to the spotlight's clamped window, populates
+slices the cached events to the spotlight's clamped window, then
+trims `window_start_us` forward to the first log line's `ts_us` when
+the nominal pre-roll begins with a silence gap — so the user never
+stares at an empty countdown while real content has yet to begin. The
+post-roll end is unaffected by the trim. The countdown duration the
+overlay displays is recomputed from the (possibly trimmed) window
+start. Spotlights whose 15 s window contains zero log lines are
+dropped by the caller. The function populates
 `spotlight.event_offsets_us` (each event's offset from
-`window_start_us`, clamped to `>= 0` when clamping cut into the
-pre-roll), and is idempotent.
+`window_start_us`, clamped to `>= 0`) and is idempotent.
 
 **SpotlightPlayback.** A `LogPlayback`-compatible adapter over a list
 of loaded spotlights. Concatenates every spotlight's `log_events` into
@@ -755,6 +763,15 @@ transitions" below) keeps the viewport blank while the first spotlight's
 pre-roll counts down, so the user sees the upcoming spotlight's info box
 on an empty backdrop before content begins — no Space needed.
 
+The top header and bottom-controls overlays are **hidden on entry**:
+`_enter_log_view_spotlight` clears `_log_overlays_visible` after the
+`_log_resume()` call (which would otherwise arm them), so the user
+sees a clean scene with only the spotlight info box overlaid. Mouse
+activity in the frame re-arms the overlays via the regular
+`_log_touch_overlays()` path; they fade again after
+`_LOG_OVERLAY_HIDE_DELAY`. The spotlight info box itself stays
+visible at all times — that rule is unchanged.
+
 **Header.** When in spotlight mode `_log_header_text` dispatches to
 `_log_spotlight_header_text`. The centre/left section reads:
 
@@ -768,56 +785,45 @@ event whose JSONL row carried a `level` field. Date is
 `spotlight.events[0].ts` formatted as local time. `ESC to return` sits
 right-aligned as in chain mode.
 
-**Floating info box (top-right).** A 30×7 framed window pinned to
+**Floating info box (top-right).** A 30×7 flat rectangle pinned to
 `top=2, right=2` — a 2-cell margin from both the top and right edges
-of `log_view`. The frame is composed of half-block glyphs with
-full-block corners on a bright banner-hue fill:
-
-- Top row: `█` + `▀` × (interior_width) + `█`
-- Bottom row: `█` + `▄` × (interior_width) + `█`
-- Interior rows: `▌` on the left, `▐` on the right
-
-All frame glyphs (`█▀▄▌▐`) share the same FG and BG style — the
-corner `█` "seals" the joint between the horizontal and vertical edges
-so the frame reads as a single closed outline. Palette:
+of `log_view`. No drawn frame glyphs: the box is a single uniform fill
+of `C_SPOTLIGHT_BOX_BG` with text on three of its rows. Palette:
 
 - `C_SPOTLIGHT_BOX_BG` — bright banner-hue fill (same hue as `C_TITLE`)
-  painted under every cell of the box, border glyphs included.
-- `C_SPOTLIGHT_FRAME` — darker shade of the same hue (fg, on the BG)
-  used for the `█▀▄▌▐` glyphs.
+  painted under every cell of the box.
 - `C_SPOTLIGHT_TEXT_PRIMARY` — near-black, on the BG. Used for the
   character name and the event label.
-- `C_SPOTLIGHT_TEXT_SECONDARY` — very dark grey, on the BG. Used for
-  the date and the countdown.
+- `C_SPOTLIGHT_TEXT_SECONDARY` — medium grey, on the BG. Lighter than
+  primary, visibly muted vs. it on the bright BG. Used for the date
+  and the countdown.
 
-Interior layout (5 rows, flush against the frame — no internal padding):
+Row layout (7 rows, full box width — no side columns):
 
 ```
-█▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀█
-▌      BERIT 2026-04-16      ▐
-▌                            ▐
-▌       Reached level 3      ▐
-▌                            ▐
-▌ In 8 seconds.              ▐
-█▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█
+                              
+        BERIT 2026-04-16      
+                              
+        Reached level 3       
+                              
+        In 8 seconds..        
+                              
 ```
 
-- Row 1: `<CHAR> <YYYY-MM-DD>` — centred as a single block. Character
+- Row 1: blank.
+- Row 2: `<CHAR> <YYYY-MM-DD>` — centred as a single block. Character
   name uppercased and rendered in `C_SPOTLIGHT_TEXT_PRIMARY`; one
   single-space separator; date in `C_SPOTLIGHT_TEXT_SECONDARY`.
-- Row 2: blank.
-- Row 3: event label, centred, `C_SPOTLIGHT_TEXT_PRIMARY`. Multi-event
-  spotlights join labels with ` · ` and truncate to fit.
-- Row 4: blank.
-- Row 5: countdown — `In <N> seconds.` while counting down,
-  `C_SPOTLIGHT_TEXT_SECONDARY`, left-aligned with one leading space.
-  Collapses to a blank row when no next event remains in this
-  spotlight. For multi-event spotlights the countdown re-targets each
-  successive event as the playhead crosses the previous one.
+- Row 3: blank.
+- Row 4: event label, centred, `C_SPOTLIGHT_TEXT_PRIMARY`.
+- Row 5: blank.
+- Row 6: countdown — `In <N> seconds..` while counting down (two
+  trailing periods), `C_SPOTLIGHT_TEXT_SECONDARY`, centred. Collapses
+  to a blank row when no next event remains in this spotlight.
+- Row 7: blank.
 
-Total: 7 rows (2 frame + 5 interior). The "SPOTLIGHT N" line is no
-longer rendered inside the box — that information is already present
-in the top header.
+The "SPOTLIGHT N" line is not rendered inside the box — that
+information lives in the top header.
 
 **Visibility.** The spotlight info box stays visible at all times in
 spotlight mode — it does **not** participate in the top header / bottom

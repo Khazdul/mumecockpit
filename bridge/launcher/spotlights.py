@@ -1,13 +1,13 @@
 # bridge/launcher/spotlights.py — cross-character spotlight reel.
 #
 # Pure library: walks every character's sealed runs, extracts the four
-# tracked event types (char_death, level_up, pkill, achievement), merges
-# neighbouring events within a single run into multi-event spotlights,
-# interleaves spotlights across characters via a "no two adjacent from
-# the same character" rotation, and (lazily) slices each spotlight's
-# `.log` to a [pre-roll, post-roll] window. See docs/runs.md for the
-# JSONL/log schema, ADR 0065 for the aggregator pattern, and
-# docs/launcher.md for how the launcher consumes this.
+# tracked event types (char_death, level_up, pkill, achievement),
+# produces one spotlight per event, interleaves spotlights across
+# characters via a "no two adjacent from the same character" rotation,
+# and (lazily) slices each spotlight's `.log` to a [pre-roll, post-roll]
+# window. See docs/runs.md for the JSONL/log schema, ADR 0065 for the
+# aggregator pattern, and docs/launcher.md for how the launcher consumes
+# this.
 
 from __future__ import annotations
 
@@ -24,14 +24,13 @@ _BRIDGE_DIR    = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _PROJECT_DIR   = os.path.dirname(_BRIDGE_DIR)
 _DATA_RUNS_DIR = os.path.join(_PROJECT_DIR, "data", "runs")
 
-# Window around a spotlight, in seconds. Multi-event spotlights anchor
-# pre-roll on the first event and post-roll on the last.
+# Window around a spotlight, in seconds. One event per spotlight: the
+# pre-roll window starts `_PRE_ROLL_S` seconds before the event and the
+# post-roll ends `_POST_ROLL_S` seconds after. Back-to-back events from
+# the same character produce two adjacent spotlights — the rotation
+# algorithm handles same-character runs gracefully.
 _PRE_ROLL_S  = 10
 _POST_ROLL_S = 5
-# Two events merge into a single spotlight if the gap between them is
-# <= this many seconds (i.e. the next event falls within the previous
-# event's post-roll).
-_MERGE_GAP_S = _POST_ROLL_S
 
 # Number of zero-duration phantom blank rows inserted at each spotlight
 # boundary (and at the very start of the reel). The launcher's play-mode
@@ -58,8 +57,8 @@ class Spotlight:
     character: str
     run_id: str
     log_path: str
-    events: list                       # list[SpotlightEvent], chronological
-    window_start_us: int               # nominal at aggregate time, clamped on lazy load
+    events: list                       # list[SpotlightEvent]; always length 1 in v1
+    window_start_us: int               # nominal at aggregate time, clamped/trimmed on lazy load
     window_end_us: int
     log_events: list = field(default_factory=list)  # populated lazily
     event_offsets_us: list = field(default_factory=list)  # parallel to events
@@ -157,7 +156,7 @@ def _extract_events(path: str) -> list:
 
 
 # ---------------------------------------------------------------------------
-# Spotlight building (merge within a single run)
+# Spotlight building (one spotlight per event)
 # ---------------------------------------------------------------------------
 
 def _build_spotlights_for_run(
@@ -166,30 +165,22 @@ def _build_spotlights_for_run(
     log_path: str,
     events: list,
 ) -> list:
-    """Group events from one run into spotlights, merging neighbours
-    within `_MERGE_GAP_S`."""
+    """Build one spotlight per event from a single run. Two close events
+    from the same character land as two back-to-back spotlights for that
+    character when no other character has a more recent pending spotlight
+    — the rotation algorithm handles that case."""
     if not events:
         return []
     events = sorted(events, key=lambda e: e.ts)
-    groups: list = [[events[0]]]
-    for ev in events[1:]:
-        prev = groups[-1][-1]
-        if ev.ts - prev.ts <= _MERGE_GAP_S:
-            groups[-1].append(ev)
-        else:
-            groups.append([ev])
-
     spotlights: list = []
-    for group in groups:
-        first_ts = group[0].ts
-        last_ts  = group[-1].ts
+    for ev in events:
         spotlights.append(Spotlight(
             character=character,
             run_id=run_id,
             log_path=log_path,
-            events=group,
-            window_start_us=(first_ts - _PRE_ROLL_S) * 1_000_000,
-            window_end_us=(last_ts + _POST_ROLL_S) * 1_000_000,
+            events=[ev],
+            window_start_us=(ev.ts - _PRE_ROLL_S) * 1_000_000,
+            window_end_us=(ev.ts + _POST_ROLL_S) * 1_000_000,
         ))
     return spotlights
 
@@ -226,7 +217,7 @@ def _rotate(per_char_groups: dict) -> list:
 
 def aggregate_spotlights(runs_dir: str | None = None) -> SpotlightReel:
     """Walk every character directory, extract tracked events from sealed
-    runs that have a paired .log, build merged spotlights per run, and
+    runs that have a paired .log, build one spotlight per event, and
     interleave them into a SpotlightReel."""
     base = runs_dir if runs_dir is not None else _DATA_RUNS_DIR
     if not os.path.isdir(base):
@@ -291,7 +282,9 @@ def _parse_full_log(path: str) -> list:
 
 def load_spotlight_log_events(spotlight: Spotlight, cache: dict) -> None:
     """Populate `spotlight.log_events` (sliced to `[window_start_us,
-    window_end_us]`), clamping the window to the actual `.log` range and
+    window_end_us]`), clamping the window to the actual `.log` range,
+    trimming the pre-roll to the first log line within the nominal
+    window (so silent leading gaps don't leave a blank countdown), and
     populating `spotlight.event_offsets_us`. Idempotent — safe to call
     multiple times. Parsed files are cached in `cache` keyed by log_path
     so a chain of spotlights sharing a `.log` parses it exactly once.
@@ -327,14 +320,32 @@ def load_spotlight_log_events(spotlight: Spotlight, cache: dict) -> None:
         spotlight._loaded = True
         return
 
-    spotlight.window_start_us = win_start
-    spotlight.window_end_us   = win_end
-
     # parsed is sorted ascending by ts_us (log files are monotonic).
     ts_us_list = [ev.ts_us for ev in parsed]
     lo = bisect.bisect_left(ts_us_list, win_start)
     hi = bisect.bisect_right(ts_us_list, win_end)
-    spotlight.log_events = parsed[lo:hi]
+    sliced = parsed[lo:hi]
+
+    if not sliced:
+        # Nominal window covered the log range but contained no log
+        # lines at all — drop the spotlight.
+        spotlight.window_start_us = win_start
+        spotlight.window_end_us   = win_start
+        spotlight.log_events = []
+        spotlight.event_offsets_us = [0] * len(spotlight.events)
+        spotlight._loaded = True
+        return
+
+    # Pre-roll trim: advance window_start_us to the first log line's
+    # timestamp when there's a leading silence gap. The post-roll end
+    # is unaffected.
+    first_log_ts_us = sliced[0].ts_us
+    if first_log_ts_us > win_start:
+        win_start = first_log_ts_us
+
+    spotlight.window_start_us = win_start
+    spotlight.window_end_us   = win_end
+    spotlight.log_events = sliced
 
     offsets: list = []
     for ev in spotlight.events:

@@ -44,7 +44,7 @@ from palette import (  # noqa: E402
     C_LOG_OVERLAY_BG, C_LOG_OVERLAY_FG, C_LOG_OVERLAY_HINT,
     C_LOG_SCRUBBER_FILLED, C_LOG_SCRUBBER_EMPTY, C_LOG_SCRUBBER_THUMB,
     C_LOG_BUTTON_IDLE, C_LOG_BUTTON_HOVER,
-    C_SPOTLIGHT_BOX_BG, C_SPOTLIGHT_FRAME,
+    C_SPOTLIGHT_BOX_BG,
     C_SPOTLIGHT_TEXT_PRIMARY, C_SPOTLIGHT_TEXT_SECONDARY,
     _S_GAINED, _S_LOSS, _S_LABEL, _S_VALUE, _S_TP_BAR,
     _S_TRACK, _S_MARKER, _S_THUMB, _S_TOTAL, _S_ARROW,
@@ -4773,11 +4773,14 @@ def _enter_log_view_spotlight(playback):
     _log_paused_offset_us     = 0
     _log_cursor_index         = 0
     _log_last_playhead_index  = -1
-    _log_overlays_visible     = True
-    _log_overlays_hide_at     = None
     _log_overlay_hover        = None
     _push_frame("log_view")
     _log_resume()
+    # Spotlight mode opens cleanly — chrome reveals on mouse activity.
+    # Override the visibility _log_resume() armed so the user sees the
+    # info box on an empty backdrop with no header/controls.
+    _log_overlays_visible = False
+    _log_overlays_hide_at = None
 
 
 def _exit_log_view():
@@ -5519,12 +5522,13 @@ def _log_spotlight_header_text(cols):
     return frags
 
 
-# Floating spotlight info box. Total width includes the 1-cell side
-# columns (▌ / ▐ on interior rows, █ at the corners); interior is
-# _SPOTLIGHT_BOX_W - 2. Height = top-border row + 5 content rows +
-# bottom-border row = 7. The 2-cell top/right margin lives in the
-# Float positioning (top=2, right=2); the narrow-terminal suppression
-# threshold is box width + 4 (margin + box + breathing room).
+# Floating spotlight info box. A flat BG-coloured rectangle — no drawn
+# frame glyphs. The 7-row, 30-col footprint matches the previous framed
+# design (former "frame rows/columns" are now blank BG fill). Text rows
+# sit at interior rows 2, 4, and 6 (counted from 1). The 2-cell
+# top/right margin lives in the Float positioning (top=2, right=2);
+# the narrow-terminal suppression threshold is box width + 4 (margin +
+# box + breathing room).
 _SPOTLIGHT_BOX_W      = 30
 _SPOTLIGHT_BOX_H      = 7
 _SPOTLIGHT_BOX_MARGIN = 2
@@ -5545,26 +5549,24 @@ def _log_spotlight_overlay_visible():
 
 
 def _log_spotlight_overlay_text():
-    """Build the framed spotlight info box (top-right floating overlay).
+    """Build the spotlight info box (top-right floating overlay).
 
-    Frame: full-block `█` at the four corners, `▀` along the top edge,
-    `▄` along the bottom edge, `▌`/`▐` on the side columns. All frame
-    glyphs share C_SPOTLIGHT_FRAME (fg) over C_SPOTLIGHT_BOX_BG.
+    Flat BG-coloured rectangle, _SPOTLIGHT_BOX_W × _SPOTLIGHT_BOX_H —
+    no drawn frame glyphs. Text sits on interior rows 2, 4, and 6
+    (counted from 1); the surrounding rows and side columns are blank
+    BG fill.
 
-    Interior layout (5 rows, flush against the frame):
-      • <CHAR> <YYYY-MM-DD>   — centred; CHAR in primary, date in secondary.
-      • blank
-      • <event label(s)>      — centred, primary text.
-      • blank
-      • In <N> seconds.       — left-aligned (1-cell leading space),
-                                secondary text. Collapses to blank when
-                                no next event remains.
+      • Row 2: <CHAR> <YYYY-MM-DD> — centred; CHAR in primary, date in
+        secondary.
+      • Row 4: <event label>      — centred, primary text.
+      • Row 6: In <N> seconds..   — centred, secondary text, ending in
+        two periods. Collapses to a blank row when no next event
+        remains in this spotlight.
     """
     box_w = _SPOTLIGHT_BOX_W
-    inner = box_w - 2
     info = _log_spotlight_current()
     if info is None:
-        return _log_spotlight_empty_box(box_w, inner)
+        return _log_spotlight_empty_box(box_w, box_w)
     spot, _spot_idx, offset_within = info
     reel = _log_view_reel
 
@@ -5580,60 +5582,53 @@ def _log_spotlight_overlay_text():
         s = (int(seconds_to_next) if seconds_to_next == int(seconds_to_next)
              else int(seconds_to_next) + 1)
         if s <= 0:
-            countdown = "In 0 seconds."
+            countdown = "In 0 seconds.."
         elif s == 1:
-            countdown = "In 1 second."
+            countdown = "In 1 second.."
         else:
-            countdown = f"In {s} seconds."
+            countdown = f"In {s} seconds.."
 
-    frags = []
-    # Top border: █ + ▀ × (inner) + █
-    frags.append((C_SPOTLIGHT_FRAME, "█"))
-    frags.append((C_SPOTLIGHT_FRAME, "▀" * inner))
-    frags.append((C_SPOTLIGHT_FRAME, "█"))
-    frags.append(("", "\n"))
-    # Interior rows.
-    interior = [
+    # Row sequence (1-indexed): 1 blank, 2 char+date, 3 blank, 4 label,
+    # 5 blank, 6 countdown, 7 blank.
+    rows = [
+        ("blank",     None),
         ("char_date", None),
         ("blank",     None),
         ("centre",    label),
         ("blank",     None),
-        ("left",      countdown),
+        ("centre_secondary", countdown),
+        ("blank",     None),
     ]
-    for kind, payload in interior:
-        frags.append((C_SPOTLIGHT_FRAME, "▌"))
+
+    frags = []
+    last_idx = len(rows) - 1
+    for i, (kind, payload) in enumerate(rows):
         if kind == "char_date":
-            frags.extend(_log_spotlight_char_date_row(char, date_str, inner))
+            frags.extend(_log_spotlight_char_date_row(char, date_str, box_w))
         else:
-            frags.extend(_log_spotlight_box_row(payload or "", kind, inner))
-        frags.append((C_SPOTLIGHT_FRAME, "▐"))
-        frags.append(("", "\n"))
-    # Bottom border: █ + ▄ × (inner) + █
-    frags.append((C_SPOTLIGHT_FRAME, "█"))
-    frags.append((C_SPOTLIGHT_FRAME, "▄" * inner))
-    frags.append((C_SPOTLIGHT_FRAME, "█"))
+            frags.extend(_log_spotlight_box_row(payload or "", kind, box_w))
+        if i != last_idx:
+            frags.append(("", "\n"))
     return frags
 
 
-def _log_spotlight_char_date_row(char, date_str, inner):
+def _log_spotlight_char_date_row(char, date_str, width):
     """Compose the "<CHAR> <date>" row: char rendered in
     C_SPOTLIGHT_TEXT_PRIMARY, single-space separator, date in
-    C_SPOTLIGHT_TEXT_SECONDARY. Centred as a single visual block;
-    truncated to fit if the combined width exceeds `inner`."""
+    C_SPOTLIGHT_TEXT_SECONDARY. Centred across the full box width as a
+    single visual block; truncated to fit if the combined width exceeds
+    `width`."""
     sep   = " "
     combo = char + sep + date_str
-    if len(combo) > inner:
+    if len(combo) > width:
         # Last-resort: drop the date, then the char. Should not happen
-        # for normal MUME names (≤ 12 chars) + 10-char date in a 28-wide
-        # interior, but defend against future widening of either side.
-        if len(char) <= inner:
-            combo = char
-            return _log_spotlight_box_row(combo, "centre", inner)
-        char = char[:inner]
-        combo = char
-        return _log_spotlight_box_row(combo, "centre", inner)
-    pad_l = (inner - len(combo)) // 2
-    pad_r = inner - len(combo) - pad_l
+        # for normal MUME names (≤ 12 chars) + 10-char date in a 30-wide
+        # box, but defend against future widening of either side.
+        if len(char) <= width:
+            return _log_spotlight_box_row(char, "centre", width)
+        return _log_spotlight_box_row(char[:width], "centre", width)
+    pad_l = (width - len(combo)) // 2
+    pad_r = width - len(combo) - pad_l
     frags = []
     if pad_l:
         frags.append((C_SPOTLIGHT_BOX_BG, " " * pad_l))
@@ -5645,46 +5640,36 @@ def _log_spotlight_char_date_row(char, date_str, inner):
     return frags
 
 
-def _log_spotlight_box_row(text, kind, inner):
-    """Render a single interior row's content (excluding the side ▌▐
-    border glyphs). Always emits exactly `inner` cells, BG-painted.
+def _log_spotlight_box_row(text, kind, width):
+    """Render a single row of the box. Always emits exactly `width`
+    cells, BG-painted.
 
     `kind` selects alignment and style:
-      • "centre" — primary text, centred.
-      • "left"   — secondary text, 1-cell leading space then left-aligned.
-      • "blank"  — pure BG fill.
+      • "centre"           — primary text, centred.
+      • "centre_secondary" — secondary text, centred.
+      • "blank"            — pure BG fill.
     """
     if kind == "blank" or not text:
-        return [(C_SPOTLIGHT_BOX_BG, " " * inner)]
-    t = text[:inner]
-    if kind == "centre":
-        pad_l = (inner - len(t)) // 2
-        pad_r = inner - len(t) - pad_l
-        frags = []
-        if pad_l:
-            frags.append((C_SPOTLIGHT_BOX_BG, " " * pad_l))
-        frags.append((C_SPOTLIGHT_TEXT_PRIMARY, t))
-        if pad_r:
-            frags.append((C_SPOTLIGHT_BOX_BG, " " * pad_r))
-        return frags
-    # "left": one-cell breathing margin, then secondary-style text, then BG fill.
-    margin = 1
-    avail = max(0, inner - margin)
-    t = t[:avail]
-    tail = inner - margin - len(t)
-    frags = [(C_SPOTLIGHT_BOX_BG, " " * margin)]
-    if t:
-        frags.append((C_SPOTLIGHT_TEXT_SECONDARY, t))
-    if tail > 0:
-        frags.append((C_SPOTLIGHT_BOX_BG, " " * tail))
+        return [(C_SPOTLIGHT_BOX_BG, " " * width)]
+    t = text[:width]
+    pad_l = (width - len(t)) // 2
+    pad_r = width - len(t) - pad_l
+    style = (C_SPOTLIGHT_TEXT_SECONDARY if kind == "centre_secondary"
+             else C_SPOTLIGHT_TEXT_PRIMARY)
+    frags = []
+    if pad_l:
+        frags.append((C_SPOTLIGHT_BOX_BG, " " * pad_l))
+    frags.append((style, t))
+    if pad_r:
+        frags.append((C_SPOTLIGHT_BOX_BG, " " * pad_r))
     return frags
 
 
-def _log_spotlight_empty_box(box_w, inner):
+def _log_spotlight_empty_box(box_w, _unused):
     """Defensive fallback for the rare case where the overlay renders
-    before a spotlight is selectable. Paints a borderless BG-coloured
-    box so the Float doesn't collapse mid-frame; should never be seen
-    by the user under normal flow."""
+    before a spotlight is selectable. Paints a flat BG-coloured box so
+    the Float doesn't collapse mid-frame; should never be seen by the
+    user under normal flow."""
     frags = []
     for i in range(_SPOTLIGHT_BOX_H):
         frags.append((C_SPOTLIGHT_BOX_BG, " " * box_w))
