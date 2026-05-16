@@ -13,8 +13,10 @@ the game pane, an input pane, and up to six side panes into one window.
 
 <img width="494" height="309" alt="Screenshot 2026-05-16 020038" src="https://github.com/user-attachments/assets/7f100007-b3d9-44fc-8d7e-dfff595f7c13" />
 <img width="494" height="309" alt="Screenshot 2026-05-16 015941" src="https://github.com/user-attachments/assets/8f7496e5-8b0e-481a-92ac-aea909fc2db9" />
-<img width="494" height="309" alt="Screenshot 2026-05-16 010540" src="https://github.com/user-attachments/assets/19486c51-a9d1-4acf-86b9-27286eb5a0e4" />
 <img width="494" height="309" alt="Screenshot 2026-05-16 010400" src="https://github.com/user-attachments/assets/deedfef8-f77a-45bc-96cb-d42c74488aaf" />
+<img width="494" height="309" alt="Screenshot 2026-05-16 010608" src="https://github.com/user-attachments/assets/1f5fbbe3-8bb5-441d-87d3-b3587d8f4569" />
+<img width="494" height="309" alt="Screenshot 2026-05-16 010540" src="https://github.com/user-attachments/assets/19486c51-a9d1-4acf-86b9-27286eb5a0e4" />
+
 
 ## Install
 
