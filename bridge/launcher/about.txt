@@ -1,9 +1,10 @@
 A fast, terminal-based MUD client built for MUME and tuned for fast PvP.
 TinTin++ owns the socket, triggers, and keybinds at the latency floor;
 a Lua brain runs above it for state, timers, and anything that benefits
-from a real programming language; tmux composes game, input, status,
-comm, and UI panes into one window. Starts in under a second, with
-opt-in updates from the launcher, and behaves the same on every machine.
+from a real programming language; tmux composes the game pane, an
+input pane, and up to six side panes into one window. Starts in under
+a second, with opt-in updates from the launcher, and behaves the same
+on every machine.
 
 CONNECTION
 
@@ -17,17 +18,22 @@ CONNECTION
             before connecting.
             Download: github.com/MUME/MMapper/releases
 
-  Direct    Connects to mume.org:4242 directly, bypassing MMapper.
+  Direct    Connects to mume.org:4242 directly over TLS, bypassing
+            MMapper.
+
+  Custom    Connects to any host and port. Useful for test servers
+            or proxies; configure from launcher Options.
 
 
 GMCP
 
-Full GMCP integration. Char, Comm.Channel, Event, and Core modules are
-negotiated at handshake and dispatched into Lua handlers. Background
-collectors populate state.char, state.comm, and state.run as
-messages arrive — vitals, kills, channel traffic, alertness, sneak,
-climb, swim, and position. New collectors are drop-in: subscribe to a
-module, write to state.*, done.
+Full GMCP integration. Char, Comm.Channel, Event, Core, and Group
+modules are negotiated at handshake and dispatched into Lua handlers.
+Background collectors populate state.char, state.comm, state.world,
+state.run, and state.group as messages arrive — vitals, kills,
+channel traffic, alertness, sneak, climb, swim, position, group
+member vitals, sun and moon state. New collectors are drop-in:
+subscribe to a module, write to state.*, done.
 
 
 SCRIPTING
@@ -44,14 +50,19 @@ the intended use.
 
 PANES
 
-Beyond the main game window, the cockpit can show four side panes,
+Beyond the main game window, the cockpit shows up to six side panes,
 each toggleable at runtime: a character panel with live vitals,
-position, mood, alertness, affects, in-game time, and session XP/TP
-deltas; a communication pane with clickable channel filters and a
-per-profile 7-day history that survives reloads and reconnects; a UI
-pane for structured status messages from scripts and the core systems
-(kills, warnings, lifecycle events); and a dedicated input pane on
-its own line.
+position, mood, alertness, in-game time, and session XP/TP deltas
+against a level-progress ruler; a buffs grid with active spells,
+buffs, debuffs, and stored spells — colour-coded by group, with
+per-character durations learned over time and blink alerts on entries
+about to expire; a group panel with party member vitals and
+threshold-coloured bars; a communication pane with clickable channel
+filters and a per-profile history that survives reloads and
+reconnects; a UI pane for structured status messages from scripts and
+the core systems (kills, warnings, lifecycle events); and a developer
+pane for tracing. A dedicated input pane sits on its own line at the
+bottom.
 
 The input pane fixes long-standing terminal-client annoyances. The
 buffer doesn't auto-clear after sending — the last command stays
@@ -62,20 +73,43 @@ re-send. Shift+Home, Shift+End, and Ctrl+A all select the full
 buffer in one move, so the next keystroke clears it.
 
 
+RUNS AND STATISTICS
+
+Every login starts a run. The cockpit writes a structured event
+stream — kills, player kills, achievements, XP and TP gains and
+losses, level-ups, group changes, deaths — plus a raw timestamped
+capture of all server output. Press <Esc> mid-session to open the
+Statistics frame: kills and PvPs sortable by name, count, or XP;
+allies you grouped with; achievements earned; XP/h and TP/h
+sparklines; and a ruler showing the level span the run covered.
+
+Pick a session from the launcher's History page to re-open the same
+view on any past run. Worth keeping? Press Save run and give it a
+0–5 star rating; saved runs survive the 14-day retention sweep that
+prunes everything else. Then watch it back in the built-in log
+player: play, pause, scrub, click any line to jump.
+
+
 COCKPIT COMMANDS
 
 Most cockpit features are reachable from the in-game menu — press
-<Esc> from any pane to open it. The cp command prefix offers the
-same controls plus a few extras useful for scripting:
+<Esc> from any pane to open it. The menu covers reconnect, save run,
+statistics, pane visibility and colours, scripts, and exit, and it
+auto-opens when the connection drops. The cp command prefix offers
+the same controls plus a few extras useful for scripting:
 
-  cp -e     clean shutdown
-  cp -s     save the current profile to disk
-  cp -u     toggle UI pane
-  cp -d     toggle dev pane
-  cp -c     toggle character panel
-  cp -m     toggle communication pane
-  cp -h     toggle pane border headers
-  cp        show the full command reference
+  cp -e              clean shutdown
+  cp -s              save the current profile to disk
+  cp -c              toggle character panel
+  cp -b              toggle buffs pane
+  cp -g              toggle group pane
+  cp -m              toggle communication pane
+  cp -u              toggle UI pane
+  cp -d              toggle dev pane
+  cp -h              toggle pane border headers
+  cp -reset-heights  reset right-column pane heights to defaults
+  cp                 show the full command reference
+
 
 MUME — MULTI-USERS IN MIDDLE-EARTH
 
