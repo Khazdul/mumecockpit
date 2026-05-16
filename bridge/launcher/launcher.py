@@ -44,8 +44,8 @@ from palette import (  # noqa: E402
     C_LOG_OVERLAY_BG, C_LOG_OVERLAY_FG, C_LOG_OVERLAY_HINT,
     C_LOG_SCRUBBER_FILLED, C_LOG_SCRUBBER_EMPTY, C_LOG_SCRUBBER_THUMB,
     C_LOG_BUTTON_IDLE, C_LOG_BUTTON_HOVER,
-    C_SPOTLIGHT_BOX_BG, C_SPOTLIGHT_BOX_FG, C_SPOTLIGHT_BOX_BORDER,
-    C_SPOTLIGHT_BLACK,
+    C_SPOTLIGHT_BOX_BG, C_SPOTLIGHT_FRAME,
+    C_SPOTLIGHT_TEXT_PRIMARY, C_SPOTLIGHT_TEXT_SECONDARY,
     _S_GAINED, _S_LOSS, _S_LABEL, _S_VALUE, _S_TP_BAR,
     _S_TRACK, _S_MARKER, _S_THUMB, _S_TOTAL, _S_ARROW,
     _S_HINT, _S_PVP, _S_ALLY, _S_STAR,
@@ -296,16 +296,6 @@ _log_scrubber_width         = 0        # number of scrubber cells in the current
 # without down-casting.
 _log_view_mode              = "chain"
 _log_view_reel              = None     # SpotlightPlayback | None
-# Spotlight black-frame transition. When the playhead crosses into a new
-# spotlight (auto-advance or manual seek), the content area renders as
-# pure black for ~500 ms with the upcoming spotlight's info card on top —
-# a title-card flash that separates adjacent scenes. The playback clock
-# is frozen at the crossing point during the black phase so per-spotlight
-# pre-roll timing is exact across transitions.
-_LOG_SPOTLIGHT_BLACK_MS         = 500
-_log_spotlight_black_until      = None  # monotonic() deadline, or None
-_log_spotlight_black_freeze_us  = 0     # playback offset to hold during black
-_log_last_spotlight_idx         = -1    # last spotlight idx seen by the tick
 _history_columns = [
     # (key, base_label, width, align, type)
     ("Char",    "Char",     None, "left",  "text"),
@@ -4757,18 +4747,16 @@ def _enter_log_view_spotlight(playback):
     built by `_enter_spotlights` from a non-empty SpotlightReel.
 
     Unlike chain mode this enters in **play** mode: the reel starts
-    rolling immediately, prefaced by the standard black title-card frame
-    (set up here so the first tick sees an active deadline and the user
-    sees the upcoming spotlight's card on black for ~500 ms before the
-    scene begins)."""
+    rolling immediately. The playback's phantom-row block at offset 0
+    provides the scroll-clear wipe — the playhead sits on the last
+    phantom while the first spotlight's pre-roll counts down, so the
+    viewport is blank until the first real event fires."""
     global _log_view_playback, _log_view_scroll, _log_view_cols, _log_view_lines
     global _log_view_event_rows
     global _log_mode, _log_play_anchor_wall, _log_play_anchor_offset_us
     global _log_paused_offset_us, _log_cursor_index, _log_last_playhead_index
     global _log_overlays_visible, _log_overlays_hide_at, _log_overlay_hover
     global _log_view_summary, _log_view_mode, _log_view_reel
-    global _log_spotlight_black_until, _log_spotlight_black_freeze_us
-    global _log_last_spotlight_idx
     _log_view_mode            = "spotlight"
     _log_view_reel            = playback
     _log_view_summary         = None
@@ -4788,14 +4776,6 @@ def _enter_log_view_spotlight(playback):
     _log_overlays_visible     = True
     _log_overlays_hide_at     = None
     _log_overlay_hover        = None
-    # Prime the black title-card for spotlight 0. The freeze is at the
-    # reel's start (offset 0); the tick will re-anchor when the deadline
-    # passes so the first event fires exactly _LOG_SPOTLIGHT_BLACK_MS
-    # after entry, not less. _log_last_spotlight_idx is set so the tick
-    # doesn't re-trigger black on its first sample.
-    _log_spotlight_black_freeze_us = 0
-    _log_spotlight_black_until     = time.monotonic() + _LOG_SPOTLIGHT_BLACK_MS / 1000
-    _log_last_spotlight_idx        = 0
     _push_frame("log_view")
     _log_resume()
 
@@ -4809,8 +4789,6 @@ def _exit_log_view():
     global _log_overlays_visible, _log_overlays_hide_at, _log_overlay_hover
     global _log_dragging_scrubber
     global _log_view_mode, _log_view_reel
-    global _log_spotlight_black_until, _log_spotlight_black_freeze_us
-    global _log_last_spotlight_idx
     _log_cancel_tick_task()
     _log_view_summary    = None
     _log_view_playback   = None
@@ -4825,9 +4803,6 @@ def _exit_log_view():
     _log_overlays_hide_at    = None
     _log_overlay_hover       = None
     _log_dragging_scrubber   = False
-    _log_spotlight_black_until     = None
-    _log_spotlight_black_freeze_us = 0
-    _log_last_spotlight_idx        = -1
     _pop_frame()
 
 
@@ -4893,30 +4868,10 @@ def _log_view_rebuild_if_needed():
 
 # --- Playback time / playhead --------------------------------------------
 def _log_current_playback_us():
-    """Return the current playback offset, in microseconds.
-
-    Spotlight-mode black transitions freeze this clock at the crossing
-    point: while the deadline is in the future we return the captured
-    freeze offset; on the first call after the deadline expires we
-    re-anchor `_log_play_anchor_wall` / `_log_play_anchor_offset_us` so
-    the clock resumes from the freeze (and the new spotlight's pre-roll
-    runs its full duration, with no accumulated drift)."""
-    global _log_spotlight_black_until
-    global _log_play_anchor_wall, _log_play_anchor_offset_us
+    """Return the current playback offset, in microseconds."""
     pb = _log_view_playback
     if pb is None:
         return 0
-    if _log_spotlight_black_until is not None:
-        if time.monotonic() < _log_spotlight_black_until:
-            return _log_spotlight_black_freeze_us
-        # Deadline expired — lazy re-anchor so the next play-mode read
-        # resumes from the freeze. Pause-mode reads ignore the anchor;
-        # the freeze offset is already mirrored in _log_paused_offset_us
-        # if the user paused mid-black.
-        if _log_mode == "play":
-            _log_play_anchor_offset_us = _log_spotlight_black_freeze_us
-            _log_play_anchor_wall      = time.monotonic()
-        _log_spotlight_black_until = None
     if _log_mode == "play":
         elapsed = int((time.monotonic() - _log_play_anchor_wall) * 1_000_000)
         cur = _log_play_anchor_offset_us + elapsed
@@ -4927,14 +4882,6 @@ def _log_current_playback_us():
     if cur > pb.total_duration_us:
         cur = pb.total_duration_us
     return cur
-
-
-def _log_in_black_phase():
-    """True while the spotlight black-frame transition is active (the
-    log content area renders blank and the info box shows the upcoming
-    spotlight's card). Read by the renderer on every frame."""
-    return (_log_spotlight_black_until is not None
-            and time.monotonic() < _log_spotlight_black_until)
 
 
 def _log_playhead_index():
@@ -4959,7 +4906,11 @@ def _log_pause():
     if _log_view_playback is None:
         return
     _log_paused_offset_us = _log_current_playback_us()
-    _log_cursor_index     = _log_playhead_index()
+    # If the playhead is sitting on a phantom row (a spotlight-boundary
+    # wipe), snap forward to the next real event so pause-mode keybinds
+    # operate on real content.
+    _log_cursor_index     = _log_skip_phantoms(_log_playhead_index(),
+                                               prefer_forward=True)
     _log_mode             = "pause"
     # Overlays become permanent while paused.
     _log_overlays_visible = True
@@ -5079,10 +5030,8 @@ def _log_start_tick_task():
 async def _log_tick_loop():
     """~30 Hz redraw loop while in play mode. Stops as soon as the frame is
     popped or the mode flips to pause; invalidates only when the playhead
-    crosses to a new event, the spotlight black-transition flips, or the
-    overlay hide-deadline expires."""
-    global _log_last_playhead_index, _log_last_spotlight_idx
-    global _log_spotlight_black_until, _log_spotlight_black_freeze_us
+    crosses to a new event or the overlay hide-deadline expires."""
+    global _log_last_playhead_index
     interval = 1.0 / _LOG_TICK_HZ
     try:
         while True:
@@ -5090,39 +5039,11 @@ async def _log_tick_loop():
                     or _log_view_playback is None):
                 return
             pb = _log_view_playback
-            was_in_black = _log_spotlight_black_until is not None
             cur_us = _log_current_playback_us()
-            # Auto-pause at end only when not in a black-card freeze
-            # (the freeze can sit at total_duration_us if the last
-            # spotlight's start is exactly the reel end — extremely
-            # unlikely, but cheap to guard).
-            if (pb.events and cur_us >= pb.total_duration_us
-                    and not _log_in_black_phase()):
+            if pb.events and cur_us >= pb.total_duration_us:
                 _log_auto_pause_at_end()
                 return
             dirty = False
-            # Spotlight-mode crossing detection. While outside a black
-            # phase, watch for the playhead entering a new spotlight
-            # (auto-advance OR a manual N/P seek into a different
-            # spotlight); when it does, freeze the clock at the crossing
-            # point and arm the title-card deadline. Within-spotlight
-            # seeks keep the same idx → no re-trigger.
-            if _log_view_mode == "spotlight" and _log_view_reel is not None:
-                if not _log_in_black_phase() and _log_view_reel.spotlights:
-                    cur_spot_idx = _log_view_reel.spotlight_at_offset(cur_us)
-                    if cur_spot_idx != _log_last_spotlight_idx:
-                        _log_spotlight_black_freeze_us = cur_us
-                        _log_spotlight_black_until = (
-                            time.monotonic()
-                            + _LOG_SPOTLIGHT_BLACK_MS / 1000)
-                        _log_last_spotlight_idx = cur_spot_idx
-                        dirty = True
-                # End-of-black redraw: the lazy re-anchor inside
-                # _log_current_playback_us has already cleared the
-                # deadline this tick, so the box flips from title-card
-                # to live content — needs an invalidate.
-                if was_in_black and _log_spotlight_black_until is None:
-                    dirty = True
             idx = _log_playhead_index()
             if idx != _log_last_playhead_index:
                 _log_last_playhead_index = idx
@@ -5203,29 +5124,9 @@ def _log_view_text():
         return [(C_BODY, "(no log loaded)")]
     _log_view_rebuild_if_needed()
     visible = _log_view_visible_rows()
-    # Spotlight black title-card frame: paint the content area pure
-    # black while the playback clock is frozen. The info-box overlay
-    # renders on top (its renderer reads the frozen playback offset, so
-    # it already shows the upcoming spotlight's card).
-    if _log_view_mode == "spotlight" and _log_in_black_phase():
-        return _log_view_text_black(visible)
     if _log_mode == "play":
         return _log_view_text_play(visible)
     return _log_view_text_pause(visible)
-
-
-def _log_view_text_black(visible):
-    """Screen-sized blank frame for the spotlight transition. One
-    fragment line per row, separated by explicit newlines so the
-    background spans the full viewport regardless of cursor / wrap
-    behaviour."""
-    cols = max(1, _term_cols())
-    frags = []
-    for i in range(visible):
-        frags.append((C_SPOTLIGHT_BLACK, " " * cols))
-        if i < visible - 1:
-            frags.append(("", "\n"))
-    return frags
 
 
 def _log_view_text_play(visible):
@@ -5281,9 +5182,56 @@ def _log_lines_to_fragments(sliced, sliced_start, cursor_idx):
     return frags
 
 
+# --- Phantom-event handling (spotlight mode) ------------------------------
+def _log_is_phantom(event_idx):
+    """True when the event at `event_idx` is a phantom blank row inserted
+    at a spotlight boundary by SpotlightPlayback (zero playback duration,
+    one blank visual row, skipped by pause-mode cursor navigation)."""
+    pb = _log_view_playback
+    if pb is None or _log_view_mode != "spotlight":
+        return False
+    is_p = getattr(pb, "is_phantom", None)
+    if is_p is None:
+        return False
+    return is_p(event_idx)
+
+
+def _log_skip_phantoms(idx, prefer_forward=True):
+    """Snap to the nearest non-phantom event. Searches the preferred
+    direction first; if it hits an end, falls back to the other direction.
+    Returns the original idx if it's already a real event, or if no real
+    event exists (degenerate case)."""
+    pb = _log_view_playback
+    if pb is None or not pb.events:
+        return idx
+    n = len(pb.events)
+    if idx < 0:
+        idx = 0
+    elif idx >= n:
+        idx = n - 1
+    if not _log_is_phantom(idx):
+        return idx
+    if prefer_forward:
+        for i in range(idx + 1, n):
+            if not _log_is_phantom(i):
+                return i
+        for i in range(idx - 1, -1, -1):
+            if not _log_is_phantom(i):
+                return i
+    else:
+        for i in range(idx - 1, -1, -1):
+            if not _log_is_phantom(i):
+                return i
+        for i in range(idx + 1, n):
+            if not _log_is_phantom(i):
+                return i
+    return idx
+
+
 # --- Cursor / scroll movement (pause mode) --------------------------------
-def _log_set_cursor(new_index):
-    """Pause-mode cursor mutation. Clamps to [0, last_index] and snaps
+def _log_set_cursor(new_index, prefer_forward=True):
+    """Pause-mode cursor mutation. Clamps to [0, last_index], snaps over
+    any phantom event in the preferred direction, then anchors
     `_log_paused_offset_us` to the cursor event's start time so the
     scrubber thumb and the MM:SS / MM:SS elapsed display follow the
     cursor on the same render pass."""
@@ -5293,6 +5241,7 @@ def _log_set_cursor(new_index):
         return
     n = len(pb.events)
     clamped = max(0, min(n - 1, int(new_index)))
+    clamped = _log_skip_phantoms(clamped, prefer_forward=prefer_forward)
     if clamped == _log_cursor_index:
         return
     _log_cursor_index     = clamped
@@ -5305,13 +5254,15 @@ def _log_set_cursor(new_index):
 
 def _log_move_cursor(delta):
     """Move cursor by `delta` events; auto-pauses if currently playing.
-    Routes through `_log_set_cursor` for clamping + scrubber/time sync."""
+    Routes through `_log_set_cursor` for clamping + scrubber/time sync.
+    Phantom blocks at spotlight boundaries are skipped in the direction
+    of travel."""
     pb = _log_view_playback
     if pb is None or not pb.events:
         return
     if _log_mode == "play":
         _log_pause()
-    _log_set_cursor(_log_cursor_index + delta)
+    _log_set_cursor(_log_cursor_index + delta, prefer_forward=(delta >= 0))
 
 
 def _log_cursor_to(index):
@@ -5321,7 +5272,7 @@ def _log_cursor_to(index):
         return
     if _log_mode == "play":
         _log_pause()
-    _log_set_cursor(index)
+    _log_set_cursor(index, prefer_forward=True)
 
 
 class _LogViewControl(FormattedTextControl):
@@ -5568,21 +5519,22 @@ def _log_spotlight_header_text(cols):
     return frags
 
 
-# Floating spotlight info box. Total width includes the 1-cell ▌▐ side
-# columns; interior is _SPOTLIGHT_BOX_W - 2. Height covers top-border
-# row + 1 padding row + 5 content rows + 1 padding row + bottom-border
-# row = 9. The 4-cell top/right margin lives in the Float positioning
-# (top=4, right=4), so the suppression threshold is box width + 8.
-_SPOTLIGHT_BOX_W      = 36
-_SPOTLIGHT_BOX_H      = 9
-_SPOTLIGHT_BOX_MARGIN = 4
+# Floating spotlight info box. Total width includes the 1-cell side
+# columns (▌ / ▐ on interior rows, █ at the corners); interior is
+# _SPOTLIGHT_BOX_W - 2. Height = top-border row + 5 content rows +
+# bottom-border row = 7. The 2-cell top/right margin lives in the
+# Float positioning (top=2, right=2); the narrow-terminal suppression
+# threshold is box width + 4 (margin + box + breathing room).
+_SPOTLIGHT_BOX_W      = 30
+_SPOTLIGHT_BOX_H      = 7
+_SPOTLIGHT_BOX_MARGIN = 2
 
 
 def _log_spotlight_overlay_visible():
     """The spotlight info box is always visible while in spotlight mode
     (the top header and bottom controls keep their auto-hide; the box
     does not). Hides only when the terminal is too narrow for the box
-    plus its 4-cell margin — playback continues without it."""
+    plus its margin — playback continues without it."""
     if _log_view_mode != "spotlight":
         return False
     if _log_view_reel is None or not _log_view_reel.spotlights:
@@ -5595,75 +5547,101 @@ def _log_spotlight_overlay_visible():
 def _log_spotlight_overlay_text():
     """Build the framed spotlight info box (top-right floating overlay).
 
-    Frame is composed of half-block glyphs on a very dark banner-hue
-    background:
-      • top row: `▀` × box_w
-      • bottom row: `▄` × box_w
-      • interior rows: `▌` on the left, `▐` on the right
-    Corners read as the horizontal-edge glyph (`▀` at the top corners,
-    `▄` at the bottom corners); the side columns only begin on the
-    first interior row. This produces a small step-pattern at each
-    corner — intentional, gives the frame a designed feel rather than
-    a CP437 imitation.
+    Frame: full-block `█` at the four corners, `▀` along the top edge,
+    `▄` along the bottom edge, `▌`/`▐` on the side columns. All frame
+    glyphs share C_SPOTLIGHT_FRAME (fg) over C_SPOTLIGHT_BOX_BG.
 
-    Interior layout (top → bottom):
-      • blank padding row
-      • SPOTLIGHT N — centred
-      • blank separator
-      • <character> — <event labels>
-      • <YYYY-MM-DD>
-      • In <X> seconds. (collapsed to blank when no next event)
-      • blank padding row
+    Interior layout (5 rows, flush against the frame):
+      • <CHAR> <YYYY-MM-DD>   — centred; CHAR in primary, date in secondary.
+      • blank
+      • <event label(s)>      — centred, primary text.
+      • blank
+      • In <N> seconds.       — left-aligned (1-cell leading space),
+                                secondary text. Collapses to blank when
+                                no next event remains.
     """
     box_w = _SPOTLIGHT_BOX_W
     inner = box_w - 2
     info = _log_spotlight_current()
     if info is None:
         return _log_spotlight_empty_box(box_w, inner)
-    spot, spot_idx, offset_within = info
+    spot, _spot_idx, offset_within = info
     reel = _log_view_reel
 
-    title    = f"SPOTLIGHT {spot_idx + 1}"
-    labels   = " · ".join(ev.label for ev in spot.events)
-    char_ln  = f"{spot.character} — {labels}"
-    date_ln  = time.strftime("%Y-%m-%d", time.localtime(spot.events[0].ts))
+    char     = spot.character.upper()
+    date_str = time.strftime("%Y-%m-%d", time.localtime(spot.events[0].ts))
+    label    = " · ".join(ev.label for ev in spot.events)
 
     _, seconds_to_next = reel.event_progress(spot, offset_within)
     if seconds_to_next is None:
-        cd_ln = ""
+        countdown = ""
     else:
         # Round up so "0 seconds" doesn't sit for almost a full second.
         s = (int(seconds_to_next) if seconds_to_next == int(seconds_to_next)
              else int(seconds_to_next) + 1)
         if s <= 0:
-            cd_ln = "In 0 seconds."
+            countdown = "In 0 seconds."
         elif s == 1:
-            cd_ln = "In 1 second."
+            countdown = "In 1 second."
         else:
-            cd_ln = f"In {s} seconds."
-
-    interior_rows = [
-        ("", "blank"),
-        (title,   "centre"),
-        ("", "blank"),
-        (char_ln, "left"),
-        (date_ln, "left"),
-        (cd_ln,   "left"),
-        ("", "blank"),
-    ]
-    # Assert: interior count = _SPOTLIGHT_BOX_H - 2 (top + bottom borders).
+            countdown = f"In {s} seconds."
 
     frags = []
-    # Top border — all `▀`, including the corners.
-    frags.append((C_SPOTLIGHT_BOX_BORDER, "▀" * box_w))
+    # Top border: █ + ▀ × (inner) + █
+    frags.append((C_SPOTLIGHT_FRAME, "█"))
+    frags.append((C_SPOTLIGHT_FRAME, "▀" * inner))
+    frags.append((C_SPOTLIGHT_FRAME, "█"))
     frags.append(("", "\n"))
-    for i, (text, kind) in enumerate(interior_rows):
-        frags.append((C_SPOTLIGHT_BOX_BORDER, "▌"))
-        frags.extend(_log_spotlight_box_row(text, kind, inner))
-        frags.append((C_SPOTLIGHT_BOX_BORDER, "▐"))
+    # Interior rows.
+    interior = [
+        ("char_date", None),
+        ("blank",     None),
+        ("centre",    label),
+        ("blank",     None),
+        ("left",      countdown),
+    ]
+    for kind, payload in interior:
+        frags.append((C_SPOTLIGHT_FRAME, "▌"))
+        if kind == "char_date":
+            frags.extend(_log_spotlight_char_date_row(char, date_str, inner))
+        else:
+            frags.extend(_log_spotlight_box_row(payload or "", kind, inner))
+        frags.append((C_SPOTLIGHT_FRAME, "▐"))
         frags.append(("", "\n"))
-    # Bottom border — all `▄`, including the corners.
-    frags.append((C_SPOTLIGHT_BOX_BORDER, "▄" * box_w))
+    # Bottom border: █ + ▄ × (inner) + █
+    frags.append((C_SPOTLIGHT_FRAME, "█"))
+    frags.append((C_SPOTLIGHT_FRAME, "▄" * inner))
+    frags.append((C_SPOTLIGHT_FRAME, "█"))
+    return frags
+
+
+def _log_spotlight_char_date_row(char, date_str, inner):
+    """Compose the "<CHAR> <date>" row: char rendered in
+    C_SPOTLIGHT_TEXT_PRIMARY, single-space separator, date in
+    C_SPOTLIGHT_TEXT_SECONDARY. Centred as a single visual block;
+    truncated to fit if the combined width exceeds `inner`."""
+    sep   = " "
+    combo = char + sep + date_str
+    if len(combo) > inner:
+        # Last-resort: drop the date, then the char. Should not happen
+        # for normal MUME names (≤ 12 chars) + 10-char date in a 28-wide
+        # interior, but defend against future widening of either side.
+        if len(char) <= inner:
+            combo = char
+            return _log_spotlight_box_row(combo, "centre", inner)
+        char = char[:inner]
+        combo = char
+        return _log_spotlight_box_row(combo, "centre", inner)
+    pad_l = (inner - len(combo)) // 2
+    pad_r = inner - len(combo) - pad_l
+    frags = []
+    if pad_l:
+        frags.append((C_SPOTLIGHT_BOX_BG, " " * pad_l))
+    frags.append((C_SPOTLIGHT_TEXT_PRIMARY, char))
+    frags.append((C_SPOTLIGHT_BOX_BG, sep))
+    frags.append((C_SPOTLIGHT_TEXT_SECONDARY, date_str))
+    if pad_r:
+        frags.append((C_SPOTLIGHT_BOX_BG, " " * pad_r))
     return frags
 
 
@@ -5671,9 +5649,11 @@ def _log_spotlight_box_row(text, kind, inner):
     """Render a single interior row's content (excluding the side ▌▐
     border glyphs). Always emits exactly `inner` cells, BG-painted.
 
-    `kind` selects alignment: "centre" centres the trimmed text,
-    "left" pads a single space margin then left-aligns, "blank" emits
-    pure BG fill."""
+    `kind` selects alignment and style:
+      • "centre" — primary text, centred.
+      • "left"   — secondary text, 1-cell leading space then left-aligned.
+      • "blank"  — pure BG fill.
+    """
     if kind == "blank" or not text:
         return [(C_SPOTLIGHT_BOX_BG, " " * inner)]
     t = text[:inner]
@@ -5683,18 +5663,18 @@ def _log_spotlight_box_row(text, kind, inner):
         frags = []
         if pad_l:
             frags.append((C_SPOTLIGHT_BOX_BG, " " * pad_l))
-        frags.append((C_SPOTLIGHT_BOX_FG, t))
+        frags.append((C_SPOTLIGHT_TEXT_PRIMARY, t))
         if pad_r:
             frags.append((C_SPOTLIGHT_BOX_BG, " " * pad_r))
         return frags
-    # "left": one-cell breathing margin, then text, then BG fill.
+    # "left": one-cell breathing margin, then secondary-style text, then BG fill.
     margin = 1
     avail = max(0, inner - margin)
     t = t[:avail]
     tail = inner - margin - len(t)
     frags = [(C_SPOTLIGHT_BOX_BG, " " * margin)]
     if t:
-        frags.append((C_SPOTLIGHT_BOX_FG, t))
+        frags.append((C_SPOTLIGHT_TEXT_SECONDARY, t))
     if tail > 0:
         frags.append((C_SPOTLIGHT_BOX_BG, " " * tail))
     return frags
@@ -5751,7 +5731,7 @@ def _log_rewind_click():
         _log_last_playhead_index   = -1
     else:
         _log_paused_offset_us = 0
-        _log_cursor_index     = 0
+        _log_cursor_index     = _log_skip_phantoms(0, prefer_forward=True)
         _log_ensure_cursor_visible()
     if _app:
         _app.invalidate()
@@ -5775,6 +5755,9 @@ def _log_scrubber_seek(target_us):
             i = 0
         if i >= len(pb.events):
             i = len(pb.events) - 1
+        # Snap past a phantom-block landing (e.g. an N/P seek to a
+        # spotlight boundary, or a drag that drops inside a wipe).
+        i = _log_skip_phantoms(i, prefer_forward=True)
         _log_cursor_index     = i
         _log_paused_offset_us = target
         _log_ensure_cursor_visible()
@@ -7295,11 +7278,11 @@ def main():
                                              filter=_log_overlays_filter),
             ),
             # Top-right floating spotlight info box (spotlight mode only).
-            # Pinned with a 4-cell margin from both the top and right edges
-            # of the log_view frame; framed in half-block glyphs on a dark
-            # banner-hue fill. Visibility is *not* gated by the bottom
-            # controls' auto-hide — only by the spotlight-mode predicate
-            # and a narrow-terminal fallback.
+            # Pinned with a 2-cell margin from both the top and right edges
+            # of the log_view frame; framed in half-block glyphs with
+            # full-block █ corners on a bright banner-hue fill. Visibility
+            # is *not* gated by the bottom controls' auto-hide — only by
+            # the spotlight-mode predicate and a narrow-terminal fallback.
             Float(
                 top=_SPOTLIGHT_BOX_MARGIN, right=_SPOTLIGHT_BOX_MARGIN,
                 width=_SPOTLIGHT_BOX_W, height=_SPOTLIGHT_BOX_H,

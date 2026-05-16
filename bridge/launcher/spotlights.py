@@ -18,6 +18,7 @@ from collections import deque
 from dataclasses import dataclass, field
 
 import log_player
+from log_player import LogEvent
 
 _BRIDGE_DIR    = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _PROJECT_DIR   = os.path.dirname(_BRIDGE_DIR)
@@ -31,6 +32,13 @@ _POST_ROLL_S = 5
 # <= this many seconds (i.e. the next event falls within the previous
 # event's post-roll).
 _MERGE_GAP_S = _POST_ROLL_S
+
+# Number of zero-duration phantom blank rows inserted at each spotlight
+# boundary (and at the very start of the reel). The launcher's play-mode
+# auto-scroll places the playhead event at the bottom of the viewport;
+# the phantom block above pushes the previous spotlight's content off
+# the top, giving a clean scroll-clear wipe between scenes.
+_LOG_SPOTLIGHT_WIPE_ROWS = 100
 
 
 # ---------------------------------------------------------------------------
@@ -367,11 +375,35 @@ class SpotlightPlayback:
         playback_offset_us: list = []
         spotlight_of_event_idx: list = []
         spotlight_start_offsets_us: list = []
+        phantom_event_indices: set = set()
         loaded_run_ids: list = []
 
         cursor_us = 0
         for spot_idx, spot in enumerate(self.spotlights):
             spotlight_start_offsets_us.append(cursor_us)
+            # Phantom wipe block: _LOG_SPOTLIGHT_WIPE_ROWS zero-duration
+            # blank events inserted before every spotlight (including the
+            # first). All share the boundary offset (= spot's start
+            # offset); the play-mode auto-scroll-to-bottom logic then
+            # pushes the previous spotlight's content off the viewport
+            # top as the playhead crosses onto this spotlight. Phantoms
+            # carry the previous spotlight's run_id (or this one's, for
+            # the leading set) — the field is opaque to playback but
+            # must be non-empty.
+            phantom_run_id = spot.run_id
+            if spot_idx > 0:
+                phantom_run_id = self.spotlights[spot_idx - 1].run_id
+            for _ in range(_LOG_SPOTLIGHT_WIPE_ROWS):
+                phantom_event_indices.add(len(events))
+                events.append(LogEvent(
+                    ts_us=cursor_us,
+                    direction="in",
+                    text=" ",
+                    run_id=phantom_run_id,
+                    fragments=[("", " ")],
+                ))
+                playback_offset_us.append(cursor_us)
+                spotlight_of_event_idx.append(spot_idx)
             if spot.run_id not in loaded_run_ids:
                 loaded_run_ids.append(spot.run_id)
             for ev in spot.log_events:
@@ -391,8 +423,16 @@ class SpotlightPlayback:
         self.total_duration_us = cursor_us
         self.spotlight_of_event_idx = spotlight_of_event_idx
         self.spotlight_start_offsets_us = spotlight_start_offsets_us
+        self.phantom_event_indices = phantom_event_indices
         self.loaded_run_ids = loaded_run_ids
         self.run_ids = list(loaded_run_ids)
+
+    def is_phantom(self, event_index: int) -> bool:
+        """True when the event at `event_index` is a phantom blank row
+        inserted at a spotlight boundary (zero playback duration; rendered
+        as a single empty visual row; skipped by pause-mode cursor
+        navigation)."""
+        return event_index in self.phantom_event_indices
 
     def __bool__(self):
         return bool(self.events)
