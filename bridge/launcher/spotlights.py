@@ -282,16 +282,22 @@ def _parse_full_log(path: str) -> list:
 
 def load_spotlight_log_events(spotlight: Spotlight, cache: dict) -> None:
     """Populate `spotlight.log_events` (sliced to `[window_start_us,
-    window_end_us]`), clamping the window to the actual `.log` range,
-    trimming the pre-roll to the first log line within the nominal
-    window (so silent leading gaps don't leave a blank countdown), and
-    populating `spotlight.event_offsets_us`. Idempotent — safe to call
-    multiple times. Parsed files are cached in `cache` keyed by log_path
-    so a chain of spotlights sharing a `.log` parses it exactly once.
+    window_end_us]`), trimming the pre-roll to the first log line
+    within the nominal window (so silent leading gaps don't leave a
+    blank countdown), and populating `spotlight.event_offsets_us`.
+    Idempotent — safe to call multiple times. Parsed files are cached
+    in `cache` keyed by log_path so a chain of spotlights sharing a
+    `.log` parses it exactly once.
 
-    If clamping leaves an empty window (event timestamps fall outside
-    the log range — corruption or clock skew), `spotlight.log_events`
-    stays empty and the caller is expected to drop the spotlight."""
+    `window_end_us` is **never** clamped to the log's last `ts_us` —
+    every spotlight's post-roll is the full 5 s past the event ts. If
+    the log has no content in the post-roll period, the playback sits
+    silent on the last visible log line until the window ends and the
+    transition to the next spotlight wipes.
+
+    If the slice is empty (event timestamps fall outside the log range
+    entirely — corruption or clock skew), `spotlight.log_events` stays
+    empty and the caller is expected to drop the spotlight."""
     if spotlight._loaded:
         return
 
@@ -306,19 +312,8 @@ def load_spotlight_log_events(spotlight: Spotlight, cache: dict) -> None:
         spotlight._loaded = True
         return
 
-    log_min_us = parsed[0].ts_us
-    log_max_us = parsed[-1].ts_us
-
-    win_start = max(spotlight.window_start_us, log_min_us)
-    win_end   = min(spotlight.window_end_us, log_max_us)
-
-    if win_start >= win_end:
-        spotlight.window_start_us = win_start
-        spotlight.window_end_us   = win_start
-        spotlight.log_events = []
-        spotlight.event_offsets_us = [0] * len(spotlight.events)
-        spotlight._loaded = True
-        return
+    win_start = spotlight.window_start_us
+    win_end   = spotlight.window_end_us
 
     # parsed is sorted ascending by ts_us (log files are monotonic).
     ts_us_list = [ev.ts_us for ev in parsed]
@@ -327,10 +322,9 @@ def load_spotlight_log_events(spotlight: Spotlight, cache: dict) -> None:
     sliced = parsed[lo:hi]
 
     if not sliced:
-        # Nominal window covered the log range but contained no log
-        # lines at all — drop the spotlight.
-        spotlight.window_start_us = win_start
-        spotlight.window_end_us   = win_start
+        # No log lines fell inside the nominal window — drop the
+        # spotlight. window_end is left untouched; caller drops on
+        # empty log_events.
         spotlight.log_events = []
         spotlight.event_offsets_us = [0] * len(spotlight.events)
         spotlight._loaded = True
@@ -338,7 +332,7 @@ def load_spotlight_log_events(spotlight: Spotlight, cache: dict) -> None:
 
     # Pre-roll trim: advance window_start_us to the first log line's
     # timestamp when there's a leading silence gap. The post-roll end
-    # is unaffected.
+    # is unaffected — window_end stays at event.ts + 5 s.
     first_log_ts_us = sliced[0].ts_us
     if first_log_ts_us > win_start:
         win_start = first_log_ts_us
