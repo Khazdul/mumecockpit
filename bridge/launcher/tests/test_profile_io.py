@@ -13,7 +13,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import profile_io  # noqa: E402
 from profile_io import (  # noqa: E402
-    Entry, Passthrough, load_profile, save_profile,
+    Entry, Passthrough, load_profile, save_profile, resolve_kind,
     _parse_line, _split_brace_args,
 )
 
@@ -245,6 +245,129 @@ class TestCaseInsensitiveAndMultiLine(unittest.TestCase):
         self.assertEqual(len(prof.entries_of("highlight")),  1)
         self.assertEqual(len(prof.entries_of("substitute")), 2)
         self.assertEqual(out, source)
+
+
+class TestResolveKind(unittest.TestCase):
+    """Direct unit tests for the prefix resolver."""
+
+    # Full abbreviation matrix from the bug report.
+    ABBREVS = {
+        "alias":      ["al", "ali", "alia", "alias"],
+        "action":     ["ac", "act", "acti", "actio", "action"],
+        "macro":      ["ma", "mac", "macr", "macro"],
+        "highlight":  ["hi", "hig", "high", "highl", "highli",
+                       "highlig", "highligh", "highlight"],
+        "substitute": ["su", "sub", "subs", "subst", "substi",
+                       "substit", "substitu", "substitut", "substitute"],
+    }
+
+    def test_every_abbreviation_resolves(self):
+        for kind, prefixes in self.ABBREVS.items():
+            for prefix in prefixes:
+                with self.subTest(kind=kind, prefix=prefix):
+                    self.assertEqual(resolve_kind(prefix), kind)
+                    # Case-insensitive: upper-case must resolve too.
+                    self.assertEqual(resolve_kind(prefix.upper()), kind)
+
+    def test_plurals_do_not_resolve(self):
+        for plural in ("macros", "aliases", "actions",
+                       "highlights", "substitutes"):
+            with self.subTest(plural=plural):
+                self.assertIsNone(resolve_kind(plural))
+
+    def test_single_char_does_not_resolve(self):
+        for ch in ("m", "a", "s", "h"):
+            with self.subTest(ch=ch):
+                self.assertIsNone(resolve_kind(ch))
+
+    def test_empty_does_not_resolve(self):
+        self.assertIsNone(resolve_kind(""))
+
+    def test_unknown_does_not_resolve(self):
+        # `nop` is not a prefix of any GUI-editable kind; `bell`, `var`,
+        # `event`, etc. similarly fall through.
+        for token in ("nop", "bell", "var", "event", "class", "zap"):
+            with self.subTest(token=token):
+                self.assertIsNone(resolve_kind(token))
+
+
+class TestAbbreviationsThroughParser(unittest.TestCase):
+    """End-to-end coverage: every abbreviated form parses as an Entry of
+    the correct kind, and round-trips byte-exact via `_raw`."""
+
+    def _round_trip(self, source):
+        with tempfile.TemporaryDirectory() as td:
+            src = Path(td) / "in.tin"
+            dst = Path(td) / "out.tin"
+            src.write_text(source)
+            prof = load_profile(src)
+            prof.path = dst
+            save_profile(prof)
+            return prof, dst.read_text()
+
+    def test_every_abbrev_parses_and_round_trips(self):
+        for kind, prefixes in TestResolveKind.ABBREVS.items():
+            for prefix in prefixes:
+                with self.subTest(kind=kind, prefix=prefix):
+                    source = f"#{prefix} {{p}} {{b}}\n"
+                    prof, out = self._round_trip(source)
+                    entries = prof.entries_of(kind)
+                    self.assertEqual(len(entries), 1)
+                    self.assertEqual(entries[0].pattern, "p")
+                    self.assertEqual(entries[0].body,    "b")
+                    self.assertEqual(out, source)
+
+    def test_abbrev_uppercase_parses(self):
+        # Spot-check the upper-case path through the parser (the matrix
+        # test above only uses lower-case in `#<prefix>`).
+        source = "#MAC {\\eOp} {flee}\n"
+        prof, out = self._round_trip(source)
+        self.assertEqual(len(prof.entries_of("macro")), 1)
+        self.assertEqual(out, source)
+
+    def test_abbrev_multi_line(self):
+        # Abbreviated command name + multi-line brace args together.
+        source = "#hi {Snowy}\n{light yellow}\n"
+        prof, out = self._round_trip(source)
+        self.assertEqual(len(prof.entries_of("highlight")), 1)
+        self.assertEqual(out, source)
+
+    def test_plural_is_passthrough(self):
+        # `#macros` is not a tt++ command (it's longer than `#macro`).
+        # The parser must surface it as Passthrough so the bytes
+        # round-trip and the tab-strip count does not include it.
+        source = "#macros {x} {y}\n"
+        prof, out = self._round_trip(source)
+        self.assertEqual(len(prof.entries_of("macro")), 0)
+        self.assertEqual(out, source)
+        self.assertTrue(any(isinstance(it, Passthrough) for it in prof.items))
+
+    def test_single_char_is_passthrough(self):
+        # `#m` could be `#macro`, `#message`, or any number of other
+        # commands — tt++ rejects it as ambiguous, so do we.
+        source = "#m {x} {y}\n"
+        prof, out = self._round_trip(source)
+        self.assertEqual(len(prof.entries_of("macro")), 0)
+        self.assertEqual(out, source)
+
+    def test_mixed_abbrev_count_correct(self):
+        # Mix abbreviated, canonical, mixed-case, and multi-line forms;
+        # the per-kind count must include them all.
+        source = (
+            "#mac {\\eOp} {flee}\n"
+            "#MACRO {\\eOm} {close exit}\n"
+            "#macr {\\eOr}\n"
+            "{south}\n"
+            "#Al {ws} {wake;stand}\n"
+            "#HI {Snowy} {light yellow}\n"
+            "#sub {orc} {ORC}\n"
+            "#macros {not} {me}\n"   # plural — Passthrough
+        )
+        prof, _out = self._round_trip(source)
+        self.assertEqual(len(prof.entries_of("macro")),      3)
+        self.assertEqual(len(prof.entries_of("alias")),      1)
+        self.assertEqual(len(prof.entries_of("highlight")),  1)
+        self.assertEqual(len(prof.entries_of("substitute")), 1)
 
 
 if __name__ == "__main__":

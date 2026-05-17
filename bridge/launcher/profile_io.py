@@ -18,17 +18,30 @@ from typing import List, Optional, Union
 
 KINDS = ("alias", "action", "macro", "highlight", "substitute")
 
-# Lower-cased command token → kind.
-_KIND_FROM_CMD = {
-    "#alias":      "alias",
-    "#action":     "action",
-    "#macro":      "macro",
-    "#highlight":  "highlight",
-    "#substitute": "substitute",
-    "#sub":        "substitute",
-}
+# Canonical command names tt++ accepts in profile files for the five
+# GUI-editable kinds. Order is irrelevant — `resolve_kind` checks all.
+CANONICAL_KINDS = ("alias", "action", "macro", "highlight", "substitute")
 
 _NOP = "#nop"
+
+
+def resolve_kind(token):
+    """Resolve a command-name token (the letters after `#`, any case) to
+    a canonical kind, mirroring tt++'s unambiguous-prefix rule.
+
+    Returns the canonical kind on an unambiguous case-insensitive prefix
+    match of length ≥ 2 (e.g. `mac` → `macro`, `Hi` → `highlight`,
+    `SUB` → `substitute`). Returns None for single-char tokens
+    (ambiguous), for tokens longer than the canonical name (plurals
+    like `macros`), and — defensively — for prefixes that would match
+    more than one canonical kind.
+    """
+    t = token.lower()
+    if len(t) < 2:
+        return None
+    matches = [k for k in CANONICAL_KINDS
+               if k.startswith(t) and len(t) <= len(k)]
+    return matches[0] if len(matches) == 1 else None
 
 
 @dataclass
@@ -146,14 +159,14 @@ def _try_parse_entry_at(src, i, n):
         j += 1
     if j >= n or src[j] != "#":
         return None
+    # `cmd_start` is the position of `#`; letters follow immediately.
     cmd_start = j
     k = j + 1
     while k < n and src[k].isalpha():
         k += 1
-    cmd = src[cmd_start:k].lower()
-    if cmd not in _KIND_FROM_CMD:
+    kind = resolve_kind(src[cmd_start + 1:k])
+    if kind is None:
         return None
-    kind = _KIND_FROM_CMD[cmd]
 
     # The command token must be followed by EOF, whitespace (incl. \n),
     # or an opening brace — anything else (e.g. `#aliasfoo`) is not us.
@@ -214,7 +227,7 @@ def _parse_line(raw_line):
     cmd = _read_command_name(line, 0, n)
     if cmd == _NOP:
         return None
-    if cmd in _KIND_FROM_CMD:
+    if cmd is not None and resolve_kind(cmd[1:]) is not None:
         result = _try_parse_entry_at(line, 0, n)
         if result is not None:
             entry, _end = result
@@ -269,7 +282,7 @@ def load_profile(path):
             nl = src.find("\n", i)
             i = n if nl == -1 else nl + 1
             continue
-        if cmd in _KIND_FROM_CMD:
+        if cmd is not None and resolve_kind(cmd[1:]) is not None:
             result = _try_parse_entry_at(src, i, n)
             if result is not None:
                 entry, end_pos = result
