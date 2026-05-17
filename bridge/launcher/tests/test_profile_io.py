@@ -172,5 +172,80 @@ class TestRoundTrip(unittest.TestCase):
         self.assertEqual(self._round_trip(source), expected)
 
 
+class TestCaseInsensitiveAndMultiLine(unittest.TestCase):
+    """Regression coverage for the bug-report fix: tt++ command names are
+    case-insensitive, and brace-group args may be separated by newlines."""
+
+    def _round_trip(self, source):
+        with tempfile.TemporaryDirectory() as td:
+            src = Path(td) / "in.tin"
+            dst = Path(td) / "out.tin"
+            src.write_text(source)
+            prof = load_profile(src)
+            prof.path = dst
+            save_profile(prof)
+            return prof, dst.read_text()
+
+    def test_all_caps_single_line_parses_as_macro(self):
+        source = "#MACRO {\\eOm} {close exit}\n"
+        prof, out = self._round_trip(source)
+        macros = prof.entries_of("macro")
+        self.assertEqual(len(macros), 1)
+        self.assertEqual(macros[0].pattern, "\\eOm")
+        self.assertEqual(macros[0].body,    "close exit")
+        self.assertEqual(out, source)   # byte-exact
+
+    def test_multi_line_parses_as_macro(self):
+        # The bug report's primary example: brace groups split by newlines
+        # with whitespace-only intervening lines.
+        source = "#macro {\\eOm}\n{\n    close exit\n}\n"
+        prof, out = self._round_trip(source)
+        macros = prof.entries_of("macro")
+        self.assertEqual(len(macros), 1)
+        self.assertEqual(macros[0].pattern, "\\eOm")
+        self.assertEqual(macros[0].body,    "\n    close exit\n")
+        self.assertEqual(out, source)   # byte-exact via _raw
+
+    def test_extra_inter_arg_whitespace_parses_as_macro(self):
+        # Regression for what should already work: arbitrary spaces between
+        # args (still on a single line).
+        source = "#macro    {\\eOm}    {close exit}\n"
+        prof, out = self._round_trip(source)
+        macros = prof.entries_of("macro")
+        self.assertEqual(len(macros), 1)
+        self.assertEqual(out, source)
+
+    def test_mixed_file_count_is_correct(self):
+        # The editor's tab-strip count must include the previously-missed
+        # all-caps and multi-line forms.
+        source = (
+            "#macro {\\eOp} {flee}\n"
+            "#MACRO {\\eOm} {close exit}\n"
+            "#macro {\\eOr}\n"
+            "{\n"
+            "    south\n"
+            "}\n"
+            "#alias {k} {kill %1}\n"
+        )
+        prof, _out = self._round_trip(source)
+        self.assertEqual(len(prof.entries_of("macro")), 3)
+        self.assertEqual(len(prof.entries_of("alias")), 1)
+
+    def test_all_known_kinds_case_insensitive(self):
+        source = (
+            "#ALIAS {k} {kill %1}\n"
+            "#Action {Bubba} {bow}\n"
+            "#HIGHLIGHT {orc} {red}\n"
+            "#Substitute {a} {b}\n"
+            "#SUB {c} {d}\n"
+        )
+        prof, out = self._round_trip(source)
+        self.assertEqual(len(prof.entries_of("alias")),      1)
+        self.assertEqual(len(prof.entries_of("action")),     1)
+        self.assertEqual(len(prof.entries_of("highlight")),  1)
+        self.assertEqual(len(prof.entries_of("substitute")), 2)
+        self.assertEqual(out, source)
+
+
 if __name__ == "__main__":
     unittest.main()
