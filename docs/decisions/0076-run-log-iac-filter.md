@@ -127,6 +127,11 @@ or being blocked by anything here.
   {SENT OUTPUT}` on the game session; the IAC gate sits in front of
   every consumer branch, so any future subscriber that joins the
   handler inherits the filter automatically.
+- **Surfaced [ADR 0081](0081-format-code-escaping.md)** — the macOS
+  connect-time deadlock attributed below to `\xFF` evaluation in `#if`
+  conditions turned out to be a `%%`-vs-`%` unwrapping difference in
+  `#format`; the project-wide convention that followed is recorded
+  separately.
 
 ## Update 2026-05-17
 
@@ -165,3 +170,37 @@ outbound-only scope, and the canonical-handler contract from
 [ADR 0059](0059-canonical-sent-output-handler.md). See also the
 SENT OUTPUT recursion note in [docs/ipc.md](../ipc.md) for why the
 USER_INPUT dispatch is the load-bearing path under buffer pressure.
+
+## 2026-05-17 Update — corrected diagnosis
+
+The "Update 2026-05-17" section above misidentified the root cause.
+It attributed the macOS connect-time deadlock to `\xFF` not
+evaluating inside `#if` string literals; that was a guess, not a
+verified diagnosis, and the `_iac` workaround was justified on the
+basis of that guess.
+
+The actual root cause was on the *other* side of the comparison.
+`#format _first {%%.1s} {%%0}` did not unwrap on macOS Homebrew tt++
+2.02.61: instead of producing the first byte of the alias body's
+`%%0`, `_first` was set to the literal four-character string `%.1s`.
+The IAC gate therefore always passed (`"%.1s" != "$_iac"`), every
+outbound subnegotiation flowed through both branches, and the
+connect-time IAC burst overflowed the macOS PTY between tt++ and the
+`lua` `#run` session. The same source built on Ubuntu unwrapped
+`%%.1s` to `%.1s` at alias-call time and the gate worked there — the
+asymmetry was a tt++ build/platform difference in `%%X` unwrapping
+for `X` outside `0..99`, not in `#if` escape evaluation.
+
+The corrected fix is in [ADR 0081](0081-format-code-escaping.md):
+use single `%` for format codes (`%U`, `%T`, `%t`, `%p`, `%.1s`) and
+reserve `%%` for alias arg substitutions (`%%0..%%99`), which are
+the only `%%` forms that unwrap reliably on both platforms.
+
+The `_iac` variable workaround is retained as defensive coding even
+though its original justification was wrong. The tt++ manual
+documents that `#var` evaluates `\x` escapes at assignment time, so
+`_iac` holds a real `0xFF` byte that the `#if` byte-equality compare
+can use unambiguously; whether `\x` *also* evaluates inside `#if`
+string literals is undocumented and was not verified. Keeping the
+binding through a documented evaluation context is cheap and removes
+one undocumented assumption from the hot path.

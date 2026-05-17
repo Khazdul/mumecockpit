@@ -35,7 +35,6 @@
 #nop (player-replay) and any USER_INPUT: consumer. Events whose first
 #nop byte of %0 is 0xFF skip both branches entirely. See
 #nop docs/decisions/0076-run-log-iac-filter.md.
-
 #alias {_register_run_log_capture %1} {
     #if {"%1" != ""} {
         #nop {Transitional hygiene: strips stale state loaded from legacy profile files that pre-date the move to the core class. May be removed once all known profile files have been saved under the current architecture.};
@@ -46,7 +45,7 @@
         #%1 #event {RECEIVED LINE} {
             #if {&_run_log_path} {
                 #class {core} {open};
-                #format _ts {%%U};
+                #format _ts {%U};
                 #class {core} {close};
                 #line log $_run_log_path {$_ts %%0}
             }
@@ -55,13 +54,13 @@
         #%1 #var {_iac} {\xFF};
         #%1 #event {SENT OUTPUT} {
             #class {core} {open};
-            #format _first {%%.1s} {%%0};
+            #format _first {%.1s} {%%0};
             #class {core} {close};
             #if {"$_first" != "$_iac"} {
                 #if {&_run_log_path} {
                     #class {core} {open};
-                    #format _ts {%%U};
-                    #format _sent {%%p} {%%0};
+                    #format _ts {%U};
+                    #format _sent {%p} {%%0};
                     #class {core} {close};
                     #line log $_run_log_path {$_ts > $_sent}
                 };

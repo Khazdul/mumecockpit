@@ -50,6 +50,11 @@ with a scripting brain on top.
   trailing `;` is harmless (nothing follows it); a `;` in the middle
   is the trap. Use `,` or `—` for prose pauses, or `#nop {…}` if a
   mid-text `;` is unavoidable. See ADR 0057.
+- **`#format` codes in alias/event bodies: single `%`, not `%%`.**
+  Use single `%` for format codes (`%U`, `%T`, `%t`, `%p`, `%.1s`);
+  reserve `%%` for alias arg substitutions (`%%0..%%99`). `%%X` for
+  non-digit `X` does not unwrap reliably on macOS Homebrew tt++. See
+  ADR 0081.
 - **Never hardcode session names.** From inside a Lua script use
   `game_cmd()` / `session_cmd()` / `send()`. `tintin_cmd()` / `tintin()` are
   for brain infrastructure, not scripts.
