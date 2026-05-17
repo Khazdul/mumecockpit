@@ -196,11 +196,30 @@ use single `%` for format codes (`%U`, `%T`, `%t`, `%p`, `%.1s`) and
 reserve `%%` for alias arg substitutions (`%%0..%%99`), which are
 the only `%%` forms that unwrap reliably on both platforms.
 
-The `_iac` variable workaround is retained as defensive coding even
-though its original justification was wrong. The tt++ manual
-documents that `#var` evaluates `\x` escapes at assignment time, so
-`_iac` holds a real `0xFF` byte that the `#if` byte-equality compare
-can use unambiguously; whether `\x` *also* evaluates inside `#if`
-string literals is undocumented and was not verified. Keeping the
-binding through a documented evaluation context is cheap and removes
-one undocumented assumption from the hot path.
+The `_iac` variable approach is **required**, not merely defensive
+coding. With `%%.1s` corrected to `%.1s` (per
+[ADR 0081](0081-format-code-escaping.md)), `_first` now holds a
+real `0xFF` byte after the `#format`; an inline
+`#if {"$_first" != "\xFF"}` would still fail because the right-hand
+side stays the four-character literal `\xFF` on this build. Binding
+the literal `0xFF` via `#%1 #var {_iac} {\xFF}` — where the manual
+documents that `\x` *is* evaluated at assignment time — and
+comparing `$_first` against `$_iac` is the only form of the gate
+that works at byte equality.
+
+The original "Update 2026-05-17" section above was therefore correct
+on the underlying mechanism (`\x` not evaluating inside `#if` string
+literals); its error was attributing the *connect-time deadlock* to
+that cause, when in fact `%%.1s` non-unwrap (per
+[ADR 0081](0081-format-code-escaping.md)) prevented the filter from
+ever reaching the comparison with a real byte. Both issues had to be
+fixed; the visible macOS symptom was driven by the `%%.1s` side, but
+the `\x`-in-`#if` issue remains real and the `_iac` binding is the
+load-bearing reason the corrected gate works.
+
+> **Empirically verified 2026-05-17** on tt++ 2.02.61 (macOS
+> Homebrew): `#if {"\xFF" == "\xFF"}` evaluates to *false*,
+> confirming that `\x` escapes are not evaluated inside `#if` string
+> literals on this build. The `_iac` variable approach (set via
+> `#var`, where `\x` is reliably evaluated at assignment time) is
+> therefore required, not merely defensive.
