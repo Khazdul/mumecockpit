@@ -51,11 +51,13 @@
                 #line log $_run_log_path {$_ts %%0}
             }
         };
+        #nop {_iac is bound via #var (where \x evaluates reliably) rather than inlined as "\xFF" in the #if below (where it does not). See ADR 0076 update.};
+        #%1 #var {_iac} {\xFF};
         #%1 #event {SENT OUTPUT} {
             #class {core} {open};
             #format _first {%%.1s} {%%0};
             #class {core} {close};
-            #if {"$_first" != "\xFF"} {
+            #if {"$_first" != "$_iac"} {
                 #if {&_run_log_path} {
                     #class {core} {open};
                     #format _ts {%%U};

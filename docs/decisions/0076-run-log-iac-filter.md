@@ -127,3 +127,41 @@ or being blocked by anything here.
   {SENT OUTPUT}` on the game session; the IAC gate sits in front of
   every consumer branch, so any future subscriber that joins the
   handler inherits the filter automatically.
+
+## Update 2026-05-17
+
+The filter as originally landed was non-functional. The condition
+`#if {"$_first" != "\xFF"}` does not evaluate the `\x` escape inside
+the `#if` string literal: `$_first` (set via `#format _first {%.1s}`)
+holds a real single 0xFF byte, while `"\xFF"` holds the literal
+4-character string `\`, `x`, `F`, `F`. The comparison was always
+unequal, so the gate never matched and every IAC-prefixed event fell
+through to both branches.
+
+On Linux this was masked. The PTY buffer between `tt++` and the lua
+`#run` session is ~16–64 KB, the connect-time IAC burst (telnet
+auto-responses to MUME's negotiation, ~10–15 frames back-to-back
+through `SENT OUTPUT` → `#lua {USER_INPUT:<binary>}`) fit inside it,
+and `brain.lua`'s `user_input` handler ignored the garbage payloads.
+IAC bytes did leak into `.log` files but caused no visible harm.
+
+On macOS the PTY buffer is ~4 KB. The same burst overflowed it; tt++
+blocked writing to lua's stdin while lua simultaneously blocked
+writing its response back to tt++'s stdin; tt++ stopped servicing its
+event loop and the cockpit window went deaf immediately after the
+MUME welcome banner. This is the root cause of the macOS-only
+freeze-after-connect observed in the field.
+
+**Fix** (`ttpp/core/run_log.tin`): bind a session/`{core}`-class
+helper `_iac` via `#%1 #var {_iac} {\xFF};` at registration time —
+a context where `\x` is evaluated reliably — and reference `$_iac`
+from the filter (`#if {"$_first" != "$_iac"}`). Byte comparison then
+succeeds and the gate works as the original decision intended.
+
+The change preserves all original-decision properties verbatim:
+filter placement (top of the `SENT OUTPUT` body, wrapping both
+branches), `{core}`-class hygiene (per [ADR 0049](0049-per-session-state-outside-profile-class.md)),
+outbound-only scope, and the canonical-handler contract from
+[ADR 0059](0059-canonical-sent-output-handler.md). See also the
+SENT OUTPUT recursion note in [docs/ipc.md](../ipc.md) for why the
+USER_INPUT dispatch is the load-bearing path under buffer pressure.

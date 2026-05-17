@@ -390,8 +390,12 @@ pane-resize updates, GMCP `Core.Hello` / `Core.Supports.Set`), whose
 payloads start with the IAC byte `0xFF`. Such events are dropped
 before either the `.log` write or the `USER_INPUT` dispatch, keeping
 the player-replay capture honest and ensuring no `user_input`
-subscriber ever sees protocol bytes as input. See
-[ADR 0076](decisions/0076-run-log-iac-filter.md).
+subscriber ever sees protocol bytes as input. The comparison is made
+against a `{core}`-class helper variable `_iac` (bound via `#var` at
+registration time) rather than an inline `"\xFF"` literal in the `#if`
+condition, because the `\x` escape is not evaluated reliably inside
+`#if` string literals — see the [ADR 0076 Update](decisions/0076-run-log-iac-filter.md#update-2026-05-17).
+See [ADR 0076](decisions/0076-run-log-iac-filter.md).
 
 **Lifecycle.** Armed on the first `Char.Vitals` tick after login (parallel to
 the `run_start` JSONL row), disarmed on `run_ending` (after the `run_end`
