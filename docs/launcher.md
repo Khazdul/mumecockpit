@@ -36,7 +36,8 @@ path) goes through that wrapper unchanged.
 
 The UI is a frame stack: a single `DynamicContainer` swaps between `main`,
 `profile`, `profile_rename`, `profile_create_name`, `profile_create_choose`,
-`profile_create_copy_picker`, `profile_delete_confirm`, `options`,
+`profile_create_copy_picker`, `profile_delete_confirm`, `profile_editor`,
+`options`,
 `options_panes`, `options_pane`, `options_connection`,
 `options_connection_custom`, `options_coming_soon`, `scripts`, `about`,
 `history`, `history_detail`, `history_rate`, `history_delete_confirm`,
@@ -98,10 +99,10 @@ Top-to-bottom:
 3. **Feedback row** — single row directly below the package; doubles
    as the spacing row above the footer. Holds transient feedback
    from Edit / Rename / Export (`Exported to ~/<name>.tin.` and
-   `Renamed to "<new>".` in `C_ACCENT`, `Editor coming soon.` and
-   `Export failed: …` in `C_HINT`) centred on the package width for
-   ~3 s. Select does not flash — the ✓ in the Selected column is the
-   confirmation.
+   `Renamed to "<new>".` in `C_ACCENT`, `Could not open <name>.tin: …`,
+   `Save failed: …`, and `Export failed: …` in `C_HINT`) centred on
+   the package width for ~3 s. Select does not flash — the ✓ in the
+   Selected column is the confirmation.
 4. Footer hint: `↑↓ Cursor · Tab/←→ Cycle · Enter Activate · ESC Back`.
    A flex spacer below the footer absorbs leftover terminal rows.
 
@@ -156,8 +157,10 @@ is a no-op.
 - **New** — pushes the existing `profile_create_name` chain
   (validation → blank-vs-copy choice → optional copy picker). The
   ADR 0042 blank-template seeding is unchanged.
-- **Edit** — flashes `Editor coming soon.` in `C_HINT` for ~3 s and
-  pushes no frame (placeholder until the editor frame ships).
+- **Edit** — parses the cursor row's `.tin` via `profile_io.load_profile`
+  and pushes the `profile_editor` frame on success. On parse / I/O
+  failure flashes `Could not open <name>.tin: <reason>` in `C_HINT`
+  for ~3 s and does not push.
 - **Rename** — pushes `profile_rename` (see below). Disabled on
   `default`.
 - **Delete** — pushes the existing `profile_delete_confirm` frame.
@@ -186,6 +189,53 @@ on validation failure, footer `Enter  Confirm · ESC  Cancel`.
   pops and the profile frame flashes `Renamed to "<new>".` in
   `C_ACCENT`.
 - ESC cancels without touching files.
+
+### `profile_editor` frame
+
+Pushed by the Edit Options-button on `profile`. Phase 1 ships the
+shell only — the tab strip and the round-trip parser
+(`bridge/launcher/profile_io.py`). List rendering, the detail panel,
+and the create / edit / delete operations land in later phases.
+
+Top-to-bottom:
+
+1. Centred title row `─── Profile editor: <name> ───` in `C_SECTION`.
+2. **Tab strip.** Five labels separated by a single space, centred on
+   the terminal: `Aliases · Actions · Macros · Highlights · Substitutes`.
+   The active tab paints `C_ACTIVE` + `underline`; inactive tabs paint
+   `C_ITEM`; hover paints `C_HOVER` on non-active labels. Right-aligned
+   on the same row: `<N> entries` in `C_HINT`, where `<N>` is the count
+   of entries of the active tab's kind in the parsed profile.
+3. Body area — placeholder text `(list view — phase 2)` centred in
+   `C_HINT`. Phase 2 fills this region with the list view.
+4. Footer hint: `Tab/←→  Switch tab  ·  ESC  Save & back` in `C_HINT`.
+
+**Keyboard.**
+
+| Key                  | Action                                       |
+|----------------------|----------------------------------------------|
+| `Tab`                | next tab (wraps)                             |
+| `Shift+Tab`          | previous tab (wraps)                         |
+| `Right`              | next tab (clamps at last tab)                |
+| `Left`               | previous tab (clamps at first tab)           |
+| Click a tab label    | switch to that tab                           |
+| `ESC`                | `save_profile()` then pop to `profile`       |
+
+**Save semantics.** ESC writes the profile back to its `.tin` file via
+`profile_io.save_profile` (temp file + atomic rename). Unmodified
+entries emit their original source line verbatim; `Passthrough` lines
+(`#var`, `#event`, blank lines, malformed entries) survive
+untouched; `#nop` lines are dropped (matching `#class write` and
+ADR 0042). If the write raises `OSError`, the frame still pops and
+the `profile` frame flashes `Save failed: <reason>` in `C_HINT` for
+~3 s.
+
+**Round-trip identity.** For any file containing only the five
+known commands plus `#var`, `#event`, `#nop`, and blank lines, load
++ save produces an output that is byte-equal to the input modulo
+dropped `#nop` lines. Macro-key escape sequences (`\eOp` and
+friends from `blank_profile.tin`) survive unaltered. Covered by
+`bridge/launcher/tests/test_profile_io.py`.
 
 ## Options sub-menu
 
@@ -1201,11 +1251,11 @@ All frames render through `prompt_toolkit` controls. Layout building blocks:
   primary `Window` is stored at module level and focused on push so
   keyboard handlers fire reliably.
 - **Centered frames** — `main`, `profile_rename`, the profile-create
-  sub-frames, `profile_delete_confirm`, `options`, `options_panes`,
-  `options_pane`, `options_connection`, `options_connection_custom`,
-  `options_coming_soon`, `history_detail`, `history_rate`,
-  `history_delete_confirm`, `update_running`, `update_result`, and
-  `exit_confirm` are wrapped in
+  sub-frames, `profile_delete_confirm`, `profile_editor`, `options`,
+  `options_panes`, `options_pane`, `options_connection`,
+  `options_connection_custom`, `options_coming_soon`, `history_detail`,
+  `history_rate`, `history_delete_confirm`, `update_running`,
+  `update_result`, and `exit_confirm` are wrapped in
   `HSplit([window], align=VerticalAlign.CENTER)` so they stay visually
   centred at any terminal height above the minimum.
 - **Package-layout frames** — `history` and `profile` use a centred

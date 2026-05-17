@@ -54,6 +54,7 @@ from palette import (  # noqa: E402
 )
 import credits  # noqa: E402
 import log_player  # noqa: E402
+import profile_io  # noqa: E402
 import run_retention  # noqa: E402
 import run_stats  # noqa: E402
 import spotlights  # noqa: E402
@@ -196,6 +197,12 @@ _new_profile_name    = ""
 # Profile delete
 _delete_target       = ""
 _delete_locked       = False   # True when target is "default" (info screen)
+
+# Profile editor (Phase 1: shell + round-trip parser; lists/edits land later)
+_editor_profile_path = None      # pathlib.Path | None
+_editor_data         = None      # profile_io.Profile | None
+_editor_active_tab   = 0         # 0..4 — Aliases / Actions / Macros / Highlights / Substitutes
+_editor_hover_tab    = None      # tab idx under cursor, None when not hovering
 
 # Options — top-level (Panes / Game text-layout / Connection / Back)
 _sel_options              = 0
@@ -342,6 +349,7 @@ _profile_create_name_window      = None
 _profile_create_choose_window    = None
 _profile_create_copy_window      = None
 _profile_delete_window           = None
+_profile_editor_window           = None
 _options_window                  = None
 _options_panes_window            = None
 _options_pane_window             = None
@@ -629,6 +637,7 @@ def _focus_current_frame():
             "profile_create_choose":      _profile_create_choose_window,
             "profile_create_copy_picker": _profile_create_copy_window,
             "profile_delete_confirm":     _profile_delete_window,
+            "profile_editor":             _profile_editor_window,
             "profile_rename":             _profile_rename_window,
             "options":                    _options_window,
             "options_panes":              _options_panes_window,
@@ -1152,7 +1161,11 @@ def _profile_action_new():
 
 
 def _profile_action_edit():
-    _profile_set_feedback("Editor coming soon.", C_HINT)
+    name = _profile_current_name()
+    if name is None:
+        return
+    path = os.path.join(PROFILES_DIR, f"{name}.tin")
+    _enter_profile_editor(path)
 
 
 def _profile_action_rename():
@@ -1460,6 +1473,152 @@ def _profile_feedback_or_blank_text():
         ("", " " * pad_l, clear_hover),
         (_profile_feedback_style, text, clear_hover),
     ]
+
+
+# --- Profile editor (Phase 1: shell + round-trip parser) -------------------
+# Tab strip: (label, kind in profile_io)
+_PROFILE_EDITOR_TABS = [
+    ("Aliases",     "alias"),
+    ("Actions",     "action"),
+    ("Macros",      "macro"),
+    ("Highlights",  "highlight"),
+    ("Substitutes", "substitute"),
+]
+
+
+def _enter_profile_editor(path):
+    """Load `path` into the editor and push the frame. Flashes a hint on
+    the profile frame and stays put if the file cannot be parsed."""
+    global _editor_profile_path, _editor_data, _editor_active_tab
+    global _editor_hover_tab
+    try:
+        data = profile_io.load_profile(path)
+    except OSError as exc:
+        name = os.path.basename(path)
+        _profile_set_feedback(
+            f"Could not open {name}: {exc.strerror or exc}", C_HINT)
+        return
+    _editor_profile_path = data.path
+    _editor_data         = data
+    _editor_active_tab   = 0
+    _editor_hover_tab    = None
+    _push_frame("profile_editor")
+
+
+def _profile_editor_save_and_close():
+    """ESC handler: persist and pop. Flashes a hint on the profile frame
+    after pop if the write fails."""
+    err_msg = None
+    if _editor_data is not None:
+        try:
+            profile_io.save_profile(_editor_data)
+        except OSError as exc:
+            err_msg = f"Save failed: {exc.strerror or exc}"
+    _pop_frame()
+    if err_msg:
+        _profile_set_feedback(err_msg, C_HINT)
+
+
+def _profile_editor_set_tab(idx):
+    global _editor_active_tab
+    n = len(_PROFILE_EDITOR_TABS)
+    new_idx = max(0, min(n - 1, idx))
+    if new_idx != _editor_active_tab:
+        _editor_active_tab = new_idx
+        if _app:
+            _app.invalidate()
+
+
+def _profile_editor_set_hover_tab(idx):
+    global _editor_hover_tab
+    if _editor_hover_tab != idx:
+        _editor_hover_tab = idx
+        if _app:
+            _app.invalidate()
+
+
+def _profile_editor_active_count():
+    if _editor_data is None:
+        return 0
+    _, kind = _PROFILE_EDITOR_TABS[_editor_active_tab]
+    return len(_editor_data.entries_of(kind))
+
+
+def _profile_editor_text():
+    """Render the editor frame: title, tab strip with right-aligned count,
+    placeholder body, footer hint. Single fragment list."""
+    cols = _term_cols()
+    name = (_editor_profile_path.stem
+            if _editor_profile_path is not None else "")
+    title  = f"─── Profile editor: {name} ───"
+    body   = "(list view — phase 2)"
+    footer = "Tab/←→  Switch tab  ·  ESC  Save & back"
+
+    def _clear(ev):
+        if ev.event_type == MouseEventType.MOUSE_MOVE:
+            _profile_editor_set_hover_tab(None)
+            return None
+        return NotImplemented
+
+    frags = []
+    frags.append(("", "\n", _clear))
+    frags.append(("", _pad_centre(title, cols), _clear))
+    frags.append((C_SECTION, title, _clear))
+    frags.append(("", "\n", _clear))
+    frags.append(("", "\n", _clear))
+
+    # Tab strip — five labels separated by a single space. Active tab is
+    # rendered bold+underline (C_ACTIVE); inactive C_ITEM; hover C_HOVER on
+    # non-active labels. The active-tab count is right-aligned to `cols`.
+    n_tabs = len(_PROFILE_EDITOR_TABS)
+    labels = [lbl for (lbl, _k) in _PROFILE_EDITOR_TABS]
+    strip_w = sum(len(s) for s in labels) + (n_tabs - 1)  # spaces between
+    count_text = f"{_profile_editor_active_count()} entries"
+
+    pad_left  = max(0, (cols - strip_w) // 2)
+    pad_right = max(0, cols - pad_left - strip_w - len(count_text))
+
+    frags.append(("", " " * pad_left, _clear))
+
+    for i, label in enumerate(labels):
+        is_active = (i == _editor_active_tab)
+        is_hover  = (_editor_hover_tab == i and not is_active)
+        if is_active:
+            style = C_ACTIVE + " underline"
+        elif is_hover:
+            style = C_HOVER
+        else:
+            style = C_ITEM
+
+        def _tab_handler(ev, row=i):
+            if ev.event_type == MouseEventType.MOUSE_MOVE:
+                _profile_editor_set_hover_tab(row)
+                return None
+            if ev.event_type == MouseEventType.MOUSE_DOWN:
+                _profile_editor_set_tab(row)
+                return None
+            return NotImplemented
+
+        frags.append((style, label, _tab_handler))
+        if i < n_tabs - 1:
+            frags.append(("", " ", _clear))
+
+    frags.append(("", " " * pad_right, _clear))
+    frags.append((C_HINT, count_text, _clear))
+    frags.append(("", "\n", _clear))
+    frags.append(("", "\n", _clear))
+    frags.append(("", "\n", _clear))
+
+    # Placeholder body — phase 2 fills this region with the list view.
+    frags.append(("", _pad_centre(body, cols), _clear))
+    frags.append((C_HINT, body, _clear))
+    frags.append(("", "\n", _clear))
+    frags.append(("", "\n", _clear))
+    frags.append(("", "\n", _clear))
+
+    frags.append(("", _pad_centre(footer, cols), _clear))
+    frags.append((C_HINT, footer, _clear))
+    return frags
 
 
 # --- Profile rename --------------------------------------------------------
@@ -6602,6 +6761,36 @@ def _kb_profile_escape(event):
     _pop_frame()
 
 
+# Profile editor
+@kb.add("tab", filter=_in_frame("profile_editor"))
+def _kb_peditor_tab(event):
+    n = len(_PROFILE_EDITOR_TABS)
+    _profile_editor_set_tab((_editor_active_tab + 1) % n)
+
+
+@kb.add("s-tab", filter=_in_frame("profile_editor"))
+def _kb_peditor_stab(event):
+    n = len(_PROFILE_EDITOR_TABS)
+    _profile_editor_set_tab((_editor_active_tab - 1) % n)
+
+
+@kb.add("right", filter=_in_frame("profile_editor"))
+def _kb_peditor_right(event):
+    # Clamp at the last tab (Shift+Tab is the wrapping variant).
+    _profile_editor_set_tab(_editor_active_tab + 1)
+
+
+@kb.add("left", filter=_in_frame("profile_editor"))
+def _kb_peditor_left(event):
+    # Clamp at the first tab (Shift+Tab is the wrapping variant).
+    _profile_editor_set_tab(_editor_active_tab - 1)
+
+
+@kb.add("escape", filter=_in_frame("profile_editor"), eager=True)
+def _kb_peditor_escape(event):
+    _profile_editor_save_and_close()
+
+
 # Profile rename
 @kb.add("escape", filter=_in_frame("profile_rename"), eager=True)
 def _kb_pren_escape(event):
@@ -7598,6 +7787,7 @@ def main():
     global _profile_table_window, _profile_options_window, _profile_rename_window
     global _profile_create_name_window, _profile_create_choose_window
     global _profile_create_copy_window, _profile_delete_window
+    global _profile_editor_window
     global _options_window, _options_panes_window, _options_pane_window
     global _options_connection_window, _options_connection_custom_window
     global _options_coming_soon_window, _options_spotlights_window
@@ -7632,6 +7822,7 @@ def main():
     _profile_create_choose_window, pcc_frame                 = _build_simple(_profile_create_choose_text)
     _profile_create_copy_window,   pcp_frame                 = _build_simple(_profile_create_copy_text)
     _profile_delete_window,        pd_frame                  = _build_simple(_profile_delete_text)
+    _profile_editor_window,        profile_editor_frame      = _build_simple(_profile_editor_text)
     _options_window,                    options_frame                  = _build_simple(_options_text)
     _options_panes_window,              options_panes_frame            = _build_simple(_options_panes_text)
     _options_pane_window,               options_pane_frame             = _build_simple(_options_pane_text)
@@ -7751,6 +7942,7 @@ def main():
         "profile_create_choose":      pcc_frame,
         "profile_create_copy_picker": pcp_frame,
         "profile_delete_confirm":     pd_frame,
+        "profile_editor":             profile_editor_frame,
         "options":                    options_frame,
         "options_panes":              options_panes_frame,
         "options_pane":               options_pane_frame,
