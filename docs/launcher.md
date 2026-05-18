@@ -195,13 +195,12 @@ on validation failure, footer `Enter  Confirm · ESC  Cancel`.
 Pushed by the Edit Options-button on `profile`. Phase 1 shipped the
 shell + round-trip parser; phase 2 made the Aliases tab a read-only
 list + detail browser; phase 3 turned the detail panel editable and
-added the create flow; the phase-3 refinements (in-buffer cursors,
-brace-balance validation, hidden Priority, vertical zone nav,
-mouse-click cursor positioning, focused-field accent border, and
-the per-kind `DETAIL_LABELS` map) cap CRUD for `#alias`. The other
-four tabs continue to show the phase-1 placeholder body;
-replicating the pattern across them is phase 4 / 5 work, plugged
-into `DETAIL_LABELS`.
+added the create flow; the phase-3 refinements cap CRUD for
+`#alias`. Phase 4 generalises the tab machinery to dispatch on the
+active kind: Actions, Substitutes, and Highlights become fully
+functional (Highlights with a dedicated colour-palette widget in
+place of the Body TextArea). Macros remains a placeholder until
+phase 5.
 
 Top-to-bottom:
 
@@ -238,40 +237,78 @@ package modelled on the `profile` frame's table package. Total width
   the active kind and focuses the detail panel's Pattern field. The
   list cursor's index range therefore spans `[0, len(view)]`, with
   `len(view)` denoting the sentinel.
-- **Detail panel (right).** Two editable fields. Per-kind labels come
-  from the module-level `DETAIL_LABELS` map
-  (`alias → (Pattern, Commands)`); phase 4 / 5 will pick up the
-  other entries (`Key`/`Color`/`Text`/`New text`) without further
-  renderer changes.
+- **Detail panel (right).** Two editable fields plus a per-kind
+  body widget. Per-kind labels come from `DETAIL_LABELS`:
+  `alias`/`action` → `(Pattern, Commands)`,
+  `substitute` → `(Text, New text)`,
+  `highlight` → `(Pattern, Color)`,
+  `macro` → `(Key, Commands)` (placeholder until phase 5). The
+  builder is chosen by `_editor_dispatch_detail_builder(kind)`:
+  `_editor_build_text_detail` for the three text-bodied kinds,
+  `_editor_build_palette_detail` for highlights.
     - **Pattern field** — single-line bordered field bound to
       `entry.pattern`. Pattern is required; see *Validation*.
-    - **Body field** (labelled "Commands" for aliases) — multi-line
-      bordered field bound to `entry.body`. Literal newlines render
-      one inner row each; the field grows vertically with content.
+    - **Body field** (text-bodied kinds) — multi-line bordered
+      field bound to `entry.body`. Literal newlines render one
+      inner row each; the field grows vertically with content.
       `Enter` splits the current line at the cursor; `←`/`→`
       traverse line boundaries; `↑`/`↓` move the cursor between
       lines while preserving column (clamped to the destination
       line's length).
-    - **Cursor & focus indication.** Both fields track an in-buffer
-      cursor (`_editor_pattern_cursor` for Pattern; a `(line, col)`
-      pair for Body) and render a `C_SELECTED` cursor cell at that
-      position while focused. The focused field's border is drawn
-      in `C_ACCENT` (amber); the unfocused field uses `C_HINT` (dim
-      grey). The Priority slot from phase 3 is no longer surfaced —
-      `Entry.priority` is preserved on disk via the parser /
-      serializer, just not editable in the UI; raw mode (phase 6)
-      will be the entry point for advanced fields.
-    - A one-line inline-error slot below the Body field, rendered
+    - **Color palette** (highlights only) — a 2-column × 7-row
+      swatch grid replacing the Body box. The base names (white,
+      red, yellow, green, cyan, blue, magenta) sit in the left
+      column; their `light` variants (and `gray` as the light
+      variant of black) in the right. Each swatch renders **its
+      name in its own colour** via `TTPP_COLOR_STYLES` from
+      `palette.py`. The cursor cell wraps the swatch in
+      `[ name ]` brackets and reverses the swatch colour for
+      contrast. Navigation is live: every cursor landing writes
+      that colour into `entry.body` so the list panel's `Color`
+      column updates in real time.
+    - **Custom slot** (highlights only) — when an existing entry's
+      colour value is not in the palette (e.g. `bold red`,
+      `reverse violet`, a hex literal), the original value is
+      stashed in `_editor_palette_custom_value` and a `Custom:
+      <value>` row is rendered below the grid in `C_HINT`. The
+      cursor parks on the Custom slot on entry-load. Moving to a
+      palette swatch replaces `entry.body` but leaves the stash
+      intact; navigating back to Custom restores the original
+      value. The stash resets on every cursor move to a different
+      entry. New highlights default to `light yellow` and never
+      show a Custom slot.
+    - **Cursor & focus indication.** Both text fields track an
+      in-buffer cursor (`_editor_pattern_cursor` for Pattern; a
+      `(line, col)` pair for Body) and render a `C_SELECTED`
+      cursor cell at that position while focused. The palette
+      grid tracks `(_editor_palette_row, _editor_palette_col)`.
+      The focused field's border is drawn in `C_ACCENT` (amber);
+      the unfocused field uses `C_HINT` (dim grey). The Priority
+      slot from phase 3 is no longer surfaced — `Entry.priority`
+      is preserved on disk via the parser / serializer, just not
+      editable in the UI.
+    - A one-line inline-error slot below the body widget, rendered
       in `C_DANGER`. Empty when no error.
-    - A blank row, then `─── Hint ───` centred in `C_HINT`, then two
-      hint lines: `Use %1, %2, %3 as argument placeholders.` and
-      `Separate commands with ; for sequences.`
+    - A blank row, then `─── Hint ───` centred in `C_HINT`, then
+      one or two hint lines (Pattern + Commands gets the
+      placeholder/sequence reminders; Highlights gets
+      `Pick a color for the highlighted text.`).
 - **Sentinel-cursor state.** When the list cursor sits on the
-  sentinel row, the detail panel shows a centred prompt
-  (`Press Enter to create a new alias.`). When the active kind has
-  zero entries and no new entry is in flight, the prompt instead
-  shows `No aliases yet. Press n to add one.` — the phase-3 reskin
-  of the phase-2 empty-state hint.
+  sentinel row, the detail panel shows a centred prompt — `Press
+  Enter to create a new <kind>.` — where `<kind>` is the active
+  tab's singular kind label. When the active kind has zero entries
+  and no new entry is in flight, the prompt instead shows
+  `No <kinds> yet. Press n to add one.`
+- **Macros tab.** Renders a single centred placeholder
+  (`Macros editor — coming in phase 5.`) regardless of cursor
+  position. The list-side keys (`Enter`, `n`, `d`, `Down` from
+  tabs) all short-circuit so a stray keypress can't create or
+  delete a macro by accident — macros stay round-trip-only until
+  phase 5 wires the Key capture overlay.
+- **Per-kind new-entry defaults.** Aliases, actions, and substitutes
+  start blank; highlights default to `pattern=''`,
+  `body='light yellow'` (so the palette cursor lands on a visible
+  swatch). Macros has no creation path in phase 4.
 
 **Display ordering and live re-sort.** Entries are *displayed* sorted
 by `pattern` (case-sensitive, locale-default). The underlying
@@ -318,33 +355,40 @@ The brace-balance primitive is `_braces_balanced(s)` in
 **Focus model.** Three zones: tabs (0), list (1), and detail (2).
 `_editor_focus` tracks the active zone; when `_editor_focus == 2`,
 `_editor_detail_field` selects which detail field is under input
-(`0=Pattern`, `1=Body`).
+(`0=Pattern`, `1=Body / Palette`). The Body slot is the palette
+grid when the active kind is `highlight`; otherwise it's the
+multi-line text field.
 
 | From                                    | Key  | Goes to                              |
 |-----------------------------------------|------|--------------------------------------|
-| Tabs                                    | `↓`  | List, first row                      |
+| Tabs                                    | `↓`  | List, first row (skipped on macros)  |
 | Tabs                                    | `↑`  | no-op                                |
 | List, first row                         | `↑`  | Tab strip (preserves active tab)     |
 | List, middle row                        | `↑`  | Previous row                         |
 | List, last row (sentinel)               | `↓`  | no-op (clamped)                      |
 | Pattern field                           | `↑`  | Tab strip                            |
-| Pattern field                           | `↓`  | Body field                           |
+| Pattern field                           | `↓`  | Body / Palette                       |
 | Body field, cursor at top line          | `↑`  | Pattern field                        |
 | Body field, cursor on inner line        | `↑`  | Cursor up within Body                |
 | Body field, cursor at last line         | `↓`  | no-op                                |
-| Body field, cursor on inner line        | `↓`  | Cursor down within Body              |
+| Palette grid, top row                   | `↑`  | Pattern field (falls through)        |
+| Palette grid, bottom row + Custom shown | `↓`  | Custom slot                          |
+| Palette grid, bottom row + no Custom    | `↓`  | no-op                                |
+| Palette grid, on Custom                 | `↑`  | Last palette row, col 0              |
 
-| Key       | Tabs                | List                          | Detail                                              |
-|-----------|---------------------|-------------------------------|-----------------------------------------------------|
-| `←` / `→` | prev / next tab     | List `→` jumps to Pattern     | Cursor movement within the field (wraps lines in Body) |
-| `n`       | no-op               | Create + focus Pattern        | Inserts literal `n` at cursor                       |
-| `d`       | no-op               | Delete confirm                | Inserts literal `d` at cursor                       |
-| `Enter`   | no-op               | Edit (entry) / create (sentinel) | Body: split line at cursor; Pattern: no-op       |
-| `Backspace` | no-op             | no-op                         | Delete char before cursor                           |
+| Key       | Tabs                | List                          | Detail (text body)                              | Detail (palette)                                  |
+|-----------|---------------------|-------------------------------|-------------------------------------------------|---------------------------------------------------|
+| `←` / `→` | prev / next tab     | List `→` jumps to Pattern     | Cursor movement within the field (wraps lines)  | Move between palette columns; clamp at edges      |
+| `n`       | no-op               | Create + focus Pattern        | Inserts literal `n` at cursor                   | Swallowed (palette is selection-only)             |
+| `d`       | no-op               | Delete confirm                | Inserts literal `d` at cursor                   | Swallowed                                         |
+| `Enter`   | no-op               | Edit (entry) / create (sentinel) | Body: split line at cursor; Pattern: no-op   | Swallowed                                         |
+| `Backspace` | no-op             | no-op                         | Delete char before cursor                       | Swallowed                                         |
 
 `Tab` / `Shift+Tab` cycle the 4-stop chain
-(`tabs → list → detail.Pattern → detail.Body → tabs`). `ESC` is
-global: it calls `save_profile()` then pops back to `profile`.
+(`tabs → list → detail.Pattern → detail.Body/Palette → tabs`). On
+the Macros tab the chain collapses to tabs only — `↓` from the tab
+strip is a no-op until phase 5. `ESC` is global: it calls
+`save_profile()` then pops back to `profile`.
 
 **Dynamic footer.** Switches with the focused zone so the visible
 keys match what's wired:
@@ -360,9 +404,20 @@ and moves focus to the list. Click on the sentinel row moves the
 cursor to it. Click inside the Pattern or Body field's content row
 focuses that field and positions the in-buffer cursor at the
 clicked column (the renderer emits per-cell click handlers; a Body
-click also pins the cursor to the clicked line). The wheel scrolls
-the list without moving the cursor (matches the table wheel
-handler used elsewhere). The scrollbar is click-to-jump.
+click also pins the cursor to the clicked line). Click on a
+palette swatch (Highlights tab) focuses the grid, moves the palette
+cursor onto that swatch, and immediately writes the swatch's name
+into `entry.body`. Mouse hover paints `C_HOVER` on the non-cursor
+palette cells. The wheel scrolls the list without moving the
+cursor. The scrollbar is click-to-jump.
+
+**List Color column rendering.** On the Highlights tab the body
+column of the list panel is rendered in the swatch's own colour
+when the entry's body value resolves through `TTPP_COLOR_STYLES`;
+custom values (e.g. `bold red`, hex literals) render in `C_ITEM`.
+The cursor / hover row uses a single-style band as elsewhere, so
+the selection always reads as one element regardless of column
+content.
 
 **Save semantics.** ESC writes the profile back to its `.tin` file via
 `profile_io.save_profile` (temp file + atomic rename). Unmodified

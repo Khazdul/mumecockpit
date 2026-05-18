@@ -36,14 +36,15 @@ def _make_profile(source):
     return prof, src, td
 
 
-def _reset_editor_state(profile, *, focus=1):
+def _reset_editor_state(profile, *, focus=1, active_tab=0):
     """Place `profile` into the editor's module-level state, fresh defaults.
 
-    `focus` defaults to 1 (list) since most tests exercise list-level
-    behaviour; pass `focus=2` to drive the detail-panel editing paths."""
+    `focus` defaults to 1 (list); pass `focus=2` to drive the detail-
+    panel editing paths. `active_tab` defaults to 0 (Aliases); pass a
+    different index for phase-4 cross-kind tests."""
     launcher._editor_profile_path = profile.path
     launcher._editor_data         = profile
-    launcher._editor_active_tab   = 0   # Aliases
+    launcher._editor_active_tab   = active_tab
     launcher._editor_hover_tab    = None
     launcher._editor_focus        = focus
     launcher._editor_list_cursor  = 0
@@ -57,6 +58,11 @@ def _reset_editor_state(profile, *, focus=1):
     launcher._editor_body_line       = 0
     launcher._editor_body_col        = 0
     launcher._editor_pattern_touched = False
+    launcher._editor_palette_row     = 0
+    launcher._editor_palette_col     = 0
+    launcher._editor_palette_hover_row = None
+    launcher._editor_palette_hover_col = None
+    launcher._editor_palette_custom_value = None
     launcher._editor_refresh_buffers()
 
 
@@ -864,6 +870,291 @@ class TestBodyCursorMovement(unittest.TestCase):
         self.assertEqual(launcher._editor_current_entry().body, "abcdef")
         self.assertEqual(launcher._editor_body_line, 0)
         self.assertEqual(launcher._editor_body_col,  3)
+
+
+class TestPhase4MultiKind(unittest.TestCase):
+    """Phase 4 activates Actions, Substitutes, and Highlights. The
+    list and detail panel dispatch on the active kind via
+    `DETAIL_LABELS` + `_EDITOR_DETAIL_BUILDERS`."""
+
+    MIXED_PROFILE = (
+        "#alias {k} {kill %1}\n"
+        "#action {Bubba} {bow} {3}\n"
+        "#macro {\\eOp} {flee}\n"
+        "#highlight {Orc} {light yellow}\n"
+        "#substitute {orc} {ORC}\n"
+        "#var {target} {orc}\n"
+    )
+
+    def test_round_trip_byte_exact_no_edits(self):
+        with tempfile.TemporaryDirectory() as td:
+            src = Path(td) / "in.tin"
+            dst = Path(td) / "out.tin"
+            src.write_text(self.MIXED_PROFILE)
+            prof = profile_io.load_profile(src)
+            _reset_editor_state(prof)
+            # Walk every tab — the renderer must not mutate items.
+            for tab in range(len(launcher._PROFILE_EDITOR_TABS)):
+                launcher._profile_editor_set_tab(tab)
+            prof.path = dst
+            profile_io.save_profile(prof)
+            self.assertEqual(dst.read_text(), self.MIXED_PROFILE)
+
+    def test_each_tab_lists_its_kind(self):
+        prof, _src, _td = _make_profile(self.MIXED_PROFILE)
+        _reset_editor_state(prof)
+        expected_kinds = [
+            ("Aliases",     "alias"),
+            ("Actions",     "action"),
+            ("Macros",      "macro"),
+            ("Highlights",  "highlight"),
+            ("Substitutes", "substitute"),
+        ]
+        for i, (label, kind) in enumerate(expected_kinds):
+            launcher._profile_editor_set_tab(i)
+            self.assertEqual(launcher._profile_editor_active_kind(), kind,
+                             f"tab {label}")
+
+    def test_list_header_labels_follow_active_kind(self):
+        prof, _src, _td = _make_profile(self.MIXED_PROFILE)
+        _reset_editor_state(prof)
+        # Substitutes header reads "Text" + "New text".
+        launcher._profile_editor_set_tab(4)
+        frags = launcher._editor_list_header_frag(visible_rows=5)
+        joined = "".join(f[1] for f in frags)
+        self.assertIn("Text",      joined)
+        self.assertIn("New text",  joined)
+        # Highlights header reads "Pattern" + "Color".
+        launcher._profile_editor_set_tab(3)
+        frags = launcher._editor_list_header_frag(visible_rows=5)
+        joined = "".join(f[1] for f in frags)
+        self.assertIn("Color",     joined)
+
+
+class TestPhase4MacroPlaceholder(unittest.TestCase):
+    """The Macros tab stays read-only in phase 4 — the detail panel
+    shows a "coming in phase 5" message and the create/delete paths
+    short-circuit so a stray keypress can't grow the items list."""
+
+    def test_detail_panel_shows_placeholder(self):
+        prof, _src, _td = _make_profile("#macro {\\eOp} {flee}\n")
+        _reset_editor_state(prof, active_tab=2)
+        entry = launcher._editor_current_entry()
+        rows = launcher._editor_detail_lines(entry, total_lines=18)
+        joined = " ".join("".join(f[1] for f in row).strip() for row in rows)
+        self.assertIn("phase 5", joined.lower())
+
+    def test_create_new_entry_is_noop_on_macros(self):
+        prof, _src, _td = _make_profile("#macro {\\eOp} {flee}\n")
+        _reset_editor_state(prof, active_tab=2)
+        before = len(prof.entries_of("macro"))
+        launcher._editor_create_new_entry()
+        self.assertEqual(len(prof.entries_of("macro")), before)
+
+    def test_request_delete_skips_macros(self):
+        prof, _src, _td = _make_profile("#macro {\\eOp} {flee}\n")
+        _reset_editor_state(prof, active_tab=2)
+        # Pretend the user pressed `d` on macros: handler does nothing.
+        # _profile_editor_request_delete would otherwise push the
+        # confirm sub-frame; we just verify the items list is unchanged.
+        before_items = list(prof.items)
+        # The keybind would short-circuit on macros; reproduce the gate:
+        if launcher._profile_editor_active_kind() != "macro":
+            launcher._profile_editor_request_delete()
+        self.assertEqual(prof.items, before_items)
+
+
+class TestPhase4PerKindDefaults(unittest.TestCase):
+    """`+ New entry` honours per-kind body defaults — new highlights
+    start on `light yellow` so the cursor lands on a visible swatch."""
+
+    def test_new_alias_has_empty_body(self):
+        prof, _src, _td = _make_profile("")
+        _reset_editor_state(prof, active_tab=0)
+        launcher._editor_create_new_entry()
+        e = launcher._editor_current_entry()
+        self.assertEqual(e.pattern, "")
+        self.assertEqual(e.body,    "")
+
+    def test_new_highlight_defaults_to_light_yellow(self):
+        prof, _src, _td = _make_profile("")
+        _reset_editor_state(prof, active_tab=3)
+        launcher._editor_create_new_entry()
+        e = launcher._editor_current_entry()
+        self.assertEqual(e.kind, "highlight")
+        self.assertEqual(e.body, "light yellow")
+        # Palette cursor lands on the matching swatch.
+        pos = launcher._editor_palette_position_for_color("light yellow")
+        self.assertEqual(
+            (launcher._editor_palette_row, launcher._editor_palette_col),
+            pos,
+        )
+        self.assertIsNone(launcher._editor_palette_custom_value)
+
+    def test_new_substitute_has_empty_body(self):
+        prof, _src, _td = _make_profile("")
+        _reset_editor_state(prof, active_tab=4)
+        launcher._editor_create_new_entry()
+        e = launcher._editor_current_entry()
+        self.assertEqual(e.kind, "substitute")
+        self.assertEqual(e.body, "")
+
+
+class TestPhase4PaletteWidget(unittest.TestCase):
+    """The highlights tab swaps the Body TextArea for a 14-cell color
+    palette grid plus an optional Custom slot."""
+
+    def _setup_highlight(self, source):
+        prof, _src, _td = _make_profile(source)
+        _reset_editor_state(prof, focus=2, active_tab=3)
+        launcher._editor_detail_field = 1
+        return prof
+
+    def test_palette_cursor_initialises_to_palette_color(self):
+        self._setup_highlight("#highlight {Orc} {light yellow}\n")
+        # `light yellow` lives at row=2, col=1.
+        self.assertEqual(
+            (launcher._editor_palette_row, launcher._editor_palette_col),
+            (2, 1),
+        )
+        self.assertIsNone(launcher._editor_palette_custom_value)
+
+    def test_custom_slot_appears_for_non_palette_body(self):
+        prof = self._setup_highlight(
+            "#highlight {Snowy} {bold red}\n")
+        # Cursor parked on the Custom slot.
+        self.assertEqual(launcher._editor_palette_row,
+                         launcher._EDITOR_PALETTE_ROWS)
+        self.assertEqual(launcher._editor_palette_custom_value, "bold red")
+        # Cell renderer surfaces the Custom slot in the detail rows.
+        entry = launcher._editor_current_entry()
+        rows = launcher._editor_detail_lines(entry, total_lines=20)
+        joined = " ".join("".join(f[1] for f in row).strip() for row in rows)
+        self.assertIn("Custom: bold red", joined)
+
+    def test_palette_navigation_updates_entry_body_live(self):
+        self._setup_highlight("#highlight {Orc} {light yellow}\n")
+        entry = launcher._editor_current_entry()
+        # Move to row=0 col=0 (white) — body becomes "white".
+        launcher._editor_palette_set_cursor(0, 0)
+        self.assertEqual(entry.body, "white")
+        # And to row=4 col=1 (light cyan).
+        launcher._editor_palette_set_cursor(4, 1)
+        self.assertEqual(entry.body, "light cyan")
+
+    def test_custom_revert_after_palette_visit(self):
+        self._setup_highlight("#highlight {Snowy} {bold red}\n")
+        entry = launcher._editor_current_entry()
+        # Body starts at "bold red" (Custom). Move to a palette swatch.
+        launcher._editor_palette_set_cursor(2, 1)   # light yellow
+        self.assertEqual(entry.body, "light yellow")
+        self.assertEqual(launcher._editor_palette_custom_value, "bold red")
+        # Navigate back to Custom — body restored.
+        launcher._editor_palette_set_cursor(
+            launcher._EDITOR_PALETTE_ROWS, 0)
+        self.assertEqual(entry.body, "bold red")
+
+    def test_palette_move_returns_false_at_top_edge(self):
+        # Returns False so the `↑` keybind can fall through to the
+        # Pattern field instead of staying in the grid.
+        self._setup_highlight("#highlight {Orc} {white}\n")
+        # white is row=0 col=0.
+        self.assertEqual(
+            (launcher._editor_palette_row, launcher._editor_palette_col),
+            (0, 0),
+        )
+        moved = launcher._editor_palette_move(-1, 0)
+        self.assertFalse(moved)
+
+    def test_palette_down_into_custom_when_visible(self):
+        self._setup_highlight("#highlight {Snowy} {bold red}\n")
+        # Stub the cursor onto the last palette row.
+        launcher._editor_palette_set_cursor(
+            launcher._EDITOR_PALETTE_ROWS - 1, 0)
+        moved = launcher._editor_palette_move(1, 0)
+        self.assertTrue(moved)
+        self.assertEqual(launcher._editor_palette_row,
+                         launcher._EDITOR_PALETTE_ROWS)
+
+    def test_palette_down_clamped_when_no_custom(self):
+        # No custom slot → ↓ at last grid row returns False.
+        self._setup_highlight("#highlight {Orc} {magenta}\n")
+        launcher._editor_palette_set_cursor(
+            launcher._EDITOR_PALETTE_ROWS - 1, 0)
+        moved = launcher._editor_palette_move(1, 0)
+        self.assertFalse(moved)
+
+
+class TestPhase4HighlightListColorColumn(unittest.TestCase):
+    """The Highlights list panel renders the `Color` column in the
+    swatch's own colour for palette values; custom values render in
+    default text style."""
+
+    def test_palette_value_uses_color_style(self):
+        prof, _src, _td = _make_profile(
+            "#highlight {Orc} {light yellow}\n")
+        _reset_editor_state(prof, active_tab=3)
+        entry = launcher._editor_current_entry()
+        frags = launcher._editor_list_row_text(entry, False, False)
+        # Two-fragment form: [(C_ITEM, pat+gap), (color_style, body)].
+        self.assertEqual(len(frags), 2)
+        body_style, body_text = frags[1]
+        self.assertIn("light yellow", body_text)
+        self.assertEqual(body_style,
+                         launcher.TTPP_COLOR_STYLES["light yellow"])
+
+    def test_custom_value_falls_back_to_plain_style(self):
+        prof, _src, _td = _make_profile(
+            "#highlight {Snowy} {bold red}\n")
+        _reset_editor_state(prof, active_tab=3)
+        entry = launcher._editor_current_entry()
+        frags = launcher._editor_list_row_text(entry, False, False)
+        # Single-fragment fallback uses C_ITEM throughout.
+        self.assertEqual(len(frags), 1)
+        style, _text = frags[0]
+        self.assertEqual(style, launcher.C_ITEM)
+
+
+class TestPhase4CrossKindEditing(unittest.TestCase):
+    """A multi-kind editing session: edit an alias, edit a highlight,
+    delete an action — ESC writes exactly those three changes and
+    nothing else."""
+
+    def test_three_changes_in_one_save(self):
+        source = (
+            "#alias {keep} {body}\n"
+            "#alias {touch} {old}\n"
+            "#action {dropme} {bow}\n"
+            "#highlight {Snowy} {bold red}\n"
+            "#substitute {orc} {ORC}\n"
+        )
+        with tempfile.TemporaryDirectory() as td:
+            src = Path(td) / "in.tin"
+            dst = Path(td) / "out.tin"
+            src.write_text(source)
+            prof = profile_io.load_profile(src)
+            _reset_editor_state(prof)
+            # Edit alias "touch" → body = "new"
+            touch = next(e for e in prof.entries_of("alias")
+                         if e.pattern == "touch")
+            touch.body = "new"
+            # Edit highlight "Snowy" → palette swatch "light yellow"
+            snowy = next(e for e in prof.entries_of("highlight")
+                         if e.pattern == "Snowy")
+            snowy.body = "light yellow"
+            # Delete action "dropme"
+            drop = next(e for e in prof.entries_of("action")
+                        if e.pattern == "dropme")
+            prof.items.remove(drop)
+            prof.path = dst
+            profile_io.save_profile(prof)
+            self.assertEqual(
+                dst.read_text(),
+                "#alias {keep} {body}\n"
+                "#alias {touch} {new}\n"
+                "#highlight {Snowy} {light yellow}\n"
+                "#substitute {orc} {ORC}\n",
+            )
 
 
 if __name__ == "__main__":

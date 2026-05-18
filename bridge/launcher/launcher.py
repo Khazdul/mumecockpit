@@ -51,6 +51,7 @@ from palette import (  # noqa: E402
     _S_TRACK, _S_MARKER, _S_THUMB, _S_TOTAL, _S_ARROW,
     _S_HINT, _S_PVP, _S_ALLY, _S_STAR,
     PANE_COLORS, PANE_COLOR_ORDER,
+    TTPP_COLOR_STYLES, TTPP_COLOR_NAMES,
 )
 import credits  # noqa: E402
 import log_player  # noqa: E402
@@ -214,12 +215,20 @@ _editor_hover_row    = None      # row index in display view under cursor, or No
 _editor_hover_sort   = False     # True when hovering the Pattern sort header
 _editor_list_sb      = None      # Scrollbar widget for the list panel
 _editor_delete_entry = None      # Entry under confirmation; cleared on confirm/cancel
-# Detail-panel editing state.
-_editor_detail_field    = 0      # 0 = Pattern, 1 = Body (active when _editor_focus == 2)
+# Detail-panel editing state. Phase 3.5 covers Pattern + Body text inputs;
+# phase 4 adds Highlights' palette grid (sharing the detail_field == 1 slot
+# with Body, dispatched on active kind).
+_editor_detail_field    = 0      # 0 = Pattern, 1 = Body (text) or Palette (highlights)
 _editor_pattern_cursor  = 0      # cursor offset into entry.pattern
 _editor_body_line       = 0      # logical line index of the cursor inside entry.body
 _editor_body_col        = 0      # column index of the cursor within the active body line
 _editor_pattern_touched = False  # True once the user has left Pattern with empty buffer; gates required-error
+# Palette state (active when _profile_editor_active_kind() == 'highlight').
+_editor_palette_row     = 0      # 0..len(_EDITOR_PALETTE_GRID)-1, or _EDITOR_PALETTE_GRID len for Custom slot
+_editor_palette_col     = 0      # 0 or 1; ignored when on Custom
+_editor_palette_hover_row = None # (row, col) under mouse; None when not hovering
+_editor_palette_hover_col = None
+_editor_palette_custom_value = None  # str | None — stashed non-palette body so user can revert
 
 # Options — top-level (Panes / Game text-layout / Connection / Back)
 _sel_options              = 0
@@ -1509,17 +1518,54 @@ _EDITOR_LIST_W        = 30      # Total list panel width (pattern + body cols)
 _EDITOR_GAP           = 2       # Cells between list-scrollbar and detail
 _EDITOR_DETAIL_W      = 44      # Detail panel width
 
-# Per-kind detail-panel field labels — `(pattern_label, body_label)`. Set
-# up here so phase 4 / 5 can plug in the rest without re-touching the
-# renderer. Phase 3.5 exercises the `alias` entry at runtime; the other
-# four tabs continue to render their phase-2 placeholder.
+# Per-kind detail-panel field labels — `(pattern_label, body_label)`. Used by
+# both the detail panel (renamed `Body` slot) and the list panel header. The
+# `macro` kind remains a placeholder until phase 5, but its labels live here
+# so the renderer doesn't need to special-case them.
 DETAIL_LABELS = {
     "alias":      ("Pattern", "Commands"),
     "action":     ("Pattern", "Commands"),
     "macro":      ("Key",     "Commands"),    # phase 5 wires Key capture
-    "highlight":  ("Pattern", "Color"),       # phase 4 swaps Color for palette
+    "highlight":  ("Pattern", "Color"),       # body slot becomes the palette grid
     "substitute": ("Text",    "New text"),
 }
+
+# Per-kind detail-panel builder. The renderer dispatches on the active kind:
+# text-bodied kinds reuse the Pattern + Body chain; `highlight` swaps the
+# Body field for a 2-D color-palette grid; `macro` shows the phase-1
+# placeholder pending phase 5.
+def _editor_dispatch_detail_builder(kind):
+    return _EDITOR_DETAIL_BUILDERS.get(kind, _editor_build_text_detail)
+
+
+# Body / Commands / etc. default values for `+ New entry` rows, keyed by kind.
+# Aliases / actions / substitutes start blank; highlights default to the
+# project's vintage-amber accent colour so the user sees the swatch
+# pre-selected and can re-pick from the palette.
+DETAIL_NEW_DEFAULTS = {
+    "alias":      ("", ""),
+    "action":     ("", ""),
+    "macro":      ("", ""),                       # placeholder until phase 5
+    "highlight":  ("", "light yellow"),
+    "substitute": ("", ""),
+}
+
+
+# Color-palette grid for the Highlights tab. Two columns, base name on the
+# left and the `light` variant on the right (matching most users' mental
+# model of the named tt++ colour set). The palette is intentionally small —
+# bold / reverse / background / hex variants belong in raw mode (phase 6).
+_EDITOR_PALETTE_GRID = [
+    ("white",        "gray"),
+    ("red",          "light red"),
+    ("yellow",       "light yellow"),
+    ("green",        "light green"),
+    ("cyan",         "light cyan"),
+    ("blue",         "light blue"),
+    ("magenta",      "light magenta"),
+]
+_EDITOR_PALETTE_ROWS = len(_EDITOR_PALETTE_GRID)
+_EDITOR_PALETTE_COLS = 2
 
 
 def _editor_package_w():
@@ -1611,6 +1657,10 @@ def _profile_editor_save_and_close():
 
 
 def _profile_editor_set_tab(idx):
+    """Switch to tab `idx`. Resets list cursor + scroll to 0 and
+    refreshes detail-panel buffers from the new active kind's first
+    entry, so cross-tab navigation always lands the cursor on a
+    real row with valid in-buffer cursors."""
     global _editor_active_tab, _editor_list_cursor, _editor_list_scroll
     n = len(_PROFILE_EDITOR_TABS)
     new_idx = max(0, min(n - 1, idx))
@@ -1618,6 +1668,7 @@ def _profile_editor_set_tab(idx):
         _editor_active_tab = new_idx
         _editor_list_cursor = 0
         _editor_list_scroll = 0
+        _editor_refresh_buffers()
         if _app:
             _app.invalidate()
 
@@ -1757,20 +1808,134 @@ def _editor_refresh_buffers():
     typing appends naturally. The pattern-touched flag resets — it
     tracks "have you ever left THIS entry's Pattern field empty" — so
     navigating away and back doesn't keep a stale error visible on a
-    different row."""
+    different row.
+
+    On `highlight` entries the palette grid cursor + Custom-slot
+    stash are also re-initialised from the entry's body. A
+    palette-named body lands the cursor on the matching swatch and
+    clears the Custom slot; a non-palette body stashes the original
+    value and parks the cursor on Custom."""
     global _editor_pattern_cursor, _editor_body_line, _editor_body_col
     global _editor_pattern_touched
+    global _editor_palette_row, _editor_palette_col
+    global _editor_palette_custom_value
+    global _editor_palette_hover_row, _editor_palette_hover_col
     entry = _editor_current_entry()
     if entry is None:
         _editor_pattern_cursor = 0
         _editor_body_line = 0
         _editor_body_col = 0
+        _editor_palette_row = 0
+        _editor_palette_col = 0
+        _editor_palette_custom_value = None
     else:
         _editor_pattern_cursor = len(entry.pattern)
         body_lines = entry.body.split("\n") if entry.body else [""]
         _editor_body_line = max(0, len(body_lines) - 1)
         _editor_body_col  = len(body_lines[_editor_body_line])
+        if entry.kind == "highlight":
+            pos = _editor_palette_position_for_color(entry.body)
+            if pos is not None:
+                _editor_palette_row, _editor_palette_col = pos
+                _editor_palette_custom_value = None
+            else:
+                # Non-palette body — stash it and park cursor on Custom.
+                _editor_palette_custom_value = entry.body
+                _editor_palette_row = _EDITOR_PALETTE_ROWS   # Custom slot
+                _editor_palette_col = 0
+        else:
+            _editor_palette_row = 0
+            _editor_palette_col = 0
+            _editor_palette_custom_value = None
     _editor_pattern_touched = False
+    _editor_palette_hover_row = None
+    _editor_palette_hover_col = None
+
+
+def _editor_palette_position_for_color(name):
+    """Return `(row, col)` of the palette cell whose label equals `name`,
+    or None when the value is not in the grid."""
+    for r, (left, right) in enumerate(_EDITOR_PALETTE_GRID):
+        if left == name:
+            return (r, 0)
+        if right == name:
+            return (r, 1)
+    return None
+
+
+def _editor_palette_color_at(row, col):
+    """Return the palette-color label at `(row, col)`, or None when
+    `row` indexes the Custom slot (row == `_EDITOR_PALETTE_ROWS`)."""
+    if 0 <= row < _EDITOR_PALETTE_ROWS and 0 <= col < _EDITOR_PALETTE_COLS:
+        return _EDITOR_PALETTE_GRID[row][col]
+    return None
+
+
+def _editor_palette_apply_cursor():
+    """Write the value at the current palette cursor into the active
+    entry's body. Palette cells write the swatch's color name; the
+    Custom slot restores the stashed pre-edit value. Routes through
+    `entry.body = ...` so `__setattr__` clears `_raw` for an edited
+    highlight to serialise canonically on save."""
+    entry = _editor_current_entry()
+    if entry is None:
+        return
+    if _editor_palette_row == _EDITOR_PALETTE_ROWS:
+        if _editor_palette_custom_value is not None:
+            entry.body = _editor_palette_custom_value
+        return
+    color = _editor_palette_color_at(_editor_palette_row, _editor_palette_col)
+    if color is not None:
+        entry.body = color
+
+
+def _editor_palette_set_cursor(row, col):
+    """Move the palette cursor to `(row, col)` and apply the live
+    binding. Clamps to the grid; `row == _EDITOR_PALETTE_ROWS` is
+    only valid when the Custom slot is visible."""
+    global _editor_palette_row, _editor_palette_col
+    custom_visible = _editor_palette_custom_value is not None
+    max_row = _EDITOR_PALETTE_ROWS if custom_visible else (_EDITOR_PALETTE_ROWS - 1)
+    row = max(0, min(max_row, row))
+    if row == _EDITOR_PALETTE_ROWS:
+        col = 0
+    else:
+        col = max(0, min(_EDITOR_PALETTE_COLS - 1, col))
+    if row == _editor_palette_row and col == _editor_palette_col:
+        return
+    _editor_palette_row = row
+    _editor_palette_col = col
+    _editor_palette_apply_cursor()
+    if _app:
+        _app.invalidate()
+
+
+def _editor_palette_move(d_row, d_col):
+    """Relative palette cursor move. Returns True when the cursor
+    landed somewhere new (so the keybind can decide whether to fall
+    through to inter-zone nav at an edge)."""
+    custom_visible = _editor_palette_custom_value is not None
+    cur_row = _editor_palette_row
+    cur_col = _editor_palette_col
+    if cur_row == _EDITOR_PALETTE_ROWS:
+        # On Custom: ↑ goes back into the grid; ↓ is a no-op; ←/→ no-op.
+        if d_row == -1:
+            _editor_palette_set_cursor(_EDITOR_PALETTE_ROWS - 1, 0)
+            return True
+        return False
+    new_row = cur_row + d_row
+    new_col = cur_col + d_col
+    if d_row > 0 and new_row >= _EDITOR_PALETTE_ROWS:
+        if custom_visible:
+            _editor_palette_set_cursor(_EDITOR_PALETTE_ROWS, 0)
+            return True
+        return False
+    if d_row < 0 and new_row < 0:
+        return False
+    if d_col != 0 and (new_col < 0 or new_col >= _EDITOR_PALETTE_COLS):
+        return False
+    _editor_palette_set_cursor(new_row, new_col)
+    return True
 
 
 def _editor_body_lines():
@@ -2040,14 +2205,19 @@ def _editor_validation_error():
 def _editor_create_new_entry():
     """Append a blank Entry of the active kind to `Profile.items`, move
     the list cursor onto it in the sorted view, and focus the detail
-    panel's Pattern field. Empty-pattern entries get dropped on save —
-    abandoning a create is harmless."""
+    panel's Pattern field. Per-kind defaults come from
+    `DETAIL_NEW_DEFAULTS`; abandoning a create is harmless because
+    `save_profile` drops empty-pattern entries before write."""
     global _editor_list_cursor
     if _editor_data is None:
         return
     kind = _profile_editor_active_kind()
+    if kind == "macro":
+        return   # phase 5 wires creation behind a Key-capture overlay
+    pat_default, body_default = DETAIL_NEW_DEFAULTS.get(kind, ("", ""))
     entry = profile_io.Entry(
-        kind=kind, pattern="", body="", priority=None, _raw=None)
+        kind=kind, pattern=pat_default, body=body_default,
+        priority=None, _raw=None)
     _editor_data.items.append(entry)
     view_after = _profile_editor_display_view()
     try:
@@ -2388,26 +2558,34 @@ def _editor_detail_lines(entry, total_lines):
     or 3-tuples `(style, text, handler)` — both forms survive the
     outer compositor.
 
-    The renderer covers three states:
-      • cursor on a real Entry → editable field chain (Pattern, Body
-        + inline error slot + hint block);
+    Dispatches the body of the panel through
+    `_editor_dispatch_detail_builder`: text-bodied kinds reuse the
+    Pattern + Body chain, `highlight` swaps Body for a palette grid,
+    `macro` falls through to a placeholder.
+
+    The wrapper handles the three non-edit branches:
       • cursor on the `+ New entry` sentinel → centred prompt;
-      • list empty *and* no entry under the cursor → empty-state
-        hint with the active kind's plural label.
+      • list empty *and* no entry under the cursor → empty-state hint;
+      • macro tab → "list view — phase 5" placeholder regardless of
+        whether the active list is empty.
     """
-    detail_focused = (_editor_focus == 2)
     kind = _profile_editor_active_kind()
     _kind_sing, kind_plural = _EDITOR_KIND_LABELS.get(kind, (kind, kind))
-    pat_lbl, body_lbl = DETAIL_LABELS.get(kind, ("Pattern", "Body"))
 
     rows = []
-
-    # --- Sentinel / empty-state branches ----------------------------------
     view = _profile_editor_display_view()
+
+    if kind == "macro":
+        msg = "Macros editor — coming in phase 5."
+        top_blank = max(0, total_lines // 2 - 1)
+        for _ in range(top_blank):
+            rows.append(_editor_pad_full(C_HINT, ""))
+        rows.append(_editor_centered_row(C_HINT, msg))
+        while len(rows) < total_lines:
+            rows.append(_editor_pad_full(C_HINT, ""))
+        return rows[:total_lines]
+
     if entry is None:
-        # No entry under the cursor — could be the sentinel row, or a
-        # truly empty list. The empty-state hint dominates when the
-        # list has zero entries (and no in-flight blank create).
         if len(view) == 0:
             msg = f"No {kind_plural} yet. Press n to add one."
         else:
@@ -2420,13 +2598,23 @@ def _editor_detail_lines(entry, total_lines):
             rows.append(_editor_pad_full(C_HINT, ""))
         return rows[:total_lines]
 
+    builder = _editor_dispatch_detail_builder(kind)
+    return builder(entry, total_lines)
+
+
+def _editor_build_text_detail(entry, total_lines):
+    """Pattern + Body editor for `alias`, `action`, `substitute`. Both
+    fields are text inputs with the in-buffer cursor model + focused-
+    border accent shared with the alias editor."""
+    detail_focused = (_editor_focus == 2)
+    pat_lbl, body_lbl = DETAIL_LABELS.get(entry.kind, ("Pattern", "Body"))
     pattern_focused = detail_focused and _editor_detail_field == 0
     body_focused    = detail_focused and _editor_detail_field == 1
-
-    pat_border = _editor_field_border_style(pattern_focused)
+    pat_border  = _editor_field_border_style(pattern_focused)
     body_border = _editor_field_border_style(body_focused)
 
-    # Pattern label + box.
+    rows = []
+
     rows.append(_editor_pad_full(C_HINT, pat_lbl))
     rows.append(_editor_pad_full(pat_border, _editor_box_top(_EDITOR_DETAIL_W)))
     rows.append(_editor_box_content_row(
@@ -2435,7 +2623,6 @@ def _editor_detail_lines(entry, total_lines):
         field_id="pattern"))
     rows.append(_editor_pad_full(pat_border, _editor_box_bot(_EDITOR_DETAIL_W)))
 
-    # Body label + box.
     rows.append(_editor_pad_full(C_HINT, body_lbl))
     rows.append(_editor_pad_full(body_border, _editor_box_top(_EDITOR_DETAIL_W)))
     body_lines = _editor_body_lines_for_entry(entry)
@@ -2448,15 +2635,12 @@ def _editor_detail_lines(entry, total_lines):
             field_id="body", line_idx=i))
     rows.append(_editor_pad_full(body_border, _editor_box_bot(_EDITOR_DETAIL_W)))
 
-    # Inline error slot. Empty when no message — keeps the row count
-    # stable so the hint block below doesn't jitter.
     err = _editor_validation_error()
     if err:
         rows.append(_editor_pad_full(C_DANGER, err))
     else:
         rows.append(_editor_pad_full(C_HINT, ""))
 
-    # Hint block divider + bullets. Truncated if the terminal is short.
     rows.append(_editor_pad_full(C_HINT, ""))
     rows.append(_editor_centered_row(C_HINT, "─── Hint ───"))
     for line in _EDITOR_HINT_LINES:
@@ -2467,37 +2651,232 @@ def _editor_detail_lines(entry, total_lines):
     return rows[:total_lines]
 
 
-def _editor_list_row_text(entry, is_cursor, is_hover):
-    """Render one list row as a (style, text) pair filling `_EDITOR_LIST_W`.
+def _editor_build_palette_detail(entry, total_lines):
+    """Pattern + 2-D color palette grid for `highlight`. The grid sits
+    where the Body box lives in the text-detail variant; the Custom
+    slot appears below the grid only when the entry's body is not in
+    the palette."""
+    detail_focused = (_editor_focus == 2)
+    pat_lbl, body_lbl = DETAIL_LABELS["highlight"]
+    pattern_focused = detail_focused and _editor_detail_field == 0
+    palette_focused = detail_focused and _editor_detail_field == 1
+    pat_border = _editor_field_border_style(pattern_focused)
 
-    Pattern column is fixed at `_EDITOR_PATTERN_COL_W` chars; remainder is the
-    body column with `…` truncation."""
+    rows = []
+
+    rows.append(_editor_pad_full(C_HINT, pat_lbl))
+    rows.append(_editor_pad_full(pat_border, _editor_box_top(_EDITOR_DETAIL_W)))
+    rows.append(_editor_box_content_row(
+        entry.pattern, pattern_focused,
+        cursor_col=_editor_pattern_cursor if pattern_focused else None,
+        field_id="pattern"))
+    rows.append(_editor_pad_full(pat_border, _editor_box_bot(_EDITOR_DETAIL_W)))
+
+    rows.append(_editor_pad_full(C_HINT, body_lbl + ":"))
+
+    custom_visible = _editor_palette_custom_value is not None
+    for r, (left, right) in enumerate(_EDITOR_PALETTE_GRID):
+        is_left_cursor  = palette_focused and r == _editor_palette_row and _editor_palette_col == 0
+        is_right_cursor = palette_focused and r == _editor_palette_row and _editor_palette_col == 1
+        is_left_hover   = (_editor_palette_hover_row == r
+                           and _editor_palette_hover_col == 0
+                           and not is_left_cursor)
+        is_right_hover  = (_editor_palette_hover_row == r
+                           and _editor_palette_hover_col == 1
+                           and not is_right_cursor)
+        rows.append(_editor_palette_row_fragments(
+            r, left, right,
+            is_left_cursor, is_right_cursor,
+            is_left_hover, is_right_hover))
+
+    if custom_visible:
+        is_custom_cursor = (palette_focused
+                            and _editor_palette_row == _EDITOR_PALETTE_ROWS)
+        is_custom_hover  = (_editor_palette_hover_row == _EDITOR_PALETTE_ROWS
+                            and not is_custom_cursor)
+        rows.append(_editor_palette_custom_row_fragments(
+            is_custom_cursor, is_custom_hover))
+
+    err = _editor_validation_error()
+    if err:
+        rows.append(_editor_pad_full(C_DANGER, err))
+    else:
+        rows.append(_editor_pad_full(C_HINT, ""))
+
+    rows.append(_editor_pad_full(C_HINT, ""))
+    rows.append(_editor_centered_row(C_HINT, "─── Hint ───"))
+    rows.append(_editor_pad_full(C_HINT, "Pick a color for the highlighted text."))
+
+    while len(rows) < total_lines:
+        rows.append(_editor_pad_full(C_HINT, ""))
+    return rows[:total_lines]
+
+
+_EDITOR_DETAIL_BUILDERS = {
+    "alias":      _editor_build_text_detail,
+    "action":     _editor_build_text_detail,
+    "substitute": _editor_build_text_detail,
+    "highlight":  _editor_build_palette_detail,
+    # `macro` is handled in the wrapper above as a kind-level placeholder.
+}
+
+
+# Palette-grid row geometry: 3-cell indent + 17-cell left cell +
+# 3-cell gap + 17-cell right cell. Sums to 40 (== inner detail width).
+_EDITOR_PALETTE_INDENT  = 3
+_EDITOR_PALETTE_CELL_W  = 17
+_EDITOR_PALETTE_GAP     = 3
+
+
+def _editor_palette_cell_text(name, is_cursor):
+    """Compose the per-cell text for a palette swatch. The cursor cell
+    wraps the name in brackets (`[ name ]`); a non-cursor cell wraps
+    in spaces of equal width so the column stays aligned."""
+    if is_cursor:
+        text = f"[ {name} ]"
+    else:
+        text = f"  {name}  "
+    return text.ljust(_EDITOR_PALETTE_CELL_W)[:_EDITOR_PALETTE_CELL_W]
+
+
+def _editor_palette_swatch_style(name, is_cursor, is_hover):
+    """Foreground style for a palette swatch. Cursor reverses the
+    swatch's color into a clearly-selected band; hover renders in
+    `C_HOVER` so the underlying color is dimmed but readable; normal
+    cells render the name *in its own color* via `TTPP_COLOR_STYLES`."""
+    if is_cursor:
+        return f"{TTPP_COLOR_STYLES[name]} reverse"
+    if is_hover:
+        return C_HOVER
+    return TTPP_COLOR_STYLES[name]
+
+
+def _editor_palette_row_fragments(grid_row, left_name, right_name,
+                                  left_cursor, right_cursor,
+                                  left_hover, right_hover):
+    """One row of the palette grid as a list of fragments summing to
+    `_EDITOR_DETAIL_W` cells. Each swatch carries its own click +
+    hover mouse handler keyed on its grid coordinates."""
+    indent = " " * _EDITOR_PALETTE_INDENT
+    gap    = " " * _EDITOR_PALETTE_GAP
+
+    left_text  = _editor_palette_cell_text(left_name,  left_cursor)
+    right_text = _editor_palette_cell_text(right_name, right_cursor)
+    left_style  = _editor_palette_swatch_style(left_name,  left_cursor,
+                                               left_hover)
+    right_style = _editor_palette_swatch_style(right_name, right_cursor,
+                                               right_hover)
+
+    frags = [
+        ("", indent),
+        (left_style, left_text,
+         _editor_make_palette_click_handler(grid_row, 0)),
+        ("", gap),
+        (right_style, right_text,
+         _editor_make_palette_click_handler(grid_row, 1)),
+    ]
+    used = (_EDITOR_PALETTE_INDENT + _EDITOR_PALETTE_CELL_W
+            + _EDITOR_PALETTE_GAP + _EDITOR_PALETTE_CELL_W)
+    if used < _EDITOR_DETAIL_W:
+        frags.append(("", " " * (_EDITOR_DETAIL_W - used)))
+    return frags
+
+
+def _editor_palette_custom_row_fragments(is_cursor, is_hover):
+    """The single-row Custom slot rendered below the grid when the
+    entry's body is not in the palette. Displays the stashed value so
+    the user can navigate back and revert."""
+    custom = _editor_palette_custom_value or ""
+    label  = f"Custom: {custom}"
+    if is_cursor:
+        text = f"[ {label} ]"
+        style = f"{C_ACCENT} reverse"
+    elif is_hover:
+        text = f"  {label}  "
+        style = C_HOVER
+    else:
+        text = f"  {label}  "
+        style = C_HINT
+    if len(text) > _EDITOR_DETAIL_W - _EDITOR_PALETTE_INDENT:
+        text = text[:max(0, _EDITOR_DETAIL_W - _EDITOR_PALETTE_INDENT - 1)] + "…"
+    indent = " " * _EDITOR_PALETTE_INDENT
+    pad = max(0, _EDITOR_DETAIL_W - _EDITOR_PALETTE_INDENT - len(text))
+    frags = [
+        ("", indent),
+        (style, text,
+         _editor_make_palette_click_handler(_EDITOR_PALETTE_ROWS, 0)),
+    ]
+    if pad > 0:
+        frags.append(("", " " * pad))
+    return frags
+
+
+def _editor_make_palette_click_handler(row, col):
+    """Build a click handler that focuses the palette grid and moves
+    the cursor to `(row, col)` — applying the live binding to
+    `Entry.body` via `_editor_palette_apply_cursor`."""
+    def _handler(ev):
+        global _editor_palette_hover_row, _editor_palette_hover_col
+        if ev.event_type == MouseEventType.MOUSE_MOVE:
+            if (_editor_palette_hover_row, _editor_palette_hover_col) != (row, col):
+                _editor_palette_hover_row = row
+                _editor_palette_hover_col = col
+                if _app:
+                    _app.invalidate()
+            return None
+        if ev.event_type != MouseEventType.MOUSE_DOWN:
+            return NotImplemented
+        _profile_editor_set_focus(2, field=1)
+        _editor_palette_set_cursor(row, col)
+        if _app:
+            _app.invalidate()
+        return None
+    return _handler
+
+
+def _editor_list_row_text(entry, is_cursor, is_hover):
+    """Render one list row as a list of `(style, text)` fragments
+    summing to `_EDITOR_LIST_W` cells.
+
+    Pattern column is fixed at `_EDITOR_PATTERN_COL_W` chars; remainder
+    is the body column with `…` truncation. For `highlight` entries
+    whose body resolves to a known palette colour, the body cell is
+    rendered *in that colour* — so the list doubles as a colour
+    preview. Custom (non-palette) values render in default text colour.
+
+    The cursor row uses a single `C_SELECTED` fragment for the whole
+    row so the selection band reads as one element."""
     w = _EDITOR_LIST_W
     pat = entry.pattern
     if len(pat) > _EDITOR_PATTERN_COL_W:
         pat = pat[:max(0, _EDITOR_PATTERN_COL_W - 1)] + "…"
     pat_cell = pat.ljust(_EDITOR_PATTERN_COL_W)
-    # 2-space gap between Pattern and Body inside the panel.
     body_col_w = w - _EDITOR_PATTERN_COL_W - 2
-    # Body in the list shows the first line only — multi-line entries are
-    # collapsed to their first physical line so the row stays compact.
     body_one_line = (entry.body.split("\n", 1)[0] if entry.body else "")
     if len(body_one_line) > body_col_w:
         body_one_line = body_one_line[:max(0, body_col_w - 1)] + "…"
     body_cell = body_one_line.ljust(body_col_w)
-    text = pat_cell + "  " + body_cell
-    text = text[:w].ljust(w)
+    full_text = (pat_cell + "  " + body_cell)[:w].ljust(w)
+
     if is_cursor:
-        style = C_SELECTED
-    elif is_hover:
-        style = C_HOVER
-    else:
-        style = C_ITEM
-    return style, text
+        return [(C_SELECTED, full_text)]
+    if is_hover:
+        return [(C_HOVER, full_text)]
+    if entry.kind == "highlight" and body_one_line in TTPP_COLOR_NAMES:
+        # Color preview: render the swatch name in its own colour. The
+        # pattern + gap stay in the default list text style.
+        return [
+            (C_ITEM, pat_cell + "  "),
+            (TTPP_COLOR_STYLES[body_one_line], body_cell),
+        ]
+    return [(C_ITEM, full_text)]
 
 
 def _editor_list_header_frag(visible_rows):
-    """Build the list header frags `Pattern <arrow>  Body` plus padding.
+    """Build the list header fragments — `<pattern_label> <arrow>  <body_label>`
+    plus padding. Labels come from `DETAIL_LABELS[active_kind]` so the
+    Highlights tab shows `Pattern + Color`, Substitutes shows
+    `Text + New text`, etc.
 
     Returns a list of fragments that fills `_EDITOR_LIST_W` cells. The
     arrow + label are wrapped in a click handler that toggles sort."""
@@ -2507,11 +2886,15 @@ def _editor_list_header_frag(visible_rows):
     base_style = C_ACTIVE if list_focused else C_SECTION
     hover_style = C_HOVER
     style = hover_style if _editor_hover_sort and not list_focused else base_style
-    # Composition: "Pattern" + " " + arrow occupies _EDITOR_PATTERN_COL_W
-    # (8 chars: 7 letters + space-or-arrow). We always render
-    # `Pattern▲` / `Pattern▼` (no inner space) so it fits exactly.
-    pat_label = ("Pattern" + arrow).ljust(_EDITOR_PATTERN_COL_W)
-    body_label = "Body".ljust(w - _EDITOR_PATTERN_COL_W - 2)
+    kind = _profile_editor_active_kind()
+    pat_lbl, body_lbl = DETAIL_LABELS.get(kind, ("Pattern", "Body"))
+    # Pattern-column label is truncated to fit `_EDITOR_PATTERN_COL_W - 1`
+    # so it leaves room for the sort arrow. "Pattern" fits exactly; for a
+    # kind like "Substitute" the source label "Text" fits comfortably.
+    pat_col_w = _EDITOR_PATTERN_COL_W
+    truncated_pat = pat_lbl[:max(0, pat_col_w - 1)]
+    pat_label = (truncated_pat + arrow).ljust(pat_col_w)
+    body_label = body_lbl[: w - pat_col_w - 2].ljust(w - pat_col_w - 2)
     gap = "  "
 
     def _sort_handler(ev):
@@ -2666,7 +3049,7 @@ def _profile_editor_text():
                 is_cursor = (abs_idx == _editor_list_cursor)
                 if 0 <= abs_idx < entries_total:
                     is_hover  = (_editor_hover_row == abs_idx and not is_cursor)
-                    style, text = _editor_list_row_text(
+                    row_frags = _editor_list_row_text(
                         view[abs_idx], is_cursor, is_hover)
 
                     def _row_handler(ev, row=abs_idx):
@@ -2691,7 +3074,9 @@ def _profile_editor_text():
                             return None
                         return NotImplemented
 
-                    left_frags = [(style, text, _row_handler)]
+                    left_frags = [
+                        (s, t, _row_handler) for (s, t) in row_frags
+                    ]
                 elif abs_idx == sentinel_idx:
                     # "+ New entry" sentinel row — selectable like any
                     # row; Enter / click creates a fresh blank Entry.
@@ -7996,17 +8381,26 @@ def _kb_peditor_stab(event):
     _profile_editor_cycle_focus(-1)
 
 
+def _editor_in_palette_focus():
+    """True when the detail panel's Body slot is showing the colour
+    palette grid (Highlights tab + detail field 1)."""
+    return (_editor_focus == 2
+            and _editor_detail_field == 1
+            and _profile_editor_active_kind() == "highlight")
+
+
 @kb.add("right", filter=_in_frame("profile_editor"))
 def _kb_peditor_right(event):
     if _editor_focus == 0:
-        # Clamp at the last tab.
         _profile_editor_set_tab(_editor_active_tab + 1)
     elif _editor_focus == 1:
-        # Right on list jumps straight to detail.Pattern.
+        if _profile_editor_active_kind() == "macro":
+            return   # placeholder tab — no detail panel to enter
         _profile_editor_set_focus(2, field=0)
     elif _editor_focus == 2:
-        # Cursor movement inside the field — no zone fall-through.
-        if _editor_detail_field == 0:
+        if _editor_in_palette_focus():
+            _editor_palette_move(0, 1)
+        elif _editor_detail_field == 0:
             _editor_pattern_move_right()
         else:
             _editor_body_move_right()
@@ -8015,11 +8409,11 @@ def _kb_peditor_right(event):
 @kb.add("left", filter=_in_frame("profile_editor"))
 def _kb_peditor_left(event):
     if _editor_focus == 0:
-        # Clamp at the first tab.
         _profile_editor_set_tab(_editor_active_tab - 1)
     elif _editor_focus == 2:
-        # Cursor movement inside the field — no zone fall-through.
-        if _editor_detail_field == 0:
+        if _editor_in_palette_focus():
+            _editor_palette_move(0, -1)
+        elif _editor_detail_field == 0:
             _editor_pattern_move_left()
         else:
             _editor_body_move_left()
@@ -8028,8 +8422,7 @@ def _kb_peditor_left(event):
 @kb.add("up", filter=_in_frame("profile_editor"))
 def _kb_peditor_up(event):
     if _editor_focus == 0:
-        # Tab strip ↑ — no-op (nothing above the tabs).
-        return
+        return   # nothing above the tabs
     if _editor_focus == 1:
         # First list row ↑ → focus the tab strip; otherwise move within.
         if _editor_list_cursor == 0:
@@ -8041,30 +8434,37 @@ def _kb_peditor_up(event):
     if _editor_detail_field == 0:
         # Pattern ↑ → focus the tab strip.
         _profile_editor_set_focus(0)
-    else:
-        # Body ↑: inter-line first; at top edge of buffer → Pattern.
-        if not _editor_body_move_line(-1):
+        return
+    if _editor_in_palette_focus():
+        # Palette ↑: traverse the grid; fall through to Pattern at the
+        # top edge.
+        if not _editor_palette_move(-1, 0):
             _profile_editor_set_focus(2, field=0)
+        return
+    # Text body ↑: inter-line first; at top edge of buffer → Pattern.
+    if not _editor_body_move_line(-1):
+        _profile_editor_set_focus(2, field=0)
 
 
 @kb.add("down", filter=_in_frame("profile_editor"))
 def _kb_peditor_down(event):
     if _editor_focus == 0:
-        # Tab strip ↓ → enter the list at the first row.
+        if _profile_editor_active_kind() == "macro":
+            return   # macros has no list — stay on the tab strip
         _profile_editor_set_focus(1)
         _profile_editor_jump_cursor(0)
         return
     if _editor_focus == 1:
-        # Last selectable row ↓ is already clamped to the sentinel.
         _profile_editor_move_cursor(1)
         return
     # Detail focus.
     if _editor_detail_field == 0:
-        # Pattern ↓ → Body.
         _profile_editor_set_focus(2, field=1)
-    else:
-        # Body ↓: inter-line; no-op at bottom edge.
-        _editor_body_move_line(1)
+        return
+    if _editor_in_palette_focus():
+        _editor_palette_move(1, 0)
+        return
+    _editor_body_move_line(1)
 
 
 @kb.add("pageup", filter=_in_frame("profile_editor"))
@@ -8096,10 +8496,12 @@ def _kb_peditor_end(event):
 @kb.add("D", filter=_in_frame("profile_editor"))
 def _kb_peditor_delete(event):
     if _editor_focus == 1:
+        if _profile_editor_active_kind() == "macro":
+            return
         _profile_editor_request_delete()
     elif _editor_focus == 2:
         # In a detail field, `d` is a regular character — fall through
-        # to the printable-input handler.
+        # to the printable-input handler (the palette field swallows it).
         _kb_peditor_any(event)
 
 
@@ -8107,6 +8509,8 @@ def _kb_peditor_delete(event):
 @kb.add("N", filter=_in_frame("profile_editor"))
 def _kb_peditor_n(event):
     if _editor_focus == 1:
+        if _profile_editor_active_kind() == "macro":
+            return
         _editor_create_new_entry()
     elif _editor_focus == 2:
         _kb_peditor_any(event)
@@ -8115,7 +8519,8 @@ def _kb_peditor_n(event):
 @kb.add("enter", filter=_in_frame("profile_editor"))
 def _kb_peditor_enter(event):
     if _editor_focus == 1:
-        # Enter on a list row → edit; on the sentinel → create.
+        if _profile_editor_active_kind() == "macro":
+            return
         if _editor_cursor_on_sentinel():
             _editor_create_new_entry()
             return
@@ -8125,8 +8530,9 @@ def _kb_peditor_enter(event):
         _profile_editor_set_focus(2, field=0)
         return
     if _editor_focus == 2:
+        if _editor_in_palette_focus():
+            return   # palette is selection-only; Enter is a no-op
         if _editor_detail_field == 1:
-            # Body: split the current line at the cursor.
             _editor_body_insert_newline()
         # Pattern: Enter is a no-op (use Tab / ↓ to advance).
 
@@ -8139,7 +8545,9 @@ def _kb_peditor_backspace(event):
         _editor_pattern_backspace()
         if _app:
             _app.invalidate()
-    elif _editor_detail_field == 1:
+    elif _editor_in_palette_focus():
+        return   # palette is selection-only
+    else:
         _editor_body_backspace()
 
 
@@ -8147,8 +8555,10 @@ def _kb_peditor_backspace(event):
 def _kb_peditor_any(event):
     """Printable-char input on the detail panel. Pattern and Body
     accept any printable character; insertion happens at the in-buffer
-    cursor."""
+    cursor. The palette field is selection-only and swallows everything."""
     if _editor_focus != 2:
+        return
+    if _editor_in_palette_focus():
         return
     data = event.data or ""
     if len(data) != 1 or not data.isprintable():

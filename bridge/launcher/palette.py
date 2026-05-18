@@ -19,6 +19,7 @@ __all__ = [
     "_S_TRACK", "_S_MARKER", "_S_THUMB", "_S_TOTAL", "_S_ARROW",
     "_S_HINT", "_S_PVP", "_S_ALLY", "_S_STAR",
     "PANE_COLORS", "PANE_COLOR_ORDER", "pane_color_hex",
+    "TTPP_COLOR_STYLES", "TTPP_COLOR_NAMES",
 ]
 
 # ---------------------------------------------------------------------------
@@ -145,3 +146,40 @@ def pane_color_hex(name):
     """Resolve a pane-colour name to its hex string, or None for the terminal
     default. Unknown names fall back to black (i.e. None)."""
     return PANE_COLORS.get(name, None) if name in PANE_COLORS else None
+
+
+# ---------------------------------------------------------------------------
+# tt++ named-color palette used by the Highlights tab in the profile editor.
+#
+# Maps the tt++ color-name strings users write in `#highlight {pattern} {color}`
+# to prompt_toolkit style strings. The named-color form (`fg:ansiwhite` etc.)
+# adapts to the terminal palette so the swatches look right wherever cockpit
+# runs. Skips `ebony` and `dark <colour>` — invisible on a dark terminal.
+#
+# The Highlights editor renders each swatch's name *in its own colour* using
+# this map, and the Highlights list panel renders the `Color` column the same
+# way. Custom values (anything not in this dict) round-trip through the parser
+# but render in the default text colour and surface in a "Custom" slot below
+# the palette grid for safe revert.
+# ---------------------------------------------------------------------------
+TTPP_COLOR_STYLES = {
+    "white":          "fg:ansiwhite",
+    "gray":           "fg:ansibrightblack",
+    "red":            "fg:ansired",
+    "light red":      "fg:ansibrightred",
+    "yellow":         "fg:ansiyellow",
+    "light yellow":   "fg:ansibrightyellow",
+    "green":          "fg:ansigreen",
+    "light green":    "fg:ansibrightgreen",
+    "cyan":           "fg:ansicyan",
+    "light cyan":     "fg:ansibrightcyan",
+    "blue":           "fg:ansiblue",
+    "light blue":     "fg:ansibrightblue",
+    "magenta":        "fg:ansimagenta",
+    "light magenta":  "fg:ansibrightmagenta",
+}
+
+# Stable lookup set — used by the editor to decide whether an entry's body
+# value is "in the palette" (cursor lands on its swatch) or a custom value
+# (rendered as plain text, also surfaced in the Custom slot).
+TTPP_COLOR_NAMES = frozenset(TTPP_COLOR_STYLES.keys())
