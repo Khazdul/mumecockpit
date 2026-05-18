@@ -57,11 +57,13 @@ def _reset_editor_state(profile, *, focus=1, active_tab=0):
     launcher._editor_body_line       = 0
     launcher._editor_body_col        = 0
     launcher._editor_pattern_touched = False
-    launcher._editor_palette_row     = 0
-    launcher._editor_palette_col     = 0
-    launcher._editor_palette_hover_row = None
-    launcher._editor_palette_hover_col = None
-    launcher._editor_palette_custom_value = None
+    launcher._editor_hl_style_cursor = 0
+    launcher._editor_hl_text_row     = 0
+    launcher._editor_hl_text_col     = 0
+    launcher._editor_hl_bg_row       = -1
+    launcher._editor_hl_bg_col       = 0
+    launcher._editor_hl_hover        = None
+    launcher._editor_hl_custom_value = None
     launcher._editor_refresh_buffers()
 
 
@@ -1000,14 +1002,14 @@ class TestPhase4PerKindDefaults(unittest.TestCase):
         launcher._editor_create_new_entry()
         e = launcher._editor_current_entry()
         self.assertEqual(e.kind, "highlight")
+        # New entries default to "light yellow" (per DETAIL_NEW_DEFAULTS).
         self.assertEqual(e.body, "light yellow")
-        # Palette cursor lands on the matching swatch.
-        pos = launcher._editor_palette_position_for_color("light yellow")
-        self.assertEqual(
-            (launcher._editor_palette_row, launcher._editor_palette_col),
-            pos,
-        )
-        self.assertIsNone(launcher._editor_palette_custom_value)
+        # Text palette cursor lands on Yellow (row 2, col 1).
+        self.assertEqual(launcher._editor_hl_text_row, 2)
+        self.assertEqual(launcher._editor_hl_text_col, 1)
+        # No background.
+        self.assertEqual(launcher._editor_hl_bg_row, -1)
+        self.assertIsNone(launcher._editor_hl_custom_value)
 
     def test_new_substitute_has_empty_body(self):
         prof, _src, _td = _make_profile("")
@@ -1018,89 +1020,156 @@ class TestPhase4PerKindDefaults(unittest.TestCase):
         self.assertEqual(e.body, "")
 
 
-class TestPhase4PaletteWidget(unittest.TestCase):
-    """The highlights tab swaps the Body TextArea for a 14-cell color
-    palette grid plus an optional Custom slot."""
+class TestHighlightPaletteRedesign(unittest.TestCase):
+    """Section C — Highlights detail panel: Style toggles + Text + BG
+    palettes. The body string is composed of `[styles] <text-colour>
+    [b <bg-colour>]`; the parser handles the lowercase + capitalised +
+    `light <colour>` conventions; non-decomposable bodies fall through
+    to a Custom slot that's preserved byte-exact."""
 
     def _setup_highlight(self, source):
         prof, _src, _td = _make_profile(source)
         _reset_editor_state(prof, focus=2, active_tab=3)
-        launcher._editor_detail_field = 1
+        launcher._editor_detail_field = 2   # Text palette
         return prof
 
-    def test_palette_cursor_initialises_to_palette_color(self):
-        self._setup_highlight("#highlight {Orc} {light yellow}\n")
-        # `light yellow` lives at row=2, col=1.
+    # --- parsing & serialising ------------------------------------
+    def test_parse_simple_color(self):
+        styles, tc, bg = launcher._hl_parse_body("red")
+        self.assertEqual(styles, set())
+        self.assertEqual(tc, "red")
+        self.assertIsNone(bg)
+
+    def test_parse_light_form_normalised(self):
+        # `light yellow` parses to capitalised form `Yellow`.
+        styles, tc, bg = launcher._hl_parse_body("light yellow")
+        self.assertEqual(tc, "Yellow")
+        self.assertIsNone(bg)
+
+    def test_parse_styles_text_and_bg(self):
+        styles, tc, bg = launcher._hl_parse_body(
+            "underscore Red b green")
+        self.assertEqual(styles, {"underscore"})
+        self.assertEqual(tc, "Red")
+        self.assertEqual(bg, "green")
+
+    def test_parse_multiple_styles(self):
+        styles, tc, bg = launcher._hl_parse_body(
+            "reverse blink Yellow")
+        self.assertEqual(styles, {"reverse", "blink"})
+        self.assertEqual(tc, "Yellow")
+        self.assertIsNone(bg)
+
+    def test_parse_rejects_unknown_token(self):
+        # `<faa>` is a custom VT100 form — parser punts to Custom.
+        self.assertIsNone(launcher._hl_parse_body("<faa>"))
+
+    def test_parse_rejects_bold_token(self):
+        # `bold` isn't in the supported style set.
+        self.assertIsNone(launcher._hl_parse_body("bold red"))
+
+    def test_serialize_round_trip(self):
+        body = "underscore Red b green"
+        styles, tc, bg = launcher._hl_parse_body(body)
         self.assertEqual(
-            (launcher._editor_palette_row, launcher._editor_palette_col),
+            launcher._hl_serialize(styles, tc, bg),
+            body,
+        )
+
+    def test_serialize_omits_b_when_no_bg(self):
+        self.assertEqual(
+            launcher._hl_serialize({"reverse"}, "Yellow", None),
+            "reverse Yellow",
+        )
+
+    def test_serialize_only_color(self):
+        self.assertEqual(
+            launcher._hl_serialize(set(), "red", None),
+            "red",
+        )
+
+    # --- cursor positions on load ---------------------------------
+    def test_cursor_lands_on_text_swatch_for_simple_body(self):
+        self._setup_highlight("#highlight {Orc} {red}\n")
+        # red is text row 0 col 0.
+        self.assertEqual(launcher._editor_hl_text_row, 0)
+        self.assertEqual(launcher._editor_hl_text_col, 0)
+        self.assertEqual(launcher._editor_hl_bg_row, -1)   # (None)
+        self.assertIsNone(launcher._editor_hl_custom_value)
+
+    def test_cursor_lands_on_light_variant(self):
+        self._setup_highlight("#highlight {Orc} {Yellow}\n")
+        # Yellow → text row 2 col 1.
+        self.assertEqual(
+            (launcher._editor_hl_text_row, launcher._editor_hl_text_col),
             (2, 1),
         )
-        self.assertIsNone(launcher._editor_palette_custom_value)
 
-    def test_custom_slot_appears_for_non_palette_body(self):
-        prof = self._setup_highlight(
-            "#highlight {Snowy} {bold red}\n")
-        # Cursor parked on the Custom slot.
-        self.assertEqual(launcher._editor_palette_row,
-                         launcher._EDITOR_PALETTE_ROWS)
-        self.assertEqual(launcher._editor_palette_custom_value, "bold red")
-        # Cell renderer surfaces the Custom slot in the detail rows.
+    def test_cursor_for_styles_text_bg(self):
+        self._setup_highlight(
+            "#highlight {Orc} {underscore Red b green}\n")
+        # Red → text row 0 col 1; green → bg row 1 col 0.
+        self.assertEqual(
+            (launcher._editor_hl_text_row, launcher._editor_hl_text_col),
+            (0, 1),
+        )
+        self.assertEqual(
+            (launcher._editor_hl_bg_row, launcher._editor_hl_bg_col),
+            (1, 0),
+        )
+
+    def test_custom_stashed_for_unparseable_body(self):
+        self._setup_highlight("#highlight {Snowy} {bold red}\n")
+        self.assertEqual(launcher._editor_hl_custom_value, "bold red")
+        # Body still preserved byte-exact.
         entry = launcher._editor_current_entry()
-        rows = launcher._editor_detail_lines(entry, total_lines=20)
+        self.assertEqual(entry.body, "bold red")
+        # Renderer surfaces the Custom slot.
+        rows = launcher._editor_detail_lines(entry, total_lines=30)
         joined = " ".join("".join(f[1] for f in row).strip() for row in rows)
         self.assertIn("Custom: bold red", joined)
 
-    def test_palette_navigation_updates_entry_body_live(self):
-        self._setup_highlight("#highlight {Orc} {light yellow}\n")
+    # --- live binding through cursor moves & toggles --------------
+    def test_text_cursor_move_updates_body(self):
+        self._setup_highlight("#highlight {Orc} {red}\n")
         entry = launcher._editor_current_entry()
-        # Move to row=0 col=0 (white) — body becomes "white".
-        launcher._editor_palette_set_cursor(0, 0)
-        self.assertEqual(entry.body, "white")
-        # And to row=4 col=1 (light cyan).
-        launcher._editor_palette_set_cursor(4, 1)
-        self.assertEqual(entry.body, "light cyan")
+        launcher._editor_hl_set_text_cursor(2, 0)   # yellow
+        self.assertEqual(entry.body, "yellow")
+        launcher._editor_hl_set_text_cursor(2, 1)   # Yellow
+        self.assertEqual(entry.body, "Yellow")
 
-    def test_custom_revert_after_palette_visit(self):
-        self._setup_highlight("#highlight {Snowy} {bold red}\n")
+    def test_bg_cursor_move_adds_b_clause(self):
+        self._setup_highlight("#highlight {Orc} {red}\n")
         entry = launcher._editor_current_entry()
-        # Body starts at "bold red" (Custom). Move to a palette swatch.
-        launcher._editor_palette_set_cursor(2, 1)   # light yellow
-        self.assertEqual(entry.body, "light yellow")
-        self.assertEqual(launcher._editor_palette_custom_value, "bold red")
-        # Navigate back to Custom — body restored.
-        launcher._editor_palette_set_cursor(
-            launcher._EDITOR_PALETTE_ROWS, 0)
-        self.assertEqual(entry.body, "bold red")
+        launcher._editor_hl_set_bg_cursor(1, 0)   # green
+        self.assertEqual(entry.body, "red b green")
+        launcher._editor_hl_set_bg_cursor(-1, 0)   # (None)
+        self.assertEqual(entry.body, "red")
 
-    def test_palette_move_returns_false_at_top_edge(self):
-        # Returns False so the `↑` keybind can fall through to the
-        # Pattern field instead of staying in the grid.
-        self._setup_highlight("#highlight {Orc} {white}\n")
-        # white is row=0 col=0.
-        self.assertEqual(
-            (launcher._editor_palette_row, launcher._editor_palette_col),
-            (0, 0),
-        )
-        moved = launcher._editor_palette_move(-1, 0)
-        self.assertFalse(moved)
+    def test_style_toggle_adds_modifier(self):
+        self._setup_highlight("#highlight {Orc} {red}\n")
+        entry = launcher._editor_current_entry()
+        launcher._editor_hl_toggle_style("underscore")
+        self.assertEqual(entry.body, "underscore red")
+        launcher._editor_hl_toggle_style("blink")
+        self.assertEqual(entry.body, "underscore blink red")
+        # Toggle off
+        launcher._editor_hl_toggle_style("underscore")
+        self.assertEqual(entry.body, "blink red")
 
-    def test_palette_down_into_custom_when_visible(self):
-        self._setup_highlight("#highlight {Snowy} {bold red}\n")
-        # Stub the cursor onto the last palette row.
-        launcher._editor_palette_set_cursor(
-            launcher._EDITOR_PALETTE_ROWS - 1, 0)
-        moved = launcher._editor_palette_move(1, 0)
-        self.assertTrue(moved)
-        self.assertEqual(launcher._editor_palette_row,
-                         launcher._EDITOR_PALETTE_ROWS)
+    def test_editing_text_color_preserves_styles_and_bg(self):
+        self._setup_highlight(
+            "#highlight {Orc} {underscore Red b green}\n")
+        entry = launcher._editor_current_entry()
+        launcher._editor_hl_set_text_cursor(3, 0)   # blue
+        self.assertEqual(entry.body, "underscore blue b green")
 
-    def test_palette_down_clamped_when_no_custom(self):
-        # No custom slot → ↓ at last grid row returns False.
-        self._setup_highlight("#highlight {Orc} {magenta}\n")
-        launcher._editor_palette_set_cursor(
-            launcher._EDITOR_PALETTE_ROWS - 1, 0)
-        moved = launcher._editor_palette_move(1, 0)
-        self.assertFalse(moved)
+    def test_editing_bg_preserves_text_and_styles(self):
+        self._setup_highlight(
+            "#highlight {Orc} {underscore Red b green}\n")
+        entry = launcher._editor_current_entry()
+        launcher._editor_hl_set_bg_cursor(4, 1)   # Magenta
+        self.assertEqual(entry.body, "underscore Red b Magenta")
 
 
 class TestPhase4HighlightListColorColumn(unittest.TestCase):

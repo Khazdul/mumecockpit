@@ -230,12 +230,23 @@ _editor_pattern_touched = False  # True once the user has left Pattern with empt
 _editor_pattern_anchor   = None  # int | None — anchor offset into entry.pattern
 _editor_body_anchor_line = None  # int | None — anchor line in entry.body
 _editor_body_anchor_col  = None  # int | None — anchor col in entry.body
-# Palette state (active when _profile_editor_active_kind() == 'highlight').
-_editor_palette_row     = 0      # 0..len(_EDITOR_PALETTE_GRID)-1, or _EDITOR_PALETTE_GRID len for Custom slot
-_editor_palette_col     = 0      # 0 or 1; ignored when on Custom
-_editor_palette_hover_row = None # (row, col) under mouse; None when not hovering
-_editor_palette_hover_col = None
-_editor_palette_custom_value = None  # str | None — stashed non-palette body so user can revert
+# Highlight editor state (active when _profile_editor_active_kind() ==
+# 'highlight'). Three palettes share the same Body slot:
+#   - Style row (3 toggle cells: underscore, blink, reverse)
+#   - Text-colour palette (7×2 grid: dark + light variants)
+#   - Background-colour palette (7×2 grid + (None) at the top)
+# Plus a Custom slot when the on-disk body doesn't decompose cleanly.
+#
+# Cursor positions are tracked per zone so cursor stays put as the user
+# Tab-cycles. `_editor_detail_field` selects which zone has focus:
+#   0 = Pattern, 1 = Style, 2 = Text palette, 3 = Background palette.
+_editor_hl_style_cursor = 0      # 0..len(_HL_STYLE_TOKENS)-1
+_editor_hl_text_row     = 0      # 0..6
+_editor_hl_text_col     = 0      # 0 or 1
+_editor_hl_bg_row       = -1     # -1 = (None) cell, 0..6 = grid row
+_editor_hl_bg_col       = 0      # 0 or 1; ignored when row == -1
+_editor_hl_hover        = None   # (zone, row, col) for the cell under mouse, or None
+_editor_hl_custom_value = None   # str | None — stashed non-palette body so user can revert
 # Macro key-capture overlay state (phase 5). Pushed as the
 # `profile_editor_macro_keybind` frame from the macro detail's Key cell
 # or auto-pushed when the user creates a new macro. The pending entry is
@@ -1568,21 +1579,180 @@ DETAIL_NEW_DEFAULTS = {
 }
 
 
-# Color-palette grid for the Highlights tab. Two columns, base name on the
-# left and the `light` variant on the right (matching most users' mental
-# model of the named tt++ colour set). The palette is intentionally small —
-# bold / reverse / background / hex variants belong in raw mode (phase 6).
-_EDITOR_PALETTE_GRID = [
-    ("white",        "gray"),
-    ("red",          "light red"),
-    ("yellow",       "light yellow"),
-    ("green",        "light green"),
-    ("cyan",         "light cyan"),
-    ("blue",         "light blue"),
-    ("magenta",      "light magenta"),
+# Highlight palette — 7 rows × 2 cols, dark-on-left, light-on-right.
+# Dark column uses lowercase tt++ names (`red`, `green`, …); light column
+# uses the capitalised forms (`Red`, `Green`, …) — both render through
+# `TTPP_COLOR_STYLES` via `_HL_DICT_KEY` since the dict is keyed on the
+# `light <colour>` form for the bright variants. Two parallel palettes
+# share this geometry: text colour (left half of the detail panel) and
+# background colour (right half + a `(None)` cell on top).
+_HL_PALETTE = [
+    ("red",     "Red"),
+    ("green",   "Green"),
+    ("yellow",  "Yellow"),
+    ("blue",    "Blue"),
+    ("magenta", "Magenta"),
+    ("cyan",    "Cyan"),
+    ("white",   "White"),
 ]
-_EDITOR_PALETTE_ROWS = len(_EDITOR_PALETTE_GRID)
-_EDITOR_PALETTE_COLS = 2
+_HL_PALETTE_ROWS = len(_HL_PALETTE)
+_HL_PALETTE_COLS = 2
+
+# Display name → TTPP_COLOR_STYLES key. Accepts the dark form, the
+# capitalised light form, and the `light <colour>` long form so on-disk
+# bodies in any of the three conventions resolve to the right swatch.
+_HL_DICT_KEY = {
+    "red":     "red",
+    "green":   "green",
+    "yellow":  "yellow",
+    "blue":    "blue",
+    "magenta": "magenta",
+    "cyan":    "cyan",
+    "white":   "white",
+    "gray":    "gray",
+    "Red":          "light red",
+    "Green":        "light green",
+    "Yellow":       "light yellow",
+    "Blue":         "light blue",
+    "Magenta":      "light magenta",
+    "Cyan":         "light cyan",
+    "White":        "gray",     # closest light-white swatch in the palette dict
+    "light red":     "light red",
+    "light green":   "light green",
+    "light yellow":  "light yellow",
+    "light blue":    "light blue",
+    "light magenta": "light magenta",
+    "light cyan":    "light cyan",
+}
+
+# Style toggles surfaced in the Style row. tt++ accepts these tokens in
+# `#highlight {pattern} {<modifiers> <colour>}`. Bold is excluded — it
+# isn't documented in `#highlight`'s modifier set, and unverified output
+# would silently break highlight rendering.
+_HL_STYLE_TOKENS = ("underscore", "blink", "reverse")
+_HL_STYLE_LABELS = {
+    "underscore": "Underscore",
+    "blink":      "Blink",
+    "reverse":    "Reverse",
+}
+
+
+def _hl_color_style(name):
+    """Resolve a display name to a TTPP_COLOR_STYLES style string, or
+    None if the name isn't in the palette. Accepts any of the three
+    on-disk conventions (lowercase, capitalised, `light <colour>`)."""
+    key = _HL_DICT_KEY.get(name)
+    if key is None:
+        return None
+    return TTPP_COLOR_STYLES.get(key)
+
+
+def _hl_parse_body(body):
+    """Parse a `#highlight` body into `(styles, text_color, bg_color)`.
+
+    Token grammar:
+      - `<style>` tokens from `_HL_STYLE_TOKENS` add to the styles set.
+      - `b` marks the next colour-context as background.
+      - `light <name>` resolves to the capitalised light variant.
+      - A bare colour token is either dark (lowercase) or light
+        (capitalised) — looked up directly in `_HL_DICT_KEY`.
+
+    Returns the parsed triple on success, or None when any token is
+    unknown or the body is empty — the caller preserves the original
+    body byte-exact in the Custom slot."""
+    tokens = body.split()
+    if not tokens:
+        return None
+    styles = set()
+    text_color = None
+    bg_color = None
+    in_bg = False
+    light_pending = False
+    for tok in tokens:
+        if tok in _HL_STYLE_TOKENS and not light_pending:
+            if tok in styles:
+                return None
+            styles.add(tok)
+            continue
+        if tok == "b" and not light_pending:
+            if in_bg or bg_color is not None:
+                return None
+            in_bg = True
+            continue
+        if tok == "light" and not light_pending:
+            light_pending = True
+            continue
+        # Colour token — combine with a pending `light` prefix.
+        if light_pending:
+            cap = tok[:1].upper() + tok[1:].lower()
+            if cap not in _HL_DICT_KEY:
+                return None
+            color = cap
+            light_pending = False
+        elif tok in _HL_DICT_KEY:
+            color = tok
+        else:
+            return None
+        if in_bg:
+            bg_color = color
+            in_bg = False
+        else:
+            if text_color is not None:
+                return None
+            text_color = color
+    if in_bg or light_pending:
+        return None
+    if not styles and text_color is None and bg_color is None:
+        return None
+    return (styles, text_color, bg_color)
+
+
+def _hl_serialize(styles, text_color, bg_color):
+    """Compose a `#highlight` body from the editor's three palettes.
+    Style tokens are emitted in `_HL_STYLE_TOKENS` order; the `b`
+    clause is omitted when no background is selected."""
+    parts = []
+    for s in _HL_STYLE_TOKENS:
+        if s in styles:
+            parts.append(s)
+    if text_color is not None:
+        parts.append(text_color)
+    if bg_color is not None:
+        parts.append("b")
+        parts.append(bg_color)
+    return " ".join(parts)
+
+
+def _hl_palette_position_for_color(name):
+    """Return `(row, col)` of the `_HL_PALETTE` cell whose label equals
+    `name`, or None when the name isn't on the grid. The check resolves
+    both the lowercase dark form (`red`) and the capitalised light form
+    (`Red`); `light red` is normalised to `Red` for the lookup so the
+    cursor lands on the right swatch."""
+    if name is None:
+        return None
+    # Normalise `light foo` → `Foo` for palette lookup.
+    if name.startswith("light "):
+        rest = name[6:]
+        name = rest[:1].upper() + rest[1:].lower()
+    elif name == "gray":
+        name = "White"
+    for r, (dark, light) in enumerate(_HL_PALETTE):
+        if dark == name:
+            return (r, 0)
+        if light == name:
+            return (r, 1)
+    return None
+
+
+def _hl_palette_color_at(row, col):
+    """Return the `_HL_PALETTE` cell label at `(row, col)`, or None when
+    the coordinate is out of range."""
+    if 0 <= row < _HL_PALETTE_ROWS and 0 <= col < _HL_PALETTE_COLS:
+        return _HL_PALETTE[row][col]
+    return None
+
+
 
 
 def _editor_package_w():
@@ -1732,10 +1902,15 @@ def _profile_editor_clear_hover():
 
 def _profile_editor_set_focus(panel, field=None):
     """Set the focus zone. Optional `field` selects the detail-panel
-    field when entering panel=2 (0 = Pattern, 1 = Body). Switching
-    panels arms the Pattern required-error when leaving an empty
-    Pattern field. Any focus or field change clears live selections
-    in both text fields — leaving the field invalidates the selection."""
+    field when entering panel=2. Switching panels arms the Pattern
+    required-error when leaving an empty Pattern field. Any focus or
+    field change clears live selections in both text fields — leaving
+    the field invalidates the selection.
+
+    Detail-field semantics depend on the active kind:
+      - text-bodied + macro: 0 = Pattern/Key, 1 = Body
+      - highlight: 0 = Pattern, 1 = Style, 2 = Text, 3 = Background
+    """
     global _editor_focus, _editor_detail_field, _editor_pattern_touched
     prev_focus = _editor_focus
     prev_field = _editor_detail_field
@@ -1759,7 +1934,8 @@ def _profile_editor_set_focus(panel, field=None):
     if panel == 2:
         if field is None:
             field = _editor_detail_field if prev_focus == 2 else 0
-        _editor_detail_field = max(0, min(1, field))
+        max_field = _editor_hl_zone_count() - 1
+        _editor_detail_field = max(0, min(max_field, field))
     if _editor_focus == panel and (panel != 2 or _editor_detail_field == prev_field):
         return
     _editor_focus = panel
@@ -1769,15 +1945,19 @@ def _profile_editor_set_focus(panel, field=None):
 
 
 def _profile_editor_cycle_focus(delta):
-    """Cycle the 4-stop focus chain: tabs → list → detail.Pattern →
-    detail.Body → tabs."""
+    """Cycle the focus chain: tabs → list → detail.zone_0 → … → tabs.
+    Detail-panel zones depend on the active kind — 2 (Pattern/Body) for
+    the text-bodied kinds and macros, 4 (Pattern/Style/Text/BG) for
+    highlights."""
+    detail_zones = _editor_hl_zone_count()
+    total = 2 + detail_zones   # tabs + list + zones
     if _editor_focus == 0:
         idx = 0
     elif _editor_focus == 1:
         idx = 1
     else:
-        idx = 2 + _editor_detail_field
-    new_idx = (idx + delta) % 4
+        idx = 2 + min(_editor_detail_field, detail_zones - 1)
+    new_idx = (idx + delta) % total
     if new_idx == 0:
         _profile_editor_set_focus(0)
     elif new_idx == 1:
@@ -1850,133 +2030,176 @@ def _editor_refresh_buffers():
     navigating away and back doesn't keep a stale error visible on a
     different row.
 
-    On `highlight` entries the palette grid cursor + Custom-slot
-    stash are also re-initialised from the entry's body. A
-    palette-named body lands the cursor on the matching swatch and
-    clears the Custom slot; a non-palette body stashes the original
-    value and parks the cursor on Custom."""
+    On `highlight` entries the three palette zones (Style, Text,
+    Background) are re-initialised by parsing `entry.body`. A body
+    that decomposes cleanly through `_hl_parse_body` sets the style
+    toggles and lands the text/bg cursors on the matching swatches;
+    a non-decomposable body stashes the original value in the Custom
+    slot and parks the user on it."""
     global _editor_pattern_cursor, _editor_body_line, _editor_body_col
     global _editor_pattern_touched
-    global _editor_palette_row, _editor_palette_col
-    global _editor_palette_custom_value
-    global _editor_palette_hover_row, _editor_palette_hover_col
+    global _editor_hl_style_cursor
+    global _editor_hl_text_row, _editor_hl_text_col
+    global _editor_hl_bg_row, _editor_hl_bg_col
+    global _editor_hl_custom_value, _editor_hl_hover
     entry = _editor_current_entry()
     if entry is None:
         _editor_pattern_cursor = 0
         _editor_body_line = 0
         _editor_body_col = 0
-        _editor_palette_row = 0
-        _editor_palette_col = 0
-        _editor_palette_custom_value = None
+        _editor_hl_text_row = 0
+        _editor_hl_text_col = 0
+        _editor_hl_bg_row   = -1
+        _editor_hl_bg_col   = 0
+        _editor_hl_style_cursor = 0
+        _editor_hl_custom_value = None
     else:
         _editor_pattern_cursor = len(entry.pattern)
         body_lines = entry.body.split("\n") if entry.body else [""]
         _editor_body_line = max(0, len(body_lines) - 1)
         _editor_body_col  = len(body_lines[_editor_body_line])
         if entry.kind == "highlight":
-            pos = _editor_palette_position_for_color(entry.body)
-            if pos is not None:
-                _editor_palette_row, _editor_palette_col = pos
-                _editor_palette_custom_value = None
+            parsed = _hl_parse_body(entry.body)
+            if parsed is not None:
+                styles, text_color, bg_color = parsed
+                _editor_hl_custom_value = None
+                # Text palette cursor → matching swatch (default red if
+                # no text colour was given).
+                pos = _hl_palette_position_for_color(text_color or "red")
+                _editor_hl_text_row, _editor_hl_text_col = pos or (0, 0)
+                # Background palette cursor — (None) when no bg.
+                if bg_color is None:
+                    _editor_hl_bg_row, _editor_hl_bg_col = -1, 0
+                else:
+                    pos = _hl_palette_position_for_color(bg_color)
+                    _editor_hl_bg_row, _editor_hl_bg_col = pos or (0, 0)
+                # Style cursor stays at 0 (Underscore) on entry switch
+                # — that's the leftmost toggle. The active set is
+                # recovered separately.
+                _editor_hl_style_cursor = 0
             else:
-                # Non-palette body — stash it and park cursor on Custom.
-                _editor_palette_custom_value = entry.body
-                _editor_palette_row = _EDITOR_PALETTE_ROWS   # Custom slot
-                _editor_palette_col = 0
+                _editor_hl_custom_value = entry.body
+                _editor_hl_text_row, _editor_hl_text_col = 0, 0
+                _editor_hl_bg_row, _editor_hl_bg_col = -1, 0
+                _editor_hl_style_cursor = 0
         else:
-            _editor_palette_row = 0
-            _editor_palette_col = 0
-            _editor_palette_custom_value = None
+            _editor_hl_text_row = 0
+            _editor_hl_text_col = 0
+            _editor_hl_bg_row   = -1
+            _editor_hl_bg_col   = 0
+            _editor_hl_style_cursor = 0
+            _editor_hl_custom_value = None
     _editor_pattern_touched = False
-    _editor_palette_hover_row = None
-    _editor_palette_hover_col = None
+    _editor_hl_hover = None
     _editor_clear_selections()
 
 
-def _editor_palette_position_for_color(name):
-    """Return `(row, col)` of the palette cell whose label equals `name`,
-    or None when the value is not in the grid."""
-    for r, (left, right) in enumerate(_EDITOR_PALETTE_GRID):
-        if left == name:
-            return (r, 0)
-        if right == name:
-            return (r, 1)
-    return None
-
-
-def _editor_palette_color_at(row, col):
-    """Return the palette-color label at `(row, col)`, or None when
-    `row` indexes the Custom slot (row == `_EDITOR_PALETTE_ROWS`)."""
-    if 0 <= row < _EDITOR_PALETTE_ROWS and 0 <= col < _EDITOR_PALETTE_COLS:
-        return _EDITOR_PALETTE_GRID[row][col]
-    return None
-
-
-def _editor_palette_apply_cursor():
-    """Write the value at the current palette cursor into the active
-    entry's body. Palette cells write the swatch's color name; the
-    Custom slot restores the stashed pre-edit value. Routes through
-    `entry.body = ...` so `__setattr__` clears `_raw` for an edited
-    highlight to serialise canonically on save."""
+def _editor_hl_active_styles():
+    """Return the styles currently active on the cursor entry — by
+    re-parsing the body. Returns an empty set when the body is in the
+    Custom slot or doesn't parse."""
     entry = _editor_current_entry()
-    if entry is None:
-        return
-    if _editor_palette_row == _EDITOR_PALETTE_ROWS:
-        if _editor_palette_custom_value is not None:
-            entry.body = _editor_palette_custom_value
-        return
-    color = _editor_palette_color_at(_editor_palette_row, _editor_palette_col)
-    if color is not None:
-        entry.body = color
+    if entry is None or entry.kind != "highlight":
+        return set()
+    parsed = _hl_parse_body(entry.body)
+    if parsed is None:
+        return set()
+    return parsed[0]
 
 
-def _editor_palette_set_cursor(row, col):
-    """Move the palette cursor to `(row, col)` and apply the live
-    binding. Clamps to the grid; `row == _EDITOR_PALETTE_ROWS` is
-    only valid when the Custom slot is visible."""
-    global _editor_palette_row, _editor_palette_col
-    custom_visible = _editor_palette_custom_value is not None
-    max_row = _EDITOR_PALETTE_ROWS if custom_visible else (_EDITOR_PALETTE_ROWS - 1)
-    row = max(0, min(max_row, row))
-    if row == _EDITOR_PALETTE_ROWS:
-        col = 0
+def _editor_hl_apply_state():
+    """Compose `entry.body` from the three palette cursors + the active
+    style set, and write it back via `entry.body = ...` (clears `_raw`).
+    Called from every keyboard / click handler that mutates a highlight
+    palette so the list panel re-renders live."""
+    entry = _editor_current_entry()
+    if entry is None or entry.kind != "highlight":
+        return
+    # If the user navigated away from Custom, drop the stash — the body
+    # is now produced from the palettes.
+    text_color = _hl_palette_color_at(_editor_hl_text_row,
+                                      _editor_hl_text_col)
+    if _editor_hl_bg_row == -1:
+        bg_color = None
     else:
-        col = max(0, min(_EDITOR_PALETTE_COLS - 1, col))
-    if row == _editor_palette_row and col == _editor_palette_col:
+        bg_color = _hl_palette_color_at(_editor_hl_bg_row,
+                                        _editor_hl_bg_col)
+    styles = _editor_hl_active_styles()
+    new_body = _hl_serialize(styles, text_color, bg_color)
+    if entry.body != new_body:
+        entry.body = new_body
+
+
+def _editor_hl_toggle_style(style):
+    """Flip `style` in the active set and re-serialise the body."""
+    entry = _editor_current_entry()
+    if entry is None or entry.kind != "highlight":
         return
-    _editor_palette_row = row
-    _editor_palette_col = col
-    _editor_palette_apply_cursor()
+    styles = _editor_hl_active_styles()
+    if style in styles:
+        styles.remove(style)
+    else:
+        styles.add(style)
+    text_color = _hl_palette_color_at(_editor_hl_text_row,
+                                      _editor_hl_text_col)
+    if _editor_hl_bg_row == -1:
+        bg_color = None
+    else:
+        bg_color = _hl_palette_color_at(_editor_hl_bg_row,
+                                        _editor_hl_bg_col)
+    entry.body = _hl_serialize(styles, text_color, bg_color)
+    # Clear the Custom stash — navigating away from Custom commits the
+    # palette-derived body.
+    global _editor_hl_custom_value
+    _editor_hl_custom_value = None
+
+
+def _editor_hl_set_text_cursor(row, col):
+    """Move the text-palette cursor to `(row, col)` (clamped) and
+    re-serialise the body."""
+    global _editor_hl_text_row, _editor_hl_text_col, _editor_hl_custom_value
+    row = max(0, min(_HL_PALETTE_ROWS - 1, row))
+    col = max(0, min(_HL_PALETTE_COLS - 1, col))
+    if (row, col) == (_editor_hl_text_row, _editor_hl_text_col):
+        return
+    _editor_hl_text_row = row
+    _editor_hl_text_col = col
+    _editor_hl_custom_value = None
+    _editor_hl_apply_state()
     if _app:
         _app.invalidate()
 
 
-def _editor_palette_move(d_row, d_col):
-    """Relative palette cursor move. Returns True when the cursor
-    landed somewhere new (so the keybind can decide whether to fall
-    through to inter-zone nav at an edge)."""
-    custom_visible = _editor_palette_custom_value is not None
-    cur_row = _editor_palette_row
-    cur_col = _editor_palette_col
-    if cur_row == _EDITOR_PALETTE_ROWS:
-        # On Custom: ↑ goes back into the grid; ↓ is a no-op; ←/→ no-op.
-        if d_row == -1:
-            _editor_palette_set_cursor(_EDITOR_PALETTE_ROWS - 1, 0)
-            return True
-        return False
-    new_row = cur_row + d_row
-    new_col = cur_col + d_col
-    if d_row > 0 and new_row >= _EDITOR_PALETTE_ROWS:
-        if custom_visible:
-            _editor_palette_set_cursor(_EDITOR_PALETTE_ROWS, 0)
-            return True
-        return False
-    if d_row < 0 and new_row < 0:
-        return False
-    if d_col != 0 and (new_col < 0 or new_col >= _EDITOR_PALETTE_COLS):
-        return False
-    _editor_palette_set_cursor(new_row, new_col)
-    return True
+def _editor_hl_set_bg_cursor(row, col):
+    """Move the bg-palette cursor to `(row, col)` and re-serialise the
+    body. `row == -1` selects the `(None)` cell — no background."""
+    global _editor_hl_bg_row, _editor_hl_bg_col, _editor_hl_custom_value
+    if row == -1:
+        new_row, new_col = -1, 0
+    else:
+        new_row = max(0, min(_HL_PALETTE_ROWS - 1, row))
+        new_col = max(0, min(_HL_PALETTE_COLS - 1, col))
+    if (new_row, new_col) == (_editor_hl_bg_row, _editor_hl_bg_col):
+        return
+    _editor_hl_bg_row = new_row
+    _editor_hl_bg_col = new_col
+    _editor_hl_custom_value = None
+    _editor_hl_apply_state()
+    if _app:
+        _app.invalidate()
+
+
+def _editor_hl_set_style_cursor(idx):
+    """Move the style-toggle cursor to `idx` (clamped). Does NOT toggle
+    the style — pressing Enter or clicking the toggle does that."""
+    global _editor_hl_style_cursor
+    n = len(_HL_STYLE_TOKENS)
+    idx = max(0, min(n - 1, idx))
+    if idx == _editor_hl_style_cursor:
+        return
+    _editor_hl_style_cursor = idx
+    if _app:
+        _app.invalidate()
 
 
 def _editor_body_lines():
@@ -2967,14 +3190,27 @@ def _editor_build_text_detail(entry, total_lines):
 
 
 def _editor_build_palette_detail(entry, total_lines):
-    """Pattern + 2-D color palette grid for `highlight`. The grid sits
-    where the Body box lives in the text-detail variant; the Custom
-    slot appears below the grid only when the entry's body is not in
-    the palette."""
+    """Highlight detail panel — Pattern + three palette zones.
+
+    Layout (top → bottom):
+      Pattern field (label + box)
+      <blank>
+      ─── Style ───
+      [ Underscore ] [ Blink ] [ Reverse ]
+      <blank>
+      ─── Text ───       ─── Background ───
+      red    Red         (None)
+      green  Green       red       Red
+      …                  green     Green
+                         …
+      Error slot · Hint block
+    """
     detail_focused = (_editor_focus == 2)
-    pat_lbl, body_lbl = DETAIL_LABELS["highlight"]
+    pat_lbl, _ = DETAIL_LABELS["highlight"]
     pattern_focused = detail_focused and _editor_detail_field == 0
-    palette_focused = detail_focused and _editor_detail_field == 1
+    style_focused   = detail_focused and _editor_detail_field == 1
+    text_focused    = detail_focused and _editor_detail_field == 2
+    bg_focused      = detail_focused and _editor_detail_field == 3
     pat_border = _editor_field_border_style(pattern_focused)
     pat_focus_h = _editor_make_field_focus_handler("pattern")
     pat_sel = _editor_pattern_selection() if pattern_focused else None
@@ -2992,30 +3228,21 @@ def _editor_build_palette_detail(entry, total_lines):
     rows.append(_editor_pad_full(pat_border, _editor_box_bot(_EDITOR_DETAIL_W),
                                  pat_focus_h))
 
-    rows.append(_editor_pad_full(C_HINT, body_lbl + ":"))
+    rows.append(_editor_pad_full(C_HINT, ""))
+    rows.append(_editor_centered_row(C_HINT, "─── Style ───"))
+    rows.append(_editor_hl_style_row(style_focused))
+    rows.append(_editor_pad_full(C_HINT, ""))
+    rows.append(_editor_hl_section_headers_row())
 
-    custom_visible = _editor_palette_custom_value is not None
-    for r, (left, right) in enumerate(_EDITOR_PALETTE_GRID):
-        is_left_cursor  = palette_focused and r == _editor_palette_row and _editor_palette_col == 0
-        is_right_cursor = palette_focused and r == _editor_palette_row and _editor_palette_col == 1
-        is_left_hover   = (_editor_palette_hover_row == r
-                           and _editor_palette_hover_col == 0
-                           and not is_left_cursor)
-        is_right_hover  = (_editor_palette_hover_row == r
-                           and _editor_palette_hover_col == 1
-                           and not is_right_cursor)
-        rows.append(_editor_palette_row_fragments(
-            r, left, right,
-            is_left_cursor, is_right_cursor,
-            is_left_hover, is_right_hover))
+    # 7 palette rows + 1 (None)/empty row above them for the bg column.
+    # Row 0 (None) row: text column is empty; bg column shows (None).
+    rows.append(_editor_hl_none_row(text_focused, bg_focused))
+    # Rows 1..7: dark/light swatches for both text and bg.
+    for r in range(_HL_PALETTE_ROWS):
+        rows.append(_editor_hl_palette_row(r, text_focused, bg_focused))
 
-    if custom_visible:
-        is_custom_cursor = (palette_focused
-                            and _editor_palette_row == _EDITOR_PALETTE_ROWS)
-        is_custom_hover  = (_editor_palette_hover_row == _EDITOR_PALETTE_ROWS
-                            and not is_custom_cursor)
-        rows.append(_editor_palette_custom_row_fragments(
-            is_custom_cursor, is_custom_hover))
+    if _editor_hl_custom_value is not None:
+        rows.append(_editor_hl_custom_row())
 
     err = _editor_validation_error()
     if err:
@@ -3025,7 +3252,7 @@ def _editor_build_palette_detail(entry, total_lines):
 
     rows.append(_editor_pad_full(C_HINT, ""))
     rows.append(_editor_centered_row(C_HINT, "─── Hint ───"))
-    rows.append(_editor_pad_full(C_HINT, "Pick a color for the highlighted text."))
+    rows.append(_editor_pad_full(C_HINT, "Toggle styles · pick text + bg colours."))
     rows.append(_editor_pad_full(C_HINT, ""))
 
     while len(rows) < total_lines:
@@ -3160,117 +3387,285 @@ _EDITOR_DETAIL_BUILDERS = {
 }
 
 
-# Palette-grid row geometry: 3-cell indent + 17-cell left cell +
-# 3-cell gap + 17-cell right cell. Sums to 40 (== inner detail width).
-_EDITOR_PALETTE_INDENT  = 3
-_EDITOR_PALETTE_CELL_W  = 17
-_EDITOR_PALETTE_GAP     = 3
+# Highlight palette geometry. Detail panel is 44 cells wide. Layout per
+# row: 1 indent + 9 text-dark + 1 gap + 9 text-light + 4 separator
+# + 9 bg-dark + 1 gap + 9 bg-light + 1 indent = 44.
+_HL_INDENT  = 1
+_HL_CELL_W  = 9
+_HL_GAP     = 1
+_HL_SEP     = 4
+# Text half spans cols [1, 20) — i.e. 20 cells wide. Background half
+# spans cols [24, 43) — also 20 cells.
+_HL_TEXT_HALF_START   = _HL_INDENT
+_HL_TEXT_HALF_W       = _HL_CELL_W + _HL_GAP + _HL_CELL_W
+_HL_BG_HALF_START     = (_HL_INDENT + _HL_CELL_W + _HL_GAP + _HL_CELL_W
+                         + _HL_SEP)
+_HL_BG_HALF_W         = _HL_CELL_W + _HL_GAP + _HL_CELL_W
 
 
-def _editor_palette_cell_text(name, is_cursor):
-    """Compose the per-cell text for a palette swatch. The cursor cell
-    wraps the name in brackets (`[ name ]`); a non-cursor cell wraps
-    in spaces of equal width so the column stays aligned."""
+def _editor_hl_text_cell_fragments(name, is_cursor, is_hover, row, col):
+    """Build the fragments for one text-palette cell. Renders the name
+    in its own colour; cursor wraps in `[ ... ]` brackets; hover paints
+    `C_HOVER`. Carries a click handler that moves the cursor."""
     if is_cursor:
-        text = f"[ {name} ]"
+        text = f"[{name}]".center(_HL_CELL_W)
     else:
-        text = f"  {name}  "
-    return text.ljust(_EDITOR_PALETTE_CELL_W)[:_EDITOR_PALETTE_CELL_W]
-
-
-def _editor_palette_swatch_style(name, is_cursor, is_hover):
-    """Foreground style for a palette swatch. Cursor reverses the
-    swatch's color into a clearly-selected band; hover renders in
-    `C_HOVER` so the underlying color is dimmed but readable; normal
-    cells render the name *in its own color* via `TTPP_COLOR_STYLES`."""
+        text = name.center(_HL_CELL_W)
+    style_key = _HL_DICT_KEY.get(name)
+    base_style = TTPP_COLOR_STYLES.get(style_key, "") if style_key else ""
     if is_cursor:
-        return f"{TTPP_COLOR_STYLES[name]} reverse"
-    if is_hover:
-        return C_HOVER
-    return TTPP_COLOR_STYLES[name]
-
-
-def _editor_palette_row_fragments(grid_row, left_name, right_name,
-                                  left_cursor, right_cursor,
-                                  left_hover, right_hover):
-    """One row of the palette grid as a list of fragments summing to
-    `_EDITOR_DETAIL_W` cells. Each swatch carries its own click +
-    hover mouse handler keyed on its grid coordinates."""
-    indent = " " * _EDITOR_PALETTE_INDENT
-    gap    = " " * _EDITOR_PALETTE_GAP
-
-    left_text  = _editor_palette_cell_text(left_name,  left_cursor)
-    right_text = _editor_palette_cell_text(right_name, right_cursor)
-    left_style  = _editor_palette_swatch_style(left_name,  left_cursor,
-                                               left_hover)
-    right_style = _editor_palette_swatch_style(right_name, right_cursor,
-                                               right_hover)
-
-    frags = [
-        ("", indent),
-        (left_style, left_text,
-         _editor_make_palette_click_handler(grid_row, 0)),
-        ("", gap),
-        (right_style, right_text,
-         _editor_make_palette_click_handler(grid_row, 1)),
-    ]
-    used = (_EDITOR_PALETTE_INDENT + _EDITOR_PALETTE_CELL_W
-            + _EDITOR_PALETTE_GAP + _EDITOR_PALETTE_CELL_W)
-    if used < _EDITOR_DETAIL_W:
-        frags.append(("", " " * (_EDITOR_DETAIL_W - used)))
-    return frags
-
-
-def _editor_palette_custom_row_fragments(is_cursor, is_hover):
-    """The single-row Custom slot rendered below the grid when the
-    entry's body is not in the palette. Displays the stashed value so
-    the user can navigate back and revert."""
-    custom = _editor_palette_custom_value or ""
-    label  = f"Custom: {custom}"
-    if is_cursor:
-        text = f"[ {label} ]"
-        style = f"{C_ACCENT} reverse"
+        style = f"{base_style} reverse" if base_style else C_SELECTED
     elif is_hover:
-        text = f"  {label}  "
         style = C_HOVER
     else:
-        text = f"  {label}  "
+        style = base_style or C_ITEM
+    return (style, text[:_HL_CELL_W],
+            _editor_hl_make_text_handler(row, col))
+
+
+def _editor_hl_bg_cell_fragments(name, is_cursor, is_hover, row, col):
+    """Build the fragments for one background-palette cell. Renders the
+    name as black-on-coloured-bg; cursor wraps in `[ ... ]` brackets;
+    hover desaturates the colour."""
+    style_key = _HL_DICT_KEY.get(name)
+    if style_key is None:
+        bg_style = ""
+    else:
+        # Convert the foreground colour style into a background style.
+        # TTPP styles look like 'fg:ansired' — swap to 'bg:ansired'.
+        fg = TTPP_COLOR_STYLES.get(style_key, "")
+        bg_style = fg.replace("fg:", "bg:") if fg else ""
+    if is_cursor:
+        text = f"[{name}]".center(_HL_CELL_W)
+        style = f"fg:#000000 {bg_style} bold" if bg_style else C_SELECTED
+    elif is_hover:
+        text = name.center(_HL_CELL_W)
+        style = f"fg:#000000 {bg_style}" if bg_style else C_HOVER
+    else:
+        text = name.center(_HL_CELL_W)
+        style = f"fg:#000000 {bg_style}" if bg_style else C_ITEM
+    return (style, text[:_HL_CELL_W],
+            _editor_hl_make_bg_handler(row, col))
+
+
+def _editor_hl_none_cell_fragment(is_cursor, is_hover):
+    """Build the `(None)` background cell as a single fragment spanning
+    the bg-half width. It selects 'no background' when the cursor lands
+    on it."""
+    label = "(None)"
+    if is_cursor:
+        text = f"[ {label} ]".center(_HL_BG_HALF_W)
+        style = C_SELECTED
+    elif is_hover:
+        text = label.center(_HL_BG_HALF_W)
+        style = C_HOVER
+    else:
+        text = label.center(_HL_BG_HALF_W)
         style = C_HINT
-    if len(text) > _EDITOR_DETAIL_W - _EDITOR_PALETTE_INDENT:
-        text = text[:max(0, _EDITOR_DETAIL_W - _EDITOR_PALETTE_INDENT - 1)] + "…"
-    indent = " " * _EDITOR_PALETTE_INDENT
-    pad = max(0, _EDITOR_DETAIL_W - _EDITOR_PALETTE_INDENT - len(text))
-    frags = [
-        ("", indent),
-        (style, text,
-         _editor_make_palette_click_handler(_EDITOR_PALETTE_ROWS, 0)),
-    ]
-    if pad > 0:
-        frags.append(("", " " * pad))
-    return frags
+    return (style, text[:_HL_BG_HALF_W],
+            _editor_hl_make_bg_handler(-1, 0))
 
 
-def _editor_make_palette_click_handler(row, col):
-    """Build a click handler that focuses the palette grid and moves
-    the cursor to `(row, col)` — applying the live binding to
-    `Entry.body` via `_editor_palette_apply_cursor`."""
+def _editor_hl_make_text_handler(row, col):
+    """MouseEvent handler for a text-palette swatch: hover paints
+    C_HOVER on the cell; click moves the cursor (which is the
+    selection — the live binding writes the swatch's name into
+    `entry.body` via `_editor_hl_set_text_cursor`)."""
     def _handler(ev):
-        global _editor_palette_hover_row, _editor_palette_hover_col
+        global _editor_hl_hover
         if ev.event_type == MouseEventType.MOUSE_MOVE:
-            if (_editor_palette_hover_row, _editor_palette_hover_col) != (row, col):
-                _editor_palette_hover_row = row
-                _editor_palette_hover_col = col
+            new_hover = ("text", row, col)
+            if _editor_hl_hover != new_hover:
+                _editor_hl_hover = new_hover
+                if _app:
+                    _app.invalidate()
+            return None
+        if ev.event_type != MouseEventType.MOUSE_DOWN:
+            return NotImplemented
+        _profile_editor_set_focus(2, field=2)
+        _editor_hl_set_text_cursor(row, col)
+        return None
+    return _handler
+
+
+def _editor_hl_make_bg_handler(row, col):
+    """Mouse handler for a background swatch (or the (None) cell when
+    `row == -1`). Selecting (None) clears the background; selecting a
+    swatch sets that colour."""
+    def _handler(ev):
+        global _editor_hl_hover
+        if ev.event_type == MouseEventType.MOUSE_MOVE:
+            new_hover = ("bg", row, col)
+            if _editor_hl_hover != new_hover:
+                _editor_hl_hover = new_hover
+                if _app:
+                    _app.invalidate()
+            return None
+        if ev.event_type != MouseEventType.MOUSE_DOWN:
+            return NotImplemented
+        _profile_editor_set_focus(2, field=3)
+        _editor_hl_set_bg_cursor(row, col)
+        return None
+    return _handler
+
+
+def _editor_hl_make_style_handler(idx):
+    """Mouse handler for a Style toggle cell. Click flips the toggle
+    on/off; hover paints C_HOVER."""
+    def _handler(ev):
+        global _editor_hl_hover
+        if ev.event_type == MouseEventType.MOUSE_MOVE:
+            new_hover = ("style", 0, idx)
+            if _editor_hl_hover != new_hover:
+                _editor_hl_hover = new_hover
                 if _app:
                     _app.invalidate()
             return None
         if ev.event_type != MouseEventType.MOUSE_DOWN:
             return NotImplemented
         _profile_editor_set_focus(2, field=1)
-        _editor_palette_set_cursor(row, col)
+        _editor_hl_set_style_cursor(idx)
+        _editor_hl_toggle_style(_HL_STYLE_TOKENS[idx])
         if _app:
             _app.invalidate()
         return None
     return _handler
+
+
+def _editor_hl_style_row(focused):
+    """Build the row of style toggles. Each toggle is a `[Label]` cell;
+    active toggles paint with `C_ACCENT` (bold-amber), inactive with
+    `C_HINT`. The cursor cell paints `C_SELECTED` when the Style zone
+    has focus."""
+    tokens = _HL_STYLE_TOKENS
+    cells = []
+    active = _editor_hl_active_styles()
+    cell_strs = []
+    for tok in tokens:
+        cell_strs.append(f"[{_HL_STYLE_LABELS[tok]}]")
+    inter_gap = "  "
+    total_w = sum(len(s) for s in cell_strs) + inter_gap_len(cell_strs, inter_gap)
+    pad_l = max(0, (_EDITOR_DETAIL_W - total_w) // 2)
+    pad_r = max(0, _EDITOR_DETAIL_W - pad_l - total_w)
+    frags = [("", " " * pad_l)]
+    for i, (tok, cell) in enumerate(zip(tokens, cell_strs)):
+        is_cursor = focused and i == _editor_hl_style_cursor
+        is_hover  = (_editor_hl_hover == ("style", 0, i)
+                     and not is_cursor)
+        is_active = tok in active
+        if is_cursor:
+            style = C_SELECTED
+        elif is_hover:
+            style = C_HOVER
+        elif is_active:
+            style = C_ACCENT
+        else:
+            style = C_HINT
+        frags.append((style, cell, _editor_hl_make_style_handler(i)))
+        if i < len(tokens) - 1:
+            frags.append(("", inter_gap))
+    if pad_r > 0:
+        frags.append(("", " " * pad_r))
+    return frags
+
+
+def inter_gap_len(cells, gap):
+    if len(cells) <= 1:
+        return 0
+    return (len(cells) - 1) * len(gap)
+
+
+def _editor_hl_section_headers_row():
+    """Centred `─── Text ───` over the text half, and
+    `─── Background ───` over the bg half."""
+    text_hdr = "─── Text ───"
+    bg_hdr   = "─── Background ───"
+    text_pad_l = max(0, (_HL_TEXT_HALF_W - len(text_hdr)) // 2)
+    text_pad_r = max(0, _HL_TEXT_HALF_W - text_pad_l - len(text_hdr))
+    bg_pad_l   = max(0, (_HL_BG_HALF_W - len(bg_hdr)) // 2)
+    bg_pad_r   = max(0, _HL_BG_HALF_W - bg_pad_l - len(bg_hdr))
+    return [
+        ("", " " * _HL_INDENT),
+        ("", " " * text_pad_l),
+        (C_HINT, text_hdr),
+        ("", " " * text_pad_r),
+        ("", " " * _HL_SEP),
+        ("", " " * bg_pad_l),
+        (C_HINT, bg_hdr),
+        ("", " " * bg_pad_r),
+        ("", " " * _HL_INDENT),
+    ]
+
+
+def _editor_hl_none_row(text_focused, bg_focused):
+    """Top row of palettes: text half is empty; bg half holds the
+    `(None)` cell."""
+    is_cursor = bg_focused and _editor_hl_bg_row == -1
+    is_hover  = (_editor_hl_hover == ("bg", -1, 0) and not is_cursor)
+    none_frag = _editor_hl_none_cell_fragment(is_cursor, is_hover)
+    return [
+        ("", " " * _HL_INDENT),
+        ("", " " * _HL_TEXT_HALF_W),
+        ("", " " * _HL_SEP),
+        none_frag,
+        ("", " " * _HL_INDENT),
+    ]
+
+
+def _editor_hl_palette_row(r, text_focused, bg_focused):
+    """Build one row of the dual palette grid: dark+light text on the
+    left, dark+light bg on the right."""
+    text_dark, text_light = _HL_PALETTE[r]
+    bg_dark, bg_light = _HL_PALETTE[r]
+    tdc = (text_focused and r == _editor_hl_text_row
+           and _editor_hl_text_col == 0)
+    tlc = (text_focused and r == _editor_hl_text_row
+           and _editor_hl_text_col == 1)
+    bdc = (bg_focused and r == _editor_hl_bg_row
+           and _editor_hl_bg_col == 0)
+    blc = (bg_focused and r == _editor_hl_bg_row
+           and _editor_hl_bg_col == 1)
+    tdh = (_editor_hl_hover == ("text", r, 0) and not tdc)
+    tlh = (_editor_hl_hover == ("text", r, 1) and not tlc)
+    bdh = (_editor_hl_hover == ("bg",   r, 0) and not bdc)
+    blh = (_editor_hl_hover == ("bg",   r, 1) and not blc)
+    return [
+        ("", " " * _HL_INDENT),
+        _editor_hl_text_cell_fragments(text_dark, tdc, tdh, r, 0),
+        ("", " " * _HL_GAP),
+        _editor_hl_text_cell_fragments(text_light, tlc, tlh, r, 1),
+        ("", " " * _HL_SEP),
+        _editor_hl_bg_cell_fragments(bg_dark, bdc, bdh, r, 0),
+        ("", " " * _HL_GAP),
+        _editor_hl_bg_cell_fragments(bg_light, blc, blh, r, 1),
+        ("", " " * _HL_INDENT),
+    ]
+
+
+def _editor_hl_custom_row():
+    """The single-row Custom slot rendered below the palette grid when
+    the body didn't decompose. Click reverts to the stashed value."""
+    custom = _editor_hl_custom_value or ""
+    label  = f"Custom: {custom}"
+    text = f"  {label}  "
+    if len(text) > _EDITOR_DETAIL_W:
+        text = text[:_EDITOR_DETAIL_W - 1] + "…"
+    pad = max(0, _EDITOR_DETAIL_W - len(text))
+
+    def _click(ev):
+        if ev.event_type == MouseEventType.MOUSE_MOVE:
+            return None
+        if ev.event_type != MouseEventType.MOUSE_DOWN:
+            return NotImplemented
+        entry = _editor_current_entry()
+        if entry is None or _editor_hl_custom_value is None:
+            return None
+        entry.body = _editor_hl_custom_value
+        if _app:
+            _app.invalidate()
+        return None
+
+    return [(C_HINT, text, _click), ("", " " * pad)]
 
 
 def _editor_list_row_text(entry, is_cursor, is_hover):
@@ -3305,7 +3700,8 @@ def _editor_list_row_text(entry, is_cursor, is_hover):
         pat = pat[:max(0, _EDITOR_PATTERN_COL_W - 1)] + "…"
     pat_cell = pat.ljust(_EDITOR_PATTERN_COL_W)
     body_col_w = w - _EDITOR_PATTERN_COL_W - 2
-    body_one_line = (entry.body.split("\n", 1)[0] if entry.body else "")
+    body_full = (entry.body.split("\n", 1)[0] if entry.body else "")
+    body_one_line = body_full
     if len(body_one_line) > body_col_w:
         body_one_line = body_one_line[:max(0, body_col_w - 1)] + "…"
     body_cell = body_one_line.ljust(body_col_w)
@@ -3315,13 +3711,26 @@ def _editor_list_row_text(entry, is_cursor, is_hover):
         return [(C_SELECTED, full_text)]
     if is_hover:
         return [(C_HOVER, full_text)]
-    if entry.kind == "highlight" and body_one_line in TTPP_COLOR_NAMES:
-        # Color preview: render the swatch name in its own colour. The
-        # pattern + gap stay in the default list text style.
-        return [
-            (C_ITEM, pat_cell + "  "),
-            (TTPP_COLOR_STYLES[body_one_line], body_cell),
-        ]
+    if entry.kind == "highlight":
+        # Color preview: render the swatch name in its own text-colour
+        # when the body parses (using the *full* body — truncation in
+        # the visible cell shouldn't disable the colour preview). Direct
+        # single-colour bodies fall through the legacy lookup for
+        # back-compat with pre-section-C profiles.
+        if body_full in TTPP_COLOR_NAMES:
+            return [
+                (C_ITEM, pat_cell + "  "),
+                (TTPP_COLOR_STYLES[body_full], body_cell),
+            ]
+        parsed = _hl_parse_body(body_full)
+        if parsed is not None:
+            _styles, text_color, _bg = parsed
+            tc_style = _hl_color_style(text_color) if text_color else None
+            if tc_style:
+                return [
+                    (C_ITEM, pat_cell + "  "),
+                    (tc_style, body_cell),
+                ]
     if entry.kind == "macro" and pat_custom:
         # Mirror the highlights Custom slot — dim the unknown-key cell so
         # it reads as "needs attention" without breaking column alignment.
@@ -8986,11 +9395,22 @@ def _kb_peditor_stab(event):
 
 
 def _editor_in_palette_focus():
-    """True when the detail panel's Body slot is showing the colour
-    palette grid (Highlights tab + detail field 1)."""
+    """True when the detail panel's currently-focused field is any of
+    the highlight palette zones (Style, Text, Background). Used by the
+    text-editing keybindings (Backspace, character input, Home/End,
+    arrow keys) to skip the text-body code paths."""
     return (_editor_focus == 2
-            and _editor_detail_field == 1
-            and _profile_editor_active_kind() == "highlight")
+            and _profile_editor_active_kind() == "highlight"
+            and _editor_detail_field in (1, 2, 3))
+
+
+def _editor_hl_zone_count():
+    """Number of focusable zones inside the detail panel for the
+    current kind. 4 for highlights (Pattern, Style, Text, BG); 2 for
+    everything else (Pattern, Body)."""
+    if _profile_editor_active_kind() == "highlight":
+        return 4
+    return 2
 
 
 def _editor_in_macro_key_focus():
@@ -8999,6 +9419,93 @@ def _editor_in_macro_key_focus():
     return (_editor_focus == 2
             and _editor_detail_field == 0
             and _profile_editor_active_kind() == "macro")
+
+
+def _kb_peditor_palette_right():
+    """←/→ within the highlight palette zones — see docs/launcher.md
+    'Focus model' for the full traversal table."""
+    field = _editor_detail_field
+    if field == 1:   # Style: cycle toggles
+        _editor_hl_set_style_cursor(_editor_hl_style_cursor + 1)
+        return
+    if field == 2:   # Text → col+1, or jump to BG at right edge
+        if _editor_hl_text_col == 0:
+            _editor_hl_set_text_cursor(_editor_hl_text_row, 1)
+        else:
+            # text col 1 → BG col 0, same row (or (None) if row mismatches)
+            _profile_editor_set_focus(2, field=3)
+            _editor_hl_set_bg_cursor(_editor_hl_text_row, 0)
+        return
+    if field == 3:   # BG: col+1, no-op at right edge
+        if _editor_hl_bg_row == -1:
+            return   # (None) — no horizontal movement
+        if _editor_hl_bg_col == 0:
+            _editor_hl_set_bg_cursor(_editor_hl_bg_row, 1)
+
+
+def _kb_peditor_palette_left():
+    field = _editor_detail_field
+    if field == 1:
+        _editor_hl_set_style_cursor(_editor_hl_style_cursor - 1)
+        return
+    if field == 2:
+        # text col 0 → no-op (left edge); col 1 → col 0
+        if _editor_hl_text_col == 1:
+            _editor_hl_set_text_cursor(_editor_hl_text_row, 0)
+        return
+    if field == 3:
+        if _editor_hl_bg_row == -1:
+            return
+        if _editor_hl_bg_col == 0:
+            # BG col 0 → Text col 1, same row
+            _profile_editor_set_focus(2, field=2)
+            _editor_hl_set_text_cursor(_editor_hl_bg_row, 1)
+        else:
+            _editor_hl_set_bg_cursor(_editor_hl_bg_row, 0)
+
+
+def _kb_peditor_palette_up():
+    field = _editor_detail_field
+    if field == 1:
+        # Style row ↑ → Pattern
+        _profile_editor_set_focus(2, field=0)
+        return
+    if field == 2:
+        # Text row 0 ↑ → Style; otherwise row-1
+        if _editor_hl_text_row == 0:
+            _profile_editor_set_focus(2, field=1)
+        else:
+            _editor_hl_set_text_cursor(_editor_hl_text_row - 1,
+                                       _editor_hl_text_col)
+        return
+    if field == 3:
+        # BG: at (None) ↑ → Style; at row 0 ↑ → (None); else row-1
+        if _editor_hl_bg_row == -1:
+            _profile_editor_set_focus(2, field=1)
+        elif _editor_hl_bg_row == 0:
+            _editor_hl_set_bg_cursor(-1, 0)
+        else:
+            _editor_hl_set_bg_cursor(_editor_hl_bg_row - 1,
+                                     _editor_hl_bg_col)
+
+
+def _kb_peditor_palette_down():
+    field = _editor_detail_field
+    if field == 1:
+        # Style row ↓ → Text palette (preserves col 0)
+        _profile_editor_set_focus(2, field=2)
+        return
+    if field == 2:
+        if _editor_hl_text_row < _HL_PALETTE_ROWS - 1:
+            _editor_hl_set_text_cursor(_editor_hl_text_row + 1,
+                                       _editor_hl_text_col)
+        return
+    if field == 3:
+        if _editor_hl_bg_row == -1:
+            _editor_hl_set_bg_cursor(0, _editor_hl_bg_col)
+        elif _editor_hl_bg_row < _HL_PALETTE_ROWS - 1:
+            _editor_hl_set_bg_cursor(_editor_hl_bg_row + 1,
+                                     _editor_hl_bg_col)
 
 
 @kb.add("right", filter=_in_frame("profile_editor"))
@@ -9011,7 +9518,7 @@ def _kb_peditor_right(event):
         if _editor_in_macro_key_focus():
             return   # Key cell is a button — no horizontal cursor
         if _editor_in_palette_focus():
-            _editor_palette_move(0, 1)
+            _kb_peditor_palette_right()
         elif _editor_detail_field == 0:
             _editor_clear_pattern_selection()
             _editor_pattern_move_right()
@@ -9026,9 +9533,9 @@ def _kb_peditor_left(event):
         _profile_editor_set_tab(_editor_active_tab - 1)
     elif _editor_focus == 2:
         if _editor_in_macro_key_focus():
-            return   # Key cell is a button — no horizontal cursor
+            return
         if _editor_in_palette_focus():
-            _editor_palette_move(0, -1)
+            _kb_peditor_palette_left()
         elif _editor_detail_field == 0:
             _editor_clear_pattern_selection()
             _editor_pattern_move_left()
@@ -9042,22 +9549,16 @@ def _kb_peditor_up(event):
     if _editor_focus == 0:
         return   # nothing above the tabs
     if _editor_focus == 1:
-        # First list row ↑ → focus the tab strip; otherwise move within.
         if _editor_list_cursor == 0:
             _profile_editor_set_focus(0)
         else:
             _profile_editor_move_cursor(-1)
         return
-    # Detail focus.
     if _editor_detail_field == 0:
-        # Pattern ↑ → focus the tab strip.
         _profile_editor_set_focus(0)
         return
     if _editor_in_palette_focus():
-        # Palette ↑: traverse the grid; fall through to Pattern at the
-        # top edge.
-        if not _editor_palette_move(-1, 0):
-            _profile_editor_set_focus(2, field=0)
+        _kb_peditor_palette_up()
         return
     # Text body ↑: inter-line first; at top edge of buffer → Pattern.
     _editor_clear_body_selection()
@@ -9074,12 +9575,13 @@ def _kb_peditor_down(event):
     if _editor_focus == 1:
         _profile_editor_move_cursor(1)
         return
-    # Detail focus.
     if _editor_detail_field == 0:
+        # Pattern ↓ → first palette zone (Style on highlights, Body
+        # otherwise).
         _profile_editor_set_focus(2, field=1)
         return
     if _editor_in_palette_focus():
-        _editor_palette_move(1, 0)
+        _kb_peditor_palette_down()
         return
     _editor_clear_body_selection()
     _editor_body_move_line(1)
@@ -9259,7 +9761,14 @@ def _kb_peditor_enter(event):
             _editor_push_keybind_overlay(just_created=False)
             return
         if _editor_in_palette_focus():
-            return   # palette is selection-only; Enter is a no-op
+            # Style zone: Enter toggles the current style. Text / BG:
+            # Enter is a no-op (the cursor IS the selection).
+            if _editor_detail_field == 1:
+                _editor_hl_toggle_style(
+                    _HL_STYLE_TOKENS[_editor_hl_style_cursor])
+                if _app:
+                    _app.invalidate()
+            return
         if _editor_detail_field == 1:
             _editor_body_insert_newline()
         # Pattern: Enter is a no-op (use Tab / ↓ to advance).
