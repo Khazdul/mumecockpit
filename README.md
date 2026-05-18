@@ -104,6 +104,11 @@ colour, connection mode (MMapper / Direct / Custom), a History
 browser for archived sessions, and a self-update flow that tracks
 GitHub release tags.
 
+**Profile editor** — full GUI CRUD for aliases, actions, macros,
+highlights, and substitutes from the launcher's Profile page.
+Round-trip preserves unknown tt++ commands and entry priorities
+verbatim. Raw mode for advanced editing pending.
+
 **MMapper** integration via WSL2 mirrored networking on Windows,
 or plain `localhost` on macOS / Linux. [MMapper][mmapper] is a
 separate graphical companion app — install it and the cockpit

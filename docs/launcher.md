@@ -37,7 +37,7 @@ path) goes through that wrapper unchanged.
 The UI is a frame stack: a single `DynamicContainer` swaps between `main`,
 `profile`, `profile_rename`, `profile_create_name`, `profile_create_choose`,
 `profile_create_copy_picker`, `profile_delete_confirm`, `profile_editor`,
-`profile_editor_delete_confirm`, `profile_editor_macro_keybind`, `options`,
+`profile_editor_macro_keybind`, `options`,
 `options_panes`, `options_pane`, `options_connection`,
 `options_connection_custom`, `options_coming_soon`, `scripts`, `about`,
 `history`, `history_detail`, `history_rate`, `history_delete_confirm`,
@@ -333,7 +333,10 @@ package modelled on the `profile` frame's table package. Total width
 - **Macros tab.** The Pattern slot is replaced by a focusable
   one-line **Key cell** rendered as `[ Numpad 0 ]` / `[ F1 ]` /
   `[ Alt+a ]` for known escapes, `[ Custom: <raw> ]` in `C_HINT`
-  for unknown ones, and `[ Press to bind… ]` in `C_HINT` for an
+  for unknown ones (same `Custom:` convention as the Highlights
+  Custom slot — the original on-disk value is preserved byte-exact
+  and replaced only when the user binds a new key through the
+  capture overlay), and `[ Press to bind… ]` in `C_HINT` for an
   empty pre-capture entry. A `(Enter to rebind)` hint sits one
   row below the cell. The cell itself is a button — `←`/`→` and
   typing are no-ops; `Enter` (or a mouse click) pushes the
@@ -1615,7 +1618,7 @@ All frames render through `prompt_toolkit` controls. Layout building blocks:
   keyboard handlers fire reliably.
 - **Centered frames** — `main`, `profile_rename`, the profile-create
   sub-frames, `profile_delete_confirm`, `profile_editor`,
-  `profile_editor_delete_confirm`, `profile_editor_macro_keybind`, `options`,
+  `profile_editor_macro_keybind`, `options`,
   `options_panes`, `options_pane`, `options_connection`,
   `options_connection_custom`, `options_coming_soon`, `history_detail`,
   `history_rate`, `history_delete_confirm`, `update_running`,

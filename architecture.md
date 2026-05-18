@@ -64,6 +64,12 @@ tracking, and UI feedback.
 │   │   ├── palette.py        # Shared prompt_toolkit colour palette (launcher + popup)
 │   │   ├── tmux_start.sh     # tmux session creation, hooks, keybinds
 │   │   ├── ingame_menu.sh    # In-game ESC popup menu
+│   │   ├── profile_io.py     # Parser / serializer for tt++ profile .tin files; backs
+│   │   │                     #   the launcher's profile editor (ADR 0042 round-trip
+│   │   │                     #   contract, see docs/launcher.md)
+│   │   ├── macro_keys.py     # Bidirectional macro-key map (tt++ escape ↔ prompt_toolkit
+│   │   │                     #   key ↔ display name) for the editor's Macros tab;
+│   │   │                     #   mirrors input_pane's forwardable-key set (ADR 0082)
 │   │   ├── run_stats.py      # JSONL run-statistics aggregator — shared by the popup
 │   │   │                     #   Statistics frame and the future launcher run-browser (ADR 0065)
 │   │   ├── spotlights.py     # Cross-character spotlight reel aggregator + playback
@@ -399,10 +405,14 @@ ADR 0077–0080) is complete: rotation/per-event windows, scroll-clear
 transitions, pre-roll trim, and the end-of-reel scrolling credits all
 shipped.
 
-The launcher's profile editor is now feature-complete for GUI-mode
-CRUD across all five tt++ command kinds — phase 5 brought the Macros
-tab online with a key-capture overlay and readable display names
-(`Numpad 0`, `F1`, `Alt+a`) in place of raw escape sequences. See
+The launcher's profile editor is GUI-complete for all five tt++
+command kinds (aliases, actions, macros, highlights, substitutes):
+five-tab navigation, per-kind detail panels, click + keyboard editing,
+the key-capture overlay for macros, and a round-trip parser /
+serializer that preserves unknown commands and entry priorities
+byte-exact. Raw-mode editing (direct `.tin`-text editing for advanced
+users) and in-game popup access to the editor are not yet wired —
+those land in follow-up phases. See
 [ADR 0082](docs/decisions/0082-macro-keys-duplicates-input-pane.md)
 for the deferred unification of `bridge/launcher/macro_keys.py` and
 `bridge/panes/input_pane.py`.
