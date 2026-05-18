@@ -22,6 +22,16 @@ KINDS = ("alias", "action", "macro", "highlight", "substitute")
 # GUI-editable kinds. Order is irrelevant — `resolve_kind` checks all.
 CANONICAL_KINDS = ("alias", "action", "macro", "highlight", "substitute")
 
+# Per-kind brace-arg arity: (min_args, max_args). tt++ accepts an optional
+# third arg as priority on every GUI-editable kind except `#macro`.
+_KIND_ARITY = {
+    "alias":      (2, 3),
+    "action":     (2, 3),
+    "macro":      (2, 2),
+    "highlight":  (2, 3),
+    "substitute": (2, 3),
+}
+
 _NOP = "#nop"
 
 
@@ -174,14 +184,17 @@ def _try_parse_entry_at(src, i, n):
         return None
     j = k
 
-    # Consume up to 3 brace groups, with arbitrary whitespace between
-    # (including newlines — tt++ treats newlines outside braces as ws).
-    # `end_after_last_brace` tracks the position right after the last
-    # `}` so trailing whitespace (which the inner loop may consume while
-    # searching for the next `{`) is NOT folded into the entry's _raw.
+    # Consume up to `max_args` brace groups, with arbitrary whitespace
+    # between (including newlines — tt++ treats newlines outside braces
+    # as ws). `end_after_last_brace` tracks the position right after
+    # the last `}` so trailing whitespace (which the inner loop may
+    # consume while searching for the next `{`) is NOT folded into the
+    # entry's _raw. `max_args` comes from `_KIND_ARITY`: `#macro`
+    # accepts exactly 2; the other four kinds accept 2 or 3.
+    min_args, max_args = _KIND_ARITY[kind]
     args = []
     end_after_last_brace = j
-    while len(args) < 3:
+    while len(args) < max_args:
         while j < n and src[j] in (" ", "\t", "\n", "\r"):
             j += 1
         if j >= n or src[j] != "{":
@@ -193,14 +206,17 @@ def _try_parse_entry_at(src, i, n):
         end_after_last_brace = j
         args.append(body_text)
 
-    if not (2 <= len(args) <= 3):
+    if not (min_args <= len(args) <= max_args):
         return None
     pattern = args[0]
     body    = args[1]
     priority = None
     if len(args) == 3:
+        # Only reachable for kinds whose max_args == 3 (alias/action/
+        # highlight/substitute). Non-integer priority surfaces the line
+        # as Passthrough so we never reinterpret an unknown form.
         try:
-            priority = int(args[2])
+            priority = int(args[2].strip())
         except ValueError:
             return None
 
@@ -248,10 +264,15 @@ _KIND_TO_CMD = {
 
 
 def _serialize_entry(entry):
-    """Regenerate a canonical `#<kind> {pattern} {body}[ {priority}]` line."""
+    """Regenerate a canonical `#<kind> {pattern} {body}[ {priority}]` line.
+
+    `#macro` never accepts a third brace-arg, so a stray `priority` on a
+    macro Entry is dropped defensively (the GUI never sets it, but the
+    serializer guards anyway)."""
     cmd = _KIND_TO_CMD[entry.kind]
     out = f"{cmd} {{{entry.pattern}}} {{{entry.body}}}"
-    if entry.priority is not None:
+    _min, max_args = _KIND_ARITY[entry.kind]
+    if entry.priority is not None and max_args >= 3:
         out += f" {{{entry.priority}}}"
     return out
 

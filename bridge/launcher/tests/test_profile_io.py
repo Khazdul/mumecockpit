@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import profile_io  # noqa: E402
 from profile_io import (  # noqa: E402
     Entry, Passthrough, load_profile, save_profile, resolve_kind,
-    _parse_line, _split_brace_args,
+    _parse_line, _split_brace_args, _serialize_entry,
 )
 
 SCRIPT_DIR = Path(__file__).resolve().parent.parent
@@ -368,6 +368,202 @@ class TestAbbreviationsThroughParser(unittest.TestCase):
         self.assertEqual(len(prof.entries_of("alias")),      1)
         self.assertEqual(len(prof.entries_of("highlight")),  1)
         self.assertEqual(len(prof.entries_of("substitute")), 1)
+
+
+class TestPriorityArity(unittest.TestCase):
+    """tt++ accepts an optional third brace-arg as priority on four of
+    the five GUI-editable kinds; `#macro` is the exception. Non-integer
+    priority falls through to Passthrough; four-arg forms fall through;
+    macro with three args falls through."""
+
+    def _round_trip(self, source):
+        with tempfile.TemporaryDirectory() as td:
+            src = Path(td) / "in.tin"
+            dst = Path(td) / "out.tin"
+            src.write_text(source)
+            prof = load_profile(src)
+            prof.path = dst
+            save_profile(prof)
+            return prof, dst.read_text()
+
+    # ----- 3-arg forms parse correctly for the four priority kinds ----
+    def test_alias_three_arg_priority(self):
+        prof, out = self._round_trip("#alias {test} {test} {1}\n")
+        entries = prof.entries_of("alias")
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(entries[0].priority, 1)
+        self.assertEqual(out, "#alias {test} {test} {1}\n")
+
+    def test_action_three_arg_priority(self):
+        prof, out = self._round_trip("#action {Bubba} {bow} {3}\n")
+        entries = prof.entries_of("action")
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(entries[0].priority, 3)
+        self.assertEqual(out, "#action {Bubba} {bow} {3}\n")
+
+    def test_highlight_three_arg_priority(self):
+        prof, out = self._round_trip("#highlight {orc} {red} {5}\n")
+        entries = prof.entries_of("highlight")
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(entries[0].priority, 5)
+        self.assertEqual(out, "#highlight {orc} {red} {5}\n")
+
+    def test_substitute_three_arg_priority(self):
+        prof, out = self._round_trip("#substitute {orc} {ORC} {2}\n")
+        entries = prof.entries_of("substitute")
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(entries[0].priority, 2)
+        self.assertEqual(out, "#substitute {orc} {ORC} {2}\n")
+
+    # ----- 2-arg forms still parse for every kind (no regression) -----
+    def test_two_arg_still_parses_for_all_kinds(self):
+        cases = [
+            ("alias",      "#alias {k} {kill %1}\n"),
+            ("action",     "#action {Bubba} {bow}\n"),
+            ("macro",      "#macro {\\eOp} {flee}\n"),
+            ("highlight",  "#highlight {orc} {red}\n"),
+            ("substitute", "#substitute {orc} {ORC}\n"),
+        ]
+        for kind, source in cases:
+            with self.subTest(kind=kind):
+                prof, out = self._round_trip(source)
+                entries = prof.entries_of(kind)
+                self.assertEqual(len(entries), 1)
+                self.assertIsNone(entries[0].priority)
+                self.assertEqual(out, source)
+
+    # ----- Negative cases (Passthrough) -------------------------------
+    def test_macro_three_arg_is_passthrough(self):
+        # `#macro` never accepts a priority. The bytes must round-trip
+        # verbatim via Passthrough.
+        source = "#macro {\\eOp} {flee} {1}\n"
+        prof, out = self._round_trip(source)
+        self.assertEqual(len(prof.entries_of("macro")), 0)
+        self.assertTrue(any(isinstance(it, Passthrough) for it in prof.items))
+        self.assertEqual(out, source)
+
+    def test_alias_non_int_priority_is_passthrough(self):
+        source = "#alias {test} {test} {notanint}\n"
+        prof, out = self._round_trip(source)
+        self.assertEqual(len(prof.entries_of("alias")), 0)
+        self.assertTrue(any(isinstance(it, Passthrough) for it in prof.items))
+        self.assertEqual(out, source)
+
+    def test_alias_four_arg_is_passthrough(self):
+        source = "#alias {a} {b} {c} {d}\n"
+        prof, out = self._round_trip(source)
+        self.assertEqual(len(prof.entries_of("alias")), 0)
+        self.assertTrue(any(isinstance(it, Passthrough) for it in prof.items))
+        self.assertEqual(out, source)
+
+    def test_action_four_arg_is_passthrough(self):
+        # Four args even when the third is integer-parseable must fall
+        # through — we don't reinterpret unknown forms.
+        source = "#action {a} {b} {1} {2}\n"
+        prof, out = self._round_trip(source)
+        self.assertEqual(len(prof.entries_of("action")), 0)
+        self.assertTrue(any(isinstance(it, Passthrough) for it in prof.items))
+        self.assertEqual(out, source)
+
+    # ----- Mixed file round-trip -------------------------------------
+    def test_mixed_file_round_trips_byte_exact(self):
+        source = (
+            "#alias {k} {kill %1}\n"
+            "#alias {test} {test} {1}\n"
+            "#action {Bubba} {bow}\n"
+            "#action {Bubba} {bow} {3}\n"
+            "#macro {\\eOp} {flee}\n"
+            "#highlight {orc} {red}\n"
+            "#highlight {troll} {yellow} {5}\n"
+            "#substitute {a} {b}\n"
+            "#substitute {c} {d} {2}\n"
+            "#var {target} {orc}\n"
+        )
+        prof, out = self._round_trip(source)
+        self.assertEqual(out, source)
+        # And the kind/priority breakdown matches.
+        aliases = prof.entries_of("alias")
+        self.assertEqual([(e.pattern, e.priority) for e in aliases],
+                         [("k", None), ("test", 1)])
+        actions = prof.entries_of("action")
+        self.assertEqual([(e.pattern, e.priority) for e in actions],
+                         [("Bubba", None), ("Bubba", 3)])
+        macros = prof.entries_of("macro")
+        self.assertEqual([(e.pattern, e.priority) for e in macros],
+                         [("\\eOp", None)])
+        highlights = prof.entries_of("highlight")
+        self.assertEqual([(e.pattern, e.priority) for e in highlights],
+                         [("orc", None), ("troll", 5)])
+        subs = prof.entries_of("substitute")
+        self.assertEqual([(e.pattern, e.priority) for e in subs],
+                         [("a", None), ("c", 2)])
+
+    def test_delete_between_priority_entries_keeps_neighbours_byte_exact(self):
+        # Deleting a non-priority entry that sits between two priority
+        # entries must leave the surviving entries byte-exact in the
+        # written file (their `_raw` is preserved through the delete).
+        source = (
+            "#alias {first} {body1} {1}\n"
+            "#alias {middle} {body2}\n"
+            "#alias {last} {body3} {2}\n"
+        )
+        with tempfile.TemporaryDirectory() as td:
+            src = Path(td) / "in.tin"
+            dst = Path(td) / "out.tin"
+            src.write_text(source)
+            prof = load_profile(src)
+            # Drop the middle (no-priority) entry.
+            middle = next(e for e in prof.entries_of("alias")
+                          if e.pattern == "middle")
+            prof.items.remove(middle)
+            prof.path = dst
+            save_profile(prof)
+            self.assertEqual(
+                dst.read_text(),
+                "#alias {first} {body1} {1}\n"
+                "#alias {last} {body3} {2}\n",
+            )
+
+    # ----- Whitespace variants of the priority arg --------------------
+    def test_priority_strips_whitespace(self):
+        prof, out = self._round_trip("#alias {a} {b} { 7 }\n")
+        entries = prof.entries_of("alias")
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(entries[0].priority, 7)
+        # _raw preserved so the inner whitespace round-trips verbatim.
+        self.assertEqual(out, "#alias {a} {b} { 7 }\n")
+
+    def test_priority_negative_int(self):
+        prof, _out = self._round_trip("#alias {a} {b} {-3}\n")
+        entries = prof.entries_of("alias")
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(entries[0].priority, -3)
+
+
+class TestSerializerPriorityGuard(unittest.TestCase):
+    """The serializer regenerates `#<kind> {p} {b} [{priority}]` from a
+    bare Entry. `#macro` must never emit a third brace-arg even if its
+    Entry has `priority` set defensively."""
+
+    def test_alias_emits_priority(self):
+        e = Entry(kind="alias", pattern="a", body="b", priority=5, _raw=None)
+        self.assertEqual(_serialize_entry(e), "#alias {a} {b} {5}")
+
+    def test_macro_drops_priority_defensively(self):
+        e = Entry(kind="macro", pattern="\\eOp", body="flee",
+                  priority=1, _raw=None)
+        # The third arg must not appear — `#macro` has no priority slot.
+        self.assertEqual(_serialize_entry(e), "#macro {\\eOp} {flee}")
+
+    def test_kinds_without_priority_emit_two_args(self):
+        for kind in ("alias", "action", "highlight", "substitute"):
+            with self.subTest(kind=kind):
+                e = Entry(kind=kind, pattern="p", body="b",
+                          priority=None, _raw=None)
+                self.assertEqual(
+                    _serialize_entry(e),
+                    f"#{kind} {{p}} {{b}}",
+                )
 
 
 if __name__ == "__main__":

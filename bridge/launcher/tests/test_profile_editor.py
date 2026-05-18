@@ -282,5 +282,35 @@ class TestCursorClamp(unittest.TestCase):
         self.assertEqual(new_view[launcher._editor_list_cursor].pattern, "ws")
 
 
+class TestDetailPanelPriority(unittest.TestCase):
+    """Detail-panel render — entries with `priority` set show an extra
+    `Priority: <N>` line in `C_HINT` below the Body field. Entries
+    without priority show no such line."""
+
+    def _detail_text(self, entry):
+        # Render the detail rows for `entry` at a fixed body height and
+        # join the visible text. Fragments are (style, padded_text);
+        # we strip each cell's trailing pad to compare cleanly.
+        rows = launcher._editor_detail_lines(entry, total_lines=20)
+        return [t.rstrip() for (_s, t) in rows]
+
+    def test_priority_line_present_when_set(self):
+        e = launcher.profile_io.Entry(
+            kind="alias", pattern="test", body="kill %1",
+            priority=1, _raw=None)
+        lines = self._detail_text(e)
+        # The Priority line should appear after the closing body box row.
+        self.assertIn("Priority: 1", lines)
+
+    def test_priority_line_absent_when_unset(self):
+        e = launcher.profile_io.Entry(
+            kind="alias", pattern="test", body="kill %1",
+            priority=None, _raw=None)
+        lines = self._detail_text(e)
+        for line in lines:
+            self.assertFalse(line.startswith("Priority:"),
+                             f"unexpected priority line: {line!r}")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1855,6 +1855,8 @@ def _editor_detail_lines(entry, total_lines):
     for line in body_lines:
         rows.append((C_ITEM, _pad(_box_row(line))))
     rows.append((C_HINT, _pad(_box_bot())))
+    if entry.priority is not None:
+        rows.append((C_HINT, _pad(f"Priority: {entry.priority}")))
     rows.append((C_HINT, _pad("")))
     divider = "─── Hint ───"
     pad_l = max(0, (w - len(divider)) // 2)
