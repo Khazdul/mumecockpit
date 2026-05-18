@@ -5,7 +5,7 @@
 
 __all__ = [
     "C_TITLE", "C_ACTIVE", "C_ITEM", "C_BODY", "C_HINT", "C_ACCENT",
-    "C_YELLOW", "C_ERR",
+    "C_YELLOW", "C_ERR", "C_DANGER",
     "C_QUOTE", "C_QUOTE_ATTR", "C_HOVER", "C_SELECTED",
     "C_HEADER", "C_SECTION", "C_DIVIDER",
     "C_BUTTON", "C_BUTTON_HOVER", "C_BUTTON_DISABLED",
@@ -32,6 +32,7 @@ C_HINT    = "fg:#585858"        # _MR_HINT   — dim, colour 240
 C_ACCENT  = "bold fg:#ffaf00"   # _MR_ACCENT — colour 214, bold
 C_YELLOW  = "bold fg:#ffd75f"   # _MR_YELLOW
 C_ERR     = "bold fg:#ff5f5f"   # _MR_ERR
+C_DANGER  = "fg:#a04030"        # muted red — inline validation errors
 
 # Launcher-specific roles
 C_QUOTE      = "italic fg:#8a8a8a"  # _MR_QUOTE      — italic, colour 245

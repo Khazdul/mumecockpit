@@ -62,6 +62,22 @@ class Entry:
     priority: Optional[int] = None
     _raw: Optional[str] = None      # original source span (without the trailing \n)
 
+    def __setattr__(self, name, value):
+        # Mutating any GUI-editable field drops `_raw` so `save_profile`
+        # regenerates the entry canonically. The dataclass-generated
+        # __init__ assigns fields in declaration order — `_raw` is last,
+        # so the initial parse-time assignment lands after the field
+        # writes that would otherwise clear it. See ADR 0081-adjacent
+        # round-trip contract in docs/launcher.md.
+        if name in ("pattern", "body", "priority"):
+            current = self.__dict__.get(name, _MISSING)
+            if current != value:
+                object.__setattr__(self, "_raw", None)
+        object.__setattr__(self, name, value)
+
+
+_MISSING = object()
+
 
 @dataclass
 class Passthrough:
@@ -330,6 +346,11 @@ def save_profile(profile):
     round-trip for unmodified entries, including multi-line forms).
     Entries with `_raw=None` are regenerated canonically. `Passthrough`
     items emit their raw text.
+
+    Entries whose `pattern.strip()` is empty are dropped entirely —
+    these are abandoned create attempts surfaced by the editor's
+    "+ New entry" sentinel. Other "soft-invalid" states (empty body,
+    etc.) are written as-is.
     """
     p = Path(profile.path)
     tmp = p.with_name(p.name + ".tmp")
@@ -338,6 +359,8 @@ def save_profile(profile):
             if isinstance(item, Passthrough):
                 fh.write(item.raw + "\n")
             elif isinstance(item, Entry):
+                if item.pattern.strip() == "":
+                    continue
                 if item._raw is not None:
                     fh.write(item._raw + "\n")
                 else:
