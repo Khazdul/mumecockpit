@@ -399,6 +399,14 @@ ADR 0077–0080) is complete: rotation/per-event windows, scroll-clear
 transitions, pre-roll trim, and the end-of-reel scrolling credits all
 shipped.
 
+The launcher's profile editor is now feature-complete for GUI-mode
+CRUD across all five tt++ command kinds — phase 5 brought the Macros
+tab online with a key-capture overlay and readable display names
+(`Numpad 0`, `F1`, `Alt+a`) in place of raw escape sequences. See
+[ADR 0082](docs/decisions/0082-macro-keys-duplicates-input-pane.md)
+for the deferred unification of `bridge/launcher/macro_keys.py` and
+`bridge/panes/input_pane.py`.
+
 ## See also
 
 - [docs/ui-messaging.md](docs/ui-messaging.md) — UI helpers, colour constants, and style rules. Touched when writing almost any script.

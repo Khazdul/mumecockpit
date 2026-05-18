@@ -37,7 +37,7 @@ path) goes through that wrapper unchanged.
 The UI is a frame stack: a single `DynamicContainer` swaps between `main`,
 `profile`, `profile_rename`, `profile_create_name`, `profile_create_choose`,
 `profile_create_copy_picker`, `profile_delete_confirm`, `profile_editor`,
-`profile_editor_delete_confirm`, `options`,
+`profile_editor_delete_confirm`, `profile_editor_macro_keybind`, `options`,
 `options_panes`, `options_pane`, `options_connection`,
 `options_connection_custom`, `options_coming_soon`, `scripts`, `about`,
 `history`, `history_detail`, `history_rate`, `history_delete_confirm`,
@@ -196,11 +196,14 @@ Pushed by the Edit Options-button on `profile`. Phase 1 shipped the
 shell + round-trip parser; phase 2 made the Aliases tab a read-only
 list + detail browser; phase 3 turned the detail panel editable and
 added the create flow; the phase-3 refinements cap CRUD for
-`#alias`. Phase 4 generalises the tab machinery to dispatch on the
-active kind: Actions, Substitutes, and Highlights become fully
+`#alias`. Phase 4 generalised the tab machinery to dispatch on the
+active kind: Actions, Substitutes, and Highlights became fully
 functional (Highlights with a dedicated colour-palette widget in
-place of the Body TextArea). Macros remains a placeholder until
-phase 5.
+place of the Body TextArea). Phase 5 brings Macros online — the
+last of the five kinds — with a key-capture overlay that records
+the canonical tt++ escape from a single keypress and a list /
+detail view that shows readable names (`Numpad 0`, `F1`, `Alt+a`)
+instead of raw escape sequences.
 
 Top-to-bottom:
 
@@ -211,8 +214,7 @@ Top-to-bottom:
    `C_ITEM`; hover paints `C_HOVER` on non-active labels. Right-aligned
    on the same row: `<N> entries` in `C_HINT`, where `<N>` is the count
    of entries of the active tab's kind in the parsed profile.
-3. Body area — master/detail two-column layout (Aliases tab only;
-   the other four tabs continue to show a phase-1 placeholder).
+3. Body area — master/detail two-column layout (all five tabs).
 4. Footer hint — text depends on focus zone (see *Focus model* below).
 
 **Body — Aliases tab.** A centred `[ list | scrollbar | gap | detail ]`
@@ -242,10 +244,11 @@ package modelled on the `profile` frame's table package. Total width
   `alias`/`action` → `(Pattern, Commands)`,
   `substitute` → `(Text, New text)`,
   `highlight` → `(Pattern, Color)`,
-  `macro` → `(Key, Commands)` (placeholder until phase 5). The
-  builder is chosen by `_editor_dispatch_detail_builder(kind)`:
+  `macro` → `(Key, Commands)`. The builder is chosen by
+  `_editor_dispatch_detail_builder(kind)`:
   `_editor_build_text_detail` for the three text-bodied kinds,
-  `_editor_build_palette_detail` for highlights.
+  `_editor_build_palette_detail` for highlights,
+  `_editor_build_macro_detail` for macros (Key cell + text body).
     - **Pattern field** — single-line bordered field bound to
       `entry.pattern`. Pattern is required; see *Validation*.
     - **Body field** (text-bodied kinds) — multi-line bordered
@@ -299,16 +302,30 @@ package modelled on the `profile` frame's table package. Total width
   tab's singular kind label. When the active kind has zero entries
   and no new entry is in flight, the prompt instead shows
   `No <kinds> yet. Press n to add one.`
-- **Macros tab.** Renders a single centred placeholder
-  (`Macros editor — coming in phase 5.`) regardless of cursor
-  position. The list-side keys (`Enter`, `n`, `d`, `Down` from
-  tabs) all short-circuit so a stray keypress can't create or
-  delete a macro by accident — macros stay round-trip-only until
-  phase 5 wires the Key capture overlay.
+- **Macros tab.** The Pattern slot is replaced by a focusable
+  one-line **Key cell** rendered as `[ Numpad 0 ]` / `[ F1 ]` /
+  `[ Alt+a ]` for known escapes, `[ Custom: <raw> ]` in `C_HINT`
+  for unknown ones, and `[ Press to bind… ]` in `C_HINT` for an
+  empty pre-capture entry. A `(Enter to rebind)` hint sits one
+  row below the cell. The cell itself is a button — `←`/`→` and
+  typing are no-ops; `Enter` (or a mouse click) pushes the
+  `profile_editor_macro_keybind` overlay where the next keypress
+  is captured. Commands below the cell is the same multi-line
+  text editor used by aliases / actions / substitutes.
+- **Macro list display.** The list panel's Pattern column shows
+  the readable name (`escape_to_name` in
+  `bridge/launcher/macro_keys.py`); unknown escapes render as
+  `Custom: <raw>` in `C_HINT`. Default sort is ascending by
+  display name (not by raw escape — sorting `\eOp` before `\eOq`
+  is meaningless to users; sorting `F1` before `Numpad 0` reads
+  naturally).
 - **Per-kind new-entry defaults.** Aliases, actions, and substitutes
   start blank; highlights default to `pattern=''`,
   `body='light yellow'` (so the palette cursor lands on a visible
-  swatch). Macros has no creation path in phase 4.
+  swatch). Macros also start blank, but `+ New entry` immediately
+  auto-pushes the key-capture overlay so the user never sees a
+  `[ Press to bind… ]` placeholder in the wild. ESC on that
+  overlay removes the unfilled Entry from `_editor_data.items`.
 
 **Display ordering and live re-sort.** Entries are *displayed* sorted
 by `pattern` (case-sensitive, locale-default). The underlying
@@ -361,7 +378,7 @@ multi-line text field.
 
 | From                                    | Key  | Goes to                              |
 |-----------------------------------------|------|--------------------------------------|
-| Tabs                                    | `↓`  | List, first row (skipped on macros)  |
+| Tabs                                    | `↓`  | List, first row                      |
 | Tabs                                    | `↑`  | no-op                                |
 | List, first row                         | `↑`  | Tab strip (preserves active tab)     |
 | List, middle row                        | `↑`  | Previous row                         |
@@ -385,10 +402,11 @@ multi-line text field.
 | `Backspace` | no-op             | no-op                         | Delete char before cursor                       | Swallowed                                         |
 
 `Tab` / `Shift+Tab` cycle the 4-stop chain
-(`tabs → list → detail.Pattern → detail.Body/Palette → tabs`). On
-the Macros tab the chain collapses to tabs only — `↓` from the tab
-strip is a no-op until phase 5. `ESC` is global: it calls
-`save_profile()` then pops back to `profile`.
+(`tabs → list → detail.Pattern → detail.Body/Palette → tabs`).
+On the Macros tab the Pattern stop becomes the press-to-bind Key
+cell — Enter on it pushes the capture overlay; `←`/`→` and printable
+keys are no-ops. `ESC` is global: it calls `save_profile()` then
+pops back to `profile`.
 
 **Dynamic footer.** Switches with the focused zone so the visible
 keys match what's wired:
@@ -464,6 +482,56 @@ instead of the `Y`/any-key contract used by profile-level delete.
 cursor back into view, and pops. The next save reflects the
 deletion. `ESC` clears `_editor_delete_entry` and pops without
 mutation.
+
+#### `profile_editor_macro_keybind` overlay
+
+Centred modal pushed from the macro detail's Key cell (Enter or
+mouse click) or auto-pushed by `+ New entry` on the Macros tab. A
+single wildcard `<any>` binding consumes the next keypress and
+runs it through `bridge/launcher/macro_keys.py`:
+
+- **Match.** `match_pressed(event)` returns a `MacroKey`. The
+  overlay writes `match.tin_escape` into `entry.pattern`,
+  re-sorts the display view, re-anchors the cursor, pops, and
+  flashes `Bound to <display name>.` in `C_ACCENT` for ~2 s
+  below the editor footer. Focus returns to Commands when the
+  overlay was auto-opened (so the user keeps typing); otherwise
+  to the Key cell.
+- **No match.** `rejection_reason(event)` returns a specific
+  message — `"Shift+letter keys aren't forwarded to tt++."`,
+  `"Alt+O has a known parser limitation."`,
+  `"Bare ESC opens the popup menu and can't be bound."`,
+  `"Plain letters reach tt++ as typed input, not as macros."`,
+  or a generic fallback. The overlay stays open with that
+  message in `C_DANGER`; the next keypress replaces or accepts.
+- **ESC.** Pops without changing the entry. When the overlay
+  was auto-pushed by `+ New entry`, the just-created Entry is
+  removed from `_editor_data.items` so the list stays visually
+  consistent. (`save_profile` would drop the empty-pattern
+  entry on ESC out of the editor anyway, but cleaning up now
+  prevents an out-of-place blank row in the list.)
+
+Layout (centred):
+
+```
+─── Bind key ───
+
+Press the key to bind…
+
+   <error line — only when an attempt failed, in C_DANGER>
+
+   ESC  Cancel
+```
+
+The known-keys set is the single source of truth for what
+`#macro` patterns the GUI can produce. It mirrors the
+forwardable-key bindings in `bridge/panes/input_pane.py` — F1–F12,
+SS3 numpad sequences (`\eOp` … `\eOy`, `\eOn`, `\eOM`, `\eOj`,
+`\eOk`, `\eOm`, `\eOo`), Alt+letter (excluding b/d/f/o), and the
+Ctrl+letter subset (g/l/o). Bind a key here that input_pane
+doesn't forward and the macro will silently never fire in-game;
+the two modules are cross-referenced in docstrings and called
+out in ADR 0082.
 
 ## Options sub-menu
 
@@ -1480,7 +1548,7 @@ All frames render through `prompt_toolkit` controls. Layout building blocks:
   keyboard handlers fire reliably.
 - **Centered frames** — `main`, `profile_rename`, the profile-create
   sub-frames, `profile_delete_confirm`, `profile_editor`,
-  `profile_editor_delete_confirm`, `options`,
+  `profile_editor_delete_confirm`, `profile_editor_macro_keybind`, `options`,
   `options_panes`, `options_pane`, `options_connection`,
   `options_connection_custom`, `options_coming_soon`, `history_detail`,
   `history_rate`, `history_delete_confirm`, `update_running`,

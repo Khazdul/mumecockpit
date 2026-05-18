@@ -55,6 +55,7 @@ from palette import (  # noqa: E402
 )
 import credits  # noqa: E402
 import log_player  # noqa: E402
+import macro_keys  # noqa: E402
 import profile_io  # noqa: E402
 import run_retention  # noqa: E402
 import run_stats  # noqa: E402
@@ -229,6 +230,17 @@ _editor_palette_col     = 0      # 0 or 1; ignored when on Custom
 _editor_palette_hover_row = None # (row, col) under mouse; None when not hovering
 _editor_palette_hover_col = None
 _editor_palette_custom_value = None  # str | None — stashed non-palette body so user can revert
+# Macro key-capture overlay state (phase 5). Pushed as the
+# `profile_editor_macro_keybind` frame from the macro detail's Key cell
+# or auto-pushed when the user creates a new macro. The pending entry is
+# stashed so an ESC during an auto-open create can remove the unfilled
+# Entry from `_editor_data.items`.
+_editor_keybind_error          = ""    # rendered in the overlay's error slot
+_editor_keybind_just_created   = False # True when the overlay was auto-pushed by + New entry
+# Inline feedback shown below the editor's footer (e.g. "Bound to F1.").
+_editor_feedback_text   = None
+_editor_feedback_style  = ""
+_editor_feedback_handle = None
 
 # Options — top-level (Panes / Game text-layout / Connection / Back)
 _sel_options              = 0
@@ -377,6 +389,7 @@ _profile_create_copy_window      = None
 _profile_delete_window           = None
 _profile_editor_window           = None
 _profile_editor_delete_window    = None
+_profile_editor_keybind_window   = None
 _options_window                  = None
 _options_panes_window            = None
 _options_pane_window             = None
@@ -666,6 +679,7 @@ def _focus_current_frame():
             "profile_delete_confirm":     _profile_delete_window,
             "profile_editor":             _profile_editor_window,
             "profile_editor_delete_confirm": _profile_editor_delete_window,
+            "profile_editor_macro_keybind": _profile_editor_keybind_window,
             "profile_rename":             _profile_rename_window,
             "options":                    _options_window,
             "options_panes":              _options_panes_window,
@@ -1519,21 +1533,19 @@ _EDITOR_GAP           = 2       # Cells between list-scrollbar and detail
 _EDITOR_DETAIL_W      = 44      # Detail panel width
 
 # Per-kind detail-panel field labels — `(pattern_label, body_label)`. Used by
-# both the detail panel (renamed `Body` slot) and the list panel header. The
-# `macro` kind remains a placeholder until phase 5, but its labels live here
-# so the renderer doesn't need to special-case them.
+# both the detail panel (renamed `Body` slot) and the list panel header.
 DETAIL_LABELS = {
     "alias":      ("Pattern", "Commands"),
     "action":     ("Pattern", "Commands"),
-    "macro":      ("Key",     "Commands"),    # phase 5 wires Key capture
+    "macro":      ("Key",     "Commands"),    # Key cell pushes a capture overlay
     "highlight":  ("Pattern", "Color"),       # body slot becomes the palette grid
     "substitute": ("Text",    "New text"),
 }
 
 # Per-kind detail-panel builder. The renderer dispatches on the active kind:
 # text-bodied kinds reuse the Pattern + Body chain; `highlight` swaps the
-# Body field for a 2-D color-palette grid; `macro` shows the phase-1
-# placeholder pending phase 5.
+# Body field for a 2-D color-palette grid; `macro` swaps Pattern for a
+# "press to bind" button that pushes the key-capture overlay.
 def _editor_dispatch_detail_builder(kind):
     return _EDITOR_DETAIL_BUILDERS.get(kind, _editor_build_text_detail)
 
@@ -1541,11 +1553,12 @@ def _editor_dispatch_detail_builder(kind):
 # Body / Commands / etc. default values for `+ New entry` rows, keyed by kind.
 # Aliases / actions / substitutes start blank; highlights default to the
 # project's vintage-amber accent colour so the user sees the swatch
-# pre-selected and can re-pick from the palette.
+# pre-selected and can re-pick from the palette. Macros start blank too,
+# but the overlay is auto-pushed so the user never sees the empty state.
 DETAIL_NEW_DEFAULTS = {
     "alias":      ("", ""),
     "action":     ("", ""),
-    "macro":      ("", ""),                       # placeholder until phase 5
+    "macro":      ("", ""),
     "highlight":  ("", "light yellow"),
     "substitute": ("", ""),
 }
@@ -1773,10 +1786,23 @@ def _profile_editor_active_count():
 def _profile_editor_display_view():
     """Return the active tab's entries sorted by `pattern` per `_editor_sort_dir`.
     The underlying `_editor_data.items` is NOT mutated — sort is presentation
-    only, so unchanged entries continue to round-trip `_raw` byte-exact."""
+    only, so unchanged entries continue to round-trip `_raw` byte-exact.
+
+    `macro` entries sort by their *display name* rather than the raw
+    escape sequence so the list groups F-keys before numpad keys before
+    Alt+letters, matching what the user sees. Unknown escapes are
+    keyed on `Custom: <raw>` so they cluster together at the end of the
+    ascending view."""
     if _editor_data is None:
         return []
-    entries = _editor_data.entries_of(_profile_editor_active_kind())
+    kind = _profile_editor_active_kind()
+    entries = _editor_data.entries_of(kind)
+    if kind == "macro":
+        def _key(e):
+            name = macro_keys.escape_to_name(e.pattern)
+            return name if name is not None else f"Custom: {e.pattern}"
+        return sorted(entries, key=_key,
+                      reverse=(_editor_sort_dir == "desc"))
     return sorted(entries, key=lambda e: e.pattern,
                   reverse=(_editor_sort_dir == "desc"))
 
@@ -2207,13 +2233,16 @@ def _editor_create_new_entry():
     the list cursor onto it in the sorted view, and focus the detail
     panel's Pattern field. Per-kind defaults come from
     `DETAIL_NEW_DEFAULTS`; abandoning a create is harmless because
-    `save_profile` drops empty-pattern entries before write."""
+    `save_profile` drops empty-pattern entries before write.
+
+    Macros are special: the new entry's Key cell is left empty and the
+    key-capture overlay is auto-pushed so the user never sees a
+    "[ Press to bind… ]" placeholder in the wild. ESC on that overlay
+    removes the unfilled Entry."""
     global _editor_list_cursor
     if _editor_data is None:
         return
     kind = _profile_editor_active_kind()
-    if kind == "macro":
-        return   # phase 5 wires creation behind a Key-capture overlay
     pat_default, body_default = DETAIL_NEW_DEFAULTS.get(kind, ("", ""))
     entry = profile_io.Entry(
         kind=kind, pattern=pat_default, body=body_default,
@@ -2227,6 +2256,8 @@ def _editor_create_new_entry():
     _profile_editor_scroll_into_view()
     _editor_refresh_buffers()
     _profile_editor_set_focus(2, field=0)
+    if kind == "macro":
+        _editor_push_keybind_overlay(just_created=True)
 
 
 def _profile_editor_scroll_into_view():
@@ -2561,29 +2592,17 @@ def _editor_detail_lines(entry, total_lines):
     Dispatches the body of the panel through
     `_editor_dispatch_detail_builder`: text-bodied kinds reuse the
     Pattern + Body chain, `highlight` swaps Body for a palette grid,
-    `macro` falls through to a placeholder.
+    `macro` swaps Pattern for the press-to-bind Key cell.
 
-    The wrapper handles the three non-edit branches:
+    The wrapper handles the no-entry branch:
       • cursor on the `+ New entry` sentinel → centred prompt;
-      • list empty *and* no entry under the cursor → empty-state hint;
-      • macro tab → "list view — phase 5" placeholder regardless of
-        whether the active list is empty.
+      • list empty *and* no entry under the cursor → empty-state hint.
     """
     kind = _profile_editor_active_kind()
     _kind_sing, kind_plural = _EDITOR_KIND_LABELS.get(kind, (kind, kind))
 
     rows = []
     view = _profile_editor_display_view()
-
-    if kind == "macro":
-        msg = "Macros editor — coming in phase 5."
-        top_blank = max(0, total_lines // 2 - 1)
-        for _ in range(top_blank):
-            rows.append(_editor_pad_full(C_HINT, ""))
-        rows.append(_editor_centered_row(C_HINT, msg))
-        while len(rows) < total_lines:
-            rows.append(_editor_pad_full(C_HINT, ""))
-        return rows[:total_lines]
 
     if entry is None:
         if len(view) == 0:
@@ -2712,12 +2731,108 @@ def _editor_build_palette_detail(entry, total_lines):
     return rows[:total_lines]
 
 
+def _editor_build_macro_detail(entry, total_lines):
+    """Key (press-to-bind cell) + Commands (text body) for `macro`.
+
+    The Key cell is a focusable button, not a TextArea — the user can
+    `Enter` or click it to push the key-capture overlay, which records
+    the canonical tt++ escape into `entry.pattern`. Commands is the
+    same text editor used for the other text-bodied kinds."""
+    detail_focused = (_editor_focus == 2)
+    pat_lbl, body_lbl = DETAIL_LABELS["macro"]
+    key_focused  = detail_focused and _editor_detail_field == 0
+    body_focused = detail_focused and _editor_detail_field == 1
+    body_border  = _editor_field_border_style(body_focused)
+
+    rows = []
+
+    rows.append(_editor_pad_full(C_HINT, pat_lbl))
+    rows.append(_editor_macro_key_cell_row(entry, key_focused))
+    rows.append(_editor_pad_full(C_HINT, "(Enter to rebind)"))
+
+    rows.append(_editor_pad_full(C_HINT, body_lbl))
+    rows.append(_editor_pad_full(body_border, _editor_box_top(_EDITOR_DETAIL_W)))
+    body_lines = _editor_body_lines_for_entry(entry)
+    cursor_line = max(0, min(len(body_lines) - 1, _editor_body_line))
+    for i, line in enumerate(body_lines):
+        is_cursor_line = body_focused and i == cursor_line
+        col = (_editor_body_col if is_cursor_line else None)
+        rows.append(_editor_box_content_row(
+            line, is_cursor_line, cursor_col=col,
+            field_id="body", line_idx=i))
+    rows.append(_editor_pad_full(body_border, _editor_box_bot(_EDITOR_DETAIL_W)))
+
+    err = _editor_validation_error()
+    if err:
+        rows.append(_editor_pad_full(C_DANGER, err))
+    else:
+        rows.append(_editor_pad_full(C_HINT, ""))
+
+    rows.append(_editor_pad_full(C_HINT, ""))
+    rows.append(_editor_centered_row(C_HINT, "─── Hint ───"))
+    rows.append(_editor_pad_full(C_HINT, "Press Enter on Key to rebind."))
+    rows.append(_editor_pad_full(C_HINT, "Separate commands with ; for sequences."))
+
+    while len(rows) < total_lines:
+        rows.append(_editor_pad_full(C_HINT, ""))
+    return rows[:total_lines]
+
+
+def _editor_macro_key_cell_text(entry):
+    """The rendered text + style for the macro Key cell, given an entry.
+
+    Three states (mirrors phase 5 spec):
+      • Empty pattern (pre-capture)  → "[ Press to bind… ]" in C_HINT.
+      • Known escape → "[ <display name> ]" in C_ITEM.
+      • Unknown escape → "[ Custom: <raw> ]" in C_HINT (same convention as
+        the highlights Custom slot).
+    """
+    raw = entry.pattern or ""
+    if raw == "":
+        return "[ Press to bind… ]", C_HINT, "placeholder"
+    name = macro_keys.escape_to_name(raw)
+    if name is not None:
+        return f"[ {name} ]", C_ITEM, "known"
+    return f"[ Custom: {raw} ]", C_HINT, "custom"
+
+
+def _editor_macro_key_cell_row(entry, focused):
+    """Render the macro Key cell as a single row that fills the detail
+    panel width. Focused state wraps the label in `C_SELECTED`; an
+    accompanying click handler pushes the capture overlay."""
+    label, style, _state = _editor_macro_key_cell_text(entry)
+    w = _EDITOR_DETAIL_W
+    indent = 0
+    text = label
+    if len(text) > w - indent:
+        text = text[: max(0, w - indent - 1)] + "…"
+    pad = max(0, w - indent - len(text))
+    if focused:
+        cell_style = C_SELECTED
+    else:
+        cell_style = style
+
+    def _click(ev):
+        if ev.event_type == MouseEventType.MOUSE_MOVE:
+            return None
+        if ev.event_type != MouseEventType.MOUSE_DOWN:
+            return NotImplemented
+        _profile_editor_set_focus(2, field=0)
+        _editor_push_keybind_overlay(just_created=False)
+        return None
+
+    frags = [(cell_style, text, _click)]
+    if pad > 0:
+        frags.append(("", " " * pad, _click))
+    return frags
+
+
 _EDITOR_DETAIL_BUILDERS = {
     "alias":      _editor_build_text_detail,
     "action":     _editor_build_text_detail,
     "substitute": _editor_build_text_detail,
     "highlight":  _editor_build_palette_detail,
-    # `macro` is handled in the wrapper above as a kind-level placeholder.
+    "macro":      _editor_build_macro_detail,
 }
 
 
@@ -2844,10 +2959,24 @@ def _editor_list_row_text(entry, is_cursor, is_hover):
     rendered *in that colour* — so the list doubles as a colour
     preview. Custom (non-palette) values render in default text colour.
 
+    `macro` entries show the readable key name (`Numpad 0`, `F1`,
+    `Alt+a`) in place of the raw escape sequence — `escape_to_name`
+    resolves the on-disk value; unknown escapes fall back to
+    `Custom: <raw>` in `C_HINT`, the same convention as the
+    highlights Custom slot.
+
     The cursor row uses a single `C_SELECTED` fragment for the whole
     row so the selection band reads as one element."""
     w = _EDITOR_LIST_W
     pat = entry.pattern
+    pat_custom = False
+    if entry.kind == "macro":
+        name = macro_keys.escape_to_name(pat)
+        if name is not None:
+            pat = name
+        else:
+            pat = f"Custom: {pat}"
+            pat_custom = True
     if len(pat) > _EDITOR_PATTERN_COL_W:
         pat = pat[:max(0, _EDITOR_PATTERN_COL_W - 1)] + "…"
     pat_cell = pat.ljust(_EDITOR_PATTERN_COL_W)
@@ -2868,6 +2997,13 @@ def _editor_list_row_text(entry, is_cursor, is_hover):
         return [
             (C_ITEM, pat_cell + "  "),
             (TTPP_COLOR_STYLES[body_one_line], body_cell),
+        ]
+    if entry.kind == "macro" and pat_custom:
+        # Mirror the highlights Custom slot — dim the unknown-key cell so
+        # it reads as "needs attention" without breaking column alignment.
+        return [
+            (C_HINT, pat_cell + "  "),
+            (C_ITEM, body_cell),
         ]
     return [(C_ITEM, full_text)]
 
@@ -3200,6 +3336,164 @@ def _profile_editor_text():
                   "ESC Save & back")
     frags.append(("", _pad_centre(footer, cols), _editor_clear_outer_hover))
     frags.append((C_HINT, footer, _editor_clear_outer_hover))
+    # Feedback flash slot — one row below the footer. Used by the
+    # macro key-capture path to show "Bound to <key>." for a short
+    # window after a successful capture.
+    if _editor_feedback_text:
+        frags.append(("", "\n", _editor_clear_outer_hover))
+        frags.append((
+            "", _pad_centre(_editor_feedback_text, cols),
+            _editor_clear_outer_hover,
+        ))
+        frags.append((
+            _editor_feedback_style, _editor_feedback_text,
+            _editor_clear_outer_hover,
+        ))
+    return frags
+
+
+# --- Profile editor — feedback flash --------------------------------------
+def _editor_set_feedback(text, style, ttl_seconds=2.0):
+    """Flash an inline feedback message below the editor footer. Used
+    for "Bound to <key>." after a successful key capture."""
+    global _editor_feedback_text, _editor_feedback_style
+    global _editor_feedback_handle
+    _editor_feedback_text  = text
+    _editor_feedback_style = style
+    if _editor_feedback_handle is not None:
+        try:
+            _editor_feedback_handle.cancel()
+        except Exception:
+            pass
+        _editor_feedback_handle = None
+    if _app_loop is not None:
+        _editor_feedback_handle = _app_loop.call_later(
+            ttl_seconds, _editor_clear_feedback)
+    if _app:
+        _app.invalidate()
+
+
+def _editor_clear_feedback():
+    global _editor_feedback_text, _editor_feedback_style
+    global _editor_feedback_handle
+    _editor_feedback_text  = None
+    _editor_feedback_style = ""
+    _editor_feedback_handle = None
+    if _app:
+        _app.invalidate()
+
+
+# --- Profile editor — macro key-capture overlay ---------------------------
+def _editor_push_keybind_overlay(just_created):
+    """Push the `profile_editor_macro_keybind` frame. `just_created` is
+    True when the overlay was auto-opened by `+ New entry`; on ESC the
+    handler then removes the unfilled Entry."""
+    global _editor_keybind_error, _editor_keybind_just_created
+    _editor_keybind_error        = ""
+    _editor_keybind_just_created = just_created
+    _push_frame("profile_editor_macro_keybind")
+
+
+def _editor_keybind_cancel():
+    """ESC handler. When the overlay was auto-pushed by `+ New entry`,
+    remove the unfilled Entry so the list stays visually consistent."""
+    global _editor_keybind_just_created, _editor_list_cursor
+    if _editor_keybind_just_created and _editor_data is not None:
+        # The just-created entry is the most recent Entry of kind=macro
+        # with an empty pattern. There is at most one such entry by
+        # construction — `_editor_create_new_entry` appends it last and
+        # immediately pushes the overlay before the user can edit.
+        for i in range(len(_editor_data.items) - 1, -1, -1):
+            it = _editor_data.items[i]
+            if (isinstance(it, profile_io.Entry)
+                    and it.kind == "macro" and it.pattern == ""):
+                del _editor_data.items[i]
+                break
+        # Re-anchor the cursor — prefer falling onto the sentinel only
+        # when no entries remain.
+        entries_total = _profile_editor_active_count()
+        if entries_total == 0:
+            _editor_list_cursor = 0
+        else:
+            _editor_list_cursor = min(_editor_list_cursor, entries_total)
+        _profile_editor_scroll_into_view()
+        _editor_refresh_buffers()
+    _editor_keybind_just_created = False
+    _pop_frame()
+    _profile_editor_set_focus(2, field=0)
+
+
+def _editor_keybind_accept(match):
+    """Match handler: write `match.tin_escape` into the current entry's
+    pattern, flash the success line, pop the overlay, and move focus to
+    Commands so the user can keep typing."""
+    global _editor_keybind_just_created
+    entry = _editor_current_entry()
+    if entry is None:
+        # Defensive — the overlay shouldn't be reachable without an
+        # entry under the cursor.
+        _editor_keybind_just_created = False
+        _pop_frame()
+        return
+    entry.pattern = match.tin_escape
+    # Re-sort + re-anchor so the entry's new place in the list lands
+    # under the cursor.
+    view_after = _profile_editor_display_view()
+    try:
+        global _editor_list_cursor
+        _editor_list_cursor = view_after.index(entry)
+        _profile_editor_scroll_into_view()
+    except ValueError:
+        pass
+    auto_opened = _editor_keybind_just_created
+    _editor_keybind_just_created = False
+    _pop_frame()
+    if auto_opened:
+        _profile_editor_set_focus(2, field=1)
+    else:
+        _profile_editor_set_focus(2, field=0)
+    _editor_set_feedback(f"Bound to {match.display_name}.", C_ACCENT)
+
+
+def _editor_keybind_set_error(msg):
+    global _editor_keybind_error
+    _editor_keybind_error = msg
+    if _app:
+        _app.invalidate()
+
+
+def _profile_editor_keybind_text():
+    """Render the key-capture overlay — a centred modal panel.
+
+    Layout:
+        ─── Bind key ───
+        <blank>
+        Press the key to bind…
+        <blank>
+           <error line — only when an attempt failed>
+        <blank>
+           ESC  Cancel
+    """
+    cols = _term_cols()
+    title  = "─── Bind key ───"
+    prompt = "Press the key to bind…"
+    footer = "ESC  Cancel"
+    frags = []
+    frags.append(("", "\n\n"))
+    frags.append(("", _pad_centre(title, cols)))
+    frags.append((C_SECTION, title))
+    frags.append(("", "\n\n\n"))
+    frags.append(("", _pad_centre(prompt, cols)))
+    frags.append((C_ITEM, prompt))
+    frags.append(("", "\n\n"))
+    if _editor_keybind_error:
+        frags.append(("", _pad_centre(_editor_keybind_error, cols)))
+        frags.append((C_DANGER, _editor_keybind_error))
+        frags.append(("", "\n\n"))
+    else:
+        frags.append(("", "\n\n"))
+    frags.append(("", _pad_centre(footer, cols)))
+    frags.append((C_HINT, footer))
     return frags
 
 
@@ -8389,15 +8683,23 @@ def _editor_in_palette_focus():
             and _profile_editor_active_kind() == "highlight")
 
 
+def _editor_in_macro_key_focus():
+    """True when the detail panel's Pattern slot is showing the macro
+    Key cell (Macros tab + detail field 0)."""
+    return (_editor_focus == 2
+            and _editor_detail_field == 0
+            and _profile_editor_active_kind() == "macro")
+
+
 @kb.add("right", filter=_in_frame("profile_editor"))
 def _kb_peditor_right(event):
     if _editor_focus == 0:
         _profile_editor_set_tab(_editor_active_tab + 1)
     elif _editor_focus == 1:
-        if _profile_editor_active_kind() == "macro":
-            return   # placeholder tab — no detail panel to enter
         _profile_editor_set_focus(2, field=0)
     elif _editor_focus == 2:
+        if _editor_in_macro_key_focus():
+            return   # Key cell is a button — no horizontal cursor
         if _editor_in_palette_focus():
             _editor_palette_move(0, 1)
         elif _editor_detail_field == 0:
@@ -8411,6 +8713,8 @@ def _kb_peditor_left(event):
     if _editor_focus == 0:
         _profile_editor_set_tab(_editor_active_tab - 1)
     elif _editor_focus == 2:
+        if _editor_in_macro_key_focus():
+            return   # Key cell is a button — no horizontal cursor
         if _editor_in_palette_focus():
             _editor_palette_move(0, -1)
         elif _editor_detail_field == 0:
@@ -8449,8 +8753,6 @@ def _kb_peditor_up(event):
 @kb.add("down", filter=_in_frame("profile_editor"))
 def _kb_peditor_down(event):
     if _editor_focus == 0:
-        if _profile_editor_active_kind() == "macro":
-            return   # macros has no list — stay on the tab strip
         _profile_editor_set_focus(1)
         _profile_editor_jump_cursor(0)
         return
@@ -8496,8 +8798,6 @@ def _kb_peditor_end(event):
 @kb.add("D", filter=_in_frame("profile_editor"))
 def _kb_peditor_delete(event):
     if _editor_focus == 1:
-        if _profile_editor_active_kind() == "macro":
-            return
         _profile_editor_request_delete()
     elif _editor_focus == 2:
         # In a detail field, `d` is a regular character — fall through
@@ -8509,8 +8809,6 @@ def _kb_peditor_delete(event):
 @kb.add("N", filter=_in_frame("profile_editor"))
 def _kb_peditor_n(event):
     if _editor_focus == 1:
-        if _profile_editor_active_kind() == "macro":
-            return
         _editor_create_new_entry()
     elif _editor_focus == 2:
         _kb_peditor_any(event)
@@ -8519,8 +8817,6 @@ def _kb_peditor_n(event):
 @kb.add("enter", filter=_in_frame("profile_editor"))
 def _kb_peditor_enter(event):
     if _editor_focus == 1:
-        if _profile_editor_active_kind() == "macro":
-            return
         if _editor_cursor_on_sentinel():
             _editor_create_new_entry()
             return
@@ -8530,6 +8826,10 @@ def _kb_peditor_enter(event):
         _profile_editor_set_focus(2, field=0)
         return
     if _editor_focus == 2:
+        if _editor_in_macro_key_focus():
+            # Key cell is a button — Enter pushes the capture overlay.
+            _editor_push_keybind_overlay(just_created=False)
+            return
         if _editor_in_palette_focus():
             return   # palette is selection-only; Enter is a no-op
         if _editor_detail_field == 1:
@@ -8541,6 +8841,8 @@ def _kb_peditor_enter(event):
 def _kb_peditor_backspace(event):
     if _editor_focus != 2:
         return
+    if _editor_in_macro_key_focus():
+        return   # Key cell is a button — backspace is a no-op
     if _editor_detail_field == 0:
         _editor_pattern_backspace()
         if _app:
@@ -8555,10 +8857,13 @@ def _kb_peditor_backspace(event):
 def _kb_peditor_any(event):
     """Printable-char input on the detail panel. Pattern and Body
     accept any printable character; insertion happens at the in-buffer
-    cursor. The palette field is selection-only and swallows everything."""
+    cursor. The palette field and the macro Key cell are
+    selection-only and swallow everything."""
     if _editor_focus != 2:
         return
     if _editor_in_palette_focus():
+        return
+    if _editor_in_macro_key_focus():
         return
     data = event.data or ""
     if len(data) != 1 or not data.isprintable():
@@ -8588,6 +8893,25 @@ def _kb_peditor_del_enter(event):
         eager=True)
 def _kb_peditor_del_escape(event):
     _profile_editor_cancel_delete()
+
+
+# Profile editor — macro key-capture overlay
+@kb.add("escape", filter=_in_frame("profile_editor_macro_keybind"),
+        eager=True)
+def _kb_peditor_keybind_escape(event):
+    _editor_keybind_cancel()
+
+
+@kb.add("<any>", filter=_in_frame("profile_editor_macro_keybind"))
+def _kb_peditor_keybind_any(event):
+    """Wildcard handler: try to match the pressed key against the
+    known-keys set. On match commit and pop; otherwise re-render with
+    a specific rejection reason."""
+    match = macro_keys.match_pressed(event)
+    if match is not None:
+        _editor_keybind_accept(match)
+    else:
+        _editor_keybind_set_error(macro_keys.rejection_reason(event))
 
 
 # Profile rename
@@ -9587,6 +9911,7 @@ def main():
     global _profile_create_name_window, _profile_create_choose_window
     global _profile_create_copy_window, _profile_delete_window
     global _profile_editor_window, _profile_editor_delete_window
+    global _profile_editor_keybind_window
     global _options_window, _options_panes_window, _options_pane_window
     global _options_connection_window, _options_connection_custom_window
     global _options_coming_soon_window, _options_spotlights_window
@@ -9623,6 +9948,7 @@ def main():
     _profile_delete_window,        pd_frame                  = _build_simple(_profile_delete_text)
     _profile_editor_window,        profile_editor_frame      = _build_simple(_profile_editor_text)
     _profile_editor_delete_window, peditor_delete_frame      = _build_simple(_profile_editor_delete_text)
+    _profile_editor_keybind_window, peditor_keybind_frame    = _build_simple(_profile_editor_keybind_text)
     _options_window,                    options_frame                  = _build_simple(_options_text)
     _options_panes_window,              options_panes_frame            = _build_simple(_options_panes_text)
     _options_pane_window,               options_pane_frame             = _build_simple(_options_pane_text)
@@ -9744,6 +10070,7 @@ def main():
         "profile_delete_confirm":     pd_frame,
         "profile_editor":             profile_editor_frame,
         "profile_editor_delete_confirm": peditor_delete_frame,
+        "profile_editor_macro_keybind": peditor_keybind_frame,
         "options":                    options_frame,
         "options_panes":              options_panes_frame,
         "options_pane":               options_pane_frame,

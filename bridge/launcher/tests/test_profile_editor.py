@@ -931,37 +931,90 @@ class TestPhase4MultiKind(unittest.TestCase):
         self.assertIn("Color",     joined)
 
 
-class TestPhase4MacroPlaceholder(unittest.TestCase):
-    """The Macros tab stays read-only in phase 4 — the detail panel
-    shows a "coming in phase 5" message and the create/delete paths
-    short-circuit so a stray keypress can't grow the items list."""
+class TestPhase5MacrosTab(unittest.TestCase):
+    """Phase 5 — the Macros tab renders the Key (press-to-bind) cell
+    + Commands editor and shows readable key names in the list."""
 
-    def test_detail_panel_shows_placeholder(self):
+    def test_detail_panel_shows_key_cell(self):
         prof, _src, _td = _make_profile("#macro {\\eOp} {flee}\n")
         _reset_editor_state(prof, active_tab=2)
         entry = launcher._editor_current_entry()
         rows = launcher._editor_detail_lines(entry, total_lines=18)
         joined = " ".join("".join(f[1] for f in row).strip() for row in rows)
-        self.assertIn("phase 5", joined.lower())
+        # No more "phase 5" placeholder.
+        self.assertNotIn("phase 5", joined.lower())
+        # Key + Commands labels and the readable name appear.
+        self.assertIn("Key", joined)
+        self.assertIn("Numpad 0", joined)
+        self.assertIn("Commands", joined)
+        self.assertIn("flee", joined)
 
-    def test_create_new_entry_is_noop_on_macros(self):
+    def test_list_row_renders_display_name(self):
         prof, _src, _td = _make_profile("#macro {\\eOp} {flee}\n")
+        _reset_editor_state(prof, active_tab=2)
+        entry = prof.entries_of("macro")[0]
+        frags = launcher._editor_list_row_text(
+            entry, is_cursor=False, is_hover=False)
+        joined = "".join(f[1] for f in frags)
+        self.assertIn("Numpad 0", joined)
+        self.assertNotIn("\\eOp", joined)
+
+    def test_list_row_custom_escape(self):
+        prof, _src, _td = _make_profile("#macro {abc} {flee}\n")
+        _reset_editor_state(prof, active_tab=2)
+        entry = prof.entries_of("macro")[0]
+        frags = launcher._editor_list_row_text(
+            entry, is_cursor=False, is_hover=False)
+        joined = "".join(f[1] for f in frags)
+        # The 8-char Pattern column truncates "Custom: abc" but the
+        # "Custom:" prefix is what tells the user the escape is unknown.
+        self.assertIn("Custom:", joined)
+
+
+class TestPhase5MacroCreate(unittest.TestCase):
+    """`+ New entry` appends a blank macro and auto-pushes the
+    key-capture overlay; ESC removes the entry, accept commits."""
+
+    def test_create_appends_blank_and_pushes_overlay(self):
+        prof, _src, _td = _make_profile("")
         _reset_editor_state(prof, active_tab=2)
         before = len(prof.entries_of("macro"))
         launcher._editor_create_new_entry()
-        self.assertEqual(len(prof.entries_of("macro")), before)
+        self.assertEqual(len(prof.entries_of("macro")), before + 1)
+        entry = prof.entries_of("macro")[-1]
+        self.assertEqual(entry.pattern, "")
+        self.assertEqual(launcher._current_frame, "profile_editor_macro_keybind")
+        self.assertTrue(launcher._editor_keybind_just_created)
+        # Clean up to avoid leaking the pushed frame state into other tests.
+        launcher._editor_keybind_cancel()
 
-    def test_request_delete_skips_macros(self):
-        prof, _src, _td = _make_profile("#macro {\\eOp} {flee}\n")
+    def test_cancel_after_create_drops_entry(self):
+        prof, _src, _td = _make_profile("")
         _reset_editor_state(prof, active_tab=2)
-        # Pretend the user pressed `d` on macros: handler does nothing.
-        # _profile_editor_request_delete would otherwise push the
-        # confirm sub-frame; we just verify the items list is unchanged.
-        before_items = list(prof.items)
-        # The keybind would short-circuit on macros; reproduce the gate:
-        if launcher._profile_editor_active_kind() != "macro":
-            launcher._profile_editor_request_delete()
-        self.assertEqual(prof.items, before_items)
+        launcher._editor_create_new_entry()
+        self.assertEqual(len(prof.entries_of("macro")), 1)
+        launcher._editor_keybind_cancel()
+        self.assertEqual(len(prof.entries_of("macro")), 0)
+        self.assertFalse(launcher._editor_keybind_just_created)
+
+
+class TestPhase5MacroSaveDropsEmpty(unittest.TestCase):
+    """Phase 3's drop-empty-pattern rule applies uniformly to macros:
+    an abandoned create (empty pattern) survives ESC out of the editor
+    only if the save path also drops it."""
+
+    def test_abandoned_macro_is_not_serialised(self):
+        prof, _src, td = _make_profile("")
+        _reset_editor_state(prof, active_tab=2)
+        # Simulate an abandoned create by appending an empty-pattern
+        # macro directly. (The auto-pushed overlay's ESC handler clears
+        # this; we want to verify save_profile's drop rule independently.)
+        prof.items.append(profile_io.Entry(
+            kind="macro", pattern="", body="", priority=None, _raw=None))
+        dst = Path(td) / "out.tin"
+        prof.path = dst
+        profile_io.save_profile(prof)
+        self.assertEqual(dst.read_text(), "")
 
 
 class TestPhase4PerKindDefaults(unittest.TestCase):
