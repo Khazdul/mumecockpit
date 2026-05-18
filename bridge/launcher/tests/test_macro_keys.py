@@ -140,23 +140,25 @@ class TestBlankProfileResolvesAllMacros(unittest.TestCase):
 
 
 class TestRejectionReason(unittest.TestCase):
+    # All rejected key shapes share one message — the forwarded set is
+    # large and terminal-dependent, so any short hint was misleading.
+    EXPECTED = "That key isn't available."
+
     def test_shift_letter(self):
         event = _make_event("G")   # printable uppercase ASCII
-        self.assertIn("Shift+letter",
-                      macro_keys.rejection_reason(event))
+        self.assertEqual(self.EXPECTED, macro_keys.rejection_reason(event))
 
     def test_alt_o(self):
         event = _make_event("escape", "o")
-        self.assertIn("Alt+O", macro_keys.rejection_reason(event))
+        self.assertEqual(self.EXPECTED, macro_keys.rejection_reason(event))
 
     def test_bare_escape(self):
         event = _make_event("escape")
-        self.assertIn("ESC", macro_keys.rejection_reason(event))
+        self.assertEqual(self.EXPECTED, macro_keys.rejection_reason(event))
 
     def test_plain_letter(self):
         event = _make_event("a")
-        self.assertIn("Plain letters",
-                      macro_keys.rejection_reason(event))
+        self.assertEqual(self.EXPECTED, macro_keys.rejection_reason(event))
 
 
 if __name__ == "__main__":

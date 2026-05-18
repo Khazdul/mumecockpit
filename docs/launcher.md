@@ -472,8 +472,16 @@ Centred sub-frame pushed by `d` on a selected list row. Modelled on
 `profile_delete_confirm`, but with an `Enter`-to-confirm contract
 instead of the `Y`/any-key contract used by profile-level delete.
 
-- Title `─── Delete alias ───` in `C_SECTION`.
-- Body `Delete alias "<pattern>"?` in `C_ITEM`.
+- Title `─── Delete <kind> ───` in `C_SECTION`, where `<kind>` is the
+  Entry's kind (`alias`, `action`, `macro`, `highlight`,
+  `substitute`).
+- Body `Delete <kind> "<pattern>"?` in `C_ITEM`. The pattern is
+  rendered via `format_entry_pattern(entry)`:
+    - `macro` entries resolve through
+      `macro_keys.escape_to_name`, so `\eOs` shows as `Numpad 3`;
+      unknown escapes fall back to `Custom: <raw>`.
+    - The other four kinds use the raw pattern, truncated to 40
+      characters with a trailing `…`.
 - Footer `Enter  Confirm · ESC  Cancel` in `C_HINT`.
 
 `Enter` removes `_editor_delete_entry` from `Profile.items` via
@@ -486,30 +494,34 @@ mutation.
 #### `profile_editor_macro_keybind` overlay
 
 Centred modal pushed from the macro detail's Key cell (Enter or
-mouse click) or auto-pushed by `+ New entry` on the Macros tab. A
-single wildcard `<any>` binding consumes the next keypress and
-runs it through `bridge/launcher/macro_keys.py`:
+mouse click) or auto-pushed by `+ New entry` on the Macros tab.
+Each entry in `macro_keys.KNOWN_KEYS` is registered as an explicit
+binding on this overlay; a `<any>` wildcard catches everything else.
+Both paths route through `bridge/launcher/macro_keys.py`:
 
-- **Match.** `match_pressed(event)` returns a `MacroKey`. The
-  overlay writes `match.tin_escape` into `entry.pattern`,
-  re-sorts the display view, re-anchors the cursor, pops, and
-  flashes `Bound to <display name>.` in `C_ACCENT` for ~2 s
-  below the editor footer. Focus returns to Commands when the
-  overlay was auto-opened (so the user keeps typing); otherwise
-  to the Key cell.
-- **No match.** `rejection_reason(event)` returns a specific
-  message — `"Shift+letter keys aren't forwarded to tt++."`,
-  `"Alt+O has a known parser limitation."`,
-  `"Bare ESC opens the popup menu and can't be bound."`,
-  `"Plain letters reach tt++ as typed input, not as macros."`,
-  or a generic fallback. The overlay stays open with that
-  message in `C_DANGER`; the next keypress replaces or accepts.
+- **Match.** The explicit binding for the pressed key (or
+  `match_pressed(event)` from the wildcard fallback) returns a
+  `MacroKey`. The overlay writes `match.tin_escape` into
+  `entry.pattern`, re-sorts the display view, re-anchors the
+  cursor, pops, and flashes `Bound to <display name>.` in
+  `C_ACCENT` for ~2 s below the editor footer. Focus returns to
+  Commands when the overlay was auto-opened (so the user keeps
+  typing); otherwise to the Key cell.
+- **No match.** `rejection_reason(event)` returns the single
+  message `"That key isn't available."` — the forwarded set is
+  large and terminal-dependent, so any short hint would be
+  misleading. The overlay stays open with that message in
+  `C_DANGER`; the next keypress replaces or accepts.
 - **ESC.** Pops without changing the entry. When the overlay
   was auto-pushed by `+ New entry`, the just-created Entry is
   removed from `_editor_data.items` so the list stays visually
   consistent. (`save_profile` would drop the empty-pattern
   entry on ESC out of the editor anyway, but cleaning up now
-  prevents an out-of-place blank row in the list.)
+  prevents an out-of-place blank row in the list.) The ESC
+  binding is registered *without* `eager=True` so prompt_toolkit
+  waits briefly for a follower key — without that disambiguation,
+  Alt+letter (delivered as `escape`, then letter) would fire
+  Cancel before the letter arrived.
 
 Layout (centred):
 

@@ -193,42 +193,9 @@ def match_pressed(event) -> Optional[MacroKey]:
 
 
 def rejection_reason(event) -> str:
-    """Specific reason a key was rejected — surfaced in the capture
-    overlay's error slot. The generic fallback is intentionally curt; the
-    overlay re-renders on every keypress so the user can iterate quickly.
-
-    Detected forms (highest specificity first):
-      • Shift+letter (single uppercase ASCII letter, no modifiers in the
-        key name)        → "Shift+letter keys aren't forwarded to tt++."
-      • Alt+o            → "Alt+O has a known parser limitation."
-      • Bare ESC         → "Bare ESC opens the popup menu and can't be bound."
-      • Plain letter / printable single char
-                         → "Plain letters reach tt++ as typed input, not as macros."
-    """
-    seq = list(event.key_sequence)
-    if not seq:
-        return "Unrecognised key — please try a different one."
-    # Bare ESC — also intercepted by the overlay's Cancel binding, but
-    # surface a specific reason if the wildcard ever sees it.
-    if len(seq) == 1 and seq[0].key in ("escape", "c-[", "\x1b"):
-        return "Bare ESC opens the popup menu and can't be bound."
-    # Alt+o (escape + 'o') — parser collision with numpad-division SS3.
-    if (len(seq) == 2
-            and seq[0].key == "escape"
-            and isinstance(seq[1].key, str)
-            and seq[1].key.lower() == "o"):
-        return "Alt+O has a known parser limitation."
-    # Shift+letter — printable uppercase ASCII letter.
-    if (len(seq) == 1
-            and isinstance(seq[0].key, str)
-            and len(seq[0].key) == 1
-            and seq[0].key.isalpha()
-            and seq[0].key.isupper()):
-        return "Shift+letter keys aren't forwarded to tt++."
-    # Plain printable single char (lowercase letter, digit, symbol).
-    if (len(seq) == 1
-            and isinstance(seq[0].key, str)
-            and len(seq[0].key) == 1
-            and seq[0].key.isprintable()):
-        return "Plain letters reach tt++ as typed input, not as macros."
-    return "That key isn't forwarded to tt++. Try F1–F12, numpad, or Alt+letter."
+    """Message shown in the capture overlay's error slot when a key
+    sequence can't be bound. The forwarded set is large and varies by
+    terminal, so any short list of "try X" hints is either misleading or
+    incomplete — the overlay re-renders on every keypress, so iteration
+    is fast."""
+    return "That key isn't available."

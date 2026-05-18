@@ -2796,6 +2796,21 @@ def _editor_macro_key_cell_text(entry):
     return f"[ Custom: {raw} ]", C_HINT, "custom"
 
 
+def format_entry_pattern(entry, max_len=40):
+    """Readable pattern for an Entry, suitable for confirm dialogs.
+
+    `macro` entries resolve through `escape_to_name`, falling back to
+    `Custom: <raw>` for unknown escape sequences. All other kinds return
+    the raw pattern, truncated with `…` when longer than `max_len`."""
+    raw = entry.pattern or ""
+    if entry.kind == "macro":
+        name = macro_keys.escape_to_name(raw)
+        return name if name is not None else f"Custom: {raw}"
+    if len(raw) > max_len:
+        return raw[: max(0, max_len - 1)] + "…"
+    return raw
+
+
 def _editor_macro_key_cell_row(entry, focused):
     """Render the macro Key cell as a single row that fills the detail
     panel width. Focused state wraps the label in `C_SELECTED`; an
@@ -3500,13 +3515,19 @@ def _profile_editor_keybind_text():
 # --- Profile editor — delete-confirm sub-frame ----------------------------
 def _profile_editor_delete_text():
     """Render the centred confirm-delete sub-frame. Modeled on
-    `profile_delete_confirm` but with title 'Delete alias' and an Enter /
-    ESC contract."""
+    `profile_delete_confirm` — title and message both use the active
+    tab's kind label (alias / action / macro / highlight / substitute),
+    and the pattern is routed through `format_entry_pattern` so macros
+    show readable key names instead of raw escape sequences."""
     cols = _term_cols()
-    pattern = (_editor_delete_entry.pattern
-               if _editor_delete_entry is not None else "")
-    title  = "─── Delete alias ───"
-    msg    = f'Delete alias "{pattern}"?'
+    if _editor_delete_entry is not None:
+        kind    = _editor_delete_entry.kind
+        pattern = format_entry_pattern(_editor_delete_entry)
+    else:
+        kind    = _profile_editor_active_kind()
+        pattern = ""
+    title  = f"─── Delete {kind} ───"
+    msg    = f'Delete {kind} "{pattern}"?'
     footer = "Enter  Confirm · ESC  Cancel"
     frags = []
     frags.append(("", "\n\n"))
@@ -8896,19 +8917,37 @@ def _kb_peditor_del_escape(event):
 
 
 # Profile editor — macro key-capture overlay
-@kb.add("escape", filter=_in_frame("profile_editor_macro_keybind"),
-        eager=True)
+# `eager=True` is intentionally omitted on the ESC binding so
+# prompt_toolkit waits briefly for a follower key — without that
+# disambiguation, Alt+letter (delivered as `escape`, then letter)
+# fires Cancel before the letter arrives.
+@kb.add("escape", filter=_in_frame("profile_editor_macro_keybind"))
 def _kb_peditor_keybind_escape(event):
     _editor_keybind_cancel()
 
 
+# Explicit binding per KNOWN_KEYS entry. Required so prompt_toolkit
+# matches chord forms (("escape", "a") for Alt+a, ("escape", "O", "p")
+# for Numpad 0) before the bare `escape` Cancel — and so the chord
+# doesn't fall through to the wildcard `<any>` on the parent list.
+def _register_overlay_keybinds():
+    for mk in macro_keys.KNOWN_KEYS:
+        keys = mk.pk_keys if isinstance(mk.pk_keys, tuple) else (mk.pk_keys,)
+        def _handler(event, _mk=mk):
+            _editor_keybind_accept(_mk)
+        kb.add(*keys,
+               filter=_in_frame("profile_editor_macro_keybind"))(_handler)
+_register_overlay_keybinds()
+
+
 @kb.add("<any>", filter=_in_frame("profile_editor_macro_keybind"))
 def _kb_peditor_keybind_any(event):
-    """Wildcard handler: try to match the pressed key against the
-    known-keys set. On match commit and pop; otherwise re-render with
-    a specific rejection reason."""
+    """Wildcard fallback for keys outside KNOWN_KEYS — show the standard
+    rejection message. (Known keys are handled by the explicit bindings
+    registered above, which take precedence over this wildcard.)"""
     match = macro_keys.match_pressed(event)
     if match is not None:
+        # Defensive — explicit bindings above should have caught this.
         _editor_keybind_accept(match)
     else:
         _editor_keybind_set_error(macro_keys.rejection_reason(event))
