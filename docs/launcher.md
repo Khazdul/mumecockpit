@@ -37,7 +37,7 @@ path) goes through that wrapper unchanged.
 The UI is a frame stack: a single `DynamicContainer` swaps between `main`,
 `profile`, `profile_rename`, `profile_create_name`, `profile_create_choose`,
 `profile_create_copy_picker`, `profile_delete_confirm`, `profile_editor`,
-`options`,
+`profile_editor_delete_confirm`, `options`,
 `options_panes`, `options_pane`, `options_connection`,
 `options_connection_custom`, `options_coming_soon`, `scripts`, `about`,
 `history`, `history_detail`, `history_rate`, `history_delete_confirm`,
@@ -192,10 +192,12 @@ on validation failure, footer `Enter  Confirm · ESC  Cancel`.
 
 ### `profile_editor` frame
 
-Pushed by the Edit Options-button on `profile`. Phase 1 ships the
-shell only — the tab strip and the round-trip parser
-(`bridge/launcher/profile_io.py`). List rendering, the detail panel,
-and the create / edit / delete operations land in later phases.
+Pushed by the Edit Options-button on `profile`. Phase 1 shipped the
+shell + round-trip parser; phase 2 makes the Aliases tab functional
+in read-only mode (sortable scrollable list + passively-updating
+detail panel + delete-with-confirm). The other four tabs continue
+to show the phase-1 placeholder body. Create and edit operations
+land in phase 3.
 
 Top-to-bottom:
 
@@ -206,36 +208,109 @@ Top-to-bottom:
    `C_ITEM`; hover paints `C_HOVER` on non-active labels. Right-aligned
    on the same row: `<N> entries` in `C_HINT`, where `<N>` is the count
    of entries of the active tab's kind in the parsed profile.
-3. Body area — placeholder text `(list view — phase 2)` centred in
-   `C_HINT`. Phase 2 fills this region with the list view.
-4. Footer hint: `Tab/←→  Switch tab  ·  ESC  Save & back` in `C_HINT`.
+3. Body area — master/detail two-column layout (Aliases tab only;
+   the other four tabs continue to show a phase-1 placeholder).
+4. Footer hint — text depends on focus zone (see *Focus model* below).
 
-**Keyboard.**
+**Body — Aliases tab.** A centred `[ list | scrollbar | gap | detail ]`
+package modelled on the `profile` frame's table package. Total width
+≈ 77 cells (list 30 + scrollbar 1 + gap 2 + detail 44).
 
-| Key                  | Action                                       |
-|----------------------|----------------------------------------------|
-| `Tab`                | next tab (wraps)                             |
-| `Shift+Tab`          | previous tab (wraps)                         |
-| `Right`              | next tab (clamps at last tab)                |
-| `Left`               | previous tab (clamps at first tab)           |
-| Click a tab label    | switch to that tab                           |
-| `ESC`                | `save_profile()` then pop to `profile`       |
+- **List panel (left).** Header row `Pattern <arrow>  Body` where
+  `<arrow>` is `▲` for ascending, `▼` for descending. Header style is
+  `C_ACTIVE` when the list is focused, `C_SECTION` otherwise; the
+  Pattern label paints `C_HOVER` on mouse hover. Pattern column is a
+  fixed 8 chars; Body column flexes and truncates with a trailing `…`.
+  The cursor row paints `C_SELECTED`; hover paints `C_HOVER`. The
+  reusable scrollbar (`bridge/launcher/widgets/scrollbar.py`) renders
+  in the 1-cell column to the right of the list, with click-to-jump
+  and wheel-scroll support; the track only appears when entries
+  overflow the visible window.
+- **Detail panel (right).** Read-only:
+    - `Pattern` label in `C_HINT` + a single-line bordered field
+      (`┌─┐│└─┘`) showing the cursor row's pattern in `C_ITEM`.
+    - `Body` label + a bordered field showing the body. Literal
+      newlines in the body (multi-line entries from the phase-1
+      parser fix) render one inner row each; the field grows
+      vertically to fit.
+    - A blank row, then `─── Hint ───` centred in `C_HINT`, then two
+      hint lines: `Use %1, %2, %3 as argument placeholders.` and
+      `Separate commands with ; for sequences.`
+- **Empty state.** When the active kind has no entries, the detail
+  panel replaces its content with a single centred line in `C_HINT`:
+  `No aliases. Create coming in phase 3.`
+
+**Display ordering.** Entries are *displayed* sorted by `pattern`
+(case-sensitive, locale-default). The underlying `Profile.items`
+list is **not** mutated by sort — sort is presentation only, so
+unchanged entries continue to round-trip `_raw` byte-exact in
+original file order. Toggling the Pattern header flips between
+ascending and descending; the cursor re-anchors onto the same Entry
+in the new ordering.
+
+**Focus model.** Two zones inside the frame: tabs (0) and list (1).
+`_editor_focus` tracks the active zone; `Tab` / `Shift+Tab` cycle.
+
+| Focus | Up / Down            | Left / Right            | PgUp / PgDn / Home / End | `d`            |
+|-------|----------------------|-------------------------|--------------------------|----------------|
+| Tabs  | no-op                | prev / next tab (clamp) | no-op                    | no-op          |
+| List  | move cursor (scrolls)| no-op (phase 2)         | page / first / last      | delete confirm |
+
+`Tab` / `Shift+Tab` cycle the focus zone regardless of which one is
+active. `ESC` is global: it calls `save_profile()` then pops back to
+`profile`.
+
+**Dynamic footer.** Switches with the focused zone so the visible
+keys match what's wired:
+
+- Tabs: `←→ Switch tab  ·  Tab Focus list  ·  ESC Save & back`
+- List: `↑↓ Move  ·  d Delete  ·  Tab Focus tabs  ·  ESC Save & back`
+
+**Mouse.** Click on a tab label switches the active tab (regardless
+of focus zone). Click on the Pattern header toggles sort direction
+and moves focus to the list. Click on a list row moves the cursor
+and moves focus to the list. The wheel scrolls the list without
+moving the cursor (matches the table wheel handler used elsewhere).
+The scrollbar is click-to-jump.
 
 **Save semantics.** ESC writes the profile back to its `.tin` file via
 `profile_io.save_profile` (temp file + atomic rename). Unmodified
 entries emit their original source line verbatim; `Passthrough` lines
 (`#var`, `#event`, blank lines, malformed entries) survive
 untouched; `#nop` lines are dropped (matching `#class write` and
-ADR 0042). If the write raises `OSError`, the frame still pops and
-the `profile` frame flashes `Save failed: <reason>` in `C_HINT` for
-~3 s.
+ADR 0042). Deletions made during the session are reflected in the
+written file: the removed `Entry` is gone from `Profile.items`, so
+neither its `_raw` nor a regenerated form is emitted. If the write
+raises `OSError`, the frame still pops and the `profile` frame
+flashes `Save failed: <reason>` in `C_HINT` for ~3 s.
 
 **Round-trip identity.** For any file containing only the five
 known commands plus `#var`, `#event`, `#nop`, and blank lines, load
 + save produces an output that is byte-equal to the input modulo
-dropped `#nop` lines. Macro-key escape sequences (`\eOp` and
-friends from `blank_profile.tin`) survive unaltered. Covered by
-`bridge/launcher/tests/test_profile_io.py`.
+dropped `#nop` lines (and any entries the user explicitly deleted
+this session). Macro-key escape sequences (`\eOp` and friends from
+`blank_profile.tin`) survive unaltered. Sorting the display view
+does NOT touch `Profile.items`, so byte-exact round-trip is
+preserved across sort toggles. Covered by
+`bridge/launcher/tests/test_profile_io.py` and
+`bridge/launcher/tests/test_profile_editor.py`.
+
+#### `profile_editor_delete_confirm` sub-frame
+
+Centred sub-frame pushed by `d` on a selected list row. Modelled on
+`profile_delete_confirm`, but with an `Enter`-to-confirm contract
+instead of the `Y`/any-key contract used by profile-level delete.
+
+- Title `─── Delete alias ───` in `C_SECTION`.
+- Body `Delete alias "<pattern>"?` in `C_ITEM`.
+- Footer `Enter  Confirm · ESC  Cancel` in `C_HINT`.
+
+`Enter` removes `_editor_delete_entry` from `Profile.items` via
+`list.remove(entry)`, clears `_editor_delete_entry`, clamps
+`_editor_list_cursor` to the new active-kind length, scrolls the
+cursor back into view, and pops. The next save reflects the
+deletion. `ESC` clears `_editor_delete_entry` and pops without
+mutation.
 
 ## Options sub-menu
 
@@ -1251,7 +1326,8 @@ All frames render through `prompt_toolkit` controls. Layout building blocks:
   primary `Window` is stored at module level and focused on push so
   keyboard handlers fire reliably.
 - **Centered frames** — `main`, `profile_rename`, the profile-create
-  sub-frames, `profile_delete_confirm`, `profile_editor`, `options`,
+  sub-frames, `profile_delete_confirm`, `profile_editor`,
+  `profile_editor_delete_confirm`, `options`,
   `options_panes`, `options_pane`, `options_connection`,
   `options_connection_custom`, `options_coming_soon`, `history_detail`,
   `history_rate`, `history_delete_confirm`, `update_running`,

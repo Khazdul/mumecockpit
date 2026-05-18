@@ -198,11 +198,19 @@ _new_profile_name    = ""
 _delete_target       = ""
 _delete_locked       = False   # True when target is "default" (info screen)
 
-# Profile editor (Phase 1: shell + round-trip parser; lists/edits land later)
+# Profile editor (Phase 2: Aliases tab list + read-only detail panel + delete)
 _editor_profile_path = None      # pathlib.Path | None
 _editor_data         = None      # profile_io.Profile | None
 _editor_active_tab   = 0         # 0..4 — Aliases / Actions / Macros / Highlights / Substitutes
 _editor_hover_tab    = None      # tab idx under cursor, None when not hovering
+_editor_focus        = 0         # 0 = tabs, 1 = list
+_editor_list_cursor  = 0         # index into the sorted display view
+_editor_list_scroll  = 0         # scroll offset for the list
+_editor_sort_dir     = "asc"     # 'asc' | 'desc' — resets on each editor open
+_editor_hover_row    = None      # row index in display view under cursor, or None
+_editor_hover_sort   = False     # True when hovering the Pattern sort header
+_editor_list_sb      = None      # Scrollbar widget for the list panel
+_editor_delete_entry = None      # Entry under confirmation; cleared on confirm/cancel
 
 # Options — top-level (Panes / Game text-layout / Connection / Back)
 _sel_options              = 0
@@ -350,6 +358,7 @@ _profile_create_choose_window    = None
 _profile_create_copy_window      = None
 _profile_delete_window           = None
 _profile_editor_window           = None
+_profile_editor_delete_window    = None
 _options_window                  = None
 _options_panes_window            = None
 _options_pane_window             = None
@@ -638,6 +647,7 @@ def _focus_current_frame():
             "profile_create_copy_picker": _profile_create_copy_window,
             "profile_delete_confirm":     _profile_delete_window,
             "profile_editor":             _profile_editor_window,
+            "profile_editor_delete_confirm": _profile_editor_delete_window,
             "profile_rename":             _profile_rename_window,
             "options":                    _options_window,
             "options_panes":              _options_panes_window,
@@ -1475,7 +1485,7 @@ def _profile_feedback_or_blank_text():
     ]
 
 
-# --- Profile editor (Phase 1: shell + round-trip parser) -------------------
+# --- Profile editor (Phase 2: Aliases list + read-only detail + delete) ----
 # Tab strip: (label, kind in profile_io)
 _PROFILE_EDITOR_TABS = [
     ("Aliases",     "alias"),
@@ -1485,12 +1495,39 @@ _PROFILE_EDITOR_TABS = [
     ("Substitutes", "substitute"),
 ]
 
+_EDITOR_PATTERN_COL_W = 8       # Pattern column inside the list panel
+_EDITOR_LIST_W        = 30      # Total list panel width (pattern + body cols)
+_EDITOR_GAP           = 2       # Cells between list-scrollbar and detail
+_EDITOR_DETAIL_W      = 44      # Detail panel width
+
+
+def _editor_package_w():
+    return _EDITOR_LIST_W + 1 + _EDITOR_GAP + _EDITOR_DETAIL_W
+
+
+def _editor_left_pad():
+    return max(0, (_term_cols() - _editor_package_w()) // 2)
+
+
+def _editor_body_h():
+    """Body row height — enough for the detail panel; grows with terminal."""
+    # 11 detail rows minimum (label + box(3) + label + box(3) + blank +
+    # hint divider + 2 hint lines).
+    return max(11, _term_rows() - 9)
+
+
+def _editor_list_visible():
+    """List data rows visible in the body (header sits above)."""
+    return max(1, _editor_body_h() - 1)
+
 
 def _enter_profile_editor(path):
     """Load `path` into the editor and push the frame. Flashes a hint on
     the profile frame and stays put if the file cannot be parsed."""
     global _editor_profile_path, _editor_data, _editor_active_tab
-    global _editor_hover_tab
+    global _editor_hover_tab, _editor_focus, _editor_list_cursor
+    global _editor_list_scroll, _editor_sort_dir, _editor_hover_row
+    global _editor_hover_sort, _editor_list_sb
     try:
         data = profile_io.load_profile(path)
     except OSError as exc:
@@ -1502,6 +1539,15 @@ def _enter_profile_editor(path):
     _editor_data         = data
     _editor_active_tab   = 0
     _editor_hover_tab    = None
+    _editor_focus        = 0
+    _editor_list_cursor  = 0
+    _editor_list_scroll  = 0
+    _editor_sort_dir     = "asc"
+    _editor_hover_row    = None
+    _editor_hover_sort   = False
+    _editor_list_sb = Scrollbar(
+        0, _editor_list_visible(), _editor_list_visible(),
+    )
     _push_frame("profile_editor")
 
 
@@ -1520,11 +1566,13 @@ def _profile_editor_save_and_close():
 
 
 def _profile_editor_set_tab(idx):
-    global _editor_active_tab
+    global _editor_active_tab, _editor_list_cursor, _editor_list_scroll
     n = len(_PROFILE_EDITOR_TABS)
     new_idx = max(0, min(n - 1, idx))
     if new_idx != _editor_active_tab:
         _editor_active_tab = new_idx
+        _editor_list_cursor = 0
+        _editor_list_scroll = 0
         if _app:
             _app.invalidate()
 
@@ -1537,35 +1585,403 @@ def _profile_editor_set_hover_tab(idx):
             _app.invalidate()
 
 
+def _profile_editor_set_hover_row(idx):
+    global _editor_hover_row
+    if _editor_hover_row != idx:
+        _editor_hover_row = idx
+        if _app:
+            _app.invalidate()
+
+
+def _profile_editor_set_hover_sort(flag):
+    global _editor_hover_sort
+    if _editor_hover_sort != flag:
+        _editor_hover_sort = flag
+        if _app:
+            _app.invalidate()
+
+
+def _profile_editor_clear_hover():
+    global _editor_hover_tab, _editor_hover_row, _editor_hover_sort
+    changed = False
+    if _editor_hover_tab is not None:
+        _editor_hover_tab = None
+        changed = True
+    if _editor_hover_row is not None:
+        _editor_hover_row = None
+        changed = True
+    if _editor_hover_sort:
+        _editor_hover_sort = False
+        changed = True
+    if changed and _app:
+        _app.invalidate()
+
+
+def _profile_editor_set_focus(panel):
+    global _editor_focus
+    if _editor_focus == panel:
+        return
+    _editor_focus = panel
+    _focus_current_frame()
+    if _app:
+        _app.invalidate()
+
+
+def _profile_editor_cycle_focus(delta):
+    _profile_editor_set_focus((_editor_focus + delta) % 2)
+
+
+def _profile_editor_active_kind():
+    _, kind = _PROFILE_EDITOR_TABS[_editor_active_tab]
+    return kind
+
+
 def _profile_editor_active_count():
     if _editor_data is None:
         return 0
-    _, kind = _PROFILE_EDITOR_TABS[_editor_active_tab]
-    return len(_editor_data.entries_of(kind))
+    return len(_editor_data.entries_of(_profile_editor_active_kind()))
+
+
+def _profile_editor_display_view():
+    """Return the active tab's entries sorted by `pattern` per `_editor_sort_dir`.
+    The underlying `_editor_data.items` is NOT mutated — sort is presentation
+    only, so unchanged entries continue to round-trip `_raw` byte-exact."""
+    if _editor_data is None:
+        return []
+    entries = _editor_data.entries_of(_profile_editor_active_kind())
+    return sorted(entries, key=lambda e: e.pattern,
+                  reverse=(_editor_sort_dir == "desc"))
+
+
+def _profile_editor_scroll_into_view():
+    """Adjust `_editor_list_scroll` so the cursor row is visible."""
+    global _editor_list_scroll
+    visible = _editor_list_visible()
+    if _editor_list_cursor < _editor_list_scroll:
+        _editor_list_scroll = _editor_list_cursor
+    elif _editor_list_cursor >= _editor_list_scroll + visible:
+        _editor_list_scroll = _editor_list_cursor - visible + 1
+    total = _profile_editor_active_count()
+    max_scroll = max(0, total - visible)
+    _editor_list_scroll = max(0, min(max_scroll, _editor_list_scroll))
+
+
+def _profile_editor_move_cursor(delta):
+    global _editor_list_cursor
+    total = _profile_editor_active_count()
+    if not total:
+        return
+    new_cursor = max(0, min(total - 1, _editor_list_cursor + delta))
+    if new_cursor != _editor_list_cursor:
+        _editor_list_cursor = new_cursor
+        _profile_editor_scroll_into_view()
+        if _app:
+            _app.invalidate()
+
+
+def _profile_editor_jump_cursor(target):
+    global _editor_list_cursor
+    total = _profile_editor_active_count()
+    if not total:
+        return
+    new_cursor = max(0, min(total - 1, target))
+    if new_cursor != _editor_list_cursor:
+        _editor_list_cursor = new_cursor
+        _profile_editor_scroll_into_view()
+        if _app:
+            _app.invalidate()
+
+
+def _profile_editor_scroll_list(delta):
+    """Wheel scroll on the list — moves the viewport without moving the
+    cursor."""
+    global _editor_list_scroll
+    visible = _editor_list_visible()
+    total = _profile_editor_active_count()
+    mx = max(0, total - visible)
+    _editor_list_scroll = max(0, min(mx, _editor_list_scroll + delta))
+    if _app:
+        _app.invalidate()
+
+
+def _profile_editor_toggle_sort():
+    """Click handler for the Pattern header — flips direction and re-anchors
+    the cursor onto the same Entry in the new ordering."""
+    global _editor_sort_dir, _editor_list_cursor
+    view_before = _profile_editor_display_view()
+    cur_entry = (view_before[_editor_list_cursor]
+                 if 0 <= _editor_list_cursor < len(view_before) else None)
+    _editor_sort_dir = "desc" if _editor_sort_dir == "asc" else "asc"
+    if cur_entry is not None:
+        view_after = _profile_editor_display_view()
+        try:
+            _editor_list_cursor = view_after.index(cur_entry)
+        except ValueError:
+            _editor_list_cursor = 0
+    _profile_editor_scroll_into_view()
+    if _app:
+        _app.invalidate()
+
+
+def _profile_editor_request_delete():
+    """`d` handler: stash the cursor Entry and push the confirm sub-frame."""
+    global _editor_delete_entry
+    view = _profile_editor_display_view()
+    if not view or not (0 <= _editor_list_cursor < len(view)):
+        return
+    _editor_delete_entry = view[_editor_list_cursor]
+    _push_frame("profile_editor_delete_confirm")
+
+
+def _profile_editor_confirm_delete():
+    """Remove the stashed Entry from items, clamp the cursor, and pop."""
+    global _editor_delete_entry, _editor_list_cursor
+    target = _editor_delete_entry
+    if target is not None and _editor_data is not None:
+        try:
+            _editor_data.items.remove(target)
+        except ValueError:
+            pass
+    _editor_delete_entry = None
+    total = _profile_editor_active_count()
+    if total == 0:
+        _editor_list_cursor = 0
+    else:
+        _editor_list_cursor = max(0, min(total - 1, _editor_list_cursor))
+    _profile_editor_scroll_into_view()
+    _pop_frame()
+
+
+def _profile_editor_cancel_delete():
+    global _editor_delete_entry
+    _editor_delete_entry = None
+    _pop_frame()
+
+
+# Scrollbar geometry used by the inline list/scrollbar render. Mirrors the
+# math in widgets/scrollbar.py so the editor's single-window layout can
+# emit one cell per body row without instantiating a separate column.
+def _editor_sb_thumb_geom(total, visible, height):
+    if total <= 0 or total <= visible or height <= 0:
+        return 0, 0
+    ratio   = visible / total
+    thumb_h = max(1, round(ratio * height))
+    thumb_h = min(thumb_h, height)
+    max_top = height - thumb_h
+    mx_scroll = max(0, total - visible)
+    if max_top <= 0 or mx_scroll <= 0:
+        return 0, thumb_h
+    top = round(_editor_list_scroll / mx_scroll * max_top)
+    top = max(0, min(max_top, top))
+    return top, thumb_h
+
+
+def _editor_sb_click_to_offset(cell_row, total, visible, height):
+    mx_scroll = max(0, total - visible)
+    if mx_scroll <= 0:
+        return 0
+    _top, thumb_h = _editor_sb_thumb_geom(total, visible, height)
+    max_top = height - thumb_h
+    if max_top <= 0:
+        return 0
+    target_top = max(0, min(max_top, cell_row - thumb_h // 2))
+    return round(target_top / max_top * mx_scroll)
+
+
+# ----- Rendering helpers --------------------------------------------------
+_EDITOR_HINT_LINES = [
+    "Use %1, %2, %3 as argument placeholders.",
+    "Separate commands with ; for sequences.",
+]
+
+
+def _editor_body_lines_for_entry(entry):
+    """Split an entry's body on literal `\\n` so multi-line entries render
+    each physical line in the bordered body field."""
+    if entry is None:
+        return [""]
+    return entry.body.split("\n") if entry.body else [""]
+
+
+def _editor_detail_lines(entry, total_lines):
+    """Build the right-side detail rows. Returns a list of `(style, text)`
+    pairs of length `total_lines`, each text padded/truncated to
+    `_EDITOR_DETAIL_W`."""
+    w = _EDITOR_DETAIL_W
+    inner = w - 4   # "│ " ... " │"
+
+    def _pad(text, fill=" "):
+        if len(text) > w:
+            return text[:w]
+        return text + fill * (w - len(text))
+
+    def _box_top():
+        return "┌" + "─" * (w - 2) + "┐"
+
+    def _box_bot():
+        return "└" + "─" * (w - 2) + "┘"
+
+    def _box_row(text):
+        if len(text) > inner:
+            text = text[:max(0, inner - 1)] + "…"
+        return "│ " + text.ljust(inner) + " │"
+
+    out = []
+
+    if entry is None:
+        # Empty-state hint, centred on the detail panel width.
+        msg = "No aliases. Create coming in phase 3."
+        if len(msg) > w:
+            msg = msg[:w]
+        pad_l = max(0, (w - len(msg)) // 2)
+        pad_r = max(0, w - pad_l - len(msg))
+        # Place the message mid-panel for a vertically balanced empty pane.
+        top_blank = max(0, total_lines // 2 - 1)
+        for _ in range(top_blank):
+            out.append((C_HINT, _pad("")))
+        out.append((C_HINT, " " * pad_l + msg + " " * pad_r))
+        while len(out) < total_lines:
+            out.append((C_HINT, _pad("")))
+        return out[:total_lines]
+
+    body_lines = _editor_body_lines_for_entry(entry)
+    rows = []
+    rows.append((C_HINT, _pad("Pattern")))
+    rows.append((C_HINT, _pad(_box_top())))
+    rows.append((C_ITEM, _pad(_box_row(entry.pattern))))
+    rows.append((C_HINT, _pad(_box_bot())))
+    rows.append((C_HINT, _pad("Body")))
+    rows.append((C_HINT, _pad(_box_top())))
+    for line in body_lines:
+        rows.append((C_ITEM, _pad(_box_row(line))))
+    rows.append((C_HINT, _pad(_box_bot())))
+    rows.append((C_HINT, _pad("")))
+    divider = "─── Hint ───"
+    pad_l = max(0, (w - len(divider)) // 2)
+    pad_r = max(0, w - pad_l - len(divider))
+    rows.append((C_HINT, " " * pad_l + divider + " " * pad_r))
+    for line in _EDITOR_HINT_LINES:
+        rows.append((C_HINT, _pad(line)))
+    # Pad / truncate to the body height. Truncating is acceptable: the
+    # hint block is the lowest-priority content.
+    while len(rows) < total_lines:
+        rows.append((C_HINT, _pad("")))
+    return rows[:total_lines]
+
+
+def _editor_list_row_text(entry, is_cursor, is_hover):
+    """Render one list row as a (style, text) pair filling `_EDITOR_LIST_W`.
+
+    Pattern column is fixed at `_EDITOR_PATTERN_COL_W` chars; remainder is the
+    body column with `…` truncation."""
+    w = _EDITOR_LIST_W
+    pat = entry.pattern
+    if len(pat) > _EDITOR_PATTERN_COL_W:
+        pat = pat[:max(0, _EDITOR_PATTERN_COL_W - 1)] + "…"
+    pat_cell = pat.ljust(_EDITOR_PATTERN_COL_W)
+    # 2-space gap between Pattern and Body inside the panel.
+    body_col_w = w - _EDITOR_PATTERN_COL_W - 2
+    # Body in the list shows the first line only — multi-line entries are
+    # collapsed to their first physical line so the row stays compact.
+    body_one_line = (entry.body.split("\n", 1)[0] if entry.body else "")
+    if len(body_one_line) > body_col_w:
+        body_one_line = body_one_line[:max(0, body_col_w - 1)] + "…"
+    body_cell = body_one_line.ljust(body_col_w)
+    text = pat_cell + "  " + body_cell
+    text = text[:w].ljust(w)
+    if is_cursor:
+        style = C_SELECTED
+    elif is_hover:
+        style = C_HOVER
+    else:
+        style = C_ITEM
+    return style, text
+
+
+def _editor_list_header_frag(visible_rows):
+    """Build the list header frags `Pattern <arrow>  Body` plus padding.
+
+    Returns a list of fragments that fills `_EDITOR_LIST_W` cells. The
+    arrow + label are wrapped in a click handler that toggles sort."""
+    w = _EDITOR_LIST_W
+    arrow = "▲" if _editor_sort_dir == "asc" else "▼"
+    list_focused = (_editor_focus == 1)
+    base_style = C_ACTIVE if list_focused else C_SECTION
+    hover_style = C_HOVER
+    style = hover_style if _editor_hover_sort and not list_focused else base_style
+    # Composition: "Pattern" + " " + arrow occupies _EDITOR_PATTERN_COL_W
+    # (8 chars: 7 letters + space-or-arrow). We always render
+    # `Pattern▲` / `Pattern▼` (no inner space) so it fits exactly.
+    pat_label = ("Pattern" + arrow).ljust(_EDITOR_PATTERN_COL_W)
+    body_label = "Body".ljust(w - _EDITOR_PATTERN_COL_W - 2)
+    gap = "  "
+
+    def _sort_handler(ev):
+        if ev.event_type == MouseEventType.MOUSE_MOVE:
+            _profile_editor_set_hover_sort(True)
+            return None
+        if ev.event_type == MouseEventType.MOUSE_DOWN:
+            _profile_editor_set_focus(1)
+            _profile_editor_toggle_sort()
+            return None
+        return NotImplemented
+
+    def _clear(ev):
+        if ev.event_type == MouseEventType.MOUSE_MOVE:
+            _profile_editor_set_hover_sort(False)
+            _profile_editor_set_hover_row(None)
+            return None
+        return NotImplemented
+
+    return [
+        (style, pat_label, _sort_handler),
+        (base_style, gap, _clear),
+        (base_style, body_label, _clear),
+    ]
+
+
+def _editor_clear_outer_hover(ev):
+    """Outer fragment hover handler — clears every hover index inside the
+    editor when MOUSE_MOVE lands in chrome (padding, blanks, etc.)."""
+    if ev.event_type == MouseEventType.MOUSE_MOVE:
+        _profile_editor_clear_hover()
+        return None
+    return NotImplemented
 
 
 def _profile_editor_text():
-    """Render the editor frame: title, tab strip with right-aligned count,
-    placeholder body, footer hint. Single fragment list."""
+    """Render the editor frame as a single fragment list.
+
+    Layout (top to bottom):
+        ─── Profile editor: <name> ───
+        <blank>
+        Aliases · Actions · ... · <count> entries
+        <blank>
+        Pattern▲  Body          │ Pattern
+        > <pattern>  <body…>    │ ┌────────────────────┐
+        <pattern>  <body>       │ │ <pattern>          │
+        …                       │ └────────────────────┘
+                                │ Body
+                                │ ┌────────────────────┐
+                                │ │ <body line 1>      │
+                                │ │ <body line 2>      │
+                                │ └────────────────────┘
+                                │ ─── Hint ───
+                                │ Use %1, %2, %3 as ...
+        <blank>
+        ↑↓ Move · d Delete · Tab Focus tabs · ESC Save & back
+    """
     cols = _term_cols()
     name = (_editor_profile_path.stem
             if _editor_profile_path is not None else "")
     title  = f"─── Profile editor: {name} ───"
-    body   = "(list view — phase 2)"
-    footer = "Tab/←→  Switch tab  ·  ESC  Save & back"
-
-    def _clear(ev):
-        if ev.event_type == MouseEventType.MOUSE_MOVE:
-            _profile_editor_set_hover_tab(None)
-            return None
-        return NotImplemented
 
     frags = []
-    frags.append(("", "\n", _clear))
-    frags.append(("", _pad_centre(title, cols), _clear))
-    frags.append((C_SECTION, title, _clear))
-    frags.append(("", "\n", _clear))
-    frags.append(("", "\n", _clear))
+    frags.append(("", "\n", _editor_clear_outer_hover))
+    frags.append(("", _pad_centre(title, cols), _editor_clear_outer_hover))
+    frags.append((C_SECTION, title, _editor_clear_outer_hover))
+    frags.append(("", "\n", _editor_clear_outer_hover))
+    frags.append(("", "\n", _editor_clear_outer_hover))
 
     # Tab strip — five labels separated by a single space. Active tab is
     # rendered bold+underline (C_ACTIVE); inactive C_ITEM; hover C_HOVER on
@@ -1578,7 +1994,7 @@ def _profile_editor_text():
     pad_left  = max(0, (cols - strip_w) // 2)
     pad_right = max(0, cols - pad_left - strip_w - len(count_text))
 
-    frags.append(("", " " * pad_left, _clear))
+    frags.append(("", " " * pad_left, _editor_clear_outer_hover))
 
     for i, label in enumerate(labels):
         is_active = (i == _editor_active_tab)
@@ -1601,23 +2017,180 @@ def _profile_editor_text():
 
         frags.append((style, label, _tab_handler))
         if i < n_tabs - 1:
-            frags.append(("", " ", _clear))
+            frags.append(("", " ", _editor_clear_outer_hover))
 
-    frags.append(("", " " * pad_right, _clear))
-    frags.append((C_HINT, count_text, _clear))
-    frags.append(("", "\n", _clear))
-    frags.append(("", "\n", _clear))
-    frags.append(("", "\n", _clear))
+    frags.append(("", " " * pad_right, _editor_clear_outer_hover))
+    frags.append((C_HINT, count_text, _editor_clear_outer_hover))
+    frags.append(("", "\n", _editor_clear_outer_hover))
+    frags.append(("", "\n", _editor_clear_outer_hover))
 
-    # Placeholder body — phase 2 fills this region with the list view.
-    frags.append(("", _pad_centre(body, cols), _clear))
-    frags.append((C_HINT, body, _clear))
-    frags.append(("", "\n", _clear))
-    frags.append(("", "\n", _clear))
-    frags.append(("", "\n", _clear))
+    # ----- Body region (master/detail) --------------------------------
+    body_h    = _editor_body_h()
+    visible   = _editor_list_visible()
+    view      = _profile_editor_display_view()
+    total     = len(view)
+    if _editor_list_sb is not None:
+        _editor_list_sb.update(total, visible, height=visible)
+        _editor_list_sb.scroll_to(_editor_list_scroll)
 
-    frags.append(("", _pad_centre(footer, cols), _clear))
-    frags.append((C_HINT, footer, _clear))
+    # Clamp cursor and scroll defensively (tab switches, deletions, etc.).
+    if total == 0:
+        if _editor_list_cursor != 0:
+            globals()["_editor_list_cursor"] = 0
+    elif _editor_list_cursor >= total:
+        globals()["_editor_list_cursor"] = total - 1
+    _profile_editor_scroll_into_view()
+
+    # Detail panel content (length == body_h).
+    cur_entry = (view[_editor_list_cursor]
+                 if total > 0 and 0 <= _editor_list_cursor < total else None)
+    detail_rows = _editor_detail_lines(cur_entry, body_h)
+
+    # Scrollbar geometry for the data rows (visible cells under header).
+    sb_top, sb_thumb_h = _editor_sb_thumb_geom(total, visible, visible)
+    sb_visible = total > visible
+
+    left_pad  = _editor_left_pad()
+    gap_str   = " " * _EDITOR_GAP
+    right_pad = max(0, cols - left_pad - _editor_package_w())
+
+    for body_row in range(body_h):
+        # ----- Left column: header (row 0) or data rows (1..body_h-1) -----
+        if body_row == 0:
+            left_frags = _editor_list_header_frag(visible)
+        else:
+            data_idx = body_row - 1   # 0..body_h-2 visible data rows index
+            if data_idx < visible:
+                abs_idx = _editor_list_scroll + data_idx
+                if 0 <= abs_idx < total:
+                    is_cursor = (abs_idx == _editor_list_cursor)
+                    is_hover  = (_editor_hover_row == abs_idx and not is_cursor)
+                    style, text = _editor_list_row_text(
+                        view[abs_idx], is_cursor, is_hover)
+
+                    def _row_handler(ev, row=abs_idx):
+                        if ev.event_type == MouseEventType.MOUSE_MOVE:
+                            _profile_editor_set_hover_row(row)
+                            _profile_editor_set_hover_sort(False)
+                            return None
+                        if ev.event_type == MouseEventType.MOUSE_DOWN:
+                            _profile_editor_set_focus(1)
+                            global _editor_list_cursor
+                            _editor_list_cursor = row
+                            _profile_editor_scroll_into_view()
+                            if _app:
+                                _app.invalidate()
+                            return None
+                        if ev.event_type == MouseEventType.SCROLL_UP:
+                            _profile_editor_scroll_list(-1)
+                            return None
+                        if ev.event_type == MouseEventType.SCROLL_DOWN:
+                            _profile_editor_scroll_list(1)
+                            return None
+                        return NotImplemented
+
+                    left_frags = [(style, text, _row_handler)]
+                else:
+                    # Blank row inside the list panel — wheel still scrolls.
+                    def _blank_row_handler(ev):
+                        if ev.event_type == MouseEventType.MOUSE_MOVE:
+                            _profile_editor_set_hover_row(None)
+                            return None
+                        if ev.event_type == MouseEventType.SCROLL_UP:
+                            _profile_editor_scroll_list(-1)
+                            return None
+                        if ev.event_type == MouseEventType.SCROLL_DOWN:
+                            _profile_editor_scroll_list(1)
+                            return None
+                        return NotImplemented
+                    left_frags = [("", " " * _EDITOR_LIST_W,
+                                   _blank_row_handler)]
+            else:
+                left_frags = [("", " " * _EDITOR_LIST_W,
+                               _editor_clear_outer_hover)]
+
+        # ----- Scrollbar cell -----
+        if body_row == 0:
+            sb_frag = ("", " ", _editor_clear_outer_hover)
+        else:
+            sb_row = body_row - 1
+            if sb_visible and sb_row < visible:
+                if sb_top <= sb_row < sb_top + sb_thumb_h:
+                    sb_style = "bold fg:#ffffff"
+                    sb_ch    = "█"
+                else:
+                    sb_style = "fg:#585858"
+                    sb_ch    = "░"
+
+                def _sb_handler(ev, row=sb_row):
+                    if ev.event_type == MouseEventType.MOUSE_DOWN:
+                        off = _editor_sb_click_to_offset(
+                            row, total, visible, visible)
+                        global _editor_list_scroll
+                        _editor_list_scroll = off
+                        if _editor_list_sb is not None:
+                            _editor_list_sb.scroll_to(off)
+                        if _app:
+                            _app.invalidate()
+                        return None
+                    if ev.event_type == MouseEventType.MOUSE_MOVE:
+                        _profile_editor_set_hover_row(None)
+                        return None
+                    return NotImplemented
+
+                sb_frag = (sb_style, sb_ch, _sb_handler)
+            else:
+                sb_frag = ("", " ", _editor_clear_outer_hover)
+
+        # ----- Detail cell -----
+        d_style, d_text = detail_rows[body_row]
+        detail_frag = (d_style, d_text, _editor_clear_outer_hover)
+
+        # ----- Compose the row -----
+        frags.append(("", " " * left_pad, _editor_clear_outer_hover))
+        for f in left_frags:
+            frags.append(f)
+        frags.append(sb_frag)
+        frags.append(("", gap_str, _editor_clear_outer_hover))
+        frags.append(detail_frag)
+        if right_pad > 0:
+            frags.append(("", " " * right_pad, _editor_clear_outer_hover))
+        frags.append(("", "\n", _editor_clear_outer_hover))
+
+    # ----- Footer -----
+    frags.append(("", "\n", _editor_clear_outer_hover))
+    if _editor_focus == 1:
+        footer = ("↑↓ Move  ·  d Delete  ·  "
+                  "Tab Focus tabs  ·  ESC Save & back")
+    else:
+        footer = ("←→ Switch tab  ·  "
+                  "Tab Focus list  ·  ESC Save & back")
+    frags.append(("", _pad_centre(footer, cols), _editor_clear_outer_hover))
+    frags.append((C_HINT, footer, _editor_clear_outer_hover))
+    return frags
+
+
+# --- Profile editor — delete-confirm sub-frame ----------------------------
+def _profile_editor_delete_text():
+    """Render the centred confirm-delete sub-frame. Modeled on
+    `profile_delete_confirm` but with title 'Delete alias' and an Enter /
+    ESC contract."""
+    cols = _term_cols()
+    pattern = (_editor_delete_entry.pattern
+               if _editor_delete_entry is not None else "")
+    title  = "─── Delete alias ───"
+    msg    = f'Delete alias "{pattern}"?'
+    footer = "Enter  Confirm · ESC  Cancel"
+    frags = []
+    frags.append(("", "\n\n"))
+    frags.append(("", _pad_centre(title, cols)))
+    frags.append((C_SECTION, title))
+    frags.append(("", "\n\n\n"))
+    frags.append(("", _pad_centre(msg, cols)))
+    frags.append((C_ITEM, msg))
+    frags.append(("", "\n\n\n"))
+    frags.append(("", _pad_centre(footer, cols)))
+    frags.append((C_HINT, footer))
     return frags
 
 
@@ -6761,34 +7334,91 @@ def _kb_profile_escape(event):
     _pop_frame()
 
 
-# Profile editor
+# Profile editor — Tab / Shift+Tab cycle focus between the tab strip and
+# the alias list; arrows / pgup / pgdn / home / end / d gate on focus.
 @kb.add("tab", filter=_in_frame("profile_editor"))
 def _kb_peditor_tab(event):
-    n = len(_PROFILE_EDITOR_TABS)
-    _profile_editor_set_tab((_editor_active_tab + 1) % n)
+    _profile_editor_cycle_focus(1)
 
 
 @kb.add("s-tab", filter=_in_frame("profile_editor"))
 def _kb_peditor_stab(event):
-    n = len(_PROFILE_EDITOR_TABS)
-    _profile_editor_set_tab((_editor_active_tab - 1) % n)
+    _profile_editor_cycle_focus(-1)
 
 
 @kb.add("right", filter=_in_frame("profile_editor"))
 def _kb_peditor_right(event):
-    # Clamp at the last tab (Shift+Tab is the wrapping variant).
-    _profile_editor_set_tab(_editor_active_tab + 1)
+    if _editor_focus == 0:
+        # Clamp at the last tab.
+        _profile_editor_set_tab(_editor_active_tab + 1)
+    # Phase 2: no-op on list focus (becomes Focus to detail in phase 3).
 
 
 @kb.add("left", filter=_in_frame("profile_editor"))
 def _kb_peditor_left(event):
-    # Clamp at the first tab (Shift+Tab is the wrapping variant).
-    _profile_editor_set_tab(_editor_active_tab - 1)
+    if _editor_focus == 0:
+        # Clamp at the first tab.
+        _profile_editor_set_tab(_editor_active_tab - 1)
+
+
+@kb.add("up", filter=_in_frame("profile_editor"))
+def _kb_peditor_up(event):
+    if _editor_focus == 1:
+        _profile_editor_move_cursor(-1)
+
+
+@kb.add("down", filter=_in_frame("profile_editor"))
+def _kb_peditor_down(event):
+    if _editor_focus == 1:
+        _profile_editor_move_cursor(1)
+
+
+@kb.add("pageup", filter=_in_frame("profile_editor"))
+def _kb_peditor_pgup(event):
+    if _editor_focus == 1:
+        _profile_editor_move_cursor(-_editor_list_visible())
+
+
+@kb.add("pagedown", filter=_in_frame("profile_editor"))
+def _kb_peditor_pgdn(event):
+    if _editor_focus == 1:
+        _profile_editor_move_cursor(_editor_list_visible())
+
+
+@kb.add("home", filter=_in_frame("profile_editor"))
+def _kb_peditor_home(event):
+    if _editor_focus == 1:
+        _profile_editor_jump_cursor(0)
+
+
+@kb.add("end", filter=_in_frame("profile_editor"))
+def _kb_peditor_end(event):
+    if _editor_focus == 1:
+        _profile_editor_jump_cursor(_profile_editor_active_count() - 1)
+
+
+@kb.add("d", filter=_in_frame("profile_editor"))
+@kb.add("D", filter=_in_frame("profile_editor"))
+def _kb_peditor_delete(event):
+    if _editor_focus == 1:
+        _profile_editor_request_delete()
 
 
 @kb.add("escape", filter=_in_frame("profile_editor"), eager=True)
 def _kb_peditor_escape(event):
     _profile_editor_save_and_close()
+
+
+# Profile editor — delete-confirm sub-frame
+@kb.add("enter", filter=_in_frame("profile_editor_delete_confirm"))
+def _kb_peditor_del_enter(event):
+    _profile_editor_confirm_delete()
+
+
+@kb.add("escape", filter=_in_frame("profile_editor_delete_confirm"),
+        eager=True)
+def _kb_peditor_del_escape(event):
+    _profile_editor_cancel_delete()
 
 
 # Profile rename
@@ -7787,7 +8417,7 @@ def main():
     global _profile_table_window, _profile_options_window, _profile_rename_window
     global _profile_create_name_window, _profile_create_choose_window
     global _profile_create_copy_window, _profile_delete_window
-    global _profile_editor_window
+    global _profile_editor_window, _profile_editor_delete_window
     global _options_window, _options_panes_window, _options_pane_window
     global _options_connection_window, _options_connection_custom_window
     global _options_coming_soon_window, _options_spotlights_window
@@ -7823,6 +8453,7 @@ def main():
     _profile_create_copy_window,   pcp_frame                 = _build_simple(_profile_create_copy_text)
     _profile_delete_window,        pd_frame                  = _build_simple(_profile_delete_text)
     _profile_editor_window,        profile_editor_frame      = _build_simple(_profile_editor_text)
+    _profile_editor_delete_window, peditor_delete_frame      = _build_simple(_profile_editor_delete_text)
     _options_window,                    options_frame                  = _build_simple(_options_text)
     _options_panes_window,              options_panes_frame            = _build_simple(_options_panes_text)
     _options_pane_window,               options_pane_frame             = _build_simple(_options_pane_text)
@@ -7943,6 +8574,7 @@ def main():
         "profile_create_copy_picker": pcp_frame,
         "profile_delete_confirm":     pd_frame,
         "profile_editor":             profile_editor_frame,
+        "profile_editor_delete_confirm": peditor_delete_frame,
         "options":                    options_frame,
         "options_panes":              options_panes_frame,
         "options_pane":               options_pane_frame,
