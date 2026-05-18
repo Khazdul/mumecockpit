@@ -215,7 +215,6 @@ _editor_sort_dir     = "asc"     # 'asc' | 'desc' — resets on each editor open
 _editor_hover_row    = None      # row index in display view under cursor, or None
 _editor_hover_sort   = False     # True when hovering the Pattern sort header
 _editor_list_sb      = None      # Scrollbar widget for the list panel
-_editor_delete_entry = None      # Entry under confirmation; cleared on confirm/cancel
 # Detail-panel editing state. Phase 3.5 covers Pattern + Body text inputs;
 # phase 4 adds Highlights' palette grid (sharing the detail_field == 1 slot
 # with Body, dispatched on active kind).
@@ -395,7 +394,6 @@ _profile_create_choose_window    = None
 _profile_create_copy_window      = None
 _profile_delete_window           = None
 _profile_editor_window           = None
-_profile_editor_delete_window    = None
 _profile_editor_keybind_window   = None
 _options_window                  = None
 _options_panes_window            = None
@@ -685,7 +683,6 @@ def _focus_current_frame():
             "profile_create_copy_picker": _profile_create_copy_window,
             "profile_delete_confirm":     _profile_delete_window,
             "profile_editor":             _profile_editor_window,
-            "profile_editor_delete_confirm": _profile_editor_delete_window,
             "profile_editor_macro_keybind": _profile_editor_keybind_window,
             "profile_rename":             _profile_rename_window,
             "options":                    _options_window,
@@ -2584,31 +2581,25 @@ def _profile_editor_toggle_sort():
 
 
 def _profile_editor_request_delete():
-    """`d` handler: stash the cursor Entry and push the confirm sub-frame.
-    No-op when the cursor is on the `+ New entry` sentinel — there is
-    nothing to delete."""
-    global _editor_delete_entry
+    """`Del` handler: remove the cursor Entry from `Profile.items`,
+    clamp the cursor, and re-render. No confirmation — the friction-
+    reduction trade-off is accepted (Del is far harder to press
+    accidentally than a letter key). No-op when the cursor is on the
+    `+ New entry` sentinel — there is nothing to delete.
+
+    After delete, prefer keeping the cursor on a real entry rather
+    than falling onto the sentinel — only land on the sentinel when
+    there are no entries left."""
+    global _editor_list_cursor
     view = _profile_editor_display_view()
     if not view or not (0 <= _editor_list_cursor < len(view)):
         return
-    _editor_delete_entry = view[_editor_list_cursor]
-    _push_frame("profile_editor_delete_confirm")
-
-
-def _profile_editor_confirm_delete():
-    """Remove the stashed Entry from items, clamp the cursor, and pop.
-
-    After delete, prefer keeping the cursor on a real entry rather than
-    falling onto the sentinel — only land on the sentinel when there
-    are no entries left."""
-    global _editor_delete_entry, _editor_list_cursor
-    target = _editor_delete_entry
-    if target is not None and _editor_data is not None:
+    target = view[_editor_list_cursor]
+    if _editor_data is not None:
         try:
             _editor_data.items.remove(target)
         except ValueError:
             pass
-    _editor_delete_entry = None
     entries_total = _profile_editor_active_count()
     if entries_total == 0:
         _editor_list_cursor = 0   # the sentinel — only row left
@@ -2617,13 +2608,8 @@ def _profile_editor_confirm_delete():
             0, min(entries_total - 1, _editor_list_cursor))
     _profile_editor_scroll_into_view()
     _editor_refresh_buffers()
-    _pop_frame()
-
-
-def _profile_editor_cancel_delete():
-    global _editor_delete_entry
-    _editor_delete_entry = None
-    _pop_frame()
+    if _app:
+        _app.invalidate()
 
 
 # Scrollbar geometry used by the inline list/scrollbar render. Mirrors the
@@ -2973,6 +2959,7 @@ def _editor_build_text_detail(entry, total_lines):
     rows.append(_editor_centered_row(C_HINT, "─── Hint ───"))
     for line in _EDITOR_HINT_LINES:
         rows.append(_editor_pad_full(C_HINT, line))
+    rows.append(_editor_pad_full(C_HINT, ""))
 
     while len(rows) < total_lines:
         rows.append(_editor_pad_full(C_HINT, ""))
@@ -3039,6 +3026,7 @@ def _editor_build_palette_detail(entry, total_lines):
     rows.append(_editor_pad_full(C_HINT, ""))
     rows.append(_editor_centered_row(C_HINT, "─── Hint ───"))
     rows.append(_editor_pad_full(C_HINT, "Pick a color for the highlighted text."))
+    rows.append(_editor_pad_full(C_HINT, ""))
 
     while len(rows) < total_lines:
         rows.append(_editor_pad_full(C_HINT, ""))
@@ -3092,6 +3080,7 @@ def _editor_build_macro_detail(entry, total_lines):
     rows.append(_editor_centered_row(C_HINT, "─── Hint ───"))
     rows.append(_editor_pad_full(C_HINT, "Press Enter on Key to rebind."))
     rows.append(_editor_pad_full(C_HINT, "Separate commands with ; for sequences."))
+    rows.append(_editor_pad_full(C_HINT, ""))
 
     while len(rows) < total_lines:
         rows.append(_editor_pad_full(C_HINT, ""))
@@ -3407,7 +3396,7 @@ def _profile_editor_text():
     Layout (top to bottom):
         ─── Profile editor: <name> ───
         <blank>
-        Aliases · Actions · ... · <count> entries
+        Aliases · Actions · Macros · Highlights · Substitutes
         <blank>
         Pattern▲  Body          │ Pattern
         > <pattern>  <body…>    │ ┌────────────────────┐
@@ -3420,8 +3409,9 @@ def _profile_editor_text():
                                 │ └────────────────────┘
                                 │ ─── Hint ───
                                 │ Use %1, %2, %3 as ...
+                                │ <blank>
         <blank>
-        ↑↓ Move · d Delete · Tab Focus tabs · ESC Save & back
+        ↑↓ Move · Del Delete · Tab Focus tabs · ESC Save & back
     """
     cols = _term_cols()
     name = (_editor_profile_path.stem
@@ -3436,22 +3426,27 @@ def _profile_editor_text():
     frags.append(("", "\n", _editor_clear_outer_hover))
 
     # Tab strip — five labels separated by a single space. Active tab is
-    # rendered bold+underline (C_ACTIVE); inactive C_ITEM; hover C_HOVER on
-    # non-active labels. The active-tab count is right-aligned to `cols`.
+    # rendered bold+underline (C_ACTIVE) when the tab strip is unfocused,
+    # or reverse-band (C_SELECTED) when the tab strip itself has focus —
+    # mirrors the list panel's cursor / hover distinction so the user can
+    # always tell which zone responds to keystrokes. Inactive tabs paint
+    # C_ITEM; hover paints C_HOVER on non-active labels.
     n_tabs = len(_PROFILE_EDITOR_TABS)
     labels = [lbl for (lbl, _k) in _PROFILE_EDITOR_TABS]
     strip_w = sum(len(s) for s in labels) + (n_tabs - 1)  # spaces between
-    count_text = f"{_profile_editor_active_count()} entries"
+    tabs_focused = (_editor_focus == 0)
 
     pad_left  = max(0, (cols - strip_w) // 2)
-    pad_right = max(0, cols - pad_left - strip_w - len(count_text))
+    pad_right = max(0, cols - pad_left - strip_w)
 
     frags.append(("", " " * pad_left, _editor_clear_outer_hover))
 
     for i, label in enumerate(labels):
         is_active = (i == _editor_active_tab)
         is_hover  = (_editor_hover_tab == i and not is_active)
-        if is_active:
+        if is_active and tabs_focused:
+            style = C_SELECTED
+        elif is_active:
             style = C_ACTIVE + " underline"
         elif is_hover:
             style = C_HOVER
@@ -3472,7 +3467,6 @@ def _profile_editor_text():
             frags.append(("", " ", _editor_clear_outer_hover))
 
     frags.append(("", " " * pad_right, _editor_clear_outer_hover))
-    frags.append((C_HINT, count_text, _editor_clear_outer_hover))
     frags.append(("", "\n", _editor_clear_outer_hover))
     frags.append(("", "\n", _editor_clear_outer_hover))
 
@@ -3567,11 +3561,16 @@ def _profile_editor_text():
                             _profile_editor_set_hover_sort(False)
                             return None
                         if ev.event_type == MouseEventType.MOUSE_DOWN:
-                            _profile_editor_set_focus(1)
+                            # Click on "+ New entry" acts as a button —
+                            # create the entry immediately. Focus moves
+                            # to the list briefly so the cursor anchors,
+                            # then `_editor_create_new_entry` moves
+                            # focus to the detail panel's Pattern field.
                             global _editor_list_cursor
+                            _profile_editor_set_focus(1)
                             _editor_list_cursor = row
                             _profile_editor_scroll_into_view()
-                            _editor_refresh_buffers()
+                            _editor_create_new_entry()
                             if _app:
                                 _app.invalidate()
                             return None
@@ -3664,7 +3663,7 @@ def _profile_editor_text():
     if _editor_focus == 0:
         footer = ("←→ Switch tab  ·  ↓ Focus list  ·  ESC Save & back")
     elif _editor_focus == 1:
-        footer = ("↑↓ Move  ·  Enter Edit  ·  n New  ·  d Delete  ·  "
+        footer = ("↑↓ Move  ·  Enter Edit  ·  n New  ·  Del Delete  ·  "
                   "Tab Cycle  ·  ESC Save & back")
     else:
         footer = ("←→ Cursor  ·  Tab Field  ·  ↑ ↓ Zone  ·  "
@@ -3827,36 +3826,6 @@ def _profile_editor_keybind_text():
         frags.append(("", "\n\n"))
     else:
         frags.append(("", "\n\n"))
-    frags.append(("", _pad_centre(footer, cols)))
-    frags.append((C_HINT, footer))
-    return frags
-
-
-# --- Profile editor — delete-confirm sub-frame ----------------------------
-def _profile_editor_delete_text():
-    """Render the centred confirm-delete sub-frame. Modeled on
-    `profile_delete_confirm` — title and message both use the active
-    tab's kind label (alias / action / macro / highlight / substitute),
-    and the pattern is routed through `format_entry_pattern` so macros
-    show readable key names instead of raw escape sequences."""
-    cols = _term_cols()
-    if _editor_delete_entry is not None:
-        kind    = _editor_delete_entry.kind
-        pattern = format_entry_pattern(_editor_delete_entry)
-    else:
-        kind    = _profile_editor_active_kind()
-        pattern = ""
-    title  = f"─── Delete {kind} ───"
-    msg    = f'Delete {kind} "{pattern}"?'
-    footer = "Enter  Confirm · ESC  Cancel"
-    frags = []
-    frags.append(("", "\n\n"))
-    frags.append(("", _pad_centre(title, cols)))
-    frags.append((C_SECTION, title))
-    frags.append(("", "\n\n\n"))
-    frags.append(("", _pad_centre(msg, cols)))
-    frags.append((C_ITEM, msg))
-    frags.append(("", "\n\n\n"))
     frags.append(("", _pad_centre(footer, cols)))
     frags.append((C_HINT, footer))
     return frags
@@ -9244,9 +9213,14 @@ def _kb_peditor_end(event):
 
 @kb.add("delete", filter=_in_frame("profile_editor"))
 def _kb_peditor_kdelete(event):
-    """Forward-delete the character at the cursor in Pattern/Body. On
-    list focus, this binding is a no-op for now — Section B swaps `d`
-    out for `Delete` to delete the list entry."""
+    """`Del` semantics depend on focus zone:
+    - List focus → delete the cursor entry immediately (no confirm).
+    - Pattern / Body focus → forward-delete the character at the cursor.
+    - Palette or macro Key cell → no-op (selection-only zones).
+    """
+    if _editor_focus == 1:
+        _profile_editor_request_delete()
+        return
     if _editor_focus != 2:
         return
     if _editor_in_macro_key_focus() or _editor_in_palette_focus():
@@ -9257,17 +9231,6 @@ def _kb_peditor_kdelete(event):
             _app.invalidate()
     else:
         _editor_body_forward_delete()
-
-
-@kb.add("d", filter=_in_frame("profile_editor"))
-@kb.add("D", filter=_in_frame("profile_editor"))
-def _kb_peditor_delete(event):
-    if _editor_focus == 1:
-        _profile_editor_request_delete()
-    elif _editor_focus == 2:
-        # In a detail field, `d` is a regular character — fall through
-        # to the printable-input handler (the palette field swallows it).
-        _kb_peditor_any(event)
 
 
 @kb.add("n", filter=_in_frame("profile_editor"))
@@ -9346,18 +9309,6 @@ def _kb_peditor_any(event):
 @kb.add("escape", filter=_in_frame("profile_editor"), eager=True)
 def _kb_peditor_escape(event):
     _profile_editor_save_and_close()
-
-
-# Profile editor — delete-confirm sub-frame
-@kb.add("enter", filter=_in_frame("profile_editor_delete_confirm"))
-def _kb_peditor_del_enter(event):
-    _profile_editor_confirm_delete()
-
-
-@kb.add("escape", filter=_in_frame("profile_editor_delete_confirm"),
-        eager=True)
-def _kb_peditor_del_escape(event):
-    _profile_editor_cancel_delete()
 
 
 # Profile editor — macro key-capture overlay
@@ -10393,7 +10344,7 @@ def main():
     global _profile_table_window, _profile_options_window, _profile_rename_window
     global _profile_create_name_window, _profile_create_choose_window
     global _profile_create_copy_window, _profile_delete_window
-    global _profile_editor_window, _profile_editor_delete_window
+    global _profile_editor_window
     global _profile_editor_keybind_window
     global _options_window, _options_panes_window, _options_pane_window
     global _options_connection_window, _options_connection_custom_window
@@ -10430,7 +10381,6 @@ def main():
     _profile_create_copy_window,   pcp_frame                 = _build_simple(_profile_create_copy_text)
     _profile_delete_window,        pd_frame                  = _build_simple(_profile_delete_text)
     _profile_editor_window,        profile_editor_frame      = _build_simple(_profile_editor_text)
-    _profile_editor_delete_window, peditor_delete_frame      = _build_simple(_profile_editor_delete_text)
     _profile_editor_keybind_window, peditor_keybind_frame    = _build_simple(_profile_editor_keybind_text)
     _options_window,                    options_frame                  = _build_simple(_options_text)
     _options_panes_window,              options_panes_frame            = _build_simple(_options_panes_text)
@@ -10552,7 +10502,6 @@ def main():
         "profile_create_copy_picker": pcp_frame,
         "profile_delete_confirm":     pd_frame,
         "profile_editor":             profile_editor_frame,
-        "profile_editor_delete_confirm": peditor_delete_frame,
         "profile_editor_macro_keybind": peditor_keybind_frame,
         "options":                    options_frame,
         "options_panes":              options_panes_frame,

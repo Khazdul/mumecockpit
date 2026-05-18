@@ -210,10 +210,12 @@ Top-to-bottom:
 1. Centred title row `─── Profile editor: <name> ───` in `C_SECTION`.
 2. **Tab strip.** Five labels separated by a single space, centred on
    the terminal: `Aliases · Actions · Macros · Highlights · Substitutes`.
-   The active tab paints `C_ACTIVE` + `underline`; inactive tabs paint
-   `C_ITEM`; hover paints `C_HOVER` on non-active labels. Right-aligned
-   on the same row: `<N> entries` in `C_HINT`, where `<N>` is the count
-   of entries of the active tab's kind in the parsed profile.
+   When the tab strip itself has focus, the active tab paints
+   `C_SELECTED` (reverse-band, black-on-amber) — mirrors the list
+   panel's cursor-row treatment so the user can tell which zone is
+   keyboard-active. When the tab strip is unfocused, the active tab
+   paints `C_ACTIVE` + `underline`. Inactive tabs paint `C_ITEM`;
+   hover paints `C_HOVER` on non-active labels.
 3. Body area — master/detail two-column layout (all five tabs).
 4. Footer hint — text depends on focus zone (see *Focus model* below).
 
@@ -235,10 +237,13 @@ package modelled on the `profile` frame's table package. Total width
   A `+ New entry` sentinel row is rendered at the bottom of the list
   (always last, regardless of sort direction) in `C_HINT`. The
   sentinel is selectable like any row; pressing `Enter` on it — or
-  pressing `n` from anywhere on list focus — appends a blank Entry of
-  the active kind and focuses the detail panel's Pattern field. The
-  list cursor's index range therefore spans `[0, len(view)]`, with
-  `len(view)` denoting the sentinel.
+  pressing `n` from anywhere on list focus, or clicking it once with
+  the mouse — appends a blank Entry of the active kind and focuses
+  the detail panel's Pattern field. (Mouse: the click acts like a
+  button — one click both anchors the cursor and creates, rather
+  than requiring a second Enter press.) The list cursor's index
+  range therefore spans `[0, len(view)]`, with `len(view)` denoting
+  the sentinel.
 - **Detail panel (right).** Two editable fields plus a per-kind
   body widget. Per-kind labels come from `DETAIL_LABELS`:
   `alias`/`action` → `(Pattern, Commands)`,
@@ -399,10 +404,9 @@ multi-line text field.
 | `Home` / `End` | no-op          | Home → first row; End → sentinel | Cursor → start / end of *current line*       | Swallowed                                         |
 | `Shift+arrow`, `Shift+Home/End` | no-op | no-op                  | Extend selection from anchor; typing replaces  | Swallowed                                         |
 | `n`       | no-op               | Create + focus Pattern        | Inserts literal `n` at cursor                   | Swallowed (palette is selection-only)             |
-| `d`       | no-op               | Delete confirm                | Inserts literal `d` at cursor                   | Swallowed                                         |
 | `Enter`   | no-op               | Edit (entry) / create (sentinel) | Body: split line at cursor; Pattern: no-op   | Swallowed                                         |
 | `Backspace` | no-op             | no-op                         | Delete char before cursor (or selection)        | Swallowed                                         |
-| `Delete`  | no-op               | no-op                         | Forward-delete char at cursor (or selection)    | Swallowed                                         |
+| `Delete`  | no-op               | Delete cursor entry (no confirm) | Forward-delete char at cursor (or selection) | Swallowed                                         |
 
 `Tab` / `Shift+Tab` cycle the 4-stop chain
 (`tabs → list → detail.Pattern → detail.Body/Palette → tabs`).
@@ -415,7 +419,7 @@ pops back to `profile`.
 keys match what's wired:
 
 - Tabs: `←→ Switch tab  ·  ↓ Focus list  ·  ESC Save & back`
-- List: `↑↓ Move  ·  Enter Edit  ·  n New  ·  d Delete  ·  Tab Cycle  ·  ESC Save & back`
+- List: `↑↓ Move  ·  Enter Edit  ·  n New  ·  Del Delete  ·  Tab Cycle  ·  ESC Save & back`
 - Detail: `←→ Cursor  ·  Tab Field  ·  ↑ ↓ Zone  ·  ESC Save & back`
 
 **Mouse.** Click on a tab label switches the active tab (regardless
@@ -491,30 +495,16 @@ one entry does not affect any other entry's `_raw`. Covered by
 `bridge/launcher/tests/test_profile_io.py` and
 `bridge/launcher/tests/test_profile_editor.py`.
 
-#### `profile_editor_delete_confirm` sub-frame
+#### Delete: no confirmation
 
-Centred sub-frame pushed by `d` on a selected list row. Modelled on
-`profile_delete_confirm`, but with an `Enter`-to-confirm contract
-instead of the `Y`/any-key contract used by profile-level delete.
-
-- Title `─── Delete <kind> ───` in `C_SECTION`, where `<kind>` is the
-  Entry's kind (`alias`, `action`, `macro`, `highlight`,
-  `substitute`).
-- Body `Delete <kind> "<pattern>"?` in `C_ITEM`. The pattern is
-  rendered via `format_entry_pattern(entry)`:
-    - `macro` entries resolve through
-      `macro_keys.escape_to_name`, so `\eOs` shows as `Numpad 3`;
-      unknown escapes fall back to `Custom: <raw>`.
-    - The other four kinds use the raw pattern, truncated to 40
-      characters with a trailing `…`.
-- Footer `Enter  Confirm · ESC  Cancel` in `C_HINT`.
-
-`Enter` removes `_editor_delete_entry` from `Profile.items` via
-`list.remove(entry)`, clears `_editor_delete_entry`, clamps
-`_editor_list_cursor` to the new active-kind length, scrolls the
-cursor back into view, and pops. The next save reflects the
-deletion. `ESC` clears `_editor_delete_entry` and pops without
-mutation.
+`Del` on a selected list row removes the cursor Entry from
+`Profile.items` immediately via `list.remove(entry)`, clamps
+`_editor_list_cursor` to the new active-kind length, and scrolls the
+cursor back into view. The next save reflects the deletion. There is
+no confirmation step — the friction-reduction trade-off is accepted
+(`Del` is significantly harder to press accidentally than a letter
+key, and the previous `d` letter binding was retired for the same
+reason).
 
 #### `profile_editor_macro_keybind` overlay
 

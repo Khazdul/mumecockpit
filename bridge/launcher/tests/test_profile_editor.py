@@ -52,7 +52,6 @@ def _reset_editor_state(profile, *, focus=1, active_tab=0):
     launcher._editor_sort_dir     = "asc"
     launcher._editor_hover_row    = None
     launcher._editor_hover_sort   = False
-    launcher._editor_delete_entry = None
     launcher._editor_detail_field    = 0
     launcher._editor_pattern_cursor  = 0
     launcher._editor_body_line       = 0
@@ -135,22 +134,9 @@ class TestDisplayViewSort(unittest.TestCase):
 
 
 class TestDelete(unittest.TestCase):
-    """`d` on a selected row stashes the cursor Entry in
-    `_editor_delete_entry`; Enter on the confirm sub-frame removes it from
-    Profile.items via `list.remove(entry)`. The next save reflects it.
-    `Esc` cancels without mutation."""
-
-    def _confirm_delete(self, prof):
-        """Drive `_profile_editor_confirm_delete` while keeping the frame
-        stack consistent (the underlying `_pop_frame` walks both)."""
-        launcher._frame_stack.append("profile_editor")
-        launcher._current_frame = "profile_editor_delete_confirm"
-        launcher._profile_editor_confirm_delete()
-
-    def _cancel_delete(self):
-        launcher._frame_stack.append("profile_editor")
-        launcher._current_frame = "profile_editor_delete_confirm"
-        launcher._profile_editor_cancel_delete()
+    """`Del` on a selected list row removes the cursor Entry from
+    `Profile.items` immediately (no confirmation). The next save
+    reflects the deletion."""
 
     def test_delete_removes_entry_from_items(self):
         source = (
@@ -164,14 +150,13 @@ class TestDelete(unittest.TestCase):
         view = launcher._profile_editor_display_view()
         target = view[0]
         self.assertEqual(target.pattern, "ab")
-        launcher._editor_delete_entry = target
-        self._confirm_delete(prof)
+        launcher._editor_list_cursor = 0
+        launcher._profile_editor_request_delete()
         remaining = [e.pattern for it in prof.items
                      if isinstance(it, profile_io.Entry)
                      for e in [it]]
         self.assertNotIn("ab", remaining)
         self.assertEqual(set(remaining), {"ws", "nw"})
-        self.assertIsNone(launcher._editor_delete_entry)
 
     def test_delete_persists_through_save(self):
         source = (
@@ -181,10 +166,9 @@ class TestDelete(unittest.TestCase):
         )
         prof, _src, td = _make_profile(source)
         _reset_editor_state(prof)
-        view = launcher._profile_editor_display_view()
-        target = next(e for e in view if e.pattern == "ab")
-        launcher._editor_delete_entry = target
-        self._confirm_delete(prof)
+        # Cursor on "ab" (display row 0 in asc).
+        launcher._editor_list_cursor = 0
+        launcher._profile_editor_request_delete()
         dst = Path(td) / "out.tin"
         prof.path = dst
         profile_io.save_profile(prof)
@@ -198,23 +182,16 @@ class TestDelete(unittest.TestCase):
             "#alias {nw} {northwest}\n",
         )
 
-    def test_cancel_keeps_entry(self):
-        source = (
-            "#alias {ws} {wake;stand}\n"
-            "#alias {ab} {abandon}\n"
-        )
-        prof, _src, td = _make_profile(source)
+    def test_sentinel_cursor_is_noop(self):
+        # Cursor on the "+ New entry" sentinel row → no-op (there is no
+        # entry to delete).
+        source = "#alias {only} {body}\n"
+        prof, _src, _td = _make_profile(source)
         _reset_editor_state(prof)
-        view = launcher._profile_editor_display_view()
-        launcher._editor_delete_entry = view[0]   # "ab"
-        self._cancel_delete()
-        # No mutation: items list and file are unchanged.
-        self.assertEqual(len(prof.entries_of("alias")), 2)
-        self.assertIsNone(launcher._editor_delete_entry)
-        dst = Path(td) / "out.tin"
-        prof.path = dst
-        profile_io.save_profile(prof)
-        self.assertEqual(dst.read_text(), source)
+        # Position cursor on the sentinel (index == len(view)).
+        launcher._editor_list_cursor = len(launcher._profile_editor_display_view())
+        launcher._profile_editor_request_delete()
+        self.assertEqual(launcher._profile_editor_active_count(), 1)
 
     def test_passthrough_lines_untouched_by_delete(self):
         # Passthrough lines (#var, #event, blanks, etc.) must survive a
@@ -229,10 +206,9 @@ class TestDelete(unittest.TestCase):
         )
         prof, _src, td = _make_profile(source)
         _reset_editor_state(prof)
-        view = launcher._profile_editor_display_view()
-        launcher._editor_delete_entry = next(
-            e for e in view if e.pattern == "ab")
-        self._confirm_delete(prof)
+        # Cursor on "ab" — display sort is asc → row 0.
+        launcher._editor_list_cursor = 0
+        launcher._profile_editor_request_delete()
         dst = Path(td) / "out.tin"
         prof.path = dst
         profile_io.save_profile(prof)
@@ -248,11 +224,6 @@ class TestDelete(unittest.TestCase):
 class TestCursorClamp(unittest.TestCase):
     """After deletion the list cursor must land on a valid display row."""
 
-    def _confirm_delete(self):
-        launcher._frame_stack.append("profile_editor")
-        launcher._current_frame = "profile_editor_delete_confirm"
-        launcher._profile_editor_confirm_delete()
-
     def test_cursor_clamps_when_last_entry_deleted(self):
         # Cursor on the final display row; deleting that row must clamp
         # the cursor to the new last index (len-1).
@@ -265,9 +236,7 @@ class TestCursorClamp(unittest.TestCase):
         _reset_editor_state(prof)
         # Display sort is asc → indices map to [ab, nw, ws]. Cursor on ws.
         launcher._editor_list_cursor = 2
-        view = launcher._profile_editor_display_view()
-        launcher._editor_delete_entry = view[2]
-        self._confirm_delete()
+        launcher._profile_editor_request_delete()
         # Two entries remain; cursor should clamp to 1 (the new last).
         self.assertEqual(launcher._profile_editor_active_count(), 2)
         self.assertEqual(launcher._editor_list_cursor, 1)
@@ -276,15 +245,14 @@ class TestCursorClamp(unittest.TestCase):
         source = "#alias {only} {body}\n"
         prof, _src, _td = _make_profile(source)
         _reset_editor_state(prof)
-        view = launcher._profile_editor_display_view()
-        launcher._editor_delete_entry = view[0]
-        self._confirm_delete()
+        launcher._editor_list_cursor = 0
+        launcher._profile_editor_request_delete()
         self.assertEqual(launcher._profile_editor_active_count(), 0)
         self.assertEqual(launcher._editor_list_cursor, 0)
 
-    def test_cursor_unaffected_when_earlier_row_deleted(self):
-        # Cursor on row 2 ("ws"); deleting row 0 ("ab") should not move
-        # the cursor (it still points at row index 1 = "ws").
+    def test_cursor_stays_on_first_when_first_row_deleted(self):
+        # Cursor at row 0 deletes "ab"; cursor stays at 0 (now pointing
+        # at "nw" — the new first entry).
         source = (
             "#alias {ab} {abandon}\n"
             "#alias {nw} {northwest}\n"
@@ -292,15 +260,12 @@ class TestCursorClamp(unittest.TestCase):
         )
         prof, _src, _td = _make_profile(source)
         _reset_editor_state(prof)
-        launcher._editor_list_cursor = 2
-        view = launcher._profile_editor_display_view()
-        launcher._editor_delete_entry = view[0]   # ab
-        self._confirm_delete()
-        # cursor was at 2 (ws); after removing ab there are 2 entries;
-        # max(0, min(1, 2)) → 1, which still points at "ws" in the new view.
-        self.assertEqual(launcher._editor_list_cursor, 1)
+        launcher._editor_list_cursor = 0
+        launcher._profile_editor_request_delete()
+        self.assertEqual(launcher._profile_editor_active_count(), 2)
+        self.assertEqual(launcher._editor_list_cursor, 0)
         new_view = launcher._profile_editor_display_view()
-        self.assertEqual(new_view[launcher._editor_list_cursor].pattern, "ws")
+        self.assertEqual(new_view[0].pattern, "nw")
 
 
 class TestDetailPanelLayout(unittest.TestCase):
