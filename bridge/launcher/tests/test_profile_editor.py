@@ -39,9 +39,8 @@ def _make_profile(source):
 def _reset_editor_state(profile, *, focus=1):
     """Place `profile` into the editor's module-level state, fresh defaults.
 
-    Phase-3 adds detail-panel state. `focus` defaults to 1 (list) since
-    most tests exercise list-level behaviour; pass `focus=2` to drive
-    the detail-panel editing paths."""
+    `focus` defaults to 1 (list) since most tests exercise list-level
+    behaviour; pass `focus=2` to drive the detail-panel editing paths."""
     launcher._editor_profile_path = profile.path
     launcher._editor_data         = profile
     launcher._editor_active_tab   = 0   # Aliases
@@ -54,8 +53,9 @@ def _reset_editor_state(profile, *, focus=1):
     launcher._editor_hover_sort   = False
     launcher._editor_delete_entry = None
     launcher._editor_detail_field    = 0
+    launcher._editor_pattern_cursor  = 0
     launcher._editor_body_line       = 0
-    launcher._editor_priority_buf    = ""
+    launcher._editor_body_col        = 0
     launcher._editor_pattern_touched = False
     launcher._editor_refresh_buffers()
 
@@ -297,49 +297,49 @@ class TestCursorClamp(unittest.TestCase):
         self.assertEqual(new_view[launcher._editor_list_cursor].pattern, "ws")
 
 
-class TestDetailPanelPriority(unittest.TestCase):
-    """Detail-panel render — phase 3 shows the Priority field as its own
-    bordered box rather than the phase-2 "Priority: <N>" label line. The
-    priority value appears inside the box when set; the box renders
-    empty (with the placeholder hint beside the label) when unset."""
+class TestDetailPanelLayout(unittest.TestCase):
+    """Detail-panel render: phase 3.5 hides Priority entirely; the field
+    chain is just Pattern + (kind-labelled) Commands box. Priority is
+    preserved on disk via `Entry.priority` and the serializer, but no
+    longer surfaced in the editor UI."""
 
     def _detail_text(self, entry):
         # Render the detail rows for `entry` against a fresh profile so
-        # the renderer can resolve `_editor_current_entry` etc. Each row
-        # is a list of (style, text) fragments — join their texts and
-        # strip trailing pad for clean comparison.
+        # `_editor_current_entry` etc. resolve correctly. Each row is a
+        # list of 2- or 3-tuple fragments; join their texts and strip
+        # trailing pad for clean comparison.
         prof, _src, _td = _make_profile("")
         prof.items.append(entry)
         _reset_editor_state(prof)
         rows = launcher._editor_detail_lines(entry, total_lines=20)
-        return ["".join(t for (_s, t) in row).rstrip() for row in rows]
+        return ["".join(f[1] for f in row).rstrip() for row in rows]
 
-    def test_priority_box_shows_value_when_set(self):
+    def test_priority_label_absent_from_panel(self):
         e = launcher.profile_io.Entry(
             kind="alias", pattern="test", body="kill %1",
             priority=1, _raw=None)
         lines = self._detail_text(e)
-        # The Priority label sits above its narrow box; the value lives
-        # inside `│ 1   │`.
-        self.assertIn("Priority", lines)
-        self.assertTrue(
-            any(stripped.startswith("│ 1") for stripped in lines),
-            f"expected priority value in box, lines were: {lines!r}")
-
-    def test_priority_placeholder_when_unset(self):
-        e = launcher.profile_io.Entry(
-            kind="alias", pattern="test", body="kill %1",
-            priority=None, _raw=None)
-        lines = self._detail_text(e)
-        # No "Priority: <N>" legacy line.
         for line in lines:
-            self.assertFalse(line.startswith("Priority:"),
-                             f"unexpected legacy priority line: {line!r}")
-        # The `(optional)` placeholder appears beside the label when the
-        # buffer is empty.
-        self.assertTrue(
-            any("(optional)" in line for line in lines),
-            f"expected placeholder hint, lines were: {lines!r}")
+            self.assertNotIn("Priority", line,
+                             f"unexpected Priority label: {line!r}")
+            self.assertNotIn("(optional)", line,
+                             f"unexpected priority placeholder: {line!r}")
+
+    def test_alias_body_label_is_commands(self):
+        e = launcher.profile_io.Entry(
+            kind="alias", pattern="k", body="kill", priority=None, _raw=None)
+        lines = self._detail_text(e)
+        self.assertIn("Commands", lines)
+        self.assertNotIn("Body", lines)
+
+    def test_detail_labels_map_matches_kinds(self):
+        # Phase 4 / 5 plug the rest in; the data lives in this map.
+        self.assertEqual(launcher.DETAIL_LABELS["alias"],
+                         ("Pattern", "Commands"))
+        self.assertEqual(launcher.DETAIL_LABELS["macro"][0],   "Key")
+        self.assertEqual(launcher.DETAIL_LABELS["highlight"][1], "Color")
+        self.assertEqual(launcher.DETAIL_LABELS["substitute"],
+                         ("Text", "New text"))
 
 
 class TestEntryMarkModified(unittest.TestCase):
@@ -618,49 +618,252 @@ class TestValidation(unittest.TestCase):
         launcher._editor_set_pattern("k")
         self.assertIsNone(launcher._editor_validation_error())
 
-    def test_brace_warning_fires_on_unescaped_brace(self):
+    def test_brace_unbalanced_pattern_fires_as_error(self):
         prof, _src, _td = _make_profile("#alias {k} {kill}\n")
         _reset_editor_state(prof, focus=2)
-        launcher._editor_set_pattern("k{x")
+        launcher._editor_set_pattern("orc {x")
         self.assertEqual(
-            launcher._editor_validation_warning(),
-            "Unescaped braces may confuse tt++ — use \\{ and \\}.")
+            launcher._editor_validation_error(),
+            "Unbalanced braces in Pattern.")
 
-    def test_brace_warning_quiet_on_escaped_brace(self):
+    def test_brace_balanced_pattern_no_error(self):
+        prof, _src, _td = _make_profile("#alias {k} {kill}\n")
+        _reset_editor_state(prof, focus=2)
+        launcher._editor_set_pattern("orc {x}")
+        self.assertIsNone(launcher._editor_validation_error())
+
+    def test_brace_escaped_pattern_no_error(self):
+        # `\{` and `\}` are literal braces in tt++ — they don't count.
         prof, _src, _td = _make_profile("#alias {k} {kill}\n")
         _reset_editor_state(prof, focus=2)
         launcher._editor_set_pattern(r"k\{x")
-        self.assertIsNone(launcher._editor_validation_warning())
+        self.assertIsNone(launcher._editor_validation_error())
 
-
-class TestPriorityBuffer(unittest.TestCase):
-    """Priority is stored as a string buffer in the editor; empty buffer
-    means `priority=None`, non-empty means `priority=int(buffer)`. The
-    `<any>` handler swallows non-digits — covered indirectly by these
-    helper-level tests."""
-
-    def test_empty_buffer_means_none(self):
+    def test_brace_unbalanced_body_fires_as_error(self):
         prof, _src, _td = _make_profile("#alias {k} {kill}\n")
         _reset_editor_state(prof, focus=2)
         entry = launcher._editor_current_entry()
-        launcher._editor_priority_buf = ""
-        launcher._editor_set_priority_from_buf()
-        self.assertIsNone(entry.priority)
+        entry.body = "kill orc {"
+        self.assertEqual(
+            launcher._editor_validation_error(),
+            "Unbalanced braces in Commands.")
 
-    def test_nonempty_buffer_sets_int_priority(self):
-        prof, _src, _td = _make_profile("#alias {k} {kill}\n")
-        _reset_editor_state(prof, focus=2)
+    def test_required_takes_precedence_over_brace(self):
+        # Empty pattern + unbalanced body → the required message wins
+        # because empty-pattern is the harder block.
+        prof, _src, _td = _make_profile("")
+        _reset_editor_state(prof)
+        launcher._editor_create_new_entry()
+        launcher._profile_editor_set_focus(2, field=1)
         entry = launcher._editor_current_entry()
-        launcher._editor_priority_buf = "12"
-        launcher._editor_set_priority_from_buf()
-        self.assertEqual(entry.priority, 12)
+        entry.body = "kill {"
+        self.assertEqual(launcher._editor_validation_error(),
+                         "Pattern is required.")
 
-    def test_priority_buffer_refresh_from_entry(self):
-        # Loading a priority entry into the editor surfaces the int as
-        # a string buffer the user can edit.
-        prof, _src, _td = _make_profile("#alias {k} {kill} {7}\n")
+
+class TestBraceBalancedHelper(unittest.TestCase):
+    """Unit tests for the brace-balance primitive used by the editor's
+    inline validation. The helper also handles `\\X` escapes — `\\{`
+    and `\\}` do not count toward the depth."""
+
+    def test_empty_string_is_balanced(self):
+        self.assertTrue(launcher._braces_balanced(""))
+
+    def test_simple_pair(self):
+        self.assertTrue(launcher._braces_balanced("{x}"))
+
+    def test_nested_pairs(self):
+        self.assertTrue(launcher._braces_balanced("{a{b}c}"))
+
+    def test_open_only(self):
+        self.assertFalse(launcher._braces_balanced("{abc"))
+
+    def test_close_only(self):
+        self.assertFalse(launcher._braces_balanced("abc}"))
+
+    def test_close_before_open(self):
+        self.assertFalse(launcher._braces_balanced("}abc{"))
+
+    def test_escaped_open_does_not_count(self):
+        self.assertTrue(launcher._braces_balanced(r"\{x"))
+
+    def test_escaped_close_does_not_count(self):
+        self.assertTrue(launcher._braces_balanced(r"x\}"))
+
+    def test_double_escape_then_brace_counts(self):
+        # `\\` is `\` literal; the following `{` is unescaped.
+        self.assertFalse(launcher._braces_balanced(r"\\{"))
+
+
+class TestPriorityPreservedThroughEditor(unittest.TestCase):
+    """Priority is no longer surfaced in the editor UI but must continue
+    to round-trip on disk. Editing an unrelated field of a priority
+    entry regenerates `#alias {pattern} {body} {priority}` from the
+    Entry fields; never touching a priority entry leaves its `_raw`
+    intact byte-for-byte."""
+
+    def test_unrelated_body_edit_preserves_priority(self):
+        source = "#alias {edited} {old}\n#alias {with_prio} {body} {7}\n"
+        with tempfile.TemporaryDirectory() as td:
+            src = Path(td) / "in.tin"
+            dst = Path(td) / "out.tin"
+            src.write_text(source)
+            prof = profile_io.load_profile(src)
+            edited = next(e for e in prof.entries_of("alias")
+                          if e.pattern == "edited")
+            edited.body = "new"
+            prof.path = dst
+            profile_io.save_profile(prof)
+            self.assertEqual(
+                dst.read_text(),
+                "#alias {edited} {new}\n"
+                "#alias {with_prio} {body} {7}\n",
+            )
+
+    def test_never_touched_priority_entry_round_trips_byte_exact(self):
+        source = "#alias {with_prio} {body} {7}\n"
+        with tempfile.TemporaryDirectory() as td:
+            src = Path(td) / "in.tin"
+            dst = Path(td) / "out.tin"
+            src.write_text(source)
+            prof = profile_io.load_profile(src)
+            _reset_editor_state(prof)
+            prof.path = dst
+            profile_io.save_profile(prof)
+            self.assertEqual(dst.read_text(), source)
+
+    def test_editing_priority_entry_keeps_priority_when_serialised(self):
+        # Even when the entry's `_raw` is cleared by a body edit, the
+        # canonical serialiser still emits the third brace-arg from
+        # Entry.priority.
+        source = "#alias {touch} {body} {7}\n"
+        with tempfile.TemporaryDirectory() as td:
+            src = Path(td) / "in.tin"
+            dst = Path(td) / "out.tin"
+            src.write_text(source)
+            prof = profile_io.load_profile(src)
+            touched = prof.entries_of("alias")[0]
+            touched.body = "new body"
+            self.assertIsNone(touched._raw)
+            self.assertEqual(touched.priority, 7)
+            prof.path = dst
+            profile_io.save_profile(prof)
+            self.assertEqual(dst.read_text(),
+                             "#alias {touch} {new body} {7}\n")
+
+
+class TestPatternCursorMovement(unittest.TestCase):
+    """Phase-3.5 in-buffer cursor — ←/→ move within the Pattern
+    buffer, insert/backspace operate at the cursor position."""
+
+    def test_left_right_move_within_buffer(self):
+        prof, _src, _td = _make_profile("#alias {kill} {body}\n")
         _reset_editor_state(prof, focus=2)
-        self.assertEqual(launcher._editor_priority_buf, "7")
+        # _editor_refresh_buffers lands the cursor at end-of-buffer.
+        self.assertEqual(launcher._editor_pattern_cursor, 4)
+        launcher._editor_pattern_move_left()
+        self.assertEqual(launcher._editor_pattern_cursor, 3)
+        launcher._editor_pattern_move_left()
+        launcher._editor_pattern_move_left()
+        launcher._editor_pattern_move_left()
+        self.assertEqual(launcher._editor_pattern_cursor, 0)
+        # No fall-through past start of buffer.
+        launcher._editor_pattern_move_left()
+        self.assertEqual(launcher._editor_pattern_cursor, 0)
+        # Right walks back across the buffer.
+        launcher._editor_pattern_move_right()
+        self.assertEqual(launcher._editor_pattern_cursor, 1)
+
+    def test_insert_at_cursor_in_middle(self):
+        prof, _src, _td = _make_profile("#alias {kill} {body}\n")
+        _reset_editor_state(prof, focus=2)
+        launcher._editor_pattern_cursor = 2   # between 'i' and 'l'
+        launcher._editor_pattern_insert_char("X")
+        self.assertEqual(launcher._editor_current_entry().pattern, "kiXll")
+        self.assertEqual(launcher._editor_pattern_cursor, 3)
+
+    def test_backspace_at_cursor_in_middle(self):
+        prof, _src, _td = _make_profile("#alias {kill} {body}\n")
+        _reset_editor_state(prof, focus=2)
+        launcher._editor_pattern_cursor = 3   # between 'l' and 'l'
+        launcher._editor_pattern_backspace()
+        self.assertEqual(launcher._editor_current_entry().pattern, "kil")
+        self.assertEqual(launcher._editor_pattern_cursor, 2)
+
+
+class TestBodyCursorMovement(unittest.TestCase):
+    """Body cursor is a (line, col) pair. ←/→ traverse line boundaries;
+    ↑/↓ preserve column as far as the destination line allows."""
+
+    def test_left_at_start_of_line_wraps_to_prev_line_end(self):
+        prof, _src, _td = _make_profile("#alias {k} {abc\ndef}\n")
+        _reset_editor_state(prof, focus=2)
+        launcher._editor_detail_field = 1
+        launcher._editor_body_line = 1
+        launcher._editor_body_col  = 0
+        launcher._editor_body_move_left()
+        self.assertEqual(launcher._editor_body_line, 0)
+        self.assertEqual(launcher._editor_body_col,  3)
+
+    def test_right_at_end_of_line_wraps_to_next_line_start(self):
+        prof, _src, _td = _make_profile("#alias {k} {abc\ndef}\n")
+        _reset_editor_state(prof, focus=2)
+        launcher._editor_detail_field = 1
+        launcher._editor_body_line = 0
+        launcher._editor_body_col  = 3
+        launcher._editor_body_move_right()
+        self.assertEqual(launcher._editor_body_line, 1)
+        self.assertEqual(launcher._editor_body_col,  0)
+
+    def test_up_returns_false_at_top_edge(self):
+        # `_editor_body_move_line` returns False at the buffer edge so
+        # the keybind can fall through to focus the Pattern field.
+        prof, _src, _td = _make_profile("#alias {k} {only line}\n")
+        _reset_editor_state(prof, focus=2)
+        launcher._editor_detail_field = 1
+        launcher._editor_body_line = 0
+        self.assertFalse(launcher._editor_body_move_line(-1))
+
+    def test_up_in_multi_line_preserves_column(self):
+        prof, _src, _td = _make_profile("#alias {k} {abcdef\nghi}\n")
+        _reset_editor_state(prof, focus=2)
+        launcher._editor_detail_field = 1
+        launcher._editor_body_line = 1
+        launcher._editor_body_col  = 3   # end of "ghi"
+        self.assertTrue(launcher._editor_body_move_line(-1))
+        self.assertEqual(launcher._editor_body_line, 0)
+        self.assertEqual(launcher._editor_body_col,  3)   # preserved
+
+    def test_up_clamps_column_to_shorter_line(self):
+        prof, _src, _td = _make_profile("#alias {k} {ab\nabcdef}\n")
+        _reset_editor_state(prof, focus=2)
+        launcher._editor_detail_field = 1
+        launcher._editor_body_line = 1
+        launcher._editor_body_col  = 5
+        self.assertTrue(launcher._editor_body_move_line(-1))
+        self.assertEqual(launcher._editor_body_line, 0)
+        self.assertEqual(launcher._editor_body_col,  2)   # clamped to len(ab)
+
+    def test_body_insert_at_cursor_splits_line(self):
+        prof, _src, _td = _make_profile("#alias {k} {abc}\n")
+        _reset_editor_state(prof, focus=2)
+        launcher._editor_detail_field = 1
+        launcher._editor_body_line = 0
+        launcher._editor_body_col  = 2   # between 'b' and 'c'
+        launcher._editor_body_insert_char("X")
+        self.assertEqual(launcher._editor_current_entry().body, "abXc")
+        self.assertEqual(launcher._editor_body_col, 3)
+
+    def test_body_backspace_at_start_of_line_joins(self):
+        prof, _src, _td = _make_profile("#alias {k} {abc\ndef}\n")
+        _reset_editor_state(prof, focus=2)
+        launcher._editor_detail_field = 1
+        launcher._editor_body_line = 1
+        launcher._editor_body_col  = 0
+        launcher._editor_body_backspace()
+        self.assertEqual(launcher._editor_current_entry().body, "abcdef")
+        self.assertEqual(launcher._editor_body_line, 0)
+        self.assertEqual(launcher._editor_body_col,  3)
 
 
 if __name__ == "__main__":

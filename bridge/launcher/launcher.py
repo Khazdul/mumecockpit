@@ -199,7 +199,9 @@ _delete_target       = ""
 _delete_locked       = False   # True when target is "default" (info screen)
 
 # Profile editor (Phase 2: Aliases tab list + read-only detail panel + delete;
-# Phase 3: editable detail panel + create flow + inline validation)
+# Phase 3: editable detail panel + create flow + inline validation;
+# Phase 3.5: in-buffer cursors with ←/→ movement, vertical zone nav,
+# brace-balance validation, Priority field hidden — see docs/launcher.md.)
 _editor_profile_path = None      # pathlib.Path | None
 _editor_data         = None      # profile_io.Profile | None
 _editor_active_tab   = 0         # 0..4 — Aliases / Actions / Macros / Highlights / Substitutes
@@ -212,10 +214,11 @@ _editor_hover_row    = None      # row index in display view under cursor, or No
 _editor_hover_sort   = False     # True when hovering the Pattern sort header
 _editor_list_sb      = None      # Scrollbar widget for the list panel
 _editor_delete_entry = None      # Entry under confirmation; cleared on confirm/cancel
-# Phase 3 — detail panel editing state.
-_editor_detail_field    = 0      # 0 = Pattern, 1 = Body, 2 = Priority (active when _editor_focus == 2)
+# Detail-panel editing state.
+_editor_detail_field    = 0      # 0 = Pattern, 1 = Body (active when _editor_focus == 2)
+_editor_pattern_cursor  = 0      # cursor offset into entry.pattern
 _editor_body_line       = 0      # logical line index of the cursor inside entry.body
-_editor_priority_buf    = ""     # string buffer for the Priority field (digits-only)
+_editor_body_col        = 0      # column index of the cursor within the active body line
 _editor_pattern_touched = False  # True once the user has left Pattern with empty buffer; gates required-error
 
 # Options — top-level (Panes / Game text-layout / Connection / Back)
@@ -1506,6 +1509,18 @@ _EDITOR_LIST_W        = 30      # Total list panel width (pattern + body cols)
 _EDITOR_GAP           = 2       # Cells between list-scrollbar and detail
 _EDITOR_DETAIL_W      = 44      # Detail panel width
 
+# Per-kind detail-panel field labels — `(pattern_label, body_label)`. Set
+# up here so phase 4 / 5 can plug in the rest without re-touching the
+# renderer. Phase 3.5 exercises the `alias` entry at runtime; the other
+# four tabs continue to render their phase-2 placeholder.
+DETAIL_LABELS = {
+    "alias":      ("Pattern", "Commands"),
+    "action":     ("Pattern", "Commands"),
+    "macro":      ("Key",     "Commands"),    # phase 5 wires Key capture
+    "highlight":  ("Pattern", "Color"),       # phase 4 swaps Color for palette
+    "substitute": ("Text",    "New text"),
+}
+
 
 def _editor_package_w():
     return _EDITOR_LIST_W + 1 + _EDITOR_GAP + _EDITOR_DETAIL_W
@@ -1518,21 +1533,18 @@ def _editor_left_pad():
 def _editor_body_h():
     """Body row height — enough for the detail panel; grows with terminal.
 
-    Phase 3 detail-panel minimum rows (top → bottom):
+    Phase 3.5 detail-panel minimum rows (top → bottom):
         Pattern label                            1
         Pattern box (top + content + bot)        3
         Body label                               1
         Body box (top + ≥1 content line + bot)   3
-        Priority label                           1
-        Priority box (top + content + bot)       3
-        Error/warning slot                       1
+        Error slot                               1
         Blank divider                            1
         ─── Hint ─── divider                     1
         Hint lines × 2                           2
-    Total minimum 17 — but the renderer truncates the hint block if
-    the terminal is short, so 15 is the smallest height we ever ask
-    for to keep the field chain itself visible."""
-    return max(17, _term_rows() - 9)
+    Total minimum 13. The hint block at the bottom is truncated when
+    the terminal is short, so the field chain itself stays visible."""
+    return max(13, _term_rows() - 9)
 
 
 def _editor_list_visible():
@@ -1547,8 +1559,8 @@ def _enter_profile_editor(path):
     global _editor_hover_tab, _editor_focus, _editor_list_cursor
     global _editor_list_scroll, _editor_sort_dir, _editor_hover_row
     global _editor_hover_sort, _editor_list_sb
-    global _editor_detail_field, _editor_body_line
-    global _editor_priority_buf, _editor_pattern_touched
+    global _editor_detail_field, _editor_body_line, _editor_body_col
+    global _editor_pattern_cursor, _editor_pattern_touched
     try:
         data = profile_io.load_profile(path)
     except OSError as exc:
@@ -1567,8 +1579,9 @@ def _enter_profile_editor(path):
     _editor_hover_row    = None
     _editor_hover_sort   = False
     _editor_detail_field    = 0
+    _editor_pattern_cursor  = 0
     _editor_body_line       = 0
-    _editor_priority_buf    = ""
+    _editor_body_col        = 0
     _editor_pattern_touched = False
     _editor_list_sb = Scrollbar(
         0, _editor_list_visible(), _editor_list_visible(),
@@ -1651,13 +1664,12 @@ def _profile_editor_clear_hover():
 
 def _profile_editor_set_focus(panel, field=None):
     """Set the focus zone. Optional `field` selects the detail-panel
-    field when entering panel=2. Switching panels triggers an error/touched
-    update for the Pattern field (when leaving it empty)."""
+    field when entering panel=2 (0 = Pattern, 1 = Body). Switching
+    panels arms the Pattern required-error when leaving an empty
+    Pattern field."""
     global _editor_focus, _editor_detail_field, _editor_pattern_touched
     prev_focus = _editor_focus
     prev_field = _editor_detail_field
-    # Leaving the Pattern field with an empty buffer arms the
-    # required-error: subsequent renders show "Pattern is required."
     leaving_pattern = (
         prev_focus == 2 and prev_field == 0
         and (panel != 2 or (field is not None and field != 0))
@@ -1669,7 +1681,7 @@ def _profile_editor_set_focus(panel, field=None):
     if panel == 2:
         if field is None:
             field = _editor_detail_field if prev_focus == 2 else 0
-        _editor_detail_field = max(0, min(2, field))
+        _editor_detail_field = max(0, min(1, field))
     if _editor_focus == panel and (panel != 2 or _editor_detail_field == prev_field):
         return
     _editor_focus = panel
@@ -1679,16 +1691,15 @@ def _profile_editor_set_focus(panel, field=None):
 
 
 def _profile_editor_cycle_focus(delta):
-    """Cycle the 5-stop focus chain: tabs → list → detail.Pattern →
-    detail.Body → detail.Priority → tabs."""
-    # Map current state to a chain index in [0..4].
+    """Cycle the 4-stop focus chain: tabs → list → detail.Pattern →
+    detail.Body → tabs."""
     if _editor_focus == 0:
         idx = 0
     elif _editor_focus == 1:
         idx = 1
     else:
         idx = 2 + _editor_detail_field
-    new_idx = (idx + delta) % 5
+    new_idx = (idx + delta) % 4
     if new_idx == 0:
         _profile_editor_set_focus(0)
     elif new_idx == 1:
@@ -1740,22 +1751,25 @@ def _editor_cursor_on_sentinel():
 
 
 def _editor_refresh_buffers():
-    """Refresh transient buffers/cursors from the current entry. Pattern
-    and Body are read directly from the Entry; Priority lives in a
-    string buffer so the user can clear it back to None. The pattern-
-    touched flag resets — it tracks "have you ever left THIS entry's
-    Pattern field empty" — so navigating away and back doesn't keep an
-    old error visible on a different row."""
-    global _editor_priority_buf, _editor_body_line, _editor_pattern_touched
+    """Refresh transient cursors from the current entry. Pattern and
+    Body are read directly from the Entry; the in-buffer cursors land
+    at end-of-buffer (and end-of-last-line for Body) so subsequent
+    typing appends naturally. The pattern-touched flag resets — it
+    tracks "have you ever left THIS entry's Pattern field empty" — so
+    navigating away and back doesn't keep a stale error visible on a
+    different row."""
+    global _editor_pattern_cursor, _editor_body_line, _editor_body_col
+    global _editor_pattern_touched
     entry = _editor_current_entry()
     if entry is None:
-        _editor_priority_buf = ""
+        _editor_pattern_cursor = 0
         _editor_body_line = 0
+        _editor_body_col = 0
     else:
-        _editor_priority_buf = (
-            "" if entry.priority is None else str(entry.priority))
+        _editor_pattern_cursor = len(entry.pattern)
         body_lines = entry.body.split("\n") if entry.body else [""]
         _editor_body_line = max(0, len(body_lines) - 1)
+        _editor_body_col  = len(body_lines[_editor_body_line])
     _editor_pattern_touched = False
 
 
@@ -1778,64 +1792,133 @@ def _editor_body_set_lines(lines):
     entry.body = "\n".join(lines)
 
 
+def _editor_body_clamp_cursor():
+    """Defensively clamp `_editor_body_line` / `_editor_body_col` into
+    the current body's shape. Called from edit and nav paths that may
+    have advanced past the trailing edge."""
+    global _editor_body_line, _editor_body_col
+    lines = _editor_body_lines()
+    _editor_body_line = max(0, min(len(lines) - 1, _editor_body_line))
+    _editor_body_col  = max(0, min(len(lines[_editor_body_line]),
+                                   _editor_body_col))
+
+
 def _editor_body_insert_char(ch):
-    """Append `ch` to the current Body line (cursor sits at end-of-line
-    per the simplified phase-3 cursor model)."""
+    """Insert `ch` at the current (line, col) cursor and advance the
+    column by one. Splits and joins use `\\n` so the Entry's body
+    string mirrors the visual line break exactly."""
+    global _editor_body_col
     entry = _editor_current_entry()
     if entry is None:
         return
     lines = _editor_body_lines()
     if not lines:
         lines = [""]
-    idx = max(0, min(len(lines) - 1, _editor_body_line))
-    lines[idx] = lines[idx] + ch
+    line = max(0, min(len(lines) - 1, _editor_body_line))
+    col  = max(0, min(len(lines[line]), _editor_body_col))
+    lines[line] = lines[line][:col] + ch + lines[line][col:]
     _editor_body_set_lines(lines)
+    _editor_body_col = col + 1
 
 
 def _editor_body_insert_newline():
-    """Insert a new empty line after the current cursor line and move
-    the cursor onto it. Splitting at column would require a column
-    cursor; phase 3 ships the simpler `append-after-current-line`
-    behaviour matching the cursor-at-end model used elsewhere."""
-    global _editor_body_line
+    """Split the current line at the cursor column and place the cursor
+    at the start of the new line."""
+    global _editor_body_line, _editor_body_col
     entry = _editor_current_entry()
     if entry is None:
         return
     lines = _editor_body_lines()
     if not lines:
         lines = [""]
-    idx = max(0, min(len(lines) - 1, _editor_body_line))
-    lines.insert(idx + 1, "")
+    line = max(0, min(len(lines) - 1, _editor_body_line))
+    col  = max(0, min(len(lines[line]), _editor_body_col))
+    head, tail = lines[line][:col], lines[line][col:]
+    lines[line] = head
+    lines.insert(line + 1, tail)
     _editor_body_set_lines(lines)
-    _editor_body_line = idx + 1
+    _editor_body_line = line + 1
+    _editor_body_col  = 0
     if _app:
         _app.invalidate()
 
 
 def _editor_body_backspace():
-    """Remove the last character of the current Body line. When the
-    line is empty and not the only line, drop it and move the cursor
-    up to the previous line. Mirrors the cursor-at-end model: the only
-    deletion point is "before the cursor", i.e. the end of the
-    current line."""
-    global _editor_body_line
+    """Delete the character before the cursor. At the start of a line
+    (col == 0) join with the previous line instead, placing the cursor
+    at the join point — standard text-editor backspace semantics."""
+    global _editor_body_line, _editor_body_col
     entry = _editor_current_entry()
     if entry is None:
         return
     lines = _editor_body_lines()
     if not lines:
         return
-    idx = max(0, min(len(lines) - 1, _editor_body_line))
-    if lines[idx]:
-        lines[idx] = lines[idx][:-1]
+    line = max(0, min(len(lines) - 1, _editor_body_line))
+    col  = max(0, min(len(lines[line]), _editor_body_col))
+    if col > 0:
+        lines[line] = lines[line][:col - 1] + lines[line][col:]
         _editor_body_set_lines(lines)
-    elif len(lines) > 1:
-        del lines[idx]
+        _editor_body_col = col - 1
+    elif line > 0:
+        prev_len = len(lines[line - 1])
+        lines[line - 1] = lines[line - 1] + lines[line]
+        del lines[line]
         _editor_body_set_lines(lines)
-        _editor_body_line = max(0, idx - 1)
-    # else: single empty line — nothing to delete.
+        _editor_body_line = line - 1
+        _editor_body_col  = prev_len
+    # else: top-left corner of an empty buffer — nothing to delete.
     if _app:
         _app.invalidate()
+
+
+def _editor_body_move_left():
+    """← within Body. Wraps from start-of-line to end-of-previous-line.
+    No-op at the top-left corner."""
+    global _editor_body_line, _editor_body_col
+    lines = _editor_body_lines()
+    line = max(0, min(len(lines) - 1, _editor_body_line))
+    col  = max(0, min(len(lines[line]), _editor_body_col))
+    if col > 0:
+        _editor_body_col = col - 1
+    elif line > 0:
+        _editor_body_line = line - 1
+        _editor_body_col  = len(lines[line - 1])
+    if _app:
+        _app.invalidate()
+
+
+def _editor_body_move_right():
+    """→ within Body. Wraps from end-of-line to start-of-next-line.
+    No-op at the bottom-right corner."""
+    global _editor_body_line, _editor_body_col
+    lines = _editor_body_lines()
+    line = max(0, min(len(lines) - 1, _editor_body_line))
+    col  = max(0, min(len(lines[line]), _editor_body_col))
+    if col < len(lines[line]):
+        _editor_body_col = col + 1
+    elif line < len(lines) - 1:
+        _editor_body_line = line + 1
+        _editor_body_col  = 0
+    if _app:
+        _app.invalidate()
+
+
+def _editor_body_move_line(delta):
+    """Up / Down within Body — preserve the column as far as the new
+    line allows. Returns True when the cursor actually moved, so the
+    `↑/↓` keybind can fall through to inter-zone nav at the edges."""
+    global _editor_body_line, _editor_body_col
+    lines = _editor_body_lines()
+    line = max(0, min(len(lines) - 1, _editor_body_line))
+    new_line = line + delta
+    if new_line < 0 or new_line >= len(lines):
+        return False
+    _editor_body_line = new_line
+    _editor_body_col  = min(_editor_body_col, len(lines[new_line]))
+    if _app:
+        _app.invalidate()
+    return True
 
 
 def _editor_set_pattern(text):
@@ -1855,49 +1938,102 @@ def _editor_set_pattern(text):
     _profile_editor_scroll_into_view()
 
 
-def _editor_set_priority_from_buf():
-    """Apply the priority buffer to the current entry: empty → None,
-    non-empty → int. The buffer is the source of truth while editing
-    so the user can hold a transient empty state without losing focus."""
+def _editor_pattern_insert_char(ch):
+    """Insert `ch` at the pattern cursor and advance the cursor."""
+    global _editor_pattern_cursor
     entry = _editor_current_entry()
     if entry is None:
         return
-    if _editor_priority_buf == "":
-        entry.priority = None
-    else:
-        try:
-            entry.priority = int(_editor_priority_buf)
-        except ValueError:
-            entry.priority = None
+    pat = entry.pattern
+    col = max(0, min(len(pat), _editor_pattern_cursor))
+    _editor_set_pattern(pat[:col] + ch + pat[col:])
+    _editor_pattern_cursor = col + 1
+
+
+def _editor_pattern_backspace():
+    """Delete the character before the pattern cursor."""
+    global _editor_pattern_cursor
+    entry = _editor_current_entry()
+    if entry is None:
+        return
+    pat = entry.pattern
+    col = max(0, min(len(pat), _editor_pattern_cursor))
+    if col == 0:
+        return
+    _editor_set_pattern(pat[:col - 1] + pat[col:])
+    _editor_pattern_cursor = col - 1
+
+
+def _editor_pattern_move_left():
+    global _editor_pattern_cursor
+    entry = _editor_current_entry()
+    if entry is None:
+        return
+    if _editor_pattern_cursor > 0:
+        _editor_pattern_cursor -= 1
+        if _app:
+            _app.invalidate()
+
+
+def _editor_pattern_move_right():
+    global _editor_pattern_cursor
+    entry = _editor_current_entry()
+    if entry is None:
+        return
+    if _editor_pattern_cursor < len(entry.pattern):
+        _editor_pattern_cursor += 1
+        if _app:
+            _app.invalidate()
+
+
+def _braces_balanced(s):
+    """Return True when every unescaped `{` in `s` has a matching `}`
+    later and no stray `}` appears first. `\\X` for any X is treated
+    as escaped (the X — including `{` and `}` — does not count toward
+    depth). Used by the editor's brace-balance validation to flag
+    profiles that tt++ would reject on next load."""
+    depth = 0
+    i = 0
+    n = len(s)
+    while i < n:
+        c = s[i]
+        if c == "\\" and i + 1 < n:
+            i += 2
+            continue
+        if c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+            if depth < 0:
+                return False
+        i += 1
+    return depth == 0
 
 
 def _editor_validation_error():
-    """The Pattern-required inline error, or None. Only fires once the
-    user has armed it by leaving the field with an empty buffer."""
+    """Inline validation error text or None. Precedence — highest first:
+
+      1. `Pattern is required.` — empty pattern, but only once the user
+         has left the field at least once (touched flag).
+      2. `Unbalanced braces in <pattern-label>.` — Pattern has mismatched
+         braces; tt++ would reject the line on next load. Live, not
+         gated by touched.
+      3. `Unbalanced braces in <body-label>.` — same for Body.
+
+    Save is **never** blocked by these. The user sees them while
+    editing and is expected to fix them; if they ESC anyway, tt++
+    will surface the error on next session load."""
     entry = _editor_current_entry()
     if entry is None:
         return None
     if _editor_pattern_touched and entry.pattern == "":
         return "Pattern is required."
-    return None
-
-
-def _editor_validation_warning():
-    """Non-blocking pattern warning — unescaped `{` or `}`. Returns the
-    warning text or None."""
-    entry = _editor_current_entry()
-    if entry is None:
-        return None
-    s = entry.pattern
-    i = 0
-    while i < len(s):
-        c = s[i]
-        if c == "\\" and i + 1 < len(s):
-            i += 2
-            continue
-        if c == "{" or c == "}":
-            return "Unescaped braces may confuse tt++ — use \\{ and \\}."
-        i += 1
+    kind = entry.kind
+    pat_lbl, body_lbl = DETAIL_LABELS.get(kind, ("Pattern", "Body"))
+    if not _braces_balanced(entry.pattern):
+        return f"Unbalanced braces in {pat_lbl}."
+    if not _braces_balanced(entry.body):
+        return f"Unbalanced braces in {body_lbl}."
     return None
 
 
@@ -2085,10 +2221,6 @@ _EDITOR_HINT_LINES = [
     "Separate commands with ; for sequences.",
 ]
 
-# Narrow Priority box: 5-char visible content width per phase-3 spec.
-_EDITOR_PRIO_BOX_W = 7      # 5 inner cells + 2 border cells
-_EDITOR_PRIO_INNER = 5
-
 # Kind labels surfaced in user-facing hints. Singular form for in-flight
 # create prompts; plural form for the empty-state message.
 _EDITOR_KIND_LABELS = {
@@ -2127,76 +2259,112 @@ def _editor_box_bot(width):
     return "└" + "─" * (width - 2) + "┘"
 
 
-def _editor_box_content_row(text, inner, focused):
-    """Render `│ <text> │` for a wide box. When `focused`, draws a
-    cursor cell at the end-of-line (matching the simplified phase-3
-    cursor model — typing appends to the current line). Returns a list
-    of (style, text) fragments summing to `_EDITOR_DETAIL_W` cells."""
+def _editor_field_border_style(focused):
+    """Subtle visual indicator for which detail field has focus.
+    Unfocused: dim grey (`C_HINT`). Focused: amber (`C_ACCENT`) — a
+    shift up the same warm family the launcher uses elsewhere, so it
+    reads as "active" without leaving the vintage-amber palette."""
+    return C_ACCENT if focused else C_HINT
+
+
+def _editor_box_content_row(text, focused, cursor_col=None,
+                            field_id=None, line_idx=None):
+    """Render `│ <text> │` for a wide field. Splits the inner area
+    into per-cell fragments so a click on any column can position the
+    cursor there. When `focused` is true and `cursor_col` is given,
+    that column gets the C_SELECTED style; otherwise the cell renders
+    plain. `field_id` is one of `"pattern"` or `"body"` and gates the
+    click handler; `line_idx` (Body only) tells the handler which
+    line within the body the click maps to.
+
+    Returns a list of `(style, text[, handler])` fragments summing to
+    `_EDITOR_DETAIL_W` cells."""
     w = _EDITOR_DETAIL_W
-    pad_right = w - 2 - 2 - inner   # outer width minus "│ " ... " │"
-    if not focused:
-        if len(text) > inner:
-            display = text[:max(0, inner - 1)] + "…"
-        else:
-            display = text.ljust(inner)
-        frags = [(C_HINT, "│ "), (C_ITEM, display), (C_HINT, " │")]
-        if pad_right > 0:
-            frags.append(("", " " * pad_right))
-        return frags
-    # Focused: reserve the rightmost inner cell for the cursor.
-    avail = max(0, inner - 1)
-    if len(text) > avail:
-        # Show the tail of the buffer so the cursor stays visible.
-        display = text[-avail:]
-        trailing = ""
+    inner = w - 4
+    border_style = _editor_field_border_style(focused)
+    pad_right = w - 2 - 2 - inner
+
+    # Compute the visible view of the buffer + the cursor's visible col.
+    # When the buffer fits in `inner`, show it fully. When it overflows,
+    # scroll so the cursor stays visible — try to keep at least one
+    # cell of context on each side.
+    if cursor_col is None:
+        cursor_col = len(text)
+    cursor_col = max(0, min(len(text), cursor_col))
+
+    if len(text) <= inner:
+        view_text   = text + " " * (inner - len(text))
+        view_cursor = cursor_col
     else:
-        display = text
-        trailing = " " * (avail - len(text))
-    frags = [
-        (C_HINT, "│ "),
-        (C_ITEM, display),
-        (C_SELECTED, " "),
-        ("", trailing),
-        (C_HINT, " │"),
-    ]
+        # Scroll so cursor sits roughly mid-view.
+        half = inner // 2
+        start = max(0, min(len(text) - inner + 1, cursor_col - half))
+        end   = start + inner
+        view_text = text[start:end]
+        if len(view_text) < inner:
+            view_text = view_text + " " * (inner - len(view_text))
+        view_cursor = cursor_col - start
+
+    frags = [(border_style, "│ ", None)]
+
+    for i in range(inner):
+        ch = view_text[i] if i < len(view_text) else " "
+        if focused and i == view_cursor:
+            style = C_SELECTED
+        else:
+            style = C_ITEM if ch != " " else ""
+        if field_id is None:
+            frags.append((style, ch, None))
+        else:
+            # Per-cell click handler — focuses the field and positions
+            # the cursor at this visible column. Body handlers also
+            # capture the line index so multi-line clicks land
+            # correctly.
+            frags.append((style, ch,
+                          _editor_make_field_click_handler(
+                              field_id, i, line_idx,
+                              start=(cursor_col - view_cursor))))
+
+    frags.append((border_style, " │", None))
     if pad_right > 0:
-        frags.append(("", " " * pad_right))
+        frags.append(("", " " * pad_right, None))
     return frags
 
 
-def _editor_narrow_box_content_row(text, inner, focused, after_box=""):
-    """Render a narrow box (Priority) `│ <text> │` followed by optional
-    `after_box` text to the right of the box. Returns fragments summing
-    to `_EDITOR_DETAIL_W` cells."""
-    w = _EDITOR_DETAIL_W
-    box_outer = inner + 2 + 2  # 2 borders + 2 inner-space cells
-    if not focused:
-        if len(text) > inner:
-            display = text[:max(0, inner - 1)] + "…"
-        else:
-            display = text.ljust(inner)
-        frags = [(C_HINT, "│ "), (C_ITEM, display), (C_HINT, " │")]
-    else:
-        avail = max(0, inner - 1)
-        if len(text) > avail:
-            display = text[-avail:]
-            trailing = ""
-        else:
-            display = text
-            trailing = " " * (avail - len(text))
-        frags = [
-            (C_HINT, "│ "),
-            (C_ITEM, display),
-            (C_SELECTED, " "),
-            ("", trailing),
-            (C_HINT, " │"),
-        ]
-    pad_right = max(0, w - box_outer - len(after_box))
-    if after_box:
-        frags.append((C_HINT, after_box))
-    if pad_right > 0:
-        frags.append(("", " " * pad_right))
-    return frags
+def _editor_make_field_click_handler(field_id, visible_col, line_idx,
+                                     start=0):
+    """Build a `MOUSE_DOWN` handler that focuses the named detail
+    field and positions the in-buffer cursor at the clicked column.
+    `start` is the scroll offset of the visible view into the buffer
+    so the click maps back to the right absolute column."""
+    def _handler(ev):
+        if ev.event_type == MouseEventType.MOUSE_MOVE:
+            return None
+        if ev.event_type != MouseEventType.MOUSE_DOWN:
+            return NotImplemented
+        global _editor_pattern_cursor, _editor_body_line, _editor_body_col
+        target_col = max(0, start + visible_col)
+        if field_id == "pattern":
+            entry = _editor_current_entry()
+            if entry is None:
+                return None
+            _profile_editor_set_focus(2, field=0)
+            _editor_pattern_cursor = max(0, min(len(entry.pattern),
+                                                target_col))
+        elif field_id == "body":
+            entry = _editor_current_entry()
+            if entry is None:
+                return None
+            _profile_editor_set_focus(2, field=1)
+            lines = _editor_body_lines()
+            line = max(0, min(len(lines) - 1,
+                              line_idx if line_idx is not None else 0))
+            _editor_body_line = line
+            _editor_body_col  = max(0, min(len(lines[line]), target_col))
+        if _app:
+            _app.invalidate()
+        return None
+    return _handler
 
 
 def _editor_centered_row(style, text):
@@ -2215,20 +2383,22 @@ def _editor_centered_row(style, text):
 
 def _editor_detail_lines(entry, total_lines):
     """Build the right-side detail rows. Returns a list of length
-    `total_lines`; each element is itself a list of `(style, text)`
-    fragments summing to `_EDITOR_DETAIL_W` cells.
+    `total_lines`; each element is itself a list of fragments summing
+    to `_EDITOR_DETAIL_W` cells. Fragments are 2-tuples `(style, text)`
+    or 3-tuples `(style, text, handler)` — both forms survive the
+    outer compositor.
 
     The renderer covers three states:
-      • cursor on a real Entry → editable field chain (Pattern, Body,
-        Priority + inline error/warning slot + hint block);
+      • cursor on a real Entry → editable field chain (Pattern, Body
+        + inline error slot + hint block);
       • cursor on the `+ New entry` sentinel → centred prompt;
-      • list empty *and* no entry under the cursor → phase-2 empty-
-        state hint with the active kind's plural label.
+      • list empty *and* no entry under the cursor → empty-state
+        hint with the active kind's plural label.
     """
-    inner = _EDITOR_DETAIL_W - 4   # "│ " ... " │"
     detail_focused = (_editor_focus == 2)
     kind = _profile_editor_active_kind()
     _kind_sing, kind_plural = _EDITOR_KIND_LABELS.get(kind, (kind, kind))
+    pat_lbl, body_lbl = DETAIL_LABELS.get(kind, ("Pattern", "Body"))
 
     rows = []
 
@@ -2236,8 +2406,8 @@ def _editor_detail_lines(entry, total_lines):
     view = _profile_editor_display_view()
     if entry is None:
         # No entry under the cursor — could be the sentinel row, or a
-        # truly empty list. The phase-2 empty-state hint dominates when
-        # the list has zero entries (and no in-flight blank create).
+        # truly empty list. The empty-state hint dominates when the
+        # list has zero entries (and no in-flight blank create).
         if len(view) == 0:
             msg = f"No {kind_plural} yet. Press n to add one."
         else:
@@ -2250,50 +2420,39 @@ def _editor_detail_lines(entry, total_lines):
             rows.append(_editor_pad_full(C_HINT, ""))
         return rows[:total_lines]
 
-    pattern_focused  = detail_focused and _editor_detail_field == 0
-    body_focused     = detail_focused and _editor_detail_field == 1
-    priority_focused = detail_focused and _editor_detail_field == 2
+    pattern_focused = detail_focused and _editor_detail_field == 0
+    body_focused    = detail_focused and _editor_detail_field == 1
+
+    pat_border = _editor_field_border_style(pattern_focused)
+    body_border = _editor_field_border_style(body_focused)
 
     # Pattern label + box.
-    rows.append(_editor_pad_full(C_HINT, "Pattern"))
-    rows.append(_editor_pad_full(C_HINT, _editor_box_top(_EDITOR_DETAIL_W)))
-    rows.append(_editor_box_content_row(entry.pattern, inner, pattern_focused))
-    rows.append(_editor_pad_full(C_HINT, _editor_box_bot(_EDITOR_DETAIL_W)))
+    rows.append(_editor_pad_full(C_HINT, pat_lbl))
+    rows.append(_editor_pad_full(pat_border, _editor_box_top(_EDITOR_DETAIL_W)))
+    rows.append(_editor_box_content_row(
+        entry.pattern, pattern_focused,
+        cursor_col=_editor_pattern_cursor if pattern_focused else None,
+        field_id="pattern"))
+    rows.append(_editor_pad_full(pat_border, _editor_box_bot(_EDITOR_DETAIL_W)))
 
     # Body label + box.
-    rows.append(_editor_pad_full(C_HINT, "Body"))
-    rows.append(_editor_pad_full(C_HINT, _editor_box_top(_EDITOR_DETAIL_W)))
+    rows.append(_editor_pad_full(C_HINT, body_lbl))
+    rows.append(_editor_pad_full(body_border, _editor_box_top(_EDITOR_DETAIL_W)))
     body_lines = _editor_body_lines_for_entry(entry)
-    # Clamp `_editor_body_line` defensively — re-sort/refresh paths
-    # already maintain it, but a stale value should never crash render.
     cursor_line = max(0, min(len(body_lines) - 1, _editor_body_line))
     for i, line in enumerate(body_lines):
         is_cursor_line = body_focused and i == cursor_line
-        rows.append(_editor_box_content_row(line, inner, is_cursor_line))
-    rows.append(_editor_pad_full(C_HINT, _editor_box_bot(_EDITOR_DETAIL_W)))
+        col = (_editor_body_col if is_cursor_line else None)
+        rows.append(_editor_box_content_row(
+            line, is_cursor_line, cursor_col=col,
+            field_id="body", line_idx=i))
+    rows.append(_editor_pad_full(body_border, _editor_box_bot(_EDITOR_DETAIL_W)))
 
-    # Priority label (with placeholder hint when buffer is empty) + box.
-    label = "Priority"
-    if _editor_priority_buf == "":
-        label += "  (optional)"
-    rows.append(_editor_pad_full(C_HINT, label))
-    rows.append(_editor_pad_full(
-        C_HINT, _editor_box_top(_EDITOR_PRIO_BOX_W).ljust(_EDITOR_DETAIL_W)))
-    # Reuse the wide-box renderer math for the narrow content row.
-    rows.append(_editor_narrow_box_content_row(
-        _editor_priority_buf, _EDITOR_PRIO_INNER, priority_focused))
-    rows.append(_editor_pad_full(
-        C_HINT, _editor_box_bot(_EDITOR_PRIO_BOX_W).ljust(_EDITOR_DETAIL_W)))
-
-    # Inline error / warning slot. Error wins over warning when both
-    # apply. Empty when no message — keeps the row count stable so the
-    # hint block below doesn't jitter.
+    # Inline error slot. Empty when no message — keeps the row count
+    # stable so the hint block below doesn't jitter.
     err = _editor_validation_error()
-    warn = _editor_validation_warning()
     if err:
         rows.append(_editor_pad_full(C_DANGER, err))
-    elif warn:
-        rows.append(_editor_pad_full(C_HINT, warn))
     else:
         rows.append(_editor_pad_full(C_HINT, ""))
 
@@ -2630,8 +2789,16 @@ def _profile_editor_text():
             frags.append(f)
         frags.append(sb_frag)
         frags.append(("", gap_str, _editor_clear_outer_hover))
-        for f_style, f_text in detail_row:
-            frags.append((f_style, f_text, _editor_clear_outer_hover))
+        # Detail rows mix 2-tuples (plain text) and 3-tuples (per-cell
+        # mouse handlers in the editable field areas). Both shapes
+        # need to land in the FormattedText stream with a hover-clear
+        # fallback for cells that don't carry their own handler.
+        for f in detail_row:
+            if len(f) == 3 and f[2] is not None:
+                frags.append(f)
+            else:
+                style, text = f[0], f[1]
+                frags.append((style, text, _editor_clear_outer_hover))
         if right_pad > 0:
             frags.append(("", " " * right_pad, _editor_clear_outer_hover))
         frags.append(("", "\n", _editor_clear_outer_hover))
@@ -2639,13 +2806,12 @@ def _profile_editor_text():
     # ----- Footer -----
     frags.append(("", "\n", _editor_clear_outer_hover))
     if _editor_focus == 0:
-        footer = ("←→ Switch tab  ·  "
-                  "Tab Focus list  ·  ESC Save & back")
+        footer = ("←→ Switch tab  ·  ↓ Focus list  ·  ESC Save & back")
     elif _editor_focus == 1:
         footer = ("↑↓ Move  ·  Enter Edit  ·  n New  ·  d Delete  ·  "
                   "Tab Cycle  ·  ESC Save & back")
     else:
-        footer = ("Tab/Shift+Tab Field  ·  ← Focus list  ·  "
+        footer = ("←→ Cursor  ·  Tab Field  ·  ↑ ↓ Zone  ·  "
                   "ESC Save & back")
     frags.append(("", _pad_centre(footer, cols), _editor_clear_outer_hover))
     frags.append((C_HINT, footer, _editor_clear_outer_hover))
@@ -7816,10 +7982,10 @@ def _kb_profile_escape(event):
     _pop_frame()
 
 
-# Profile editor — Tab / Shift+Tab cycle the 5-stop focus chain
-# (tabs → list → detail.Pattern → detail.Body → detail.Priority → tabs).
-# Arrows / pgup / pgdn / home / end / d / n / Enter / printable input gate
-# on the current focus zone.
+# Profile editor — Tab / Shift+Tab cycle the 4-stop focus chain
+# (tabs → list → detail.Pattern → detail.Body → tabs). Arrows and
+# printable input route through one handler per key, gated on the
+# current focus zone + active detail field.
 @kb.add("tab", filter=_in_frame("profile_editor"))
 def _kb_peditor_tab(event):
     _profile_editor_cycle_focus(1)
@@ -7838,7 +8004,12 @@ def _kb_peditor_right(event):
     elif _editor_focus == 1:
         # Right on list jumps straight to detail.Pattern.
         _profile_editor_set_focus(2, field=0)
-    # Detail focus: no-op (cursor lives at end of buffer in phase 3).
+    elif _editor_focus == 2:
+        # Cursor movement inside the field — no zone fall-through.
+        if _editor_detail_field == 0:
+            _editor_pattern_move_right()
+        else:
+            _editor_body_move_right()
 
 
 @kb.add("left", filter=_in_frame("profile_editor"))
@@ -7847,34 +8018,53 @@ def _kb_peditor_left(event):
         # Clamp at the first tab.
         _profile_editor_set_tab(_editor_active_tab - 1)
     elif _editor_focus == 2:
-        # Any detail field → return focus to the list.
-        _profile_editor_set_focus(1)
+        # Cursor movement inside the field — no zone fall-through.
+        if _editor_detail_field == 0:
+            _editor_pattern_move_left()
+        else:
+            _editor_body_move_left()
 
 
 @kb.add("up", filter=_in_frame("profile_editor"))
 def _kb_peditor_up(event):
-    global _editor_body_line
+    if _editor_focus == 0:
+        # Tab strip ↑ — no-op (nothing above the tabs).
+        return
     if _editor_focus == 1:
-        _profile_editor_move_cursor(-1)
-    elif _editor_focus == 2 and _editor_detail_field == 1:
-        # Body cursor moves up between lines; no fall-through at top edge.
-        if _editor_body_line > 0:
-            _editor_body_line -= 1
-            if _app:
-                _app.invalidate()
+        # First list row ↑ → focus the tab strip; otherwise move within.
+        if _editor_list_cursor == 0:
+            _profile_editor_set_focus(0)
+        else:
+            _profile_editor_move_cursor(-1)
+        return
+    # Detail focus.
+    if _editor_detail_field == 0:
+        # Pattern ↑ → focus the tab strip.
+        _profile_editor_set_focus(0)
+    else:
+        # Body ↑: inter-line first; at top edge of buffer → Pattern.
+        if not _editor_body_move_line(-1):
+            _profile_editor_set_focus(2, field=0)
 
 
 @kb.add("down", filter=_in_frame("profile_editor"))
 def _kb_peditor_down(event):
-    global _editor_body_line
+    if _editor_focus == 0:
+        # Tab strip ↓ → enter the list at the first row.
+        _profile_editor_set_focus(1)
+        _profile_editor_jump_cursor(0)
+        return
     if _editor_focus == 1:
+        # Last selectable row ↓ is already clamped to the sentinel.
         _profile_editor_move_cursor(1)
-    elif _editor_focus == 2 and _editor_detail_field == 1:
-        lines = _editor_body_lines()
-        if _editor_body_line < len(lines) - 1:
-            _editor_body_line += 1
-            if _app:
-                _app.invalidate()
+        return
+    # Detail focus.
+    if _editor_detail_field == 0:
+        # Pattern ↓ → Body.
+        _profile_editor_set_focus(2, field=1)
+    else:
+        # Body ↓: inter-line; no-op at bottom edge.
+        _editor_body_move_line(1)
 
 
 @kb.add("pageup", filter=_in_frame("profile_editor"))
@@ -7936,10 +8126,9 @@ def _kb_peditor_enter(event):
         return
     if _editor_focus == 2:
         if _editor_detail_field == 1:
-            # Body: insert a newline at end of the current line, then
-            # move cursor onto the new empty line.
+            # Body: split the current line at the cursor.
             _editor_body_insert_newline()
-        # Pattern / Priority: Enter is a no-op (use Tab to advance).
+        # Pattern: Enter is a no-op (use Tab / ↓ to advance).
 
 
 @kb.add("backspace", filter=_in_frame("profile_editor"))
@@ -7947,49 +8136,29 @@ def _kb_peditor_backspace(event):
     if _editor_focus != 2:
         return
     if _editor_detail_field == 0:
-        entry = _editor_current_entry()
-        if entry is not None and entry.pattern:
-            _editor_set_pattern(entry.pattern[:-1])
-            if _app:
-                _app.invalidate()
+        _editor_pattern_backspace()
+        if _app:
+            _app.invalidate()
     elif _editor_detail_field == 1:
         _editor_body_backspace()
-    elif _editor_detail_field == 2:
-        global _editor_priority_buf
-        if _editor_priority_buf:
-            _editor_priority_buf = _editor_priority_buf[:-1]
-            _editor_set_priority_from_buf()
-            if _app:
-                _app.invalidate()
 
 
 @kb.add("<any>", filter=_in_frame("profile_editor"))
 def _kb_peditor_any(event):
     """Printable-char input on the detail panel. Pattern and Body
-    accept any printable character; Priority swallows non-digits."""
+    accept any printable character; insertion happens at the in-buffer
+    cursor."""
     if _editor_focus != 2:
         return
     data = event.data or ""
     if len(data) != 1 or not data.isprintable():
         return
     if _editor_detail_field == 0:
-        entry = _editor_current_entry()
-        if entry is None:
-            return
-        _editor_set_pattern(entry.pattern + data)
+        _editor_pattern_insert_char(data)
         if _app:
             _app.invalidate()
     elif _editor_detail_field == 1:
         _editor_body_insert_char(data)
-    elif _editor_detail_field == 2:
-        if not data.isdigit():
-            return
-        global _editor_priority_buf
-        # Keep the buffer bounded so absurd values don't explode the box.
-        if len(_editor_priority_buf) >= 4:
-            return
-        _editor_priority_buf += data
-        _editor_set_priority_from_buf()
         if _app:
             _app.invalidate()
 

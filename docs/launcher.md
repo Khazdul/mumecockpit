@@ -194,10 +194,14 @@ on validation failure, footer `Enter  Confirm · ESC  Cancel`.
 
 Pushed by the Edit Options-button on `profile`. Phase 1 shipped the
 shell + round-trip parser; phase 2 made the Aliases tab a read-only
-list + detail browser; phase 3 turns the detail panel editable and
-adds the create flow, completing CRUD for `#alias`. The other four
-tabs continue to show the phase-1 placeholder body; replicating the
-phase-3 pattern across them is phase 4 work.
+list + detail browser; phase 3 turned the detail panel editable and
+added the create flow; the phase-3 refinements (in-buffer cursors,
+brace-balance validation, hidden Priority, vertical zone nav,
+mouse-click cursor positioning, focused-field accent border, and
+the per-kind `DETAIL_LABELS` map) cap CRUD for `#alias`. The other
+four tabs continue to show the phase-1 placeholder body;
+replicating the pattern across them is phase 4 / 5 work, plugged
+into `DETAIL_LABELS`.
 
 Top-to-bottom:
 
@@ -234,25 +238,31 @@ package modelled on the `profile` frame's table package. Total width
   the active kind and focuses the detail panel's Pattern field. The
   list cursor's index range therefore spans `[0, len(view)]`, with
   `len(view)` denoting the sentinel.
-- **Detail panel (right).** Editable in phase 3:
-    - `Pattern` label in `C_HINT` + a single-line bordered field
-      (`┌─┐│└─┘`) bound to `entry.pattern`. Pattern is required;
-      see *Validation* below.
-    - `Body` label + a multi-line bordered field bound to
-      `entry.body`. Literal newlines render one inner row each; the
-      field grows vertically with content. `Enter` inside the Body
-      field inserts a new line; `Up`/`Down` move the cursor between
-      lines and are no-ops at the top/bottom edge (they do **not**
-      fall through to inter-field navigation).
-    - `Priority` label + a narrow 5-char-wide bordered field bound
-      to `entry.priority`. Empty buffer means `priority=None`; a
-      non-empty buffer is `int(buffer)`. When the buffer is empty
-      the label appends a `(optional)` placeholder hint in
-      `C_HINT`. Non-digit keystrokes are silently swallowed.
-    - A one-line inline-error/warning slot below Priority. Hard
-      errors render in `C_DANGER` (`Pattern is required.`);
-      warnings render in `C_HINT` (`Unescaped braces may confuse
-      tt++ — use \{ and \}.`) and never block save.
+- **Detail panel (right).** Two editable fields. Per-kind labels come
+  from the module-level `DETAIL_LABELS` map
+  (`alias → (Pattern, Commands)`); phase 4 / 5 will pick up the
+  other entries (`Key`/`Color`/`Text`/`New text`) without further
+  renderer changes.
+    - **Pattern field** — single-line bordered field bound to
+      `entry.pattern`. Pattern is required; see *Validation*.
+    - **Body field** (labelled "Commands" for aliases) — multi-line
+      bordered field bound to `entry.body`. Literal newlines render
+      one inner row each; the field grows vertically with content.
+      `Enter` splits the current line at the cursor; `←`/`→`
+      traverse line boundaries; `↑`/`↓` move the cursor between
+      lines while preserving column (clamped to the destination
+      line's length).
+    - **Cursor & focus indication.** Both fields track an in-buffer
+      cursor (`_editor_pattern_cursor` for Pattern; a `(line, col)`
+      pair for Body) and render a `C_SELECTED` cursor cell at that
+      position while focused. The focused field's border is drawn
+      in `C_ACCENT` (amber); the unfocused field uses `C_HINT` (dim
+      grey). The Priority slot from phase 3 is no longer surfaced —
+      `Entry.priority` is preserved on disk via the parser /
+      serializer, just not editable in the UI; raw mode (phase 6)
+      will be the entry point for advanced fields.
+    - A one-line inline-error slot below the Body field, rendered
+      in `C_DANGER`. Empty when no error.
     - A blank row, then `─── Hint ───` centred in `C_HINT`, then two
       hint lines: `Use %1, %2, %3 as argument placeholders.` and
       `Separate commands with ; for sequences.`
@@ -280,72 +290,97 @@ bound `Entry` field immediately. Field mutation routes through
 edited entry serialises canonically on save, while untouched
 entries continue to emit `_raw` byte-exact.
 
-**Validation.**
+**Validation.** The inline-error slot shows at most one message at a
+time, with the following precedence (highest first):
 
-- **Pattern required.** A blank Pattern is allowed while the user
-  is typing — the inline error only arms once they leave the field
-  (Tab, Shift+Tab, or `←` to the list). Once armed, the slot shows
-  `Pattern is required.` in `C_DANGER` whenever the buffer is
-  empty, and clears the moment Pattern becomes non-empty. The
-  error does **not** block `ESC`; abandoned create attempts
-  (empty-pattern entries) are dropped by `save_profile` before
-  write.
-- **Unescaped braces.** A pattern containing `{` or `}` that is not
-  preceded by `\` shows a non-blocking warning in `C_HINT`:
-  `Unescaped braces may confuse tt++ — use \{ and \}.` The warning
-  fires live as the user types.
-- **Priority digits-only.** Non-digit keystrokes are swallowed.
-  Empty buffer ⇒ `priority=None`; non-empty buffer ⇒
-  `priority=int(buffer)`.
-- **Body.** No validation in phase 3.
+1. **Pattern required.** A blank Pattern is allowed while the user
+   is typing — the error only arms once they leave the field (Tab,
+   Shift+Tab, `↑` to tabs, `↓` to Body). Once armed, the slot shows
+   `Pattern is required.` in `C_DANGER` whenever the buffer is
+   empty, and clears the moment Pattern becomes non-empty. The
+   error does **not** block `ESC`; abandoned create attempts
+   (empty-pattern entries) are dropped by `save_profile` before
+   write.
+2. **Unbalanced braces in Pattern.** Fires live as the user types:
+   any unescaped `{` without a matching `}` (or vice versa) shows
+   `Unbalanced braces in Pattern.` in `C_DANGER`. `\{` and `\}` are
+   treated as escaped and don't count toward depth. tt++ would
+   reject the resulting line on next session load — the user gets
+   honest feedback while editing. Save is **not** blocked.
+3. **Unbalanced braces in Commands.** Same check on `entry.body`,
+   labelled by the kind's body label from `DETAIL_LABELS`
+   (`Commands` for aliases / actions / macros, `Color` for
+   highlights, `New text` for substitutes).
+
+The brace-balance primitive is `_braces_balanced(s)` in
+`launcher.py`; unit-tested directly.
 
 **Focus model.** Three zones: tabs (0), list (1), and detail (2).
 `_editor_focus` tracks the active zone; when `_editor_focus == 2`,
-`_editor_detail_field` selects which of the three detail fields is
-under input (`0=Pattern`, `1=Body`, `2=Priority`).
+`_editor_detail_field` selects which detail field is under input
+(`0=Pattern`, `1=Body`).
 
-| Focus  | Up / Down                  | Left              | Right         | PgUp / PgDn / Home / End | `n`        | `d`            | `Enter`         |
-|--------|----------------------------|-------------------|---------------|--------------------------|------------|----------------|-----------------|
-| Tabs   | no-op                      | prev tab (clamp)  | next tab (clamp) | no-op                | char-in (in detail only) | no-op | no-op          |
-| List   | move cursor (scrolls)      | no-op             | focus detail.Pattern | page / first / last | create + focus Pattern | delete confirm | edit (entry) / create (sentinel) |
-| Detail | Body only: inter-line move | focus list        | no-op         | no-op                    | char-in    | char-in        | Body: newline; others: no-op |
+| From                                    | Key  | Goes to                              |
+|-----------------------------------------|------|--------------------------------------|
+| Tabs                                    | `↓`  | List, first row                      |
+| Tabs                                    | `↑`  | no-op                                |
+| List, first row                         | `↑`  | Tab strip (preserves active tab)     |
+| List, middle row                        | `↑`  | Previous row                         |
+| List, last row (sentinel)               | `↓`  | no-op (clamped)                      |
+| Pattern field                           | `↑`  | Tab strip                            |
+| Pattern field                           | `↓`  | Body field                           |
+| Body field, cursor at top line          | `↑`  | Pattern field                        |
+| Body field, cursor on inner line        | `↑`  | Cursor up within Body                |
+| Body field, cursor at last line         | `↓`  | no-op                                |
+| Body field, cursor on inner line        | `↓`  | Cursor down within Body              |
 
-`Tab` / `Shift+Tab` cycle the full 5-stop chain
-(`tabs → list → detail.Pattern → detail.Body → detail.Priority → tabs`).
-`ESC` is global: it calls `save_profile()` then pops back to
-`profile`.
+| Key       | Tabs                | List                          | Detail                                              |
+|-----------|---------------------|-------------------------------|-----------------------------------------------------|
+| `←` / `→` | prev / next tab     | List `→` jumps to Pattern     | Cursor movement within the field (wraps lines in Body) |
+| `n`       | no-op               | Create + focus Pattern        | Inserts literal `n` at cursor                       |
+| `d`       | no-op               | Delete confirm                | Inserts literal `d` at cursor                       |
+| `Enter`   | no-op               | Edit (entry) / create (sentinel) | Body: split line at cursor; Pattern: no-op       |
+| `Backspace` | no-op             | no-op                         | Delete char before cursor                           |
+
+`Tab` / `Shift+Tab` cycle the 4-stop chain
+(`tabs → list → detail.Pattern → detail.Body → tabs`). `ESC` is
+global: it calls `save_profile()` then pops back to `profile`.
 
 **Dynamic footer.** Switches with the focused zone so the visible
 keys match what's wired:
 
-- Tabs: `←→ Switch tab  ·  Tab Focus list  ·  ESC Save & back`
+- Tabs: `←→ Switch tab  ·  ↓ Focus list  ·  ESC Save & back`
 - List: `↑↓ Move  ·  Enter Edit  ·  n New  ·  d Delete  ·  Tab Cycle  ·  ESC Save & back`
-- Detail: `Tab/Shift+Tab Field  ·  ← Focus list  ·  ESC Save & back`
+- Detail: `←→ Cursor  ·  Tab Field  ·  ↑ ↓ Zone  ·  ESC Save & back`
 
 **Mouse.** Click on a tab label switches the active tab (regardless
 of focus zone). Click on the Pattern header toggles sort direction
 and moves focus to the list. Click on a list row moves the cursor
 and moves focus to the list. Click on the sentinel row moves the
-cursor to it (then `Enter` or a second click via the same handler
-creates). The wheel scrolls the list without moving the cursor
-(matches the table wheel handler used elsewhere). The scrollbar is
-click-to-jump.
+cursor to it. Click inside the Pattern or Body field's content row
+focuses that field and positions the in-buffer cursor at the
+clicked column (the renderer emits per-cell click handlers; a Body
+click also pins the cursor to the clicked line). The wheel scrolls
+the list without moving the cursor (matches the table wheel
+handler used elsewhere). The scrollbar is click-to-jump.
 
 **Save semantics.** ESC writes the profile back to its `.tin` file via
 `profile_io.save_profile` (temp file + atomic rename). Unmodified
 entries emit their original source line verbatim; entries whose
 fields were mutated have already had their `_raw` cleared (via
 `Entry.__setattr__`) and so serialise canonically as
-`#<kind> {pattern} {body}[ {priority}]`; entries whose
-`pattern.strip()` is empty are dropped before write (abandoned
-create attempts);  `Passthrough` lines (`#var`, `#event`, blank
-lines, malformed entries) survive untouched; `#nop` lines are
-dropped (matching `#class write` and ADR 0042). Deletions made
-during the session are reflected in the written file. After a
-successful save the `profile` frame flashes
-`Saved <name>.tin.` in `C_ACCENT` for ~3 s; on
-`OSError` the frame still pops and flashes
-`Save failed: <reason>` in `C_HINT`.
+`#<kind> {pattern} {body}[ {priority}]`. The priority slot is
+preserved by the serializer even though it's hidden in the editor
+UI, so loading a profile with `#alias {test} {body} {7}`, editing
+`body`, and saving emits `#alias {test} {new body} {7}` with the
+priority intact. Entries whose `pattern.strip()` is empty are
+dropped before write (abandoned create attempts).  `Passthrough`
+lines (`#var`, `#event`, blank lines, malformed entries) survive
+untouched; `#nop` lines are dropped (matching `#class write` and
+ADR 0042). Deletions made during the session are reflected in the
+written file. After a successful save the `profile` frame flashes
+`Saved <name>.tin.` in `C_ACCENT` for ~3 s; on `OSError` the frame
+still pops and flashes `Save failed: <reason>` in `C_HINT`.
 
 **Round-trip identity.** For any file containing only the five
 known commands plus `#var`, `#event`, `#nop`, and blank lines, load
