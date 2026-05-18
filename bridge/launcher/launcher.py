@@ -224,6 +224,13 @@ _editor_pattern_cursor  = 0      # cursor offset into entry.pattern
 _editor_body_line       = 0      # logical line index of the cursor inside entry.body
 _editor_body_col        = 0      # column index of the cursor within the active body line
 _editor_pattern_touched = False  # True once the user has left Pattern with empty buffer; gates required-error
+# Shift-arrow selection anchors. None when no selection is active. The
+# anchor + the current cursor define the selection range; typing,
+# backspace, and forward-delete consume the selection when set. Cleared
+# on any non-shift cursor move, focus change, or entry change.
+_editor_pattern_anchor   = None  # int | None — anchor offset into entry.pattern
+_editor_body_anchor_line = None  # int | None — anchor line in entry.body
+_editor_body_anchor_col  = None  # int | None — anchor col in entry.body
 # Palette state (active when _profile_editor_active_kind() == 'highlight').
 _editor_palette_row     = 0      # 0..len(_EDITOR_PALETTE_GRID)-1, or _EDITOR_PALETTE_GRID len for Custom slot
 _editor_palette_col     = 0      # 0 or 1; ignored when on Custom
@@ -1730,7 +1737,8 @@ def _profile_editor_set_focus(panel, field=None):
     """Set the focus zone. Optional `field` selects the detail-panel
     field when entering panel=2 (0 = Pattern, 1 = Body). Switching
     panels arms the Pattern required-error when leaving an empty
-    Pattern field."""
+    Pattern field. Any focus or field change clears live selections
+    in both text fields — leaving the field invalidates the selection."""
     global _editor_focus, _editor_detail_field, _editor_pattern_touched
     prev_focus = _editor_focus
     prev_field = _editor_detail_field
@@ -1738,10 +1746,19 @@ def _profile_editor_set_focus(panel, field=None):
         prev_focus == 2 and prev_field == 0
         and (panel != 2 or (field is not None and field != 0))
     )
+    leaving_body = (
+        prev_focus == 2 and prev_field == 1
+        and (panel != 2 or (field is not None and field != 1))
+    )
     if leaving_pattern:
         entry = _editor_current_entry()
         if entry is not None and entry.pattern == "":
             _editor_pattern_touched = True
+        _editor_clear_pattern_selection()
+    if leaving_body:
+        _editor_clear_body_selection()
+    if panel != 2:
+        _editor_clear_selections()
     if panel == 2:
         if field is None:
             field = _editor_detail_field if prev_focus == 2 else 0
@@ -1876,6 +1893,7 @@ def _editor_refresh_buffers():
     _editor_pattern_touched = False
     _editor_palette_hover_row = None
     _editor_palette_hover_col = None
+    _editor_clear_selections()
 
 
 def _editor_palette_position_for_color(name):
@@ -1997,11 +2015,13 @@ def _editor_body_clamp_cursor():
 def _editor_body_insert_char(ch):
     """Insert `ch` at the current (line, col) cursor and advance the
     column by one. Splits and joins use `\\n` so the Entry's body
-    string mirrors the visual line break exactly."""
+    string mirrors the visual line break exactly. Replaces the live
+    selection (if any) before inserting."""
     global _editor_body_col
     entry = _editor_current_entry()
     if entry is None:
         return
+    _editor_body_delete_selection()
     lines = _editor_body_lines()
     if not lines:
         lines = [""]
@@ -2014,11 +2034,13 @@ def _editor_body_insert_char(ch):
 
 def _editor_body_insert_newline():
     """Split the current line at the cursor column and place the cursor
-    at the start of the new line."""
+    at the start of the new line. Replaces the live selection (if any)
+    before splitting."""
     global _editor_body_line, _editor_body_col
     entry = _editor_current_entry()
     if entry is None:
         return
+    _editor_body_delete_selection()
     lines = _editor_body_lines()
     if not lines:
         lines = [""]
@@ -2037,10 +2059,15 @@ def _editor_body_insert_newline():
 def _editor_body_backspace():
     """Delete the character before the cursor. At the start of a line
     (col == 0) join with the previous line instead, placing the cursor
-    at the join point — standard text-editor backspace semantics."""
+    at the join point — standard text-editor backspace semantics. With
+    a live selection, delete the selection instead."""
     global _editor_body_line, _editor_body_col
     entry = _editor_current_entry()
     if entry is None:
+        return
+    if _editor_body_delete_selection():
+        if _app:
+            _app.invalidate()
         return
     lines = _editor_body_lines()
     if not lines:
@@ -2129,12 +2156,139 @@ def _editor_set_pattern(text):
     _profile_editor_scroll_into_view()
 
 
+def _editor_clear_pattern_selection():
+    global _editor_pattern_anchor
+    _editor_pattern_anchor = None
+
+
+def _editor_clear_body_selection():
+    global _editor_body_anchor_line, _editor_body_anchor_col
+    _editor_body_anchor_line = None
+    _editor_body_anchor_col  = None
+
+
+def _editor_clear_selections():
+    """Clear both Pattern and Body selection anchors."""
+    _editor_clear_pattern_selection()
+    _editor_clear_body_selection()
+
+
+def _editor_pattern_set_anchor_if_none():
+    """Arm the Pattern selection anchor at the current cursor. Called
+    from shift-arrow handlers so a fresh shift-move starts a selection
+    rooted at the current cursor."""
+    global _editor_pattern_anchor
+    if _editor_pattern_anchor is None:
+        _editor_pattern_anchor = _editor_pattern_cursor
+
+
+def _editor_body_set_anchor_if_none():
+    """Arm the Body selection anchor at the current cursor."""
+    global _editor_body_anchor_line, _editor_body_anchor_col
+    if _editor_body_anchor_line is None:
+        _editor_body_anchor_line = _editor_body_line
+        _editor_body_anchor_col  = _editor_body_col
+
+
+def _editor_pattern_selection():
+    """Return `(start, end)` in Pattern (inclusive, exclusive) or None
+    when no live selection. `start == end` is treated as no selection."""
+    if _editor_pattern_anchor is None:
+        return None
+    a = _editor_pattern_anchor
+    c = _editor_pattern_cursor
+    if a == c:
+        return None
+    return (min(a, c), max(a, c))
+
+
+def _editor_body_selection():
+    """Return `((s_line, s_col), (e_line, e_col))` for the Body
+    selection, or None. Ordering normalised so start ≤ end in document
+    order (line first, then column)."""
+    if _editor_body_anchor_line is None:
+        return None
+    a = (_editor_body_anchor_line, _editor_body_anchor_col)
+    c = (_editor_body_line, _editor_body_col)
+    if a == c:
+        return None
+    return (min(a, c), max(a, c))
+
+
+def _editor_body_line_selection_range(line_idx):
+    """The per-line selection slice `(start_col, end_col)` for `line_idx`,
+    or None when the selection doesn't touch this line. Used by the
+    renderer to paint the C_SELECTED band per visible line."""
+    sel = _editor_body_selection()
+    if sel is None:
+        return None
+    (sl, sc), (el, ec) = sel
+    if line_idx < sl or line_idx > el:
+        return None
+    lines = _editor_body_lines()
+    line_len = len(lines[line_idx]) if 0 <= line_idx < len(lines) else 0
+    start_col = sc if line_idx == sl else 0
+    # End-of-line lines (anywhere except the last line of the selection)
+    # paint one past the visible content so the selection reads as
+    # continuous — the renderer treats `line_len + 1` as "include the
+    # trailing space cell".
+    end_col = ec if line_idx == el else line_len + 1
+    return (start_col, end_col)
+
+
+def _editor_pattern_delete_selection():
+    """When a Pattern selection exists, delete it and place the cursor
+    at the selection start. Returns True iff a deletion happened."""
+    global _editor_pattern_cursor, _editor_pattern_anchor
+    sel = _editor_pattern_selection()
+    if sel is None:
+        return False
+    entry = _editor_current_entry()
+    if entry is None:
+        return False
+    s, e = sel
+    pat = entry.pattern
+    _editor_set_pattern(pat[:s] + pat[e:])
+    _editor_pattern_cursor = s
+    _editor_pattern_anchor = None
+    return True
+
+
+def _editor_body_delete_selection():
+    """When a Body selection exists, delete it and place the cursor at
+    the selection start. Returns True iff a deletion happened."""
+    global _editor_body_line, _editor_body_col
+    global _editor_body_anchor_line, _editor_body_anchor_col
+    sel = _editor_body_selection()
+    if sel is None:
+        return False
+    (sl, sc), (el, ec) = sel
+    lines = _editor_body_lines()
+    if not lines:
+        return False
+    sl = max(0, min(len(lines) - 1, sl))
+    el = max(0, min(len(lines) - 1, el))
+    sc = max(0, min(len(lines[sl]), sc))
+    ec = max(0, min(len(lines[el]), ec))
+    head = lines[sl][:sc]
+    tail = lines[el][ec:]
+    new_lines = lines[:sl] + [head + tail] + lines[el + 1:]
+    _editor_body_set_lines(new_lines)
+    _editor_body_line = sl
+    _editor_body_col  = sc
+    _editor_body_anchor_line = None
+    _editor_body_anchor_col  = None
+    return True
+
+
 def _editor_pattern_insert_char(ch):
-    """Insert `ch` at the pattern cursor and advance the cursor."""
+    """Insert `ch` at the pattern cursor and advance the cursor. Replaces
+    the live selection (if any) before inserting."""
     global _editor_pattern_cursor
     entry = _editor_current_entry()
     if entry is None:
         return
+    _editor_pattern_delete_selection()
     pat = entry.pattern
     col = max(0, min(len(pat), _editor_pattern_cursor))
     _editor_set_pattern(pat[:col] + ch + pat[col:])
@@ -2142,10 +2296,13 @@ def _editor_pattern_insert_char(ch):
 
 
 def _editor_pattern_backspace():
-    """Delete the character before the pattern cursor."""
+    """Delete the character before the pattern cursor. With a live
+    selection, delete the selection instead."""
     global _editor_pattern_cursor
     entry = _editor_current_entry()
     if entry is None:
+        return
+    if _editor_pattern_delete_selection():
         return
     pat = entry.pattern
     col = max(0, min(len(pat), _editor_pattern_cursor))
@@ -2153,6 +2310,21 @@ def _editor_pattern_backspace():
         return
     _editor_set_pattern(pat[:col - 1] + pat[col:])
     _editor_pattern_cursor = col - 1
+
+
+def _editor_pattern_forward_delete():
+    """Delete the character *at* the pattern cursor (the cell under the
+    cursor). With a live selection, delete the selection instead."""
+    entry = _editor_current_entry()
+    if entry is None:
+        return
+    if _editor_pattern_delete_selection():
+        return
+    pat = entry.pattern
+    col = max(0, min(len(pat), _editor_pattern_cursor))
+    if col >= len(pat):
+        return
+    _editor_set_pattern(pat[:col] + pat[col + 1:])
 
 
 def _editor_pattern_move_left():
@@ -2175,6 +2347,74 @@ def _editor_pattern_move_right():
         _editor_pattern_cursor += 1
         if _app:
             _app.invalidate()
+
+
+def _editor_pattern_move_home():
+    """Pattern is single-line — Home goes to col 0."""
+    global _editor_pattern_cursor
+    if _editor_current_entry() is None:
+        return
+    _editor_pattern_cursor = 0
+    if _app:
+        _app.invalidate()
+
+
+def _editor_pattern_move_end():
+    """Pattern is single-line — End goes to len(pattern)."""
+    global _editor_pattern_cursor
+    entry = _editor_current_entry()
+    if entry is None:
+        return
+    _editor_pattern_cursor = len(entry.pattern)
+    if _app:
+        _app.invalidate()
+
+
+def _editor_body_move_home():
+    """Home in Body — start of the current logical line."""
+    global _editor_body_col
+    if _editor_current_entry() is None:
+        return
+    _editor_body_col = 0
+    if _app:
+        _app.invalidate()
+
+
+def _editor_body_move_end():
+    """End in Body — end of the current logical line."""
+    global _editor_body_col
+    if _editor_current_entry() is None:
+        return
+    lines = _editor_body_lines()
+    line = max(0, min(len(lines) - 1, _editor_body_line))
+    _editor_body_col = len(lines[line])
+    if _app:
+        _app.invalidate()
+
+
+def _editor_body_forward_delete():
+    """Delete the character at the cursor in Body. At end-of-line, join
+    with the next line. With a live selection, delete the selection."""
+    global _editor_body_col
+    entry = _editor_current_entry()
+    if entry is None:
+        return
+    if _editor_body_delete_selection():
+        return
+    lines = _editor_body_lines()
+    if not lines:
+        return
+    line = max(0, min(len(lines) - 1, _editor_body_line))
+    col  = max(0, min(len(lines[line]), _editor_body_col))
+    if col < len(lines[line]):
+        lines[line] = lines[line][:col] + lines[line][col + 1:]
+        _editor_body_set_lines(lines)
+    elif line < len(lines) - 1:
+        lines[line] = lines[line] + lines[line + 1]
+        del lines[line + 1]
+        _editor_body_set_lines(lines)
+    if _app:
+        _app.invalidate()
 
 
 def _braces_balanced(s):
@@ -2441,15 +2681,27 @@ def _editor_body_lines_for_entry(entry):
     return entry.body.split("\n") if entry.body else [""]
 
 
-def _editor_pad_full(style, text):
+def _editor_pad_full(style, text, handler=None):
     """Build a single-fragment row of width `_EDITOR_DETAIL_W` from a
-    single style + text. Pads with empty-style spaces or truncates."""
+    single style + text. Pads with empty-style spaces or truncates.
+
+    When `handler` is supplied, every fragment carries it so the whole
+    row reacts to mouse clicks — used by the label, border, and gap
+    rows of editable detail fields so clicking on the field's chrome
+    focuses it (rather than just clicks on the content row)."""
     w = _EDITOR_DETAIL_W
+    if handler is None:
+        if len(text) > w:
+            return [(style, text[:w])]
+        if len(text) == w:
+            return [(style, text)]
+        return [(style, text), ("", " " * (w - len(text)))]
     if len(text) > w:
-        return [(style, text[:w])]
+        return [(style, text[:w], handler)]
     if len(text) == w:
-        return [(style, text)]
-    return [(style, text), ("", " " * (w - len(text)))]
+        return [(style, text, handler)]
+    return [(style, text, handler),
+            ("", " " * (w - len(text)), handler)]
 
 
 def _editor_box_top(width):
@@ -2468,21 +2720,35 @@ def _editor_field_border_style(focused):
     return C_ACCENT if focused else C_HINT
 
 
-def _editor_box_content_row(text, focused, cursor_col=None,
+def _editor_box_content_row(text, border_focused, cursor_col=None,
+                            sel_range=None,
                             field_id=None, line_idx=None):
     """Render `│ <text> │` for a wide field. Splits the inner area
     into per-cell fragments so a click on any column can position the
-    cursor there. When `focused` is true and `cursor_col` is given,
-    that column gets the C_SELECTED style; otherwise the cell renders
-    plain. `field_id` is one of `"pattern"` or `"body"` and gates the
-    click handler; `line_idx` (Body only) tells the handler which
-    line within the body the click maps to.
+    cursor there.
+
+    `border_focused` controls the `│` border-character style; pass the
+    field-level focus state so every row of a focused multi-line field
+    draws consistent borders (the cursor line and the non-cursor lines
+    look the same).
+
+    `cursor_col`, when not None, marks the absolute column on this line
+    where the in-buffer cursor sits — that cell paints `C_SELECTED`.
+    Pass None on non-cursor lines.
+
+    `sel_range`, when not None, is `(start_col, end_col)` of the live
+    selection that touches this line (absolute columns, end-exclusive);
+    every cell in `[start_col, end_col)` paints `C_SELECTED`.
+
+    `field_id` is `"pattern"` or `"body"` and gates the per-cell click
+    handler; `line_idx` (Body only) tells the handler which line within
+    the body the click maps to.
 
     Returns a list of `(style, text[, handler])` fragments summing to
     `_EDITOR_DETAIL_W` cells."""
     w = _EDITOR_DETAIL_W
     inner = w - 4
-    border_style = _editor_field_border_style(focused)
+    border_style = _editor_field_border_style(border_focused)
     pad_right = w - 2 - 2 - inner
 
     # Compute the visible view of the buffer + the cursor's visible col.
@@ -2490,27 +2756,31 @@ def _editor_box_content_row(text, focused, cursor_col=None,
     # scroll so the cursor stays visible — try to keep at least one
     # cell of context on each side.
     if cursor_col is None:
-        cursor_col = len(text)
-    cursor_col = max(0, min(len(text), cursor_col))
+        cur_for_scroll = len(text)
+    else:
+        cur_for_scroll = max(0, min(len(text), cursor_col))
 
     if len(text) <= inner:
-        view_text   = text + " " * (inner - len(text))
-        view_cursor = cursor_col
+        view_text  = text + " " * (inner - len(text))
+        start_col  = 0
     else:
-        # Scroll so cursor sits roughly mid-view.
         half = inner // 2
-        start = max(0, min(len(text) - inner + 1, cursor_col - half))
-        end   = start + inner
-        view_text = text[start:end]
+        start_col = max(0, min(len(text) - inner + 1, cur_for_scroll - half))
+        view_text = text[start_col:start_col + inner]
         if len(view_text) < inner:
             view_text = view_text + " " * (inner - len(view_text))
-        view_cursor = cursor_col - start
+
+    view_cursor = (cur_for_scroll - start_col) if cursor_col is not None else None
 
     frags = [(border_style, "│ ", None)]
 
     for i in range(inner):
         ch = view_text[i] if i < len(view_text) else " "
-        if focused and i == view_cursor:
+        abs_col = start_col + i
+        in_sel = (sel_range is not None
+                  and sel_range[0] <= abs_col < sel_range[1])
+        is_cursor = (view_cursor is not None and i == view_cursor)
+        if is_cursor or in_sel:
             style = C_SELECTED
         else:
             style = C_ITEM if ch != " " else ""
@@ -2523,8 +2793,7 @@ def _editor_box_content_row(text, focused, cursor_col=None,
             # correctly.
             frags.append((style, ch,
                           _editor_make_field_click_handler(
-                              field_id, i, line_idx,
-                              start=(cursor_col - view_cursor))))
+                              field_id, i, line_idx, start=start_col)))
 
     frags.append((border_style, " │", None))
     if pad_right > 0:
@@ -2537,7 +2806,8 @@ def _editor_make_field_click_handler(field_id, visible_col, line_idx,
     """Build a `MOUSE_DOWN` handler that focuses the named detail
     field and positions the in-buffer cursor at the clicked column.
     `start` is the scroll offset of the visible view into the buffer
-    so the click maps back to the right absolute column."""
+    so the click maps back to the right absolute column. Clicks clear
+    any live selection on that field."""
     def _handler(ev):
         if ev.event_type == MouseEventType.MOUSE_MOVE:
             return None
@@ -2552,6 +2822,7 @@ def _editor_make_field_click_handler(field_id, visible_col, line_idx,
             _profile_editor_set_focus(2, field=0)
             _editor_pattern_cursor = max(0, min(len(entry.pattern),
                                                 target_col))
+            _editor_clear_pattern_selection()
         elif field_id == "body":
             entry = _editor_current_entry()
             if entry is None:
@@ -2562,6 +2833,33 @@ def _editor_make_field_click_handler(field_id, visible_col, line_idx,
                               line_idx if line_idx is not None else 0))
             _editor_body_line = line
             _editor_body_col  = max(0, min(len(lines[line]), target_col))
+            _editor_clear_body_selection()
+        if _app:
+            _app.invalidate()
+        return None
+    return _handler
+
+
+def _editor_make_field_focus_handler(field_id):
+    """A MOUSE_DOWN handler that focuses the named detail field without
+    repositioning the in-buffer cursor at a column. Used by the label
+    row, the top/bottom border rows, and the side-padding cells so a
+    click anywhere on a field's outer bounding box brings it into
+    focus."""
+    def _handler(ev):
+        if ev.event_type == MouseEventType.MOUSE_MOVE:
+            return None
+        if ev.event_type != MouseEventType.MOUSE_DOWN:
+            return NotImplemented
+        entry = _editor_current_entry()
+        if entry is None:
+            return None
+        if field_id == "pattern":
+            _profile_editor_set_focus(2, field=0)
+            _editor_clear_pattern_selection()
+        elif field_id == "body":
+            _profile_editor_set_focus(2, field=1)
+            _editor_clear_body_selection()
         if _app:
             _app.invalidate()
         return None
@@ -2631,28 +2929,39 @@ def _editor_build_text_detail(entry, total_lines):
     body_focused    = detail_focused and _editor_detail_field == 1
     pat_border  = _editor_field_border_style(pattern_focused)
     body_border = _editor_field_border_style(body_focused)
+    pat_focus_h  = _editor_make_field_focus_handler("pattern")
+    body_focus_h = _editor_make_field_focus_handler("body")
+    pat_sel = _editor_pattern_selection() if pattern_focused else None
 
     rows = []
 
-    rows.append(_editor_pad_full(C_HINT, pat_lbl))
-    rows.append(_editor_pad_full(pat_border, _editor_box_top(_EDITOR_DETAIL_W)))
+    rows.append(_editor_pad_full(C_HINT, pat_lbl, pat_focus_h))
+    rows.append(_editor_pad_full(pat_border, _editor_box_top(_EDITOR_DETAIL_W),
+                                 pat_focus_h))
     rows.append(_editor_box_content_row(
         entry.pattern, pattern_focused,
         cursor_col=_editor_pattern_cursor if pattern_focused else None,
+        sel_range=pat_sel,
         field_id="pattern"))
-    rows.append(_editor_pad_full(pat_border, _editor_box_bot(_EDITOR_DETAIL_W)))
+    rows.append(_editor_pad_full(pat_border, _editor_box_bot(_EDITOR_DETAIL_W),
+                                 pat_focus_h))
 
-    rows.append(_editor_pad_full(C_HINT, body_lbl))
-    rows.append(_editor_pad_full(body_border, _editor_box_top(_EDITOR_DETAIL_W)))
+    rows.append(_editor_pad_full(C_HINT, body_lbl, body_focus_h))
+    rows.append(_editor_pad_full(body_border, _editor_box_top(_EDITOR_DETAIL_W),
+                                 body_focus_h))
     body_lines = _editor_body_lines_for_entry(entry)
     cursor_line = max(0, min(len(body_lines) - 1, _editor_body_line))
     for i, line in enumerate(body_lines):
         is_cursor_line = body_focused and i == cursor_line
         col = (_editor_body_col if is_cursor_line else None)
+        sel = (_editor_body_line_selection_range(i)
+               if body_focused else None)
         rows.append(_editor_box_content_row(
-            line, is_cursor_line, cursor_col=col,
+            line, body_focused, cursor_col=col,
+            sel_range=sel,
             field_id="body", line_idx=i))
-    rows.append(_editor_pad_full(body_border, _editor_box_bot(_EDITOR_DETAIL_W)))
+    rows.append(_editor_pad_full(body_border, _editor_box_bot(_EDITOR_DETAIL_W),
+                                 body_focus_h))
 
     err = _editor_validation_error()
     if err:
@@ -2680,16 +2989,21 @@ def _editor_build_palette_detail(entry, total_lines):
     pattern_focused = detail_focused and _editor_detail_field == 0
     palette_focused = detail_focused and _editor_detail_field == 1
     pat_border = _editor_field_border_style(pattern_focused)
+    pat_focus_h = _editor_make_field_focus_handler("pattern")
+    pat_sel = _editor_pattern_selection() if pattern_focused else None
 
     rows = []
 
-    rows.append(_editor_pad_full(C_HINT, pat_lbl))
-    rows.append(_editor_pad_full(pat_border, _editor_box_top(_EDITOR_DETAIL_W)))
+    rows.append(_editor_pad_full(C_HINT, pat_lbl, pat_focus_h))
+    rows.append(_editor_pad_full(pat_border, _editor_box_top(_EDITOR_DETAIL_W),
+                                 pat_focus_h))
     rows.append(_editor_box_content_row(
         entry.pattern, pattern_focused,
         cursor_col=_editor_pattern_cursor if pattern_focused else None,
+        sel_range=pat_sel,
         field_id="pattern"))
-    rows.append(_editor_pad_full(pat_border, _editor_box_bot(_EDITOR_DETAIL_W)))
+    rows.append(_editor_pad_full(pat_border, _editor_box_bot(_EDITOR_DETAIL_W),
+                                 pat_focus_h))
 
     rows.append(_editor_pad_full(C_HINT, body_lbl + ":"))
 
@@ -2743,6 +3057,7 @@ def _editor_build_macro_detail(entry, total_lines):
     key_focused  = detail_focused and _editor_detail_field == 0
     body_focused = detail_focused and _editor_detail_field == 1
     body_border  = _editor_field_border_style(body_focused)
+    body_focus_h = _editor_make_field_focus_handler("body")
 
     rows = []
 
@@ -2750,17 +3065,22 @@ def _editor_build_macro_detail(entry, total_lines):
     rows.append(_editor_macro_key_cell_row(entry, key_focused))
     rows.append(_editor_pad_full(C_HINT, "(Enter to rebind)"))
 
-    rows.append(_editor_pad_full(C_HINT, body_lbl))
-    rows.append(_editor_pad_full(body_border, _editor_box_top(_EDITOR_DETAIL_W)))
+    rows.append(_editor_pad_full(C_HINT, body_lbl, body_focus_h))
+    rows.append(_editor_pad_full(body_border, _editor_box_top(_EDITOR_DETAIL_W),
+                                 body_focus_h))
     body_lines = _editor_body_lines_for_entry(entry)
     cursor_line = max(0, min(len(body_lines) - 1, _editor_body_line))
     for i, line in enumerate(body_lines):
         is_cursor_line = body_focused and i == cursor_line
         col = (_editor_body_col if is_cursor_line else None)
+        sel = (_editor_body_line_selection_range(i)
+               if body_focused else None)
         rows.append(_editor_box_content_row(
-            line, is_cursor_line, cursor_col=col,
+            line, body_focused, cursor_col=col,
+            sel_range=sel,
             field_id="body", line_idx=i))
-    rows.append(_editor_pad_full(body_border, _editor_box_bot(_EDITOR_DETAIL_W)))
+    rows.append(_editor_pad_full(body_border, _editor_box_bot(_EDITOR_DETAIL_W),
+                                 body_focus_h))
 
     err = _editor_validation_error()
     if err:
@@ -8724,8 +9044,10 @@ def _kb_peditor_right(event):
         if _editor_in_palette_focus():
             _editor_palette_move(0, 1)
         elif _editor_detail_field == 0:
+            _editor_clear_pattern_selection()
             _editor_pattern_move_right()
         else:
+            _editor_clear_body_selection()
             _editor_body_move_right()
 
 
@@ -8739,8 +9061,10 @@ def _kb_peditor_left(event):
         if _editor_in_palette_focus():
             _editor_palette_move(0, -1)
         elif _editor_detail_field == 0:
+            _editor_clear_pattern_selection()
             _editor_pattern_move_left()
         else:
+            _editor_clear_body_selection()
             _editor_body_move_left()
 
 
@@ -8767,6 +9091,7 @@ def _kb_peditor_up(event):
             _profile_editor_set_focus(2, field=0)
         return
     # Text body ↑: inter-line first; at top edge of buffer → Pattern.
+    _editor_clear_body_selection()
     if not _editor_body_move_line(-1):
         _profile_editor_set_focus(2, field=0)
 
@@ -8787,7 +9112,89 @@ def _kb_peditor_down(event):
     if _editor_in_palette_focus():
         _editor_palette_move(1, 0)
         return
+    _editor_clear_body_selection()
     _editor_body_move_line(1)
+
+
+# Shift-arrow selection. Each handler arms the anchor (if not already
+# set) and reuses the regular movement primitive. The selection cell-
+# range is computed at render time from (anchor, cursor).
+@kb.add("s-right", filter=_in_frame("profile_editor"))
+def _kb_peditor_s_right(event):
+    if _editor_focus != 2:
+        return
+    if _editor_in_macro_key_focus() or _editor_in_palette_focus():
+        return
+    if _editor_detail_field == 0:
+        _editor_pattern_set_anchor_if_none()
+        _editor_pattern_move_right()
+    else:
+        _editor_body_set_anchor_if_none()
+        _editor_body_move_right()
+
+
+@kb.add("s-left", filter=_in_frame("profile_editor"))
+def _kb_peditor_s_left(event):
+    if _editor_focus != 2:
+        return
+    if _editor_in_macro_key_focus() or _editor_in_palette_focus():
+        return
+    if _editor_detail_field == 0:
+        _editor_pattern_set_anchor_if_none()
+        _editor_pattern_move_left()
+    else:
+        _editor_body_set_anchor_if_none()
+        _editor_body_move_left()
+
+
+@kb.add("s-up", filter=_in_frame("profile_editor"))
+def _kb_peditor_s_up(event):
+    if _editor_focus != 2:
+        return
+    if (_editor_in_macro_key_focus() or _editor_in_palette_focus()
+            or _editor_detail_field == 0):
+        return   # Pattern is single-line — s-up is a no-op
+    _editor_body_set_anchor_if_none()
+    _editor_body_move_line(-1)
+
+
+@kb.add("s-down", filter=_in_frame("profile_editor"))
+def _kb_peditor_s_down(event):
+    if _editor_focus != 2:
+        return
+    if (_editor_in_macro_key_focus() or _editor_in_palette_focus()
+            or _editor_detail_field == 0):
+        return
+    _editor_body_set_anchor_if_none()
+    _editor_body_move_line(1)
+
+
+@kb.add("s-home", filter=_in_frame("profile_editor"))
+def _kb_peditor_s_home(event):
+    if _editor_focus != 2:
+        return
+    if _editor_in_macro_key_focus() or _editor_in_palette_focus():
+        return
+    if _editor_detail_field == 0:
+        _editor_pattern_set_anchor_if_none()
+        _editor_pattern_move_home()
+    else:
+        _editor_body_set_anchor_if_none()
+        _editor_body_move_home()
+
+
+@kb.add("s-end", filter=_in_frame("profile_editor"))
+def _kb_peditor_s_end(event):
+    if _editor_focus != 2:
+        return
+    if _editor_in_macro_key_focus() or _editor_in_palette_focus():
+        return
+    if _editor_detail_field == 0:
+        _editor_pattern_set_anchor_if_none()
+        _editor_pattern_move_end()
+    else:
+        _editor_body_set_anchor_if_none()
+        _editor_body_move_end()
 
 
 @kb.add("pageup", filter=_in_frame("profile_editor"))
@@ -8806,6 +9213,16 @@ def _kb_peditor_pgdn(event):
 def _kb_peditor_home(event):
     if _editor_focus == 1:
         _profile_editor_jump_cursor(0)
+        return
+    if _editor_focus == 2:
+        if _editor_in_macro_key_focus() or _editor_in_palette_focus():
+            return
+        if _editor_detail_field == 0:
+            _editor_clear_pattern_selection()
+            _editor_pattern_move_home()
+        else:
+            _editor_clear_body_selection()
+            _editor_body_move_home()
 
 
 @kb.add("end", filter=_in_frame("profile_editor"))
@@ -8813,6 +9230,33 @@ def _kb_peditor_end(event):
     if _editor_focus == 1:
         # End jumps to the sentinel row — the last selectable position.
         _profile_editor_jump_cursor(_profile_editor_display_total() - 1)
+        return
+    if _editor_focus == 2:
+        if _editor_in_macro_key_focus() or _editor_in_palette_focus():
+            return
+        if _editor_detail_field == 0:
+            _editor_clear_pattern_selection()
+            _editor_pattern_move_end()
+        else:
+            _editor_clear_body_selection()
+            _editor_body_move_end()
+
+
+@kb.add("delete", filter=_in_frame("profile_editor"))
+def _kb_peditor_kdelete(event):
+    """Forward-delete the character at the cursor in Pattern/Body. On
+    list focus, this binding is a no-op for now — Section B swaps `d`
+    out for `Delete` to delete the list entry."""
+    if _editor_focus != 2:
+        return
+    if _editor_in_macro_key_focus() or _editor_in_palette_focus():
+        return
+    if _editor_detail_field == 0:
+        _editor_pattern_forward_delete()
+        if _app:
+            _app.invalidate()
+    else:
+        _editor_body_forward_delete()
 
 
 @kb.add("d", filter=_in_frame("profile_editor"))

@@ -396,10 +396,13 @@ multi-line text field.
 | Key       | Tabs                | List                          | Detail (text body)                              | Detail (palette)                                  |
 |-----------|---------------------|-------------------------------|-------------------------------------------------|---------------------------------------------------|
 | `←` / `→` | prev / next tab     | List `→` jumps to Pattern     | Cursor movement within the field (wraps lines)  | Move between palette columns; clamp at edges      |
+| `Home` / `End` | no-op          | Home → first row; End → sentinel | Cursor → start / end of *current line*       | Swallowed                                         |
+| `Shift+arrow`, `Shift+Home/End` | no-op | no-op                  | Extend selection from anchor; typing replaces  | Swallowed                                         |
 | `n`       | no-op               | Create + focus Pattern        | Inserts literal `n` at cursor                   | Swallowed (palette is selection-only)             |
 | `d`       | no-op               | Delete confirm                | Inserts literal `d` at cursor                   | Swallowed                                         |
 | `Enter`   | no-op               | Edit (entry) / create (sentinel) | Body: split line at cursor; Pattern: no-op   | Swallowed                                         |
-| `Backspace` | no-op             | no-op                         | Delete char before cursor                       | Swallowed                                         |
+| `Backspace` | no-op             | no-op                         | Delete char before cursor (or selection)        | Swallowed                                         |
+| `Delete`  | no-op               | no-op                         | Forward-delete char at cursor (or selection)    | Swallowed                                         |
 
 `Tab` / `Shift+Tab` cycle the 4-stop chain
 (`tabs → list → detail.Pattern → detail.Body/Palette → tabs`).
@@ -422,12 +425,34 @@ and moves focus to the list. Click on the sentinel row moves the
 cursor to it. Click inside the Pattern or Body field's content row
 focuses that field and positions the in-buffer cursor at the
 clicked column (the renderer emits per-cell click handlers; a Body
-click also pins the cursor to the clicked line). Click on a
-palette swatch (Highlights tab) focuses the grid, moves the palette
-cursor onto that swatch, and immediately writes the swatch's name
-into `entry.body`. Mouse hover paints `C_HOVER` on the non-cursor
-palette cells. The wheel scrolls the list without moving the
-cursor. The scrollbar is click-to-jump.
+click also pins the cursor to the clicked line). Click on the
+field's label or border row also focuses the field (cursor lands at
+buffer start). Click on a palette swatch (Highlights tab) focuses
+the grid, moves the palette cursor onto that swatch, and
+immediately writes the swatch's name into `entry.body`. Mouse hover
+paints `C_HOVER` on the non-cursor palette cells. The wheel scrolls
+the list without moving the cursor. The scrollbar is
+click-to-jump.
+
+**Mouse-drag text selection is not wired.** The editor's mouse
+event model is per-cell click handlers that fire on `MOUSE_DOWN`
+plus `MOUSE_MOVE` for hover. Drag-to-select would require
+distinguishing motion-with-button-held from hover-without-button,
+plus a coordinator that anchors the selection at `MOUSE_DOWN` and
+extends it on the run of `MOUSE_MOVE` events before `MOUSE_UP`.
+Prompt_toolkit's terminal mouse pipeline doesn't reliably surface
+the button state on motion reports in every host, so this would
+land with terminal-specific holes. **Use Shift+arrow / Shift+Home /
+Shift+End** to select text in Pattern and Commands — it works
+uniformly across all terminals.
+
+**Text-field selection.** Shift+Left/Right/Up/Down extend the
+selection from a per-field anchor; Shift+Home/Shift+End extend to
+line start/end. Typing replaces the selection; Backspace and Delete
+remove it. Click, plain arrow keys, focus change, or entry change
+clear the selection. The selection band paints `C_SELECTED` across
+the affected cells, and the per-cell click handler still positions
+the cursor at the clicked column.
 
 **List Color column rendering.** On the Highlights tab the body
 column of the list panel is rendered in the swatch's own colour
