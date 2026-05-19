@@ -128,3 +128,41 @@ toggle activation (focus + Enter / Space, or click).
 - **Remember mode across pushes.** Rejected for phase 6 to keep
   the contract simple; can be added later as a session state if
   the need surfaces.
+
+## Follow-up (Phase 6.1, 2026-05-19)
+
+Three issues surfaced after Phase 6 shipped and were addressed in
+the same editor-mode render path:
+
+- **Performance.** The buffer's `_editor_buffer_line_starts()` was
+  O(L) over the full buffer, and `_editor_buffer_visual_layout`
+  invoked it (transitively) once per logical line — O(N·L) per
+  layout call, and the renderer ran three layout calls per frame.
+  Per-cell fragment construction allocated ~80×24 closures per
+  frame. Fix: keyed memos for `line_starts` and `(text, cols) →
+  visual layout`, both invalidated by the buffer text's identity
+  (Python strings are immutable, so every mutator naturally
+  invalidates the caches by allocating a fresh string). The body
+  renderer collapses per-cell fragments into per-row style runs
+  (1–5 runs per content row) with a single per-row mouse handler
+  that interprets the click column from `ev.position.x`.
+- **Scroll decoupling.** `_editor_buffer_scroll_into_view` was
+  called unconditionally during render, which clamped the viewport
+  back to the cursor on the next frame after a scrollbar click.
+  Fix: the render path no longer scrolls; every cursor-mutating
+  action (keystrokes, content clicks, shift-arrow selection moves,
+  mutations) calls `_editor_buffer_scroll_cursor_into_view()`
+  explicitly. Scrollbar clicks stay where the user put them; the
+  next cursor-moving keystroke pulls the viewport back, matching
+  conventional editor behaviour.
+- **Selection.** `_editor_buffer_anchor` (`int | None`) was added.
+  `Shift` + `←` / `→` / `↑` / `↓` / `Home` / `End` plant the
+  anchor at the current cursor (if unset) and perform the same
+  cursor move as the unshifted variant; the band
+  `[min(anchor, cursor), max(anchor, cursor))` paints with
+  `C_SELECTED`. Plain cursor movement, mode flip, content click,
+  or any mutation clears the anchor. Type-to-replace and
+  `Backspace`/`Delete` consume the selection as a single
+  operation. Clipboard (Ctrl-C / X / V) is intentionally deferred;
+  selection without clipboard still composes with type-to-replace
+  and range-delete.

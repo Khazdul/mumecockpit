@@ -229,6 +229,16 @@ _editor_toggle_hover    = None     # "menu" | "editor" | None — mouse hover
 _editor_buffer_text     = ""       # current text content of the editor buffer
 _editor_buffer_cursor   = 0        # absolute char offset (0..len(text))
 _editor_buffer_scroll   = 0        # first visible visual row (after wrap)
+_editor_buffer_anchor   = None     # int | None — shift-arrow selection anchor offset
+# Layout caches. Keyed off the buffer text's *identity* (`is` compare).
+# Python strings are immutable; every mutator allocates a fresh string,
+# so identity is a free invariant. Without these caches, an 80×24 body's
+# three layout passes per render are O(N·L) over the full buffer (see
+# ADR 0083 follow-up).
+_editor_buffer_line_starts_cache  = (None, None)
+#   (text_ref, starts_list)
+_editor_buffer_visual_cache       = (None, None, None)
+#   (text_ref, cols, (wrap_w, total, line_to_visual))
 # Detail-panel editing state. Phase 3.5 covers Pattern + Body text inputs;
 # phase 4 adds Highlights' palette grid (sharing the detail_field == 1 slot
 # with Body, dispatched on active kind).
@@ -1842,6 +1852,7 @@ def _enter_profile_editor(path):
     globals()["_editor_buffer_text"]    = ""
     globals()["_editor_buffer_cursor"]  = 0
     globals()["_editor_buffer_scroll"]  = 0
+    globals()["_editor_buffer_anchor"]  = None
     _editor_list_sb = Scrollbar(
         0, _editor_list_visible(), _editor_list_visible(),
     )
@@ -4061,6 +4072,7 @@ def _editor_flip_mode():
     entry becoming a Passthrough until reformatted."""
     global _editor_mode
     global _editor_buffer_text, _editor_buffer_cursor, _editor_buffer_scroll
+    global _editor_buffer_anchor
     global _editor_list_cursor, _editor_list_scroll
     if _editor_data is None:
         return
@@ -4068,6 +4080,7 @@ def _editor_flip_mode():
         _editor_buffer_text   = profile_io.serialize_profile(_editor_data)
         _editor_buffer_cursor = 0
         _editor_buffer_scroll = 0
+        _editor_buffer_anchor = None
         _editor_mode          = "editor"
     else:
         path = _editor_data.path
@@ -4090,17 +4103,29 @@ def _editor_flip_mode():
 def _editor_buffer_line_starts():
     """Return a list of buffer offsets where each logical line starts.
     Always has at least one entry (`[0]`); ends BEFORE the trailing `\\n`
-    of the buffer so the cursor at end-of-buffer maps to a valid line."""
-    starts = [0]
+    of the buffer so the cursor at end-of-buffer maps to a valid line.
+
+    Cached against the buffer text reference: Python strings are
+    immutable, so an `is` match guarantees identical content. Every
+    mutator allocates a fresh string, which invalidates the cache."""
+    global _editor_buffer_line_starts_cache
     text = _editor_buffer_text
+    cached_text, cached_starts = _editor_buffer_line_starts_cache
+    if cached_text is text and cached_starts is not None:
+        return cached_starts
+    starts = [0]
     for i, ch in enumerate(text):
         if ch == "\n":
             starts.append(i + 1)
+    _editor_buffer_line_starts_cache = (text, starts)
     return starts
 
 
 def _editor_buffer_line_count():
-    """Number of logical lines in the buffer."""
+    """Number of logical lines in the buffer.
+
+    Trailing `\\n` creates a phantom empty line so the cursor at end-of-
+    buffer has a real `(line, col)` mapping. Empty buffer → 1 line."""
     text = _editor_buffer_text
     if text == "":
         return 1
@@ -4145,9 +4170,30 @@ def _editor_buffer_set_cursor_from_line_col(line, col):
     _editor_buffer_cursor = starts[line] + col
 
 
+def _editor_buffer_consume_selection():
+    """If an editor-mode selection is active, delete the selected range
+    and place the cursor at its low end. Returns True if a selection
+    was consumed (so callers can skip an additional character delete)."""
+    global _editor_buffer_text, _editor_buffer_cursor, _editor_buffer_anchor
+    if _editor_buffer_anchor is None:
+        return False
+    cur = max(0, min(len(_editor_buffer_text), _editor_buffer_cursor))
+    anchor = max(0, min(len(_editor_buffer_text), _editor_buffer_anchor))
+    lo, hi = (anchor, cur) if anchor <= cur else (cur, anchor)
+    if lo == hi:
+        _editor_buffer_anchor = None
+        return False
+    _editor_buffer_text = _editor_buffer_text[:lo] + _editor_buffer_text[hi:]
+    _editor_buffer_cursor = lo
+    _editor_buffer_anchor = None
+    return True
+
+
 def _editor_buffer_insert(text_to_insert):
-    """Insert `text_to_insert` at the cursor and advance the cursor."""
+    """Insert `text_to_insert` at the cursor and advance the cursor.
+    If a selection is active, replace it."""
     global _editor_buffer_text, _editor_buffer_cursor
+    _editor_buffer_consume_selection()
     cur = max(0, min(len(_editor_buffer_text), _editor_buffer_cursor))
     _editor_buffer_text = (
         _editor_buffer_text[:cur] + text_to_insert
@@ -4156,7 +4202,11 @@ def _editor_buffer_insert(text_to_insert):
 
 
 def _editor_buffer_backspace():
+    """Delete the character before the cursor — or the active selection
+    if one is set (the selection-delete is the entire operation)."""
     global _editor_buffer_text, _editor_buffer_cursor
+    if _editor_buffer_consume_selection():
+        return
     cur = max(0, min(len(_editor_buffer_text), _editor_buffer_cursor))
     if cur <= 0:
         return
@@ -4166,12 +4216,31 @@ def _editor_buffer_backspace():
 
 
 def _editor_buffer_delete():
+    """Forward-delete: drop the character after the cursor — or the
+    active selection if one is set."""
     global _editor_buffer_text
+    if _editor_buffer_consume_selection():
+        return
     cur = max(0, min(len(_editor_buffer_text), _editor_buffer_cursor))
     if cur >= len(_editor_buffer_text):
         return
     _editor_buffer_text = (
         _editor_buffer_text[:cur] + _editor_buffer_text[cur + 1:])
+
+
+def _editor_buffer_clear_selection():
+    """Drop any active shift-arrow selection anchor."""
+    global _editor_buffer_anchor
+    _editor_buffer_anchor = None
+
+
+def _editor_buffer_begin_selection_if_needed():
+    """Plant the selection anchor at the current cursor if no selection
+    is active yet. Called before any shift-arrow movement."""
+    global _editor_buffer_anchor
+    if _editor_buffer_anchor is None:
+        _editor_buffer_anchor = max(
+            0, min(len(_editor_buffer_text), _editor_buffer_cursor))
 
 
 def _editor_buffer_content_width(cols):
@@ -4200,18 +4269,35 @@ def _editor_buffer_visual_layout(cols):
       line — `start_visual[i]` is the first visual row index of logical
       line `i`, `wrap_count[i]` is how many visual rows it occupies.
 
-    Empty logical lines still occupy one visual row."""
+    Empty logical lines still occupy one visual row.
+
+    Cached per `(text_ref, cols)` — `is`-matching the buffer reference
+    invalidates on any mutation (which allocates a fresh string). One
+    render frame triggers up to three calls (direct + two via
+    `_editor_buffer_cursor_visual_row`); only the first does work."""
+    global _editor_buffer_visual_cache
+    text = _editor_buffer_text
+    cached_text, cached_cols, cached_val = _editor_buffer_visual_cache
+    if (cached_text is text
+            and cached_cols == cols
+            and cached_val is not None):
+        return cached_val
     wrap_w = _editor_buffer_content_width(cols)
     starts = _editor_buffer_line_starts()
+    text_len = len(text)
     line_to_visual = []
     total = 0
     for line_idx in range(len(starts)):
-        line_text = _editor_buffer_line_text(line_idx)
-        n = max(1, (len(line_text) + wrap_w - 1) // wrap_w
-                if line_text else 1)
+        start = starts[line_idx]
+        end = (starts[line_idx + 1] - 1
+               if line_idx + 1 < len(starts) else text_len)
+        line_len = end - start
+        n = max(1, (line_len + wrap_w - 1) // wrap_w) if line_len else 1
         line_to_visual.append((total, n))
         total += n
-    return wrap_w, total, line_to_visual
+    out = (wrap_w, total, line_to_visual)
+    _editor_buffer_visual_cache = (text, cols, out)
+    return out
 
 
 def _editor_buffer_cursor_visual_row(cols):
@@ -4600,17 +4686,36 @@ def _editor_append_footer(frags, cols):
         ))
 
 
+def _editor_buffer_scroll_cursor_into_view():
+    """Pull the viewport so the cursor's visual row is visible. Called
+    from every cursor-mutating action (keystrokes, content clicks,
+    selection-extending shift+arrows). Scrollbar clicks deliberately do
+    NOT call this so the user's scroll survives until the cursor moves.
+
+    The render path no longer calls scroll_into_view; the viewport sits
+    wherever the most recent cursor-mutating action put it."""
+    _editor_buffer_scroll_into_view(_term_cols(), _editor_body_h())
+
+
 def _editor_append_editor_body(frags, cols):
     """Render the editor-mode body: full-width text buffer with line
     numbers on the left, an inline scrollbar on the right, and a
-    current-line highlight tracking the cursor."""
+    current-line highlight tracking the cursor.
+
+    Per-row composition. Each row is emitted as ~3-6 style runs (line-
+    number cell, 1-5 content runs, scrollbar, newline) with a single
+    per-row mouse handler that interprets `ev.position.x`. The previous
+    per-cell layout allocated ~83 fragments and closures per row × 24
+    rows per frame — measurable lag on files of ~20+ lines."""
     body_h = _editor_body_h()
     wrap_w, total_visual, l2v = _editor_buffer_visual_layout(cols)
-    _editor_buffer_scroll_into_view(cols, body_h)
     scroll = _editor_buffer_scroll
     cursor_line, cursor_col = _editor_buffer_cursor_to_line_col()
-    cursor_visual_row = l2v[cursor_line][0] + (cursor_col // wrap_w)
+    cursor_wrap_idx = cursor_col // wrap_w
     ln_w = _editor_line_num_w()
+    starts = _editor_buffer_line_starts()
+    text = _editor_buffer_text
+    text_len = len(text)
 
     overflow = total_visual > body_h
     sb_top, sb_thumb_h = _editor_sb_thumb_geom_generic(
@@ -4623,15 +4728,14 @@ def _editor_append_editor_body(frags, cols):
     visible_rows = []
     line_idx = 0
     consumed = 0
-    # Find the starting logical line.
-    for i, (start, n) in enumerate(l2v):
-        if start + n > scroll:
+    for i, (s, n) in enumerate(l2v):
+        if s + n > scroll:
             line_idx = i
-            consumed = scroll - start
+            consumed = scroll - s
             break
-    for vrow in range(body_h):
+    for _ in range(body_h):
         if line_idx < len(l2v):
-            start, n = l2v[line_idx]
+            _start, n = l2v[line_idx]
             visible_rows.append((line_idx, consumed))
             consumed += 1
             if consumed >= n:
@@ -4644,49 +4748,83 @@ def _editor_append_editor_body(frags, cols):
     hl_bg          = (_EDITOR_LINE_HL_BG if buffer_focused
                       else _EDITOR_LINE_HL_BG_DIM)
 
+    # Active selection range in absolute char offsets, or None.
+    sel_lo = sel_hi = None
+    if _editor_buffer_anchor is not None:
+        a = max(0, min(text_len, _editor_buffer_anchor))
+        c = max(0, min(text_len, _editor_buffer_cursor))
+        if a != c:
+            sel_lo, sel_hi = (a, c) if a < c else (c, a)
+
     for vrow in range(body_h):
         info = visible_rows[vrow]
-        is_cursor_visual_row = (
-            info is not None
-            and info[0] == cursor_line
-            and info[1] == (cursor_col // wrap_w))
         is_cursor_line = (info is not None and info[0] == cursor_line)
         row_bg = hl_bg if is_cursor_line else ""
 
-        # Line-number cell.
+        # ----- Line-number cell -----
         if info is None or info[1] != 0:
             ln_text = " " * ln_w
         else:
             ln_text = (str(info[0] + 1).rjust(ln_w - 1) + " ")
-        frags.append((f"fg:#585858 {row_bg}".strip(), ln_text,
-                      _editor_clear_outer_hover))
+        ln_style = f"fg:#585858 {row_bg}".strip()
+        frags.append((ln_style, ln_text, _editor_clear_outer_hover))
 
-        # Content cells (wrap_w wide, per-cell for cursor click handler).
+        # ----- Content cells (one row = 1-5 style runs) -----
         if info is None:
-            content = " " * wrap_w
-            for col in range(wrap_w):
-                frags.append((row_bg, " ", _editor_clear_outer_hover))
+            frags.append((row_bg, " " * wrap_w, _editor_clear_outer_hover))
         else:
-            line_text = _editor_buffer_line_text(info[0])
-            wrap_idx  = info[1]
-            start     = wrap_idx * wrap_w
-            chunk     = line_text[start:start + wrap_w]
-            for ccol in range(wrap_w):
-                ch = chunk[ccol] if ccol < len(chunk) else " "
-                abs_col = start + ccol
-                is_cursor_cell = (
-                    is_cursor_visual_row
-                    and abs_col == cursor_col)
-                if is_cursor_cell and buffer_focused:
-                    style = C_SELECTED
-                elif ch != " ":
-                    style = f"{C_ITEM} {row_bg}".strip()
-                else:
-                    style = row_bg
-                frags.append((style, ch,
-                              _editor_buffer_click_handler(info[0], abs_col)))
+            logical_line, wrap_idx = info
+            line_start_abs = starts[logical_line]
+            line_end_abs   = (starts[logical_line + 1] - 1
+                              if logical_line + 1 < len(starts) else text_len)
+            line_len = line_end_abs - line_start_abs
 
-        # Scrollbar cell.
+            wrap_start = wrap_idx * wrap_w
+            chunk_lo   = line_start_abs + wrap_start
+            chunk_hi   = line_start_abs + min(line_len, wrap_start + wrap_w)
+            chunk      = text[chunk_lo:chunk_hi]
+            chunk_len  = len(chunk)
+
+            is_cursor_visual_row = (
+                is_cursor_line and wrap_idx == cursor_wrap_idx)
+            cursor_cell = (cursor_col - wrap_start
+                           if is_cursor_visual_row else -1)
+
+            content_text_style = f"{C_ITEM} {row_bg}".strip()
+            row_handler = _editor_buffer_row_click_handler(
+                logical_line, wrap_start, ln_w, line_len)
+
+            # Build per-cell style + char arrays, then collapse runs.
+            cell_styles = [None] * wrap_w
+            cell_chars  = [" "] * wrap_w
+            for ccol in range(wrap_w):
+                if ccol < chunk_len:
+                    ch = chunk[ccol]
+                    cell_chars[ccol] = ch
+                    in_sel = (sel_lo is not None
+                              and sel_lo <= chunk_lo + ccol < sel_hi)
+                else:
+                    ch = " "
+                    in_sel = False
+                is_cursor_cell = (ccol == cursor_cell)
+                if (is_cursor_cell and buffer_focused) or in_sel:
+                    cell_styles[ccol] = C_SELECTED
+                elif ch != " ":
+                    cell_styles[ccol] = content_text_style
+                else:
+                    cell_styles[ccol] = row_bg
+
+            i = 0
+            while i < wrap_w:
+                j = i + 1
+                while j < wrap_w and cell_styles[j] == cell_styles[i]:
+                    j += 1
+                frags.append((cell_styles[i],
+                              "".join(cell_chars[i:j]),
+                              row_handler))
+                i = j
+
+        # ----- Scrollbar cell -----
         if sb_visible and sb_top <= vrow < sb_top + sb_thumb_h:
             sb_style, sb_glyph = "bold fg:#ffffff", "█"
         elif sb_visible:
@@ -4701,17 +4839,28 @@ def _editor_append_editor_body(frags, cols):
         frags.append(("", "\n", _editor_clear_outer_hover))
 
 
-def _editor_buffer_click_handler(line_idx, col):
-    """Mouse handler for a content cell in the editor buffer. Click
-    positions the cursor at this `(line, col)` and unfocuses the
-    toggle. Move events are silent (no per-row hover in editor mode)."""
-    def _h(ev, ln=line_idx, c=col):
+def _editor_buffer_row_click_handler(logical_line, wrap_start,
+                                     content_x_offset, line_len):
+    """One mouse handler per visible row. Click lands the cursor on the
+    `(logical_line, col)` derived from `ev.position.x`; selection is
+    cleared. Move events are silent (no per-row hover in editor mode).
+
+    Pre-Phase-6.1 this was one closure per cell — ~80×24 closures per
+    frame. Now one closure per visible row, interpreting the column at
+    click time."""
+    def _h(ev):
         if ev.event_type == MouseEventType.MOUSE_MOVE:
             return None
         if ev.event_type != MouseEventType.MOUSE_DOWN:
             return NotImplemented
+        col_in_content = ev.position.x - content_x_offset
+        if col_in_content < 0:
+            col_in_content = 0
+        abs_col = min(line_len, wrap_start + col_in_content)
         _editor_unfocus_toggle()
-        _editor_buffer_set_cursor_from_line_col(ln, c)
+        _editor_buffer_set_cursor_from_line_col(logical_line, abs_col)
+        _editor_buffer_clear_selection()
+        _editor_buffer_scroll_cursor_into_view()
         if _app:
             _app.invalidate()
         return None
@@ -10568,63 +10717,133 @@ def _kb_peditor_buffer_move_cursor(delta_line, delta_col=0):
     return True
 
 
+# --- Plain (unshifted) cursor moves: clear selection, then move ------
 @kb.add("left",  filter=_in_pe_editor())
 def _kb_peditor_buffer_left(event):
+    _editor_buffer_clear_selection()
     _kb_peditor_buffer_move_cursor(0, -1)
+    _editor_buffer_scroll_cursor_into_view()
 
 
 @kb.add("right", filter=_in_pe_editor())
 def _kb_peditor_buffer_right(event):
+    _editor_buffer_clear_selection()
     _kb_peditor_buffer_move_cursor(0, +1)
+    _editor_buffer_scroll_cursor_into_view()
 
 
 @kb.add("up", filter=_in_pe_editor())
 def _kb_peditor_buffer_up(event):
+    _editor_buffer_clear_selection()
     if not _kb_peditor_buffer_move_cursor(-1):
         _editor_focus_toggle()
+    else:
+        _editor_buffer_scroll_cursor_into_view()
 
 
 @kb.add("down", filter=_in_pe_editor())
 def _kb_peditor_buffer_down(event):
+    _editor_buffer_clear_selection()
     _kb_peditor_buffer_move_cursor(+1)
+    _editor_buffer_scroll_cursor_into_view()
 
 
 @kb.add("home", filter=_in_pe_editor())
 def _kb_peditor_buffer_home(event):
+    _editor_buffer_clear_selection()
     line, _col = _editor_buffer_cursor_to_line_col()
     _editor_buffer_set_cursor_from_line_col(line, 0)
+    _editor_buffer_scroll_cursor_into_view()
 
 
 @kb.add("end", filter=_in_pe_editor())
 def _kb_peditor_buffer_end(event):
+    _editor_buffer_clear_selection()
     line, _col = _editor_buffer_cursor_to_line_col()
     _editor_buffer_set_cursor_from_line_col(
         line, len(_editor_buffer_line_text(line)))
+    _editor_buffer_scroll_cursor_into_view()
 
 
 @kb.add("pageup", filter=_in_pe_editor())
 def _kb_peditor_buffer_pgup(event):
+    _editor_buffer_clear_selection()
     _kb_peditor_buffer_move_cursor(-max(1, _editor_body_h()))
+    _editor_buffer_scroll_cursor_into_view()
 
 
 @kb.add("pagedown", filter=_in_pe_editor())
 def _kb_peditor_buffer_pgdn(event):
+    _editor_buffer_clear_selection()
     _kb_peditor_buffer_move_cursor(+max(1, _editor_body_h()))
+    _editor_buffer_scroll_cursor_into_view()
+
+
+# --- Shift+arrow / Shift+Home / Shift+End: extend selection ----------
+# Each plants an anchor at the current cursor (if not already set),
+# then performs the same cursor move as the unshifted variant. The
+# selection is the [min(anchor, cursor), max(anchor, cursor)) range.
+@kb.add("s-left",  filter=_in_pe_editor())
+def _kb_peditor_buffer_s_left(event):
+    _editor_buffer_begin_selection_if_needed()
+    _kb_peditor_buffer_move_cursor(0, -1)
+    _editor_buffer_scroll_cursor_into_view()
+
+
+@kb.add("s-right", filter=_in_pe_editor())
+def _kb_peditor_buffer_s_right(event):
+    _editor_buffer_begin_selection_if_needed()
+    _kb_peditor_buffer_move_cursor(0, +1)
+    _editor_buffer_scroll_cursor_into_view()
+
+
+@kb.add("s-up", filter=_in_pe_editor())
+def _kb_peditor_buffer_s_up(event):
+    _editor_buffer_begin_selection_if_needed()
+    _kb_peditor_buffer_move_cursor(-1)
+    _editor_buffer_scroll_cursor_into_view()
+
+
+@kb.add("s-down", filter=_in_pe_editor())
+def _kb_peditor_buffer_s_down(event):
+    _editor_buffer_begin_selection_if_needed()
+    _kb_peditor_buffer_move_cursor(+1)
+    _editor_buffer_scroll_cursor_into_view()
+
+
+@kb.add("s-home", filter=_in_pe_editor())
+def _kb_peditor_buffer_s_home(event):
+    _editor_buffer_begin_selection_if_needed()
+    line, _col = _editor_buffer_cursor_to_line_col()
+    _editor_buffer_set_cursor_from_line_col(line, 0)
+    _editor_buffer_scroll_cursor_into_view()
+
+
+@kb.add("s-end", filter=_in_pe_editor())
+def _kb_peditor_buffer_s_end(event):
+    _editor_buffer_begin_selection_if_needed()
+    line, _col = _editor_buffer_cursor_to_line_col()
+    _editor_buffer_set_cursor_from_line_col(
+        line, len(_editor_buffer_line_text(line)))
+    _editor_buffer_scroll_cursor_into_view()
 
 
 @kb.add("backspace", filter=_in_pe_editor())
 def _kb_peditor_buffer_backspace(event):
     _editor_buffer_backspace()
+    _editor_buffer_scroll_cursor_into_view()
 
 
 @kb.add("delete", filter=_in_pe_editor())
 def _kb_peditor_buffer_delete(event):
     _editor_buffer_delete()
+    _editor_buffer_scroll_cursor_into_view()
 
 
 @kb.add("enter", filter=_in_pe_editor())
 def _kb_peditor_buffer_enter(event):
     _editor_buffer_insert("\n")
+    _editor_buffer_scroll_cursor_into_view()
 
 
 @kb.add("tab", filter=_in_pe_editor())
@@ -10643,6 +10862,7 @@ def _kb_peditor_buffer_any(event):
     if len(data) != 1 or not data.isprintable():
         return
     _editor_buffer_insert(data)
+    _editor_buffer_scroll_cursor_into_view()
 
 
 # Profile editor — macro key-capture overlay

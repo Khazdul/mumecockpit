@@ -453,18 +453,58 @@ and wrap count. Empty logical lines still occupy one visual row.
 - `↑` at top of buffer — fall through to the toggle.
 - `Home` / `End` — line start / end.
 - `PgUp` / `PgDn` — viewport-sized vertical move.
-- `Backspace` / `Delete` — character deletion.
-- `Enter` — insert `\n`.
+- `Shift` + `←` / `→` / `↑` / `↓` / `Home` / `End` — extend
+  selection from anchor. See **Selection** below.
+- `Backspace` / `Delete` — character deletion, or selection delete
+  when a selection is active.
+- `Enter` — insert `\n`. Replaces any active selection first.
 - `Tab` — cycle focus to the toggle (does **not** insert a literal
   tab).
-- Printable `<any>` — insert at cursor.
+- Printable `<any>` — insert at cursor. Replaces any active
+  selection first.
 
 **Mouse.** Click in the buffer positions the cursor on the clicked
 `(line, col)` and clears toggle focus (so the buffer responds to
 the next keystroke). Click on the inline scrollbar's track above
 the thumb pages up by one viewport; click below pages down; click
 on the thumb itself is a no-op. Mouse drag-to-select is not wired
-(same constraint as menu mode).
+(same constraint as menu mode); clicks also clear any active
+keyboard selection.
+
+**Selection.** `_editor_buffer_anchor` (`int | None`) is the anchor
+char offset; `None` means no selection. Pressing any
+`Shift`+movement key plants the anchor at the current cursor (if
+unset) and moves; the selection range is
+`[min(anchor, cursor), max(anchor, cursor))`. The selection band
+paints with `C_SELECTED` styling on every covered cell, spanning
+multiple visual rows when the selection crosses wraps or logical
+lines. Plain (unshifted) cursor movement, a content click, mode
+flip, or any successful mutation clears the anchor. Typing or
+`Backspace`/`Delete` with an active selection replaces or deletes
+the selection as a single operation. Clipboard (Ctrl-C / X / V)
+for the buffer is not wired — selection still composes with type-
+to-replace and `Delete` to drop a range.
+
+**Scroll decoupling.** `_editor_buffer_scroll_into_view` is invoked
+only from cursor-mutating actions (keystrokes, content clicks,
+shift-arrow selection moves, mutations) — never unconditionally
+on render. Scrollbar clicks therefore move the viewport away from
+the cursor and the viewport stays where the click placed it
+across subsequent renders until the user moves the cursor with
+the keyboard or clicks in the buffer (the next cursor move pulls
+the viewport back to the cursor, matching the convention in code
+editors).
+
+**Layout caches.** `_editor_buffer_line_starts_cache` and
+`_editor_buffer_visual_cache` are keyed off the buffer text's
+*identity* (`is` compare); Python strings are immutable, so every
+mutator allocates a fresh string and invalidates both caches
+automatically. Without them, the three layout passes per render
+(one direct, two via `_editor_buffer_cursor_visual_row`) would
+each be O(N·L) over the full buffer — visibly laggy on files of
+~20+ lines. The renderer also emits per-row style runs (line-num
+cell + 1–5 content runs + scrollbar) with a single per-row mouse
+handler instead of one fragment + closure per cell.
 
 #### Focus model
 
