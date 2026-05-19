@@ -9,6 +9,8 @@ __all__ = [
     "C_QUOTE", "C_QUOTE_ATTR", "C_HOVER", "C_SELECTED",
     "C_HEADER", "C_SECTION", "C_DIVIDER",
     "C_BUTTON", "C_BUTTON_HOVER", "C_BUTTON_DISABLED",
+    "C_BUTTON_INACTIVE", "C_BUTTON_ACTIVE_UNFOCUSED",
+    "C_BUTTON_ACTIVE_FOCUSED",
     "C_LOG_PLAYER_INPUT", "C_LOG_CURSOR",
     "C_LOG_OVERLAY_BG", "C_LOG_OVERLAY_FG", "C_LOG_OVERLAY_HINT",
     "C_LOG_SCRUBBER_FILLED", "C_LOG_SCRUBBER_EMPTY", "C_LOG_SCRUBBER_THUMB",
@@ -49,6 +51,22 @@ C_SELECTED   = "fg:#000000 bg:#bcbcbc"   # active sidebar filter — black on li
 C_BUTTON          = "fg:#bcbcbc bg:#1a1a1a"   # normal flat button
 C_BUTTON_HOVER    = "fg:#bcbcbc bg:#2a2a2a"   # mouse-hover, non-cursor
 C_BUTTON_DISABLED = "fg:#585858 bg:#0f0f0f"   # disabled — dim grey on near-bg
+
+# Three-state button colour grammar — used by the profile editor's kind
+# column, the MENU/EDITOR mode toggle, the entry-list cursor row, and the
+# detail-panel frame borders. A uniform background-driven indicator that
+# replaces the older mix of bold/underline and reverse-band styles.
+#
+#   Inactive (not selected)        → C_BUTTON_INACTIVE
+#   Active, owning zone unfocused  → C_BUTTON_ACTIVE_UNFOCUSED  (= C_SELECTED)
+#   Active, owning zone focused    → C_BUTTON_ACTIVE_FOCUSED    (amber bg)
+#
+# The hover state for inactive buttons reuses C_BUTTON_ACTIVE_UNFOCUSED so
+# the preview matches the unfocused-but-selected appearance — a single
+# motion of attention rather than two competing styles.
+C_BUTTON_INACTIVE         = "fg:#bcbcbc bg:#000000"
+C_BUTTON_ACTIVE_UNFOCUSED = "fg:#000000 bg:#bcbcbc"
+C_BUTTON_ACTIVE_FOCUSED   = "fg:#000000 bg:#ffaf00"
 
 # ---------------------------------------------------------------------------
 # Statistics-frame palette (mockup-driven; isolated from the other frames so

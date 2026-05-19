@@ -41,6 +41,7 @@ from palette import (  # noqa: E402
     C_YELLOW, C_ERR, C_DANGER, C_QUOTE, C_QUOTE_ATTR, C_HOVER, C_SELECTED,
     C_HEADER, C_SECTION, C_DIVIDER,
     C_BUTTON, C_BUTTON_HOVER, C_BUTTON_DISABLED,
+    C_BUTTON_INACTIVE, C_BUTTON_ACTIVE_UNFOCUSED, C_BUTTON_ACTIVE_FOCUSED,
     C_LOG_CURSOR,
     C_LOG_OVERLAY_BG, C_LOG_OVERLAY_FG, C_LOG_OVERLAY_HINT,
     C_LOG_SCRUBBER_FILLED, C_LOG_SCRUBBER_EMPTY, C_LOG_SCRUBBER_THUMB,
@@ -223,6 +224,7 @@ _editor_pattern_cursor  = 0      # cursor offset into entry.pattern
 _editor_body_line       = 0      # logical line index of the cursor inside entry.body
 _editor_body_col        = 0      # column index of the cursor within the active body line
 _editor_pattern_touched = False  # True once the user has left Pattern with empty buffer; gates required-error
+_editor_body_scroll     = 0      # First visible body-line in the 10-row capped Commands viewport
 # Shift-arrow selection anchors. None when no selection is active. The
 # anchor + the current cursor define the selection range; typing,
 # backspace, and forward-delete consume the selection when set. Cleared
@@ -1543,9 +1545,19 @@ _PROFILE_EDITOR_TABS = [
 ]
 
 _EDITOR_PATTERN_COL_W = 8       # Pattern column inside the list panel
-_EDITOR_LIST_W        = 30      # Total list panel width (pattern + body cols)
-_EDITOR_GAP           = 2       # Cells between list-scrollbar and detail
-_EDITOR_DETAIL_W      = 44      # Detail panel width
+_EDITOR_KIND_W        = 13      # Vertical kind-button column width
+_EDITOR_LIST_W        = 23      # List panel content (scrollbar is +1 column)
+_EDITOR_GAP           = 2       # Cells between panels
+_EDITOR_DETAIL_W      = 30      # Detail panel width
+
+# Number of body rows the kind column claims — five 3-row block buttons,
+# no inter-button spacing. The kind column stacks at body_row 0..14 in
+# the editor body; rows beyond that paint as kind-column blanks.
+_EDITOR_KIND_ROWS     = 15
+
+# Cap on visible rows for the Commands / New-text detail body field.
+# Bodies longer than this scroll within the field via an inline scrollbar.
+_EDITOR_BODY_CAP_ROWS = 10
 
 # Per-kind detail-panel field labels — `(pattern_label, body_label)`. Used by
 # both the detail panel (renamed `Body` slot) and the list panel header.
@@ -1756,7 +1768,10 @@ def _hl_palette_color_at(row, col):
 
 
 def _editor_package_w():
-    return _EDITOR_LIST_W + 1 + _EDITOR_GAP + _EDITOR_DETAIL_W
+    # kind column + gap + list + scrollbar + gap + detail
+    return (_EDITOR_KIND_W + _EDITOR_GAP
+            + _EDITOR_LIST_W + 1
+            + _EDITOR_GAP + _EDITOR_DETAIL_W)
 
 
 def _editor_left_pad():
@@ -1764,20 +1779,11 @@ def _editor_left_pad():
 
 
 def _editor_body_h():
-    """Body row height — enough for the detail panel; grows with terminal.
-
-    Phase 3.5 detail-panel minimum rows (top → bottom):
-        Pattern label                            1
-        Pattern box (top + content + bot)        3
-        Body label                               1
-        Body box (top + ≥1 content line + bot)   3
-        Error slot                               1
-        Blank divider                            1
-        ─── Hint ─── divider                     1
-        Hint lines × 2                           2
-    Total minimum 13. The hint block at the bottom is truncated when
-    the terminal is short, so the field chain itself stays visible."""
-    return max(13, _term_rows() - 9)
+    """Body row height — enough for the kind column + detail panel; grows
+    with terminal. The kind column needs 15 rows for five 3-row block
+    buttons; the detail panel needs a similar floor for its field chain
+    (Pattern + Commands + error + hint block). 15 covers both."""
+    return max(_EDITOR_KIND_ROWS, _term_rows() - 9)
 
 
 def _editor_list_visible():
@@ -1816,6 +1822,7 @@ def _enter_profile_editor(path):
     _editor_body_line       = 0
     _editor_body_col        = 0
     _editor_pattern_touched = False
+    globals()["_editor_body_scroll"] = 0
     _editor_list_sb = Scrollbar(
         0, _editor_list_visible(), _editor_list_visible(),
     )
@@ -2037,12 +2044,13 @@ def _editor_refresh_buffers():
     a non-decomposable body stashes the original value in the Custom
     slot and parks the user on it."""
     global _editor_pattern_cursor, _editor_body_line, _editor_body_col
-    global _editor_pattern_touched
+    global _editor_pattern_touched, _editor_body_scroll
     global _editor_hl_style_cursor
     global _editor_hl_text_row, _editor_hl_text_col
     global _editor_hl_bg_row, _editor_hl_bg_col
     global _editor_hl_custom_value, _editor_hl_hover
     entry = _editor_current_entry()
+    _editor_body_scroll = 0
     if entry is None:
         _editor_pattern_cursor = 0
         _editor_body_line = 0
@@ -2871,8 +2879,8 @@ def _editor_sb_click_to_offset(cell_row, total, visible, height):
 
 # ----- Rendering helpers --------------------------------------------------
 _EDITOR_HINT_LINES = [
-    "Use %1, %2, %3 as argument placeholders.",
-    "Separate commands with ; for sequences.",
+    "Use %1, %2, %3 for args.",
+    "; separates commands.",
 ]
 
 # Kind labels surfaced in user-facing hints. Singular form for in-flight
@@ -2892,6 +2900,118 @@ def _editor_body_lines_for_entry(entry):
     if entry is None:
         return [""]
     return entry.body.split("\n") if entry.body else [""]
+
+
+def _editor_body_viewport(line_count):
+    """Clamp `_editor_body_scroll` so the cursor stays inside the 10-row
+    Commands viewport, then return `(scroll, visible_count, overflow)`.
+
+    `overflow` is True when `line_count` exceeds the cap — used to decide
+    whether the body box needs an inline scrollbar column."""
+    global _editor_body_scroll
+    cap = _EDITOR_BODY_CAP_ROWS
+    if line_count <= cap:
+        _editor_body_scroll = 0
+        return 0, line_count, False
+    cur = max(0, min(line_count - 1, _editor_body_line))
+    if cur < _editor_body_scroll:
+        _editor_body_scroll = cur
+    elif cur >= _editor_body_scroll + cap:
+        _editor_body_scroll = cur - cap + 1
+    _editor_body_scroll = max(0, min(line_count - cap, _editor_body_scroll))
+    return _editor_body_scroll, cap, True
+
+
+def _editor_body_scrollbar_cell(visible_row, scroll, total, visible, focused):
+    """Build the scrollbar cell for a body-box visible row when content
+    overflows the cap. Mirrors the entry-list scrollbar glyphs: bright
+    block thumb + dim track. Click handler is page-step (matching the
+    Scrollbar widget contract)."""
+    cap = _EDITOR_BODY_CAP_ROWS
+    top, thumb_h = _editor_sb_thumb_geom_generic(total, visible, cap, scroll)
+    if top <= visible_row < top + thumb_h:
+        style, glyph = "bold fg:#ffffff", "█"
+    else:
+        style, glyph = "fg:#585858", "░"
+
+    def _handler(ev, row=visible_row, t=top, h=thumb_h):
+        if ev.event_type != MouseEventType.MOUSE_DOWN:
+            return None if ev.event_type == MouseEventType.MOUSE_MOVE \
+                else NotImplemented
+        global _editor_body_scroll, _editor_body_line
+        mx = max(0, total - visible)
+        if row < t:
+            _editor_body_scroll = max(0, _editor_body_scroll - visible)
+        elif row >= t + h:
+            _editor_body_scroll = min(mx, _editor_body_scroll + visible)
+        else:
+            return None
+        # Keep the cursor inside the viewport — clamp to the new window
+        # so subsequent typing happens where the user is looking.
+        if _editor_body_line < _editor_body_scroll:
+            _editor_body_line = _editor_body_scroll
+        elif _editor_body_line >= _editor_body_scroll + visible:
+            _editor_body_line = _editor_body_scroll + visible - 1
+        if _app:
+            _app.invalidate()
+        return None
+    return (style, glyph, _handler)
+
+
+def _editor_sb_thumb_geom_generic(total, visible, height, offset):
+    """Generic thumb geometry — same math as `_editor_sb_thumb_geom`
+    but parameterised by the scroll offset so it works for the body
+    field's local viewport (the entry-list helper hardcodes
+    `_editor_list_scroll`)."""
+    if total <= 0 or total <= visible or height <= 0:
+        return 0, 0
+    ratio   = visible / total
+    thumb_h = max(1, round(ratio * height))
+    thumb_h = min(thumb_h, height)
+    max_top = height - thumb_h
+    mx_scroll = max(0, total - visible)
+    if max_top <= 0 or mx_scroll <= 0:
+        return 0, thumb_h
+    top = round(offset / mx_scroll * max_top)
+    top = max(0, min(max_top, top))
+    return top, thumb_h
+
+
+def _editor_build_body_box(entry, body_focused, body_lbl, body_border,
+                           body_focus_h):
+    """Build the label + bordered Commands / New-text box for the body
+    field. Visible content is capped at `_EDITOR_BODY_CAP_ROWS`; bodies
+    longer than the cap render with an inline scrollbar in the right
+    edge of the box and the viewport tracks the cursor.
+
+    Returns the list of detail rows for the field (label + top border +
+    visible content rows + bottom border)."""
+    rows = []
+    rows.append(_editor_pad_full(C_HINT, body_lbl, body_focus_h))
+    rows.append(_editor_pad_full(body_border, _editor_box_top(_EDITOR_DETAIL_W),
+                                 body_focus_h))
+    body_lines  = _editor_body_lines_for_entry(entry)
+    cursor_line = max(0, min(len(body_lines) - 1, _editor_body_line))
+    scroll, visible, overflow = _editor_body_viewport(len(body_lines))
+    end = min(scroll + visible, len(body_lines))
+    for vrow, i in enumerate(range(scroll, end)):
+        line = body_lines[i]
+        is_cursor_line = body_focused and i == cursor_line
+        col = (_editor_body_col if is_cursor_line else None)
+        sel = (_editor_body_line_selection_range(i)
+               if body_focused else None)
+        sb_cell = None
+        if overflow:
+            sb_cell = _editor_body_scrollbar_cell(
+                vrow, scroll, len(body_lines), visible, body_focused)
+        rows.append(_editor_box_content_row(
+            line, body_focused, cursor_col=col,
+            sel_range=sel,
+            field_id="body", line_idx=i,
+            scrollbar_cell=sb_cell))
+    rows.append(_editor_pad_full(body_border, _editor_box_bot(_EDITOR_DETAIL_W),
+                                 body_focus_h))
+    return rows
 
 
 def _editor_pad_full(style, text, handler=None):
@@ -2935,7 +3055,8 @@ def _editor_field_border_style(focused):
 
 def _editor_box_content_row(text, border_focused, cursor_col=None,
                             sel_range=None,
-                            field_id=None, line_idx=None):
+                            field_id=None, line_idx=None,
+                            scrollbar_cell=None):
     """Render `│ <text> │` for a wide field. Splits the inner area
     into per-cell fragments so a click on any column can position the
     cursor there.
@@ -2957,12 +3078,21 @@ def _editor_box_content_row(text, border_focused, cursor_col=None,
     handler; `line_idx` (Body only) tells the handler which line within
     the body the click maps to.
 
+    `scrollbar_cell`, when not None, is a `(style, glyph[, handler])`
+    fragment that replaces the rightmost inner cell — used by the body
+    field when its content overflows the 10-row visible cap. Effective
+    content width drops by one in that case.
+
     Returns a list of `(style, text[, handler])` fragments summing to
     `_EDITOR_DETAIL_W` cells."""
     w = _EDITOR_DETAIL_W
-    inner = w - 4
     border_style = _editor_field_border_style(border_focused)
-    pad_right = w - 2 - 2 - inner
+    if scrollbar_cell is None:
+        inner = w - 4
+    else:
+        # Reserve the rightmost inner cell for the scrollbar; content
+        # cells fill the remaining w-5 columns.
+        inner = w - 5
 
     # Compute the visible view of the buffer + the cursor's visible col.
     # When the buffer fits in `inner`, show it fully. When it overflows,
@@ -3008,9 +3138,12 @@ def _editor_box_content_row(text, border_focused, cursor_col=None,
                           _editor_make_field_click_handler(
                               field_id, i, line_idx, start=start_col)))
 
+    if scrollbar_cell is not None:
+        # `scrollbar_cell` may be a 2- or 3-tuple; normalise either way.
+        frags.append(scrollbar_cell if len(scrollbar_cell) == 3
+                     else (scrollbar_cell[0], scrollbar_cell[1], None))
+
     frags.append((border_style, " │", None))
-    if pad_right > 0:
-        frags.append(("", " " * pad_right, None))
     return frags
 
 
@@ -3159,22 +3292,8 @@ def _editor_build_text_detail(entry, total_lines):
     rows.append(_editor_pad_full(pat_border, _editor_box_bot(_EDITOR_DETAIL_W),
                                  pat_focus_h))
 
-    rows.append(_editor_pad_full(C_HINT, body_lbl, body_focus_h))
-    rows.append(_editor_pad_full(body_border, _editor_box_top(_EDITOR_DETAIL_W),
-                                 body_focus_h))
-    body_lines = _editor_body_lines_for_entry(entry)
-    cursor_line = max(0, min(len(body_lines) - 1, _editor_body_line))
-    for i, line in enumerate(body_lines):
-        is_cursor_line = body_focused and i == cursor_line
-        col = (_editor_body_col if is_cursor_line else None)
-        sel = (_editor_body_line_selection_range(i)
-               if body_focused else None)
-        rows.append(_editor_box_content_row(
-            line, body_focused, cursor_col=col,
-            sel_range=sel,
-            field_id="body", line_idx=i))
-    rows.append(_editor_pad_full(body_border, _editor_box_bot(_EDITOR_DETAIL_W),
-                                 body_focus_h))
+    rows.extend(_editor_build_body_box(
+        entry, body_focused, body_lbl, body_border, body_focus_h))
 
     err = _editor_validation_error()
     if err:
@@ -3256,7 +3375,7 @@ def _editor_build_palette_detail(entry, total_lines):
 
     rows.append(_editor_pad_full(C_HINT, ""))
     rows.append(_editor_centered_row(C_HINT, "─── Hint ───"))
-    rows.append(_editor_pad_full(C_HINT, "Toggle styles · pick text + bg colours."))
+    rows.append(_editor_pad_full(C_HINT, "Toggle styles · pick colours."))
     rows.append(_editor_pad_full(C_HINT, ""))
 
     while len(rows) < total_lines:
@@ -3284,22 +3403,8 @@ def _editor_build_macro_detail(entry, total_lines):
     rows.append(_editor_macro_key_cell_row(entry, key_focused))
     rows.append(_editor_pad_full(C_HINT, "(Enter to rebind)"))
 
-    rows.append(_editor_pad_full(C_HINT, body_lbl, body_focus_h))
-    rows.append(_editor_pad_full(body_border, _editor_box_top(_EDITOR_DETAIL_W),
-                                 body_focus_h))
-    body_lines = _editor_body_lines_for_entry(entry)
-    cursor_line = max(0, min(len(body_lines) - 1, _editor_body_line))
-    for i, line in enumerate(body_lines):
-        is_cursor_line = body_focused and i == cursor_line
-        col = (_editor_body_col if is_cursor_line else None)
-        sel = (_editor_body_line_selection_range(i)
-               if body_focused else None)
-        rows.append(_editor_box_content_row(
-            line, body_focused, cursor_col=col,
-            sel_range=sel,
-            field_id="body", line_idx=i))
-    rows.append(_editor_pad_full(body_border, _editor_box_bot(_EDITOR_DETAIL_W),
-                                 body_focus_h))
+    rows.extend(_editor_build_body_box(
+        entry, body_focused, body_lbl, body_border, body_focus_h))
 
     err = _editor_validation_error()
     if err:
@@ -3309,8 +3414,8 @@ def _editor_build_macro_detail(entry, total_lines):
 
     rows.append(_editor_pad_full(C_HINT, ""))
     rows.append(_editor_centered_row(C_HINT, "─── Hint ───"))
-    rows.append(_editor_pad_full(C_HINT, "Press Enter on Key to rebind."))
-    rows.append(_editor_pad_full(C_HINT, "Separate commands with ; for sequences."))
+    rows.append(_editor_pad_full(C_HINT, "Enter on Key to rebind."))
+    rows.append(_editor_pad_full(C_HINT, "; separates commands."))
     rows.append(_editor_pad_full(C_HINT, ""))
 
     while len(rows) < total_lines:
@@ -3712,7 +3817,9 @@ def _editor_list_row_text(entry, is_cursor, is_hover):
     full_text = (pat_cell + "  " + body_cell)[:w].ljust(w)
 
     if is_cursor:
-        return [(C_SELECTED, full_text)]
+        cursor_style = (C_BUTTON_ACTIVE_FOCUSED if _editor_focus == 1
+                        else C_BUTTON_ACTIVE_UNFOCUSED)
+        return [(cursor_style, full_text)]
     if is_hover:
         return [(C_HOVER, full_text)]
     if entry.kind == "highlight":
@@ -3752,13 +3859,15 @@ def _editor_list_header_frag(visible_rows):
     `Text + New text`, etc.
 
     Returns a list of fragments that fills `_EDITOR_LIST_W` cells. The
-    arrow + label are wrapped in a click handler that toggles sort."""
+    arrow + label are wrapped in a click handler that toggles sort. The
+    header stays in muted grey (`C_HINT`) regardless of focus — the
+    three-state colour grammar reserves the focus signal for the cursor
+    row inside the list and for the kind/mode buttons."""
     w = _EDITOR_LIST_W
     arrow = "▲" if _editor_sort_dir == "asc" else "▼"
-    list_focused = (_editor_focus == 1)
-    base_style = C_ACTIVE if list_focused else C_SECTION
+    base_style = C_HINT
     hover_style = C_HOVER
-    style = hover_style if _editor_hover_sort and not list_focused else base_style
+    style = hover_style if _editor_hover_sort else base_style
     kind = _profile_editor_active_kind()
     pat_lbl, body_lbl = DETAIL_LABELS.get(kind, ("Pattern", "Body"))
     # Pattern-column label is truncated to fit `_EDITOR_PATTERN_COL_W - 1`
@@ -3803,83 +3912,85 @@ def _editor_clear_outer_hover(ev):
     return NotImplemented
 
 
+def _editor_kind_button_style(idx):
+    """Return the three-state colour token for the kind button at index
+    `idx` (0..len(_PROFILE_EDITOR_TABS)-1). Hover on an inactive button
+    previews the active-unfocused state."""
+    is_active    = (idx == _editor_active_tab)
+    is_hover     = (_editor_hover_tab == idx and not is_active)
+    zone_focused = (_editor_focus == 0)
+    if is_active and zone_focused:
+        return C_BUTTON_ACTIVE_FOCUSED
+    if is_active or is_hover:
+        return C_BUTTON_ACTIVE_UNFOCUSED
+    return C_BUTTON_INACTIVE
+
+
+def _editor_kind_button_handler(idx):
+    """Mouse handler for any cell inside the kind button at index `idx`.
+    Hovering sets `_editor_hover_tab`; clicking focuses the kind column
+    and switches to that kind."""
+    def _h(ev, i=idx):
+        if ev.event_type == MouseEventType.MOUSE_MOVE:
+            _profile_editor_set_hover_tab(i)
+            return None
+        if ev.event_type == MouseEventType.MOUSE_DOWN:
+            _profile_editor_set_focus(0)
+            _profile_editor_set_tab(i)
+            return None
+        return NotImplemented
+    return _h
+
+
+def _editor_kind_column_row(body_row):
+    """Return a `(style, text, handler)` fragment for the kind-column
+    cell at `body_row`. Rows 0..14 paint button cells (five 3-row
+    blocks stacked with no separator); rows ≥ 15 paint chrome blanks."""
+    if body_row >= _EDITOR_KIND_ROWS:
+        return ("", " " * _EDITOR_KIND_W, _editor_clear_outer_hover)
+    btn_idx     = body_row // 3
+    within_btn  = body_row % 3
+    label_upper = _PROFILE_EDITOR_TABS[btn_idx][0].upper()
+    style       = _editor_kind_button_style(btn_idx)
+    if within_btn == 1:
+        text = label_upper.center(_EDITOR_KIND_W)
+    else:
+        text = " " * _EDITOR_KIND_W
+    return (style, text, _editor_kind_button_handler(btn_idx))
+
+
 def _profile_editor_text():
     """Render the editor frame as a single fragment list.
 
     Layout (top to bottom):
-        ─── Profile editor: <name> ───
+        ─── Profile Editor: <name> ───
         <blank>
-        Aliases · Actions · Macros · Highlights · Substitutes
+        ┌───────┐ Pattern▲ Body          Pattern
+        │       │ <pattern> <body…>      ┌────────────────────┐
+        │ ALIAS │ + New entry            │ <pattern>          │
+        │   ES  │                        └────────────────────┘
+        ├───────┤                        Commands
+        │       │                        ┌────────────────────┐
+        │ACTIONS│                        │ <body line 1>      │
+        │       │                        │ <body line 2>      │
+        ├───────┤                        └────────────────────┘
+        …                                ─── Hint ───
+        …                                Use %1, %2, %3 as ...
         <blank>
-        Pattern▲  Body          │ Pattern
-        > <pattern>  <body…>    │ ┌────────────────────┐
-        <pattern>  <body>       │ │ <pattern>          │
-        …                       │ └────────────────────┘
-                                │ Body
-                                │ ┌────────────────────┐
-                                │ │ <body line 1>      │
-                                │ │ <body line 2>      │
-                                │ └────────────────────┘
-                                │ ─── Hint ───
-                                │ Use %1, %2, %3 as ...
-                                │ <blank>
-        <blank>
-        ↑↓ Move · Del Delete · Tab Focus tabs · ESC Save & back
-    """
+        ↑↓ Move · Tab Cycle · Del Delete · ESC Save & back
+
+    The kind buttons stack vertically on the left with no separator
+    rows; the colour grammar (`C_BUTTON_*`) carries focus + active
+    state. Headers and field labels stay in muted grey at all times."""
     cols = _term_cols()
     name = (_editor_profile_path.stem
             if _editor_profile_path is not None else "")
-    title  = f"─── Profile editor: {name} ───"
+    title  = f"─── Profile Editor: {name} ───"
 
     frags = []
     frags.append(("", "\n", _editor_clear_outer_hover))
     frags.append(("", _pad_centre(title, cols), _editor_clear_outer_hover))
     frags.append((C_SECTION, title, _editor_clear_outer_hover))
-    frags.append(("", "\n", _editor_clear_outer_hover))
-    frags.append(("", "\n", _editor_clear_outer_hover))
-
-    # Tab strip — five labels separated by a single space. Active tab is
-    # rendered bold+underline (C_ACTIVE) when the tab strip is unfocused,
-    # or reverse-band (C_SELECTED) when the tab strip itself has focus —
-    # mirrors the list panel's cursor / hover distinction so the user can
-    # always tell which zone responds to keystrokes. Inactive tabs paint
-    # C_ITEM; hover paints C_HOVER on non-active labels.
-    n_tabs = len(_PROFILE_EDITOR_TABS)
-    labels = [lbl for (lbl, _k) in _PROFILE_EDITOR_TABS]
-    strip_w = sum(len(s) for s in labels) + (n_tabs - 1)  # spaces between
-    tabs_focused = (_editor_focus == 0)
-
-    pad_left  = max(0, (cols - strip_w) // 2)
-    pad_right = max(0, cols - pad_left - strip_w)
-
-    frags.append(("", " " * pad_left, _editor_clear_outer_hover))
-
-    for i, label in enumerate(labels):
-        is_active = (i == _editor_active_tab)
-        is_hover  = (_editor_hover_tab == i and not is_active)
-        if is_active and tabs_focused:
-            style = C_SELECTED
-        elif is_active:
-            style = C_ACTIVE + " underline"
-        elif is_hover:
-            style = C_HOVER
-        else:
-            style = C_ITEM
-
-        def _tab_handler(ev, row=i):
-            if ev.event_type == MouseEventType.MOUSE_MOVE:
-                _profile_editor_set_hover_tab(row)
-                return None
-            if ev.event_type == MouseEventType.MOUSE_DOWN:
-                _profile_editor_set_tab(row)
-                return None
-            return NotImplemented
-
-        frags.append((style, label, _tab_handler))
-        if i < n_tabs - 1:
-            frags.append(("", " ", _editor_clear_outer_hover))
-
-    frags.append(("", " " * pad_right, _editor_clear_outer_hover))
     frags.append(("", "\n", _editor_clear_outer_hover))
     frags.append(("", "\n", _editor_clear_outer_hover))
 
@@ -3962,7 +4073,8 @@ def _profile_editor_text():
                     label = "+ New entry"
                     text = label.ljust(_EDITOR_LIST_W)[:_EDITOR_LIST_W]
                     if is_cursor:
-                        style = C_SELECTED
+                        style = (C_BUTTON_ACTIVE_FOCUSED if _editor_focus == 1
+                                 else C_BUTTON_ACTIVE_UNFOCUSED)
                     elif is_hover:
                         style = C_HOVER
                     else:
@@ -4053,6 +4165,9 @@ def _profile_editor_text():
 
         # ----- Compose the row -----
         frags.append(("", " " * left_pad, _editor_clear_outer_hover))
+        # Kind-column cell + gap.
+        frags.append(_editor_kind_column_row(body_row))
+        frags.append(("", gap_str, _editor_clear_outer_hover))
         for f in left_frags:
             frags.append(f)
         frags.append(sb_frag)
@@ -4074,7 +4189,7 @@ def _profile_editor_text():
     # ----- Footer -----
     frags.append(("", "\n", _editor_clear_outer_hover))
     if _editor_focus == 0:
-        footer = ("←→ Switch tab  ·  ↓ Focus list  ·  ESC Save & back")
+        footer = ("↑↓ Move kind  ·  Tab Cycle  ·  ESC Save & back")
     elif _editor_focus == 1:
         footer = ("↑↓ Move  ·  Enter Edit  ·  n New  ·  Del Delete  ·  "
                   "Tab Cycle  ·  ESC Save & back")
@@ -9515,7 +9630,9 @@ def _kb_peditor_palette_down():
 @kb.add("right", filter=_in_frame("profile_editor"))
 def _kb_peditor_right(event):
     if _editor_focus == 0:
-        _profile_editor_set_tab(_editor_active_tab + 1)
+        # Kind column is vertical — Right moves focus to the entry list.
+        _profile_editor_set_focus(1)
+        return
     elif _editor_focus == 1:
         _profile_editor_set_focus(2, field=0)
     elif _editor_focus == 2:
@@ -9534,8 +9651,11 @@ def _kb_peditor_right(event):
 @kb.add("left", filter=_in_frame("profile_editor"))
 def _kb_peditor_left(event):
     if _editor_focus == 0:
-        _profile_editor_set_tab(_editor_active_tab - 1)
-    elif _editor_focus == 2:
+        return   # Kind column is leftmost zone — left is a no-op.
+    if _editor_focus == 1:
+        _profile_editor_set_focus(0)
+        return
+    if _editor_focus == 2:
         if _editor_in_macro_key_focus():
             return
         if _editor_in_palette_focus():
@@ -9551,7 +9671,10 @@ def _kb_peditor_left(event):
 @kb.add("up", filter=_in_frame("profile_editor"))
 def _kb_peditor_up(event):
     if _editor_focus == 0:
-        return   # nothing above the tabs
+        # Move up one kind, bounded at the top of the column.
+        if _editor_active_tab > 0:
+            _profile_editor_set_tab(_editor_active_tab - 1)
+        return
     if _editor_focus == 1:
         if _editor_list_cursor == 0:
             _profile_editor_set_focus(0)
@@ -9573,8 +9696,13 @@ def _kb_peditor_up(event):
 @kb.add("down", filter=_in_frame("profile_editor"))
 def _kb_peditor_down(event):
     if _editor_focus == 0:
-        _profile_editor_set_focus(1)
-        _profile_editor_jump_cursor(0)
+        # Move down one kind, or fall through to the entry list at the
+        # bottom of the column so the user can keep pressing ↓.
+        if _editor_active_tab < len(_PROFILE_EDITOR_TABS) - 1:
+            _profile_editor_set_tab(_editor_active_tab + 1)
+        else:
+            _profile_editor_set_focus(1)
+            _profile_editor_jump_cursor(0)
         return
     if _editor_focus == 1:
         _profile_editor_move_cursor(1)
