@@ -212,9 +212,7 @@ _editor_hover_tab    = None      # tab idx under cursor, None when not hovering
 _editor_focus        = 0         # 0 = tabs, 1 = list, 2 = detail
 _editor_list_cursor  = 0         # index into the sorted display view; len(view) = "+ New entry" sentinel
 _editor_list_scroll  = 0         # scroll offset for the list
-_editor_sort_dir     = "asc"     # 'asc' | 'desc' — resets on each editor open
 _editor_hover_row    = None      # row index in display view under cursor, or None
-_editor_hover_sort   = False     # True when hovering the Pattern sort header
 _editor_list_sb      = None      # Scrollbar widget for the list panel
 # View-mode toggle. The profile editor has two mutually-exclusive views
 # over the same in-memory Profile: a form-based "menu" mode and a
@@ -257,21 +255,27 @@ _editor_body_anchor_line = None  # int | None — anchor line in entry.body
 _editor_body_anchor_col  = None  # int | None — anchor col in entry.body
 # Highlight editor state (active when _profile_editor_active_kind() ==
 # 'highlight'). Three palettes share the same Body slot:
-#   - Style row (3 toggle cells: underscore, blink, reverse)
-#   - Text-colour palette (7×2 grid: dark + light variants)
-#   - Background-colour palette (7×2 grid + (None) at the top)
-# Plus a Custom slot when the on-disk body doesn't decompose cleanly.
+#   - Style row (4 inline toggles: Bold, Und, Blk, Rev — ADR 0084)
+#   - Text-colour grid (7×2 swatches under `-- Text --`)
+#   - Background-colour grid (7×2 swatches under `--- BG ---`)
 #
 # Cursor positions are tracked per zone so cursor stays put as the user
 # Tab-cycles. `_editor_detail_field` selects which zone has focus:
-#   0 = Pattern, 1 = Style, 2 = Text palette, 3 = Background palette.
+#   0 = Pattern, 1 = Style, 2 = Text grid, 3 = Background grid.
+#
+# Selection is decoupled from cursor (Phase 6.2): the cursor moves
+# freely; Enter / click on a swatch toggles whether THAT swatch is the
+# selected text/bg colour. `_editor_hl_*_sel = None` means "no colour
+# selected for this dimension"; only the selection (not the cursor)
+# drives `entry.body`.
 _editor_hl_style_cursor = 0      # 0..len(_HL_STYLE_TOKENS)-1
 _editor_hl_text_row     = 0      # 0..6
 _editor_hl_text_col     = 0      # 0 or 1
-_editor_hl_bg_row       = -1     # -1 = (None) cell, 0..6 = grid row
-_editor_hl_bg_col       = 0      # 0 or 1; ignored when row == -1
+_editor_hl_text_sel     = None   # (row, col) or None — selected text swatch
+_editor_hl_bg_row       = 0      # 0..6 — cursor; no longer uses -1 sentinel
+_editor_hl_bg_col       = 0      # 0 or 1
+_editor_hl_bg_sel       = None   # (row, col) or None — selected bg swatch
 _editor_hl_hover        = None   # (zone, row, col) for the cell under mouse, or None
-_editor_hl_custom_value = None   # str | None — stashed non-palette body so user can revert
 # Macro key-capture overlay state (phase 5). Pushed as the
 # `profile_editor_macro_keybind` frame from the macro detail's Key cell
 # or auto-pushed when the user creates a new macro. The pending entry is
@@ -1660,15 +1664,18 @@ _HL_DICT_KEY = {
     "light cyan":    "light cyan",
 }
 
-# Style toggles surfaced in the Style row. tt++ accepts these tokens in
-# `#highlight {pattern} {<modifiers> <colour>}`. Bold is excluded — it
-# isn't documented in `#highlight`'s modifier set, and unverified output
-# would silently break highlight rendering.
-_HL_STYLE_TOKENS = ("underscore", "blink", "reverse")
+# Style toggles surfaced in the Style row. tt++ accepts `underscore`,
+# `blink`, and `reverse` directly in `#highlight {pattern} {<modifiers>
+# <colour>}`. `bold` is not listed in tt++'s modifier set for #highlight
+# — it appears in the palette per the Phase 6.2 spec but, if enabled
+# with no companion modifier or colour, tt++ may reject the body or
+# silently skip the modifier. See ADR 0084.
+_HL_STYLE_TOKENS = ("bold", "underscore", "blink", "reverse")
 _HL_STYLE_LABELS = {
-    "underscore": "Underscore",
-    "blink":      "Blink",
-    "reverse":    "Reverse",
+    "bold":       "Bold",
+    "underscore": "Und",
+    "blink":      "Blk",
+    "reverse":    "Rev",
 }
 
 
@@ -1819,8 +1826,8 @@ def _enter_profile_editor(path):
     the profile frame and stays put if the file cannot be parsed."""
     global _editor_profile_path, _editor_data, _editor_active_tab
     global _editor_hover_tab, _editor_focus, _editor_list_cursor
-    global _editor_list_scroll, _editor_sort_dir, _editor_hover_row
-    global _editor_hover_sort, _editor_list_sb
+    global _editor_list_scroll, _editor_hover_row
+    global _editor_list_sb
     global _editor_detail_field, _editor_body_line, _editor_body_col
     global _editor_pattern_cursor, _editor_pattern_touched
     try:
@@ -1837,9 +1844,7 @@ def _enter_profile_editor(path):
     _editor_focus        = 0
     _editor_list_cursor  = 0
     _editor_list_scroll  = 0
-    _editor_sort_dir     = "asc"
     _editor_hover_row    = None
-    _editor_hover_sort   = False
     _editor_detail_field    = 0
     _editor_pattern_cursor  = 0
     _editor_body_line       = 0
@@ -1922,16 +1927,8 @@ def _profile_editor_set_hover_row(idx):
             _app.invalidate()
 
 
-def _profile_editor_set_hover_sort(flag):
-    global _editor_hover_sort
-    if _editor_hover_sort != flag:
-        _editor_hover_sort = flag
-        if _app:
-            _app.invalidate()
-
-
 def _profile_editor_clear_hover():
-    global _editor_hover_tab, _editor_hover_row, _editor_hover_sort
+    global _editor_hover_tab, _editor_hover_row
     global _editor_toggle_hover
     changed = False
     if _editor_hover_tab is not None:
@@ -1939,9 +1936,6 @@ def _profile_editor_clear_hover():
         changed = True
     if _editor_hover_row is not None:
         _editor_hover_row = None
-        changed = True
-    if _editor_hover_sort:
-        _editor_hover_sort = False
         changed = True
     if _editor_toggle_hover is not None:
         _editor_toggle_hover = None
@@ -2047,15 +2041,17 @@ def _profile_editor_active_count():
 
 
 def _profile_editor_display_view():
-    """Return the active tab's entries sorted by `pattern` per `_editor_sort_dir`.
-    The underlying `_editor_data.items` is NOT mutated — sort is presentation
-    only, so unchanged entries continue to round-trip `_raw` byte-exact.
+    """Return the active tab's entries in ascending display order. The
+    underlying `_editor_data.items` is already sorted by `parse_profile`,
+    but `entries_of` returns them in items-order, which a mid-session
+    create can scramble (the new entry is appended to the bottom). A
+    presentation-only sort keeps the list view stable until the next
+    save/mode-flip re-sorts the underlying items.
 
     `macro` entries sort by their *display name* rather than the raw
     escape sequence so the list groups F-keys before numpad keys before
     Alt+letters, matching what the user sees. Unknown escapes are
-    keyed on `Custom: <raw>` so they cluster together at the end of the
-    ascending view."""
+    keyed on `Custom: <raw>` so they cluster together at the end."""
     if _editor_data is None:
         return []
     kind = _profile_editor_active_kind()
@@ -2064,10 +2060,8 @@ def _profile_editor_display_view():
         def _key(e):
             name = macro_keys.escape_to_name(e.pattern)
             return name if name is not None else f"Custom: {e.pattern}"
-        return sorted(entries, key=_key,
-                      reverse=(_editor_sort_dir == "desc"))
-    return sorted(entries, key=lambda e: e.pattern,
-                  reverse=(_editor_sort_dir == "desc"))
+        return sorted(entries, key=_key)
+    return sorted(entries, key=lambda e: e.pattern)
 
 
 def _profile_editor_display_total():
@@ -2108,9 +2102,9 @@ def _editor_refresh_buffers():
     global _editor_pattern_cursor, _editor_body_line, _editor_body_col
     global _editor_pattern_touched, _editor_body_scroll
     global _editor_hl_style_cursor
-    global _editor_hl_text_row, _editor_hl_text_col
-    global _editor_hl_bg_row, _editor_hl_bg_col
-    global _editor_hl_custom_value, _editor_hl_hover
+    global _editor_hl_text_row, _editor_hl_text_col, _editor_hl_text_sel
+    global _editor_hl_bg_row, _editor_hl_bg_col, _editor_hl_bg_sel
+    global _editor_hl_hover
     entry = _editor_current_entry()
     _editor_body_scroll = 0
     if entry is None:
@@ -2119,10 +2113,11 @@ def _editor_refresh_buffers():
         _editor_body_col = 0
         _editor_hl_text_row = 0
         _editor_hl_text_col = 0
-        _editor_hl_bg_row   = -1
+        _editor_hl_text_sel = None
+        _editor_hl_bg_row   = 0
         _editor_hl_bg_col   = 0
+        _editor_hl_bg_sel   = None
         _editor_hl_style_cursor = 0
-        _editor_hl_custom_value = None
     else:
         _editor_pattern_cursor = len(entry.pattern)
         body_lines = entry.body.split("\n") if entry.body else [""]
@@ -2131,34 +2126,36 @@ def _editor_refresh_buffers():
         if entry.kind == "highlight":
             parsed = _hl_parse_body(entry.body)
             if parsed is not None:
-                styles, text_color, bg_color = parsed
-                _editor_hl_custom_value = None
-                # Text palette cursor → matching swatch (default red if
-                # no text colour was given).
-                pos = _hl_palette_position_for_color(text_color or "red")
-                _editor_hl_text_row, _editor_hl_text_col = pos or (0, 0)
-                # Background palette cursor — (None) when no bg.
-                if bg_color is None:
-                    _editor_hl_bg_row, _editor_hl_bg_col = -1, 0
-                else:
-                    pos = _hl_palette_position_for_color(bg_color)
-                    _editor_hl_bg_row, _editor_hl_bg_col = pos or (0, 0)
-                # Style cursor stays at 0 (Underscore) on entry switch
-                # — that's the leftmost toggle. The active set is
-                # recovered separately.
+                _styles, text_color, bg_color = parsed
+                # Selection mirrors the body's text/bg colour; cursor
+                # parks on the selected swatch (or 0,0 when no selection).
+                text_pos = (_hl_palette_position_for_color(text_color)
+                            if text_color else None)
+                _editor_hl_text_sel = text_pos
+                _editor_hl_text_row, _editor_hl_text_col = text_pos or (0, 0)
+                bg_pos = (_hl_palette_position_for_color(bg_color)
+                          if bg_color else None)
+                _editor_hl_bg_sel = bg_pos
+                _editor_hl_bg_row, _editor_hl_bg_col = bg_pos or (0, 0)
                 _editor_hl_style_cursor = 0
             else:
-                _editor_hl_custom_value = entry.body
+                # Non-decomposable body — nothing selected on either
+                # dimension. Cursor parks at (0,0) so navigation starts
+                # somewhere visible; the original body stays in
+                # `entry.body` until the user toggles a swatch.
                 _editor_hl_text_row, _editor_hl_text_col = 0, 0
-                _editor_hl_bg_row, _editor_hl_bg_col = -1, 0
+                _editor_hl_text_sel = None
+                _editor_hl_bg_row, _editor_hl_bg_col = 0, 0
+                _editor_hl_bg_sel = None
                 _editor_hl_style_cursor = 0
         else:
             _editor_hl_text_row = 0
             _editor_hl_text_col = 0
-            _editor_hl_bg_row   = -1
+            _editor_hl_text_sel = None
+            _editor_hl_bg_row   = 0
             _editor_hl_bg_col   = 0
+            _editor_hl_bg_sel   = None
             _editor_hl_style_cursor = 0
-            _editor_hl_custom_value = None
     _editor_pattern_touched = False
     _editor_hl_hover = None
     _editor_clear_selections()
@@ -2177,23 +2174,18 @@ def _editor_hl_active_styles():
     return parsed[0]
 
 
-def _editor_hl_apply_state():
-    """Compose `entry.body` from the three palette cursors + the active
-    style set, and write it back via `entry.body = ...` (clears `_raw`).
-    Called from every keyboard / click handler that mutates a highlight
-    palette so the list panel re-renders live."""
+def _editor_hl_compose_body():
+    """Compose `entry.body` from the current selections + active styles.
+    Phase 6.2: the SELECTION (not the cursor) drives the body — either
+    selection may be `None`, meaning "no colour on this dimension".
+    Writes the new body back to `entry.body` (which drops `_raw`)."""
     entry = _editor_current_entry()
     if entry is None or entry.kind != "highlight":
         return
-    # If the user navigated away from Custom, drop the stash — the body
-    # is now produced from the palettes.
-    text_color = _hl_palette_color_at(_editor_hl_text_row,
-                                      _editor_hl_text_col)
-    if _editor_hl_bg_row == -1:
-        bg_color = None
-    else:
-        bg_color = _hl_palette_color_at(_editor_hl_bg_row,
-                                        _editor_hl_bg_col)
+    text_color = (_hl_palette_color_at(*_editor_hl_text_sel)
+                  if _editor_hl_text_sel else None)
+    bg_color = (_hl_palette_color_at(*_editor_hl_bg_sel)
+                if _editor_hl_bg_sel else None)
     styles = _editor_hl_active_styles()
     new_body = _hl_serialize(styles, text_color, bg_color)
     if entry.body != new_body:
@@ -2210,51 +2202,61 @@ def _editor_hl_toggle_style(style):
         styles.remove(style)
     else:
         styles.add(style)
-    text_color = _hl_palette_color_at(_editor_hl_text_row,
-                                      _editor_hl_text_col)
-    if _editor_hl_bg_row == -1:
-        bg_color = None
-    else:
-        bg_color = _hl_palette_color_at(_editor_hl_bg_row,
-                                        _editor_hl_bg_col)
+    text_color = (_hl_palette_color_at(*_editor_hl_text_sel)
+                  if _editor_hl_text_sel else None)
+    bg_color = (_hl_palette_color_at(*_editor_hl_bg_sel)
+                if _editor_hl_bg_sel else None)
     entry.body = _hl_serialize(styles, text_color, bg_color)
-    # Clear the Custom stash — navigating away from Custom commits the
-    # palette-derived body.
-    global _editor_hl_custom_value
-    _editor_hl_custom_value = None
+
+
+def _editor_hl_toggle_text_selection_at_cursor():
+    """Enter / click on a Text swatch: if the cursor sits on the
+    currently selected swatch, clear the selection (no text colour).
+    Otherwise, mark the cursor swatch as selected. Re-composes the body."""
+    global _editor_hl_text_sel
+    pos = (_editor_hl_text_row, _editor_hl_text_col)
+    _editor_hl_text_sel = None if _editor_hl_text_sel == pos else pos
+    _editor_hl_compose_body()
+    if _app:
+        _app.invalidate()
+
+
+def _editor_hl_toggle_bg_selection_at_cursor():
+    """Enter / click on a BG swatch: toggle the BG selection at the
+    cursor and re-compose the body."""
+    global _editor_hl_bg_sel
+    pos = (_editor_hl_bg_row, _editor_hl_bg_col)
+    _editor_hl_bg_sel = None if _editor_hl_bg_sel == pos else pos
+    _editor_hl_compose_body()
+    if _app:
+        _app.invalidate()
 
 
 def _editor_hl_set_text_cursor(row, col):
-    """Move the text-palette cursor to `(row, col)` (clamped) and
-    re-serialise the body."""
-    global _editor_hl_text_row, _editor_hl_text_col, _editor_hl_custom_value
+    """Move the text-palette cursor to `(row, col)` (clamped). Cursor
+    movement is decoupled from selection — see ADR 0084."""
+    global _editor_hl_text_row, _editor_hl_text_col
     row = max(0, min(_HL_PALETTE_ROWS - 1, row))
     col = max(0, min(_HL_PALETTE_COLS - 1, col))
     if (row, col) == (_editor_hl_text_row, _editor_hl_text_col):
         return
     _editor_hl_text_row = row
     _editor_hl_text_col = col
-    _editor_hl_custom_value = None
-    _editor_hl_apply_state()
     if _app:
         _app.invalidate()
 
 
 def _editor_hl_set_bg_cursor(row, col):
-    """Move the bg-palette cursor to `(row, col)` and re-serialise the
-    body. `row == -1` selects the `(None)` cell — no background."""
-    global _editor_hl_bg_row, _editor_hl_bg_col, _editor_hl_custom_value
-    if row == -1:
-        new_row, new_col = -1, 0
-    else:
-        new_row = max(0, min(_HL_PALETTE_ROWS - 1, row))
-        new_col = max(0, min(_HL_PALETTE_COLS - 1, col))
+    """Move the bg-palette cursor to `(row, col)` (clamped). Cursor
+    movement is decoupled from selection — see ADR 0084. The `-1`
+    sentinel for "(None)" is no longer used."""
+    global _editor_hl_bg_row, _editor_hl_bg_col
+    new_row = max(0, min(_HL_PALETTE_ROWS - 1, row))
+    new_col = max(0, min(_HL_PALETTE_COLS - 1, col))
     if (new_row, new_col) == (_editor_hl_bg_row, _editor_hl_bg_col):
         return
     _editor_hl_bg_row = new_row
     _editor_hl_bg_col = new_col
-    _editor_hl_custom_value = None
-    _editor_hl_apply_state()
     if _app:
         _app.invalidate()
 
@@ -2849,30 +2851,6 @@ def _profile_editor_scroll_list(delta):
         _app.invalidate()
 
 
-def _profile_editor_toggle_sort():
-    """Click handler for the Pattern header — flips direction and re-anchors
-    the cursor onto the same Entry in the new ordering. The sentinel
-    row stays at the bottom of the displayed list regardless of sort
-    direction, so a cursor on it stays there too."""
-    global _editor_sort_dir, _editor_list_cursor
-    view_before = _profile_editor_display_view()
-    on_sentinel = _editor_list_cursor == len(view_before)
-    cur_entry = (view_before[_editor_list_cursor]
-                 if 0 <= _editor_list_cursor < len(view_before) else None)
-    _editor_sort_dir = "desc" if _editor_sort_dir == "asc" else "asc"
-    view_after = _profile_editor_display_view()
-    if on_sentinel:
-        _editor_list_cursor = len(view_after)
-    elif cur_entry is not None:
-        try:
-            _editor_list_cursor = view_after.index(cur_entry)
-        except ValueError:
-            _editor_list_cursor = 0
-    _profile_editor_scroll_into_view()
-    if _app:
-        _app.invalidate()
-
-
 def _profile_editor_request_delete():
     """`Del` handler: remove the cursor Entry from `Profile.items`,
     clamp the cursor, and re-render. No confirmation — the friction-
@@ -3375,20 +3353,25 @@ def _editor_build_text_detail(entry, total_lines):
 
 
 def _editor_build_palette_detail(entry, total_lines):
-    """Highlight detail panel — Pattern + three palette zones.
+    """Highlight detail panel — Phase 6.2 layout.
 
-    Layout (top → bottom):
-      Pattern field (label + box)
-      <blank>
-      ─── Style ───
-      [ Underscore ] [ Blink ] [ Reverse ]
-      <blank>
-      ─── Text ───       ─── Background ───
-      red    Red         (None)
-      green  Green       red       Red
-      …                  green     Green
-                         …
-      Error slot · Hint block
+    Rows (top → bottom), all centred within the detail panel:
+
+        Pattern
+        ┌────────────────────────────┐
+        │ <pattern text>             │
+        └────────────────────────────┘
+        Style
+        [ ]Bold [ ]Und [ ]Blk [ ]Rev
+        -- Text --        --- BG ---
+        [ ]██  [ ]██     [ ]██  [ ]██   ← row 0
+        ...
+        [ ]██  [ ]██     [ ]██  [ ]██   ← row 6
+
+    Swatch toggle (`[X]`) reflects whether THAT swatch is the
+    currently-selected text/bg colour (Phase 6.2: selection decoupled
+    from cursor — see ADR 0084). Enter or click on a swatch toggles
+    selection; mouse hover paints a hover highlight.
     """
     detail_focused = (_editor_focus == 2)
     pat_lbl, _ = DETAIL_LABELS["highlight"]
@@ -3413,21 +3396,11 @@ def _editor_build_palette_detail(entry, total_lines):
     rows.append(_editor_pad_full(pat_border, _editor_box_bot(_EDITOR_DETAIL_W),
                                  pat_focus_h))
 
-    rows.append(_editor_pad_full(C_HINT, ""))
-    rows.append(_editor_centered_row(C_HINT, "─── Style ───"))
+    rows.append(_editor_pad_full(C_HINT, "Style"))
     rows.append(_editor_hl_style_row(style_focused))
-    rows.append(_editor_pad_full(C_HINT, ""))
     rows.append(_editor_hl_section_headers_row())
-
-    # 7 palette rows + 1 (None)/empty row above them for the bg column.
-    # Row 0 (None) row: text column is empty; bg column shows (None).
-    rows.append(_editor_hl_none_row(text_focused, bg_focused))
-    # Rows 1..7: dark/light swatches for both text and bg.
     for r in range(_HL_PALETTE_ROWS):
         rows.append(_editor_hl_palette_row(r, text_focused, bg_focused))
-
-    if _editor_hl_custom_value is not None:
-        rows.append(_editor_hl_custom_row())
 
     err = _editor_validation_error()
     if err:
@@ -3437,7 +3410,7 @@ def _editor_build_palette_detail(entry, total_lines):
 
     rows.append(_editor_pad_full(C_HINT, ""))
     rows.append(_editor_centered_row(C_HINT, "─── Hint ───"))
-    rows.append(_editor_pad_full(C_HINT, "Toggle styles · pick colours."))
+    rows.append(_editor_pad_full(C_HINT, "Enter on a swatch toggles it."))
     rows.append(_editor_pad_full(C_HINT, ""))
 
     while len(rows) < total_lines:
@@ -3558,90 +3531,55 @@ _EDITOR_DETAIL_BUILDERS = {
 }
 
 
-# Highlight palette geometry. Detail panel is 44 cells wide. Layout per
-# row: 1 indent + 9 text-dark + 1 gap + 9 text-light + 4 separator
-# + 9 bg-dark + 1 gap + 9 bg-light + 1 indent = 44.
-_HL_INDENT  = 1
-_HL_CELL_W  = 9
-_HL_GAP     = 1
-_HL_SEP     = 4
-# Text half spans cols [1, 20) — i.e. 20 cells wide. Background half
-# spans cols [24, 43) — also 20 cells.
-_HL_TEXT_HALF_START   = _HL_INDENT
-_HL_TEXT_HALF_W       = _HL_CELL_W + _HL_GAP + _HL_CELL_W
-_HL_BG_HALF_START     = (_HL_INDENT + _HL_CELL_W + _HL_GAP + _HL_CELL_W
-                         + _HL_SEP)
-_HL_BG_HALF_W         = _HL_CELL_W + _HL_GAP + _HL_CELL_W
+# Phase 6.2 palette geometry. Inner content spans 28 cells: 6+6 Text
+# swatches + 3-cell gap + 6+6 BG swatches + 1 trailing space. Each
+# swatch column is 6 cells wide; the swatch itself is `[X]██` (5 chars)
+# + 1 trailing space. The whole row is centred within `_EDITOR_DETAIL_W`.
+_HL_SWATCH_COL_W   = 6
+_HL_GRID_GAP       = 3
+_HL_GRID_W         = (_HL_SWATCH_COL_W * 4 + _HL_GRID_GAP)   # 27
+_HL_HEADER_HALF_W  = _HL_SWATCH_COL_W * 2                     # 12
 
 
-def _editor_hl_text_cell_fragments(name, is_cursor, is_hover, row, col):
-    """Build the fragments for one text-palette cell. Renders the name
-    in its own colour; cursor wraps in `[ ... ]` brackets; hover paints
-    `C_HOVER`. Carries a click handler that moves the cursor."""
+def _editor_hl_swatch_fragments(name, kind, is_selected, is_cursor,
+                                is_hover, row, col):
+    """Build the fragments for one Text or BG swatch cell.
+
+    `kind` is "text" or "bg". `[X]██` when selected, `[ ]██` otherwise.
+    The `██` band is painted in the swatch's colour. Trailing space
+    completes the 6-cell column.
+
+    Focus + state styling: a cursor swatch wraps its checkbox in
+    C_SELECTED so the cursor reads against any underlying colour;
+    hover paints C_HOVER on the checkbox slot."""
+    checkbox = "[X]" if is_selected else "[ ]"
+    band = "██"
+
     if is_cursor:
-        text = f"[{name}]".center(_HL_CELL_W)
+        cb_style = C_SELECTED
+    elif is_hover:
+        cb_style = C_HOVER
     else:
-        text = name.center(_HL_CELL_W)
+        cb_style = C_ITEM
+
     style_key = _HL_DICT_KEY.get(name)
-    base_style = TTPP_COLOR_STYLES.get(style_key, "") if style_key else ""
-    if is_cursor:
-        style = f"{base_style} reverse" if base_style else C_SELECTED
-    elif is_hover:
-        style = C_HOVER
-    else:
-        style = base_style or C_ITEM
-    return (style, text[:_HL_CELL_W],
-            _editor_hl_make_text_handler(row, col))
+    fg = TTPP_COLOR_STYLES.get(style_key, "") if style_key else ""
+    band_style = fg or C_ITEM
 
-
-def _editor_hl_bg_cell_fragments(name, is_cursor, is_hover, row, col):
-    """Build the fragments for one background-palette cell. Renders the
-    name as black-on-coloured-bg; cursor wraps in `[ ... ]` brackets;
-    hover desaturates the colour."""
-    style_key = _HL_DICT_KEY.get(name)
-    if style_key is None:
-        bg_style = ""
-    else:
-        # Convert the foreground colour style into a background style.
-        # TTPP styles look like 'fg:ansired' — swap to 'bg:ansired'.
-        fg = TTPP_COLOR_STYLES.get(style_key, "")
-        bg_style = fg.replace("fg:", "bg:") if fg else ""
-    if is_cursor:
-        text = f"[{name}]".center(_HL_CELL_W)
-        style = f"fg:#000000 {bg_style} bold" if bg_style else C_SELECTED
-    elif is_hover:
-        text = name.center(_HL_CELL_W)
-        style = f"fg:#000000 {bg_style}" if bg_style else C_HOVER
-    else:
-        text = name.center(_HL_CELL_W)
-        style = f"fg:#000000 {bg_style}" if bg_style else C_ITEM
-    return (style, text[:_HL_CELL_W],
-            _editor_hl_make_bg_handler(row, col))
-
-
-def _editor_hl_none_cell_fragment(is_cursor, is_hover):
-    """Build the `(None)` background cell as a single fragment spanning
-    the bg-half width. It selects 'no background' when the cursor lands
-    on it."""
-    label = "(None)"
-    if is_cursor:
-        text = f"[ {label} ]".center(_HL_BG_HALF_W)
-        style = C_SELECTED
-    elif is_hover:
-        text = label.center(_HL_BG_HALF_W)
-        style = C_HOVER
-    else:
-        text = label.center(_HL_BG_HALF_W)
-        style = C_HINT
-    return (style, text[:_HL_BG_HALF_W],
-            _editor_hl_make_bg_handler(-1, 0))
+    handler = (_editor_hl_make_text_handler(row, col)
+               if kind == "text" else _editor_hl_make_bg_handler(row, col))
+    trailing_pad = _HL_SWATCH_COL_W - len(checkbox) - len(band)
+    return [
+        (cb_style, checkbox, handler),
+        (band_style, band, handler),
+        ("", " " * trailing_pad, handler),
+    ]
 
 
 def _editor_hl_make_text_handler(row, col):
-    """MouseEvent handler for a text-palette swatch: hover paints
-    C_HOVER on the cell; click moves the cursor (which is the
-    selection — the live binding writes the swatch's name into
-    `entry.body` via `_editor_hl_set_text_cursor`)."""
+    """MouseEvent handler for a Text swatch: hover paints C_HOVER;
+    click moves the cursor to the swatch AND toggles its selection
+    (Phase 6.2 — selection decoupled from cursor)."""
     def _handler(ev):
         global _editor_hl_hover
         if ev.event_type == MouseEventType.MOUSE_MOVE:
@@ -3655,14 +3593,14 @@ def _editor_hl_make_text_handler(row, col):
             return NotImplemented
         _profile_editor_set_focus(2, field=2)
         _editor_hl_set_text_cursor(row, col)
+        _editor_hl_toggle_text_selection_at_cursor()
         return None
     return _handler
 
 
 def _editor_hl_make_bg_handler(row, col):
-    """Mouse handler for a background swatch (or the (None) cell when
-    `row == -1`). Selecting (None) clears the background; selecting a
-    swatch sets that colour."""
+    """MouseEvent handler for a BG swatch: hover paints C_HOVER; click
+    moves the cursor to the swatch AND toggles its selection."""
     def _handler(ev):
         global _editor_hl_hover
         if ev.event_type == MouseEventType.MOUSE_MOVE:
@@ -3676,6 +3614,7 @@ def _editor_hl_make_bg_handler(row, col):
             return NotImplemented
         _profile_editor_set_focus(2, field=3)
         _editor_hl_set_bg_cursor(row, col)
+        _editor_hl_toggle_bg_selection_at_cursor()
         return None
     return _handler
 
@@ -3704,90 +3643,89 @@ def _editor_hl_make_style_handler(idx):
 
 
 def _editor_hl_style_row(focused):
-    """Build the row of style toggles. Each toggle is a `[Label]` cell;
-    active toggles paint with `C_ACCENT` (bold-amber), inactive with
-    `C_HINT`. The cursor cell paints `C_SELECTED` when the Style zone
-    has focus."""
+    """Build the inline Style toggle row: `[X]Bold [X]Und [X]Blk [X]Rev`.
+
+    Each toggle's checkbox reflects whether the style is currently in
+    the active set; the cursor cell paints `C_SELECTED`; the label is
+    coloured `C_ACCENT` when active, `C_HINT` otherwise, `C_HOVER` on
+    mouse hover. Cells are packed within the detail panel width (28
+    inner cells)."""
     tokens = _HL_STYLE_TOKENS
-    cells = []
     active = _editor_hl_active_styles()
-    cell_strs = []
-    for tok in tokens:
-        cell_strs.append(f"[{_HL_STYLE_LABELS[tok]}]")
-    inter_gap = "  "
-    total_w = sum(len(s) for s in cell_strs) + inter_gap_len(cell_strs, inter_gap)
+    # Layout: 7+1+6+1+6+1+6 = 28 cells.
+    cell_labels = [_HL_STYLE_LABELS[t] for t in tokens]
+    cells = [f"[{'X' if t in active else ' '}]{lbl}"
+             for t, lbl in zip(tokens, cell_labels)]
+    total_w = sum(len(c) for c in cells) + (len(cells) - 1)  # 1-space gaps
     pad_l = max(0, (_EDITOR_DETAIL_W - total_w) // 2)
     pad_r = max(0, _EDITOR_DETAIL_W - pad_l - total_w)
     frags = [("", " " * pad_l)]
-    for i, (tok, cell) in enumerate(zip(tokens, cell_strs)):
+    for i, (tok, lbl) in enumerate(zip(tokens, cell_labels)):
         is_cursor = focused and i == _editor_hl_style_cursor
         is_hover  = (_editor_hl_hover == ("style", 0, i)
                      and not is_cursor)
         is_active = tok in active
+        checkbox = f"[{'X' if is_active else ' '}]"
         if is_cursor:
-            style = C_SELECTED
+            cb_style = C_SELECTED
         elif is_hover:
-            style = C_HOVER
-        elif is_active:
-            style = C_ACCENT
+            cb_style = C_HOVER
         else:
-            style = C_HINT
-        frags.append((style, cell, _editor_hl_make_style_handler(i)))
+            cb_style = C_ACCENT if is_active else C_HINT
+        if is_cursor:
+            lbl_style = C_SELECTED
+        elif is_hover:
+            lbl_style = C_HOVER
+        elif is_active:
+            lbl_style = C_ACCENT
+        else:
+            lbl_style = C_HINT
+        h = _editor_hl_make_style_handler(i)
+        frags.append((cb_style, checkbox, h))
+        frags.append((lbl_style, lbl, h))
         if i < len(tokens) - 1:
-            frags.append(("", inter_gap))
+            frags.append(("", " "))
     if pad_r > 0:
         frags.append(("", " " * pad_r))
     return frags
 
 
-def inter_gap_len(cells, gap):
-    if len(cells) <= 1:
-        return 0
-    return (len(cells) - 1) * len(gap)
-
-
 def _editor_hl_section_headers_row():
-    """Centred `─── Text ───` over the text half, and
-    `─── Background ───` over the bg half."""
-    text_hdr = "─── Text ───"
-    bg_hdr   = "─── Background ───"
-    text_pad_l = max(0, (_HL_TEXT_HALF_W - len(text_hdr)) // 2)
-    text_pad_r = max(0, _HL_TEXT_HALF_W - text_pad_l - len(text_hdr))
-    bg_pad_l   = max(0, (_HL_BG_HALF_W - len(bg_hdr)) // 2)
-    bg_pad_r   = max(0, _HL_BG_HALF_W - bg_pad_l - len(bg_hdr))
+    """Phase 6.2: `-- Text --` over the Text grid and `--- BG ---` over
+    the BG grid. Each header is centred within its 12-cell column area
+    (two swatch columns wide). The whole row is itself centred within
+    the detail panel."""
+    text_hdr = "-- Text --"
+    bg_hdr   = "--- BG ---"
+    text_pad_l = max(0, (_HL_HEADER_HALF_W - len(text_hdr)) // 2)
+    text_pad_r = max(0, _HL_HEADER_HALF_W - text_pad_l - len(text_hdr))
+    bg_pad_l   = max(0, (_HL_HEADER_HALF_W - len(bg_hdr))   // 2)
+    bg_pad_r   = max(0, _HL_HEADER_HALF_W - bg_pad_l - len(bg_hdr))
+    inner_w = _HL_GRID_W
+    panel_pad_l = max(0, (_EDITOR_DETAIL_W - inner_w) // 2)
+    panel_pad_r = max(0, _EDITOR_DETAIL_W - panel_pad_l - inner_w)
     return [
-        ("", " " * _HL_INDENT),
+        ("", " " * panel_pad_l),
         ("", " " * text_pad_l),
         (C_HINT, text_hdr),
         ("", " " * text_pad_r),
-        ("", " " * _HL_SEP),
+        ("", " " * _HL_GRID_GAP),
         ("", " " * bg_pad_l),
         (C_HINT, bg_hdr),
         ("", " " * bg_pad_r),
-        ("", " " * _HL_INDENT),
-    ]
-
-
-def _editor_hl_none_row(text_focused, bg_focused):
-    """Top row of palettes: text half is empty; bg half holds the
-    `(None)` cell."""
-    is_cursor = bg_focused and _editor_hl_bg_row == -1
-    is_hover  = (_editor_hl_hover == ("bg", -1, 0) and not is_cursor)
-    none_frag = _editor_hl_none_cell_fragment(is_cursor, is_hover)
-    return [
-        ("", " " * _HL_INDENT),
-        ("", " " * _HL_TEXT_HALF_W),
-        ("", " " * _HL_SEP),
-        none_frag,
-        ("", " " * _HL_INDENT),
+        ("", " " * panel_pad_r),
     ]
 
 
 def _editor_hl_palette_row(r, text_focused, bg_focused):
-    """Build one row of the dual palette grid: dark+light text on the
-    left, dark+light bg on the right."""
+    """Build one row of the swatch grid: two Text swatches, gap, two BG
+    swatches. The whole row is centred within the detail panel.
+
+    Each swatch is rendered as `[X]██` or `[ ]██` per its own selection
+    state; the cursor draws as `C_SELECTED` on the checkbox slot."""
     text_dark, text_light = _HL_PALETTE[r]
-    bg_dark, bg_light = _HL_PALETTE[r]
+    bg_dark, bg_light     = _HL_PALETTE[r]
+
     tdc = (text_focused and r == _editor_hl_text_row
            and _editor_hl_text_col == 0)
     tlc = (text_focused and r == _editor_hl_text_row
@@ -3800,43 +3738,28 @@ def _editor_hl_palette_row(r, text_focused, bg_focused):
     tlh = (_editor_hl_hover == ("text", r, 1) and not tlc)
     bdh = (_editor_hl_hover == ("bg",   r, 0) and not bdc)
     blh = (_editor_hl_hover == ("bg",   r, 1) and not blc)
-    return [
-        ("", " " * _HL_INDENT),
-        _editor_hl_text_cell_fragments(text_dark, tdc, tdh, r, 0),
-        ("", " " * _HL_GAP),
-        _editor_hl_text_cell_fragments(text_light, tlc, tlh, r, 1),
-        ("", " " * _HL_SEP),
-        _editor_hl_bg_cell_fragments(bg_dark, bdc, bdh, r, 0),
-        ("", " " * _HL_GAP),
-        _editor_hl_bg_cell_fragments(bg_light, blc, blh, r, 1),
-        ("", " " * _HL_INDENT),
-    ]
 
+    td_sel = _editor_hl_text_sel == (r, 0)
+    tl_sel = _editor_hl_text_sel == (r, 1)
+    bd_sel = _editor_hl_bg_sel   == (r, 0)
+    bl_sel = _editor_hl_bg_sel   == (r, 1)
 
-def _editor_hl_custom_row():
-    """The single-row Custom slot rendered below the palette grid when
-    the body didn't decompose. Click reverts to the stashed value."""
-    custom = _editor_hl_custom_value or ""
-    label  = f"Custom: {custom}"
-    text = f"  {label}  "
-    if len(text) > _EDITOR_DETAIL_W:
-        text = text[:_EDITOR_DETAIL_W - 1] + "…"
-    pad = max(0, _EDITOR_DETAIL_W - len(text))
-
-    def _click(ev):
-        if ev.event_type == MouseEventType.MOUSE_MOVE:
-            return None
-        if ev.event_type != MouseEventType.MOUSE_DOWN:
-            return NotImplemented
-        entry = _editor_current_entry()
-        if entry is None or _editor_hl_custom_value is None:
-            return None
-        entry.body = _editor_hl_custom_value
-        if _app:
-            _app.invalidate()
-        return None
-
-    return [(C_HINT, text, _click), ("", " " * pad)]
+    inner_w = _HL_GRID_W
+    panel_pad_l = max(0, (_EDITOR_DETAIL_W - inner_w) // 2)
+    panel_pad_r = max(0, _EDITOR_DETAIL_W - panel_pad_l - inner_w)
+    frags = [("", " " * panel_pad_l)]
+    frags.extend(_editor_hl_swatch_fragments(text_dark,  "text", td_sel,
+                                             tdc, tdh, r, 0))
+    frags.extend(_editor_hl_swatch_fragments(text_light, "text", tl_sel,
+                                             tlc, tlh, r, 1))
+    frags.append(("", " " * _HL_GRID_GAP))
+    frags.extend(_editor_hl_swatch_fragments(bg_dark,    "bg", bd_sel,
+                                             bdc, bdh, r, 0))
+    frags.extend(_editor_hl_swatch_fragments(bg_light,   "bg", bl_sel,
+                                             blc, blh, r, 1))
+    if panel_pad_r > 0:
+        frags.append(("", " " * panel_pad_r))
+    return frags
 
 
 def _editor_list_row_text(entry, is_cursor, is_hover):
@@ -3871,7 +3794,16 @@ def _editor_list_row_text(entry, is_cursor, is_hover):
         pat = pat[:max(0, _EDITOR_PATTERN_COL_W - 1)] + "…"
     pat_cell = pat.ljust(_EDITOR_PATTERN_COL_W)
     body_col_w = w - _EDITOR_PATTERN_COL_W - 2
-    body_full = (entry.body.split("\n", 1)[0] if entry.body else "")
+    # Phase 6.2: skip leading blank/whitespace-only lines so a body whose
+    # first real content sits below empty lines still previews here. The
+    # detail panel keeps the body verbatim — this only affects the list
+    # preview cell.
+    body_full = ""
+    if entry.body:
+        for line in entry.body.split("\n"):
+            if line.strip():
+                body_full = line
+                break
     body_one_line = body_full
     if len(body_one_line) > body_col_w:
         body_one_line = body_one_line[:max(0, body_col_w - 1)] + "…"
@@ -3915,51 +3847,34 @@ def _editor_list_row_text(entry, is_cursor, is_hover):
 
 
 def _editor_list_header_frag(visible_rows):
-    """Build the list header fragments — `<pattern_label> <arrow>  <body_label>`
+    """Build the list header fragments — `<pattern_label>  <body_label>`
     plus padding. Labels come from `DETAIL_LABELS[active_kind]` so the
     Highlights tab shows `Pattern + Color`, Substitutes shows
     `Text + New text`, etc.
 
     Returns a list of fragments that fills `_EDITOR_LIST_W` cells. The
-    arrow + label are wrapped in a click handler that toggles sort. The
     header stays in muted grey (`C_HINT`) regardless of focus — the
     three-state colour grammar reserves the focus signal for the cursor
-    row inside the list and for the kind/mode buttons."""
+    row inside the list and for the kind/mode buttons. The header is
+    non-interactive in Phase 6.2; the underlying data is always sorted
+    ascending so the click-to-toggle affordance was retired."""
     w = _EDITOR_LIST_W
-    arrow = "▲" if _editor_sort_dir == "asc" else "▼"
     base_style = C_HINT
-    hover_style = C_HOVER
-    style = hover_style if _editor_hover_sort else base_style
     kind = _profile_editor_active_kind()
     pat_lbl, body_lbl = DETAIL_LABELS.get(kind, ("Pattern", "Body"))
-    # Pattern-column label is truncated to fit `_EDITOR_PATTERN_COL_W - 1`
-    # so it leaves room for the sort arrow. "Pattern" fits exactly; for a
-    # kind like "Substitute" the source label "Text" fits comfortably.
     pat_col_w = _EDITOR_PATTERN_COL_W
-    truncated_pat = pat_lbl[:max(0, pat_col_w - 1)]
-    pat_label = (truncated_pat + arrow).ljust(pat_col_w)
+    pat_label = pat_lbl[:pat_col_w].ljust(pat_col_w)
     body_label = body_lbl[: w - pat_col_w - 2].ljust(w - pat_col_w - 2)
     gap = "  "
 
-    def _sort_handler(ev):
-        if ev.event_type == MouseEventType.MOUSE_MOVE:
-            _profile_editor_set_hover_sort(True)
-            return None
-        if ev.event_type == MouseEventType.MOUSE_DOWN:
-            _profile_editor_set_focus(1)
-            _profile_editor_toggle_sort()
-            return None
-        return NotImplemented
-
     def _clear(ev):
         if ev.event_type == MouseEventType.MOUSE_MOVE:
-            _profile_editor_set_hover_sort(False)
             _profile_editor_set_hover_row(None)
             return None
         return NotImplemented
 
     return [
-        (style, pat_label, _sort_handler),
+        (base_style, pat_label, _clear),
         (base_style, gap, _clear),
         (base_style, body_label, _clear),
     ]
@@ -4458,7 +4373,6 @@ def _profile_editor_text():
                     def _row_handler(ev, row=abs_idx):
                         if ev.event_type == MouseEventType.MOUSE_MOVE:
                             _profile_editor_set_hover_row(row)
-                            _profile_editor_set_hover_sort(False)
                             return None
                         if ev.event_type == MouseEventType.MOUSE_DOWN:
                             _profile_editor_set_focus(1)
@@ -4497,7 +4411,6 @@ def _profile_editor_text():
                     def _sentinel_handler(ev, row=abs_idx):
                         if ev.event_type == MouseEventType.MOUSE_MOVE:
                             _profile_editor_set_hover_row(row)
-                            _profile_editor_set_hover_sort(False)
                             return None
                         if ev.event_type == MouseEventType.MOUSE_DOWN:
                             # Click on "+ New entry" acts as a button —
@@ -4658,20 +4571,24 @@ def _editor_append_title_row(frags, title, cols):
 
 def _editor_append_footer(frags, cols):
     """Footer hints + the macro key-capture feedback flash. Hint text
-    depends on the current focus zone and the active mode."""
+    depends on the current focus zone and the active mode.
+
+    Phase 6.2: arrow-key and Enter tokens are removed from all editor
+    footers — they're intuitive enough from layout to skip the hint.
+    Kept tokens: `Tab Cycle` / `Shift+Tab`, `n New`, `Del Delete`,
+    `ESC Save & back`."""
     frags.append(("", "\n", _editor_clear_outer_hover))
     if _editor_toggle_focused:
-        footer = ("Enter Flip mode  ·  Tab Cycle  ·  ESC Save & back")
+        footer = "Tab Cycle  ·  ESC Save & back"
     elif _editor_mode == "editor":
-        footer = ("←→↑↓ Cursor  ·  Tab Toggle  ·  ESC Save & back")
+        footer = "Tab Toggle  ·  ESC Save & back"
     elif _editor_focus == 0:
-        footer = ("↑↓ Move kind  ·  Tab Cycle  ·  ESC Save & back")
+        footer = "Tab Cycle  ·  ESC Save & back"
     elif _editor_focus == 1:
-        footer = ("↑↓ Move  ·  Enter Edit  ·  n New  ·  Del Delete  ·  "
-                  "Tab Cycle  ·  ESC Save & back")
-    else:
-        footer = ("←→ Cursor  ·  Tab Field  ·  ↑ ↓ Zone  ·  "
+        footer = ("n New  ·  Del Delete  ·  Tab Cycle  ·  "
                   "ESC Save & back")
+    else:
+        footer = "Tab Field  ·  ESC Save & back"
     frags.append(("", _pad_centre(footer, cols), _editor_clear_outer_hover))
     frags.append((C_HINT, footer, _editor_clear_outer_hover))
     if _editor_feedback_text:
@@ -10238,56 +10155,73 @@ def _editor_in_macro_key_focus():
 
 
 def _kb_peditor_palette_right():
-    """←/→ within the highlight palette zones — see docs/launcher.md
-    'Focus model' for the full traversal table."""
+    """Right within the highlight palette zones — see docs/launcher.md
+    'Focus model'. Phase 6.2 chain:
+    Style rightmost (Reverse) → Text (0, 0);
+    Text col 0 → Text col 1;
+    Text col 1 → BG col 0 (same row);
+    BG col 0 → BG col 1;
+    BG col 1 → no-op (rightmost zone)."""
     field = _editor_detail_field
-    if field == 1:   # Style: cycle toggles
-        _editor_hl_set_style_cursor(_editor_hl_style_cursor + 1)
+    if field == 1:
+        if _editor_hl_style_cursor >= len(_HL_STYLE_TOKENS) - 1:
+            # Reverse (rightmost) → Text (0, 0).
+            _profile_editor_set_focus(2, field=2)
+            _editor_hl_set_text_cursor(0, 0)
+        else:
+            _editor_hl_set_style_cursor(_editor_hl_style_cursor + 1)
         return
-    if field == 2:   # Text → col+1, or jump to BG at right edge
+    if field == 2:
         if _editor_hl_text_col == 0:
             _editor_hl_set_text_cursor(_editor_hl_text_row, 1)
         else:
-            # text col 1 → BG col 0, same row (or (None) if row mismatches)
             _profile_editor_set_focus(2, field=3)
             _editor_hl_set_bg_cursor(_editor_hl_text_row, 0)
         return
-    if field == 3:   # BG: col+1, no-op at right edge
-        if _editor_hl_bg_row == -1:
-            return   # (None) — no horizontal movement
+    if field == 3:
         if _editor_hl_bg_col == 0:
             _editor_hl_set_bg_cursor(_editor_hl_bg_row, 1)
 
 
 def _kb_peditor_palette_left():
+    """Left within the highlight palette. Phase 6.2 fall-through chain:
+    Style.Bold (leftmost toggle) → Pattern (cursor at end);
+    Text col 0 → Style.Reverse (rightmost toggle);
+    BG col 0 → Text col 1 (same row).
+    All other moves are intra-zone."""
+    global _editor_pattern_cursor
     field = _editor_detail_field
     if field == 1:
-        _editor_hl_set_style_cursor(_editor_hl_style_cursor - 1)
+        if _editor_hl_style_cursor <= 0:
+            entry = _editor_current_entry()
+            _profile_editor_set_focus(2, field=0)
+            _editor_pattern_cursor = len(entry.pattern) if entry else 0
+        else:
+            _editor_hl_set_style_cursor(_editor_hl_style_cursor - 1)
         return
     if field == 2:
-        # text col 0 → no-op (left edge); col 1 → col 0
         if _editor_hl_text_col == 1:
             _editor_hl_set_text_cursor(_editor_hl_text_row, 0)
+        else:
+            _profile_editor_set_focus(2, field=1)
+            _editor_hl_set_style_cursor(len(_HL_STYLE_TOKENS) - 1)
         return
     if field == 3:
-        if _editor_hl_bg_row == -1:
-            return
-        if _editor_hl_bg_col == 0:
-            # BG col 0 → Text col 1, same row
+        if _editor_hl_bg_col == 1:
+            _editor_hl_set_bg_cursor(_editor_hl_bg_row, 0)
+        else:
             _profile_editor_set_focus(2, field=2)
             _editor_hl_set_text_cursor(_editor_hl_bg_row, 1)
-        else:
-            _editor_hl_set_bg_cursor(_editor_hl_bg_row, 0)
 
 
 def _kb_peditor_palette_up():
+    """Up within the highlight palette: Style ↑ → Pattern;
+    Text / BG row 0 ↑ → Style; otherwise row-1."""
     field = _editor_detail_field
     if field == 1:
-        # Style row ↑ → Pattern
         _profile_editor_set_focus(2, field=0)
         return
     if field == 2:
-        # Text row 0 ↑ → Style; otherwise row-1
         if _editor_hl_text_row == 0:
             _profile_editor_set_focus(2, field=1)
         else:
@@ -10295,20 +10229,18 @@ def _kb_peditor_palette_up():
                                        _editor_hl_text_col)
         return
     if field == 3:
-        # BG: at (None) ↑ → Style; at row 0 ↑ → (None); else row-1
-        if _editor_hl_bg_row == -1:
+        if _editor_hl_bg_row == 0:
             _profile_editor_set_focus(2, field=1)
-        elif _editor_hl_bg_row == 0:
-            _editor_hl_set_bg_cursor(-1, 0)
         else:
             _editor_hl_set_bg_cursor(_editor_hl_bg_row - 1,
                                      _editor_hl_bg_col)
 
 
 def _kb_peditor_palette_down():
+    """Down within the highlight palette: Style ↓ → Text col 0;
+    Text / BG bottom row ↓ → no-op; otherwise row+1."""
     field = _editor_detail_field
     if field == 1:
-        # Style row ↓ → Text palette (preserves col 0)
         _profile_editor_set_focus(2, field=2)
         return
     if field == 2:
@@ -10317,9 +10249,7 @@ def _kb_peditor_palette_down():
                                        _editor_hl_text_col)
         return
     if field == 3:
-        if _editor_hl_bg_row == -1:
-            _editor_hl_set_bg_cursor(0, _editor_hl_bg_col)
-        elif _editor_hl_bg_row < _HL_PALETTE_ROWS - 1:
+        if _editor_hl_bg_row < _HL_PALETTE_ROWS - 1:
             _editor_hl_set_bg_cursor(_editor_hl_bg_row + 1,
                                      _editor_hl_bg_col)
 
@@ -10347,6 +10277,15 @@ def _kb_peditor_right(event):
 
 @kb.add("left", filter=_in_pe_menu())
 def _kb_peditor_left(event):
+    """Stepwise Left within the menu mode. Each detail-panel zone, when
+    its cursor sits at position 0, falls through one zone to the left:
+    Body → Pattern (or Key for macros), Pattern / Key → entry list,
+    list → kind column, kind column is the wall. Within highlight
+    palette zones the fall-through chain is Style.Bold → Pattern,
+    Text first col → Style.Reverse, BG first col → Text last col —
+    see `_kb_peditor_palette_left`. Fall-through clears the active
+    text selection so the new zone starts fresh."""
+    global _editor_pattern_cursor, _editor_body_line, _editor_body_col
     if _editor_focus == 0:
         return   # Kind column is leftmost zone — left is a no-op.
     if _editor_focus == 1:
@@ -10354,15 +10293,35 @@ def _kb_peditor_left(event):
         return
     if _editor_focus == 2:
         if _editor_in_macro_key_focus():
+            # Macro Key cell is a button (no horizontal cursor) — Left
+            # falls through to the entry list.
+            _profile_editor_set_focus(1)
             return
         if _editor_in_palette_focus():
             _kb_peditor_palette_left()
-        elif _editor_detail_field == 0:
-            _editor_clear_pattern_selection()
-            _editor_pattern_move_left()
-        else:
+            return
+        if _editor_detail_field == 0:
+            # Text-bodied Pattern: at pos 0 → entry list.
+            if _editor_pattern_cursor <= 0:
+                _editor_clear_pattern_selection()
+                _profile_editor_set_focus(1)
+            else:
+                _editor_clear_pattern_selection()
+                _editor_pattern_move_left()
+            return
+        # Body at line 0 col 0: fall through to the previous zone.
+        # Text-bodied kinds → Pattern (cursor at end). Macros → Key cell.
+        if _editor_body_line == 0 and _editor_body_col == 0:
             _editor_clear_body_selection()
-            _editor_body_move_left()
+            entry = _editor_current_entry()
+            if _profile_editor_active_kind() == "macro":
+                _profile_editor_set_focus(2, field=0)
+            else:
+                _profile_editor_set_focus(2, field=0)
+                _editor_pattern_cursor = len(entry.pattern) if entry else 0
+            return
+        _editor_clear_body_selection()
+        _editor_body_move_left()
 
 
 @kb.add("up", filter=_in_pe_menu())
@@ -10594,12 +10553,16 @@ def _kb_peditor_enter(event):
             return
         if _editor_in_palette_focus():
             # Style zone: Enter toggles the current style. Text / BG:
-            # Enter is a no-op (the cursor IS the selection).
+            # Enter toggles the selection at the cursor swatch.
             if _editor_detail_field == 1:
                 _editor_hl_toggle_style(
                     _HL_STYLE_TOKENS[_editor_hl_style_cursor])
                 if _app:
                     _app.invalidate()
+            elif _editor_detail_field == 2:
+                _editor_hl_toggle_text_selection_at_cursor()
+            elif _editor_detail_field == 3:
+                _editor_hl_toggle_bg_selection_at_cursor()
             return
         if _editor_detail_field == 1:
             _editor_body_insert_newline()
@@ -10655,11 +10618,9 @@ def _kb_peditor_escape(event):
 # ---------------------------------------------------------------------------
 # Profile editor — MENU/EDITOR toggle key handlers
 # ---------------------------------------------------------------------------
-@kb.add("enter", filter=_in_pe_toggle())
-@kb.add(" ",     filter=_in_pe_toggle())
-def _kb_peditor_toggle_activate(event):
-    _editor_flip_mode()
-
+# Phase 6.2: Left/Right select MENU/EDITOR respectively (two-button row;
+# no-op when the requested mode is already active). Enter and Space no
+# longer activate the toggle — those keys are free for other zones.
 
 @kb.add("up", filter=_in_pe_toggle())
 def _kb_peditor_toggle_up(event):
@@ -10676,10 +10637,18 @@ def _kb_peditor_toggle_down(event):
     # toggle focus drops us straight into it.
 
 
-@kb.add("left",  filter=_in_pe_toggle())
+@kb.add("left", filter=_in_pe_toggle())
+def _kb_peditor_toggle_left(event):
+    # Left selects MENU. No-op when MENU is already active.
+    if _editor_mode != "menu":
+        _editor_flip_mode()
+
+
 @kb.add("right", filter=_in_pe_toggle())
-def _kb_peditor_toggle_lr(event):
-    return   # Single-selection toggle — no horizontal cursor.
+def _kb_peditor_toggle_right(event):
+    # Right selects EDITOR. No-op when EDITOR is already active.
+    if _editor_mode != "editor":
+        _editor_flip_mode()
 
 
 @kb.add("tab",   filter=_in_pe_toggle())
@@ -10768,14 +10737,27 @@ def _kb_peditor_buffer_end(event):
 @kb.add("pageup", filter=_in_pe_editor())
 def _kb_peditor_buffer_pgup(event):
     _editor_buffer_clear_selection()
-    _kb_peditor_buffer_move_cursor(-max(1, _editor_body_h()))
+    line, col = _editor_buffer_cursor_to_line_col()
+    step = max(1, _editor_body_h())
+    target_line = max(0, line - step)
+    target_col = 0 if target_line == 0 else col
+    _editor_buffer_set_cursor_from_line_col(target_line, target_col)
     _editor_buffer_scroll_cursor_into_view()
 
 
 @kb.add("pagedown", filter=_in_pe_editor())
 def _kb_peditor_buffer_pgdn(event):
     _editor_buffer_clear_selection()
-    _kb_peditor_buffer_move_cursor(+max(1, _editor_body_h()))
+    line, col = _editor_buffer_cursor_to_line_col()
+    step = max(1, _editor_body_h())
+    last = _editor_buffer_line_count() - 1
+    target_line = min(last, line + step)
+    if target_line == last:
+        last_len = len(_editor_buffer_line_text(last))
+        target_col = 0 if col < (last_len - col) else last_len
+    else:
+        target_col = col
+    _editor_buffer_set_cursor_from_line_col(target_line, target_col)
     _editor_buffer_scroll_cursor_into_view()
 
 

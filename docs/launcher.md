@@ -218,7 +218,13 @@ highlights); phase 5 brought Macros online with a key-capture
 overlay. Phase 6 replaced the horizontal tab strip with the
 vertical kind column, introduced the three-state colour grammar,
 capped the body field at 10 rows, and added the editor-mode text
-view + toggle (ADR 0083).
+view + toggle (ADR 0083). Phase 6.2 polish: alphabetical sort with
+group separation on parse + serialize (ADR 0084), dropped the
+list-view sort header, redesigned the highlight palette (28-cell
+checkbox swatches with selection decoupled from cursor), stepwise
+Left-arrow fall-through across detail zones, Left/Right activates
+the MENU/EDITOR toggle, and footer hints stripped of arrow + Enter
+tokens.
 
 #### Three-state colour grammar
 
@@ -236,11 +242,10 @@ Hover on an inactive button paints the active-unfocused state — a
 preview of how it would look if selected. Hover on chrome
 (gaps, padding, blank rows) clears all hover state.
 
-Headers (`Pattern ▼  Body`, `Pattern`, `Commands`, `─── Hint ───`)
-stay in muted grey (`C_HINT`) at **all** times. The Pattern sort
-header still paints `C_HOVER` on mouse hover, but no focus
-transition recolours it — the cursor row and button states carry
-the focus signal.
+Headers (`Pattern  Body`, `Pattern`, `Commands`, `─── Hint ───`)
+stay in muted grey (`C_HINT`) at **all** times — the cursor row and
+button states carry the focus signal. The Pattern column header is
+non-interactive (Phase 6.2: sorting is canonical, no toggle).
 
 #### Layout
 
@@ -270,10 +275,13 @@ title would collide with the toggle on a narrow terminal, the
 title's right-side decorative dashes truncate; the toggle is
 never sacrificed.
 
-- Activation: `Enter` or `Space` when the toggle has keyboard
-  focus flips mode. Mouse click on the inactive block flips;
-  mouse click on the active block is a no-op. Mouse hover on the
-  inactive block paints `C_BUTTON_ACTIVE_UNFOCUSED` (preview).
+- Activation (Phase 6.2): `Left` selects MENU, `Right` selects
+  EDITOR when the toggle has keyboard focus — no-op when the
+  requested mode is already active. `Enter` and `Space` are no
+  longer toggle activators (they're free for the buffer and other
+  zones). Mouse click on the inactive block flips; click on the
+  active block is a no-op. Mouse hover on the inactive block
+  paints `C_BUTTON_ACTIVE_UNFOCUSED` (preview).
 - Focus: `_editor_toggle_focused` is a separate flag — when True,
   no menu-mode editing zone responds to keys. `↑` on the first
   kind in the kind column / on the top row of the entry list / on
@@ -283,8 +291,8 @@ never sacrificed.
 **No keystroke binds mode switching.** Pressing `m`, `e`, `M`, or
 `E` on any text-editing context (Pattern, Body, editor buffer,
 sentinel hint, kind-list cursor) inserts the literal character.
-Mode flip is exclusively via toggle activation (focus + Enter /
-Space, or click).
+Mode flip is exclusively via toggle activation (focus + Left /
+Right, or click).
 
 #### Menu mode
 
@@ -297,27 +305,35 @@ column. `↑` / `↓` move between kinds within the column; `↓` from
 the last kind drops into the entry list; `↑` from the first kind
 falls through to the toggle.
 
-**Entry list (middle).** Header row `<pat_label> <arrow>  <body_label>`
-in `C_HINT` (muted grey) at all times, where `<arrow>` is `▲` for
-ascending, `▼` for descending; the Pattern label paints `C_HOVER`
-on mouse hover. Labels come from `DETAIL_LABELS[active_kind]` so
-Highlights shows `Pattern + Color`, Substitutes shows
-`Text + New text`, etc. Pattern column is a fixed 8 chars; Body
-column flexes and truncates with a trailing `…`. The cursor row
-paints per the colour grammar (amber when list focused, grey when
-unfocused); hover paints `C_HOVER`. The reusable scrollbar
-(`bridge/launcher/widgets/scrollbar.py`) renders in the 1-cell
-column to the right of the list, with page-step click-to-jump and
-wheel-scroll support; the track appears only when entries overflow
-the visible window.
+**Entry list (middle).** Header row `<pat_label>  <body_label>` in
+`C_HINT` (muted grey) at all times. Labels come from
+`DETAIL_LABELS[active_kind]` so Highlights shows `Pattern + Color`,
+Substitutes shows `Text + New text`, etc. Pattern column is a fixed
+8 chars; Body column flexes and truncates with a trailing `…`. The
+Body cell skips leading blank/whitespace-only lines so a body whose
+first real content sits below empty lines still previews (the
+detail panel keeps the body verbatim — this only affects the list
+cell). The cursor row paints per the colour grammar (amber when
+list focused, grey when unfocused); hover paints `C_HOVER`. The
+reusable scrollbar (`bridge/launcher/widgets/scrollbar.py`) renders
+in the 1-cell column to the right of the list, with page-step
+click-to-jump and wheel-scroll support; the track appears only
+when entries overflow the visible window.
 
 A `+ New entry` sentinel row is rendered at the bottom of the list
-(always last, regardless of sort direction) in `C_HINT`. The
-sentinel is selectable like any row; pressing `Enter` on it — or
-pressing `n` from anywhere on list focus, or clicking it once with
-the mouse — appends a blank Entry of the active kind and focuses
-the detail panel's Pattern field. The list cursor's index range
-spans `[0, len(view)]`, with `len(view)` denoting the sentinel.
+in `C_HINT`. The sentinel is selectable like any row; pressing
+`Enter` on it — or pressing `n` from anywhere on list focus, or
+clicking it once with the mouse — appends a blank Entry of the
+active kind and focuses the detail panel's Pattern field. The list
+cursor's index range spans `[0, len(view)]`, with `len(view)`
+denoting the sentinel.
+
+Mid-session create appends to `Profile.items` without re-sorting,
+so the new entry lands at the bottom of its kind group in the list
+view until the next save / mode-flip (which re-sorts via
+serialize → parse). The list-view sort itself is presentation-only
+ascending by pattern (case-sensitive for non-macro kinds; macros
+sort by display name so F-keys cluster before numpad before Alt).
 
 **Detail panel (right).** Per-kind labels from `DETAIL_LABELS`:
 `alias`/`action` → `(Pattern, Commands)`, `substitute` →
@@ -343,29 +359,35 @@ spans `[0, len(view)]`, with `len(view)` denoting the sentinel.
   (amber). This is the sole focus indicator for the field's
   bounding box — the in-buffer cursor inside the field is the
   fine-grained indicator.
-- **Highlight palettes** (highlights only) — three zones replace
-  the Body field: **Style**, **Text**, **Background**. The Style
-  row holds the three `[Underscore]` / `[Blink]` / `[Reverse]`
-  toggle cells (`Bold` is intentionally not surfaced — tt++ doesn't
-  document it in `#highlight`'s modifier set). `─── Text ───` and
-  `─── Background ───` headers split the detail-panel inner width
-  into two halves; each palette is a 2×7 grid (dark on the left,
-  light on the right). Text swatches render in their own colour
-  via `TTPP_COLOR_STYLES`; background swatches render as
-  black-on-coloured-fill. A `(None)` cell above the bg grid omits
-  the `b <colour>` clause. Live binding: any move rewrites
-  `entry.body`.
+- **Highlight palette** (highlights only) — Phase 6.2 layout
+  replaces the Body field with a 28-cell package: a `Style` label
+  + an inline row of four toggles `[ ]Bold [ ]Und [ ]Blk [ ]Rev`,
+  then `-- Text --` / `--- BG ---` headers over a 2×7 grid of
+  checkbox swatches. Each swatch renders as `[X]██` or `[ ]██`
+  where `██` is a two-cell color band; the checkbox reflects
+  whether THAT swatch is the currently-selected text/bg colour.
+  Cursor and selection are decoupled (see ADR 0084): cursor moves
+  navigate the grid without changing the body; `Enter` (or mouse
+  click) on a swatch toggles its selection — selecting it (and
+  clearing any previously selected swatch in the same dimension)
+  if it was unselected, deselecting it if it was already selected.
+  Exactly zero or one swatch per dimension is selected at any time.
+  `bold` joins the supported style set (the original layout
+  excluded it because tt++'s `#highlight` modifier docs don't list
+  it; the toggle is surfaced anyway per Phase 6.2 spec — ADR 0084
+  documents the trade-off).
 - **Body serialisation.** Composed as
-  `[<styles>] [<text-colour>] [b <bg-colour>]` — styles emitted in
-  stable order (`underscore`, `blink`, `reverse`); colour tokens
-  use the cell label as-is; the `b <bg>` clause is omitted when
-  `(None)` is selected. The parser (`_hl_parse_body`) accepts the
-  lowercase, capitalised, and `light <colour>` forms equivalently.
-- **Custom slot** (highlights only) — when an existing body
-  doesn't decompose, the original value stashes in
-  `_editor_hl_custom_value` and renders as `Custom: <value>` in
-  `C_HINT` below the palette grid. Touching any palette zone
-  commits the palette-derived body and clears the stash.
+  `[<styles>] [<text-colour>] [b <bg-colour>]` — styles emitted
+  in stable order (`bold`, `underscore`, `blink`, `reverse`);
+  colour tokens use the cell label as-is; the `b <bg>` clause is
+  omitted when no BG swatch is selected; the text colour is
+  omitted when no Text swatch is selected. The parser
+  (`_hl_parse_body`) accepts the lowercase, capitalised, and
+  `light <colour>` forms equivalently.
+- **Unparseable bodies** persist verbatim in `entry.body` until
+  the user toggles a swatch (no Custom slot in Phase 6.2 — see
+  ADR 0084). Cursor parks at `(0, 0)` on both dimensions with no
+  selection.
 - **Macro Key cell** — focusable one-line button rendered as
   `[ Numpad 0 ]` / `[ F1 ]` / `[ Alt+a ]` for known escapes,
   `[ Custom: <raw> ]` in `C_HINT` for unknown ones, and
@@ -386,14 +408,16 @@ also start blank, but `+ New entry` immediately auto-pushes the
 key-capture overlay so the user never sees `[ Press to bind… ]`
 in the wild.
 
-**Display ordering.** Entries are *displayed* sorted by `pattern`
-(case-sensitive, locale-default). The underlying `Profile.items`
-list is **not** mutated by sort — unchanged entries continue to
-round-trip `_raw` byte-exact in original file order. Toggling the
-Pattern header flips between ascending and descending; the cursor
-re-anchors onto the same Entry. While the user types in Pattern
-the displayed list re-sorts live and the cursor follows the edited
-entry.
+**Display ordering.** Phase 6.2: `parse_profile` sorts items into
+command groups, alphabetical within each group; `serialize_profile`
+emits groups separated by a single blank line. The list view
+mirrors this — sorted ascending by pattern (case-sensitive for
+non-macro kinds; macros sort by display name). There is no
+sort-direction toggle anymore — the canonical sort is the only
+order. While the user types in Pattern the displayed list re-sorts
+live and the cursor follows the edited entry. Mid-session creates
+append to the bottom of their kind group; the next save / mode-flip
+re-sorts via serialize → parse.
 
 **Live binding.** Every keystroke in a detail field updates the
 bound `Entry` field immediately. Field mutation routes through
@@ -533,16 +557,34 @@ text-bodied + macro; `0..3` for highlights).
 - Menu mode → first kind in the kind column.
 - Editor mode → buffer (cursor at offset 0).
 
+**Stepwise Left-arrow fall-through** (Phase 6.2). When the cursor
+is at position 0 of a detail-panel zone, `←` falls through one
+zone to the left:
+- Text-bodied Pattern at pos 0 → entry list
+- Body at line 0 col 0 → Pattern (cursor at end of Pattern)
+- Macro Key cell → entry list
+- Macro Body at line 0 col 0 → Key cell
+- Highlight Pattern at pos 0 → entry list
+- Highlight Style.Bold (leftmost toggle) → Pattern (cursor at end)
+- Highlight Text col 0 → Style.Reverse (rightmost toggle)
+- Highlight BG col 0 → Text col 1 (same row)
+
+`←` at non-zero positions moves within the zone (or extends the
+selection when Shift is held). Fall-through clears any active text
+selection.
+
 **Existing per-zone arrow behaviour preserved otherwise** (palette
 zones, macro key cell, body cursor inside Commands, etc. — see
 phase-5 doc).
 
-**Dynamic footer.** Switches with focus + mode:
-- Toggle: `Enter Flip mode  ·  Tab Cycle  ·  ESC Save & back`
-- Editor mode: `←→↑↓ Cursor  ·  Tab Toggle  ·  ESC Save & back`
-- Menu / kind: `↑↓ Move kind  ·  Tab Cycle  ·  ESC Save & back`
-- Menu / list: `↑↓ Move  ·  Enter Edit  ·  n New  ·  Del Delete  ·  Tab Cycle  ·  ESC Save & back`
-- Menu / detail: `←→ Cursor  ·  Tab Field  ·  ↑ ↓ Zone  ·  ESC Save & back`
+**Dynamic footer** (Phase 6.2 — arrow + Enter tokens removed since
+they're intuitive from layout; kept tokens are the non-obvious
+ones):
+- Toggle: `Tab Cycle  ·  ESC Save & back`
+- Editor mode: `Tab Toggle  ·  ESC Save & back`
+- Menu / kind: `Tab Cycle  ·  ESC Save & back`
+- Menu / list: `n New  ·  Del Delete  ·  Tab Cycle  ·  ESC Save & back`
+- Menu / detail: `Tab Field  ·  ESC Save & back`
 
 #### Mode flip semantics
 
@@ -585,15 +627,18 @@ on `OSError` the frame still pops and flashes
 
 #### Round-trip identity
 
-For any file containing only the five known commands plus `#var`,
-`#event`, `#nop`, and blank lines, load + save with **no edits**
-produces an output that is byte-equal to the input modulo dropped
-`#nop` lines. The same property holds for an editor-mode-authored
-profile that contains one entry of each kind plus a `#var` and a
-blank line, round-tripped via flip-to-editor + flip-back-to-menu
-+ save. Sorting the display view does NOT touch `Profile.items`;
-editing one entry does not affect any other entry's `_raw`.
-Covered by `bridge/launcher/tests/test_profile_io.py` and
+Phase 6.2 changed the canonical form: load + save with no edits
+produces an output that is sorted into command groups
+(alphabetical by command name, alphabetical within each group by
+first brace-arg, single blank line between groups) — see ADR 0084.
+Individual entries' `_raw` still round-trips byte-exact, but the
+*order* changes from source order to canonical order. `#nop` lines
+are dropped (ADR 0042). Blank lines, free text, and malformed
+Passthrough lines are dropped during the sort pass. Multi-line
+Passthrough forms (a `#class {x} { ... \n ... }` block split
+across physical lines) lose their continuation lines on sort —
+documented limitation. Covered by
+`bridge/launcher/tests/test_profile_io.py` and
 `bridge/launcher/tests/test_profile_editor.py`.
 
 #### `profile_io` string helpers

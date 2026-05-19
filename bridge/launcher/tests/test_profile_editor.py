@@ -49,9 +49,7 @@ def _reset_editor_state(profile, *, focus=1, active_tab=0):
     launcher._editor_focus        = focus
     launcher._editor_list_cursor  = 0
     launcher._editor_list_scroll  = 0
-    launcher._editor_sort_dir     = "asc"
     launcher._editor_hover_row    = None
-    launcher._editor_hover_sort   = False
     launcher._editor_detail_field    = 0
     launcher._editor_pattern_cursor  = 0
     launcher._editor_body_line       = 0
@@ -60,10 +58,11 @@ def _reset_editor_state(profile, *, focus=1, active_tab=0):
     launcher._editor_hl_style_cursor = 0
     launcher._editor_hl_text_row     = 0
     launcher._editor_hl_text_col     = 0
-    launcher._editor_hl_bg_row       = -1
+    launcher._editor_hl_text_sel     = None
+    launcher._editor_hl_bg_row       = 0
     launcher._editor_hl_bg_col       = 0
+    launcher._editor_hl_bg_sel       = None
     launcher._editor_hl_hover        = None
-    launcher._editor_hl_custom_value = None
     launcher._editor_refresh_buffers()
 
 
@@ -84,7 +83,10 @@ class TestDisplayViewSort(unittest.TestCase):
         patterns = [e.pattern for e in view]
         self.assertEqual(patterns, ["ab", "nw", "ws"])
 
-    def test_toggle_flips_direction(self):
+    def test_parse_sorts_items_alphabetically(self):
+        # Phase 6.2: parse_profile sorts items into command groups,
+        # alphabetical within each group. The presentation view then
+        # mirrors this — no separate sort direction state.
         source = (
             "#alias {ws} {wake;stand}\n"
             "#alias {ab} {abandon}\n"
@@ -92,47 +94,30 @@ class TestDisplayViewSort(unittest.TestCase):
         )
         prof, _src, _td = _make_profile(source)
         _reset_editor_state(prof)
-        launcher._editor_sort_dir = "desc"
+        items_patterns = [it.pattern for it in prof.items
+                          if isinstance(it, profile_io.Entry)]
+        self.assertEqual(items_patterns, ["ab", "nw", "ws"])
         view = launcher._profile_editor_display_view()
-        self.assertEqual([e.pattern for e in view], ["ws", "nw", "ab"])
+        self.assertEqual([e.pattern for e in view], ["ab", "nw", "ws"])
 
-    def test_items_unmodified_by_sort(self):
-        # The display view is *presentation only* — Profile.items stays
-        # in source order so unchanged entries continue to emit their
-        # original `_raw` span byte-for-byte.
+    def test_save_emits_sorted_grouped_output(self):
+        # Save reflects the sort+group canonical form — Phase 6.2.
         source = (
             "#alias {ws} {wake;stand}\n"
             "#alias {ab} {abandon}\n"
             "#alias {nw} {northwest}\n"
         )
-        prof, _src, _td = _make_profile(source)
-        _reset_editor_state(prof)
-        before = [it.pattern for it in prof.items
-                  if isinstance(it, profile_io.Entry)]
-        _ = launcher._profile_editor_display_view()
-        launcher._editor_sort_dir = "desc"
-        _ = launcher._profile_editor_display_view()
-        after = [it.pattern for it in prof.items
-                 if isinstance(it, profile_io.Entry)]
-        self.assertEqual(before, ["ws", "ab", "nw"])
-        self.assertEqual(before, after)
-
-    def test_round_trip_byte_exact_after_sort(self):
-        # Sorting the display view must not affect what save_profile writes.
-        source = (
-            "#alias {ws} {wake;stand}\n"
+        expected = (
             "#alias {ab} {abandon}\n"
             "#alias {nw} {northwest}\n"
+            "#alias {ws} {wake;stand}\n"
         )
         prof, _src, td = _make_profile(source)
         _reset_editor_state(prof)
-        _ = launcher._profile_editor_display_view()
-        launcher._editor_sort_dir = "desc"
-        _ = launcher._profile_editor_display_view()
         dst = Path(td) / "out.tin"
         prof.path = dst
         profile_io.save_profile(prof)
-        self.assertEqual(dst.read_text(), source)
+        self.assertEqual(dst.read_text(), expected)
 
 
 class TestDelete(unittest.TestCase):
@@ -175,13 +160,13 @@ class TestDelete(unittest.TestCase):
         prof.path = dst
         profile_io.save_profile(prof)
         written = dst.read_text()
-        # The "ab" line is gone; the other two survive in their original
-        # source order with their _raw bytes untouched.
+        # The "ab" line is gone; surviving entries serialise in the
+        # Phase 6.2 sorted+grouped form.
         self.assertNotIn("{ab}", written)
         self.assertEqual(
             written,
-            "#alias {ws} {wake;stand}\n"
-            "#alias {nw} {northwest}\n",
+            "#alias {nw} {northwest}\n"
+            "#alias {ws} {wake;stand}\n",
         )
 
     def test_sentinel_cursor_is_noop(self):
@@ -195,10 +180,10 @@ class TestDelete(unittest.TestCase):
         launcher._profile_editor_request_delete()
         self.assertEqual(launcher._profile_editor_active_count(), 1)
 
-    def test_passthrough_lines_untouched_by_delete(self):
-        # Passthrough lines (#var, #event, blanks, etc.) must survive a
-        # delete operation byte-exact. This protects the round-trip
-        # contract for the rest of the file.
+    def test_passthrough_lines_survive_delete_in_canonical_order(self):
+        # Classifiable Passthrough lines (#var, #event) survive a delete
+        # operation; they re-emit in canonical sorted+grouped form (the
+        # blank line on input is dropped during the sort pass).
         source = (
             "#var {mytarget} {orc}\n"
             "\n"
@@ -216,10 +201,11 @@ class TestDelete(unittest.TestCase):
         profile_io.save_profile(prof)
         self.assertEqual(
             dst.read_text(),
-            "#var {mytarget} {orc}\n"
-            "\n"
             "#alias {ws} {wake;stand}\n"
-            "#event {SESSION CONNECTED} {#showme welcome}\n",
+            "\n"
+            "#event {SESSION CONNECTED} {#showme welcome}\n"
+            "\n"
+            "#var {mytarget} {orc}\n",
         )
 
 
@@ -410,14 +396,14 @@ class TestEditedEntryRegeneratesCanonically(unittest.TestCase):
             target.body = "new_body"
             prof.path = dst
             profile_io.save_profile(prof)
+            # Phase 6.2: alphabetical order is also_keep, keep, touch.
+            # `keep` keeps its odd whitespace via _raw; `also_keep`
+            # round-trips _raw verbatim; `touch` regenerates canonically.
             self.assertEqual(
                 dst.read_text(),
-                # `keep` keeps its odd whitespace via _raw, `touch` is
-                # regenerated canonically, `also_keep` (with priority)
-                # round-trips its _raw verbatim.
+                "#alias {also_keep} {body3} {5}\n"
                 "#alias    {keep}    {body1}\n"
-                "#alias {touch} {new_body}\n"
-                "#alias {also_keep} {body3} {5}\n",
+                "#alias {touch} {new_body}\n",
             )
 
 
@@ -464,17 +450,20 @@ class TestRoundTripIdentityAfterEditorOpen(unittest.TestCase):
         _reset_editor_state(prof)
         prof.path = dst
         profile_io.save_profile(prof)
-        # Strip #nop lines from the original for the comparison —
-        # save_profile drops them per ADR 0042 and we don't want this
-        # test to fail on that pre-existing semantic.
-        expected = "\n".join(
-            line for line in source.splitlines()
-            if not (line.lstrip().startswith("#nop")
-                    and (len(line.lstrip()) == 4
-                         or line.lstrip()[4] in (" ", "\t", "{", "\n", "\r")))
+        # Phase 6.2: #macro lines emerge alphabetised; the #nop header
+        # and the blank separator are dropped on the sort pass.
+        expected = (
+            "#macro {\\eOk} {open exit}\n"
+            "#macro {\\eOm} {close exit}\n"
+            "#macro {\\eOp} {flee}\n"
+            "#macro {\\eOr} {south}\n"
+            "#macro {\\eOs} {down}\n"
+            "#macro {\\eOt} {west}\n"
+            "#macro {\\eOu} {exits}\n"
+            "#macro {\\eOv} {east}\n"
+            "#macro {\\eOx} {north}\n"
+            "#macro {\\eOy} {up}\n"
         )
-        if source.endswith("\n"):
-            expected += "\n"
         self.assertEqual(dst.read_text(), expected)
 
 
@@ -525,9 +514,6 @@ class TestSentinelAndCreate(unittest.TestCase):
         prof, _src, _td = _make_profile(source)
         _reset_editor_state(prof)
         self.assertEqual(launcher._profile_editor_active_count(), 2)
-        self.assertEqual(launcher._profile_editor_display_total(), 3)
-        # Sentinel sits at index len(view) regardless of sort direction.
-        launcher._editor_sort_dir = "desc"
         self.assertEqual(launcher._profile_editor_display_total(), 3)
 
     def test_create_appends_blank_entry_and_focuses_pattern(self):
@@ -853,19 +839,33 @@ class TestPhase4MultiKind(unittest.TestCase):
         "#var {target} {orc}\n"
     )
 
-    def test_round_trip_byte_exact_no_edits(self):
+    def test_round_trip_emits_sorted_grouped_no_edits(self):
+        # Phase 6.2: parse → sort gives a canonical grouped form.
+        # Walking every tab in the editor must not perturb it.
+        expected = (
+            "#action {Bubba} {bow} {3}\n"
+            "\n"
+            "#alias {k} {kill %1}\n"
+            "\n"
+            "#highlight {Orc} {light yellow}\n"
+            "\n"
+            "#macro {\\eOp} {flee}\n"
+            "\n"
+            "#substitute {orc} {ORC}\n"
+            "\n"
+            "#var {target} {orc}\n"
+        )
         with tempfile.TemporaryDirectory() as td:
             src = Path(td) / "in.tin"
             dst = Path(td) / "out.tin"
             src.write_text(self.MIXED_PROFILE)
             prof = profile_io.load_profile(src)
             _reset_editor_state(prof)
-            # Walk every tab — the renderer must not mutate items.
             for tab in range(len(launcher._PROFILE_EDITOR_TABS)):
                 launcher._profile_editor_set_tab(tab)
             prof.path = dst
             profile_io.save_profile(prof)
-            self.assertEqual(dst.read_text(), self.MIXED_PROFILE)
+            self.assertEqual(dst.read_text(), expected)
 
     def test_each_tab_lists_its_kind(self):
         prof, _src, _td = _make_profile(self.MIXED_PROFILE)
@@ -1004,12 +1004,13 @@ class TestPhase4PerKindDefaults(unittest.TestCase):
         self.assertEqual(e.kind, "highlight")
         # New entries default to "light yellow" (per DETAIL_NEW_DEFAULTS).
         self.assertEqual(e.body, "light yellow")
-        # Text palette cursor lands on Yellow (row 2, col 1).
+        # Text palette cursor parks on Yellow (row 2, col 1) AND that
+        # swatch is the active selection.
         self.assertEqual(launcher._editor_hl_text_row, 2)
         self.assertEqual(launcher._editor_hl_text_col, 1)
-        # No background.
-        self.assertEqual(launcher._editor_hl_bg_row, -1)
-        self.assertIsNone(launcher._editor_hl_custom_value)
+        self.assertEqual(launcher._editor_hl_text_sel, (2, 1))
+        # No background selection.
+        self.assertIsNone(launcher._editor_hl_bg_sel)
 
     def test_new_substitute_has_empty_body(self):
         prof, _src, _td = _make_profile("")
@@ -1021,16 +1022,17 @@ class TestPhase4PerKindDefaults(unittest.TestCase):
 
 
 class TestHighlightPaletteRedesign(unittest.TestCase):
-    """Section C — Highlights detail panel: Style toggles + Text + BG
-    palettes. The body string is composed of `[styles] <text-colour>
-    [b <bg-colour>]`; the parser handles the lowercase + capitalised +
-    `light <colour>` conventions; non-decomposable bodies fall through
-    to a Custom slot that's preserved byte-exact."""
+    """Phase 6.2 — Highlights detail panel: 4 inline Style toggles +
+    Text grid + BG grid; selection is decoupled from cursor (cursor
+    navigates freely, Enter / click on a swatch toggles whether it is
+    the selected swatch). The body string is composed of
+    `[styles] <text-colour> [b <bg-colour>]`; the parser handles the
+    lowercase + capitalised + `light <colour>` conventions."""
 
     def _setup_highlight(self, source):
         prof, _src, _td = _make_profile(source)
         _reset_editor_state(prof, focus=2, active_tab=3)
-        launcher._editor_detail_field = 2   # Text palette
+        launcher._editor_detail_field = 2   # Text grid
         return prof
 
     # --- parsing & serialising ------------------------------------
@@ -1041,7 +1043,6 @@ class TestHighlightPaletteRedesign(unittest.TestCase):
         self.assertIsNone(bg)
 
     def test_parse_light_form_normalised(self):
-        # `light yellow` parses to capitalised form `Yellow`.
         styles, tc, bg = launcher._hl_parse_body("light yellow")
         self.assertEqual(tc, "Yellow")
         self.assertIsNone(bg)
@@ -1061,12 +1062,16 @@ class TestHighlightPaletteRedesign(unittest.TestCase):
         self.assertIsNone(bg)
 
     def test_parse_rejects_unknown_token(self):
-        # `<faa>` is a custom VT100 form — parser punts to Custom.
+        # `<faa>` is a custom VT100 form — parser punts (no Custom slot
+        # in Phase 6.2; the original body simply persists).
         self.assertIsNone(launcher._hl_parse_body("<faa>"))
 
-    def test_parse_rejects_bold_token(self):
-        # `bold` isn't in the supported style set.
-        self.assertIsNone(launcher._hl_parse_body("bold red"))
+    def test_parse_accepts_bold_token(self):
+        # Phase 6.2: `bold` joined the supported style set (ADR 0084).
+        styles, tc, bg = launcher._hl_parse_body("bold red")
+        self.assertEqual(styles, {"bold"})
+        self.assertEqual(tc, "red")
+        self.assertIsNone(bg)
 
     def test_serialize_round_trip(self):
         body = "underscore Red b green"
@@ -1088,62 +1093,97 @@ class TestHighlightPaletteRedesign(unittest.TestCase):
             "red",
         )
 
-    # --- cursor positions on load ---------------------------------
-    def test_cursor_lands_on_text_swatch_for_simple_body(self):
+    def test_serialize_bold_emitted_first(self):
+        # _HL_STYLE_TOKENS lists bold first, so the serializer's
+        # stable-ordered output begins with it when active.
+        self.assertEqual(
+            launcher._hl_serialize({"bold", "blink"}, "red", None),
+            "bold blink red",
+        )
+
+    # --- cursor + selection on load -------------------------------
+    def test_cursor_and_selection_land_on_text_swatch(self):
         self._setup_highlight("#highlight {Orc} {red}\n")
-        # red is text row 0 col 0.
+        # red is text row 0 col 0; selection mirrors cursor.
         self.assertEqual(launcher._editor_hl_text_row, 0)
         self.assertEqual(launcher._editor_hl_text_col, 0)
-        self.assertEqual(launcher._editor_hl_bg_row, -1)   # (None)
-        self.assertIsNone(launcher._editor_hl_custom_value)
+        self.assertEqual(launcher._editor_hl_text_sel, (0, 0))
+        # No BG selection — cursor parks at (0, 0).
+        self.assertIsNone(launcher._editor_hl_bg_sel)
+        self.assertEqual(launcher._editor_hl_bg_row, 0)
 
     def test_cursor_lands_on_light_variant(self):
         self._setup_highlight("#highlight {Orc} {Yellow}\n")
-        # Yellow → text row 2 col 1.
         self.assertEqual(
             (launcher._editor_hl_text_row, launcher._editor_hl_text_col),
             (2, 1),
         )
+        self.assertEqual(launcher._editor_hl_text_sel, (2, 1))
 
     def test_cursor_for_styles_text_bg(self):
         self._setup_highlight(
             "#highlight {Orc} {underscore Red b green}\n")
-        # Red → text row 0 col 1; green → bg row 1 col 0.
         self.assertEqual(
             (launcher._editor_hl_text_row, launcher._editor_hl_text_col),
             (0, 1),
         )
+        self.assertEqual(launcher._editor_hl_text_sel, (0, 1))
         self.assertEqual(
             (launcher._editor_hl_bg_row, launcher._editor_hl_bg_col),
             (1, 0),
         )
+        self.assertEqual(launcher._editor_hl_bg_sel, (1, 0))
 
-    def test_custom_stashed_for_unparseable_body(self):
-        self._setup_highlight("#highlight {Snowy} {bold red}\n")
-        self.assertEqual(launcher._editor_hl_custom_value, "bold red")
-        # Body still preserved byte-exact.
+    def test_unparseable_body_leaves_body_untouched(self):
+        # No more Custom slot — the body persists verbatim, cursor parks
+        # at (0,0) with no swatch selected on either dimension.
+        self._setup_highlight("#highlight {Snowy} {<faa>}\n")
         entry = launcher._editor_current_entry()
-        self.assertEqual(entry.body, "bold red")
-        # Renderer surfaces the Custom slot.
-        rows = launcher._editor_detail_lines(entry, total_lines=30)
-        joined = " ".join("".join(f[1] for f in row).strip() for row in rows)
-        self.assertIn("Custom: bold red", joined)
+        self.assertEqual(entry.body, "<faa>")
+        self.assertIsNone(launcher._editor_hl_text_sel)
+        self.assertIsNone(launcher._editor_hl_bg_sel)
+        self.assertEqual(
+            (launcher._editor_hl_text_row, launcher._editor_hl_text_col),
+            (0, 0))
 
-    # --- live binding through cursor moves & toggles --------------
-    def test_text_cursor_move_updates_body(self):
+    # --- selection toggling drives the body -----------------------
+    def test_cursor_move_does_not_change_body(self):
+        # Phase 6.2: cursor is decoupled from selection — moving the
+        # cursor must not rewrite entry.body.
         self._setup_highlight("#highlight {Orc} {red}\n")
         entry = launcher._editor_current_entry()
-        launcher._editor_hl_set_text_cursor(2, 0)   # yellow
-        self.assertEqual(entry.body, "yellow")
-        launcher._editor_hl_set_text_cursor(2, 1)   # Yellow
+        launcher._editor_hl_set_text_cursor(2, 0)   # yellow under cursor
+        self.assertEqual(entry.body, "red")        # but body unchanged
+        # The selection is still red.
+        self.assertEqual(launcher._editor_hl_text_sel, (0, 0))
+
+    def test_toggle_text_selection_at_cursor_updates_body(self):
+        self._setup_highlight("#highlight {Orc} {red}\n")
+        entry = launcher._editor_current_entry()
+        launcher._editor_hl_set_text_cursor(2, 1)        # Yellow
+        launcher._editor_hl_toggle_text_selection_at_cursor()
         self.assertEqual(entry.body, "Yellow")
+        self.assertEqual(launcher._editor_hl_text_sel, (2, 1))
 
-    def test_bg_cursor_move_adds_b_clause(self):
+    def test_toggle_text_selection_off_clears_color(self):
+        # When cursor sits on the currently-selected swatch, toggling
+        # deselects (no text colour in the body).
         self._setup_highlight("#highlight {Orc} {red}\n")
         entry = launcher._editor_current_entry()
-        launcher._editor_hl_set_bg_cursor(1, 0)   # green
+        # Cursor parks on the selected swatch on load.
+        launcher._editor_hl_toggle_text_selection_at_cursor()
+        self.assertIsNone(launcher._editor_hl_text_sel)
+        self.assertEqual(entry.body, "")  # no color, no styles
+
+    def test_toggle_bg_selection_adds_b_clause(self):
+        self._setup_highlight("#highlight {Orc} {red}\n")
+        entry = launcher._editor_current_entry()
+        launcher._editor_detail_field = 3
+        launcher._editor_hl_set_bg_cursor(1, 0)        # green
+        launcher._editor_hl_toggle_bg_selection_at_cursor()
         self.assertEqual(entry.body, "red b green")
-        launcher._editor_hl_set_bg_cursor(-1, 0)   # (None)
+        # Toggling the same swatch off drops the b-clause.
+        launcher._editor_hl_toggle_bg_selection_at_cursor()
         self.assertEqual(entry.body, "red")
 
     def test_style_toggle_adds_modifier(self):
@@ -1153,22 +1193,25 @@ class TestHighlightPaletteRedesign(unittest.TestCase):
         self.assertEqual(entry.body, "underscore red")
         launcher._editor_hl_toggle_style("blink")
         self.assertEqual(entry.body, "underscore blink red")
-        # Toggle off
         launcher._editor_hl_toggle_style("underscore")
         self.assertEqual(entry.body, "blink red")
 
-    def test_editing_text_color_preserves_styles_and_bg(self):
+    def test_editing_text_preserves_styles_and_bg(self):
         self._setup_highlight(
             "#highlight {Orc} {underscore Red b green}\n")
         entry = launcher._editor_current_entry()
-        launcher._editor_hl_set_text_cursor(3, 0)   # blue
+        # Move cursor to blue (row 3 col 0) and toggle selection there.
+        launcher._editor_hl_set_text_cursor(3, 0)
+        launcher._editor_hl_toggle_text_selection_at_cursor()
         self.assertEqual(entry.body, "underscore blue b green")
 
     def test_editing_bg_preserves_text_and_styles(self):
         self._setup_highlight(
             "#highlight {Orc} {underscore Red b green}\n")
         entry = launcher._editor_current_entry()
-        launcher._editor_hl_set_bg_cursor(4, 1)   # Magenta
+        launcher._editor_detail_field = 3
+        launcher._editor_hl_set_bg_cursor(4, 1)        # Magenta
+        launcher._editor_hl_toggle_bg_selection_at_cursor()
         self.assertEqual(entry.body, "underscore Red b Magenta")
 
 
@@ -1190,13 +1233,13 @@ class TestPhase4HighlightListColorColumn(unittest.TestCase):
         self.assertEqual(body_style,
                          launcher.TTPP_COLOR_STYLES["light yellow"])
 
-    def test_custom_value_falls_back_to_plain_style(self):
+    def test_unparseable_value_falls_back_to_plain_style(self):
+        # `<faa>` doesn't parse — list cell falls back to plain C_ITEM.
         prof, _src, _td = _make_profile(
-            "#highlight {Snowy} {bold red}\n")
+            "#highlight {Snowy} {<faa>}\n")
         _reset_editor_state(prof, active_tab=3)
         entry = launcher._editor_current_entry()
         frags = launcher._editor_list_row_text(entry, False, False)
-        # Single-fragment fallback uses C_ITEM throughout.
         self.assertEqual(len(frags), 1)
         style, _text = frags[0]
         self.assertEqual(style, launcher.C_ITEM)
@@ -1235,11 +1278,14 @@ class TestPhase4CrossKindEditing(unittest.TestCase):
             prof.items.remove(drop)
             prof.path = dst
             profile_io.save_profile(prof)
+            # Phase 6.2: save emits the canonical sorted+grouped form.
             self.assertEqual(
                 dst.read_text(),
                 "#alias {keep} {body}\n"
                 "#alias {touch} {new}\n"
+                "\n"
                 "#highlight {Snowy} {light yellow}\n"
+                "\n"
                 "#substitute {orc} {ORC}\n",
             )
 
@@ -1270,10 +1316,13 @@ class TestEditorModeFlip(unittest.TestCase):
 
     def test_flip_to_editor_serialises_profile(self):
         source = "#alias {k} {kill %1}\n#var {x} {y}\n"
+        # Phase 6.2: parse → sort means the buffer reflects the canonical
+        # grouped form, not the source verbatim.
+        expected_buffer = "#alias {k} {kill %1}\n\n#var {x} {y}\n"
         prof = self._setup_in_menu_mode(source)
         launcher._editor_flip_mode()
         self.assertEqual(launcher._editor_mode, "editor")
-        self.assertEqual(launcher._editor_buffer_text, source)
+        self.assertEqual(launcher._editor_buffer_text, expected_buffer)
         # Cursor lands at offset 0 on flip.
         self.assertEqual(launcher._editor_buffer_cursor, 0)
         self.assertEqual(launcher._editor_buffer_scroll, 0)
@@ -1293,11 +1342,11 @@ class TestEditorModeFlip(unittest.TestCase):
         self.assertEqual([(e.pattern, e.body) for e in aliases],
                          [("k", "kill"), ("ws", "wake;stand")])
 
-    def test_round_trip_one_of_each_kind_byte_exact(self):
-        # The Done-when criterion: a profile authored entirely in editor
-        # mode, containing one entry of each kind plus a #var and a
-        # blank line, round-trips byte-exact across load → unmodified
-        # save.
+    def test_round_trip_one_of_each_kind_emits_sorted(self):
+        # Phase 6.2: parse → sort + group is the canonical form. A
+        # profile with one entry of each kind plus a #var (blank line
+        # in input is dropped on sort) round-trips through the canonical
+        # form when flipped to editor and back.
         source = (
             "#alias {k} {kill %1}\n"
             "#action {Bubba} {bow}\n"
@@ -1306,6 +1355,19 @@ class TestEditorModeFlip(unittest.TestCase):
             "#substitute {orc} {ORC}\n"
             "#var {target} {orc}\n"
             "\n"
+        )
+        expected = (
+            "#action {Bubba} {bow}\n"
+            "\n"
+            "#alias {k} {kill %1}\n"
+            "\n"
+            "#highlight {Orc} {red}\n"
+            "\n"
+            "#macro {\\eOp} {flee}\n"
+            "\n"
+            "#substitute {orc} {ORC}\n"
+            "\n"
+            "#var {target} {orc}\n"
         )
         with tempfile.TemporaryDirectory() as td:
             src = Path(td) / "in.tin"
@@ -1319,13 +1381,12 @@ class TestEditorModeFlip(unittest.TestCase):
             launcher._editor_buffer_scroll = 0
             launcher._editor_toggle_focused = False
             launcher._editor_toggle_hover = None
-            # Round-trip via flip-to-editor + flip-back-to-menu.
             launcher._editor_flip_mode()
-            self.assertEqual(launcher._editor_buffer_text, source)
+            self.assertEqual(launcher._editor_buffer_text, expected)
             launcher._editor_flip_mode()
             prof.path = dst
             profile_io.save_profile(prof)
-            self.assertEqual(dst.read_text(), source)
+            self.assertEqual(dst.read_text(), expected)
 
     def test_edits_survive_flip_round_trip(self):
         # Edit in menu mode → flip to editor → flip back to menu — the
