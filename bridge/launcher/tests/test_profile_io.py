@@ -146,22 +146,45 @@ class TestRoundTrip(unittest.TestCase):
         return "".join(out)
 
     def test_blank_template(self):
+        # Phase 6.2: parse → serialize sorts within the single #macro
+        # group alphabetically by pattern and drops the #nop header and
+        # blank separator.
         source = BLANK_TEMPLATE.read_text()
         result = self._round_trip(source)
-        self.assertEqual(result, self._strip_nop(source))
+        expected = (
+            "#macro {\\eOk} {open exit}\n"
+            "#macro {\\eOm} {close exit}\n"
+            "#macro {\\eOp} {flee}\n"
+            "#macro {\\eOr} {south}\n"
+            "#macro {\\eOs} {down}\n"
+            "#macro {\\eOt} {west}\n"
+            "#macro {\\eOu} {exits}\n"
+            "#macro {\\eOv} {east}\n"
+            "#macro {\\eOx} {north}\n"
+            "#macro {\\eOy} {up}\n"
+        )
+        self.assertEqual(result, expected)
 
     def test_macro_escape_preserved(self):
         source = "#macro {\\eOp} {flee}\n"
         self.assertEqual(self._round_trip(source), source)
 
     def test_passthrough_var_and_event(self):
+        # Sort groups by command (alias < event < var), drops blank line.
         source = (
             "#var {mytarget} {orc}\n"
             "\n"
             "#event {SESSION CONNECTED} {#showme welcome}\n"
             "#alias {k} {kill %1}\n"
         )
-        self.assertEqual(self._round_trip(source), source)
+        expected = (
+            "#alias {k} {kill %1}\n"
+            "\n"
+            "#event {SESSION CONNECTED} {#showme welcome}\n"
+            "\n"
+            "#var {mytarget} {orc}\n"
+        )
+        self.assertEqual(self._round_trip(source), expected)
 
     def test_nop_dropped(self):
         source = (
@@ -240,12 +263,24 @@ class TestCaseInsensitiveAndMultiLine(unittest.TestCase):
             "#Substitute {a} {b}\n"
             "#SUB {c} {d}\n"
         )
+        # Sort: groups by command (action, alias, highlight, substitute);
+        # each entry's `_raw` (with its mixed case) survives the sort.
+        expected = (
+            "#Action {Bubba} {bow}\n"
+            "\n"
+            "#ALIAS {k} {kill %1}\n"
+            "\n"
+            "#HIGHLIGHT {orc} {red}\n"
+            "\n"
+            "#Substitute {a} {b}\n"
+            "#SUB {c} {d}\n"
+        )
         prof, out = self._round_trip(source)
         self.assertEqual(len(prof.entries_of("alias")),      1)
         self.assertEqual(len(prof.entries_of("action")),     1)
         self.assertEqual(len(prof.entries_of("highlight")),  1)
         self.assertEqual(len(prof.entries_of("substitute")), 2)
-        self.assertEqual(out, source)
+        self.assertEqual(out, expected)
 
 
 class TestResolveKind(unittest.TestCase):
@@ -467,7 +502,7 @@ class TestPriorityArity(unittest.TestCase):
         self.assertEqual(out, source)
 
     # ----- Mixed file round-trip -------------------------------------
-    def test_mixed_file_round_trips_byte_exact(self):
+    def test_mixed_file_round_trips_with_sort_and_groups(self):
         source = (
             "#alias {k} {kill %1}\n"
             "#alias {test} {test} {1}\n"
@@ -480,8 +515,27 @@ class TestPriorityArity(unittest.TestCase):
             "#substitute {c} {d} {2}\n"
             "#var {target} {orc}\n"
         )
+        # Phase 6.2: groups alphabetical by command; within a group,
+        # alphabetical by first arg (stable for ties).
+        expected = (
+            "#action {Bubba} {bow}\n"
+            "#action {Bubba} {bow} {3}\n"
+            "\n"
+            "#alias {k} {kill %1}\n"
+            "#alias {test} {test} {1}\n"
+            "\n"
+            "#highlight {orc} {red}\n"
+            "#highlight {troll} {yellow} {5}\n"
+            "\n"
+            "#macro {\\eOp} {flee}\n"
+            "\n"
+            "#substitute {a} {b}\n"
+            "#substitute {c} {d} {2}\n"
+            "\n"
+            "#var {target} {orc}\n"
+        )
         prof, out = self._round_trip(source)
-        self.assertEqual(out, source)
+        self.assertEqual(out, expected)
         # And the kind/priority breakdown matches.
         aliases = prof.entries_of("alias")
         self.assertEqual([(e.pattern, e.priority) for e in aliases],
@@ -595,12 +649,19 @@ class TestStringHelpers(unittest.TestCase):
     def test_blank_template_round_trip_str(self):
         source = BLANK_TEMPLATE.read_text()
         prof, out = self._round_trip_str(source)
-        # Same #nop-drop semantics as load/save.
-        expected = "".join(
-            line for line in source.splitlines(keepends=True)
-            if not (line.lstrip().startswith("#nop") and (
-                len(line.lstrip()) == 4
-                or line.lstrip()[4] in (" ", "\t", "{", "\n", "\r")))
+        # Phase 6.2: parse → serialize sorts within the single #macro
+        # group alphabetically by pattern; #nop + blank header dropped.
+        expected = (
+            "#macro {\\eOk} {open exit}\n"
+            "#macro {\\eOm} {close exit}\n"
+            "#macro {\\eOp} {flee}\n"
+            "#macro {\\eOr} {south}\n"
+            "#macro {\\eOs} {down}\n"
+            "#macro {\\eOt} {west}\n"
+            "#macro {\\eOu} {exits}\n"
+            "#macro {\\eOv} {east}\n"
+            "#macro {\\eOx} {north}\n"
+            "#macro {\\eOy} {up}\n"
         )
         self.assertEqual(out, expected)
         # The path attached at parse time survives round-trip.
@@ -619,8 +680,19 @@ class TestStringHelpers(unittest.TestCase):
             "#highlight {Orc} {red} {5}\n"
             "#substitute {x} {y} {2}\n"
         )
+        # Sort groups alphabetically; one entry per group means each
+        # group is a single line with a blank-line separator between.
+        expected = (
+            "#action {Bubba} {bow} {3}\n"
+            "\n"
+            "#alias {a} {b} {1}\n"
+            "\n"
+            "#highlight {Orc} {red} {5}\n"
+            "\n"
+            "#substitute {x} {y} {2}\n"
+        )
         prof, out = self._round_trip_str(source)
-        self.assertEqual(out, source)
+        self.assertEqual(out, expected)
         # Priorities decoded as ints, not strings.
         self.assertEqual(prof.entries_of("alias")[0].priority,      1)
         self.assertEqual(prof.entries_of("action")[0].priority,     3)
@@ -635,14 +707,26 @@ class TestStringHelpers(unittest.TestCase):
             "#event {SESSION CONNECTED} {#showme welcome}\n"
             "#macro {\\eOp} {flee}\n"
         )
+        # Sort: groups alias < event < macro < var (alphabetical),
+        # blank line dropped on sort.
+        expected = (
+            "#alias {k} {kill %1}\n"
+            "\n"
+            "#event {SESSION CONNECTED} {#showme welcome}\n"
+            "\n"
+            "#macro {\\eOp} {flee}\n"
+            "\n"
+            "#var {target} {orc}\n"
+        )
         prof, out = self._round_trip_str(source)
-        self.assertEqual(out, source)
+        self.assertEqual(out, expected)
         self.assertEqual(len(prof.entries_of("alias")), 1)
         self.assertEqual(len(prof.entries_of("macro")), 1)
-        # The Passthroughs survive in order.
+        # Only the two classifiable Passthroughs survive (blank line
+        # was dropped on sort).
         passthroughs = [it for it in prof.items
                         if isinstance(it, Passthrough)]
-        self.assertEqual(len(passthroughs), 3)
+        self.assertEqual(len(passthroughs), 2)
 
     def test_serialize_drops_nop_and_empty_pattern(self):
         # Direct construction — verify the same drop rules as save_profile.
@@ -673,9 +757,10 @@ class TestStringHelpers(unittest.TestCase):
 
     def test_load_save_still_work_via_helpers(self):
         # Sanity: the disk wrappers go through the same code paths as
-        # parse/serialize, so a load → save round-trip continues to be
-        # byte-exact for the same inputs the string helpers preserve.
+        # parse/serialize. Phase 6.2 sort splits the two commands into
+        # their own groups with a blank-line separator.
         source = "#alias {k} {kill %1}\n#var {x} {y}\n"
+        expected = "#alias {k} {kill %1}\n\n#var {x} {y}\n"
         with tempfile.TemporaryDirectory() as td:
             src = Path(td) / "in.tin"
             dst = Path(td) / "out.tin"
@@ -683,7 +768,158 @@ class TestStringHelpers(unittest.TestCase):
             prof = load_profile(src)
             prof.path = dst
             save_profile(prof)
-            self.assertEqual(dst.read_text(), source)
+            self.assertEqual(dst.read_text(), expected)
+
+
+class TestSort(unittest.TestCase):
+    """Phase 6.2: alphabetical sort with group separation. parse_profile
+    sorts on the way in; serialize_profile sorts on the way out and
+    inserts a single blank line between command groups."""
+
+    PATH = Path("/dev/null/profile.tin")
+
+    def _round_trip_str(self, source):
+        prof = parse_profile(source, self.PATH)
+        return prof, serialize_profile(prof)
+
+    def test_groups_alphabetically_with_separator(self):
+        source = (
+            "#var {target} {orc}\n"
+            "#alias {k} {kill %1}\n"
+            "#event {SESSION CONNECTED} {#showme welcome}\n"
+            "#action {Bubba} {bow}\n"
+        )
+        expected = (
+            "#action {Bubba} {bow}\n"
+            "\n"
+            "#alias {k} {kill %1}\n"
+            "\n"
+            "#event {SESSION CONNECTED} {#showme welcome}\n"
+            "\n"
+            "#var {target} {orc}\n"
+        )
+        _prof, out = self._round_trip_str(source)
+        self.assertEqual(out, expected)
+
+    def test_within_group_alphabetical_by_first_arg(self):
+        source = (
+            "#alias {z} {Zzz}\n"
+            "#alias {a} {Aaa}\n"
+            "#alias {m} {Mmm}\n"
+        )
+        expected = (
+            "#alias {a} {Aaa}\n"
+            "#alias {m} {Mmm}\n"
+            "#alias {z} {Zzz}\n"
+        )
+        _prof, out = self._round_trip_str(source)
+        self.assertEqual(out, expected)
+
+    def test_passthrough_var_event_classified(self):
+        # `#var` and `#event` aren't GUI-editable kinds but are still
+        # `#<cmd> {arg1} ...` shapes — they end up in their own sorted
+        # groups, not at the end as opaque blobs.
+        source = (
+            "#var {b} {2}\n"
+            "#var {a} {1}\n"
+            "#event {Z STATE} {one}\n"
+            "#event {A STATE} {two}\n"
+        )
+        expected = (
+            "#event {A STATE} {two}\n"
+            "#event {Z STATE} {one}\n"
+            "\n"
+            "#var {a} {1}\n"
+            "#var {b} {2}\n"
+        )
+        _prof, out = self._round_trip_str(source)
+        self.assertEqual(out, expected)
+
+    def test_blank_lines_and_free_text_dropped(self):
+        source = (
+            "\n"
+            "just some free text\n"
+            "#alias {k} {kill %1}\n"
+            "\n"
+            "another free-text line that means nothing\n"
+            "#alias {a} {assist}\n"
+            "\n"
+        )
+        expected = (
+            "#alias {a} {assist}\n"
+            "#alias {k} {kill %1}\n"
+        )
+        _prof, out = self._round_trip_str(source)
+        self.assertEqual(out, expected)
+
+    def test_parse_returns_sorted_profile(self):
+        # parse_profile alone must already produce a sorted Profile —
+        # the post-parse items list should equal the order serialize
+        # would emit.
+        source = (
+            "#var {target} {orc}\n"
+            "#alias {k} {kill %1}\n"
+            "#action {Bubba} {bow}\n"
+        )
+        prof = parse_profile(source, self.PATH)
+        cmds_in_order = []
+        for item in prof.items:
+            if isinstance(item, Entry):
+                cmds_in_order.append((profile_io._KIND_TO_CMD[item.kind],
+                                      item.pattern))
+            else:
+                classified = profile_io._classify_passthrough(item)
+                if classified is not None:
+                    cmds_in_order.append(classified)
+        self.assertEqual(cmds_in_order, [
+            ("#action", "Bubba"),
+            ("#alias",  "k"),
+            ("#var",    "target"),
+        ])
+
+    def test_case_insensitive_within_group(self):
+        source = (
+            "#alias {Zebra} {z}\n"
+            "#alias {apple} {a}\n"
+            "#alias {Banana} {b}\n"
+        )
+        # Case-insensitive: a < B < Z regardless of source case.
+        expected = (
+            "#alias {apple} {a}\n"
+            "#alias {Banana} {b}\n"
+            "#alias {Zebra} {z}\n"
+        )
+        _prof, out = self._round_trip_str(source)
+        self.assertEqual(out, expected)
+
+    def test_no_blank_before_first_or_after_last(self):
+        # Sanity for the separator: only between groups.
+        source = "#alias {a} {1}\n#var {b} {2}\n"
+        _prof, out = self._round_trip_str(source)
+        # No leading or trailing blank line.
+        self.assertFalse(out.startswith("\n"))
+        self.assertTrue(out.endswith("\n"))
+        self.assertFalse(out.endswith("\n\n"))
+
+    def test_single_group_has_no_separators(self):
+        source = "#alias {b} {2}\n#alias {a} {1}\n"
+        expected = "#alias {a} {1}\n#alias {b} {2}\n"
+        _prof, out = self._round_trip_str(source)
+        self.assertEqual(out, expected)
+
+    def test_round_trip_is_idempotent(self):
+        # parse → serialize → parse → serialize must equal serialize
+        # after one round-trip (the result is already in canonical form).
+        source = (
+            "#var {x} {y}\n"
+            "#alias {b} {2}\n"
+            "\n"
+            "stray line\n"
+            "#alias {a} {1}\n"
+        )
+        _p1, out1 = self._round_trip_str(source)
+        _p2, out2 = self._round_trip_str(out1)
+        self.assertEqual(out1, out2)
 
 
 if __name__ == "__main__":

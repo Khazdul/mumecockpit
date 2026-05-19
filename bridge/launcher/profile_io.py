@@ -294,6 +294,77 @@ def _serialize_entry(entry):
 
 
 # ---------------------------------------------------------------------------
+# Sort + group helpers
+# ---------------------------------------------------------------------------
+def _classify_passthrough(pt):
+    """Return `(command_name, first_arg)` for a Passthrough whose raw
+    text starts with `#<cmd> {arg1}`, or `None` for blank lines, free
+    text, and malformed forms — those are dropped on sort.
+
+    `command_name` is the lower-cased `#<token>` (e.g. `#var`).
+    `first_arg` is the text strictly between the first `{...}` group;
+    it becomes the sort key within the command group.
+
+    Multi-line passthrough forms (a `#class {x} { ... \\n ... }` block
+    whose closing `}` lives on a later physical line) become per-line
+    Passthroughs in `parse_profile`; only the first line classifies and
+    the continuation lines drop on sort. This is a known limitation —
+    see the Phase 6.2 ADR."""
+    raw = pt.raw
+    n = len(raw)
+    cmd = _read_command_name(raw, 0, n)
+    if cmd is None:
+        return None
+    # Advance past leading horizontal whitespace then the `#<letters>` token.
+    j = 0
+    while j < n and raw[j] in (" ", "\t"):
+        j += 1
+    j += len(cmd)
+    while j < n and raw[j] in (" ", "\t"):
+        j += 1
+    if j >= n or raw[j] != "{":
+        return None
+    result = _read_brace_group(raw, j, n)
+    if result is None:
+        return None
+    first_arg, _end = result
+    return (cmd, first_arg)
+
+
+def _item_classify(item):
+    """Return `(command_name, sort_key)` for an Entry or Passthrough, or
+    `None` for items that should be dropped on sort.
+
+    Empty-pattern Entries (the editor's abandoned create attempts) are
+    also dropped — `serialize_profile` already had this rule; surfacing
+    it here keeps `parse_profile` and `serialize_profile` symmetric."""
+    if isinstance(item, Entry):
+        if item.pattern.strip() == "":
+            return None
+        return (_KIND_TO_CMD[item.kind], item.pattern)
+    if isinstance(item, Passthrough):
+        return _classify_passthrough(item)
+    return None
+
+
+def _sorted_items(items):
+    """Sort `items` into command groups. Returns a list of
+    `(command_name, item)` tuples in render order: groups sorted
+    alphabetically by `command_name`, items within each group sorted
+    case-insensitively by `sort_key`. Stable sort preserves source order
+    on ties."""
+    classified = []
+    for item in items:
+        key = _item_classify(item)
+        if key is None:
+            continue
+        cmd, sort_key = key
+        classified.append((cmd, sort_key, item))
+    classified.sort(key=lambda t: (t[0].lower(), t[1].lower()))
+    return [(cmd, item) for cmd, _key, item in classified]
+
+
+# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 def parse_profile(src, path):
@@ -303,7 +374,14 @@ def parse_profile(src, path):
     Walks the source as a stream, not line by line, so multi-line entry
     forms (brace groups separated by newlines) are recognised. Lines
     that don't start a known command fall through to Passthrough one
-    physical line at a time. `#nop` lines are dropped (ADR 0042)."""
+    physical line at a time. `#nop` lines are dropped (ADR 0042).
+
+    The returned `Profile.items` is sorted into command groups —
+    alphabetical by command name, alphabetical within each group by
+    first brace-arg (case-insensitive). Blank lines, free text, and
+    malformed Passthroughs are dropped during the sort pass. This
+    matches the order `serialize_profile` would emit, so a parse →
+    serialize round-trip is idempotent."""
     items = []
     i = 0
     n = len(src)
@@ -312,7 +390,7 @@ def parse_profile(src, path):
         if cmd == _NOP:
             # Drop one physical line. Multi-line `#nop {...}` blocks
             # are not consumed wholesale; their brace lines become
-            # Passthrough, which still byte-round-trips.
+            # Passthrough, which the sort pass drops anyway.
             nl = src.find("\n", i)
             i = n if nl == -1 else nl + 1
             continue
@@ -333,11 +411,19 @@ def parse_profile(src, path):
             items.append(Passthrough(raw=src[i:nl].rstrip("\r")))
             i = nl + 1
 
-    return Profile(path=Path(path), items=items)
+    sorted_items = [item for _cmd, item in _sorted_items(items)]
+    return Profile(path=Path(path), items=sorted_items)
 
 
 def serialize_profile(profile):
     """Render `profile.items` as the full file content (a string).
+
+    Items are grouped by `#<command>` (Entry kinds plus any
+    classifiable Passthrough) and sorted alphabetically within each
+    group; groups are sorted alphabetically by command name and emitted
+    with a single blank line between them. Blank lines, free text, and
+    malformed Passthroughs in the input are dropped — see the Phase 6.2
+    ADR for the rationale.
 
     Entry items with `_raw` still attached emit that verbatim (lossless
     round-trip for unmodified entries, including multi-line forms).
@@ -352,16 +438,18 @@ def serialize_profile(profile):
     Each item is followed by a newline; the result therefore always
     ends with `\\n` when non-empty."""
     out = []
-    for item in profile.items:
+    prev_cmd = None
+    for cmd, item in _sorted_items(profile.items):
+        if prev_cmd is not None and prev_cmd != cmd:
+            out.append("\n")
         if isinstance(item, Passthrough):
             out.append(item.raw + "\n")
-        elif isinstance(item, Entry):
-            if item.pattern.strip() == "":
-                continue
+        else:
             if item._raw is not None:
                 out.append(item._raw + "\n")
             else:
                 out.append(_serialize_entry(item) + "\n")
+        prev_cmd = cmd
     return "".join(out)
 
 
