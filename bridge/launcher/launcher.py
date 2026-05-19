@@ -216,6 +216,19 @@ _editor_sort_dir     = "asc"     # 'asc' | 'desc' — resets on each editor open
 _editor_hover_row    = None      # row index in display view under cursor, or None
 _editor_hover_sort   = False     # True when hovering the Pattern sort header
 _editor_list_sb      = None      # Scrollbar widget for the list panel
+# View-mode toggle. The profile editor has two mutually-exclusive views
+# over the same in-memory Profile: a form-based "menu" mode and a
+# plain-text "editor" mode that renders the full serialised file. The
+# toggle widget on the title row flips between them. Mode is *not*
+# remembered across pushes — every _enter_profile_editor lands on menu.
+_editor_mode            = "menu"   # "menu" | "editor"
+_editor_toggle_focused  = False    # True when the keyboard focus is on the toggle row
+_editor_toggle_hover    = None     # "menu" | "editor" | None — mouse hover
+# Editor-mode text buffer. Populated on every menu→editor flip by
+# serialize_profile(); parsed back into _editor_data on editor→menu.
+_editor_buffer_text     = ""       # current text content of the editor buffer
+_editor_buffer_cursor   = 0        # absolute char offset (0..len(text))
+_editor_buffer_scroll   = 0        # first visible visual row (after wrap)
 # Detail-panel editing state. Phase 3.5 covers Pattern + Body text inputs;
 # phase 4 adds Highlights' palette grid (sharing the detail_field == 1 slot
 # with Body, dispatched on active kind).
@@ -1823,6 +1836,12 @@ def _enter_profile_editor(path):
     _editor_body_col        = 0
     _editor_pattern_touched = False
     globals()["_editor_body_scroll"] = 0
+    globals()["_editor_mode"]           = "menu"
+    globals()["_editor_toggle_focused"] = False
+    globals()["_editor_toggle_hover"]   = None
+    globals()["_editor_buffer_text"]    = ""
+    globals()["_editor_buffer_cursor"]  = 0
+    globals()["_editor_buffer_scroll"]  = 0
     _editor_list_sb = Scrollbar(
         0, _editor_list_visible(), _editor_list_visible(),
     )
@@ -1832,10 +1851,19 @@ def _enter_profile_editor(path):
 
 def _profile_editor_save_and_close():
     """ESC handler: persist and pop. Flashes a hint on the profile
-    frame after pop — success in `C_ACCENT`, failure in `C_HINT`."""
+    frame after pop — success in `C_ACCENT`, failure in `C_HINT`.
+
+    When ESC fires from editor mode, parse the buffer back into the
+    Profile before saving so the on-disk content reflects the user's
+    text edits."""
     err_msg = None
     saved_name = None
     if _editor_data is not None:
+        if _editor_mode == "editor":
+            new_prof = profile_io.parse_profile(_editor_buffer_text,
+                                                _editor_data.path)
+            _editor_data.items[:] = new_prof.items
+            _editor_data.path     = new_prof.path
         try:
             profile_io.save_profile(_editor_data)
             saved_name = (
@@ -1893,6 +1921,7 @@ def _profile_editor_set_hover_sort(flag):
 
 def _profile_editor_clear_hover():
     global _editor_hover_tab, _editor_hover_row, _editor_hover_sort
+    global _editor_toggle_hover
     changed = False
     if _editor_hover_tab is not None:
         _editor_hover_tab = None
@@ -1902,6 +1931,9 @@ def _profile_editor_clear_hover():
         changed = True
     if _editor_hover_sort:
         _editor_hover_sort = False
+        changed = True
+    if _editor_toggle_hover is not None:
+        _editor_toggle_hover = None
         changed = True
     if changed and _app:
         _app.invalidate()
@@ -1919,6 +1951,8 @@ def _profile_editor_set_focus(panel, field=None):
       - highlight: 0 = Pattern, 1 = Style, 2 = Text, 3 = Background
     """
     global _editor_focus, _editor_detail_field, _editor_pattern_touched
+    # Any explicit menu-zone focus clears the toggle row's keyboard claim.
+    _editor_unfocus_toggle()
     prev_focus = _editor_focus
     prev_field = _editor_detail_field
     leaving_pattern = (
@@ -1952,25 +1986,42 @@ def _profile_editor_set_focus(panel, field=None):
 
 
 def _profile_editor_cycle_focus(delta):
-    """Cycle the focus chain: tabs → list → detail.zone_0 → … → tabs.
-    Detail-panel zones depend on the active kind — 2 (Pattern/Body) for
-    the text-bodied kinds and macros, 4 (Pattern/Style/Text/BG) for
-    highlights."""
+    """Cycle the focus chain.
+
+    Menu mode: toggle → kind → list → detail.Pattern → detail.Body →
+    toggle. Highlight detail has four zones; macro has two; aliases /
+    actions / substitutes have two. The detail zones come from
+    `_editor_hl_zone_count` so the cycle length adapts to the kind.
+
+    Editor mode: toggle → buffer → toggle."""
+    if _editor_mode == "editor":
+        new_focused = not _editor_toggle_focused
+        if new_focused:
+            _editor_focus_toggle()
+        else:
+            _editor_unfocus_toggle()
+        return
     detail_zones = _editor_hl_zone_count()
-    total = 2 + detail_zones   # tabs + list + zones
-    if _editor_focus == 0:
+    total = 3 + detail_zones   # toggle + kind + list + detail zones
+    if _editor_toggle_focused:
         idx = 0
-    elif _editor_focus == 1:
+    elif _editor_focus == 0:
         idx = 1
+    elif _editor_focus == 1:
+        idx = 2
     else:
-        idx = 2 + min(_editor_detail_field, detail_zones - 1)
+        idx = 3 + min(_editor_detail_field, detail_zones - 1)
     new_idx = (idx + delta) % total
     if new_idx == 0:
+        _editor_focus_toggle()
+        return
+    _editor_unfocus_toggle()
+    if new_idx == 1:
         _profile_editor_set_focus(0)
-    elif new_idx == 1:
+    elif new_idx == 2:
         _profile_editor_set_focus(1)
     else:
-        _profile_editor_set_focus(2, field=new_idx - 2)
+        _profile_editor_set_focus(2, field=new_idx - 3)
 
 
 def _profile_editor_active_kind():
@@ -3912,6 +3963,280 @@ def _editor_clear_outer_hover(ev):
     return NotImplemented
 
 
+# ---------------------------------------------------------------------------
+# Mode toggle (MENU / EDITOR)
+# ---------------------------------------------------------------------------
+_EDITOR_TOGGLE_LABELS = ("MENU", "EDITOR")
+
+# Soft-wrap left padding for the line-number column ("999 " for ≤999-line
+# files; widens automatically when the file is longer). Computed at render.
+# The current-line highlight tone in editor mode — subtle dark grey that
+# tracks the cursor without competing with the amber selection band.
+_EDITOR_LINE_HL_BG       = "bg:#1f1f1f"
+_EDITOR_LINE_HL_BG_DIM   = "bg:#141414"  # buffer unfocused — visible but dimmer
+
+
+def _editor_toggle_block(label):
+    """Return the rendered text for a toggle block. Each block is the label
+    wrapped in one cell of padding on each side, per the spec."""
+    return f" {label} "
+
+
+def _editor_toggle_widget_w():
+    """Total width of the MENU/EDITOR toggle including the single-space gap
+    between the blocks."""
+    return sum(len(_editor_toggle_block(s)) for s in _EDITOR_TOGGLE_LABELS) + 1
+
+
+def _editor_toggle_button_style(label_lower):
+    """Three-state colour for a toggle block. `label_lower` is "menu" or
+    "editor". Active = matches `_editor_mode`. Zone focus = the toggle row
+    has keyboard focus. Hover on the inactive block previews active-
+    unfocused (matches the kind-button convention)."""
+    is_active = (label_lower == _editor_mode)
+    is_hover  = (_editor_toggle_hover == label_lower and not is_active)
+    if is_active and _editor_toggle_focused:
+        return C_BUTTON_ACTIVE_FOCUSED
+    if is_active or is_hover:
+        return C_BUTTON_ACTIVE_UNFOCUSED
+    return C_BUTTON_INACTIVE
+
+
+def _editor_set_toggle_hover(label_lower):
+    """Update the toggle-row hover state and invalidate. `label_lower` is
+    "menu", "editor", or None."""
+    global _editor_toggle_hover
+    if _editor_toggle_hover != label_lower:
+        _editor_toggle_hover = label_lower
+        if _app:
+            _app.invalidate()
+
+
+def _editor_toggle_button_handler(label_lower):
+    """Mouse handler for a toggle block."""
+    def _h(ev, lbl=label_lower):
+        if ev.event_type == MouseEventType.MOUSE_MOVE:
+            _editor_set_toggle_hover(lbl)
+            return None
+        if ev.event_type == MouseEventType.MOUSE_DOWN:
+            # Click on the active block is a no-op; click on the
+            # inactive block flips mode. Either way, focus the toggle.
+            _editor_focus_toggle()
+            if lbl != _editor_mode:
+                _editor_flip_mode()
+            return None
+        return NotImplemented
+    return _h
+
+
+def _editor_focus_toggle():
+    """Move keyboard focus to the toggle row."""
+    global _editor_toggle_focused
+    if not _editor_toggle_focused:
+        _editor_toggle_focused = True
+        _focus_current_frame()
+        if _app:
+            _app.invalidate()
+
+
+def _editor_unfocus_toggle():
+    """Clear toggle focus — used when a non-toggle zone takes focus."""
+    global _editor_toggle_focused
+    if _editor_toggle_focused:
+        _editor_toggle_focused = False
+        if _app:
+            _app.invalidate()
+
+
+def _editor_flip_mode():
+    """Toggle between menu and editor mode. Edits in either mode survive
+    the flip:
+      • menu → editor — serialise the in-memory Profile into the text
+        buffer; place the cursor at offset 0.
+      • editor → menu — parse the buffer back into the existing Profile;
+        re-anchor the menu cursors via `_editor_refresh_buffers`.
+
+    The lenient parser surfaces unrecognised lines as Passthrough so
+    user-edited text never throws — the worst case is a previously-known
+    entry becoming a Passthrough until reformatted."""
+    global _editor_mode
+    global _editor_buffer_text, _editor_buffer_cursor, _editor_buffer_scroll
+    global _editor_list_cursor, _editor_list_scroll
+    if _editor_data is None:
+        return
+    if _editor_mode == "menu":
+        _editor_buffer_text   = profile_io.serialize_profile(_editor_data)
+        _editor_buffer_cursor = 0
+        _editor_buffer_scroll = 0
+        _editor_mode          = "editor"
+    else:
+        path = _editor_data.path
+        new_prof = profile_io.parse_profile(_editor_buffer_text, path)
+        _editor_data.items[:] = new_prof.items
+        _editor_data.path     = new_prof.path
+        # Reset list cursor onto a real row of the current kind so the
+        # detail panel re-binds cleanly.
+        _editor_list_cursor = 0
+        _editor_list_scroll = 0
+        _editor_refresh_buffers()
+        _editor_mode = "menu"
+    if _app:
+        _app.invalidate()
+
+
+# ---------------------------------------------------------------------------
+# Editor-mode buffer helpers
+# ---------------------------------------------------------------------------
+def _editor_buffer_line_starts():
+    """Return a list of buffer offsets where each logical line starts.
+    Always has at least one entry (`[0]`); ends BEFORE the trailing `\\n`
+    of the buffer so the cursor at end-of-buffer maps to a valid line."""
+    starts = [0]
+    text = _editor_buffer_text
+    for i, ch in enumerate(text):
+        if ch == "\n":
+            starts.append(i + 1)
+    return starts
+
+
+def _editor_buffer_line_count():
+    """Number of logical lines in the buffer."""
+    text = _editor_buffer_text
+    if text == "":
+        return 1
+    return text.count("\n") + (0 if text.endswith("\n") else 1) \
+        + (1 if text.endswith("\n") else 0)
+
+
+def _editor_buffer_cursor_to_line_col():
+    """Convert `_editor_buffer_cursor` (absolute offset) to a
+    `(line, col)` pair (both 0-indexed). Walks the line-starts table."""
+    text = _editor_buffer_text
+    starts = _editor_buffer_line_starts()
+    cur = max(0, min(len(text), _editor_buffer_cursor))
+    line = 0
+    for i, s in enumerate(starts):
+        if s <= cur:
+            line = i
+        else:
+            break
+    col = cur - starts[line]
+    return line, col
+
+
+def _editor_buffer_line_text(line_idx):
+    """Return the text of logical line `line_idx` (without trailing \\n)."""
+    text = _editor_buffer_text
+    starts = _editor_buffer_line_starts()
+    if not (0 <= line_idx < len(starts)):
+        return ""
+    start = starts[line_idx]
+    end = starts[line_idx + 1] - 1 if line_idx + 1 < len(starts) else len(text)
+    return text[start:end]
+
+
+def _editor_buffer_set_cursor_from_line_col(line, col):
+    """Move the buffer cursor to `(line, col)`. Clamps to valid range."""
+    global _editor_buffer_cursor
+    starts = _editor_buffer_line_starts()
+    line = max(0, min(len(starts) - 1, line))
+    line_len = len(_editor_buffer_line_text(line))
+    col = max(0, min(line_len, col))
+    _editor_buffer_cursor = starts[line] + col
+
+
+def _editor_buffer_insert(text_to_insert):
+    """Insert `text_to_insert` at the cursor and advance the cursor."""
+    global _editor_buffer_text, _editor_buffer_cursor
+    cur = max(0, min(len(_editor_buffer_text), _editor_buffer_cursor))
+    _editor_buffer_text = (
+        _editor_buffer_text[:cur] + text_to_insert
+        + _editor_buffer_text[cur:])
+    _editor_buffer_cursor = cur + len(text_to_insert)
+
+
+def _editor_buffer_backspace():
+    global _editor_buffer_text, _editor_buffer_cursor
+    cur = max(0, min(len(_editor_buffer_text), _editor_buffer_cursor))
+    if cur <= 0:
+        return
+    _editor_buffer_text = (
+        _editor_buffer_text[:cur - 1] + _editor_buffer_text[cur:])
+    _editor_buffer_cursor = cur - 1
+
+
+def _editor_buffer_delete():
+    global _editor_buffer_text
+    cur = max(0, min(len(_editor_buffer_text), _editor_buffer_cursor))
+    if cur >= len(_editor_buffer_text):
+        return
+    _editor_buffer_text = (
+        _editor_buffer_text[:cur] + _editor_buffer_text[cur + 1:])
+
+
+def _editor_buffer_content_width(cols):
+    """Width of the visible text-buffer region in editor mode. Equals the
+    terminal width minus the line-number column and the right-edge
+    scrollbar slot. Floors at 1 cell so the renderer never divides by
+    zero on a pathologically narrow terminal."""
+    return max(1, cols - _editor_line_num_w() - 1)
+
+
+def _editor_line_num_w():
+    """Width of the line-number column. Default 4 cells (3 digits + 1-cell
+    gap); widens by one cell per extra digit when the file is longer
+    than 999 lines."""
+    n = _editor_buffer_line_count()
+    digits = max(3, len(str(max(1, n))))
+    return digits + 1
+
+
+def _editor_buffer_visual_layout(cols):
+    """Compute the visual layout of the buffer for the current viewport:
+
+    - `wrap_w`: content-cell width per visual row.
+    - `visual_rows`: total visual rows after soft wrap.
+    - `line_to_visual`: list of (start_visual, wrap_count) per logical
+      line — `start_visual[i]` is the first visual row index of logical
+      line `i`, `wrap_count[i]` is how many visual rows it occupies.
+
+    Empty logical lines still occupy one visual row."""
+    wrap_w = _editor_buffer_content_width(cols)
+    starts = _editor_buffer_line_starts()
+    line_to_visual = []
+    total = 0
+    for line_idx in range(len(starts)):
+        line_text = _editor_buffer_line_text(line_idx)
+        n = max(1, (len(line_text) + wrap_w - 1) // wrap_w
+                if line_text else 1)
+        line_to_visual.append((total, n))
+        total += n
+    return wrap_w, total, line_to_visual
+
+
+def _editor_buffer_cursor_visual_row(cols):
+    """Return the visual row index where the cursor sits, for current
+    viewport `cols`."""
+    wrap_w, _total, l2v = _editor_buffer_visual_layout(cols)
+    line, col = _editor_buffer_cursor_to_line_col()
+    start, _n = l2v[line]
+    return start + (col // wrap_w)
+
+
+def _editor_buffer_scroll_into_view(cols, viewport_h):
+    """Clamp `_editor_buffer_scroll` so the cursor row stays inside the
+    viewport. Adjusts in the smallest delta needed."""
+    global _editor_buffer_scroll
+    _wrap_w, total, _l2v = _editor_buffer_visual_layout(cols)
+    cur_row = _editor_buffer_cursor_visual_row(cols)
+    if cur_row < _editor_buffer_scroll:
+        _editor_buffer_scroll = cur_row
+    elif cur_row >= _editor_buffer_scroll + viewport_h:
+        _editor_buffer_scroll = cur_row - viewport_h + 1
+    max_scroll = max(0, total - viewport_h)
+    _editor_buffer_scroll = max(0, min(max_scroll, _editor_buffer_scroll))
+
+
 def _editor_kind_button_style(idx):
     """Return the three-state colour token for the kind button at index
     `idx` (0..len(_PROFILE_EDITOR_TABS)-1). Hover on an inactive button
@@ -3989,10 +4314,13 @@ def _profile_editor_text():
 
     frags = []
     frags.append(("", "\n", _editor_clear_outer_hover))
-    frags.append(("", _pad_centre(title, cols), _editor_clear_outer_hover))
-    frags.append((C_SECTION, title, _editor_clear_outer_hover))
+    _editor_append_title_row(frags, title, cols)
     frags.append(("", "\n", _editor_clear_outer_hover))
-    frags.append(("", "\n", _editor_clear_outer_hover))
+
+    if _editor_mode == "editor":
+        _editor_append_editor_body(frags, cols)
+        _editor_append_footer(frags, cols)
+        return frags
 
     # ----- Body region (master/detail) --------------------------------
     body_h    = _editor_body_h()
@@ -4186,9 +4514,71 @@ def _profile_editor_text():
             frags.append(("", " " * right_pad, _editor_clear_outer_hover))
         frags.append(("", "\n", _editor_clear_outer_hover))
 
-    # ----- Footer -----
+    _editor_append_footer(frags, cols)
+    return frags
+
+
+def _editor_append_title_row(frags, title, cols):
+    """Render the title-row with the MENU/EDITOR toggle right-aligned so
+    the `R` in EDITOR sits above the right `┐` of the detail panel's
+    Pattern frame in menu mode. Narrow terminals truncate the title's
+    right-side decorative dashes; the toggle is never sacrificed."""
+    package_w = _editor_package_w()
+    left_pad  = _editor_left_pad()
+    toggle_w  = _editor_toggle_widget_w()
+    # The R in EDITOR must sit at the column of the detail panel's `┐`
+    # (i.e. the last column of the package). Right-aligning the toggle's
+    # offset-13 cell to that column means the toggle starts 14 cells
+    # before. The trailing space of " EDITOR " hangs one cell past the
+    # package right edge — invisible on a black background.
+    r_col       = left_pad + package_w - 1
+    toggle_start = r_col - 13
+
+    # Centre the title on the terminal, then truncate from the right so it
+    # never overlaps the toggle.
+    title_start = (cols - len(title)) // 2
+    title_max_end = toggle_start - 1   # one cell of gap
+    if title_start + len(title) > title_max_end:
+        max_len = max(0, title_max_end - title_start)
+        title = title[:max_len].rstrip("─ ")
+    title_start = (cols - len(title)) // 2 if title else 0
+    # Re-clamp after possible truncation so the title still fits.
+    if title_start + len(title) > title_max_end:
+        title_start = max(0, title_max_end - len(title))
+
+    # Emit: leading padding, title, padding to toggle, toggle, trailing pad.
+    if title_start > 0:
+        frags.append(("", " " * title_start, _editor_clear_outer_hover))
+    if title:
+        frags.append((C_SECTION, title, _editor_clear_outer_hover))
+    pad_to_toggle = max(0, toggle_start - (title_start + len(title)))
+    if pad_to_toggle > 0:
+        frags.append(("", " " * pad_to_toggle, _editor_clear_outer_hover))
+
+    for i, label_upper in enumerate(_EDITOR_TOGGLE_LABELS):
+        label_lower = label_upper.lower()
+        block = _editor_toggle_block(label_upper)
+        style = _editor_toggle_button_style(label_lower)
+        frags.append((style, block,
+                      _editor_toggle_button_handler(label_lower)))
+        if i == 0:
+            frags.append(("", " ", _editor_clear_outer_hover))
+
+    tail_pad = max(0, cols - toggle_start - toggle_w)
+    if tail_pad > 0:
+        frags.append(("", " " * tail_pad, _editor_clear_outer_hover))
     frags.append(("", "\n", _editor_clear_outer_hover))
-    if _editor_focus == 0:
+
+
+def _editor_append_footer(frags, cols):
+    """Footer hints + the macro key-capture feedback flash. Hint text
+    depends on the current focus zone and the active mode."""
+    frags.append(("", "\n", _editor_clear_outer_hover))
+    if _editor_toggle_focused:
+        footer = ("Enter Flip mode  ·  Tab Cycle  ·  ESC Save & back")
+    elif _editor_mode == "editor":
+        footer = ("←→↑↓ Cursor  ·  Tab Toggle  ·  ESC Save & back")
+    elif _editor_focus == 0:
         footer = ("↑↓ Move kind  ·  Tab Cycle  ·  ESC Save & back")
     elif _editor_focus == 1:
         footer = ("↑↓ Move  ·  Enter Edit  ·  n New  ·  Del Delete  ·  "
@@ -4198,9 +4588,6 @@ def _profile_editor_text():
                   "ESC Save & back")
     frags.append(("", _pad_centre(footer, cols), _editor_clear_outer_hover))
     frags.append((C_HINT, footer, _editor_clear_outer_hover))
-    # Feedback flash slot — one row below the footer. Used by the
-    # macro key-capture path to show "Bound to <key>." for a short
-    # window after a successful capture.
     if _editor_feedback_text:
         frags.append(("", "\n", _editor_clear_outer_hover))
         frags.append((
@@ -4211,7 +4598,145 @@ def _profile_editor_text():
             _editor_feedback_style, _editor_feedback_text,
             _editor_clear_outer_hover,
         ))
-    return frags
+
+
+def _editor_append_editor_body(frags, cols):
+    """Render the editor-mode body: full-width text buffer with line
+    numbers on the left, an inline scrollbar on the right, and a
+    current-line highlight tracking the cursor."""
+    body_h = _editor_body_h()
+    wrap_w, total_visual, l2v = _editor_buffer_visual_layout(cols)
+    _editor_buffer_scroll_into_view(cols, body_h)
+    scroll = _editor_buffer_scroll
+    cursor_line, cursor_col = _editor_buffer_cursor_to_line_col()
+    cursor_visual_row = l2v[cursor_line][0] + (cursor_col // wrap_w)
+    ln_w = _editor_line_num_w()
+
+    overflow = total_visual > body_h
+    sb_top, sb_thumb_h = _editor_sb_thumb_geom_generic(
+        total_visual, body_h, body_h, scroll)
+    sb_visible = overflow
+
+    # Pre-compute (logical_line, wrap_idx) for each visible visual row.
+    # `l2v[line_idx] = (start_visual, wrap_count)`; we walk forward from
+    # the line that contains the first visible visual row.
+    visible_rows = []
+    line_idx = 0
+    consumed = 0
+    # Find the starting logical line.
+    for i, (start, n) in enumerate(l2v):
+        if start + n > scroll:
+            line_idx = i
+            consumed = scroll - start
+            break
+    for vrow in range(body_h):
+        if line_idx < len(l2v):
+            start, n = l2v[line_idx]
+            visible_rows.append((line_idx, consumed))
+            consumed += 1
+            if consumed >= n:
+                line_idx += 1
+                consumed = 0
+        else:
+            visible_rows.append(None)
+
+    buffer_focused = (not _editor_toggle_focused)
+    hl_bg          = (_EDITOR_LINE_HL_BG if buffer_focused
+                      else _EDITOR_LINE_HL_BG_DIM)
+
+    for vrow in range(body_h):
+        info = visible_rows[vrow]
+        is_cursor_visual_row = (
+            info is not None
+            and info[0] == cursor_line
+            and info[1] == (cursor_col // wrap_w))
+        is_cursor_line = (info is not None and info[0] == cursor_line)
+        row_bg = hl_bg if is_cursor_line else ""
+
+        # Line-number cell.
+        if info is None or info[1] != 0:
+            ln_text = " " * ln_w
+        else:
+            ln_text = (str(info[0] + 1).rjust(ln_w - 1) + " ")
+        frags.append((f"fg:#585858 {row_bg}".strip(), ln_text,
+                      _editor_clear_outer_hover))
+
+        # Content cells (wrap_w wide, per-cell for cursor click handler).
+        if info is None:
+            content = " " * wrap_w
+            for col in range(wrap_w):
+                frags.append((row_bg, " ", _editor_clear_outer_hover))
+        else:
+            line_text = _editor_buffer_line_text(info[0])
+            wrap_idx  = info[1]
+            start     = wrap_idx * wrap_w
+            chunk     = line_text[start:start + wrap_w]
+            for ccol in range(wrap_w):
+                ch = chunk[ccol] if ccol < len(chunk) else " "
+                abs_col = start + ccol
+                is_cursor_cell = (
+                    is_cursor_visual_row
+                    and abs_col == cursor_col)
+                if is_cursor_cell and buffer_focused:
+                    style = C_SELECTED
+                elif ch != " ":
+                    style = f"{C_ITEM} {row_bg}".strip()
+                else:
+                    style = row_bg
+                frags.append((style, ch,
+                              _editor_buffer_click_handler(info[0], abs_col)))
+
+        # Scrollbar cell.
+        if sb_visible and sb_top <= vrow < sb_top + sb_thumb_h:
+            sb_style, sb_glyph = "bold fg:#ffffff", "█"
+        elif sb_visible:
+            sb_style, sb_glyph = "fg:#585858", "░"
+        else:
+            sb_style, sb_glyph = "", " "
+        frags.append((sb_style, sb_glyph,
+                      _editor_buffer_scrollbar_click_handler(vrow, sb_top,
+                                                             sb_thumb_h,
+                                                             total_visual,
+                                                             body_h)))
+        frags.append(("", "\n", _editor_clear_outer_hover))
+
+
+def _editor_buffer_click_handler(line_idx, col):
+    """Mouse handler for a content cell in the editor buffer. Click
+    positions the cursor at this `(line, col)` and unfocuses the
+    toggle. Move events are silent (no per-row hover in editor mode)."""
+    def _h(ev, ln=line_idx, c=col):
+        if ev.event_type == MouseEventType.MOUSE_MOVE:
+            return None
+        if ev.event_type != MouseEventType.MOUSE_DOWN:
+            return NotImplemented
+        _editor_unfocus_toggle()
+        _editor_buffer_set_cursor_from_line_col(ln, c)
+        if _app:
+            _app.invalidate()
+        return None
+    return _h
+
+
+def _editor_buffer_scrollbar_click_handler(vrow, sb_top, sb_thumb_h,
+                                           total, viewport_h):
+    """Page-step click on the editor-mode scrollbar. Clicks above the
+    thumb page up by one viewport, clicks below page down."""
+    def _h(ev, row=vrow, top=sb_top, h=sb_thumb_h, t=total, v=viewport_h):
+        if ev.event_type != MouseEventType.MOUSE_DOWN:
+            return None if ev.event_type == MouseEventType.MOUSE_MOVE \
+                else NotImplemented
+        global _editor_buffer_scroll
+        max_scroll = max(0, t - v)
+        if row < top:
+            _editor_buffer_scroll = max(0, _editor_buffer_scroll - v)
+        elif row >= top + h:
+            _editor_buffer_scroll = min(max_scroll,
+                                        _editor_buffer_scroll + v)
+        if _app:
+            _app.invalidate()
+        return None
+    return _h
 
 
 # --- Profile editor — feedback flash --------------------------------------
@@ -9367,6 +9892,29 @@ def _too_small():
     return Condition(lambda: not _size_ok())
 
 
+# Profile-editor sub-state filters. The editor has three orthogonal
+# states overlaid on the same `profile_editor` frame:
+#   - Mode: menu | editor (rendered view)
+#   - Toggle focus: True when the MENU/EDITOR toggle row owns keys
+# Each handler picks the slice it needs. ESC and a few catch-all bindings
+# still use plain `_in_frame("profile_editor")` so they fire in any state.
+def _in_pe_menu():
+    return Condition(lambda: _size_ok() and _current_frame == "profile_editor"
+                     and _editor_mode == "menu"
+                     and not _editor_toggle_focused)
+
+
+def _in_pe_editor():
+    return Condition(lambda: _size_ok() and _current_frame == "profile_editor"
+                     and _editor_mode == "editor"
+                     and not _editor_toggle_focused)
+
+
+def _in_pe_toggle():
+    return Condition(lambda: _size_ok() and _current_frame == "profile_editor"
+                     and _editor_toggle_focused)
+
+
 kb = KeyBindings()
 
 
@@ -9503,12 +10051,12 @@ def _kb_profile_escape(event):
 # (tabs → list → detail.Pattern → detail.Body → tabs). Arrows and
 # printable input route through one handler per key, gated on the
 # current focus zone + active detail field.
-@kb.add("tab", filter=_in_frame("profile_editor"))
+@kb.add("tab", filter=_in_pe_menu())
 def _kb_peditor_tab(event):
     _profile_editor_cycle_focus(1)
 
 
-@kb.add("s-tab", filter=_in_frame("profile_editor"))
+@kb.add("s-tab", filter=_in_pe_menu())
 def _kb_peditor_stab(event):
     _profile_editor_cycle_focus(-1)
 
@@ -9627,7 +10175,7 @@ def _kb_peditor_palette_down():
                                      _editor_hl_bg_col)
 
 
-@kb.add("right", filter=_in_frame("profile_editor"))
+@kb.add("right", filter=_in_pe_menu())
 def _kb_peditor_right(event):
     if _editor_focus == 0:
         # Kind column is vertical — Right moves focus to the entry list.
@@ -9648,7 +10196,7 @@ def _kb_peditor_right(event):
             _editor_body_move_right()
 
 
-@kb.add("left", filter=_in_frame("profile_editor"))
+@kb.add("left", filter=_in_pe_menu())
 def _kb_peditor_left(event):
     if _editor_focus == 0:
         return   # Kind column is leftmost zone — left is a no-op.
@@ -9668,21 +10216,24 @@ def _kb_peditor_left(event):
             _editor_body_move_left()
 
 
-@kb.add("up", filter=_in_frame("profile_editor"))
+@kb.add("up", filter=_in_pe_menu())
 def _kb_peditor_up(event):
     if _editor_focus == 0:
-        # Move up one kind, bounded at the top of the column.
+        # Move up one kind; at the top of the column, fall through to
+        # the MENU/EDITOR toggle.
         if _editor_active_tab > 0:
             _profile_editor_set_tab(_editor_active_tab - 1)
+        else:
+            _editor_focus_toggle()
         return
     if _editor_focus == 1:
         if _editor_list_cursor == 0:
-            _profile_editor_set_focus(0)
+            _editor_focus_toggle()
         else:
             _profile_editor_move_cursor(-1)
         return
     if _editor_detail_field == 0:
-        _profile_editor_set_focus(0)
+        _editor_focus_toggle()
         return
     if _editor_in_palette_focus():
         _kb_peditor_palette_up()
@@ -9693,7 +10244,7 @@ def _kb_peditor_up(event):
         _profile_editor_set_focus(2, field=0)
 
 
-@kb.add("down", filter=_in_frame("profile_editor"))
+@kb.add("down", filter=_in_pe_menu())
 def _kb_peditor_down(event):
     if _editor_focus == 0:
         # Move down one kind, or fall through to the entry list at the
@@ -9722,7 +10273,7 @@ def _kb_peditor_down(event):
 # Shift-arrow selection. Each handler arms the anchor (if not already
 # set) and reuses the regular movement primitive. The selection cell-
 # range is computed at render time from (anchor, cursor).
-@kb.add("s-right", filter=_in_frame("profile_editor"))
+@kb.add("s-right", filter=_in_pe_menu())
 def _kb_peditor_s_right(event):
     if _editor_focus != 2:
         return
@@ -9736,7 +10287,7 @@ def _kb_peditor_s_right(event):
         _editor_body_move_right()
 
 
-@kb.add("s-left", filter=_in_frame("profile_editor"))
+@kb.add("s-left", filter=_in_pe_menu())
 def _kb_peditor_s_left(event):
     if _editor_focus != 2:
         return
@@ -9750,7 +10301,7 @@ def _kb_peditor_s_left(event):
         _editor_body_move_left()
 
 
-@kb.add("s-up", filter=_in_frame("profile_editor"))
+@kb.add("s-up", filter=_in_pe_menu())
 def _kb_peditor_s_up(event):
     if _editor_focus != 2:
         return
@@ -9761,7 +10312,7 @@ def _kb_peditor_s_up(event):
     _editor_body_move_line(-1)
 
 
-@kb.add("s-down", filter=_in_frame("profile_editor"))
+@kb.add("s-down", filter=_in_pe_menu())
 def _kb_peditor_s_down(event):
     if _editor_focus != 2:
         return
@@ -9772,7 +10323,7 @@ def _kb_peditor_s_down(event):
     _editor_body_move_line(1)
 
 
-@kb.add("s-home", filter=_in_frame("profile_editor"))
+@kb.add("s-home", filter=_in_pe_menu())
 def _kb_peditor_s_home(event):
     if _editor_focus != 2:
         return
@@ -9786,7 +10337,7 @@ def _kb_peditor_s_home(event):
         _editor_body_move_home()
 
 
-@kb.add("s-end", filter=_in_frame("profile_editor"))
+@kb.add("s-end", filter=_in_pe_menu())
 def _kb_peditor_s_end(event):
     if _editor_focus != 2:
         return
@@ -9800,19 +10351,19 @@ def _kb_peditor_s_end(event):
         _editor_body_move_end()
 
 
-@kb.add("pageup", filter=_in_frame("profile_editor"))
+@kb.add("pageup", filter=_in_pe_menu())
 def _kb_peditor_pgup(event):
     if _editor_focus == 1:
         _profile_editor_move_cursor(-_editor_list_visible())
 
 
-@kb.add("pagedown", filter=_in_frame("profile_editor"))
+@kb.add("pagedown", filter=_in_pe_menu())
 def _kb_peditor_pgdn(event):
     if _editor_focus == 1:
         _profile_editor_move_cursor(_editor_list_visible())
 
 
-@kb.add("home", filter=_in_frame("profile_editor"))
+@kb.add("home", filter=_in_pe_menu())
 def _kb_peditor_home(event):
     if _editor_focus == 1:
         _profile_editor_jump_cursor(0)
@@ -9828,7 +10379,7 @@ def _kb_peditor_home(event):
             _editor_body_move_home()
 
 
-@kb.add("end", filter=_in_frame("profile_editor"))
+@kb.add("end", filter=_in_pe_menu())
 def _kb_peditor_end(event):
     if _editor_focus == 1:
         # End jumps to the sentinel row — the last selectable position.
@@ -9845,7 +10396,7 @@ def _kb_peditor_end(event):
             _editor_body_move_end()
 
 
-@kb.add("delete", filter=_in_frame("profile_editor"))
+@kb.add("delete", filter=_in_pe_menu())
 def _kb_peditor_kdelete(event):
     """`Del` semantics depend on focus zone:
     - List focus → delete the cursor entry immediately (no confirm).
@@ -9867,8 +10418,8 @@ def _kb_peditor_kdelete(event):
         _editor_body_forward_delete()
 
 
-@kb.add("n", filter=_in_frame("profile_editor"))
-@kb.add("N", filter=_in_frame("profile_editor"))
+@kb.add("n", filter=_in_pe_menu())
+@kb.add("N", filter=_in_pe_menu())
 def _kb_peditor_n(event):
     if _editor_focus == 1:
         _editor_create_new_entry()
@@ -9876,7 +10427,7 @@ def _kb_peditor_n(event):
         _kb_peditor_any(event)
 
 
-@kb.add("enter", filter=_in_frame("profile_editor"))
+@kb.add("enter", filter=_in_pe_menu())
 def _kb_peditor_enter(event):
     if _editor_focus == 1:
         if _editor_cursor_on_sentinel():
@@ -9906,7 +10457,7 @@ def _kb_peditor_enter(event):
         # Pattern: Enter is a no-op (use Tab / ↓ to advance).
 
 
-@kb.add("backspace", filter=_in_frame("profile_editor"))
+@kb.add("backspace", filter=_in_pe_menu())
 def _kb_peditor_backspace(event):
     if _editor_focus != 2:
         return
@@ -9922,7 +10473,7 @@ def _kb_peditor_backspace(event):
         _editor_body_backspace()
 
 
-@kb.add("<any>", filter=_in_frame("profile_editor"))
+@kb.add("<any>", filter=_in_pe_menu())
 def _kb_peditor_any(event):
     """Printable-char input on the detail panel. Pattern and Body
     accept any printable character; insertion happens at the in-buffer
@@ -9950,6 +10501,148 @@ def _kb_peditor_any(event):
 @kb.add("escape", filter=_in_frame("profile_editor"), eager=True)
 def _kb_peditor_escape(event):
     _profile_editor_save_and_close()
+
+
+# ---------------------------------------------------------------------------
+# Profile editor — MENU/EDITOR toggle key handlers
+# ---------------------------------------------------------------------------
+@kb.add("enter", filter=_in_pe_toggle())
+@kb.add(" ",     filter=_in_pe_toggle())
+def _kb_peditor_toggle_activate(event):
+    _editor_flip_mode()
+
+
+@kb.add("up", filter=_in_pe_toggle())
+def _kb_peditor_toggle_up(event):
+    # Nothing above the toggle.
+    return
+
+
+@kb.add("down", filter=_in_pe_toggle())
+def _kb_peditor_toggle_down(event):
+    _editor_unfocus_toggle()
+    if _editor_mode == "menu":
+        _profile_editor_set_focus(0)
+    # In editor mode the buffer is the only other zone — clearing the
+    # toggle focus drops us straight into it.
+
+
+@kb.add("left",  filter=_in_pe_toggle())
+@kb.add("right", filter=_in_pe_toggle())
+def _kb_peditor_toggle_lr(event):
+    return   # Single-selection toggle — no horizontal cursor.
+
+
+@kb.add("tab",   filter=_in_pe_toggle())
+def _kb_peditor_toggle_tab(event):
+    _profile_editor_cycle_focus(1)
+
+
+@kb.add("s-tab", filter=_in_pe_toggle())
+def _kb_peditor_toggle_stab(event):
+    _profile_editor_cycle_focus(-1)
+
+
+# ---------------------------------------------------------------------------
+# Profile editor — editor-mode buffer key handlers
+# ---------------------------------------------------------------------------
+def _kb_peditor_buffer_move_cursor(delta_line, delta_col=0):
+    """Move the buffer cursor by line/column. Preserves the column when
+    moving vertically (clamps to the destination line's length)."""
+    line, col = _editor_buffer_cursor_to_line_col()
+    if delta_line:
+        new_line = line + delta_line
+        starts = _editor_buffer_line_starts()
+        if new_line < 0:
+            return False
+        if new_line >= len(starts):
+            return False
+        new_line_len = len(_editor_buffer_line_text(new_line))
+        new_col = min(col, new_line_len)
+        _editor_buffer_set_cursor_from_line_col(new_line, new_col)
+        return True
+    if delta_col:
+        global _editor_buffer_cursor
+        _editor_buffer_cursor = max(0, min(len(_editor_buffer_text),
+                                           _editor_buffer_cursor + delta_col))
+    return True
+
+
+@kb.add("left",  filter=_in_pe_editor())
+def _kb_peditor_buffer_left(event):
+    _kb_peditor_buffer_move_cursor(0, -1)
+
+
+@kb.add("right", filter=_in_pe_editor())
+def _kb_peditor_buffer_right(event):
+    _kb_peditor_buffer_move_cursor(0, +1)
+
+
+@kb.add("up", filter=_in_pe_editor())
+def _kb_peditor_buffer_up(event):
+    if not _kb_peditor_buffer_move_cursor(-1):
+        _editor_focus_toggle()
+
+
+@kb.add("down", filter=_in_pe_editor())
+def _kb_peditor_buffer_down(event):
+    _kb_peditor_buffer_move_cursor(+1)
+
+
+@kb.add("home", filter=_in_pe_editor())
+def _kb_peditor_buffer_home(event):
+    line, _col = _editor_buffer_cursor_to_line_col()
+    _editor_buffer_set_cursor_from_line_col(line, 0)
+
+
+@kb.add("end", filter=_in_pe_editor())
+def _kb_peditor_buffer_end(event):
+    line, _col = _editor_buffer_cursor_to_line_col()
+    _editor_buffer_set_cursor_from_line_col(
+        line, len(_editor_buffer_line_text(line)))
+
+
+@kb.add("pageup", filter=_in_pe_editor())
+def _kb_peditor_buffer_pgup(event):
+    _kb_peditor_buffer_move_cursor(-max(1, _editor_body_h()))
+
+
+@kb.add("pagedown", filter=_in_pe_editor())
+def _kb_peditor_buffer_pgdn(event):
+    _kb_peditor_buffer_move_cursor(+max(1, _editor_body_h()))
+
+
+@kb.add("backspace", filter=_in_pe_editor())
+def _kb_peditor_buffer_backspace(event):
+    _editor_buffer_backspace()
+
+
+@kb.add("delete", filter=_in_pe_editor())
+def _kb_peditor_buffer_delete(event):
+    _editor_buffer_delete()
+
+
+@kb.add("enter", filter=_in_pe_editor())
+def _kb_peditor_buffer_enter(event):
+    _editor_buffer_insert("\n")
+
+
+@kb.add("tab", filter=_in_pe_editor())
+def _kb_peditor_buffer_tab(event):
+    _profile_editor_cycle_focus(1)
+
+
+@kb.add("s-tab", filter=_in_pe_editor())
+def _kb_peditor_buffer_stab(event):
+    _profile_editor_cycle_focus(-1)
+
+
+@kb.add("<any>", filter=_in_pe_editor())
+def _kb_peditor_buffer_any(event):
+    data = event.data or ""
+    if len(data) != 1 or not data.isprintable():
+        return
+    _editor_buffer_insert(data)
 
 
 # Profile editor — macro key-capture overlay

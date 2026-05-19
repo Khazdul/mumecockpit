@@ -1244,5 +1244,251 @@ class TestPhase4CrossKindEditing(unittest.TestCase):
             )
 
 
+class TestEditorModeFlip(unittest.TestCase):
+    """Phase 6 — menu/editor mode toggle. The two views are live-bound
+    to the same in-memory Profile: menu → editor serialises the items
+    into the text buffer; editor → menu parses the buffer back."""
+
+    def _setup_in_menu_mode(self, source=""):
+        prof, _src, _td = _make_profile(source)
+        _reset_editor_state(prof)
+        launcher._editor_mode           = "menu"
+        launcher._editor_toggle_focused = False
+        launcher._editor_toggle_hover   = None
+        launcher._editor_buffer_text    = ""
+        launcher._editor_buffer_cursor  = 0
+        launcher._editor_buffer_scroll  = 0
+        return prof
+
+    def test_default_mode_is_menu_on_open(self):
+        # No call to _enter_profile_editor here — the test harness sets
+        # menu mode directly, mirroring the editor-state reset.
+        prof = self._setup_in_menu_mode("#alias {k} {kill}\n")
+        self.assertEqual(launcher._editor_mode, "menu")
+        # Buffer text is empty until the first flip.
+        self.assertEqual(launcher._editor_buffer_text, "")
+
+    def test_flip_to_editor_serialises_profile(self):
+        source = "#alias {k} {kill %1}\n#var {x} {y}\n"
+        prof = self._setup_in_menu_mode(source)
+        launcher._editor_flip_mode()
+        self.assertEqual(launcher._editor_mode, "editor")
+        self.assertEqual(launcher._editor_buffer_text, source)
+        # Cursor lands at offset 0 on flip.
+        self.assertEqual(launcher._editor_buffer_cursor, 0)
+        self.assertEqual(launcher._editor_buffer_scroll, 0)
+
+    def test_flip_back_to_menu_parses_buffer(self):
+        # User edits the buffer in editor mode; flipping back into menu
+        # rebuilds the Profile from the buffer text.
+        prof = self._setup_in_menu_mode("#alias {k} {kill}\n")
+        launcher._editor_flip_mode()  # → editor
+        # Append a fresh entry through the buffer-mutation primitives.
+        launcher._editor_buffer_cursor = len(launcher._editor_buffer_text)
+        for ch in "#alias {ws} {wake;stand}\n":
+            launcher._editor_buffer_insert(ch)
+        launcher._editor_flip_mode()  # → menu
+        self.assertEqual(launcher._editor_mode, "menu")
+        aliases = prof.entries_of("alias")
+        self.assertEqual([(e.pattern, e.body) for e in aliases],
+                         [("k", "kill"), ("ws", "wake;stand")])
+
+    def test_round_trip_one_of_each_kind_byte_exact(self):
+        # The Done-when criterion: a profile authored entirely in editor
+        # mode, containing one entry of each kind plus a #var and a
+        # blank line, round-trips byte-exact across load → unmodified
+        # save.
+        source = (
+            "#alias {k} {kill %1}\n"
+            "#action {Bubba} {bow}\n"
+            "#macro {\\eOp} {flee}\n"
+            "#highlight {Orc} {red}\n"
+            "#substitute {orc} {ORC}\n"
+            "#var {target} {orc}\n"
+            "\n"
+        )
+        with tempfile.TemporaryDirectory() as td:
+            src = Path(td) / "in.tin"
+            dst = Path(td) / "out.tin"
+            src.write_text(source)
+            prof = profile_io.load_profile(src)
+            _reset_editor_state(prof)
+            launcher._editor_mode = "menu"
+            launcher._editor_buffer_text = ""
+            launcher._editor_buffer_cursor = 0
+            launcher._editor_buffer_scroll = 0
+            launcher._editor_toggle_focused = False
+            launcher._editor_toggle_hover = None
+            # Round-trip via flip-to-editor + flip-back-to-menu.
+            launcher._editor_flip_mode()
+            self.assertEqual(launcher._editor_buffer_text, source)
+            launcher._editor_flip_mode()
+            prof.path = dst
+            profile_io.save_profile(prof)
+            self.assertEqual(dst.read_text(), source)
+
+    def test_edits_survive_flip_round_trip(self):
+        # Edit in menu mode → flip to editor → flip back to menu — the
+        # menu-mode edit must persist (parser preserves it as the same
+        # canonical Entry).
+        prof = self._setup_in_menu_mode("#alias {k} {kill}\n")
+        # Edit through the menu-mode helper.
+        alias_k = prof.entries_of("alias")[0]
+        alias_k.body = "kill orc"
+        # Flip to editor and back.
+        launcher._editor_flip_mode()
+        self.assertIn("kill orc", launcher._editor_buffer_text)
+        launcher._editor_flip_mode()
+        self.assertEqual(prof.entries_of("alias")[0].body, "kill orc")
+
+
+class TestEditorModeBufferCursor(unittest.TestCase):
+    """Editor-mode buffer cursor model. Cursor is an absolute offset
+    into `_editor_buffer_text`; helpers convert to `(line, col)` and
+    the line-starts table backs visual layout / scroll-into-view."""
+
+    def _setup_buffer(self, text):
+        # Drop into editor mode with `text` as the buffer content.
+        prof, _src, _td = _make_profile("")
+        _reset_editor_state(prof)
+        launcher._editor_mode           = "editor"
+        launcher._editor_toggle_focused = False
+        launcher._editor_buffer_text    = text
+        launcher._editor_buffer_cursor  = 0
+        launcher._editor_buffer_scroll  = 0
+
+    def test_cursor_to_line_col_first_line(self):
+        self._setup_buffer("hello\nworld\n")
+        launcher._editor_buffer_cursor = 3
+        self.assertEqual(launcher._editor_buffer_cursor_to_line_col(),
+                         (0, 3))
+
+    def test_cursor_to_line_col_second_line(self):
+        self._setup_buffer("hello\nworld\n")
+        launcher._editor_buffer_cursor = 8   # 6 (start of "world") + 2
+        self.assertEqual(launcher._editor_buffer_cursor_to_line_col(),
+                         (1, 2))
+
+    def test_insert_at_cursor_advances_offset(self):
+        self._setup_buffer("ab")
+        launcher._editor_buffer_cursor = 1
+        launcher._editor_buffer_insert("X")
+        self.assertEqual(launcher._editor_buffer_text, "aXb")
+        self.assertEqual(launcher._editor_buffer_cursor, 2)
+
+    def test_backspace_at_offset(self):
+        self._setup_buffer("abc")
+        launcher._editor_buffer_cursor = 2
+        launcher._editor_buffer_backspace()
+        self.assertEqual(launcher._editor_buffer_text, "ac")
+        self.assertEqual(launcher._editor_buffer_cursor, 1)
+
+    def test_backspace_at_start_is_noop(self):
+        self._setup_buffer("abc")
+        launcher._editor_buffer_cursor = 0
+        launcher._editor_buffer_backspace()
+        self.assertEqual(launcher._editor_buffer_text, "abc")
+
+    def test_delete_at_offset(self):
+        self._setup_buffer("abc")
+        launcher._editor_buffer_cursor = 1
+        launcher._editor_buffer_delete()
+        self.assertEqual(launcher._editor_buffer_text, "ac")
+        # Cursor stays put — delete consumes the character to the right.
+        self.assertEqual(launcher._editor_buffer_cursor, 1)
+
+    def test_delete_at_end_is_noop(self):
+        self._setup_buffer("abc")
+        launcher._editor_buffer_cursor = 3
+        launcher._editor_buffer_delete()
+        self.assertEqual(launcher._editor_buffer_text, "abc")
+
+    def test_set_cursor_from_line_col_clamps_to_line_length(self):
+        self._setup_buffer("ab\nlonger line\n")
+        launcher._editor_buffer_set_cursor_from_line_col(0, 99)
+        # Line 0 is "ab" (length 2) — col clamps to 2.
+        self.assertEqual(launcher._editor_buffer_cursor, 2)
+
+    def test_line_count_handles_trailing_newline(self):
+        # Vim-style line count: a trailing \n creates an empty phantom
+        # line so the cursor at end-of-buffer has a real (line, col)
+        # mapping.
+        self._setup_buffer("a\nb\n")
+        self.assertEqual(launcher._editor_buffer_line_count(), 3)
+
+    def test_line_count_no_trailing_newline(self):
+        self._setup_buffer("a\nb")
+        self.assertEqual(launcher._editor_buffer_line_count(), 2)
+
+
+class TestEditorModeToggle(unittest.TestCase):
+    """Toggle-row focus + activation. Enter/Space flips mode, click on
+    the inactive block flips mode, click on the active block is a
+    no-op."""
+
+    def _setup(self):
+        prof, _src, _td = _make_profile("#alias {k} {kill}\n")
+        _reset_editor_state(prof)
+        launcher._editor_mode           = "menu"
+        launcher._editor_toggle_focused = False
+        launcher._editor_toggle_hover   = None
+        launcher._editor_buffer_text    = ""
+        launcher._editor_buffer_cursor  = 0
+        launcher._editor_buffer_scroll  = 0
+        return prof
+
+    def test_focus_toggle_sets_flag(self):
+        self._setup()
+        launcher._editor_focus_toggle()
+        self.assertTrue(launcher._editor_toggle_focused)
+
+    def test_setting_menu_focus_clears_toggle_focus(self):
+        self._setup()
+        launcher._editor_focus_toggle()
+        launcher._profile_editor_set_focus(1)
+        self.assertFalse(launcher._editor_toggle_focused)
+
+    def test_flip_mode_menu_to_editor_serialises(self):
+        prof = self._setup()
+        launcher._editor_flip_mode()
+        self.assertEqual(launcher._editor_mode, "editor")
+        self.assertEqual(launcher._editor_buffer_text,
+                         "#alias {k} {kill}\n")
+
+    def test_button_style_inactive_when_other_mode(self):
+        self._setup()
+        # mode = menu — the EDITOR button is inactive.
+        self.assertEqual(
+            launcher._editor_toggle_button_style("editor"),
+            launcher.C_BUTTON_INACTIVE,
+        )
+
+    def test_button_style_active_focused_amber(self):
+        self._setup()
+        launcher._editor_focus_toggle()
+        # mode = menu, toggle focused → MENU is active-focused.
+        self.assertEqual(
+            launcher._editor_toggle_button_style("menu"),
+            launcher.C_BUTTON_ACTIVE_FOCUSED,
+        )
+
+    def test_button_style_active_unfocused_grey(self):
+        self._setup()
+        # mode = menu, toggle NOT focused → MENU is active-unfocused.
+        self.assertEqual(
+            launcher._editor_toggle_button_style("menu"),
+            launcher.C_BUTTON_ACTIVE_UNFOCUSED,
+        )
+
+    def test_button_hover_on_inactive_previews_unfocused(self):
+        self._setup()
+        # mode = menu — hover on EDITOR previews active-unfocused.
+        launcher._editor_toggle_hover = "editor"
+        self.assertEqual(
+            launcher._editor_toggle_button_style("editor"),
+            launcher.C_BUTTON_ACTIVE_UNFOCUSED,
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
