@@ -13,7 +13,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import profile_io  # noqa: E402
 from profile_io import (  # noqa: E402
-    Entry, Passthrough, load_profile, save_profile, resolve_kind,
+    Entry, Passthrough, load_profile, save_profile,
+    parse_profile, serialize_profile, resolve_kind,
     _parse_line, _split_brace_args, _serialize_entry,
 )
 
@@ -564,6 +565,125 @@ class TestSerializerPriorityGuard(unittest.TestCase):
                     _serialize_entry(e),
                     f"#{kind} {{p}} {{b}}",
                 )
+
+
+class TestStringHelpers(unittest.TestCase):
+    """`parse_profile(src, path)` and `serialize_profile(profile)` are the
+    pure string-mode helpers underlying load/save. They share all the
+    invariants documented on load/save — `_raw` byte-exact for unmodified
+    entries, canonical regeneration on mutation, `#nop` drop, empty-
+    pattern drop — but bypass disk I/O so the editor's mode-flip can
+    round-trip in memory."""
+
+    PATH = Path("/dev/null/profile.tin")
+
+    def _round_trip_str(self, source):
+        prof = parse_profile(source, self.PATH)
+        return prof, serialize_profile(prof)
+
+    def test_parse_profile_attaches_path(self):
+        prof = parse_profile("", Path("/tmp/whatever.tin"))
+        self.assertEqual(prof.path, Path("/tmp/whatever.tin"))
+        self.assertEqual(prof.items, [])
+
+    def test_parse_profile_accepts_str_path(self):
+        # `path` accepts both `pathlib.Path` and `str` (load_profile
+        # historically accepted either; the helper preserves that).
+        prof = parse_profile("", "/tmp/whatever.tin")
+        self.assertEqual(prof.path, Path("/tmp/whatever.tin"))
+
+    def test_blank_template_round_trip_str(self):
+        source = BLANK_TEMPLATE.read_text()
+        prof, out = self._round_trip_str(source)
+        # Same #nop-drop semantics as load/save.
+        expected = "".join(
+            line for line in source.splitlines(keepends=True)
+            if not (line.lstrip().startswith("#nop") and (
+                len(line.lstrip()) == 4
+                or line.lstrip()[4] in (" ", "\t", "{", "\n", "\r")))
+        )
+        self.assertEqual(out, expected)
+        # The path attached at parse time survives round-trip.
+        self.assertEqual(prof.path, self.PATH)
+
+    def test_multi_line_entry_round_trip_str(self):
+        source = "#macro {\\eOm}\n{\n    close exit\n}\n"
+        prof, out = self._round_trip_str(source)
+        self.assertEqual(len(prof.entries_of("macro")), 1)
+        self.assertEqual(out, source)
+
+    def test_priority_entry_round_trip_str(self):
+        source = (
+            "#alias {a} {b} {1}\n"
+            "#action {Bubba} {bow} {3}\n"
+            "#highlight {Orc} {red} {5}\n"
+            "#substitute {x} {y} {2}\n"
+        )
+        prof, out = self._round_trip_str(source)
+        self.assertEqual(out, source)
+        # Priorities decoded as ints, not strings.
+        self.assertEqual(prof.entries_of("alias")[0].priority,      1)
+        self.assertEqual(prof.entries_of("action")[0].priority,     3)
+        self.assertEqual(prof.entries_of("highlight")[0].priority,  5)
+        self.assertEqual(prof.entries_of("substitute")[0].priority, 2)
+
+    def test_mixed_entry_and_passthrough_round_trip_str(self):
+        source = (
+            "#var {target} {orc}\n"
+            "\n"
+            "#alias {k} {kill %1}\n"
+            "#event {SESSION CONNECTED} {#showme welcome}\n"
+            "#macro {\\eOp} {flee}\n"
+        )
+        prof, out = self._round_trip_str(source)
+        self.assertEqual(out, source)
+        self.assertEqual(len(prof.entries_of("alias")), 1)
+        self.assertEqual(len(prof.entries_of("macro")), 1)
+        # The Passthroughs survive in order.
+        passthroughs = [it for it in prof.items
+                        if isinstance(it, Passthrough)]
+        self.assertEqual(len(passthroughs), 3)
+
+    def test_serialize_drops_nop_and_empty_pattern(self):
+        # Direct construction — verify the same drop rules as save_profile.
+        prof = profile_io.Profile(path=self.PATH, items=[
+            Entry(kind="alias", pattern="",  body="x",
+                  priority=None, _raw=None),
+            Entry(kind="alias", pattern="k", body="kill",
+                  priority=None, _raw=None),
+        ])
+        self.assertEqual(serialize_profile(prof), "#alias {k} {kill}\n")
+
+    def test_serialize_empty_profile_is_empty_string(self):
+        prof = profile_io.Profile(path=self.PATH, items=[])
+        self.assertEqual(serialize_profile(prof), "")
+
+    def test_edit_then_serialize_regenerates_canonically(self):
+        source = "#alias    {keep}    {body}\n#alias {touch} {old}\n"
+        prof = parse_profile(source, self.PATH)
+        touch = next(e for e in prof.entries_of("alias")
+                     if e.pattern == "touch")
+        touch.body = "new"
+        self.assertEqual(
+            serialize_profile(prof),
+            # `keep` keeps its odd whitespace via _raw, `touch` is
+            # regenerated canonically.
+            "#alias    {keep}    {body}\n#alias {touch} {new}\n",
+        )
+
+    def test_load_save_still_work_via_helpers(self):
+        # Sanity: the disk wrappers go through the same code paths as
+        # parse/serialize, so a load → save round-trip continues to be
+        # byte-exact for the same inputs the string helpers preserve.
+        source = "#alias {k} {kill %1}\n#var {x} {y}\n"
+        with tempfile.TemporaryDirectory() as td:
+            src = Path(td) / "in.tin"
+            dst = Path(td) / "out.tin"
+            src.write_text(source)
+            prof = load_profile(src)
+            prof.path = dst
+            save_profile(prof)
+            self.assertEqual(dst.read_text(), source)
 
 
 if __name__ == "__main__":

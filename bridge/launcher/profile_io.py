@@ -296,17 +296,14 @@ def _serialize_entry(entry):
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
-def load_profile(path):
-    """Parse `path` (a `pathlib.Path` or `str`) into a `Profile`.
+def parse_profile(src, path):
+    """Parse `src` (a string) into a `Profile`, attaching `path` (a
+    `pathlib.Path` or `str`) as the resulting profile's path.
 
     Walks the source as a stream, not line by line, so multi-line entry
     forms (brace groups separated by newlines) are recognised. Lines
     that don't start a known command fall through to Passthrough one
-    physical line at a time."""
-    p = Path(path)
-    with open(p, "r") as fh:
-        src = fh.read()
-
+    physical line at a time. `#nop` lines are dropped (ADR 0042)."""
     items = []
     i = 0
     n = len(src)
@@ -336,11 +333,11 @@ def load_profile(path):
             items.append(Passthrough(raw=src[i:nl].rstrip("\r")))
             i = nl + 1
 
-    return Profile(path=p, items=items)
+    return Profile(path=Path(path), items=items)
 
 
-def save_profile(profile):
-    """Write `profile` back to its `path` via a temp-file + rename.
+def serialize_profile(profile):
+    """Render `profile.items` as the full file content (a string).
 
     Entry items with `_raw` still attached emit that verbatim (lossless
     round-trip for unmodified entries, including multi-line forms).
@@ -351,18 +348,37 @@ def save_profile(profile):
     these are abandoned create attempts surfaced by the editor's
     "+ New entry" sentinel. Other "soft-invalid" states (empty body,
     etc.) are written as-is.
-    """
+
+    Each item is followed by a newline; the result therefore always
+    ends with `\\n` when non-empty."""
+    out = []
+    for item in profile.items:
+        if isinstance(item, Passthrough):
+            out.append(item.raw + "\n")
+        elif isinstance(item, Entry):
+            if item.pattern.strip() == "":
+                continue
+            if item._raw is not None:
+                out.append(item._raw + "\n")
+            else:
+                out.append(_serialize_entry(item) + "\n")
+    return "".join(out)
+
+
+def load_profile(path):
+    """Read `path` (a `pathlib.Path` or `str`) and return the parsed
+    `Profile`. Thin wrapper around `parse_profile`."""
+    p = Path(path)
+    with open(p, "r") as fh:
+        src = fh.read()
+    return parse_profile(src, p)
+
+
+def save_profile(profile):
+    """Serialise `profile` and write it to `profile.path` via a
+    temp-file + rename. Thin wrapper around `serialize_profile`."""
     p = Path(profile.path)
     tmp = p.with_name(p.name + ".tmp")
     with open(tmp, "w") as fh:
-        for item in profile.items:
-            if isinstance(item, Passthrough):
-                fh.write(item.raw + "\n")
-            elif isinstance(item, Entry):
-                if item.pattern.strip() == "":
-                    continue
-                if item._raw is not None:
-                    fh.write(item._raw + "\n")
-                else:
-                    fh.write(_serialize_entry(item) + "\n")
+        fh.write(serialize_profile(profile))
     os.replace(tmp, p)
