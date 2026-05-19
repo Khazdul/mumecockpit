@@ -82,6 +82,21 @@ class Scrollbar:
     def scroll_by(self, delta: int) -> None:
         self.scroll_to(self._offset + int(delta))
 
+    def handle_click(self, cell_row: int) -> None:
+        """Page-step click on cell `cell_row`:
+
+        - row above the thumb → scroll up one viewport
+        - row below the thumb → scroll down one viewport
+        - row on the thumb    → no-op (drag is out of scope)
+        """
+        if not self.visible:
+            return
+        thumb_top, thumb_h = self._thumb_geometry()
+        if cell_row < thumb_top:
+            self.scroll_by(-self._visible)
+        elif cell_row >= thumb_top + thumb_h:
+            self.scroll_by(self._visible)
+
     # ------------------------------------------------------------------
     # Rendering
     # ------------------------------------------------------------------
@@ -108,7 +123,7 @@ class Scrollbar:
             def _handler(ev, row=i):
                 if ev.event_type != MouseEventType.MOUSE_DOWN:
                     return
-                self.scroll_to(self._click_to_offset(row))
+                self.handle_click(row)
 
             frags.append((style, ch, _handler))
             if i < self._height - 1:
@@ -137,23 +152,6 @@ class Scrollbar:
         thumb_top = round(self._offset / max_scroll * max_thumb_top)
         thumb_top = max(0, min(max_thumb_top, thumb_top))
         return thumb_top, thumb_h
-
-    def _click_to_offset(self, cell_row: int) -> int:
-        """Map a click on cell `cell_row` to a scroll offset.
-
-        Centres the thumb on the clicked cell, then maps the resulting
-        thumb position back to a scroll offset.
-        """
-        max_scroll = self._max_scroll()
-        if max_scroll <= 0:
-            return 0
-        _, thumb_h    = self._thumb_geometry()
-        max_thumb_top = self._height - thumb_h
-        if max_thumb_top <= 0:
-            return 0
-        target_top = cell_row - thumb_h // 2
-        target_top = max(0, min(max_thumb_top, target_top))
-        return round(target_top / max_thumb_top * max_scroll)
 
 
 # ---------------------------------------------------------------------------

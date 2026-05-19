@@ -2854,15 +2854,19 @@ def _editor_sb_thumb_geom(total, visible, height):
 
 
 def _editor_sb_click_to_offset(cell_row, total, visible, height):
+    """Page-step click: clicks above/below the thumb scroll by one
+    viewport; clicks on the thumb are a no-op. Mirrors the widget's
+    Scrollbar.render() handler so the inline-rendered entry-list bar
+    behaves identically. Returns the new `_editor_list_scroll` value."""
     mx_scroll = max(0, total - visible)
     if mx_scroll <= 0:
-        return 0
-    _top, thumb_h = _editor_sb_thumb_geom(total, visible, height)
-    max_top = height - thumb_h
-    if max_top <= 0:
-        return 0
-    target_top = max(0, min(max_top, cell_row - thumb_h // 2))
-    return round(target_top / max_top * mx_scroll)
+        return _editor_list_scroll
+    top, thumb_h = _editor_sb_thumb_geom(total, visible, height)
+    if cell_row < top:
+        return max(0, _editor_list_scroll - visible)
+    if cell_row >= top + thumb_h:
+        return min(mx_scroll, _editor_list_scroll + visible)
+    return _editor_list_scroll
 
 
 # ----- Rendering helpers --------------------------------------------------
