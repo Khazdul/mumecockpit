@@ -197,3 +197,19 @@ surfaces; the body renders through the palette's plain text-path
 fallback. The leftmost-toggle Left-arrow fall-through (§3, "Style.
 Bold → Pattern") now applies to `Undersc.` as the new leftmost
 toggle.
+
+### Phase 6.3 kind-buttons layout
+
+The vertical kind column moved to a horizontal kind-buttons row
+above the body — five 13-cell BG-filled 3-row blocks separated by
+3-cell gaps, centred on the terminal, in alphabetical order
+(`ACTIONS`, `ALIASES`, `HIGHLIGHTS`, `MACROS`, `SUBSTITUTES`).
+Within-row navigation switches from `↑/↓` to `←/→` (no wrap on
+either end). Vertical fall-through respects the new physical
+stacking: `↑` from the kind row → toggle; `↑` from list top row
+or detail.Pattern → kind row (not directly to toggle as in Phase
+6.2). The body widens to fill the freed horizontal space — list
+23 → 38, detail 30 → 35, inter-panel gap 2 → 3 — for a less
+cramped editing surface. Tab cycle length is unchanged; the
+five focus stops are now toggle → kind row → list → Pattern →
+Body.

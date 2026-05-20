@@ -36,12 +36,26 @@ def _make_profile(source):
     return prof, src, td
 
 
-def _reset_editor_state(profile, *, focus=1, active_tab=0):
+def _tab_index(kind):
+    """Resolve a kind string to its tab index in the current
+    `_PROFILE_EDITOR_TABS`. Decouples tests from tab order — Phase 6.3
+    re-sorted the buttons alphabetically."""
+    for i, (_label, k) in enumerate(launcher._PROFILE_EDITOR_TABS):
+        if k == kind:
+            return i
+    raise KeyError(kind)
+
+
+def _reset_editor_state(profile, *, focus=1, active_tab=None, kind="alias"):
     """Place `profile` into the editor's module-level state, fresh defaults.
 
     `focus` defaults to 1 (list); pass `focus=2` to drive the detail-
-    panel editing paths. `active_tab` defaults to 0 (Aliases); pass a
-    different index for phase-4 cross-kind tests."""
+    panel editing paths. `kind` (default "alias") selects which tab is
+    active and is resolved to the current tab index. `active_tab` (an
+    integer) overrides `kind` when provided — kept for the few tests
+    that need to walk every tab by index."""
+    if active_tab is None:
+        active_tab = _tab_index(kind)
     launcher._editor_profile_path = profile.path
     launcher._editor_data         = profile
     launcher._editor_active_tab   = active_tab
@@ -868,13 +882,15 @@ class TestPhase4MultiKind(unittest.TestCase):
             self.assertEqual(dst.read_text(), expected)
 
     def test_each_tab_lists_its_kind(self):
+        # Phase 6.3: tabs are sorted alphabetically by label —
+        # ACTIONS, ALIASES, HIGHLIGHTS, MACROS, SUBSTITUTES.
         prof, _src, _td = _make_profile(self.MIXED_PROFILE)
         _reset_editor_state(prof)
         expected_kinds = [
-            ("Aliases",     "alias"),
             ("Actions",     "action"),
-            ("Macros",      "macro"),
+            ("Aliases",     "alias"),
             ("Highlights",  "highlight"),
+            ("Macros",      "macro"),
             ("Substitutes", "substitute"),
         ]
         for i, (label, kind) in enumerate(expected_kinds):
@@ -886,13 +902,13 @@ class TestPhase4MultiKind(unittest.TestCase):
         prof, _src, _td = _make_profile(self.MIXED_PROFILE)
         _reset_editor_state(prof)
         # Substitutes header reads "Text" + "New text".
-        launcher._profile_editor_set_tab(4)
+        launcher._profile_editor_set_tab(_tab_index("substitute"))
         frags = launcher._editor_list_header_frag(visible_rows=5)
         joined = "".join(f[1] for f in frags)
         self.assertIn("Text",      joined)
         self.assertIn("New text",  joined)
         # Highlights header reads "Pattern" + "Color".
-        launcher._profile_editor_set_tab(3)
+        launcher._profile_editor_set_tab(_tab_index("highlight"))
         frags = launcher._editor_list_header_frag(visible_rows=5)
         joined = "".join(f[1] for f in frags)
         self.assertIn("Color",     joined)
@@ -904,7 +920,7 @@ class TestPhase5MacrosTab(unittest.TestCase):
 
     def test_detail_panel_shows_key_cell(self):
         prof, _src, _td = _make_profile("#macro {\\eOp} {flee}\n")
-        _reset_editor_state(prof, active_tab=2)
+        _reset_editor_state(prof, kind="macro")
         entry = launcher._editor_current_entry()
         rows = launcher._editor_detail_lines(entry, total_lines=18)
         joined = " ".join("".join(f[1] for f in row).strip() for row in rows)
@@ -918,7 +934,7 @@ class TestPhase5MacrosTab(unittest.TestCase):
 
     def test_list_row_renders_display_name(self):
         prof, _src, _td = _make_profile("#macro {\\eOp} {flee}\n")
-        _reset_editor_state(prof, active_tab=2)
+        _reset_editor_state(prof, kind="macro")
         entry = prof.entries_of("macro")[0]
         frags = launcher._editor_list_row_text(
             entry, is_cursor=False, is_hover=False)
@@ -928,7 +944,7 @@ class TestPhase5MacrosTab(unittest.TestCase):
 
     def test_list_row_custom_escape(self):
         prof, _src, _td = _make_profile("#macro {abc} {flee}\n")
-        _reset_editor_state(prof, active_tab=2)
+        _reset_editor_state(prof, kind="macro")
         entry = prof.entries_of("macro")[0]
         frags = launcher._editor_list_row_text(
             entry, is_cursor=False, is_hover=False)
@@ -944,7 +960,7 @@ class TestPhase5MacroCreate(unittest.TestCase):
 
     def test_create_appends_blank_and_pushes_overlay(self):
         prof, _src, _td = _make_profile("")
-        _reset_editor_state(prof, active_tab=2)
+        _reset_editor_state(prof, kind="macro")
         before = len(prof.entries_of("macro"))
         launcher._editor_create_new_entry()
         self.assertEqual(len(prof.entries_of("macro")), before + 1)
@@ -957,7 +973,7 @@ class TestPhase5MacroCreate(unittest.TestCase):
 
     def test_cancel_after_create_drops_entry(self):
         prof, _src, _td = _make_profile("")
-        _reset_editor_state(prof, active_tab=2)
+        _reset_editor_state(prof, kind="macro")
         launcher._editor_create_new_entry()
         self.assertEqual(len(prof.entries_of("macro")), 1)
         launcher._editor_keybind_cancel()
@@ -972,7 +988,7 @@ class TestPhase5MacroSaveDropsEmpty(unittest.TestCase):
 
     def test_abandoned_macro_is_not_serialised(self):
         prof, _src, td = _make_profile("")
-        _reset_editor_state(prof, active_tab=2)
+        _reset_editor_state(prof, kind="macro")
         # Simulate an abandoned create by appending an empty-pattern
         # macro directly. (The auto-pushed overlay's ESC handler clears
         # this; we want to verify save_profile's drop rule independently.)
@@ -990,7 +1006,7 @@ class TestPhase4PerKindDefaults(unittest.TestCase):
 
     def test_new_alias_has_empty_body(self):
         prof, _src, _td = _make_profile("")
-        _reset_editor_state(prof, active_tab=0)
+        _reset_editor_state(prof, kind="alias")
         launcher._editor_create_new_entry()
         e = launcher._editor_current_entry()
         self.assertEqual(e.pattern, "")
@@ -998,7 +1014,7 @@ class TestPhase4PerKindDefaults(unittest.TestCase):
 
     def test_new_highlight_defaults_to_light_yellow(self):
         prof, _src, _td = _make_profile("")
-        _reset_editor_state(prof, active_tab=3)
+        _reset_editor_state(prof, kind="highlight")
         launcher._editor_create_new_entry()
         e = launcher._editor_current_entry()
         self.assertEqual(e.kind, "highlight")
@@ -1014,7 +1030,7 @@ class TestPhase4PerKindDefaults(unittest.TestCase):
 
     def test_new_substitute_has_empty_body(self):
         prof, _src, _td = _make_profile("")
-        _reset_editor_state(prof, active_tab=4)
+        _reset_editor_state(prof, kind="substitute")
         launcher._editor_create_new_entry()
         e = launcher._editor_current_entry()
         self.assertEqual(e.kind, "substitute")
@@ -1031,7 +1047,7 @@ class TestHighlightPaletteRedesign(unittest.TestCase):
 
     def _setup_highlight(self, source):
         prof, _src, _td = _make_profile(source)
-        _reset_editor_state(prof, focus=2, active_tab=3)
+        _reset_editor_state(prof, focus=2, kind="highlight")
         launcher._editor_detail_field = 2   # Text grid
         return prof
 
@@ -1224,7 +1240,7 @@ class TestPhase4HighlightListColorColumn(unittest.TestCase):
     def test_palette_value_uses_color_style(self):
         prof, _src, _td = _make_profile(
             "#highlight {Orc} {light yellow}\n")
-        _reset_editor_state(prof, active_tab=3)
+        _reset_editor_state(prof, kind="highlight")
         entry = launcher._editor_current_entry()
         frags = launcher._editor_list_row_text(entry, False, False)
         # Two-fragment form: [(C_ITEM, pat+gap), (color_style, body)].
@@ -1238,7 +1254,7 @@ class TestPhase4HighlightListColorColumn(unittest.TestCase):
         # `<faa>` doesn't parse — list cell falls back to plain C_ITEM.
         prof, _src, _td = _make_profile(
             "#highlight {Snowy} {<faa>}\n")
-        _reset_editor_state(prof, active_tab=3)
+        _reset_editor_state(prof, kind="highlight")
         entry = launcher._editor_current_entry()
         frags = launcher._editor_list_row_text(entry, False, False)
         self.assertEqual(len(frags), 1)

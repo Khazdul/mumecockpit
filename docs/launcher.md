@@ -224,7 +224,12 @@ list-view sort header, redesigned the highlight palette (28-cell
 checkbox swatches with selection decoupled from cursor), stepwise
 Left-arrow fall-through across detail zones, Left/Right activates
 the MENU/EDITOR toggle, and footer hints stripped of arrow + Enter
-tokens.
+tokens. Phase 6.3 moved the kind buttons from a vertical left
+column to a horizontal row above the body (alphabetical order,
+Left/Right traverses), widened the list (23 → 38) and detail
+(30 → 35), normalised tt++'s `#write`-rewritten multi-line bodies
+on load for `action` / `alias` / `macro`, and dropped Bold from
+the highlight Style row.
 
 #### Three-state colour grammar
 
@@ -235,8 +240,8 @@ detail-panel frame borders. Defined in `palette.py`.
 | State                      | Token                       | Used for                                                                          |
 |----------------------------|-----------------------------|-----------------------------------------------------------------------------------|
 | Inactive (not selected)    | `C_BUTTON_INACTIVE`         | Non-active kind buttons; non-active mode button                                   |
-| Active, zone unfocused     | `C_BUTTON_ACTIVE_UNFOCUSED` | Selected kind when kind column unfocused; active mode when toggle unfocused; entry-list cursor row when list unfocused |
-| Active, zone focused       | `C_BUTTON_ACTIVE_FOCUSED`   | Selected kind when kind column focused; active mode when toggle focused; entry-list cursor row when list focused; detail-panel frame borders |
+| Active, zone unfocused     | `C_BUTTON_ACTIVE_UNFOCUSED` | Selected kind when kind-buttons row unfocused; active mode when toggle unfocused; entry-list cursor row when list unfocused |
+| Active, zone focused       | `C_BUTTON_ACTIVE_FOCUSED`   | Selected kind when kind-buttons row focused; active mode when toggle focused; entry-list cursor row when list focused; detail-panel frame borders |
 
 Hover on an inactive button paints the active-unfocused state — a
 preview of how it would look if selected. Hover on chrome
@@ -249,20 +254,30 @@ non-interactive (Phase 6.2: sorting is canonical, no toggle).
 
 #### Layout
 
-Top-to-bottom for both modes:
+Top-to-bottom (menu mode — Phase 6.3):
 
 1. **Title row** — `─── Profile Editor: <name> ───` in `C_SECTION`,
    centred on the terminal, with the MENU/EDITOR toggle
    right-aligned on the same row.
 2. Blank row.
-3. **Body** — menu mode renders three columns
-   (`[ kind | list+scrollbar | detail ]`); editor mode renders the
-   line-number column + buffer + inline scrollbar.
-4. **Footer hint** — text depends on focus zone and mode (see
+3. **Kind-buttons row** — five 3-row-tall BG-filled blocks
+   (`ACTIONS`, `ALIASES`, `HIGHLIGHTS`, `MACROS`, `SUBSTITUTES`)
+   separated by 3-cell gaps, the whole group centred on the
+   terminal.
+4. Blank row.
+5. **Body** — two columns (`[ list+scrollbar | detail ]`); the
+   kind column moved into the row above in Phase 6.3.
+6. **Footer hint** — text depends on focus zone and mode (see
    *Focus model*).
 
-Centred body widths (target 80-cell terminal): kind 13 + gap 2 +
-list 23 + scrollbar 1 + gap 2 + detail 30 = **71** cells.
+Editor mode is identical except step 3 (the kind row) is omitted —
+the buffer fills the space directly after the title's blank row.
+
+Centred kind-buttons row width: 5 × 13 + 4 × 3 = **77** cells.
+Centred body widths: list 38 + scrollbar 1 + gap 3 + detail 35 =
+**77** cells — both rows nominally align. Phase 6.3 widened the
+list (23 → 38), detail (30 → 35), and inter-panel gap (2 → 3) to
+reclaim the space freed by removing the kind column.
 
 #### MENU/EDITOR toggle
 
@@ -283,10 +298,12 @@ never sacrificed.
   active block is a no-op. Mouse hover on the inactive block
   paints `C_BUTTON_ACTIVE_UNFOCUSED` (preview).
 - Focus: `_editor_toggle_focused` is a separate flag — when True,
-  no menu-mode editing zone responds to keys. `↑` on the first
-  kind in the kind column / on the top row of the entry list / on
-  the detail Pattern field falls through to the toggle. `↓` from
-  the toggle drops into the first zone of the current mode.
+  no menu-mode editing zone responds to keys. `↑` on any
+  kind-buttons row button falls through to the toggle (Phase 6.3);
+  the entry-list top row and detail.Pattern fall through to the
+  kind-buttons row, not to the toggle. `↓` from the toggle drops
+  into the first zone of the current mode (kind-buttons row in
+  menu, buffer in editor).
 
 **No keystroke binds mode switching.** Pressing `m`, `e`, `M`, or
 `E` on any text-editing context (Pattern, Body, editor buffer,
@@ -296,14 +313,26 @@ Right, or click).
 
 #### Menu mode
 
-**Kind column (left).** Five 3-row block buttons stacked with no
-inter-button gap: `ALIASES`, `ACTIONS`, `MACROS`, `HIGHLIGHTS`,
-`SUBSTITUTES`. Each button's background fills its full 13-cell ×
-3-row footprint; the label is centred on the middle row. Mouse
-click on any button switches the active kind and focuses the kind
-column. `↑` / `↓` move between kinds within the column; `↓` from
-the last kind drops into the entry list; `↑` from the first kind
-falls through to the toggle.
+**Kind buttons (horizontal row).** Phase 6.3 replaced the vertical
+left column with a single 3-row-tall row of five buttons that sits
+between the title and the body. Buttons in **alphabetical** order:
+`ACTIONS`, `ALIASES`, `HIGHLIGHTS`, `MACROS`, `SUBSTITUTES`. Each
+button's background fills its full 13-cell × 3-row footprint (wide
+enough for "SUBSTITUTES"); the label is centred on the middle row.
+Buttons are separated by 3-cell gaps and the whole group is centred
+on the terminal. Mouse click on any button switches the active kind
+and focuses the kind-buttons zone.
+
+Keyboard within the kind-buttons row:
+- `←` / `→` move between buttons. No wrap — `←` on `ACTIONS`
+  and `→` on `SUBSTITUTES` are no-ops.
+- `↑` falls through to the MENU/EDITOR toggle.
+- `↓` falls through to the entry list.
+
+The row sits between the toggle and the body in the new physical
+stacking, so the up-arrow fall-through from the entry list top row
+and from detail.Pattern lands on the kind-buttons row (not on the
+toggle, as in Phase 6.2).
 
 **Entry list (middle).** Header row `<pat_label>  <body_label>` in
 `C_HINT` (muted grey) at all times. Labels come from
@@ -548,15 +577,21 @@ text-bodied + macro; `0..3` for highlights).
   (highlights extend to `Pattern → Style → Text → Background`).
 - Editor mode: `toggle → buffer → toggle`.
 
-**Up-arrow fall-through to toggle:**
-- `↑` on first kind in the kind column → toggle.
-- `↑` on top row of the entry list → toggle.
-- `↑` from detail.Pattern → toggle.
-- `↑` on the topmost line of the editor buffer → toggle.
+**Up-arrow fall-through (Phase 6.3):**
+- `↑` from any kind button → toggle (kind row sits below toggle).
+- `↑` on top row of the entry list → kind-buttons row.
+- `↑` from detail.Pattern → kind-buttons row.
+- `↑` on the topmost line of the editor buffer → toggle (no kind
+  row in editor mode).
 
-**Down-arrow from toggle:**
-- Menu mode → first kind in the kind column.
-- Editor mode → buffer (cursor at offset 0).
+**Down-arrow:**
+- From toggle, menu mode → kind-buttons row.
+- From any kind button → entry list (cursor at row 0).
+- From toggle, editor mode → buffer (cursor at offset 0).
+
+**Left / Right within the kind-buttons row** (Phase 6.3): step to
+the previous / next button. No wrap — `←` on the first button
+(ACTIONS) and `→` on the last (SUBSTITUTES) are no-ops.
 
 **Stepwise Left-arrow fall-through** (Phase 6.2). When the cursor
 is at position 0 of a detail-panel zone, `←` falls through one
@@ -566,7 +601,8 @@ zone to the left:
 - Macro Key cell → entry list
 - Macro Body at line 0 col 0 → Key cell
 - Highlight Pattern at pos 0 → entry list
-- Highlight Style.Bold (leftmost toggle) → Pattern (cursor at end)
+- Highlight Style.Undersc. (leftmost toggle after Phase 6.3
+  dropped Bold) → Pattern (cursor at end)
 - Highlight Text col 0 → Style.Reverse (rightmost toggle)
 - Highlight BG col 0 → Text col 1 (same row)
 

@@ -1563,25 +1563,30 @@ def _profile_feedback_or_blank_text():
 
 
 # --- Profile editor (Phase 2: Aliases list + read-only detail + delete) ----
-# Tab strip: (label, kind in profile_io)
+# Kind buttons: (label, kind in profile_io). Phase 6.3: alphabetical
+# order — the row is the only physical layout, so users can predict
+# button placement from the label alone. Switching the order here
+# automatically reorders the rendered row and the focus chain (set_tab
+# resolves by index).
 _PROFILE_EDITOR_TABS = [
-    ("Aliases",     "alias"),
     ("Actions",     "action"),
-    ("Macros",      "macro"),
+    ("Aliases",     "alias"),
     ("Highlights",  "highlight"),
+    ("Macros",      "macro"),
     ("Substitutes", "substitute"),
 ]
 
 _EDITOR_PATTERN_COL_W = 8       # Pattern column inside the list panel
-_EDITOR_KIND_W        = 13      # Vertical kind-button column width
-_EDITOR_LIST_W        = 23      # List panel content (scrollbar is +1 column)
-_EDITOR_GAP           = 2       # Cells between panels
-_EDITOR_DETAIL_W      = 30      # Detail panel width
+_EDITOR_KIND_W        = 13      # Each kind-button cell width (wide enough
+                                # for "SUBSTITUTES" + centring)
+_EDITOR_KIND_GAP      = 3       # Cells between kind buttons in the row
+_EDITOR_KIND_ROW_H    = 3       # Kind-button row height (3-row blocks)
+_EDITOR_LIST_W        = 38      # List panel content (scrollbar is +1 column)
+_EDITOR_GAP           = 3       # Cells between list+scrollbar and detail
+_EDITOR_DETAIL_W      = 35      # Detail panel width
 
-# Number of body rows the kind column claims — five 3-row block buttons,
-# no inter-button spacing. The kind column stacks at body_row 0..14 in
-# the editor body; rows beyond that paint as kind-column blanks.
-_EDITOR_KIND_ROWS     = 15
+# Number of buttons in the kind row — derived for layout math.
+_EDITOR_KIND_COUNT    = len(_PROFILE_EDITOR_TABS)
 
 # Cap on visible rows for the Commands / New-text detail body field.
 # Bodies longer than this scroll within the field via an inline scrollbar.
@@ -1799,22 +1804,35 @@ def _hl_palette_color_at(row, col):
 
 
 def _editor_package_w():
-    # kind column + gap + list + scrollbar + gap + detail
-    return (_EDITOR_KIND_W + _EDITOR_GAP
-            + _EDITOR_LIST_W + 1
-            + _EDITOR_GAP + _EDITOR_DETAIL_W)
+    # Body width: list + scrollbar + gap + detail. Kind buttons moved
+    # to a horizontal row above the body (Phase 6.3); body math no
+    # longer includes the kind column.
+    return _EDITOR_LIST_W + 1 + _EDITOR_GAP + _EDITOR_DETAIL_W
 
 
 def _editor_left_pad():
     return max(0, (_term_cols() - _editor_package_w()) // 2)
 
 
+def _editor_kind_row_w():
+    """Total width of the horizontal kind-button row: five 13-cell
+    buttons with 3-cell gaps between, centred on the terminal."""
+    return (_EDITOR_KIND_COUNT * _EDITOR_KIND_W
+            + (_EDITOR_KIND_COUNT - 1) * _EDITOR_KIND_GAP)
+
+
+def _editor_kind_left_pad():
+    return max(0, (_term_cols() - _editor_kind_row_w()) // 2)
+
+
 def _editor_body_h():
-    """Body row height — enough for the kind column + detail panel; grows
-    with terminal. The kind column needs 15 rows for five 3-row block
-    buttons; the detail panel needs a similar floor for its field chain
-    (Pattern + Commands + error + hint block). 15 covers both."""
-    return max(_EDITOR_KIND_ROWS, _term_rows() - 9)
+    """Body row height — enough for the detail panel's field chain
+    (Pattern + Commands + error + hint block), grows with terminal.
+    Reserves rows for the kind-button row + its blank-line separator
+    above the body (3 + 1 = 4) on top of the existing chrome budget.
+    The kind column was removed in Phase 6.3 — buttons now live in a
+    horizontal row above the body."""
+    return max(15, _term_rows() - 13)
 
 
 def _editor_list_visible():
@@ -4254,8 +4272,8 @@ def _editor_kind_button_style(idx):
 
 def _editor_kind_button_handler(idx):
     """Mouse handler for any cell inside the kind button at index `idx`.
-    Hovering sets `_editor_hover_tab`; clicking focuses the kind column
-    and switches to that kind."""
+    Hovering sets `_editor_hover_tab`; clicking focuses the kind-button
+    row and switches to that kind."""
     def _h(ev, i=idx):
         if ev.event_type == MouseEventType.MOUSE_MOVE:
             _profile_editor_set_hover_tab(i)
@@ -4268,46 +4286,61 @@ def _editor_kind_button_handler(idx):
     return _h
 
 
-def _editor_kind_column_row(body_row):
-    """Return a `(style, text, handler)` fragment for the kind-column
-    cell at `body_row`. Rows 0..14 paint button cells (five 3-row
-    blocks stacked with no separator); rows ≥ 15 paint chrome blanks."""
-    if body_row >= _EDITOR_KIND_ROWS:
-        return ("", " " * _EDITOR_KIND_W, _editor_clear_outer_hover)
-    btn_idx     = body_row // 3
-    within_btn  = body_row % 3
-    label_upper = _PROFILE_EDITOR_TABS[btn_idx][0].upper()
-    style       = _editor_kind_button_style(btn_idx)
-    if within_btn == 1:
-        text = label_upper.center(_EDITOR_KIND_W)
-    else:
-        text = " " * _EDITOR_KIND_W
-    return (style, text, _editor_kind_button_handler(btn_idx))
+def _editor_append_kind_button_row(frags, cols):
+    """Append the horizontal kind-button row (3 rows tall) to `frags`.
+    Five 13-cell BG-filled blocks separated by 3-cell gaps, the whole
+    group centred on the terminal. Each button paints per the
+    three-state colour grammar; the label sits centred on the middle
+    row. Phase 6.3 replaced the vertical kind column with this row.
+
+    Each rendered cell carries the button's mouse handler so hover and
+    click work on any cell within the block, mirroring the column-era
+    behaviour."""
+    left_pad  = _editor_kind_left_pad()
+    row_w     = _editor_kind_row_w()
+    right_pad = max(0, cols - left_pad - row_w)
+    n         = _EDITOR_KIND_COUNT
+    for within_btn in range(_EDITOR_KIND_ROW_H):
+        if left_pad > 0:
+            frags.append(("", " " * left_pad, _editor_clear_outer_hover))
+        for idx in range(n):
+            label_upper = _PROFILE_EDITOR_TABS[idx][0].upper()
+            style       = _editor_kind_button_style(idx)
+            if within_btn == 1:
+                text = label_upper.center(_EDITOR_KIND_W)
+            else:
+                text = " " * _EDITOR_KIND_W
+            frags.append((style, text, _editor_kind_button_handler(idx)))
+            if idx < n - 1:
+                frags.append(("", " " * _EDITOR_KIND_GAP,
+                              _editor_clear_outer_hover))
+        if right_pad > 0:
+            frags.append(("", " " * right_pad, _editor_clear_outer_hover))
+        frags.append(("", "\n", _editor_clear_outer_hover))
 
 
 def _profile_editor_text():
     """Render the editor frame as a single fragment list.
 
-    Layout (top to bottom):
-        ─── Profile Editor: <name> ───
-        <blank>
-        ┌───────┐ Pattern▲ Body          Pattern
-        │       │ <pattern> <body…>      ┌────────────────────┐
-        │ ALIAS │ + New entry            │ <pattern>          │
-        │   ES  │                        └────────────────────┘
-        ├───────┤                        Commands
-        │       │                        ┌────────────────────┐
-        │ACTIONS│                        │ <body line 1>      │
-        │       │                        │ <body line 2>      │
-        ├───────┤                        └────────────────────┘
-        …                                ─── Hint ───
-        …                                Use %1, %2, %3 as ...
-        <blank>
-        ↑↓ Move · Tab Cycle · Del Delete · ESC Save & back
+    Layout (top to bottom, menu mode — Phase 6.3):
 
-    The kind buttons stack vertically on the left with no separator
-    rows; the colour grammar (`C_BUTTON_*`) carries focus + active
-    state. Headers and field labels stay in muted grey at all times."""
+        ─── Profile Editor: <name> ───                  MENU EDITOR
+        <blank>
+        ┌───────────┐  ┌───────────┐  ...  ┌───────────┐
+        │  ACTIONS  │  │  ALIASES  │       │SUBSTITUTES│
+        └───────────┘  └───────────┘       └───────────┘
+        <blank>
+        Pattern        Body                Pattern
+        <pattern>      <body…>             ┌─────────────────┐
+        + New entry                        │ <pattern>       │
+        ...                                 ...
+
+    The five 13-cell kind buttons sit in a horizontal row, BG-filled,
+    centred on the terminal. The colour grammar (`C_BUTTON_*`) carries
+    focus + active state. Headers and field labels stay in muted grey
+    at all times. Phase 6.3 replaced the vertical kind column with this
+    row, widened the entry list (23 → 38) and detail panel (30 → 35),
+    and bumped the inter-panel gap (2 → 3)."""
     cols = _term_cols()
     name = (_editor_profile_path.stem
             if _editor_profile_path is not None else "")
@@ -4321,6 +4354,10 @@ def _profile_editor_text():
         _editor_append_editor_body(frags, cols)
         _editor_append_footer(frags, cols)
         return frags
+
+    # Menu mode: kind-button row (3 rows) + blank separator, then body.
+    _editor_append_kind_button_row(frags, cols)
+    frags.append(("", "\n", _editor_clear_outer_hover))
 
     # ----- Body region (master/detail) --------------------------------
     body_h    = _editor_body_h()
@@ -4490,10 +4527,9 @@ def _profile_editor_text():
         detail_row = detail_rows[body_row]
 
         # ----- Compose the row -----
+        # Phase 6.3: no kind column — buttons live in a horizontal row
+        # above the body. Body starts with list + scrollbar + detail.
         frags.append(("", " " * left_pad, _editor_clear_outer_hover))
-        # Kind-column cell + gap.
-        frags.append(_editor_kind_column_row(body_row))
-        frags.append(("", gap_str, _editor_clear_outer_hover))
         for f in left_frags:
             frags.append(f)
         frags.append(sb_frag)
@@ -10257,8 +10293,10 @@ def _kb_peditor_palette_down():
 @kb.add("right", filter=_in_pe_menu())
 def _kb_peditor_right(event):
     if _editor_focus == 0:
-        # Kind column is vertical — Right moves focus to the entry list.
-        _profile_editor_set_focus(1)
+        # Kind buttons row (Phase 6.3): Right moves to the next button.
+        # No wrap — Right on the last button (SUBSTITUTES) is a no-op.
+        if _editor_active_tab < len(_PROFILE_EDITOR_TABS) - 1:
+            _profile_editor_set_tab(_editor_active_tab + 1)
         return
     elif _editor_focus == 1:
         _profile_editor_set_focus(2, field=0)
@@ -10280,14 +10318,20 @@ def _kb_peditor_left(event):
     """Stepwise Left within the menu mode. Each detail-panel zone, when
     its cursor sits at position 0, falls through one zone to the left:
     Body → Pattern (or Key for macros), Pattern / Key → entry list,
-    list → kind column, kind column is the wall. Within highlight
-    palette zones the fall-through chain is Style.Undersc. → Pattern,
-    Text first col → Style.Reverse, BG first col → Text last col —
-    see `_kb_peditor_palette_left`. Fall-through clears the active
-    text selection so the new zone starts fresh."""
+    list → kind buttons. On the kind-buttons row (Phase 6.3 — buttons
+    now sit horizontally), Left moves to the previous button (no wrap)
+    instead of falling through. Within highlight palette zones the
+    fall-through chain is Style.Undersc. → Pattern, Text first col →
+    Style.Reverse, BG first col → Text last col — see
+    `_kb_peditor_palette_left`. Fall-through clears the active text
+    selection so the new zone starts fresh."""
     global _editor_pattern_cursor, _editor_body_line, _editor_body_col
     if _editor_focus == 0:
-        return   # Kind column is leftmost zone — left is a no-op.
+        # Kind buttons row: Left moves to the previous button. No wrap
+        # — Left on the first button (ACTIONS) is a no-op.
+        if _editor_active_tab > 0:
+            _profile_editor_set_tab(_editor_active_tab - 1)
+        return
     if _editor_focus == 1:
         _profile_editor_set_focus(0)
         return
@@ -10327,21 +10371,22 @@ def _kb_peditor_left(event):
 @kb.add("up", filter=_in_pe_menu())
 def _kb_peditor_up(event):
     if _editor_focus == 0:
-        # Move up one kind; at the top of the column, fall through to
-        # the MENU/EDITOR toggle.
-        if _editor_active_tab > 0:
-            _profile_editor_set_tab(_editor_active_tab - 1)
-        else:
-            _editor_focus_toggle()
+        # Kind buttons row (Phase 6.3): Up always falls through to the
+        # MENU/EDITOR toggle — the buttons are now a single horizontal
+        # row, not a vertical column.
+        _editor_focus_toggle()
         return
     if _editor_focus == 1:
         if _editor_list_cursor == 0:
-            _editor_focus_toggle()
+            # Top of entry list → kind buttons (which sit between the
+            # list and the toggle in the new physical stacking).
+            _profile_editor_set_focus(0)
         else:
             _profile_editor_move_cursor(-1)
         return
     if _editor_detail_field == 0:
-        _editor_focus_toggle()
+        # Detail Pattern → kind buttons (was: → toggle).
+        _profile_editor_set_focus(0)
         return
     if _editor_in_palette_focus():
         _kb_peditor_palette_up()
@@ -10355,13 +10400,10 @@ def _kb_peditor_up(event):
 @kb.add("down", filter=_in_pe_menu())
 def _kb_peditor_down(event):
     if _editor_focus == 0:
-        # Move down one kind, or fall through to the entry list at the
-        # bottom of the column so the user can keep pressing ↓.
-        if _editor_active_tab < len(_PROFILE_EDITOR_TABS) - 1:
-            _profile_editor_set_tab(_editor_active_tab + 1)
-        else:
-            _profile_editor_set_focus(1)
-            _profile_editor_jump_cursor(0)
+        # Kind buttons row (Phase 6.3): Down always falls through to
+        # the entry list, since the buttons sit horizontally above it.
+        _profile_editor_set_focus(1)
+        _profile_editor_jump_cursor(0)
         return
     if _editor_focus == 1:
         _profile_editor_move_cursor(1)
