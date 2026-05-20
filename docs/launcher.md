@@ -360,10 +360,12 @@ sort by display name so F-keys cluster before numpad before Alt).
   bounding box — the in-buffer cursor inside the field is the
   fine-grained indicator.
 - **Highlight palette** (highlights only) — Phase 6.2 layout
-  replaces the Body field with a 28-cell package: a `Style` label
-  + an inline row of four toggles `[ ]Bold [ ]Und [ ]Blk [ ]Rev`,
-  then `-- Text --` / `--- BG ---` headers over a 2×7 grid of
-  checkbox swatches. Each swatch renders as `[X]██` or `[ ]██`
+  replaces the Body field with a `Style` label + an inline row of
+  three toggles `[ ]Undersc. [ ]Blink [ ]Reverse` (Phase 6.3
+  dropped Bold — tt++ doesn't list it as a `#highlight` modifier,
+  and surfacing it produced bodies tt++ would reject or silently
+  drop), then `-- Text --` / `--- BG ---` headers over a 2×7 grid
+  of checkbox swatches. Each swatch renders as `[X]██` or `[ ]██`
   where `██` is a two-cell color band; the checkbox reflects
   whether THAT swatch is the currently-selected text/bg colour.
   Cursor and selection are decoupled (see ADR 0084): cursor moves
@@ -372,10 +374,9 @@ sort by display name so F-keys cluster before numpad before Alt).
   clearing any previously selected swatch in the same dimension)
   if it was unselected, deselecting it if it was already selected.
   Exactly zero or one swatch per dimension is selected at any time.
-  `bold` joins the supported style set (the original layout
-  excluded it because tt++'s `#highlight` modifier docs don't list
-  it; the toggle is surfaced anyway per Phase 6.2 spec — ADR 0084
-  documents the trade-off).
+  A persisted body containing `bold` falls through `_hl_parse_body`
+  as unknown so the original `_raw` survives byte-exact on save
+  (no Bold control surfaces in the palette).
 - **Body serialisation.** Composed as
   `[<styles>] [<text-colour>] [b <bg-colour>]` — styles emitted
   in stable order (`bold`, `underscore`, `blink`, `reverse`);

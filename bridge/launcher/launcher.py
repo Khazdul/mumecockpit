@@ -255,7 +255,8 @@ _editor_body_anchor_line = None  # int | None — anchor line in entry.body
 _editor_body_anchor_col  = None  # int | None — anchor col in entry.body
 # Highlight editor state (active when _profile_editor_active_kind() ==
 # 'highlight'). Three palettes share the same Body slot:
-#   - Style row (4 inline toggles: Bold, Und, Blk, Rev — ADR 0084)
+#   - Style row (3 inline toggles: Undersc., Blink, Reverse — ADR 0084 /
+#     Phase 6.3 dropped Bold; tt++ doesn't list it as a #highlight modifier)
 #   - Text-colour grid (7×2 swatches under `-- Text --`)
 #   - Background-colour grid (7×2 swatches under `--- BG ---`)
 #
@@ -1666,16 +1667,16 @@ _HL_DICT_KEY = {
 
 # Style toggles surfaced in the Style row. tt++ accepts `underscore`,
 # `blink`, and `reverse` directly in `#highlight {pattern} {<modifiers>
-# <colour>}`. `bold` is not listed in tt++'s modifier set for #highlight
-# — it appears in the palette per the Phase 6.2 spec but, if enabled
-# with no companion modifier or colour, tt++ may reject the body or
-# silently skip the modifier. See ADR 0084.
-_HL_STYLE_TOKENS = ("bold", "underscore", "blink", "reverse")
+# <colour>}`. Phase 6.3: `bold` was removed — tt++ doesn't list it as a
+# `#highlight` modifier, and surfacing it produced bodies tt++ would
+# reject or silently drop. An on-disk `bold` token in a highlight body
+# parses unchanged into the Custom slot (no `_raw` clobber) since the
+# palette parser rejects it as unknown.
+_HL_STYLE_TOKENS = ("underscore", "blink", "reverse")
 _HL_STYLE_LABELS = {
-    "bold":       "Bold",
-    "underscore": "Und",
-    "blink":      "Blk",
-    "reverse":    "Rev",
+    "underscore": "Undersc.",
+    "blink":      "Blink",
+    "reverse":    "Reverse",
 }
 
 
@@ -3362,7 +3363,7 @@ def _editor_build_palette_detail(entry, total_lines):
         │ <pattern text>             │
         └────────────────────────────┘
         Style
-        [ ]Bold [ ]Und [ ]Blk [ ]Rev
+        [ ]Undersc. [ ]Blink [ ]Reverse
         -- Text --        --- BG ---
         [ ]██  [ ]██     [ ]██  [ ]██   ← row 0
         ...
@@ -3643,16 +3644,15 @@ def _editor_hl_make_style_handler(idx):
 
 
 def _editor_hl_style_row(focused):
-    """Build the inline Style toggle row: `[X]Bold [X]Und [X]Blk [X]Rev`.
+    """Build the inline Style toggle row:
+    `[X]Undersc. [X]Blink [X]Reverse` (Phase 6.3).
 
     Each toggle's checkbox reflects whether the style is currently in
     the active set; the cursor cell paints `C_SELECTED`; the label is
     coloured `C_ACCENT` when active, `C_HINT` otherwise, `C_HOVER` on
-    mouse hover. Cells are packed within the detail panel width (28
-    inner cells)."""
+    mouse hover. Cells are centred within the detail panel width."""
     tokens = _HL_STYLE_TOKENS
     active = _editor_hl_active_styles()
-    # Layout: 7+1+6+1+6+1+6 = 28 cells.
     cell_labels = [_HL_STYLE_LABELS[t] for t in tokens]
     cells = [f"[{'X' if t in active else ' '}]{lbl}"
              for t, lbl in zip(tokens, cell_labels)]
@@ -10183,8 +10183,9 @@ def _kb_peditor_palette_right():
 
 
 def _kb_peditor_palette_left():
-    """Left within the highlight palette. Phase 6.2 fall-through chain:
-    Style.Bold (leftmost toggle) → Pattern (cursor at end);
+    """Left within the highlight palette. Phase 6.3 fall-through chain
+    (leftmost Style toggle is now Undersc. after Bold was dropped):
+    Style.Undersc. (leftmost toggle) → Pattern (cursor at end);
     Text col 0 → Style.Reverse (rightmost toggle);
     BG col 0 → Text col 1 (same row).
     All other moves are intra-zone."""
@@ -10280,7 +10281,7 @@ def _kb_peditor_left(event):
     its cursor sits at position 0, falls through one zone to the left:
     Body → Pattern (or Key for macros), Pattern / Key → entry list,
     list → kind column, kind column is the wall. Within highlight
-    palette zones the fall-through chain is Style.Bold → Pattern,
+    palette zones the fall-through chain is Style.Undersc. → Pattern,
     Text first col → Style.Reverse, BG first col → Text last col —
     see `_kb_peditor_palette_left`. Fall-through clears the active
     text selection so the new zone starts fresh."""

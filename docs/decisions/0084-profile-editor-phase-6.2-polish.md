@@ -107,6 +107,7 @@ ignores `bold` in a `#highlight` body the modifier has no visual
 effect; if tt++ rejects the body the whole highlight fails. We
 chose to surface the toggle per spec and document the risk here —
 users who run into broken highlights can clear the Bold toggle.
+(Phase 6.3 reversed this call — see addendum below.)
 
 #### Why decouple cursor from selection
 
@@ -179,3 +180,20 @@ no multi-line bodies so its round-trip test is unaffected.
 
 Highlights and substitutes are not normalised — tt++ doesn't
 reformat them and their bodies may contain intentional whitespace.
+
+### Phase 6.3 Bold-toggle removal
+
+Phase 6.2 surfaced `bold` in the Style row per spec even though
+tt++'s `#highlight` modifier docs don't list it (trade-off
+documented above). Phase 6.3 reversed that call: bodies tt++
+silently dropped or rejected were a worse outcome than the spec
+gain. `_HL_STYLE_TOKENS` becomes `(underscore, blink, reverse)`
+and the labels widen to `Undersc.`, `Blink`, `Reverse`. A
+persisted body containing `bold` falls through `_hl_parse_body`
+as unknown (rather than as a recognised style) — `_raw` is
+retained and the body survives byte-exact on save until the user
+explicitly edits the highlight in the palette. No Bold control
+surfaces; the body renders through the palette's plain text-path
+fallback. The leftmost-toggle Left-arrow fall-through (§3, "Style.
+Bold → Pattern") now applies to `Undersc.` as the new leftmost
+toggle.

@@ -1066,12 +1066,12 @@ class TestHighlightPaletteRedesign(unittest.TestCase):
         # in Phase 6.2; the original body simply persists).
         self.assertIsNone(launcher._hl_parse_body("<faa>"))
 
-    def test_parse_accepts_bold_token(self):
-        # Phase 6.2: `bold` joined the supported style set (ADR 0084).
-        styles, tc, bg = launcher._hl_parse_body("bold red")
-        self.assertEqual(styles, {"bold"})
-        self.assertEqual(tc, "red")
-        self.assertIsNone(bg)
+    def test_parse_rejects_bold_token(self):
+        # Phase 6.3: `bold` was dropped from the supported style set —
+        # tt++ doesn't list it as a `#highlight` modifier. A persisted
+        # body containing `bold` falls through as unrecognised so the
+        # original `_raw` survives on save rather than dropping data.
+        self.assertIsNone(launcher._hl_parse_body("bold red"))
 
     def test_serialize_round_trip(self):
         body = "underscore Red b green"
@@ -1093,12 +1093,13 @@ class TestHighlightPaletteRedesign(unittest.TestCase):
             "red",
         )
 
-    def test_serialize_bold_emitted_first(self):
-        # _HL_STYLE_TOKENS lists bold first, so the serializer's
-        # stable-ordered output begins with it when active.
+    def test_serialize_skips_dropped_bold(self):
+        # Phase 6.3: `bold` is no longer in `_HL_STYLE_TOKENS`, so the
+        # serializer ignores it even if it sneaks into the styles set.
+        # The remaining stable order is underscore < blink < reverse.
         self.assertEqual(
             launcher._hl_serialize({"bold", "blink"}, "red", None),
-            "bold blink red",
+            "blink red",
         )
 
     # --- cursor + selection on load -------------------------------
