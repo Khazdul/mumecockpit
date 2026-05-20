@@ -4314,7 +4314,6 @@ def _profile_editor_text():
     title  = f"─── Profile Editor: {name} ───"
 
     frags = []
-    frags.append(("", "\n", _editor_clear_outer_hover))
     _editor_append_title_row(frags, title, cols)
     frags.append(("", "\n", _editor_clear_outer_hover))
 
