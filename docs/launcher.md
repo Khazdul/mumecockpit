@@ -631,13 +631,28 @@ Phase 6.2 changed the canonical form: load + save with no edits
 produces an output that is sorted into command groups
 (alphabetical by command name, alphabetical within each group by
 first brace-arg, single blank line between groups) — see ADR 0084.
-Individual entries' `_raw` still round-trips byte-exact, but the
-*order* changes from source order to canonical order. `#nop` lines
-are dropped (ADR 0042). Blank lines, free text, and malformed
-Passthrough lines are dropped during the sort pass. Multi-line
-Passthrough forms (a `#class {x} { ... \n ... }` block split
-across physical lines) lose their continuation lines on sort —
-documented limitation. Covered by
+Individual entries' `_raw` round-trips byte-exact **only for
+entries already in flat form**. Phase 6.3 added a per-entry
+post-parse normalisation for `action` / `alias` / `macro` bodies
+that tt++ has rewritten on `#write` (logout) into its indented
+multi-line form: leading and trailing whitespace-only lines are
+stripped, and every line that starts with at least four spaces
+has the leading four spaces removed. Bodies that change clear
+their `_raw`, so they regenerate canonically on save
+(`#<kind> {pattern} {body}` — the body keeps its `;\n` newlines
+but is no longer indented). Bodies already in flat form compare
+equal and keep their `_raw`. Highlights and substitutes are not
+normalised — tt++ doesn't reformat them and their bodies may
+contain intentional whitespace. The cycle is stable: tt++
+re-expands a saved flat body to its multi-line form on the next
+`#write`; the editor re-normalises on the next load.
+
+The *order* also changes from source order to canonical order on
+parse. `#nop` lines are dropped (ADR 0042). Blank lines, free
+text, and malformed Passthrough lines are dropped during the sort
+pass. Multi-line Passthrough forms (a `#class {x} { ... \n ... }`
+block split across physical lines) lose their continuation lines
+on sort — documented limitation. Covered by
 `bridge/launcher/tests/test_profile_io.py` and
 `bridge/launcher/tests/test_profile_editor.py`.
 

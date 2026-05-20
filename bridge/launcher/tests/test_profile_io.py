@@ -221,14 +221,17 @@ class TestCaseInsensitiveAndMultiLine(unittest.TestCase):
 
     def test_multi_line_parses_as_macro(self):
         # The bug report's primary example: brace groups split by newlines
-        # with whitespace-only intervening lines.
+        # with whitespace-only intervening lines. Phase 6.3: the
+        # tt++-rewritten body is normalised on parse — blank edge lines
+        # stripped, four-space indent removed — so `_raw` is cleared and
+        # the entry regenerates canonically on save.
         source = "#macro {\\eOm}\n{\n    close exit\n}\n"
         prof, out = self._round_trip(source)
         macros = prof.entries_of("macro")
         self.assertEqual(len(macros), 1)
         self.assertEqual(macros[0].pattern, "\\eOm")
-        self.assertEqual(macros[0].body,    "\n    close exit\n")
-        self.assertEqual(out, source)   # byte-exact via _raw
+        self.assertEqual(macros[0].body, "close exit")
+        self.assertEqual(out, "#macro {\\eOm} {close exit}\n")
 
     def test_extra_inter_arg_whitespace_parses_as_macro(self):
         # Regression for what should already work: arbitrary spaces between
@@ -668,10 +671,12 @@ class TestStringHelpers(unittest.TestCase):
         self.assertEqual(prof.path, self.PATH)
 
     def test_multi_line_entry_round_trip_str(self):
+        # Phase 6.3: tt++ multi-line bodies normalise at parse time, so
+        # the output is the canonical flat form, not the source verbatim.
         source = "#macro {\\eOm}\n{\n    close exit\n}\n"
         prof, out = self._round_trip_str(source)
         self.assertEqual(len(prof.entries_of("macro")), 1)
-        self.assertEqual(out, source)
+        self.assertEqual(out, "#macro {\\eOm} {close exit}\n")
 
     def test_priority_entry_round_trip_str(self):
         source = (
@@ -920,6 +925,93 @@ class TestSort(unittest.TestCase):
         _p1, out1 = self._round_trip_str(source)
         _p2, out2 = self._round_trip_str(out1)
         self.assertEqual(out1, out2)
+
+
+class TestBodyNormalisation(unittest.TestCase):
+    """Phase 6.3: bodies for action / alias / macro entries get their
+    tt++-rewritten multi-line indentation undone at load time so the
+    editor's Commands field renders cleanly. Highlights and substitutes
+    are left untouched. A flat-form body round-trips byte-exact via its
+    retained `_raw`; a tt++-rewritten body has `_raw` cleared and
+    regenerates canonically on save."""
+
+    PATH = Path("/dev/null/profile.tin")
+
+    def test_strips_leading_trailing_blank_lines(self):
+        source = "#action {test} {\ntest1\n}\n"
+        prof = parse_profile(source, self.PATH)
+        actions = prof.entries_of("action")
+        self.assertEqual(len(actions), 1)
+        self.assertEqual(actions[0].body, "test1")
+
+    def test_strips_four_space_indent(self):
+        source = "#action {test} {\n    test1;\n    test2;\n    test3\n}\n"
+        prof = parse_profile(source, self.PATH)
+        actions = prof.entries_of("action")
+        self.assertEqual(len(actions), 1)
+        self.assertEqual(actions[0].body, "test1;\ntest2;\ntest3")
+
+    def test_preserves_semicolon_newlines(self):
+        # Lines without four-space indent stay un-indented; the `;\n`
+        # separators between statements survive.
+        source = ("#action {test} {\n"
+                  "    test1;\n"
+                  "    test2;\n"
+                  "    test3;\n"
+                  "    test4\n"
+                  "}\n")
+        prof = parse_profile(source, self.PATH)
+        actions = prof.entries_of("action")
+        self.assertEqual(len(actions), 1)
+        self.assertEqual(actions[0].body, "test1;\ntest2;\ntest3;\ntest4")
+
+    def test_flat_body_keeps_raw(self):
+        # An action already in flat form: body unchanged, _raw retained,
+        # serialisation is byte-exact.
+        source = "#action {test} {test1;test2;test3;test4}\n"
+        prof = parse_profile(source, self.PATH)
+        actions = prof.entries_of("action")
+        self.assertEqual(len(actions), 1)
+        self.assertEqual(actions[0].body, "test1;test2;test3;test4")
+        self.assertIsNotNone(actions[0]._raw)
+        self.assertEqual(serialize_profile(prof), source)
+
+    def test_ttpp_format_clears_raw(self):
+        # A tt++ multi-line action: body changes on normalisation, _raw
+        # is cleared, and the entry regenerates canonically on save —
+        # multi-line but un-indented, with `;` newlines preserved.
+        source = ("#action {test} {\n"
+                  "    test1;\n"
+                  "    test2;\n"
+                  "    test3;\n"
+                  "    test4\n"
+                  "}\n")
+        prof = parse_profile(source, self.PATH)
+        actions = prof.entries_of("action")
+        self.assertEqual(len(actions), 1)
+        self.assertIsNone(actions[0]._raw)
+        self.assertEqual(
+            serialize_profile(prof),
+            "#action {test} {test1;\ntest2;\ntest3;\ntest4}\n",
+        )
+
+    def test_normalisation_skips_highlight_and_substitute(self):
+        # tt++ does not reformat these on `#write`, and their bodies may
+        # contain intentional whitespace — leave them untouched. The
+        # `_raw` is retained so the bytes round-trip verbatim.
+        source = ("#highlight {orc} {\n"
+                  "    red\n"
+                  "}\n"
+                  "#substitute {orc} {\n"
+                  "    ORC\n"
+                  "}\n")
+        prof = parse_profile(source, self.PATH)
+        hl = prof.entries_of("highlight")[0]
+        sub = prof.entries_of("substitute")[0]
+        self.assertEqual(hl.body, "\n    red\n")
+        self.assertEqual(sub.body, "\n    ORC\n")
+        self.assertIsNotNone(hl._raw)
+        self.assertIsNotNone(sub._raw)
 
 
 if __name__ == "__main__":

@@ -22,6 +22,13 @@ KINDS = ("alias", "action", "macro", "highlight", "substitute")
 # GUI-editable kinds. Order is irrelevant — `resolve_kind` checks all.
 CANONICAL_KINDS = ("alias", "action", "macro", "highlight", "substitute")
 
+# Kinds whose bodies tt++ rewrites on `#write` (logout) into an indented
+# multi-line block. We normalise these back to flat form at parse time so
+# the editor's Commands field renders cleanly. Highlights and substitutes
+# are left untouched — tt++ does not reformat them and their bodies may
+# contain intentional whitespace.
+_NORMALISE_BODY_KINDS = frozenset(("action", "alias", "macro"))
+
 # Per-kind brace-arg arity: (min_args, max_args). tt++ accepts an optional
 # third arg as priority on every GUI-editable kind except `#macro`.
 _KIND_ARITY = {
@@ -347,6 +354,39 @@ def _item_classify(item):
     return None
 
 
+def _normalise_body(body):
+    """Reformat a tt++-rewritten multi-line body back to flat form.
+
+    tt++ rewrites multi-statement bodies on `#write` (logout) into an
+    indented block: the text right after the opening `{` and right
+    before the closing `}` becomes a blank-edge line, and every
+    in-between line is prefixed with four spaces. We undo both:
+
+      1. Strip leading and trailing blank/whitespace-only lines.
+      2. For every remaining line that begins with at least four
+         spaces, remove the leading four spaces.
+
+    Newlines following `;` survive — the result reads as one statement
+    per line, un-indented, no blank edge rows. Idempotent (a body
+    already in flat form returns equal). The caller is expected to
+    apply this only to kinds in `_NORMALISE_BODY_KINDS`."""
+    lines = body.split("\n")
+    # Strip leading whitespace-only lines.
+    while lines and lines[0].strip() == "":
+        lines.pop(0)
+    # Strip trailing whitespace-only lines.
+    while lines and lines[-1].strip() == "":
+        lines.pop()
+    # De-indent any line that starts with at least four spaces.
+    out = []
+    for line in lines:
+        if line.startswith("    "):
+            out.append(line[4:])
+        else:
+            out.append(line)
+    return "\n".join(out)
+
+
 def _sorted_items(items):
     """Sort `items` into command groups. Returns a list of
     `(command_name, item)` tuples in render order: groups sorted
@@ -410,6 +450,17 @@ def parse_profile(src, path):
         else:
             items.append(Passthrough(raw=src[i:nl].rstrip("\r")))
             i = nl + 1
+
+    # Per-entry post-parse: normalise tt++-rewritten multi-line bodies
+    # back to flat form for action / alias / macro. Routes the new value
+    # through `Entry.__setattr__`, which only clears `_raw` when the
+    # string actually changes — so a flat-form entry round-trips
+    # byte-exact, while a multi-line one regenerates canonically on
+    # save. Structural (operates on `entry.body`, not the raw source),
+    # so a legitimate nested `{` inside a body is unaffected.
+    for item in items:
+        if isinstance(item, Entry) and item.kind in _NORMALISE_BODY_KINDS:
+            item.body = _normalise_body(item.body)
 
     sorted_items = [item for _cmd, item in _sorted_items(items)]
     return Profile(path=Path(path), items=sorted_items)

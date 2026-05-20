@@ -156,3 +156,26 @@ horizontal nav).
 - Test suites in `bridge/launcher/tests/` updated to reflect the
   canonical output. The byte-exact round-trip tests now compare
   against the sorted-and-grouped form.
+
+### Phase 6.3 round-trip qualification
+
+Phase 6.3 added a per-entry post-parse normalisation for the
+`action` / `alias` / `macro` kinds: bodies that tt++ rewrote on
+`#write` (logout) into its indented multi-line form get their
+leading/trailing whitespace-only lines stripped and their leading
+four-space indentation removed. Routing the result through
+`entry.body = …` clears `_raw` (since the string changes), so the
+entry regenerates canonically on save (`#<kind> {pattern} {body}`)
+with `;\n` newlines preserved but no indent.
+
+**Byte-exact round-trip therefore holds only for entries already
+in flat form.** Entries in tt++'s multi-line `#write` format
+normalise on load and regenerate on save — the on-disk text after
+the first save differs from the original by exactly the indent
+strip + blank-edge strip. The cycle is stable: tt++ re-expands a
+saved flat body to its multi-line form on the next `#write`; the
+editor re-normalises on the next load. `blank_profile.tin` has
+no multi-line bodies so its round-trip test is unaffected.
+
+Highlights and substitutes are not normalised — tt++ doesn't
+reformat them and their bodies may contain intentional whitespace.
