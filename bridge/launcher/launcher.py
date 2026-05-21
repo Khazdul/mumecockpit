@@ -3704,13 +3704,15 @@ def _editor_hl_style_row(focused):
 
     Each toggle's on/off state is conveyed solely by the `[X]` / `[ ]`
     checkbox glyph — colour is a pure cursor/focus indicator, never
-    keyed off `is_active`. The cursor cell mirrors the entry-list
-    cursor row: `C_BUTTON_ACTIVE_FOCUSED` (amber) when the Style zone
-    is focused, `C_BUTTON_ACTIVE_UNFOCUSED` (grey) when the cursor
-    parks there but the zone is unfocused. Hover paints `C_HOVER` on
-    non-cursor toggles; the default is `C_HINT`. Precedence, highest
-    first: cursor (focused → amber, unfocused → grey) > hover >
-    default. Cells are centred within the detail panel width."""
+    keyed off `is_active`. Palette zones are amber-or-nothing: a
+    cursor position inside a multi-cell zone is not a persistent
+    selection (unlike the kind buttons or the entry-list cursor row),
+    so when the Style zone loses focus the cursor simply disappears
+    — no grey "out of focus" carry-over. The cursor cell paints
+    `C_BUTTON_ACTIVE_FOCUSED` (amber) when the Style zone is focused;
+    hover paints `C_HOVER`; everything else paints `C_HINT`.
+    Precedence, highest first: cursor + focused > hover > default.
+    Cells are centred within the detail panel width."""
     tokens = _HL_STYLE_TOKENS
     active = _editor_hl_active_styles()
     cell_labels = [_HL_STYLE_LABELS[t] for t in tokens]
@@ -3721,13 +3723,12 @@ def _editor_hl_style_row(focused):
     pad_r = max(0, _EDITOR_DETAIL_W - pad_l - total_w)
     frags = [("", " " * pad_l)]
     for i, (tok, lbl) in enumerate(zip(tokens, cell_labels)):
-        is_cursor = (i == _editor_hl_style_cursor)
+        is_cursor = focused and (i == _editor_hl_style_cursor)
         is_hover  = (_editor_hl_hover == ("style", 0, i)
                      and not is_cursor)
         checkbox = f"[{'X' if tok in active else ' '}]"
         if is_cursor:
-            cell_style = (C_BUTTON_ACTIVE_FOCUSED if focused
-                          else C_BUTTON_ACTIVE_UNFOCUSED)
+            cell_style = C_BUTTON_ACTIVE_FOCUSED
         elif is_hover:
             cell_style = C_HOVER
         else:

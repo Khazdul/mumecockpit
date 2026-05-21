@@ -250,6 +250,24 @@ focused element paints amber (`C_BUTTON_ACTIVE_FOCUSED`). The cursor +
 focused branch always wins over hover and over the existing
 active / selected treatment in every detail-panel zone.
 
+**Grey "out of focus" applies only to persistent selections.** The
+`C_BUTTON_ACTIVE_UNFOCUSED` (grey) state marks something the user has
+chosen that stays relevant while they work in another zone — the
+**current kind tab** and the **entry being edited** in the list. Both
+have no other glyph to carry that meaning, so the grey background
+does it.
+
+A cursor position inside a multi-cell palette zone (Style toggles,
+Text swatches, BG swatches) is *not* a persistent selection — it only
+records "where the cursor was last in this zone" and is irrelevant
+once focus leaves. So palette zones are **amber-or-nothing**: amber on
+the cursor cell when the zone is focused, default styling everywhere
+else. The cursor index is still retained internally and reappears as
+amber when the zone regains focus; `[X]` / `[ ]` continues to show
+on/selected state in every case. The macro Key cell follows the same
+rule — amber when focused, default otherwise; it is a single-cell
+field, not a list cursor.
+
 Hover on an inactive button paints the active-unfocused state — a
 preview of how it would look if selected. Hover on chrome
 (gaps, padding, blank rows) clears all hover state.
