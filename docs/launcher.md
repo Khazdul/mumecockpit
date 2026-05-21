@@ -38,7 +38,7 @@ The UI is a frame stack: a single `DynamicContainer` swaps between `main`,
 `profile`, `profile_rename`, `profile_create_name`, `profile_create_choose`,
 `profile_create_copy_picker`, `profile_delete_confirm`, `profile_editor`,
 `profile_editor_macro_keybind`, `options`,
-`options_panes`, `options_pane`, `options_connection`,
+`options_panes`, `options_connection`,
 `options_connection_custom`, `options_coming_soon`, `scripts`, `about`,
 `history`, `history_detail`, `history_rate`, `history_delete_confirm`,
 `log_view`, `spotlights_empty`, `credits`, `update_running`,
@@ -47,9 +47,9 @@ The UI is a frame stack: a single `DynamicContainer` swaps between `main`,
 frame owns its own `KeyBindings` filter (`_in_frame(name)`) so
 navigation, scroll, and ESC behave per-frame. The popup architecture
 (ADR 0062) is the reference; see `bridge/launcher/ingame_menu.py` for
-the same patterns. There is one shared `options_pane` frame (the
-target pane is selected via module state on push); per-pane subframes
-do not have distinct names.
+the same patterns. The Panes submenu is a single `options_panes`
+frame backed by the shared `panes_grid` module (ADR 0086); there is
+no longer a per-pane subframe.
 
 | Feature | Detail |
 |---------|--------|
@@ -879,43 +879,82 @@ and pops back to `main`.
 
 ### `options_panes` frame
 
-Lists the six right-column panes (Character / Buffs / Group /
-Communication / UI / Developer), then a blank row, then a `Display pane
-headers` toggle (`[x]` when on), then a blank row, then `Back`. Selecting
-a pane row pushes the per-pane subframe (`options_pane`) with the chosen
-target stashed on `_options_pane_target`.
+Single frame for the Panes submenu. Renders a **pane × colour grid**
+where rows are the six right-column panes (Character / Buffs / Group /
+Communication / UI / Developer) and columns are the seven palette
+entries (Black / Red / Green / Blue / Grey / Orange / Purple). Below
+the grid sit a blank row, a `[X] Display pane headers` toggle, a blank
+row, and `Back`. The frame uses the `menu_chrome.title_block` /
+`footer_block` helpers (`blank_above=2`) and the shared
+`panes_grid` module — see ADR 0086 and the
+[Panes-colour-grid model](#panes-colour-grid-model) section below.
 
-The headers toggle flips `show_pane_dividers` in `startup.conf` and is
-read by the cockpit's tmux border-status setup at next start. It does
-not call `toggle_pane.sh` from the launcher — the change is deferred-
-persistence only, in line with the rest of the launcher Options.
+Each grid cell renders as `[X]███` or `[ ]███` — a 3-cell checkbox and
+a 3-cell colour swatch. Per row, **0 or 1 cells are checked**: zero
+checked means the pane is off (and the row paints dim end-to-end); one
+checked means the pane is on with that colour.
 
-### `options_pane` frame
+Enter / click semantics (per `panes_grid.apply_cell_toggle`):
 
-One shared frame, re-rendered per render against
-`_options_pane_target`. Title takes the form `─── <Name> pane ───`
-(e.g. `─── Character pane ───`). Content (top-to-bottom):
+- On a grid cell — if the cell is the pane's currently-checked colour,
+  uncheck it (the pane goes off); otherwise check it (the pane goes on
+  with that colour, clearing any other checked cell in the row).
+- On the headers toggle row — flips `show_pane_dividers` in `_conf`.
+  The cockpit's tmux border-status setup reads the key at next start;
+  nothing live happens at the launcher.
+- On `Back` — saves and pops (same as ESC).
 
-- `[x] Enabled` — toggles the pane's `show_<key>` value in
-  `startup.conf`. Effect is deferred — the new state takes hold on next
-  cockpit start; nothing live happens at the launcher.
-- blank row
-- `Pane color` section label (`C_SECTION`)
-- Seven radio rows: `( ) Black`, `Red`, `Green`, `Blue`, `Grey`,
-  `Orange`, `Purple`. The current selection is rendered with `(•)`. Each
-  row trails three full-block glyphs (`███`) as a colour swatch.
-- blank row
-- `Back`
+The headers toggle and `Back` use the **filled-button cursor grammar**
+(`menu_chrome.button_fragment`, gold *background* on cursor); grid
+cells use the **swatch-cell grammar** (gold *foreground* on the
+cursor cell's `[ ]` / `[X]` glyphs).
 
-Swatch styling: tinted entries paint `bg:<hex> fg:<hex>` so the cells
-fill solid; `Black` paints `bg:#000000 fg:#000000` — solid black even on
-a black terminal. The swatch reflects the actual pane bg one would get
-on next start — except for `Black`, where the runtime mapping is
-`bg=default` (the terminal background shows through, not literal
-`#000000`). Selecting a colour writes `pane_color_<key>` to
-`startup.conf` on Back / ESC; nothing live happens at the launcher
-(the popup's per-pane subframe re-tints live — see
-[docs/popup-menu.md](popup-menu.md#panes-submenu)).
+Persistence is **deferred**: cell clicks mutate `_conf`; `_save_conf`
+fires on Back / ESC. This is the persistence asymmetry vs. the popup —
+the popup's equivalent frame writes immediately and live-applies via
+`toggle_pane.sh` and `tmux select-pane -P bg=…`. Both surfaces ultimately
+write the same `startup.conf` keys (`show_<key>`, `pane_color_<key>`,
+`show_pane_dividers`).
+
+**Cursor / navigation.** Eight navigable rows: the six grid rows, the
+headers-toggle row (`_PANES_HEADERS_ROW`), and the `Back` row
+(`_PANES_BACK_ROW`). `↑` / `↓` move between them (clamped, no wrap).
+`←` / `→` move the column **only while the cursor is on a grid row**,
+clamped 0..6; the column persists across grid rows and across visits
+to the headers / Back rows. Mouse hover on any selectable target moves
+the cursor to that target — there is no separate hover style. Footer:
+`↑↓←→ Move · Enter Toggle · ESC Back`.
+
+### Panes colour grid model
+
+Source: `bridge/launcher/panes_grid.py` — a pure (no prompt_toolkit
+import, no global state) module shared between the launcher and the
+popup. Three entries:
+
+- `panes_grid_fragments(rows, term_cols, cursor, cell_handler=None)` —
+  fragments for the colour-name header row plus one row per pane.
+  `rows` is a list of `(label, enabled, colour_index)`; `cursor` is
+  `(row_idx, col_idx)` or `None` when the cursor sits outside the grid.
+  Cell-colour precedence: cursor cell `[ ]` / `[X]` →  `C_CURSOR_CELL`
+  (gold fg); else on an enabled row, checked `[X]` → `C_ACTIVE`,
+  unchecked `[ ]` → `C_HINT`; on a disabled row, label / brackets /
+  swatch all paint `C_PANE_OFF`, except the cursor cell's brackets
+  which stay gold. The colour-name header row paints in `C_HINT`.
+  When `cell_handler` is provided the cell fragments are emitted as
+  3-tuples carrying the returned mouse handler; otherwise as 2-tuples.
+- `apply_cell_toggle(enabled, colour_index, col)` — pure state
+  transition. Returns `(False, colour_index)` when the clicked column
+  matches the active colour of an on pane; otherwise `(True, col)`.
+- `grid_width()` — total horizontal width of the grid (used for
+  centring callers).
+
+The launcher and the popup both read / write the existing
+`startup.conf` keys — `show_<key>` and `pane_color_<key>`. The grid
+model maps `show_<key>=1` with an empty or unknown `pane_color_<key>`
+to the Black column.
+
+Tests live in `bridge/launcher/tests/test_panes_grid.py` and run
+without prompt_toolkit installed.
 
 ### Per-pane colour palette
 
@@ -935,7 +974,13 @@ back to `bg=default` and logs a debug line.
 | `orange` | `#1c140a` | `bg=#1C140A`     |
 | `purple` | `#16101c` | `bg=#16101C`     |
 
-`PANE_COLOR_ORDER` in `palette.py` defines the radio presentation order.
+`PANE_COLOR_ORDER` in `palette.py` defines the grid's column order.
+
+The `C_PANE_OFF` palette token (also in `palette.py`) is the dim grey
+painted across every cell of a disabled grid row — label, brackets,
+and swatch all share it so the row reads as unmistakably off. The
+cursor cell's brackets escape the dim treatment so a disabled row
+stays navigable.
 
 ### `options_connection` frame
 
@@ -1874,7 +1919,7 @@ All frames render through `prompt_toolkit` controls. Layout building blocks:
 - **Centered frames** — `main`, `profile_rename`, the profile-create
   sub-frames, `profile_delete_confirm`, `profile_editor`,
   `profile_editor_macro_keybind`, `options`,
-  `options_panes`, `options_pane`, `options_connection`,
+  `options_panes`, `options_connection`,
   `options_connection_custom`, `options_coming_soon`, `history_detail`,
   `history_rate`, `history_delete_confirm`, `update_running`,
   `update_result`, and `exit_confirm` are wrapped in

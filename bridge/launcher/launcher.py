@@ -51,7 +51,7 @@ from palette import (  # noqa: E402
     _S_GAINED, _S_LOSS, _S_LABEL, _S_VALUE, _S_TP_BAR,
     _S_TRACK, _S_MARKER, _S_THUMB, _S_TOTAL, _S_ARROW,
     _S_HINT, _S_PVP, _S_ALLY, _S_STAR,
-    PANE_COLORS, PANE_COLOR_ORDER,
+    PANE_COLOR_ORDER,
     TTPP_COLOR_STYLES, TTPP_COLOR_NAMES,
 )
 import credits  # noqa: E402
@@ -61,6 +61,10 @@ import profile_io  # noqa: E402
 import run_retention  # noqa: E402
 import run_stats  # noqa: E402
 import spotlights  # noqa: E402
+from menu_chrome import (  # noqa: E402
+    button_fragment, footer_block, title_block, title_block_height,
+)
+from panes_grid import apply_cell_toggle, panes_grid_fragments  # noqa: E402
 from widgets.scrollbar import Scrollbar  # noqa: E402
 
 # ---------------------------------------------------------------------------
@@ -292,15 +296,15 @@ _editor_feedback_handle = None
 # Options — top-level (Panes / Game text-layout / Connection / Back)
 _sel_options              = 0
 _hover_options            = -1
-# Options — Panes submenu (Character / Buffs / Group / Comm / UI / Dev / blank /
-# Display pane headers / Back)
-_sel_options_panes        = 0
-_hover_options_panes      = -1
-# Options — per-pane subframe (Enabled / blank / Pane color label / 7 colours /
-# blank / Back). Single shared cursor since only one is rendered at a time.
-_sel_options_pane         = 0
-_hover_options_pane       = -1
-_options_pane_target      = "status"   # which pane the subframe is currently editing
+# Options — Panes submenu (pane × colour grid). Eight navigable rows:
+#   0..5 — pane rows (Character / Buffs / Group / Comm / UI / Developer).
+#   6    — Display pane headers toggle.
+#   7    — Back.
+# _options_panes_col is the persistent column (0..6) for grid rows; it is
+# preserved while the cursor sits on the headers / Back rows so returning
+# to a grid row re-enters the same column.
+_options_panes_row        = 0
+_options_panes_col        = 0
 # Options — Connection submenu (MMapper / Direct / Custom / Back)
 _sel_options_connection   = 0
 _hover_options_connection = -1
@@ -438,7 +442,6 @@ _profile_editor_window           = None
 _profile_editor_keybind_window   = None
 _options_window                  = None
 _options_panes_window            = None
-_options_pane_window             = None
 _options_connection_window       = None
 _options_connection_custom_window = None
 _options_coming_soon_window      = None
@@ -728,7 +731,6 @@ def _focus_current_frame():
             "profile_rename":             _profile_rename_window,
             "options":                    _options_window,
             "options_panes":              _options_panes_window,
-            "options_pane":               _options_pane_window,
             "options_connection":         _options_connection_window,
             "options_connection_custom":  _options_connection_custom_window,
             "options_coming_soon":        _options_coming_soon_window,
@@ -795,17 +797,13 @@ def _pad_centre(text, cols=None):
 def _set_hover(frame, idx):
     """Set hover index for the named frame; invalidate if changed."""
     global _hover_main, _hover_options, _hover_copy
-    global _hover_options_panes, _hover_options_pane, _hover_options_connection
+    global _hover_options_connection
     global _hover_options_spotlights
     changed = False
     if frame == "main" and _hover_main != idx:
         _hover_main = idx; changed = True
     elif frame == "options" and _hover_options != idx:
         _hover_options = idx; changed = True
-    elif frame == "options_panes" and _hover_options_panes != idx:
-        _hover_options_panes = idx; changed = True
-    elif frame == "options_pane" and _hover_options_pane != idx:
-        _hover_options_pane = idx; changed = True
     elif frame == "options_connection" and _hover_options_connection != idx:
         _hover_options_connection = idx; changed = True
     elif frame == "options_spotlights" and _hover_options_spotlights != idx:
@@ -5447,14 +5445,16 @@ def _enter_options_frame():
 
 
 def _activate_option(idx):
-    global _sel_options, _sel_options_panes, _sel_options_connection
+    global _sel_options, _sel_options_connection
     global _sel_options_spotlights
+    global _options_panes_row, _options_panes_col
     if idx < 0 or idx >= len(_OPTIONS_ROWS):
         return
     _sel_options = idx
     action, _label = _OPTIONS_ROWS[idx]
     if action == "panes":
-        _sel_options_panes = 0
+        _options_panes_row = 0
+        _options_panes_col = 0
         _push_frame("options_panes")
     elif action == "scripts":
         _enter_scripts_frame()
@@ -5524,286 +5524,161 @@ def _options_text():
 
 
 # ---------------------------------------------------------------------------
-# Options — Panes submenu
+# Options — Panes submenu (pane × colour grid)
 # ---------------------------------------------------------------------------
-# Rows produced as (kind, payload):
-#   "pane"    payload=(pane_target, label)
-#   "sep"
-#   "headers"
-#   "back"
-def _options_panes_rows():
-    rows = []
-    for target, label, _, _ in _PANE_OPTIONS:
-        rows.append(("pane", (target, label)))
-    rows.append(("sep", None))
-    rows.append(("headers", None))
-    rows.append(("sep", None))
-    rows.append(("back", None))
-    return rows
+# One frame replaces the previous Panes index + six per-pane subframes.
+# Rows of the grid are panes, columns are the seven colours. A pane row
+# with zero checked cells is off; exactly one checked cell is on with
+# that colour. apply_cell_toggle handles the on/off/switch-colour logic;
+# rendering goes through panes_grid_fragments. See ADR 0086 and
+# docs/launcher.md "Panes submenu".
+#
+# Eight navigable rows: rows 0..5 are pane rows (←/→ moves between the
+# seven colour columns; the column persists across grid rows). Row 6 is
+# the [X] Display pane headers toggle; row 7 is Back. ↑/↓ moves between
+# all eight rows. Enter activates: a grid cell toggles via the model
+# above, the headers row flips show_pane_dividers, Back saves and pops.
+# ESC = Back. All writes are deferred — _save_conf fires on the exit path.
+
+_PANES_GRID_ROWS   = len(_PANE_OPTIONS)            # 6
+_PANES_HEADERS_ROW = _PANES_GRID_ROWS              # 6
+_PANES_BACK_ROW    = _PANES_GRID_ROWS + 1          # 7
+_PANES_LAST_ROW    = _PANES_BACK_ROW
+_PANES_LAST_COL    = len(PANE_COLOR_ORDER) - 1     # 6
 
 
-def _options_panes_selectable_indices():
-    return [i for i, (k, _) in enumerate(_options_panes_rows()) if k != "sep"]
+def _set_panes_cursor(row, col=None):
+    """Update the panes-grid cursor; invalidate on change."""
+    global _options_panes_row, _options_panes_col
+    changed = False
+    if row != _options_panes_row:
+        _options_panes_row = row
+        changed = True
+    if col is not None and col != _options_panes_col:
+        _options_panes_col = col
+        changed = True
+    if changed and _app:
+        _app.invalidate()
 
 
-def _enter_options_pane_frame(target):
-    """Push the per-pane subframe for `target` (status/buffs/...)."""
-    global _options_pane_target, _sel_options_pane
-    _options_pane_target = target
-    _sel_options_pane = 0
-    _push_frame("options_pane")
+def _options_panes_back():
+    _save_conf()
+    _pop_frame()
 
 
-def _options_panes_activate(row_idx):
-    rows = _options_panes_rows()
-    if not (0 <= row_idx < len(rows)):
-        return
-    kind, payload = rows[row_idx]
-    if kind == "pane":
-        target, _ = payload
-        _enter_options_pane_frame(target)
-    elif kind == "headers":
-        key = "show_pane_dividers"
-        _conf[key] = "0" if _conf.get(key) == "1" else "1"
-        if _app:
-            _app.invalidate()
-    elif kind == "back":
-        _save_conf()
-        _pop_frame()
+def _apply_panes_grid_toggle(row, col):
+    """Apply a click on grid cell (row, col): on/off or switch-colour."""
+    _target, _label, show_key, color_key = _PANE_OPTIONS[row]
+    enabled = (_conf.get(show_key) == "1")
+    cur_color = _conf.get(color_key, "")
+    try:
+        cur_idx = PANE_COLOR_ORDER.index(cur_color)
+    except ValueError:
+        cur_idx = 0
+    new_enabled, new_idx = apply_cell_toggle(enabled, cur_idx, col)
+    _conf[show_key] = "1" if new_enabled else "0"
+    if new_enabled:
+        _conf[color_key] = PANE_COLOR_ORDER[new_idx]
+    if _app:
+        _app.invalidate()
+
+
+def _toggle_pane_headers():
+    key = "show_pane_dividers"
+    _conf[key] = "0" if _conf.get(key) == "1" else "1"
+    if _app:
+        _app.invalidate()
 
 
 def _options_panes_text():
     cols   = _term_cols()
-    title  = "─── Panes ───"
-    footer = "↑↓ Navigate · Enter Select · ESC Back"
+    rows_h = _term_rows()
 
-    rows = _options_panes_rows()
-    sel_indices = _options_panes_selectable_indices()
-    sel_pos = (_sel_options_panes
-               if 0 <= _sel_options_panes < len(sel_indices)
-               else 0)
-    sel_row = sel_indices[sel_pos] if sel_indices else -1
-
-    # Pre-compute labels for width measurement.
-    labels = []
-    for kind, payload in rows:
-        if kind == "pane":
-            _, lbl = payload
-            labels.append(lbl)
-        elif kind == "sep":
-            labels.append("")
-        elif kind == "headers":
-            box = "[x]" if _conf.get("show_pane_dividers") == "1" else "[ ]"
-            labels.append(f"{box} Display pane headers")
-        elif kind == "back":
-            labels.append("Back")
-    maxw = max((len(l) for l in labels), default=0)
-    pad  = max(0, (cols - (maxw + 6)) // 2)
-
-    frags = []
-    frags.append(("", "\n\n"))
-    frags.append(("", _pad_centre(title, cols)))
-    frags.append((C_TITLE, title))
-    frags.append(("", "\n\n"))
-
-    for i, (kind, payload) in enumerate(rows):
-        if kind == "sep":
-            frags.append(("", "\n"))
-            continue
-
-        label = labels[i]
-        if kind == "back":
-            label = "Back"
-        is_active = (i == sel_row)
-        is_hover  = (i == _hover_options_panes)
-        style     = _row_style(is_active, is_hover)
-        prefix    = "<< " if is_active else "   "
-        suffix    = " >>" if is_active else "   "
-
-        def _make_handler(row=i, pos=(sel_indices.index(i) if i in sel_indices else 0)):
-            def _h(ev):
-                global _sel_options_panes
-                if ev.event_type == MouseEventType.MOUSE_MOVE:
-                    _set_hover("options_panes", row)
-                    return
-                if ev.event_type == MouseEventType.MOUSE_DOWN:
-                    _sel_options_panes = pos
-                    _options_panes_activate(row)
-            return _h
-
-        h = _make_handler()
-        frags.append(("", " " * pad))
-        frags.append((style, prefix, h))
-        frags.append((style, label, h))
-        frags.append((style, suffix, h))
-        frags.append(("", "\n"))
-
-    frags.append(("", "\n"))
-    frags.append(("", _pad_centre(footer, cols)))
-    frags.append((C_HINT, footer))
-    return frags
-
-
-# ---------------------------------------------------------------------------
-# Options — per-pane subframe (Enabled + colour radios + Back)
-# ---------------------------------------------------------------------------
-# Row layout:
-#   0  Enabled toggle
-#   1  blank
-#   2  "Pane color" section label   (non-selectable)
-#   3..9  colour radios (7)
-#   10 blank
-#   11 Back
-_PANE_FRAME_ENABLED   = 0
-_PANE_FRAME_SECTION   = 2
-_PANE_FRAME_COLOR_LO  = 3
-_PANE_FRAME_COLOR_HI  = _PANE_FRAME_COLOR_LO + len(PANE_COLOR_ORDER) - 1
-_PANE_FRAME_BACK      = _PANE_FRAME_COLOR_HI + 2
-_PANE_FRAME_TOTAL     = _PANE_FRAME_BACK + 1
-
-
-def _options_pane_selectable_indices():
-    out = [_PANE_FRAME_ENABLED]
-    out.extend(range(_PANE_FRAME_COLOR_LO, _PANE_FRAME_COLOR_HI + 1))
-    out.append(_PANE_FRAME_BACK)
-    return out
-
-
-def _current_pane_meta():
-    for target, label, show_key, color_key in _PANE_OPTIONS:
-        if target == _options_pane_target:
-            return target, label, show_key, color_key
-    # fallback — should not happen
-    return _PANE_OPTIONS[0]
-
-
-def _options_pane_activate(row_idx):
-    target, _label, show_key, color_key = _current_pane_meta()
-    if row_idx == _PANE_FRAME_ENABLED:
-        _conf[show_key] = "0" if _conf.get(show_key) == "1" else "1"
-        if _app:
-            _app.invalidate()
-        return
-    if _PANE_FRAME_COLOR_LO <= row_idx <= _PANE_FRAME_COLOR_HI:
-        name = PANE_COLOR_ORDER[row_idx - _PANE_FRAME_COLOR_LO]
-        _conf[color_key] = name
-        if _app:
-            _app.invalidate()
-        return
-    if row_idx == _PANE_FRAME_BACK:
-        _save_conf()
-        _pop_frame()
-
-
-def _options_pane_text():
-    cols = _term_cols()
-    target, label, show_key, color_key = _current_pane_meta()
-    title  = f"─── {label} pane ───"
-    footer = "↑↓ Navigate · Enter Select · ESC Back"
-
-    enabled = (_conf.get(show_key) == "1")
-    cur_color = _conf.get(color_key, "black")
-
-    # Build labels and inactive styles per row index.
-    rows = []  # (label_text, kind)
-    enabled_label = ("[x] Enabled" if enabled else "[ ] Enabled")
-    rows.append((enabled_label, "toggle"))
-    rows.append(("", "sep"))
-    rows.append(("Pane color", "section"))
-    for name in PANE_COLOR_ORDER:
-        dot = "(•)" if cur_color == name else "( )"
-        rows.append((f"{dot} {name.capitalize()}", "radio"))
-    rows.append(("", "sep"))
-    rows.append(("Back", "back"))
-
-    # Width of the longest left-block label (enabled / radios / Back / section).
-    # Colour swatch (3 cells) plus separator are added in their own fragments.
-    label_w = max(len(r[0]) for r in rows if r[1] != "sep")
-
-    # Compute centring pad. The visible row width is:
-    #   prefix(3) + label_w + suffix(3)             (toggle / section / back)
-    #   prefix(3) + label_w + "  " + 3 swatches(3)  (radio)
-    # Use the wider of the two so the column stays aligned.
-    radio_extra = 2 + 3  # "  " gap + 3-cell swatch
-    block_w = max(label_w + 6, label_w + 6 + radio_extra)
-    pad = max(0, (cols - block_w) // 2)
-
-    sel = _sel_options_pane
-    sel_indices = _options_pane_selectable_indices()
-    if not (0 <= sel < len(sel_indices)):
-        sel = 0
-    sel_row = sel_indices[sel]
-
-    frags = []
-    frags.append(("", "\n\n"))
-    frags.append(("", _pad_centre(title, cols)))
-    frags.append((C_TITLE, title))
-    frags.append(("", "\n\n"))
-
-    for i, (text, kind) in enumerate(rows):
-        if kind == "sep":
-            frags.append(("", "\n"))
-            continue
-
-        if kind == "section":
-            # Non-selectable section label, no prefix/suffix decoration.
-            frags.append(("", " " * (pad + 3)))
-            frags.append((C_SECTION, text))
-            frags.append(("", "\n"))
-            continue
-
-        is_active = (i == sel_row)
-        is_hover  = (i == _hover_options_pane)
-        style     = _row_style(is_active, is_hover)
-        prefix    = "<< " if is_active else "   "
-        suffix    = " >>" if is_active else "   "
-
-        # Per-row sel_pos for the click handler.
+    # Grid rows from _conf. Empty / unknown colour names fall back to
+    # Black (column 0) per the grid model.
+    grid_rows = []
+    for _target, label, show_key, color_key in _PANE_OPTIONS:
+        enabled = (_conf.get(show_key) == "1")
+        cur_color = _conf.get(color_key, "")
         try:
-            sel_pos = sel_indices.index(i)
+            colour_index = PANE_COLOR_ORDER.index(cur_color)
         except ValueError:
-            sel_pos = 0
+            colour_index = 0
+        grid_rows.append((label, enabled, colour_index))
 
-        def _make_handler(row=i, pos=sel_pos):
-            def _h(ev):
-                global _sel_options_pane
-                if ev.event_type == MouseEventType.MOUSE_MOVE:
-                    _set_hover("options_pane", row)
-                    return
-                if ev.event_type == MouseEventType.MOUSE_DOWN:
-                    _sel_options_pane = pos
-                    _options_pane_activate(row)
-            return _h
+    cur_row = _options_panes_row
+    cur_col = _options_panes_col
+    grid_cursor = (cur_row, cur_col) if cur_row < _PANES_GRID_ROWS else None
 
-        h = _make_handler()
+    headers_on    = (_conf.get("show_pane_dividers") == "1")
+    headers_label = f"[{'X' if headers_on else ' '}] Display pane headers"
+    headers_w     = len(headers_label) + 4   # 2 cells padding each side
+    back_label    = "Back"
+    back_w        = 8
 
-        # Left padding to centre the block. For radio rows, pad so the label
-        # column lines up with toggle/back (which have no swatch). Both block
-        # widths share the same left edge — pad is the block-centring offset.
-        frags.append(("", " " * pad))
-        frags.append((style, prefix, h))
-        # Label, left-aligned in a fixed-width column.
-        padded_label = text + " " * max(0, label_w - len(text))
-        frags.append((style, padded_label, h))
+    frags = []
+    frags.extend(title_block("─── Panes ───", cols, blank_above=2))
 
-        if kind == "radio":
-            # Trailing colour swatch: 3 full-block glyphs. Solid fill for
-            # every entry; Black is a true #000000 swatch even though the
-            # actual pane keeps the terminal default bg.
-            color_name = PANE_COLOR_ORDER[i - _PANE_FRAME_COLOR_LO]
-            hex_color  = PANE_COLORS.get(color_name)
-            frags.append((style, "  ", h))
-            if hex_color is None:
-                frags.append(("bg:#000000 fg:#000000", "███", h))
-            else:
-                frags.append((f"bg:{hex_color} fg:{hex_color}", "███", h))
+    def _make_cell_handler(ri, ci):
+        def _h(ev):
+            if ev.event_type == MouseEventType.MOUSE_MOVE:
+                _set_panes_cursor(ri, ci)
+                return
+            if ev.event_type == MouseEventType.MOUSE_DOWN:
+                _set_panes_cursor(ri, ci)
+                _apply_panes_grid_toggle(ri, ci)
+        return _h
 
-        frags.append((style, suffix, h))
-        frags.append(("", "\n"))
+    frags.extend(panes_grid_fragments(
+        grid_rows, cols, grid_cursor, cell_handler=_make_cell_handler,
+    ))
 
+    # Blank row between grid and the headers toggle.
     frags.append(("", "\n"))
-    frags.append(("", _pad_centre(footer, cols)))
-    frags.append((C_HINT, footer))
+
+    # Display pane headers (filled-button grammar).
+    state_h = "selected_focused" if cur_row == _PANES_HEADERS_ROW else "inactive"
+    style_h, text_h = button_fragment(headers_label, headers_w, state_h)
+
+    def _headers_handler(ev):
+        if ev.event_type == MouseEventType.MOUSE_MOVE:
+            _set_panes_cursor(_PANES_HEADERS_ROW)
+            return
+        if ev.event_type == MouseEventType.MOUSE_DOWN:
+            _set_panes_cursor(_PANES_HEADERS_ROW)
+            _toggle_pane_headers()
+
+    pad_h = max(0, (cols - headers_w) // 2)
+    frags.append(("", " " * pad_h))
+    frags.append((style_h, text_h, _headers_handler))
+    frags.append(("", "\n"))
+
+    # Blank row between headers and Back.
+    frags.append(("", "\n"))
+
+    # Back (filled-button grammar).
+    state_b = "selected_focused" if cur_row == _PANES_BACK_ROW else "inactive"
+    style_b, text_b = button_fragment(back_label, back_w, state_b)
+
+    def _back_handler(ev):
+        if ev.event_type == MouseEventType.MOUSE_MOVE:
+            _set_panes_cursor(_PANES_BACK_ROW)
+            return
+        if ev.event_type == MouseEventType.MOUSE_DOWN:
+            _options_panes_back()
+
+    pad_b = max(0, (cols - back_w) // 2)
+    frags.append(("", " " * pad_b))
+    frags.append((style_b, text_b, _back_handler))
+    frags.append(("", "\n"))
+
+    # Footer block anchored to the final terminal row. Content rows
+    # above the footer = title block + header row + 6 pane rows + 4
+    # rows of bottom chrome (blank · headers · blank · Back).
+    content_rows = title_block_height(2) + 1 + _PANES_GRID_ROWS + 4
+    footer = "↑↓←→ Move · Enter Toggle · ESC Back"
+    frags.extend(footer_block(footer, cols, rows_h, content_rows))
+
     return frags
 
 
@@ -11208,70 +11083,48 @@ def _kb_opt_escape(event):
     _pop_frame()
 
 
-# Options — Panes submenu
+# Options — Panes submenu (colour grid). Eight navigable rows; ←/→ moves
+# the column only on grid rows, and the column persists across grid rows.
 @kb.add("up", filter=_in_frame("options_panes"))
 def _kb_optp_up(event):
-    global _sel_options_panes
-    n = len(_options_panes_selectable_indices())
-    if n:
-        _sel_options_panes = (_sel_options_panes - 1) % n
+    if _options_panes_row > 0:
+        _set_panes_cursor(_options_panes_row - 1)
 
 
 @kb.add("down", filter=_in_frame("options_panes"))
 def _kb_optp_down(event):
-    global _sel_options_panes
-    n = len(_options_panes_selectable_indices())
-    if n:
-        _sel_options_panes = (_sel_options_panes + 1) % n
+    if _options_panes_row < _PANES_LAST_ROW:
+        _set_panes_cursor(_options_panes_row + 1)
+
+
+@kb.add("left", filter=_in_frame("options_panes"))
+def _kb_optp_left(event):
+    if _options_panes_row < _PANES_GRID_ROWS and _options_panes_col > 0:
+        _set_panes_cursor(_options_panes_row, _options_panes_col - 1)
+
+
+@kb.add("right", filter=_in_frame("options_panes"))
+def _kb_optp_right(event):
+    if (_options_panes_row < _PANES_GRID_ROWS
+            and _options_panes_col < _PANES_LAST_COL):
+        _set_panes_cursor(_options_panes_row, _options_panes_col + 1)
 
 
 @kb.add("enter", filter=_in_frame("options_panes"))
 @kb.add(" ",     filter=_in_frame("options_panes"))
 def _kb_optp_select(event):
-    sel = _options_panes_selectable_indices()
-    if not sel:
-        return
-    idx = _sel_options_panes if _sel_options_panes < len(sel) else len(sel) - 1
-    _options_panes_activate(sel[idx])
+    r = _options_panes_row
+    if r < _PANES_GRID_ROWS:
+        _apply_panes_grid_toggle(r, _options_panes_col)
+    elif r == _PANES_HEADERS_ROW:
+        _toggle_pane_headers()
+    elif r == _PANES_BACK_ROW:
+        _options_panes_back()
 
 
 @kb.add("escape", filter=_in_frame("options_panes"), eager=True)
 def _kb_optp_escape(event):
-    _save_conf()
-    _pop_frame()
-
-
-# Options — per-pane subframe
-@kb.add("up", filter=_in_frame("options_pane"))
-def _kb_optpp_up(event):
-    global _sel_options_pane
-    n = len(_options_pane_selectable_indices())
-    if n:
-        _sel_options_pane = (_sel_options_pane - 1) % n
-
-
-@kb.add("down", filter=_in_frame("options_pane"))
-def _kb_optpp_down(event):
-    global _sel_options_pane
-    n = len(_options_pane_selectable_indices())
-    if n:
-        _sel_options_pane = (_sel_options_pane + 1) % n
-
-
-@kb.add("enter", filter=_in_frame("options_pane"))
-@kb.add(" ",     filter=_in_frame("options_pane"))
-def _kb_optpp_select(event):
-    sel = _options_pane_selectable_indices()
-    if not sel:
-        return
-    idx = _sel_options_pane if _sel_options_pane < len(sel) else len(sel) - 1
-    _options_pane_activate(sel[idx])
-
-
-@kb.add("escape", filter=_in_frame("options_pane"), eager=True)
-def _kb_optpp_escape(event):
-    _save_conf()
-    _pop_frame()
+    _options_panes_back()
 
 
 # Options — Spotlights submenu
@@ -12027,7 +11880,7 @@ def main():
     global _profile_create_copy_window, _profile_delete_window
     global _profile_editor_window
     global _profile_editor_keybind_window
-    global _options_window, _options_panes_window, _options_pane_window
+    global _options_window, _options_panes_window
     global _options_connection_window, _options_connection_custom_window
     global _options_coming_soon_window, _options_spotlights_window
     global _spotlights_empty_window
@@ -12065,7 +11918,6 @@ def main():
     _profile_editor_keybind_window, peditor_keybind_frame    = _build_simple(_profile_editor_keybind_text)
     _options_window,                    options_frame                  = _build_simple(_options_text)
     _options_panes_window,              options_panes_frame            = _build_simple(_options_panes_text)
-    _options_pane_window,               options_pane_frame             = _build_simple(_options_pane_text)
     _options_connection_window,         options_connection_frame       = _build_simple(_options_connection_text)
     _options_connection_custom_window,  options_connection_custom_frame = _build_simple(_options_connection_custom_text)
     _options_coming_soon_window,        options_coming_soon_frame      = _build_simple(_options_coming_soon_text)
@@ -12186,7 +12038,6 @@ def main():
         "profile_editor_macro_keybind": peditor_keybind_frame,
         "options":                    options_frame,
         "options_panes":              options_panes_frame,
-        "options_pane":               options_pane_frame,
         "options_connection":         options_connection_frame,
         "options_connection_custom":  options_connection_custom_frame,
         "options_coming_soon":        options_coming_soon_frame,

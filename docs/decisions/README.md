@@ -80,6 +80,7 @@ Active ADRs by area. Click through for context, alternatives, and consequences.
 - [ADR 0069](0069-launcher-prompt-toolkit.md) — Launcher rewritten in prompt_toolkit — `launcher.py` is the menu body; `launcher.sh` is a thin exec wrapper. Frame stack mirrors ADR 0062; colour palette extracted to `palette.py` and shared with the popup.
 - [ADR 0073](0073-statistics-rendering-duplicated.md) — Statistics rendering is duplicated between popup and launcher History — the in-game popup Statistics frame and the launcher's History detail frame share data (ADR 0065) but each renders its own. Different hosts and use cases justify the duplication; conditions for future consolidation are recorded.
 - [ADR 0085](0085-shared-menu-chrome.md) — Shared menu chrome between launcher and popup — `bridge/launcher/menu_chrome.py` exposes title/footer/button helpers (and two new palette tokens, `C_OK` / `C_CURSOR_CELL`) so both surfaces share title spacing, footer anchoring, and the two-mode cursor grammar.
+- [ADR 0086](0086-panes-grid.md) — Panes configuration as a single colour grid — `bridge/launcher/panes_grid.py` renders a pane × colour grid (rows = panes, columns = the 7 palette entries; 0 or 1 cells checked per row). Replaces the per-pane Options subframes on both surfaces; shared render, per-surface commit (launcher deferred, popup immediate + live tmux). Adds `C_PANE_OFF` to `palette.py`.
 
 ### Bridge services & startup
 
