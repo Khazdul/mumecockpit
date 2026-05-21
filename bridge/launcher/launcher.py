@@ -11557,23 +11557,34 @@ def _kb_hist_right(event):
 
 @kb.add("up", filter=_in_frame("history"))
 def _kb_hist_up(event):
-    # Filter sits above the table; ↑ at row 0 of the table falls
-    # through to the filter pill row. Within the filter row ↑ is a
-    # no-op — pills are arranged horizontally.
+    # Filter sits above both zones. ↑ at row 0 of the table and ↑ on the
+    # topmost enabled button of the options column both fall through to
+    # the filter pill row. Within the filter row ↑ is a no-op — pills
+    # are arranged horizontally.
+    global _history_menu_cursor
     if _history_focused == 1:
         if _history_table_cursor == 0:
             _history_set_focus(0)
         else:
             _history_move_table(-1)
     elif _history_focused == 2:
-        _history_menu_move(-1)
+        enabled = _history_menu_enabled_indices()
+        if enabled and _history_menu_cursor == enabled[0]:
+            _history_set_focus(0)
+        else:
+            _history_menu_move(-1)
 
 
 @kb.add("down", filter=_in_frame("history"))
 def _kb_hist_down(event):
-    # ↓ on the filter row drops into the table.
+    # ↓ on the filter row drops into the options column at the topmost
+    # enabled button (RUN LOG when it's enabled).
+    global _history_menu_cursor
     if _history_focused == 0:
-        _history_set_focus(1)
+        enabled = _history_menu_enabled_indices()
+        if enabled:
+            _history_menu_cursor = enabled[0]
+        _history_set_focus(2)
     elif _history_focused == 1:
         _history_move_table(1)
     elif _history_focused == 2:

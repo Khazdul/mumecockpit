@@ -1225,14 +1225,16 @@ landing spot even with an empty table.
 |---------|--------------------|---------------------------------------|
 | filter  | ←/→                | move pill cursor (clamp, no wrap; window scrolls minimally) |
 | filter  | Enter / Space      | re-apply cursor pill's filter         |
-| filter  | ↓                  | focus table                           |
+| filter  | ↑                  | no-op (filter is the top zone)        |
+| filter  | ↓                  | focus options column at the topmost enabled button |
 | table   | ↑                  | move cursor up; falls through to the filter row when on row 0 |
 | table   | ↓                  | move cursor down (clamp)              |
 | table   | PgUp/PgDn          | scroll 10                             |
 | table   | Home/End           | jump to ends                          |
 | table   | Enter / Space      | open Run log when row has a log; otherwise no-op |
 | table   | ←                  | focus button column                   |
-| options | ↑/↓                | move cursor button (skip disabled)    |
+| options | ↑                  | move cursor button (skip disabled); falls through to the filter row when on the topmost enabled button |
+| options | ↓                  | move cursor button (skip disabled, wraps to top) |
 | options | Enter / Space      | activate selected button              |
 | options | →                  | focus table                           |
 | any     | Tab / Shift+Tab    | cycle focus (filter → table → options)|
@@ -1243,8 +1245,12 @@ wrap, re-filters immediately) and pan the visible window minimally
 when it overflows. On the table they focus the button column (`←`
 only — `→` is a no-op since nothing sits right of the table). On the
 button column `→` focuses the table; `←` is a no-op.
-The filter row is reached above the table (↑ at row 0 of the table,
-or Tab).
+
+The filter row is reached above each zone below it via the spatial
+arrow path: `↑` at row 0 of the table, or `↑` on the topmost enabled
+button of the options column (`RUN LOG` when enabled), focuses the
+filter row. `↓` from the filter row reciprocates by focusing the
+options column at the topmost enabled button.
 
 **Filter behaviour.** Cursor equals the active filter; moving the
 cursor with ←/→ or clicking a pill re-filters immediately. Filter
