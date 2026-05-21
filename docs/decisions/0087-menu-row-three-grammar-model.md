@@ -164,3 +164,34 @@ that hook, and adding it framework-side would couple every cell's
 hover semantics to a single global state. The per-frame invariant
 is local and explicit and matches what the Profile / History frames
 already do.
+
+## Amendment — 2026-05-21 (P3.2)
+
+Two corrections to the section above, kept here rather than spun into
+a new ADR because P3.2 is a follow-up polish to this same decision.
+
+**Arrows hug the label.** The original `menu_row(label, label_col_w,
+state, …)` left-padded the label to `label_col_w`, so the selected
+row's `<< … >>` arrows trailed empty padding (`<< Enter MUME      >>`)
+instead of sitting one space off the label. The helper is now
+`menu_row(label, state, …)` — the label is emitted unpadded and the
+row is `len(label) + 6` cells wide, so the arrows always hug the
+label. The label still does not shift between states because the
+prefix and suffix are the same width (3 cells) in every state.
+
+**Two alignment rules, not one.** Section 2 above ("Alignment
+convention, restored") said every menu list left-aligns on a shared
+column inside a centred block. That is correct only for the **glyph
+menus** — frames whose rows carry leading `[ ]` / `( )` glyphs that
+need to stack vertically (`options_connection`, `options_spotlights`,
+and the headers-toggle + `Back` block of `options_panes`). For
+**plain `<< label >>` menus** (`main` and `options`) the rows are
+centred *independently* on their own width — the pre-P3 behaviour —
+because there are no leading glyphs to stack. The two rules are not
+the same; `docs/launcher.md` "Alignment convention" carries the
+updated wording.
+
+Glyph menus still compute `left_pad` from `label_col_w + 6` (centred
+on the widest composed row), but now compute the per-row right pad
+from each row's actual width to fill out to the right screen edge,
+since `menu_row` no longer pads the label.

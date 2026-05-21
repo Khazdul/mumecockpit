@@ -2023,7 +2023,7 @@ import prompt_toolkit — the caller appends the fragments into its own
 | `title_block(title, term_cols, blank_above)` | Fragments for `blank_above` blank rows, then `title` centred in `term_cols` styled `C_SECTION`, then one trailing blank row. `title` is passed already decorated (e.g. `"─── Panes ───"`). `blank_above = 2` for the launcher, `1` for the popup. |
 | `title_block_height(blank_above)` | Returns `blank_above + 2` — the visual-row count produced by `title_block`. |
 | `footer_block(footer_text, term_cols, term_rows, content_rows)` | `content_rows` is the row count above the footer (title block + body). Emits `max(0, term_rows - content_rows - 1)` blank rows then `footer_text` centred in `term_cols` styled `C_HINT`, so the footer lands on the final terminal row. When content fills or overflows the terminal the pad clamps to zero — never negative. |
-| `menu_row(label, label_col_w, state, mouse_handler=None, inactive_style=C_ITEM)` | Fragment list for one `<< label >>` selectable menu row: a fixed 3-cell prefix (`<< ` or `   `) + `label` left-padded to `label_col_w` + a fixed 3-cell suffix (` >>` or `   `). `state ∈ {"inactive", "hover", "selected"}`: `selected` → arrows in `C_CURSOR_CELL` (gold), label in `C_ACTIVE`; `hover` → blank arrows, label in `C_HOVER`; `inactive` → blank arrows, label in `inactive_style` (default `C_ITEM`; `C_HINT` for the "Text layout" placeholder). Selection wins over hover. The caller prepends the centring pad for the whole vertical block; the helper emits only the row. When `mouse_handler` is given, every fragment carries it as a 3-tuple. |
+| `menu_row(label, state, mouse_handler=None, inactive_style=C_ITEM)` | Fragment list for one `<< label >>` selectable menu row: a fixed 3-cell prefix (`<< ` or `   `) + the raw `label` + a fixed 3-cell suffix (` >>` or `   `). Row width is `len(label) + 6` and symmetric, so the arrows hug the label (`<< Enter MUME >>`, never `<< Enter MUME      >>`) and the label never shifts horizontally between states. `state ∈ {"inactive", "hover", "selected"}`: `selected` → arrows in `C_CURSOR_CELL` (gold), label in `C_ACTIVE`; `hover` → blank arrows, label in `C_HOVER`; `inactive` → blank arrows, label in `inactive_style` (default `C_ITEM`; `C_HINT` for the "Text layout" placeholder). Selection wins over hover. The caller is responsible for centring — see the Alignment convention below for the two cases. When `mouse_handler` is given, every fragment carries it as a 3-tuple. |
 | `button_fragment(label, width, state)` | A single `(style, text)` 2-tuple. `label` is centred in `width` cells (truncated when longer). `state ∈ {"inactive", "hover", "selected_unfocused", "selected_focused", "disabled"}` maps to: `C_BUTTON_INACTIVE` / `C_BUTTON_ACTIVE_UNFOCUSED` (hover deliberately previews the unfocused-selected look) / `C_BUTTON_ACTIVE_UNFOCUSED` / `C_BUTTON_ACTIVE_FOCUSED` / `C_BUTTON_DISABLED`. Used by the Profile / History button columns and the editor's LITE kind-buttons; vertical menu lists use `menu_row` instead. |
 
 `title_block` and `footer_block` both accept an optional `mouse_handler`
@@ -2087,18 +2087,34 @@ state:
   signal "not ready yet"; selected / hover states still pick up
   the normal menu-row grammar.
 
-**Alignment convention.** Every menu list — Profile pages and the rest
-of the swept frames alike — is left-aligned on a shared column inside
-a centred block. The widest composed label across the frame's rows
-sets `label_col_w`; the block (`label_col_w + 6` cells wide, including
-the 3-cell prefix and 3-cell suffix `menu_row` emits) is centred as a
-unit. Leading `[ ]` / `( )` glyphs stack vertically because every
-row's label is left-padded to the same width — not because the chrome
-shifts to accommodate them. The block re-centres on every render so a
-resize is immediate. The `options_panes` frame is the one place where
-two centred blocks coexist on the same page: the colour grid sits in
-its own centred block above, and the headers-toggle + `Back` rows sit
-in a second centred block below.
+**Alignment convention.** Menu frames use one of two centring rules,
+chosen by whether the frame's rows carry leading `[ ]` / `( )` glyphs
+that need to stack vertically:
+
+- **Plain `<< label >>` menus** — `main` and `options`. Each row is
+  centred *independently* on its own width (`len(label) + 6`), so
+  the menu is ragged-centred. Because the prefix and suffix are the
+  same width (3 cells) in every state, the label sits at the same
+  column within the row in inactive / hover / selected — it does
+  not shift when a row is selected. There is no shared block here.
+- **Glyph menus** — `options_connection`, `options_spotlights`, and
+  the headers-toggle + `Back` block of `options_panes`. Every row
+  left-aligns on a shared column inside a single centred block. The
+  block is `label_col_w + 6` cells wide, where `label_col_w` is the
+  widest composed label across the frame's rows; the caller prepends
+  the same left margin to every row so the leading `[X]` / `(•)`
+  glyphs stack vertically at one column. `menu_row` does not pad the
+  label, so the per-row right pad is computed from each row's actual
+  width to fill out to the right screen edge (and carries the
+  clear-hover handler).
+
+In both rules, the row geometry re-centres on every render so a
+resize is immediate, and the `<< >>` arrows hug the label with one
+space of breathing room — no trailing pad before the closing arrow.
+The `options_panes` frame is the one place where two centred zones
+coexist on the same page: the colour grid sits in its own centred
+block above, and the headers-toggle + `Back` rows sit in a second
+centred block below (the glyph-menu rule).
 
 **Hover-clear invariant.** In a menu frame, every emitted fragment is
 either a selectable row (carries a MOUSE_MOVE handler that sets the

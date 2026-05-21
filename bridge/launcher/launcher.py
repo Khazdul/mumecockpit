@@ -952,9 +952,10 @@ def _main_text():
             return _h
 
         h = _make_handler()
+        right_pad_main = max(0, cols - left_pad - len(label) - 6)
         frags.append(("", " " * left_pad, clear_hover))
-        frags.extend(menu_row(label, label_col_w, state, mouse_handler=h))
-        frags.append(("", " " * right_pad, clear_hover))
+        frags.extend(menu_row(label, state, mouse_handler=h))
+        frags.append(("", " " * right_pad_main, clear_hover))
         frags.append(("", "\n", clear_hover))
 
     frags.append(("", "\n", clear_hover))
@@ -5510,7 +5511,6 @@ def _options_text():
     label_col_w = max(len(label) for _, label in _OPTIONS_ROWS)
     block_w     = label_col_w + 6
     left_pad    = max(0, (cols - block_w) // 2)
-    right_pad   = max(0, cols - left_pad - block_w)
 
     frags = []
     frags.extend(title_block(
@@ -5544,9 +5544,10 @@ def _options_text():
             return _h
 
         h = _make_handler()
+        right_pad = max(0, cols - left_pad - len(label) - 6)
         frags.append(("", " " * left_pad, clear_hover))
         frags.extend(menu_row(
-            label, label_col_w, state,
+            label, state,
             mouse_handler=h, inactive_style=inactive_style,
         ))
         frags.append(("", " " * right_pad, clear_hover))
@@ -5666,12 +5667,13 @@ def _options_panes_text():
     headers_on    = (_conf.get("show_pane_dividers") == "1")
     headers_label = f"[{'X' if headers_on else ' '}] Display pane headers"
     back_label    = "Back"
-    # Headers + Back share one centred block, left-aligned on the wider
-    # label so the `[X]` glyph and "Back" stack at the same column.
+    # Headers + Back share one centred block, left-aligned on the
+    # widest composed row so the `[X]` glyph and "Back" stack at the
+    # same column. `menu_row` no longer pads the label, so the right
+    # pad is computed per row from its actual width.
     label_col_w   = max(len(headers_label), len(back_label))
     block_w       = label_col_w + 6
     left_pad      = max(0, (cols - block_w) // 2)
-    right_pad     = max(0, cols - left_pad - block_w)
 
     frags = []
     frags.extend(title_block(
@@ -5706,11 +5708,12 @@ def _options_panes_text():
             _set_panes_cursor(_PANES_HEADERS_ROW)
             _toggle_pane_headers()
 
+    headers_right_pad = max(0, cols - left_pad - len(headers_label) - 6)
     frags.append(("", " " * left_pad, clear_hover))
     frags.extend(menu_row(
-        headers_label, label_col_w, state_h, mouse_handler=_headers_handler,
+        headers_label, state_h, mouse_handler=_headers_handler,
     ))
-    frags.append(("", " " * right_pad, clear_hover))
+    frags.append(("", " " * headers_right_pad, clear_hover))
     frags.append(("", "\n", clear_hover))
 
     # Blank row between headers and Back.
@@ -5726,11 +5729,12 @@ def _options_panes_text():
         if ev.event_type == MouseEventType.MOUSE_DOWN:
             _options_panes_back()
 
+    back_right_pad = max(0, cols - left_pad - len(back_label) - 6)
     frags.append(("", " " * left_pad, clear_hover))
     frags.extend(menu_row(
-        back_label, label_col_w, state_b, mouse_handler=_back_handler,
+        back_label, state_b, mouse_handler=_back_handler,
     ))
-    frags.append(("", " " * right_pad, clear_hover))
+    frags.append(("", " " * back_right_pad, clear_hover))
     frags.append(("", "\n", clear_hover))
 
     # Footer block anchored to the final terminal row. Content rows
@@ -5799,10 +5803,13 @@ def _options_connection_text():
     # column inside a centred block so the radio glyphs stack vertically.
     rows = _CONNECTION_MODES_ROWS(cur, custom_detail)
     labels = rows + ["Back"]
+    # Glyph menu: every row left-aligns at the same column inside a
+    # centred block. The block is centred on the widest composed row;
+    # `menu_row` no longer pads the label, so the right pad is
+    # computed per row from its actual width.
     label_col_w = max(len(l) for l in labels)
     block_w     = label_col_w + 6
     left_pad    = max(0, (cols - block_w) // 2)
-    right_pad   = max(0, cols - left_pad - block_w)
 
     frags = []
     frags.extend(title_block(
@@ -5834,8 +5841,9 @@ def _options_connection_text():
             return _h
 
         h = _make_handler()
+        right_pad = max(0, cols - left_pad - len(label) - 6)
         frags.append(("", " " * left_pad, clear_hover))
-        frags.extend(menu_row(label, label_col_w, state, mouse_handler=h))
+        frags.extend(menu_row(label, state, mouse_handler=h))
         frags.append(("", " " * right_pad, clear_hover))
         frags.append(("", "\n", clear_hover))
 
@@ -6018,10 +6026,13 @@ def _options_spotlights_text():
             labels.append("")
         elif kind == "back":
             labels.append("Back")
+    # Glyph menu: every row left-aligns at the same column inside a
+    # centred block. The block is centred on the widest composed row;
+    # `menu_row` no longer pads the label, so the right pad is
+    # computed per row from its actual width.
     label_col_w = max((len(l) for l in labels if l), default=0)
     block_w     = label_col_w + 6
     left_pad    = max(0, (cols - block_w) // 2)
-    right_pad   = max(0, cols - left_pad - block_w)
 
     frags = []
     frags.extend(title_block(
@@ -6052,8 +6063,9 @@ def _options_spotlights_text():
             return _h
 
         h = _make_handler()
+        right_pad = max(0, cols - left_pad - len(label) - 6)
         frags.append(("", " " * left_pad, clear_hover))
-        frags.extend(menu_row(label, label_col_w, state, mouse_handler=h))
+        frags.extend(menu_row(label, state, mouse_handler=h))
         frags.append(("", " " * right_pad, clear_hover))
         frags.append(("", "\n", clear_hover))
         body_rows += 1

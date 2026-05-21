@@ -184,71 +184,81 @@ class TestButtonFragment(unittest.TestCase):
 class TestMenuRow(unittest.TestCase):
     def test_selected_uses_gold_arrows_and_active_label(self):
         # selected → "<< " and " >>" in gold (C_CURSOR_CELL); label in
-        # C_ACTIVE; label left-padded to label_col_w.
-        frags = menu_chrome.menu_row("Options", 10, "selected")
+        # C_ACTIVE; label emitted unpadded so the arrows hug it.
+        frags = menu_chrome.menu_row("Options", "selected")
         self.assertEqual(frags[0], (C_CURSOR_CELL, "<< "))
-        self.assertEqual(frags[1], (C_ACTIVE,      "Options   "))
+        self.assertEqual(frags[1], (C_ACTIVE,      "Options"))
         self.assertEqual(frags[2], (C_CURSOR_CELL, " >>"))
 
     def test_hover_uses_blank_arrows_and_hover_label(self):
         # hover → three-space prefix/suffix, label in C_HOVER.
-        frags = menu_chrome.menu_row("Options", 10, "hover")
+        frags = menu_chrome.menu_row("Options", "hover")
         self.assertEqual(frags[0], ("",      "   "))
-        self.assertEqual(frags[1], (C_HOVER, "Options   "))
+        self.assertEqual(frags[1], (C_HOVER, "Options"))
         self.assertEqual(frags[2], ("",      "   "))
 
     def test_inactive_uses_blank_arrows_and_item_label(self):
         # inactive → three-space prefix/suffix, label in C_ITEM by default.
-        frags = menu_chrome.menu_row("Options", 10, "inactive")
+        frags = menu_chrome.menu_row("Options", "inactive")
         self.assertEqual(frags[0], ("",     "   "))
-        self.assertEqual(frags[1], (C_ITEM, "Options   "))
+        self.assertEqual(frags[1], (C_ITEM, "Options"))
         self.assertEqual(frags[2], ("",     "   "))
 
     def test_inactive_style_override(self):
         # inactive with explicit inactive_style (e.g. C_HINT for the
         # Text-layout placeholder) recolours only the label.
-        frags = menu_chrome.menu_row("Text layout", 12, "inactive",
+        frags = menu_chrome.menu_row("Text layout", "inactive",
                                      inactive_style=C_HINT)
         self.assertEqual(frags[1][0], C_HINT)
         # hover state ignores inactive_style.
-        frags = menu_chrome.menu_row("Text layout", 12, "hover",
+        frags = menu_chrome.menu_row("Text layout", "hover",
                                      inactive_style=C_HINT)
         self.assertEqual(frags[1][0], C_HOVER)
         # selected state ignores inactive_style.
-        frags = menu_chrome.menu_row("Text layout", 12, "selected",
+        frags = menu_chrome.menu_row("Text layout", "selected",
                                      inactive_style=C_HINT)
         self.assertEqual(frags[1][0], C_ACTIVE)
 
-    def test_label_left_padded_to_col_w(self):
-        # Shorter label is right-padded with spaces so the leading
-        # column aligns and the suffix sits at a fixed cell.
-        frags = menu_chrome.menu_row("[ ] X", 12, "inactive")
-        self.assertEqual(frags[1][1], "[ ] X" + " " * 7)
-
-    def test_label_at_col_w_unchanged(self):
-        # Exact-width label is not padded.
-        frags = menu_chrome.menu_row("Exactly10!", 10, "inactive")
+    def test_label_emitted_unpadded(self):
+        # No trailing pad — the label rides between the 3-cell arrows
+        # bare, so `<< >>` hugs the label regardless of length.
+        frags = menu_chrome.menu_row("[ ] X", "inactive")
+        self.assertEqual(frags[1][1], "[ ] X")
+        frags = menu_chrome.menu_row("Exactly10!", "inactive")
         self.assertEqual(frags[1][1], "Exactly10!")
-
-    def test_label_longer_than_col_w_unchanged(self):
-        # Longer label is not truncated (menu_row trusts the caller's
-        # label_col_w to be ≥ all composed labels in the frame).
-        frags = menu_chrome.menu_row("Too long label", 5, "inactive")
+        frags = menu_chrome.menu_row("Too long label", "inactive")
         self.assertEqual(frags[1][1], "Too long label")
 
-    def test_fixed_three_cell_prefix_suffix(self):
-        # The "<<"/">>"/" " bits are always exactly 3 cells, regardless
-        # of label_col_w — leading glyphs stack vertically only because
-        # of the label-pad, not because the chrome shifts.
+    def test_row_width_is_label_plus_six(self):
+        # Total visual width of the row = len(label) + 6 (3-cell
+        # prefix + label + 3-cell suffix), in every state.
         for state in ("selected", "hover", "inactive"):
-            frags = menu_chrome.menu_row("X", 1, state)
+            for label in ("X", "Options", "[X] Display pane headers"):
+                frags = menu_chrome.menu_row(label, state)
+                width = sum(len(f[1]) for f in frags)
+                self.assertEqual(width, len(label) + 6)
+
+    def test_arrows_abut_the_label(self):
+        # `<< ` ends with a single space and ` >>` starts with one —
+        # so there is exactly one space between the arrows and the
+        # label, no trailing pad before the closing arrow.
+        frags = menu_chrome.menu_row("Enter MUME", "selected")
+        self.assertEqual(frags[0][1], "<< ")
+        self.assertEqual(frags[1][1], "Enter MUME")
+        self.assertEqual(frags[2][1], " >>")
+
+    def test_fixed_three_cell_prefix_suffix(self):
+        # The "<<"/">>"/" " bits are always exactly 3 cells, in every
+        # state — the row width grows only with the label.
+        for state in ("selected", "hover", "inactive"):
+            frags = menu_chrome.menu_row("X", state)
             self.assertEqual(len(frags[0][1]), 3)
             self.assertEqual(len(frags[2][1]), 3)
 
     def test_mouse_handler_passthrough(self):
         sentinel = object()
         frags = menu_chrome.menu_row(
-            "Options", 10, "selected", mouse_handler=sentinel,
+            "Options", "selected", mouse_handler=sentinel,
         )
         self.assertEqual(len(frags), 3)
         for f in frags:
@@ -256,7 +266,7 @@ class TestMenuRow(unittest.TestCase):
             self.assertIs(f[2], sentinel)
 
     def test_no_mouse_handler_gives_two_tuples(self):
-        frags = menu_chrome.menu_row("Options", 10, "inactive")
+        frags = menu_chrome.menu_row("Options", "inactive")
         for f in frags:
             self.assertEqual(len(f), 2)
 

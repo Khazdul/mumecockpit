@@ -97,15 +97,14 @@ def footer_block(footer_text, term_cols, term_rows, content_rows,
     return _attach(frags, mouse_handler)
 
 
-def menu_row(label, label_col_w, state, mouse_handler=None,
-             inactive_style=C_ITEM):
+def menu_row(label, state, mouse_handler=None, inactive_style=C_ITEM):
     """Fragments for one `<< label >>` selectable menu row.
 
-    Layout is a fixed 3-cell prefix (`<< ` or `   `) + `label` left-
-    padded to `label_col_w` + a fixed 3-cell suffix (` >>` or `   `).
-    The caller is responsible for prepending the centring pad that
-    aligns the whole vertical block within the terminal; this helper
-    only emits the row.
+    The label is emitted unpadded — the row is `len(label) + 6` cells
+    wide and symmetric, so the `<< >>` arrows sit one space off the
+    label (`<< Enter MUME >>`, never `<< Enter MUME      >>`). The
+    label never shifts horizontally between states because the prefix
+    and suffix are the same width (3 cells) in every state.
 
     `state ∈ {"inactive", "hover", "selected"}`:
       - `selected`  — `<<` / `>>` arrows in gold (`C_CURSOR_CELL`),
@@ -119,29 +118,26 @@ def menu_row(label, label_col_w, state, mouse_handler=None,
                        "Text layout" entry).
 
     `label` is composed by the caller, including any `[ ]` / `( )`
-    glyph. The left-pad to `label_col_w` means leading glyphs stack
-    vertically when the caller computes `label_col_w` as the widest
-    composed label in the frame.
+    glyph. To make leading glyphs stack vertically (glyph menus), the
+    caller computes the widest *composed* row in the frame and
+    prepends a per-row left margin so the whole block shares one left
+    edge; plain `<< label >>` menus instead centre each row
+    individually.
 
     When `mouse_handler` is given, every fragment is emitted as a
     3-tuple carrying it.
     """
-    if len(label) < label_col_w:
-        label_text = label + " " * (label_col_w - len(label))
-    else:
-        label_text = label
-
     if state == "selected":
         prefix = (C_CURSOR_CELL, "<< ")
-        body   = (C_ACTIVE,      label_text)
+        body   = (C_ACTIVE,      label)
         suffix = (C_CURSOR_CELL, " >>")
     elif state == "hover":
         prefix = ("",            "   ")
-        body   = (C_HOVER,       label_text)
+        body   = (C_HOVER,       label)
         suffix = ("",            "   ")
     else:
         prefix = ("",            "   ")
-        body   = (inactive_style, label_text)
+        body   = (inactive_style, label)
         suffix = ("",            "   ")
 
     return _attach([prefix, body, suffix], mouse_handler)
