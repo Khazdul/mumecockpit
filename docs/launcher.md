@@ -1103,9 +1103,11 @@ Top-to-bottom (P4.1 layout — see ADR 0088 and its P4.1 amendment):
 2. **Filter pill row.** Horizontal row of pills — `All` first, then
    one pill per character returned by `list_characters_with_runs()`
    (alphabetical). Characters without sealed JSONLs are excluded.
-   Pre-P4 visual grammar: cursor → `C_SELECTED` (black on light grey);
-   hover → `C_HOVER`; otherwise `C_ITEM`. Selecting a pill applies its
-   filter immediately. There is no `Filter` header.
+   Visual grammar matches the table cursor row and the button columns:
+   cursor + filter row focused → `C_BUTTON_ACTIVE_FOCUSED` (gold);
+   cursor + focus elsewhere → `C_BUTTON_ACTIVE_UNFOCUSED` (grey,
+   ≡ `C_SELECTED`); hover → `C_HOVER`; otherwise `C_ITEM`. Selecting a
+   pill applies its filter immediately. There is no `Filter` header.
    - **Fits.** Total pill width ≤ terminal width → the row is centred
      on the terminal with no arrows.
    - **Overflows.** Total > terminal width → the row paints across the

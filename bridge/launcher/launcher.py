@@ -7149,9 +7149,11 @@ def _history_filter_pills_text():
     """Render the horizontal filter pill row.
 
     One pill per filter item (`All` first, then characters alphabetically).
-    Visual grammar: cursor → C_SELECTED (black on light grey); hover →
-    C_HOVER; otherwise C_ITEM. Selecting a pill applies its filter
-    immediately.
+    Visual grammar matches the table cursor row and the button columns:
+    cursor + filter row focused → `C_BUTTON_ACTIVE_FOCUSED` (gold);
+    cursor + focus elsewhere → `C_BUTTON_ACTIVE_UNFOCUSED` (grey,
+    ≡ `C_SELECTED`); hover → `C_HOVER`; otherwise `C_ITEM`. Selecting a
+    pill applies its filter immediately.
 
     P4.2 horizontal scroll: when the pills' total width exceeds the
     terminal width, a window of whole pills is rendered with 2-cell edge
@@ -7171,6 +7173,7 @@ def _history_filter_pills_text():
         pill_widths, cols, _history_filter_offset,
     )
 
+    filter_focused = (_history_focused == 0)
     hover_panel, hover_row = _history_hover
     frags = []
 
@@ -7201,8 +7204,10 @@ def _history_filter_pills_text():
 
         is_cursor = (i == _history_filter_cursor)
         is_hover  = (hover_panel == 0 and hover_row == i and not is_cursor)
-        if is_cursor:
-            style = C_SELECTED
+        if is_cursor and filter_focused:
+            style = C_BUTTON_ACTIVE_FOCUSED
+        elif is_cursor:
+            style = C_BUTTON_ACTIVE_UNFOCUSED
         elif is_hover:
             style = C_HOVER
         else:
