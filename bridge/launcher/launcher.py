@@ -1828,18 +1828,22 @@ def _editor_kind_left_pad():
 def _editor_body_h():
     """Body row height — branches on `_editor_mode`.
 
-    Lite mode budget reserves rows for the title row, blank separator,
-    horizontal kind-button row + its blank-line separator, footer
-    blank, and footer text (13 rows of chrome total). The detail
+    Lite mode budget reserves rows for the leading blank, title row,
+    blank separator, horizontal kind-button row + its blank-line
+    separator, footer blank, and footer text (13 rows of chrome
+    total — lite mode is shorter than the terminal so it gets its
+    leading blank from vertical centering for free). The detail
     panel's field chain (Pattern + Commands + error + hint block)
     needs ~15 rows minimum.
 
     Editor mode has no kind-button row and no detail panel; only the
-    title row, one blank, the buffer, the footer blank, and the
-    footer text. Reserve 4 chrome rows total so the buffer fills the
-    full terminal height with no dead rows at the bottom."""
+    leading blank, title row, one blank below the title, the buffer,
+    the footer blank, and the footer text. Reserve 5 chrome rows
+    total so the buffer fills the full terminal height with no dead
+    rows at the bottom. Sync with `_profile_editor_text`'s leading
+    blank — change them together."""
     if _editor_mode == "editor":
-        return max(15, _term_rows() - 4)
+        return max(15, _term_rows() - 5)
     return max(15, _term_rows() - 13)
 
 
@@ -4417,6 +4421,11 @@ def _profile_editor_text():
         + New entry                        │ <pattern>       │
         ...                                 ...
 
+    Editor mode replaces steps 2-5 with the full-height text buffer,
+    and emits an explicit leading blank above the title row (lite
+    mode's leading blank comes from `_centered` for free; editor
+    mode fills the terminal exactly so it has to be emitted).
+
     The five 13-cell kind buttons sit in a horizontal row, BG-filled,
     centred on the terminal. The colour grammar (`C_BUTTON_*`) carries
     focus + active state. Headers and field labels stay in muted grey
@@ -4429,6 +4438,15 @@ def _profile_editor_text():
     title  = f"─── Profile Editor: {name} ───"
 
     frags = []
+    # Editor mode is sized to fill the terminal exactly, so the leading
+    # blank above the title has to be emitted explicitly here — vertical
+    # centering can't supply it. Lite mode is shorter than the terminal
+    # and picks up its leading blank from `_centered` for free, so no
+    # extra `\n` there (adding one would shift its centering). The
+    # editor-mode buffer-height overhead in `_editor_body_h` accounts
+    # for this leading blank — change them together.
+    if _editor_mode == "editor":
+        frags.append(("", "\n", _editor_clear_outer_hover))
     _editor_append_title_row(frags, title, cols)
     frags.append(("", "\n", _editor_clear_outer_hover))
 

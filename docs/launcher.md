@@ -298,12 +298,16 @@ Top-to-bottom (lite mode — Phase 6.3):
 Editor mode is identical except step 3 (the kind row) is omitted —
 the buffer fills the space directly after the title's blank row,
 all the way down to the footer's blank + hint row. The vertical
-chrome budget in editor mode is just `1 blank + title + 1 blank +
-buffer + 1 blank + footer hint` (≈ 4 chrome rows around a buffer
-sized to `term_rows - 4`), so there are no dead rows at the
-bottom. `_editor_body_h()` branches on `_editor_mode` for this —
-lite keeps the wider lite-mode chrome budget; editor uses the
-smaller one.
+chrome budget in editor mode is `1 blank + title + 1 blank +
+buffer + 1 blank + footer hint` (5 chrome rows around a buffer
+sized to `term_rows - 5`), so there are no dead rows at the
+bottom. The leading blank above the title is emitted explicitly in
+editor mode — lite mode is shorter than the terminal so its leading
+blank comes from `_centered` for free; editor mode fills the
+terminal exactly, so the `\n` has to be in the fragment list and
+the overhead constant has to match (sync them together).
+`_editor_body_h()` branches on `_editor_mode` for this — lite keeps
+the wider lite-mode chrome budget; editor uses the smaller one.
 
 Centred kind-buttons row width: 5 × 13 + 4 × 3 = **77** cells.
 Centred body widths: list 38 + scrollbar 1 + gap 3 + detail 35 =
