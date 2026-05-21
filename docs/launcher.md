@@ -234,14 +234,21 @@ list (23 → 38) and detail (30 → 35), normalised tt++'s
 #### Three-state colour grammar
 
 A uniform background-driven indicator applied across the kind
-buttons, the LITE/EDITOR toggle, the entry-list cursor row, and the
-detail-panel frame borders. Defined in `palette.py`.
+buttons, the LITE/EDITOR toggle, the entry-list cursor row, the
+detail-panel frame borders, and the focused-cursor cell inside every
+detail-panel zone (Style toggles, Text/BG swatches, Macro Key cell).
+Defined in `palette.py`.
 
 | State                      | Token                       | Used for                                                                          |
 |----------------------------|-----------------------------|-----------------------------------------------------------------------------------|
 | Inactive (not selected)    | `C_BUTTON_INACTIVE`         | Non-active kind buttons; non-active mode button                                   |
 | Active, zone unfocused     | `C_BUTTON_ACTIVE_UNFOCUSED` | Selected kind when kind-buttons row unfocused; active mode when toggle unfocused; entry-list cursor row when list unfocused |
-| Active, zone focused       | `C_BUTTON_ACTIVE_FOCUSED`   | Selected kind when kind-buttons row focused; active mode when toggle focused; entry-list cursor row when list focused; detail-panel frame borders |
+| Active, zone focused       | `C_BUTTON_ACTIVE_FOCUSED`   | Selected kind when kind-buttons row focused; active mode when toggle focused; entry-list cursor row when list focused; detail-panel frame borders; cursor cell inside a focused detail zone — Style toggle, Text/BG swatch checkbox slot, Macro Key cell |
+
+Governing principle: wherever keyboard focus sits in the editor, the
+focused element paints amber (`C_BUTTON_ACTIVE_FOCUSED`). The cursor +
+focused branch always wins over hover and over the existing
+active / selected treatment in every detail-panel zone.
 
 Hover on an inactive button paints the active-unfocused state — a
 preview of how it would look if selected. Hover on chrome

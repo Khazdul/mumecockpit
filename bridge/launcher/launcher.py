@@ -3546,8 +3546,9 @@ def format_entry_pattern(entry, max_len=40):
 
 def _editor_macro_key_cell_row(entry, focused):
     """Render the macro Key cell as a single row that fills the detail
-    panel width. Focused state wraps the label in `C_SELECTED`; an
-    accompanying click handler pushes the capture overlay."""
+    panel width. Focused state wraps the label in `C_BUTTON_ACTIVE_FOCUSED`
+    (the same amber token the entry-list cursor row and kind buttons use);
+    an accompanying click handler pushes the capture overlay."""
     label, style, _state = _editor_macro_key_cell_text(entry)
     w = _EDITOR_DETAIL_W
     indent = 0
@@ -3556,7 +3557,7 @@ def _editor_macro_key_cell_row(entry, focused):
         text = text[: max(0, w - indent - 1)] + "…"
     pad = max(0, w - indent - len(text))
     if focused:
-        cell_style = C_SELECTED
+        cell_style = C_BUTTON_ACTIVE_FOCUSED
     else:
         cell_style = style
 
@@ -3602,14 +3603,16 @@ def _editor_hl_swatch_fragments(name, kind, is_selected, is_cursor,
     The `██` band is painted in the swatch's colour. Trailing space
     completes the 6-cell column.
 
-    Focus + state styling: a cursor swatch wraps its checkbox in
-    C_SELECTED so the cursor reads against any underlying colour;
-    hover paints C_HOVER on the checkbox slot."""
+    Focus + state styling: a cursor swatch (zone focused) wraps its
+    checkbox in C_BUTTON_ACTIVE_FOCUSED — the same amber token the
+    entry-list cursor row and kind buttons use — so the cursor reads
+    against any underlying colour; hover paints C_HOVER on the
+    checkbox slot. Cursor + focused wins over hover."""
     checkbox = "[X]" if is_selected else "[ ]"
     band = "██"
 
     if is_cursor:
-        cb_style = C_SELECTED
+        cb_style = C_BUTTON_ACTIVE_FOCUSED
     elif is_hover:
         cb_style = C_HOVER
     else:
@@ -3700,9 +3703,11 @@ def _editor_hl_style_row(focused):
     `[X]Undersc. [X]Blink [X]Reverse` (Phase 6.3).
 
     Each toggle's checkbox reflects whether the style is currently in
-    the active set; the cursor cell paints `C_SELECTED`; the label is
-    coloured `C_ACCENT` when active, `C_HINT` otherwise, `C_HOVER` on
-    mouse hover. Cells are centred within the detail panel width."""
+    the active set; the cursor cell paints `C_BUTTON_ACTIVE_FOCUSED`
+    (amber, matching the entry-list cursor and kind buttons); the label
+    is coloured `C_ACCENT` when active, `C_HINT` otherwise, `C_HOVER`
+    on mouse hover. Cursor + focused wins over hover and active. Cells
+    are centred within the detail panel width."""
     tokens = _HL_STYLE_TOKENS
     active = _editor_hl_active_styles()
     cell_labels = [_HL_STYLE_LABELS[t] for t in tokens]
@@ -3719,13 +3724,13 @@ def _editor_hl_style_row(focused):
         is_active = tok in active
         checkbox = f"[{'X' if is_active else ' '}]"
         if is_cursor:
-            cb_style = C_SELECTED
+            cb_style = C_BUTTON_ACTIVE_FOCUSED
         elif is_hover:
             cb_style = C_HOVER
         else:
             cb_style = C_ACCENT if is_active else C_HINT
         if is_cursor:
-            lbl_style = C_SELECTED
+            lbl_style = C_BUTTON_ACTIVE_FOCUSED
         elif is_hover:
             lbl_style = C_HOVER
         elif is_active:
@@ -3775,7 +3780,8 @@ def _editor_hl_palette_row(r, text_focused, bg_focused):
     swatches. The whole row is centred within the detail panel.
 
     Each swatch is rendered as `[X]██` or `[ ]██` per its own selection
-    state; the cursor draws as `C_SELECTED` on the checkbox slot."""
+    state; the cursor (zone focused) draws as `C_BUTTON_ACTIVE_FOCUSED`
+    (amber) on the checkbox slot."""
     text_dark, text_light = _HL_PALETTE[r]
     bg_dark, bg_light     = _HL_PALETTE[r]
 
@@ -3874,8 +3880,9 @@ def _editor_list_row_text(entry, is_cursor, is_hover):
     `Custom: <raw>` in `C_HINT`, the same convention as the
     highlights Custom slot.
 
-    The cursor row uses a single `C_SELECTED` fragment for the whole
-    row so the selection band reads as one element."""
+    The cursor row uses a single `C_BUTTON_ACTIVE_FOCUSED` (amber) or
+    `C_BUTTON_ACTIVE_UNFOCUSED` (grey) fragment for the whole row so
+    the selection band reads as one element."""
     w = _EDITOR_LIST_W
     pat = entry.pattern
     pat_custom = False
