@@ -1103,11 +1103,28 @@ Top-to-bottom (P4.1 layout — see ADR 0088 and its P4.1 amendment):
 2. **Filter pill row.** Horizontal row of pills — `All` first, then
    one pill per character returned by `list_characters_with_runs()`
    (alphabetical). Characters without sealed JSONLs are excluded.
-   Centred on the **terminal** (not the package). Pre-P4 visual
-   grammar: cursor → `C_SELECTED` (black on light grey); hover →
-   `C_HOVER`; otherwise `C_ITEM`. Selecting a pill applies its
-   filter immediately. There is no `Filter` header. Horizontal-
-   overflow scrolling for long character lists is P4.2.
+   Pre-P4 visual grammar: cursor → `C_SELECTED` (black on light grey);
+   hover → `C_HOVER`; otherwise `C_ITEM`. Selecting a pill applies its
+   filter immediately. There is no `Filter` header.
+   - **Fits.** Total pill width ≤ terminal width → the row is centred
+     on the terminal with no arrows.
+   - **Overflows.** Total > terminal width → the row paints across the
+     full terminal width with a 2-cell slot reserved at each edge. `‹`
+     appears in the left slot when pills are hidden to the left, `›`
+     in the right slot when pills are hidden to the right; the slot
+     stays blank on the side that hides nothing, so pill positions
+     never jump as the arrows appear and disappear. Edge arrows paint
+     in `C_BODY`. The visible window always contains whole pills —
+     never a clipped pill; trailing slack inside the window is blank.
+   - **Cursor follows.** Keyboard `←` / `→` move the cursor pill and
+     scroll the window by whole pills, the minimum needed to keep the
+     cursor pill fully visible. Clicking `‹` / `›` pans the window one
+     pill *without* moving the cursor (mouse browsing); clicking a
+     visible pill selects it as today.
+   - The windowing computation is the pure
+     `bridge/launcher/history_filter.py` module (`compute_window` /
+     `scroll_to_cursor` / `pan`); unit-tested by
+     `tests/test_history_filter.py`.
 3. Blank row.
 4. **Centred package:
    `[ button column | gap | runs table | scrollbar ]`.** Horizontally
@@ -1206,7 +1223,7 @@ landing spot even with an empty table.
 
 | Focus   | Key                | Action                                |
 |---------|--------------------|---------------------------------------|
-| filter  | ←/→                | move pill cursor (clamp, no wrap)     |
+| filter  | ←/→                | move pill cursor (clamp, no wrap; window scrolls minimally) |
 | filter  | Enter / Space      | re-apply cursor pill's filter         |
 | filter  | ↓                  | focus table                           |
 | table   | ↑                  | move cursor up; falls through to the filter row when on row 0 |
@@ -1222,9 +1239,10 @@ landing spot even with an empty table.
 | any     | ESC                | pop to main menu                      |
 
 `←` / `→` move the pill cursor while on the filter row (clamped, no
-wrap, re-filters immediately). On the table they focus the button
-column (`←` only — `→` is a no-op since nothing sits right of the
-table). On the button column `→` focuses the table; `←` is a no-op.
+wrap, re-filters immediately) and pan the visible window minimally
+when it overflows. On the table they focus the button column (`←`
+only — `→` is a no-op since nothing sits right of the table). On the
+button column `→` focuses the table; `←` is a no-op.
 The filter row is reached above the table (↑ at row 0 of the table,
 or Tab).
 
@@ -1237,12 +1255,15 @@ and cursor to 0; sort state is preserved.
 Clicking a runs-table row with `has_log` true opens `log_view` for
 that chain (same destination as Enter / Space on the row, or the
 Run log button); clicking a row with no log moves the cursor only —
-Stats is reachable from the button column. Wheel scrolls the table
-when hovered (`_WheelScrollControl`, the shared
-`FormattedTextControl` subclass that intercepts `SCROLL_UP` /
-`SCROLL_DOWN` and forwards them to a per-frame callback); wheel
-over the filter pill row or button column is a no-op. The table's
-click-to-jump scrollbar uses `bridge/launcher/widgets/scrollbar.py`.
+Stats is reachable from the button column. Clicking a visible filter
+pill selects it (focus → filter, cursor → pill); clicking `‹` / `›`
+on the filter row pans the visible window one pill without moving
+the cursor. Wheel scrolls the table when hovered
+(`_WheelScrollControl`, the shared `FormattedTextControl` subclass
+that intercepts `SCROLL_UP` / `SCROLL_DOWN` and forwards them to a
+per-frame callback); wheel over the filter pill row or button column
+is a no-op. The table's click-to-jump scrollbar uses
+`bridge/launcher/widgets/scrollbar.py`.
 
 **Action handlers.** All operate on the row currently under the table
 cursor (`_history_sessions[_history_table_cursor]`). With no row,

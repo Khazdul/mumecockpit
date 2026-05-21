@@ -56,6 +56,7 @@ from palette import (  # noqa: E402
     TTPP_COLOR_STYLES, TTPP_COLOR_NAMES,
 )
 import credits  # noqa: E402
+import history_filter  # noqa: E402
 import log_player  # noqa: E402
 import macro_keys  # noqa: E402
 import profile_io  # noqa: E402
@@ -335,6 +336,7 @@ _history_sessions        = []        # filtered + sorted SessionSummary list
 _history_filter          = "All"
 _history_sort            = ("Char", "asc")
 _history_filter_cursor   = 0         # cursor pill index
+_history_filter_offset   = 0         # leftmost visible pill index (P4.2 scroll)
 _history_table_cursor    = 0
 _history_table_scroll    = 0
 _history_menu_cursor     = 0         # cursor row in Options widget
@@ -6488,7 +6490,7 @@ def _history_left_pad():
 
 def _enter_history_frame():
     global _history_filter_items, _history_filter, _history_sort
-    global _history_filter_cursor
+    global _history_filter_cursor, _history_filter_offset
     global _history_table_cursor, _history_table_scroll
     global _history_menu_cursor
     global _history_focused, _history_hover
@@ -6501,6 +6503,7 @@ def _enter_history_frame():
     _history_filter         = "All"
     _history_sort           = ("Char", "asc")
     _history_filter_cursor  = 0
+    _history_filter_offset  = 0
     _history_table_cursor   = 0
     _history_table_scroll   = 0
     _history_focused        = 1
@@ -6689,9 +6692,25 @@ def _history_scroll_into_view(cursor, scroll, visible):
     return scroll
 
 
+def _history_filter_pill_widths():
+    return [len(it) + 4 for it in _history_filter_items]
+
+
+def _history_scroll_filter_to_cursor():
+    """Pan _history_filter_offset minimally so the cursor pill is visible."""
+    global _history_filter_offset
+    _history_filter_offset = history_filter.scroll_to_cursor(
+        _history_filter_pill_widths(),
+        _term_cols(),
+        _history_filter_cursor,
+        _history_filter_offset,
+    )
+
+
 def _history_move_filter(delta):
     """Move the filter pill cursor one step left/right in the horizontal
-    pill row (P4.1). Clamps at both ends — no wrap."""
+    pill row (P4.1). Clamps at both ends — no wrap. P4.2: scrolls the
+    overflow window minimally to keep the cursor pill visible."""
     global _history_filter_cursor
     n = len(_history_filter_items)
     if not n:
@@ -6700,6 +6719,7 @@ def _history_move_filter(delta):
     if new_cursor == _history_filter_cursor:
         return
     _history_filter_cursor = new_cursor
+    _history_scroll_filter_to_cursor()
     _history_set_filter(_history_filter_items[new_cursor])
 
 
@@ -6710,7 +6730,22 @@ def _history_jump_filter(target):
         return
     new_cursor = max(0, min(n - 1, target))
     _history_filter_cursor = new_cursor
+    _history_scroll_filter_to_cursor()
     _history_set_filter(_history_filter_items[new_cursor])
+
+
+def _history_pan_filter(delta):
+    """Pan the filter window by `delta` whole pills without moving the
+    cursor (mouse-arrow browsing). Clamps to the valid pan range."""
+    global _history_filter_offset
+    _history_filter_offset = history_filter.pan(
+        _history_filter_pill_widths(),
+        _term_cols(),
+        _history_filter_offset,
+        delta,
+    )
+    if _app:
+        _app.invalidate()
 
 
 def _history_apply_cursor_filter():
@@ -7111,28 +7146,59 @@ def _history_footer_text():
 
 # --- Filter pill row render (horizontal, centred under the title) ---------
 def _history_filter_pills_text():
-    """Render the horizontal filter pill row, centred on the terminal.
+    """Render the horizontal filter pill row.
 
     One pill per filter item (`All` first, then characters alphabetically).
-    Pre-P4 visual grammar: cursor → C_SELECTED (black on light grey);
-    hover → C_HOVER; otherwise C_ITEM. Selecting a pill applies its
-    filter immediately. Horizontal-overflow scrolling is P4.2 — for now
-    the row paints as wide as the items demand and may run past the
-    terminal edge on very narrow widths."""
+    Visual grammar: cursor → C_SELECTED (black on light grey); hover →
+    C_HOVER; otherwise C_ITEM. Selecting a pill applies its filter
+    immediately.
+
+    P4.2 horizontal scroll: when the pills' total width exceeds the
+    terminal width, a window of whole pills is rendered with 2-cell edge
+    slots reserved for `‹` / `›` arrows (painted in C_BODY). The
+    arrow glyphs appear only on the side with hidden pills; the slot
+    stays reserved either way so pill positions don't jump. Clicking an
+    arrow pans the window one pill without moving the cursor; the
+    cursor's keyboard moves pan the window minimally."""
     cols  = _term_cols()
     items = _history_filter_items
     clear_hover = _hover_at(None, None)
     if not items:
         return [("", "", clear_hover)]
-    # Each pill is "  <label>  ", joined by a 2-space separator.
-    pill_widths = [len(it) + 4 for it in items]
-    total_w = sum(pill_widths) + 2 * (len(items) - 1)
-    pad_left = max(0, (cols - total_w) // 2)
+
+    pill_widths = _history_filter_pill_widths()
+    start, end, left_arrow, right_arrow, overflows = history_filter.compute_window(
+        pill_widths, cols, _history_filter_offset,
+    )
 
     hover_panel, hover_row = _history_hover
-    frags = [("", " " * pad_left, clear_hover)]
+    frags = []
 
-    for i, label in enumerate(items):
+    if overflows:
+        # Edge slot (2 cells): "‹ " when there are hidden pills to the
+        # left, "  " otherwise. Click on the arrow pans one pill left.
+        def _click_left(ev):
+            if ev.event_type == MouseEventType.MOUSE_DOWN and left_arrow:
+                _history_set_focus(0)
+                _history_pan_filter(-1)
+                return None
+            return NotImplemented
+        left_glyph = "‹ " if left_arrow else "  "
+        frags.append((C_BODY, left_glyph,
+                      _hover_at(None, None, on_event=_click_left)))
+    else:
+        total_w = history_filter.total_row_width(pill_widths)
+        pad_left = max(0, (cols - total_w) // 2)
+        if pad_left:
+            frags.append(("", " " * pad_left, clear_hover))
+
+    used = 0
+    for vi, i in enumerate(range(start, end)):
+        label = items[i]
+        if vi > 0:
+            frags.append(("", "  ", clear_hover))
+            used += 2
+
         is_cursor = (i == _history_filter_cursor)
         is_hover  = (hover_panel == 0 and hover_row == i and not is_cursor)
         if is_cursor:
@@ -7151,8 +7217,23 @@ def _history_filter_pills_text():
 
         pill_text = "  " + label + "  "
         frags.append((style, pill_text, _hover_at(0, i, on_event=_click)))
-        if i < len(items) - 1:
-            frags.append(("", "  ", clear_hover))
+        used += pill_widths[i]
+
+    if overflows:
+        usable = max(0, cols - 2 * history_filter.EDGE_SLOT_W)
+        trailing = max(0, usable - used)
+        if trailing:
+            frags.append(("", " " * trailing, clear_hover))
+
+        def _click_right(ev):
+            if ev.event_type == MouseEventType.MOUSE_DOWN and right_arrow:
+                _history_set_focus(0)
+                _history_pan_filter(1)
+                return None
+            return NotImplemented
+        right_glyph = " ›" if right_arrow else "  "
+        frags.append((C_BODY, right_glyph,
+                      _hover_at(None, None, on_event=_click_right)))
     return frags
 
 
