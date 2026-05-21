@@ -6030,7 +6030,8 @@ _spotlights_empty_reason = "no_data"
 
 
 def _spotlights_empty_text():
-    cols = _term_cols()
+    cols   = _term_cols()
+    rows_h = _term_rows()
     title  = "─── Spotlights ───"
     footer = "Any key to return"
     body_w = max(20, min(72, cols - 4))
@@ -6040,17 +6041,14 @@ def _spotlights_empty_text():
     wrapped = _wrap_text(body, body_w)
 
     frags = []
-    frags.append(("", "\n\n"))
-    frags.append(("", _pad_centre(title, cols)))
-    frags.append((C_TITLE, title))
-    frags.append(("", "\n\n"))
+    frags.extend(title_block(title, cols, blank_above=2))
     for line in wrapped:
         frags.append(("", _pad_centre(line, cols)))
         frags.append((C_BODY, line))
         frags.append(("", "\n"))
-    frags.append(("", "\n"))
-    frags.append(("", _pad_centre(footer, cols)))
-    frags.append((C_HINT, footer))
+
+    content_rows = title_block_height(2) + len(wrapped)
+    frags.extend(footer_block(footer, cols, rows_h, content_rows))
     return frags
 
 
@@ -6112,24 +6110,21 @@ def _parse_scripts_cache():
 
 
 def _scripts_visible_rows():
-    # Title (3) + footer (2) = 5 reserved rows.
-    return max(1, _term_rows() - 5)
+    """Visible body rows = terminal rows minus the title block (4) and
+    the single footer row anchored at the bottom by `footer_block`."""
+    return max(1, _term_rows() - title_block_height(2) - 1)
 
 
-def _scripts_title_text():
-    cols = _term_cols()
-    title = "─── Scripts ───"
-    return [
-        ("", "\n"),
-        ("", _pad_centre(title, cols)),
-        (C_TITLE, title),
-        ("", "\n"),
-    ]
+def _scripts_text():
+    """Single-frame renderer for the Scripts page.
 
-
-def _scripts_content_text():
+    Lays out the title block, a viewport-sized body (always renders
+    `_scripts_visible_rows()` lines, padding with blanks when the content
+    list is shorter), and a footer anchored to the final terminal row by
+    `menu_chrome.footer_block`."""
     global _scripts_scroll
-    cols = _term_cols()
+    cols   = _term_cols()
+    rows_h = _term_rows()
     pad  = max(0, (cols - 60) // 2)
     p    = " " * pad
 
@@ -6146,32 +6141,28 @@ def _scripts_content_text():
         elif tag == "M":
             visual.append([("", p), (C_BODY, text)])
 
-    visible = _scripts_visible_rows()
-    max_scroll = max(0, len(visual) - visible)
+    viewport = _scripts_visible_rows()
+    max_scroll = max(0, len(visual) - viewport)
     if _scripts_scroll > max_scroll:
         _scripts_scroll = max_scroll
     if _scripts_sb is not None:
-        _scripts_sb.update(len(visual), visible, height=visible)
+        _scripts_sb.update(len(visual), viewport, height=viewport)
         _scripts_sb.scroll_to(_scripts_scroll)
 
-    sliced = visual[_scripts_scroll:_scripts_scroll + visible]
     frags = []
-    for i, line in enumerate(sliced):
-        frags.extend(line)
-        if i < len(sliced) - 1:
-            frags.append(("", "\n"))
-    return frags
+    frags.extend(title_block("─── Scripts ───", cols, blank_above=2))
 
+    sliced = visual[_scripts_scroll:_scripts_scroll + viewport]
+    for i in range(viewport):
+        if i < len(sliced):
+            frags.extend(sliced[i])
+        frags.append(("", "\n"))
 
-def _scripts_footer_text():
-    cols = _term_cols()
     overflow = _scripts_sb is not None and _scripts_sb.visible
     footer = "↑↓ Scroll · ESC Back" if overflow else "ESC  Back"
-    return [
-        ("", "\n"),
-        ("", _pad_centre(footer, cols)),
-        (C_HINT, footer),
-    ]
+    content_rows = title_block_height(2) + viewport
+    frags.extend(footer_block(footer, cols, rows_h, content_rows))
+    return frags
 
 
 def _scroll_scripts(delta):
@@ -6242,85 +6233,99 @@ def _wrap_about_if_needed():
 
 
 def _about_visible_rows():
-    # Title (3) + footer (2) = 5 reserved rows.
-    return max(1, _term_rows() - 5)
+    """Visible body rows = terminal rows minus the title block (4) and
+    the single footer row anchored at the bottom by `footer_block`."""
+    return max(1, _term_rows() - title_block_height(2) - 1)
 
 
-def _about_title_text():
-    cols = _term_cols()
+def _about_title_fragments(cols):
+    """Title-block fragments for the About frame.
+
+    Matches `menu_chrome.title_block(..., blank_above=2)` in layout (2
+    blank rows, title row, trailing blank row) but right-aligns the
+    current version (and any "Update available" suffix) on the title
+    row, which the generic helper does not support."""
     title = "─── About ───"
     cur   = _cockpit_version
     latest = _latest_release_tag()
     has_update = bool(latest) and _strip_v(latest) != _strip_v(cur)
 
-    tlen = len(title)
     if has_update:
         right = f"{cur}  ·  Update available: {latest}"
     else:
         right = cur
+
+    tlen = len(title)
     rlen = len(right)
     tpad = max(0, (cols - tlen) // 2)
     vstart = max(0, cols - 2 - rlen)
     gap = max(1, vstart - tpad - tlen)
 
-    frags = [("", "\n"), ("", " " * tpad), (C_TITLE, title), ("", " " * gap)]
+    frags = [
+        ("", "\n"),                   # blank row 1
+        ("", "\n"),                   # blank row 2
+        ("", " " * tpad),
+        (C_SECTION, title),
+        ("", " " * gap),
+    ]
     if has_update:
         frags.append((C_BODY, cur))
         frags.append((C_BODY, "  ·  "))
         frags.append((C_ACCENT, f"Update available: {latest}"))
     else:
         frags.append((C_BODY, cur))
-    frags.append(("", "\n"))
+    frags.append(("", "\n"))          # end of title row
+    frags.append(("", "\n"))          # trailing blank
     return frags
 
 
-def _about_content_text():
+def _about_text():
+    """Single-frame renderer for the About page. See `_scripts_text` for
+    the title-block / viewport / footer-block contract."""
     global _about_scroll
     _wrap_about_if_needed()
-    cols = _term_cols()
+    cols   = _term_cols()
+    rows_h = _term_rows()
     width = max(20, min(76, cols - 4))
     pad = max(0, (cols - width) // 2)
     p = " " * pad
 
-    visible = _about_visible_rows()
+    viewport = _about_visible_rows()
     total = len(_about_lines)
-    mx = max(0, total - visible)
+    mx = max(0, total - viewport)
     if _about_scroll > mx:
         _about_scroll = mx
     if _about_sb is not None:
-        _about_sb.update(total, visible, height=visible)
+        _about_sb.update(total, viewport, height=viewport)
         _about_sb.scroll_to(_about_scroll)
 
-    sliced = _about_lines[_about_scroll:_about_scroll + visible]
     frags = []
-    for i, line in enumerate(sliced):
-        if not line:
-            pass
-        elif line[:1].isspace():
-            frags.append(("", p))
-            frags.append((C_ACCENT, line))
-        else:
-            stripped = line.lstrip()
-            if stripped and stripped[0].isalpha() and stripped == stripped.upper():
-                style = C_TITLE
+    frags.extend(_about_title_fragments(cols))
+
+    sliced = _about_lines[_about_scroll:_about_scroll + viewport]
+    for i in range(viewport):
+        if i < len(sliced):
+            line = sliced[i]
+            if not line:
+                pass
+            elif line[:1].isspace():
+                frags.append(("", p))
+                frags.append((C_ACCENT, line))
             else:
-                style = C_BODY
-            frags.append(("", p))
-            frags.append((style, line))
-        if i < len(sliced) - 1:
-            frags.append(("", "\n"))
-    return frags
+                stripped = line.lstrip()
+                if stripped and stripped[0].isalpha() and stripped == stripped.upper():
+                    style = C_TITLE
+                else:
+                    style = C_BODY
+                frags.append(("", p))
+                frags.append((style, line))
+        frags.append(("", "\n"))
 
-
-def _about_footer_text():
-    cols = _term_cols()
     overflow = _about_sb is not None and _about_sb.visible
     footer = "↑↓ Scroll · ESC Back" if overflow else "ESC  Back"
-    return [
-        ("", "\n"),
-        ("", _pad_centre(footer, cols)),
-        (C_HINT, footer),
-    ]
+    content_rows = title_block_height(2) + viewport
+    frags.extend(footer_block(footer, cols, rows_h, content_rows))
+    return frags
 
 
 def _scroll_about(delta):
@@ -9924,16 +9929,17 @@ def _update_result_text():
     else:
         title, body_style, footer = "Update failed", C_ERR, "Any key to return."
 
+    # Modal dialog: vertically centred via `_centered` (no `footer_block`
+    # anchoring) — there is no persistent shortcut row. The title still
+    # adopts `C_SECTION` via `title_block`.
     frags = []
-    frags.append(("", "\n\n"))
-    frags.append(("", _pad_centre(title, cols)))
-    frags.append((C_TITLE, title))
-    frags.append(("", "\n\n\n"))
+    frags.extend(title_block(title, cols, blank_above=2))
+    frags.append(("", "\n"))
     for line in _update_output.splitlines() or [""]:
         frags.append(("", _pad_centre(line, cols)))
         frags.append((body_style, line))
         frags.append(("", "\n"))
-    frags.append(("", "\n\n"))
+    frags.append(("", "\n"))
     frags.append(("", _pad_centre(footer, cols)))
     frags.append((C_HINT, footer))
     return frags
@@ -9954,10 +9960,13 @@ def _update_result_keypress():
 def _exit_confirm_text():
     cols = _term_cols()
     msg = "Quit? Press Y to confirm, any other key to cancel."
+    # Modal dialog: vertically centred via `_centered`; no shortcut row,
+    # so no `footer_block`. Message adopts the `C_SECTION` title colour
+    # to match the rest of the swept menu chrome.
     return [
         ("", "\n\n"),
         ("", _pad_centre(msg, cols)),
-        (C_ACTIVE, msg),
+        (C_SECTION, msg),
     ]
 
 
@@ -11671,18 +11680,6 @@ def _build_simple(text_fn):
     return win, _centered(win)
 
 
-def _build_scrolling(title_fn, content_fn, footer_fn):
-    """Build a [title (fixed) | content (fills) | footer (fixed)] frame."""
-    title  = Window(content=FormattedTextControl(text=title_fn,  focusable=False),
-                    height=3, wrap_lines=False, always_hide_cursor=True)
-    content = Window(content=FormattedTextControl(text=content_fn, focusable=True),
-                     wrap_lines=False, always_hide_cursor=True,
-                     height=Dimension(weight=1))
-    footer = Window(content=FormattedTextControl(text=footer_fn, focusable=False),
-                    height=2, wrap_lines=False, always_hide_cursor=True)
-    return content, HSplit([title, content, footer])
-
-
 def _build_history():
     """Build the History frame:
         title · filter header · pill row · blank · [table + options] · feedback · footer.
@@ -11936,12 +11933,8 @@ def main():
     _options_coming_soon_window,        options_coming_soon_frame      = _build_simple(_options_coming_soon_text)
     _options_spotlights_window,         options_spotlights_frame       = _build_simple(_options_spotlights_text)
     _spotlights_empty_window,           spotlights_empty_frame         = _build_simple(_spotlights_empty_text)
-    _scripts_window,               scripts_frame             = _build_scrolling(
-        _scripts_title_text, _scripts_content_text, _scripts_footer_text
-    )
-    _about_window,                 about_frame               = _build_scrolling(
-        _about_title_text, _about_content_text, _about_footer_text
-    )
+    _scripts_window,               scripts_frame             = _build_simple(_scripts_text)
+    _about_window,                 about_frame               = _build_simple(_about_text)
     _update_running_window,        update_running_frame      = _build_simple(_update_running_text)
     _update_result_window,         update_result_frame       = _build_simple(_update_result_text)
     _exit_confirm_window,          exit_confirm_frame        = _build_simple(_exit_confirm_text)

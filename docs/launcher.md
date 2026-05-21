@@ -1939,9 +1939,12 @@ All frames render through `prompt_toolkit` controls. Layout building blocks:
   with a feedback row and footer below; a flex spacer absorbs leftover
   rows so the package, feedback row, and footer hug together at the top
   of the frame.
-- **Scrolling frames** — `scripts` and `about` use a three-row split
-  (`title` fixed height, `content` `Dimension(weight=1)`, `footer` fixed
-  height) with the content control slicing by a scroll offset.
+- **Scrolling frames** — `scripts` and `about` are single-window
+  frames that render `title_block` (4 rows), a viewport-sized body
+  (always emits `_term_rows() - 5` lines, padding with blanks when the
+  content list is shorter), and `footer_block` on the final terminal
+  row. The body slices its lines list by `_scripts_scroll` /
+  `_about_scroll`; scroll keybinds key off the same viewport height.
 - **Minimum-size gate** — when `cols < 60` or `rows < 18`, the root getter
   returns a single "Terminal too small" container instead of the active
   frame. A `<any>`-filter binding swallows key input while the gate is
@@ -2018,20 +2021,55 @@ import prompt_toolkit — the caller appends the fragments into its own
 | `footer_block(footer_text, term_cols, term_rows, content_rows)` | `content_rows` is the row count above the footer (title block + body). Emits `max(0, term_rows - content_rows - 1)` blank rows then `footer_text` centred in `term_cols` styled `C_HINT`, so the footer lands on the final terminal row. When content fills or overflows the terminal the pad clamps to zero — never negative. |
 | `button_fragment(label, width, state)` | A single `(style, text)` 2-tuple. `label` is centred in `width` cells (truncated when longer). `state ∈ {"inactive", "hover", "selected_unfocused", "selected_focused", "disabled"}` maps to: `C_BUTTON_INACTIVE` / `C_BUTTON_ACTIVE_UNFOCUSED` (hover deliberately previews the unfocused-selected look) / `C_BUTTON_ACTIVE_UNFOCUSED` / `C_BUTTON_ACTIVE_FOCUSED` / `C_BUTTON_DISABLED`. |
 
-The helpers do not yet replace per-frame title / footer rendering —
-adoption is staged across follow-up PRs. See
-[ADR 0085](decisions/0085-shared-menu-chrome.md).
+Every frame in the launcher's startup-menu surface uses these helpers
+for its title row, footer anchoring, and selectable-row styling —
+`main`, the full Options chain (`options`, `options_panes`,
+`options_connection`, `options_connection_custom`,
+`options_spotlights`, `options_coming_soon`), `scripts`, `about`,
+`spotlights_empty`, and the two modal dialogs (`update_result`,
+`exit_confirm`). The `profile` and `history` chains keep their
+bespoke widget grammars; `log_view` keeps its own `C_LOG_*` palette.
+See [ADR 0085](decisions/0085-shared-menu-chrome.md).
 
-**Alignment convention (Profile / Options / Scripts pages).** Menu rows
-are left-aligned on a shared column inside a centred block. The widest
+**Title / footer placement.** Sub-menu titles render in `C_SECTION`
+(darker cyan) via `title_block(..., blank_above=2)`. The main page's
+ASCII banner is the launcher's logo, not a section title, and stays
+in `C_TITLE`; the banner is top-anchored, the menu rows and quote sit
+in the middle, and the footer is bottom-anchored via `footer_block`.
+Every other swept frame's shortcut row also sits on the final terminal
+row — the footer no longer shifts vertically when the user moves
+between sibling frames. The two modal dialogs (`exit_confirm`,
+`update_result`) deliberately opt out of footer anchoring and stay
+vertically centred; they still adopt `C_SECTION` for their title /
+message line.
+
+**Button-cell grammar.** Every selectable menu row is a centred,
+uniform-width, background-filled button cell rendered through
+`button_fragment` — the legacy `<< label >>` prefix-suffix arrows are
+retired everywhere they survived. Cursor row → gold *background*
+(`selected_focused`), mouse hover → grey (`hover`), other rows →
+`inactive`. Radio / toggle rows (`(•)` / `( )` / `[X]` / `[ ]`) keep
+their leading glyph as part of the button label; the glyph shape
+carries the persistent on / active state so colour stays reserved for
+the transient cursor and hover. The Options frame's "Text layout"
+placeholder is the one exception — its inactive state stays dim
+`C_HINT` with no background to signal "not ready yet"; cursor / hover
+still pick up the normal three-state look.
+
+**Alignment convention (Profile pages).** Profile-frame menu rows are
+left-aligned on a shared column inside a centred block. The widest
 label is computed on every render so the block re-centres after a
-resize.
+resize. (Other frames now centre each button cell individually via
+`button_fragment`.)
 
 **About page three-colour scheme.** Each wrapped line is classified
 before printing: all-uppercase lines → `C_TITLE` (headings); lines
 starting with whitespace → `C_ACCENT` (key/command lines such as
 `  cp -e`); all other non-empty lines → `C_BODY` (prose). Indented lines
-pass through `_wrap_text` unchanged.
+pass through `_wrap_text` unchanged. The page's section title row
+(`─── About ─── 0.X.Y`) renders in `C_SECTION` like other sub-menu
+titles; the right-aligned version string and any "Update available"
+suffix keep their `C_BODY` / `C_ACCENT` colours.
 
 - **Alt screen / cursor / mouse modes.** `Application(full_screen=True,
   mouse_support=True)` manages alt-screen entry and exit, cursor
