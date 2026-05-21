@@ -103,6 +103,12 @@ Frame titles in `options`, `panes`, and the per-pane subframe now
 emit a blank row between the centred title and the first content row,
 matching the launcher's title spacing.
 
+Title, footer, and three-state button chrome are shared with the
+launcher via `bridge/launcher/menu_chrome.py` — see
+[docs/launcher.md](launcher.md#shared-menu-chrome) for the helper
+contracts and [ADR 0085](decisions/0085-shared-menu-chrome.md) for
+the rationale.
+
 ## Panes submenu
 
 `Options → Panes`. Source of truth is `_PANE_TARGETS` in

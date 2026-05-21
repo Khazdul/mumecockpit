@@ -1927,6 +1927,46 @@ shared with the in-game popup. Roles:
 | `C_SPOTLIGHT_FRAME`          | Spotlight info-box outline glyphs (`█▀▄▌▐`) — black on the box bg |
 | `C_SPOTLIGHT_TEXT_PRIMARY`   | Spotlight info-box primary text — near-black on box bg (character name, event label) |
 | `C_SPOTLIGHT_TEXT_SECONDARY` | Spotlight info-box secondary text — muted grey on box bg (countdown), visibly subordinate |
+| `C_OK`              | Persistent "selected / active" marker (e.g. the profile-table ✓) — green, never gold. |
+| `C_CURSOR_CELL`     | Focused-cursor foreground on swatch / checkbox cells in palette zones — gold, applied to the `[ ]` glyphs only; the swatch keeps its own colour. Separate token from `C_ACCENT` so the two can diverge later. |
+
+The two states share the same underlying grammar, expressed by which
+attribute carries the gold:
+
+- Focused cursor on a *filled button* → gold *background*
+  (`C_BUTTON_ACTIVE_FOCUSED`).
+- Focused cursor on a *swatch / checkbox cell* → gold *foreground*
+  (`C_CURSOR_CELL`), no background. Palette / swatch zones are
+  gold-or-nothing — they have no unfocused carry-over.
+- Selected but owning zone unfocused → grey background
+  (`C_BUTTON_ACTIVE_UNFOCUSED`). Applies only to persistent
+  selections (active kind, active mode, edited list row); never to
+  palette / swatch cursors.
+- Persistent active marker → green (`C_OK`).
+
+The legacy near-black `C_BUTTON` / `C_BUTTON_HOVER` constants are
+retained for the History and Profile Options widgets and retire when
+those widgets adopt the three-state grammar.
+
+### Shared menu chrome
+
+`bridge/launcher/menu_chrome.py` is a small pure-function module that
+both `launcher.py` and `ingame_menu.py` import for the title block,
+footer anchoring, and three-state button cell. It returns
+prompt_toolkit-style fragment lists / tuples but does not itself
+import prompt_toolkit — the caller appends the fragments into its own
+`frags` list and attaches mouse handlers if needed.
+
+| Helper | Contract |
+|--------|----------|
+| `title_block(title, term_cols, blank_above)` | Fragments for `blank_above` blank rows, then `title` centred in `term_cols` styled `C_SECTION`, then one trailing blank row. `title` is passed already decorated (e.g. `"─── Panes ───"`). `blank_above = 2` for the launcher, `1` for the popup. |
+| `title_block_height(blank_above)` | Returns `blank_above + 2` — the visual-row count produced by `title_block`. |
+| `footer_block(footer_text, term_cols, term_rows, content_rows)` | `content_rows` is the row count above the footer (title block + body). Emits `max(0, term_rows - content_rows - 1)` blank rows then `footer_text` centred in `term_cols` styled `C_HINT`, so the footer lands on the final terminal row. When content fills or overflows the terminal the pad clamps to zero — never negative. |
+| `button_fragment(label, width, state)` | A single `(style, text)` 2-tuple. `label` is centred in `width` cells (truncated when longer). `state ∈ {"inactive", "hover", "selected_unfocused", "selected_focused", "disabled"}` maps to: `C_BUTTON_INACTIVE` / `C_BUTTON_ACTIVE_UNFOCUSED` (hover deliberately previews the unfocused-selected look) / `C_BUTTON_ACTIVE_UNFOCUSED` / `C_BUTTON_ACTIVE_FOCUSED` / `C_BUTTON_DISABLED`. |
+
+The helpers do not yet replace per-frame title / footer rendering —
+adoption is staged across follow-up PRs. See
+[ADR 0085](decisions/0085-shared-menu-chrome.md).
 
 **Alignment convention (Profile / Options / Scripts pages).** Menu rows
 are left-aligned on a shared column inside a centred block. The widest

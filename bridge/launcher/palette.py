@@ -11,6 +11,7 @@ __all__ = [
     "C_BUTTON", "C_BUTTON_HOVER", "C_BUTTON_DISABLED",
     "C_BUTTON_INACTIVE", "C_BUTTON_ACTIVE_UNFOCUSED",
     "C_BUTTON_ACTIVE_FOCUSED",
+    "C_OK", "C_CURSOR_CELL",
     "C_LOG_PLAYER_INPUT", "C_LOG_CURSOR",
     "C_LOG_OVERLAY_BG", "C_LOG_OVERLAY_FG", "C_LOG_OVERLAY_HINT",
     "C_LOG_SCRUBBER_FILLED", "C_LOG_SCRUBBER_EMPTY", "C_LOG_SCRUBBER_THUMB",
@@ -67,6 +68,24 @@ C_BUTTON_DISABLED = "fg:#585858 bg:#0f0f0f"   # disabled — dim grey on near-bg
 C_BUTTON_INACTIVE         = "fg:#bcbcbc bg:#000000"
 C_BUTTON_ACTIVE_UNFOCUSED = "fg:#000000 bg:#bcbcbc"
 C_BUTTON_ACTIVE_FOCUSED   = "fg:#000000 bg:#ffaf00"
+
+# Cursor grammar — two modes of "focused" indicator across menu chrome:
+#
+#   - Focused cursor on a filled button → gold *background*
+#     (C_BUTTON_ACTIVE_FOCUSED).
+#   - Focused cursor on a swatch / checkbox cell → gold *foreground*
+#     (C_CURSOR_CELL) applied to the `[ ]` glyphs only; the swatch keeps
+#     its own colour. Palette / swatch zones are gold-or-nothing — they
+#     have no unfocused carry-over (the cursor index is per-zone scratch,
+#     not a persistent selection).
+#   - Selected but owning zone unfocused → grey background
+#     (C_BUTTON_ACTIVE_UNFOCUSED). Applies only to persistent selections
+#     (active kind, active mode, edited list row); never to palette/swatch
+#     cursors.
+#   - Persistent "active / selected" marker → green (C_OK). Used for the
+#     profile-table ✓ and similar always-on indicators; never gold.
+C_OK          = "bold fg:#7ac46f"
+C_CURSOR_CELL = "bold fg:#ffaf00"
 
 # ---------------------------------------------------------------------------
 # Statistics-frame palette (mockup-driven; isolated from the other frames so
