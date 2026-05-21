@@ -257,8 +257,8 @@ _editor_body_anchor_col  = None  # int | None — anchor col in entry.body
 # 'highlight'). Three palettes share the same Body slot:
 #   - Style row (3 inline toggles: Undersc., Blink, Reverse — ADR 0084 /
 #     Phase 6.3 dropped Bold; tt++ doesn't list it as a #highlight modifier)
-#   - Text-colour grid (7×2 swatches under `-- Text --`)
-#   - Background-colour grid (7×2 swatches under `--- BG ---`)
+#   - Text-colour grid (7×2 swatches under `── Text ──`)
+#   - Background-colour grid (7×2 swatches under `── BG ──`)
 #
 # Cursor positions are tracked per zone so cursor stays put as the user
 # Tab-cycles. `_editor_detail_field` selects which zone has focus:
@@ -2937,10 +2937,33 @@ def _editor_sb_click_to_offset(cell_row, total, visible, height):
 
 
 # ----- Rendering helpers --------------------------------------------------
-_EDITOR_HINT_LINES = [
-    "Use %1, %2, %3 for args.",
-    "; separates commands.",
-]
+# Per-kind two-line hint shown under the `─── Hint ───` divider in the
+# detail panel. Phrased for lite-mode input (pattern + body cells, not
+# the full `#command` line); `→` separates the pattern side from the
+# command side. Each line must fit `_EDITOR_DETAIL_W - 2` (~33 cells)
+# without wrapping.
+_EDITOR_HINTS = {
+    "alias": (
+        "%1 %2 capture words · ; chains",
+        "gv %1  →  get %1;value %1",
+    ),
+    "action": (
+        "%1 %2 match text · ^ anchors line",
+        "^%1 raises %2 hand  →  group %1",
+    ),
+    "highlight": (
+        "%1 matches text · ^ anchors line",
+        "^%1 enters  colours whole line",
+    ),
+    "substitute": (
+        "%1 %2 capture & reuse in New text",
+        "%1 massacres %2 → %1 MASSACRES %2",
+    ),
+    "macro": (
+        "Enter on Key cell to bind a key",
+        "$var inserts variable · ; chains",
+    ),
+}
 
 # Kind labels surfaced in user-facing hints. Singular form for in-flight
 # create prompts; plural form for the empty-state message.
@@ -3362,7 +3385,7 @@ def _editor_build_text_detail(entry, total_lines):
 
     rows.append(_editor_pad_full(C_HINT, ""))
     rows.append(_editor_centered_row(C_HINT, "─── Hint ───"))
-    for line in _EDITOR_HINT_LINES:
+    for line in _EDITOR_HINTS.get(entry.kind, ("", "")):
         rows.append(_editor_pad_full(C_HINT, line))
     rows.append(_editor_pad_full(C_HINT, ""))
 
@@ -3372,7 +3395,7 @@ def _editor_build_text_detail(entry, total_lines):
 
 
 def _editor_build_palette_detail(entry, total_lines):
-    """Highlight detail panel — Phase 6.2 layout.
+    """Highlight detail panel — Phase 6.4 layout.
 
     Rows (top → bottom), all centred within the detail panel:
 
@@ -3380,9 +3403,10 @@ def _editor_build_palette_detail(entry, total_lines):
         ┌────────────────────────────┐
         │ <pattern text>             │
         └────────────────────────────┘
-        Style
+        <blank>
         [ ]Undersc. [ ]Blink [ ]Reverse
-        -- Text --        --- BG ---
+        <blank>
+        ── Text ──        ── BG ──
         [ ]██  [ ]██     [ ]██  [ ]██   ← row 0
         ...
         [ ]██  [ ]██     [ ]██  [ ]██   ← row 6
@@ -3415,8 +3439,9 @@ def _editor_build_palette_detail(entry, total_lines):
     rows.append(_editor_pad_full(pat_border, _editor_box_bot(_EDITOR_DETAIL_W),
                                  pat_focus_h))
 
-    rows.append(_editor_pad_full(C_HINT, "Style"))
+    rows.append(_editor_pad_full(C_HINT, ""))
     rows.append(_editor_hl_style_row(style_focused))
+    rows.append(_editor_pad_full(C_HINT, ""))
     rows.append(_editor_hl_section_headers_row())
     for r in range(_HL_PALETTE_ROWS):
         rows.append(_editor_hl_palette_row(r, text_focused, bg_focused))
@@ -3429,7 +3454,8 @@ def _editor_build_palette_detail(entry, total_lines):
 
     rows.append(_editor_pad_full(C_HINT, ""))
     rows.append(_editor_centered_row(C_HINT, "─── Hint ───"))
-    rows.append(_editor_pad_full(C_HINT, "Enter on a swatch toggles it."))
+    for line in _EDITOR_HINTS.get("highlight", ("", "")):
+        rows.append(_editor_pad_full(C_HINT, line))
     rows.append(_editor_pad_full(C_HINT, ""))
 
     while len(rows) < total_lines:
@@ -3455,7 +3481,7 @@ def _editor_build_macro_detail(entry, total_lines):
 
     rows.append(_editor_pad_full(C_HINT, pat_lbl))
     rows.append(_editor_macro_key_cell_row(entry, key_focused))
-    rows.append(_editor_pad_full(C_HINT, "(Enter to rebind)"))
+    rows.append(_editor_pad_full(C_HINT, ""))
 
     rows.extend(_editor_build_body_box(
         entry, body_focused, body_lbl, body_border, body_focus_h))
@@ -3468,8 +3494,8 @@ def _editor_build_macro_detail(entry, total_lines):
 
     rows.append(_editor_pad_full(C_HINT, ""))
     rows.append(_editor_centered_row(C_HINT, "─── Hint ───"))
-    rows.append(_editor_pad_full(C_HINT, "Enter on Key to rebind."))
-    rows.append(_editor_pad_full(C_HINT, "; separates commands."))
+    for line in _EDITOR_HINTS.get("macro", ("", "")):
+        rows.append(_editor_pad_full(C_HINT, line))
     rows.append(_editor_pad_full(C_HINT, ""))
 
     while len(rows) < total_lines:
@@ -3709,12 +3735,13 @@ def _editor_hl_style_row(focused):
 
 
 def _editor_hl_section_headers_row():
-    """Phase 6.2: `-- Text --` over the Text grid and `--- BG ---` over
-    the BG grid. Each header is centred within its 12-cell column area
-    (two swatch columns wide). The whole row is itself centred within
-    the detail panel."""
-    text_hdr = "-- Text --"
-    bg_hdr   = "--- BG ---"
+    """Phase 6.4: `── Text ──` over the Text grid and `── BG ──` over
+    the BG grid (U+2500 box-drawing glyphs, matching the `─── Hint ───`
+    and frame divider styling). Each header is centred within its
+    12-cell column area (two swatch columns wide). The whole row is
+    itself centred within the detail panel."""
+    text_hdr = "── Text ──"
+    bg_hdr   = "── BG ──"
     text_pad_l = max(0, (_HL_HEADER_HALF_W - len(text_hdr)) // 2)
     text_pad_r = max(0, _HL_HEADER_HALF_W - text_pad_l - len(text_hdr))
     bg_pad_l   = max(0, (_HL_HEADER_HALF_W - len(bg_hdr))   // 2)

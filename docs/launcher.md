@@ -396,15 +396,19 @@ sort by display name so F-keys cluster before numpad before Alt).
   (amber). This is the sole focus indicator for the field's
   bounding box — the in-buffer cursor inside the field is the
   fine-grained indicator.
-- **Highlight palette** (highlights only) — Phase 6.2 layout
-  replaces the Body field with a `Style` label + an inline row of
-  three toggles `[ ]Undersc. [ ]Blink [ ]Reverse` (Phase 6.3
-  dropped Bold — tt++ doesn't list it as a `#highlight` modifier,
-  and surfacing it produced bodies tt++ would reject or silently
-  drop), then `-- Text --` / `--- BG ---` headers over a 2×7 grid
-  of checkbox swatches. Each swatch renders as `[X]██` or `[ ]██`
-  where `██` is a two-cell color band; the checkbox reflects
-  whether THAT swatch is the currently-selected text/bg colour.
+- **Highlight palette** (highlights only) — Phase 6.4 layout
+  replaces the Body field with an inline row of three style toggles
+  `[ ]Undersc. [ ]Blink [ ]Reverse` (Phase 6.3 dropped Bold — tt++
+  doesn't list it as a `#highlight` modifier, and surfacing it
+  produced bodies tt++ would reject or silently drop), then
+  `── Text ──` / `── BG ──` headers (U+2500 box-drawing glyphs,
+  matching the `─── Hint ───` divider styling) over a 2×7 grid of
+  checkbox swatches. Phase 6.4 removed the `Style` label row that
+  used to sit above the toggles and added one blank row above and
+  one blank row below the toggle row, so the Style toggle breathes
+  visually. Each swatch renders as `[X]██` or `[ ]██` where `██`
+  is a two-cell color band; the checkbox reflects whether THAT
+  swatch is the currently-selected text/bg colour.
   Cursor and selection are decoupled (see ADR 0084): cursor moves
   navigate the grid without changing the body; `Enter` (or mouse
   click) on a swatch toggles its selection — selecting it (and
@@ -431,9 +435,36 @@ sort by display name so F-keys cluster before numpad before Alt).
   `[ Custom: <raw> ]` in `C_HINT` for unknown ones, and
   `[ Press to bind… ]` in `C_HINT` for an empty pre-capture
   entry. `Enter` (or a mouse click) pushes the
-  `profile_editor_macro_keybind` overlay.
+  `profile_editor_macro_keybind` overlay. Phase 6.4 dropped the
+  `(Enter to rebind)` hint line that used to render directly
+  below the Key cell — the row remains blank so the macro layout
+  height is unchanged.
 - An inline-error slot below the body widget (`C_DANGER`), then a
-  blank row, a centred `─── Hint ───`, and one or two hint lines.
+  blank row, a centred `─── Hint ───`, and the per-kind two-line
+  hint below it (see *Hint content* below).
+
+##### Hint content
+
+Each kind has a fixed two-line hint shown beneath the centred
+`─── Hint ───` divider in the detail panel, styled in `C_HINT`.
+Line 1 is a short syntax reminder; line 2 is a single-line example
+phrased for lite-mode input (pattern and body cells, not the full
+`#command` line) — `→` separates the pattern side from the command
+side. The hints live in the `_EDITOR_HINTS` dict in `launcher.py`:
+
+| Kind         | Line 1                              | Line 2                                |
+|--------------|-------------------------------------|---------------------------------------|
+| `alias`      | `%1 %2 capture words · ; chains`    | `gv %1  →  get %1;value %1`           |
+| `action`     | `%1 %2 match text · ^ anchors line` | `^%1 raises %2 hand  →  group %1`     |
+| `highlight`  | `%1 matches text · ^ anchors line`  | `^%1 enters  colours whole line`      |
+| `substitute` | `%1 %2 capture & reuse in New text` | `%1 massacres %2 → %1 MASSACRES %2`   |
+| `macro`      | `Enter on Key cell to bind a key`   | `$var inserts variable · ; chains`    |
+
+Hint lines must fit the detail panel's inner width
+(`_EDITOR_DETAIL_W = 35`, target ~33 chars). Shorten examples
+(drop a word, tighten spacing) rather than letting them wrap or
+truncate mid-token. Source for syntax accuracy: the ACTION,
+HIGHLIGHT, SUBSTITUTE, and ALIAS sections of `ttpp_manual.txt`.
 
 **Sentinel-cursor state.** When the list cursor sits on the
 sentinel row the detail panel shows a centred prompt — `Press
