@@ -62,7 +62,7 @@ import run_retention  # noqa: E402
 import run_stats  # noqa: E402
 import spotlights  # noqa: E402
 from menu_chrome import (  # noqa: E402
-    button_fragment, footer_block, title_block, title_block_height,
+    footer_block, menu_row, title_block, title_block_height,
 )
 from panes_grid import apply_cell_toggle, panes_grid_fragments  # noqa: E402
 from widgets.scrollbar import Scrollbar  # noqa: E402
@@ -822,25 +822,16 @@ def _row_style(is_active, is_hovered, inactive_style=None):
     return inactive_style or C_ITEM
 
 
-def _menu_button_state(is_active, is_hover):
-    """Map (active, hover) to a `menu_chrome.button_fragment` state name."""
+def _menu_row_state(is_active, is_hover):
+    """Map (active, hover) to a `menu_chrome.menu_row` state name.
+
+    Selection (keyboard cursor) wins over hover — a row that is both
+    selected and hovered renders as `selected`."""
     if is_active:
-        return "selected_focused"
+        return "selected"
     if is_hover:
         return "hover"
     return "inactive"
-
-
-def _centre_in_width(label, width):
-    """Pad / truncate `label` to `width` cells, centred. Mirrors
-    `menu_chrome.button_fragment`'s own centring so a row that opts out
-    of the filled-button look (e.g. the Text-layout placeholder) still
-    aligns under the column."""
-    if len(label) >= width:
-        return label[:width]
-    pad = width - len(label)
-    left = pad // 2
-    return " " * left + label + " " * (pad - left)
 
 
 # ---------------------------------------------------------------------------
@@ -915,34 +906,41 @@ def _activate_main(idx):
         _push_frame("exit_confirm")
 
 
+def _main_clear_hover(ev):
+    if ev.event_type == MouseEventType.MOUSE_MOVE:
+        _set_hover("main", -1)
+
+
 def _main_text():
     _check_cache_change()
     cols = _term_cols()
     rows_h = _term_rows()
     frags = []
+    clear_hover = _main_clear_hover
 
     # ASCII banner — the logo stays in C_TITLE; it is not a section title
     # and does not go through `menu_chrome.title_block`.
-    frags.append(("", "\n"))
+    frags.append(("", "\n", clear_hover))
     for line in _MUME_LINES:
-        frags.append(("", _pad_centre(line, cols)))
-        frags.append((C_TITLE, line))
-        frags.append(("", "\n"))
+        frags.append(("", _pad_centre(line, cols), clear_hover))
+        frags.append((C_TITLE, line, clear_hover))
+        frags.append(("", "\n", clear_hover))
     for line in _COCKPIT_LINES:
-        frags.append(("", _pad_centre(line, cols)))
-        frags.append((C_TITLE, line))
-        frags.append(("", "\n"))
-    frags.append(("", "\n"))
+        frags.append(("", _pad_centre(line, cols), clear_hover))
+        frags.append((C_TITLE, line, clear_hover))
+        frags.append(("", "\n", clear_hover))
+    frags.append(("", "\n", clear_hover))
     banner_rows = 1 + len(_MUME_LINES) + len(_COCKPIT_LINES) + 1
 
     items = _main_items
     sel_idx = _sel_main if 0 <= _sel_main < len(items) else 0
-    btn_w = max(len(l) for l in items) + 4
-    btn_pad = " " * max(0, (cols - btn_w) // 2)
+    label_col_w = max(len(l) for l in items)
+    block_w     = label_col_w + 6
+    left_pad    = max(0, (cols - block_w) // 2)
+    right_pad   = max(0, cols - left_pad - block_w)
 
     for i, label in enumerate(items):
-        state = _menu_button_state(i == sel_idx, i == _hover_main)
-        style, text = button_fragment(label, btn_w, state)
+        state = _menu_row_state(i == sel_idx, i == _hover_main)
 
         def _make_handler(row=i):
             def _h(ev):
@@ -954,31 +952,34 @@ def _main_text():
             return _h
 
         h = _make_handler()
-        frags.append(("", btn_pad))
-        frags.append((style, text, h))
-        frags.append(("", "\n"))
+        frags.append(("", " " * left_pad, clear_hover))
+        frags.extend(menu_row(label, label_col_w, state, mouse_handler=h))
+        frags.append(("", " " * right_pad, clear_hover))
+        frags.append(("", "\n", clear_hover))
 
-    frags.append(("", "\n"))
+    frags.append(("", "\n", clear_hover))
 
     quote_rows = 0
     if _quote_text:
         quoted = f'"{_quote_text}"'
-        frags.append(("", _pad_centre(quoted, cols)))
-        frags.append((C_QUOTE, quoted))
-        frags.append(("", "\n"))
+        frags.append(("", _pad_centre(quoted, cols), clear_hover))
+        frags.append((C_QUOTE, quoted, clear_hover))
+        frags.append(("", "\n", clear_hover))
         quote_rows += 1
         if _quote_attr:
             attr = f"— {_quote_attr}"
-            frags.append(("", _pad_centre(attr, cols)))
-            frags.append((C_QUOTE_ATTR, attr))
-            frags.append(("", "\n"))
+            frags.append(("", _pad_centre(attr, cols), clear_hover))
+            frags.append((C_QUOTE_ATTR, attr, clear_hover))
+            frags.append(("", "\n", clear_hover))
             quote_rows += 1
-        frags.append(("", "\n"))
+        frags.append(("", "\n", clear_hover))
         quote_rows += 1
 
     footer = "↑↓ Navigate · Enter/Space Select"
     content_rows = banner_rows + len(items) + 1 + quote_rows
-    frags.extend(footer_block(footer, cols, rows_h, content_rows))
+    frags.extend(footer_block(
+        footer, cols, rows_h, content_rows, mouse_handler=clear_hover,
+    ))
     return frags
 
 
@@ -5494,39 +5495,44 @@ def _activate_option(idx):
         _pop_frame()
 
 
+def _options_clear_hover(ev):
+    if ev.event_type == MouseEventType.MOUSE_MOVE:
+        _set_hover("options", -1)
+
+
 def _options_text():
     cols   = _term_cols()
     rows_h = _term_rows()
     title  = "─── Options ───"
     footer = "↑↓ Navigate · Enter Select · ESC Back"
+    clear_hover = _options_clear_hover
 
-    btn_w = max(len(label) for _, label in _OPTIONS_ROWS) + 4
-    btn_pad = " " * max(0, (cols - btn_w) // 2)
+    label_col_w = max(len(label) for _, label in _OPTIONS_ROWS)
+    block_w     = label_col_w + 6
+    left_pad    = max(0, (cols - block_w) // 2)
+    right_pad   = max(0, cols - left_pad - block_w)
 
     frags = []
-    frags.extend(title_block(title, cols, blank_above=2))
+    frags.extend(title_block(
+        title, cols, blank_above=2, mouse_handler=clear_hover,
+    ))
 
     back_idx = len(_OPTIONS_ROWS) - 1
     blank_rows = 0
 
     for i, (action, label) in enumerate(_OPTIONS_ROWS):
         if i == back_idx:
-            frags.append(("", "\n"))   # blank before Back
+            frags.append(("", "\n", clear_hover))   # blank before Back
             blank_rows += 1
 
         is_active = (i == _sel_options)
         is_hover  = (i == _hover_options)
-        state     = _menu_button_state(is_active, is_hover)
+        state     = _menu_row_state(is_active, is_hover)
 
         # Text layout is a placeholder row — render its inactive state in
-        # dim C_HINT (no bg fill) so it reads as "not ready yet" without
-        # the filled-button look. Active / hover still use the normal
-        # three-state grammar.
-        if action == "text_layout" and state == "inactive":
-            style = C_HINT
-            text  = _centre_in_width(label, btn_w)
-        else:
-            style, text = button_fragment(label, btn_w, state)
+        # dim C_HINT so it reads as "not ready yet". Selected / hover still
+        # use the normal menu-row grammar.
+        inactive_style = C_HINT if action == "text_layout" else C_ITEM
 
         def _make_handler(row=i):
             def _h(ev):
@@ -5538,12 +5544,18 @@ def _options_text():
             return _h
 
         h = _make_handler()
-        frags.append(("", btn_pad))
-        frags.append((style, text, h))
-        frags.append(("", "\n"))
+        frags.append(("", " " * left_pad, clear_hover))
+        frags.extend(menu_row(
+            label, label_col_w, state,
+            mouse_handler=h, inactive_style=inactive_style,
+        ))
+        frags.append(("", " " * right_pad, clear_hover))
+        frags.append(("", "\n", clear_hover))
 
     content_rows = title_block_height(2) + len(_OPTIONS_ROWS) + blank_rows
-    frags.extend(footer_block(footer, cols, rows_h, content_rows))
+    frags.extend(footer_block(
+        footer, cols, rows_h, content_rows, mouse_handler=clear_hover,
+    ))
     return frags
 
 
@@ -5614,9 +5626,26 @@ def _toggle_pane_headers():
         _app.invalidate()
 
 
+def _options_panes_clear_hover(ev):
+    """MOUSE_MOVE handler for the panes-frame chrome. Sets the cursor row
+    to the no-hover sentinel (_PANES_LAST_ROW + 1) so chrome events drop
+    the hover; the keyboard cursor stays where it was via the persisted
+    `_options_panes_row` (only changed by `_set_panes_cursor` calls)."""
+    # Panes frame is unique: the keyboard cursor and the mouse hover
+    # share `_options_panes_row`. Clearing hover here would also move
+    # the cursor, so we deliberately do nothing — the headers / Back
+    # rows' own MOUSE_MOVE handlers already overwrite the cursor when
+    # the mouse moves onto them, and the grid cells do the same. The
+    # function still exists so the title_block / footer_block / blank
+    # rows can carry a handler (the invariant) even though it is a
+    # no-op on MOUSE_MOVE.
+    return
+
+
 def _options_panes_text():
     cols   = _term_cols()
     rows_h = _term_rows()
+    clear_hover = _options_panes_clear_hover
 
     # Grid rows from _conf. Empty / unknown colour names fall back to
     # Black (column 0) per the grid model.
@@ -5636,12 +5665,18 @@ def _options_panes_text():
 
     headers_on    = (_conf.get("show_pane_dividers") == "1")
     headers_label = f"[{'X' if headers_on else ' '}] Display pane headers"
-    headers_w     = len(headers_label) + 4   # 2 cells padding each side
     back_label    = "Back"
-    back_w        = 8
+    # Headers + Back share one centred block, left-aligned on the wider
+    # label so the `[X]` glyph and "Back" stack at the same column.
+    label_col_w   = max(len(headers_label), len(back_label))
+    block_w       = label_col_w + 6
+    left_pad      = max(0, (cols - block_w) // 2)
+    right_pad     = max(0, cols - left_pad - block_w)
 
     frags = []
-    frags.extend(title_block("─── Panes ───", cols, blank_above=2))
+    frags.extend(title_block(
+        "─── Panes ───", cols, blank_above=2, mouse_handler=clear_hover,
+    ))
 
     def _make_cell_handler(ri, ci):
         def _h(ev):
@@ -5658,11 +5693,10 @@ def _options_panes_text():
     ))
 
     # Blank row between grid and the headers toggle.
-    frags.append(("", "\n"))
+    frags.append(("", "\n", clear_hover))
 
-    # Display pane headers (filled-button grammar).
-    state_h = "selected_focused" if cur_row == _PANES_HEADERS_ROW else "inactive"
-    style_h, text_h = button_fragment(headers_label, headers_w, state_h)
+    # Display pane headers — << label >> menu-row grammar.
+    state_h = "selected" if cur_row == _PANES_HEADERS_ROW else "inactive"
 
     def _headers_handler(ev):
         if ev.event_type == MouseEventType.MOUSE_MOVE:
@@ -5672,17 +5706,18 @@ def _options_panes_text():
             _set_panes_cursor(_PANES_HEADERS_ROW)
             _toggle_pane_headers()
 
-    pad_h = max(0, (cols - headers_w) // 2)
-    frags.append(("", " " * pad_h))
-    frags.append((style_h, text_h, _headers_handler))
-    frags.append(("", "\n"))
+    frags.append(("", " " * left_pad, clear_hover))
+    frags.extend(menu_row(
+        headers_label, label_col_w, state_h, mouse_handler=_headers_handler,
+    ))
+    frags.append(("", " " * right_pad, clear_hover))
+    frags.append(("", "\n", clear_hover))
 
     # Blank row between headers and Back.
-    frags.append(("", "\n"))
+    frags.append(("", "\n", clear_hover))
 
-    # Back (filled-button grammar).
-    state_b = "selected_focused" if cur_row == _PANES_BACK_ROW else "inactive"
-    style_b, text_b = button_fragment(back_label, back_w, state_b)
+    # Back — << label >> menu-row grammar.
+    state_b = "selected" if cur_row == _PANES_BACK_ROW else "inactive"
 
     def _back_handler(ev):
         if ev.event_type == MouseEventType.MOUSE_MOVE:
@@ -5691,17 +5726,21 @@ def _options_panes_text():
         if ev.event_type == MouseEventType.MOUSE_DOWN:
             _options_panes_back()
 
-    pad_b = max(0, (cols - back_w) // 2)
-    frags.append(("", " " * pad_b))
-    frags.append((style_b, text_b, _back_handler))
-    frags.append(("", "\n"))
+    frags.append(("", " " * left_pad, clear_hover))
+    frags.extend(menu_row(
+        back_label, label_col_w, state_b, mouse_handler=_back_handler,
+    ))
+    frags.append(("", " " * right_pad, clear_hover))
+    frags.append(("", "\n", clear_hover))
 
     # Footer block anchored to the final terminal row. Content rows
     # above the footer = title block + header row + 6 pane rows + 4
     # rows of bottom chrome (blank · headers · blank · Back).
     content_rows = title_block_height(2) + 1 + _PANES_GRID_ROWS + 4
     footer = "↑↓←→ Move · Enter Toggle · ESC Back"
-    frags.extend(footer_block(footer, cols, rows_h, content_rows))
+    frags.extend(footer_block(
+        footer, cols, rows_h, content_rows, mouse_handler=clear_hover,
+    ))
 
     return frags
 
@@ -5736,11 +5775,17 @@ def _options_connection_activate(idx):
         _enter_options_connection_custom_frame()
 
 
+def _options_connection_clear_hover(ev):
+    if ev.event_type == MouseEventType.MOUSE_MOVE:
+        _set_hover("options_connection", -1)
+
+
 def _options_connection_text():
     cols   = _term_cols()
     rows_h = _term_rows()
     title  = "─── Connection ───"
     footer = "↑↓ Navigate · Enter Select · ESC Back"
+    clear_hover = _options_connection_clear_hover
 
     cur = _conf.get("connection_mode", "mmapper")
     host = _conf.get("connection_host", "localhost")
@@ -5750,29 +5795,32 @@ def _options_connection_text():
     # Each row's full label includes the radio glyph and (for the three
     # modes) the host:port detail; the leading (•) / ( ) glyph carries
     # the persistent on / active state — colour is reserved for the
-    # transient cursor and hover. Width is the widest label + 4 cells of
-    # padding, matching the rest of the launcher's button-cell grammar.
+    # transient cursor and hover. The block is left-aligned on a shared
+    # column inside a centred block so the radio glyphs stack vertically.
     rows = _CONNECTION_MODES_ROWS(cur, custom_detail)
-    label_w = max(len(r) for r in rows)
-    btn_w   = max(label_w, len("Back")) + 4
-    btn_pad = " " * max(0, (cols - btn_w) // 2)
+    labels = rows + ["Back"]
+    label_col_w = max(len(l) for l in labels)
+    block_w     = label_col_w + 6
+    left_pad    = max(0, (cols - block_w) // 2)
+    right_pad   = max(0, cols - left_pad - block_w)
 
     frags = []
-    frags.extend(title_block(title, cols, blank_above=2))
+    frags.extend(title_block(
+        title, cols, blank_above=2, mouse_handler=clear_hover,
+    ))
 
     back_idx = len(rows)   # Back is appended below the mode rows
     blank_rows = 0
     n_rows = len(rows) + 1
 
-    for i, label in enumerate(rows + ["Back"]):
+    for i, label in enumerate(labels):
         if i == back_idx:
-            frags.append(("", "\n"))
+            frags.append(("", "\n", clear_hover))
             blank_rows += 1
 
         is_active = (i == _sel_options_connection)
         is_hover  = (i == _hover_options_connection)
-        state     = _menu_button_state(is_active, is_hover)
-        style, text = button_fragment(label, btn_w, state)
+        state     = _menu_row_state(is_active, is_hover)
 
         def _make_handler(row=i):
             def _h(ev):
@@ -5786,20 +5834,23 @@ def _options_connection_text():
             return _h
 
         h = _make_handler()
-        frags.append(("", btn_pad))
-        frags.append((style, text, h))
-        frags.append(("", "\n"))
+        frags.append(("", " " * left_pad, clear_hover))
+        frags.extend(menu_row(label, label_col_w, state, mouse_handler=h))
+        frags.append(("", " " * right_pad, clear_hover))
+        frags.append(("", "\n", clear_hover))
 
     content_rows = title_block_height(2) + n_rows + blank_rows
-    frags.extend(footer_block(footer, cols, rows_h, content_rows))
+    frags.extend(footer_block(
+        footer, cols, rows_h, content_rows, mouse_handler=clear_hover,
+    ))
     return frags
 
 
 def _CONNECTION_MODES_ROWS(cur, custom_detail):
     """Mode-row labels for the Connection submenu. The leading (•) / ( )
-    glyph is part of the button label so the cursor / hover grammar
-    rendered by `menu_chrome.button_fragment` does not need to overlay
-    a separate persistent-active style."""
+    glyph is part of the menu-row label so the cursor / hover grammar
+    rendered by `menu_chrome.menu_row` does not need to overlay a
+    separate persistent-active style."""
     rows = []
     for mode, lbl, detail in _CONNECTION_MODES:
         dot = "(•)" if cur == mode else "( )"
@@ -5936,11 +5987,17 @@ def _options_spotlights_activate(row_idx):
         _pop_frame()
 
 
+def _options_spotlights_clear_hover(ev):
+    if ev.event_type == MouseEventType.MOUSE_MOVE:
+        _set_hover("options_spotlights", -1)
+
+
 def _options_spotlights_text():
     cols   = _term_cols()
     rows_h = _term_rows()
     title  = "─── Spotlights ───"
     footer = "↑↓ Navigate · Enter Select · ESC Back"
+    clear_hover = _options_spotlights_clear_hover
 
     rows = _options_spotlights_rows()
     sel_indices = _options_spotlights_selectable_indices()
@@ -5954,31 +6011,34 @@ def _options_spotlights_text():
         if kind == "toggle":
             # The leading [X] / [ ] glyph carries the persistent on /
             # active state, so the row's transient cursor / hover colour
-            # can ride on the shared button grammar without overloading.
+            # can ride on the shared menu-row grammar without overloading.
             box = "[X]" if _conf.get(key) == "1" else "[ ]"
             labels.append(f"{box} {label}")
         elif kind == "sep":
             labels.append("")
         elif kind == "back":
             labels.append("Back")
-    btn_w = max((len(l) for l in labels if l), default=0) + 4
-    btn_pad = " " * max(0, (cols - btn_w) // 2)
+    label_col_w = max((len(l) for l in labels if l), default=0)
+    block_w     = label_col_w + 6
+    left_pad    = max(0, (cols - block_w) // 2)
+    right_pad   = max(0, cols - left_pad - block_w)
 
     frags = []
-    frags.extend(title_block(title, cols, blank_above=2))
+    frags.extend(title_block(
+        title, cols, blank_above=2, mouse_handler=clear_hover,
+    ))
 
     body_rows = 0
     for i, (kind, _key, _label) in enumerate(rows):
         if kind == "sep":
-            frags.append(("", "\n"))
+            frags.append(("", "\n", clear_hover))
             body_rows += 1
             continue
 
         label = labels[i]
         is_active = (i == sel_row)
         is_hover  = (i == _hover_options_spotlights)
-        state     = _menu_button_state(is_active, is_hover)
-        style, text = button_fragment(label, btn_w, state)
+        state     = _menu_row_state(is_active, is_hover)
 
         def _make_handler(row=i, pos=(sel_indices.index(i) if i in sel_indices else 0)):
             def _h(ev):
@@ -5992,13 +6052,16 @@ def _options_spotlights_text():
             return _h
 
         h = _make_handler()
-        frags.append(("", btn_pad))
-        frags.append((style, text, h))
-        frags.append(("", "\n"))
+        frags.append(("", " " * left_pad, clear_hover))
+        frags.extend(menu_row(label, label_col_w, state, mouse_handler=h))
+        frags.append(("", " " * right_pad, clear_hover))
+        frags.append(("", "\n", clear_hover))
         body_rows += 1
 
     content_rows = title_block_height(2) + body_rows
-    frags.extend(footer_block(footer, cols, rows_h, content_rows))
+    frags.extend(footer_block(
+        footer, cols, rows_h, content_rows, mouse_handler=clear_hover,
+    ))
     return frags
 
 

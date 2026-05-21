@@ -868,10 +868,9 @@ Navigation hub pushed by activating "Options" on the main frame. Children:
 - **Spotlights** → `options_spotlights` — per-kind toggles for the
   Spotlights reel (deaths, level-ups, PvP kills, achievements).
 - **Text layout** → `options_coming_soon` — placeholder for future
-  layout/typography options. The row paints in `C_HINT` (dim grey,
-  no background fill) in its inactive state to signal "not ready yet";
-  cursor and hover states pick up the normal three-state
-  `button_fragment` grammar.
+  layout/typography options. The row's inactive label paints in
+  `C_HINT` (dim grey) to signal "not ready yet"; selected / hover
+  states pick up the normal `<< label >>` menu-row grammar.
 - **Connection** → `options_connection` — MMapper / Direct / Custom
   selector; Custom pushes a host/port input subframe.
 
@@ -905,10 +904,11 @@ Enter / click semantics (per `panes_grid.apply_cell_toggle`):
   nothing live happens at the launcher.
 - On `Back` — saves and pops (same as ESC).
 
-The headers toggle and `Back` use the **filled-button cursor grammar**
-(`menu_chrome.button_fragment`, gold *background* on cursor); grid
-cells use the **swatch-cell grammar** (gold *foreground* on the
-cursor cell's `[ ]` / `[X]` glyphs).
+The headers toggle and `Back` use the **`<< label >>` menu-row
+grammar** (`menu_chrome.menu_row`, gold *arrows* on the cursor row),
+left-aligned in their own centred block below the grid; grid cells
+use the **swatch-cell grammar** (gold *foreground* on the cursor
+cell's `[ ]` / `[X]` glyphs).
 
 Persistence is **deferred**: cell clicks mutate `_conf`; `_save_conf`
 fires on Back / ESC. This is the persistence asymmetry vs. the popup —
@@ -991,10 +991,12 @@ current `connection_mode` in `startup.conf`. Selecting MMapper or
 Direct writes `connection_mode` and pops on Back/ESC. Selecting Custom
 writes `connection_mode=custom` and pushes `options_connection_custom`.
 
-Each row's full label (`(•) MMapper  (localhost:4242)`, etc.) goes
-through `menu_chrome.button_fragment` as a single button cell — the
-leading `(•)` / `( )` glyph carries the persistent on / active state
-and the cursor / hover colour rides on the shared three-state grammar.
+Each row's full label (`(•) MMapper  (localhost:4242)`, etc.) is
+rendered through `menu_chrome.menu_row` — the leading `(•)` / `( )`
+glyph carries the persistent on / active state, and the cursor row's
+gold `<<` / `>>` arrows + `C_ACTIVE` label carry the transient
+selection. All four rows are left-aligned on a shared column inside
+a centred block so the radio glyphs stack vertically.
 
 `bridge/launcher/read_config.sh` consumes the resulting keys at tt++
 startup and produces the `_host`, `_port`, `_ses_cmd` tt++ variables
@@ -1012,11 +1014,13 @@ and pops back to `options_connection`.
 
 Per-kind toggles for the [Spotlights reel](#spotlights-sub-menu). Four
 `[X]` / `[ ]` rows followed by a blank row and `Back`, rendered through
-`menu_chrome.button_fragment` so the leading `[X]` / `[ ]` glyph carries
-the persistent on / active state and the row's background colour stays
-reserved for the transient cursor and hover — identical grammar to the
-`Display pane headers` toggle in `options_panes`. Enter / Space / click
-flips the row; ESC or `Back` saves and pops back to `options`.
+`menu_chrome.menu_row` so the leading `[X]` / `[ ]` glyph carries the
+persistent on / active state and the cursor row's gold `<<` / `>>`
+arrows carry the transient selection — identical grammar to the
+`Display pane headers` toggle in `options_panes`. All five rows share
+one centred block, left-aligned on the widest label so the `[X]` /
+`[ ]` glyphs and `Back` stack vertically. Enter / Space / click flips
+the row; ESC or `Back` saves and pops back to `options`.
 
 | Row              | `startup.conf` key                | JSONL `event`  |
 |------------------|-----------------------------------|----------------|
@@ -2019,7 +2023,15 @@ import prompt_toolkit — the caller appends the fragments into its own
 | `title_block(title, term_cols, blank_above)` | Fragments for `blank_above` blank rows, then `title` centred in `term_cols` styled `C_SECTION`, then one trailing blank row. `title` is passed already decorated (e.g. `"─── Panes ───"`). `blank_above = 2` for the launcher, `1` for the popup. |
 | `title_block_height(blank_above)` | Returns `blank_above + 2` — the visual-row count produced by `title_block`. |
 | `footer_block(footer_text, term_cols, term_rows, content_rows)` | `content_rows` is the row count above the footer (title block + body). Emits `max(0, term_rows - content_rows - 1)` blank rows then `footer_text` centred in `term_cols` styled `C_HINT`, so the footer lands on the final terminal row. When content fills or overflows the terminal the pad clamps to zero — never negative. |
-| `button_fragment(label, width, state)` | A single `(style, text)` 2-tuple. `label` is centred in `width` cells (truncated when longer). `state ∈ {"inactive", "hover", "selected_unfocused", "selected_focused", "disabled"}` maps to: `C_BUTTON_INACTIVE` / `C_BUTTON_ACTIVE_UNFOCUSED` (hover deliberately previews the unfocused-selected look) / `C_BUTTON_ACTIVE_UNFOCUSED` / `C_BUTTON_ACTIVE_FOCUSED` / `C_BUTTON_DISABLED`. |
+| `menu_row(label, label_col_w, state, mouse_handler=None, inactive_style=C_ITEM)` | Fragment list for one `<< label >>` selectable menu row: a fixed 3-cell prefix (`<< ` or `   `) + `label` left-padded to `label_col_w` + a fixed 3-cell suffix (` >>` or `   `). `state ∈ {"inactive", "hover", "selected"}`: `selected` → arrows in `C_CURSOR_CELL` (gold), label in `C_ACTIVE`; `hover` → blank arrows, label in `C_HOVER`; `inactive` → blank arrows, label in `inactive_style` (default `C_ITEM`; `C_HINT` for the "Text layout" placeholder). Selection wins over hover. The caller prepends the centring pad for the whole vertical block; the helper emits only the row. When `mouse_handler` is given, every fragment carries it as a 3-tuple. |
+| `button_fragment(label, width, state)` | A single `(style, text)` 2-tuple. `label` is centred in `width` cells (truncated when longer). `state ∈ {"inactive", "hover", "selected_unfocused", "selected_focused", "disabled"}` maps to: `C_BUTTON_INACTIVE` / `C_BUTTON_ACTIVE_UNFOCUSED` (hover deliberately previews the unfocused-selected look) / `C_BUTTON_ACTIVE_UNFOCUSED` / `C_BUTTON_ACTIVE_FOCUSED` / `C_BUTTON_DISABLED`. Used by the Profile / History button columns and the editor's LITE kind-buttons; vertical menu lists use `menu_row` instead. |
+
+`title_block` and `footer_block` both accept an optional `mouse_handler`
+keyword: when given, every emitted fragment is a 3-tuple carrying that
+handler. Menu frames pass their frame-specific clear-hover handler so
+MOUSE_MOVE events above the first menu row or below the last clear the
+stuck hover instead of leaving the previous row highlighted. See the
+"Hover-clear invariant" note below.
 
 Every frame in the launcher's startup-menu surface uses these helpers
 for its title row, footer anchoring, and selectable-row styling —
@@ -2043,24 +2055,66 @@ between sibling frames. The two modal dialogs (`exit_confirm`,
 vertically centred; they still adopt `C_SECTION` for their title /
 message line.
 
-**Button-cell grammar.** Every selectable menu row is a centred,
-uniform-width, background-filled button cell rendered through
-`button_fragment` — the legacy `<< label >>` prefix-suffix arrows are
-retired everywhere they survived. Cursor row → gold *background*
-(`selected_focused`), mouse hover → grey (`hover`), other rows →
-`inactive`. Radio / toggle rows (`(•)` / `( )` / `[X]` / `[ ]`) keep
-their leading glyph as part of the button label; the glyph shape
-carries the persistent on / active state so colour stays reserved for
-the transient cursor and hover. The Options frame's "Text layout"
-placeholder is the one exception — its inactive state stays dim
-`C_HINT` with no background to signal "not ready yet"; cursor / hover
-still pick up the normal three-state look.
+**Button-cell grammar.** The launcher's chrome carries three distinct
+cell grammars; which one applies depends on the zone, not on the
+state:
 
-**Alignment convention (Profile pages).** Profile-frame menu rows are
-left-aligned on a shared column inside a centred block. The widest
-label is computed on every render so the block re-centres after a
-resize. (Other frames now centre each button cell individually via
-`button_fragment`.)
+- **Gold-background filled buttons** (`button_fragment`) — the Profile
+  and History entry-list / button columns and the profile editor's
+  LITE kind-buttons. Cursor row → gold *background*
+  (`selected_focused`), unfocused-selected → grey
+  (`selected_unfocused`), hover previews the unfocused-selected look,
+  other rows → `inactive` near-black fill.
+- **Gold-foreground swatch cells** (`panes_grid_fragments`) — the
+  Panes submenu's pane × colour grid. The cursor cell's `[ ]` / `[X]`
+  brackets paint in `C_CURSOR_CELL` (gold *foreground*) while the
+  swatch keeps its own colour. Palette / swatch zones are
+  gold-or-nothing: no unfocused carry-over.
+- **Gold-arrow `<< label >>` menu rows** (`menu_row`) — every vertical
+  menu list in the launcher's startup-menu surface (`main`,
+  `options`, the headers-toggle / `Back` rows of `options_panes`,
+  `options_connection`, `options_spotlights`, and the popup-side
+  equivalents under P5). Cursor row → gold `<<` / `>>` arrows
+  (`C_CURSOR_CELL`) with the label in `C_ACTIVE`; mouse hover →
+  blank arrows with the label lightened to `C_HOVER`; inactive
+  rows → blank arrows with the label in `C_ITEM`. Selection (the
+  keyboard cursor) wins over hover. Radio / toggle rows (`(•)` /
+  `( )` / `[X]` / `[ ]`) keep their leading glyph as part of the
+  composed label; the glyph shape carries the persistent on /
+  active state so colour stays reserved for the transient cursor
+  and hover. The Options frame's "Text layout" placeholder is the
+  one exception — its inactive label paints in dim `C_HINT` to
+  signal "not ready yet"; selected / hover states still pick up
+  the normal menu-row grammar.
+
+**Alignment convention.** Every menu list — Profile pages and the rest
+of the swept frames alike — is left-aligned on a shared column inside
+a centred block. The widest composed label across the frame's rows
+sets `label_col_w`; the block (`label_col_w + 6` cells wide, including
+the 3-cell prefix and 3-cell suffix `menu_row` emits) is centred as a
+unit. Leading `[ ]` / `( )` glyphs stack vertically because every
+row's label is left-padded to the same width — not because the chrome
+shifts to accommodate them. The block re-centres on every render so a
+resize is immediate. The `options_panes` frame is the one place where
+two centred blocks coexist on the same page: the colour grid sits in
+its own centred block above, and the headers-toggle + `Back` rows sit
+in a second centred block below.
+
+**Hover-clear invariant.** In a menu frame, every emitted fragment is
+either a selectable row (carries a MOUSE_MOVE handler that sets the
+frame's hover index to that row's index) or chrome (carries a
+clear-hover handler that resets the hover index to the no-hover
+sentinel). The clear-hover handler is attached to the title-block and
+footer-block fragments (via the `mouse_handler` keyword), to every
+blank-separator row inside the frame, and to the per-row centring
+left / right padding around each `menu_row` call. Without this
+invariant, MOUSE_MOVE above the first row or below the last row never
+fires a handler, the previous row's hover sticks, and the highlight
+trails the actual pointer position. The `options_panes` frame is the
+exception: its keyboard cursor and mouse hover share the same
+`_options_panes_row` (there is no separate hover index), so its
+clear-hover handler is a deliberate no-op that exists only to keep
+the invariant well-formed.
 
 **About page three-colour scheme.** Each wrapped line is classified
 before printing: all-uppercase lines → `C_TITLE` (headings); lines
