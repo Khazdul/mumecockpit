@@ -11,7 +11,7 @@ __all__ = [
     "C_BUTTON", "C_BUTTON_HOVER", "C_BUTTON_DISABLED",
     "C_BUTTON_INACTIVE", "C_BUTTON_ACTIVE_UNFOCUSED",
     "C_BUTTON_ACTIVE_FOCUSED",
-    "C_OK", "C_CURSOR_CELL",
+    "C_OK", "C_CURSOR_CELL", "C_PANE_OFF",
     "C_LOG_PLAYER_INPUT", "C_LOG_CURSOR",
     "C_LOG_OVERLAY_BG", "C_LOG_OVERLAY_FG", "C_LOG_OVERLAY_HINT",
     "C_LOG_SCRUBBER_FILLED", "C_LOG_SCRUBBER_EMPTY", "C_LOG_SCRUBBER_THUMB",
@@ -86,6 +86,12 @@ C_BUTTON_ACTIVE_FOCUSED   = "fg:#000000 bg:#ffaf00"
 #     profile-table ✓ and similar always-on indicators; never gold.
 C_OK          = "bold fg:#7ac46f"
 C_CURSOR_CELL = "bold fg:#ffaf00"
+
+# Panes-grid dim colour. Painted on every cell (label, checkbox, swatch) of
+# a disabled pane row so the row reads as unmistakably "off" against the
+# enabled rows' bright checkboxes and coloured swatches. One step darker
+# than C_HINT (#585858) — the gap is the whole point.
+C_PANE_OFF    = "fg:#3a3a3a"
 
 # ---------------------------------------------------------------------------
 # Statistics-frame palette (mockup-driven; isolated from the other frames so
