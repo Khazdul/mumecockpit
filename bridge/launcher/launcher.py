@@ -42,6 +42,7 @@ from palette import (  # noqa: E402
     C_HEADER, C_SECTION, C_DIVIDER,
     C_BUTTON, C_BUTTON_HOVER, C_BUTTON_DISABLED,
     C_BUTTON_INACTIVE, C_BUTTON_ACTIVE_UNFOCUSED, C_BUTTON_ACTIVE_FOCUSED,
+    C_OK,
     C_LOG_CURSOR,
     C_LOG_OVERLAY_BG, C_LOG_OVERLAY_FG, C_LOG_OVERLAY_HINT,
     C_LOG_SCRUBBER_FILLED, C_LOG_SCRUBBER_EMPTY, C_LOG_SCRUBBER_THUMB,
@@ -62,7 +63,7 @@ import run_retention  # noqa: E402
 import run_stats  # noqa: E402
 import spotlights  # noqa: E402
 from menu_chrome import (  # noqa: E402
-    footer_block, menu_row, title_block, title_block_height,
+    button_fragment, footer_block, menu_row, title_block, title_block_height,
 )
 from panes_grid import apply_cell_toggle, panes_grid_fragments  # noqa: E402
 from widgets.scrollbar import Scrollbar  # noqa: E402
@@ -1044,15 +1045,16 @@ def _enter_profile_frame():
 
 
 def _profile_table_visible():
-    """Visible data rows in the table — data-fit, with a floor so the Options
+    """Visible data rows in the table — data-fit, with a floor so the button
     column never clips.
 
-    Outer chrome (title 3 + footer 2 = 5) plus inner chrome (feedback row 1 +
-    table header row 1 = 2) reserves 7 terminal rows. Options is 1 header +
-    N buttons; the table window is `visible + 1` rows (header + data), so
-    visible must be at least len(_PROFILE_BUTTONS) for the Options widget to
-    render in full."""
-    max_by_terminal = max(1, _term_rows() - 3 - 2 - 2)
+    P4 chrome budget: title (4 rows, `title_block_height(2)`) + feedback
+    (1) + footer (1) + table header (1) = 7 reserved rows; flex_spacer
+    absorbs anything left over. The button column has no header in P4 —
+    its first button aligns with the table header row — so visible must be
+    at least `len(_PROFILE_BUTTONS)` for the button column to render in
+    full."""
+    max_by_terminal = max(1, _term_rows() - 7)
     options_min = len(_PROFILE_BUTTONS)
     return min(max_by_terminal, max(options_min, len(_profiles)))
 
@@ -1341,23 +1343,18 @@ def _profile_clear_feedback():
 # --- Title / footer text ---------------------------------------------------
 def _profile_title_text():
     cols = _term_cols()
-    title = "─── Profile ───"
-    return _profile_hover_clear_frags([
-        ("", "\n"),
-        ("", _pad_centre(title, cols)),
-        (C_TITLE, title),
-        ("", "\n"),
-    ])
+    clear_hover = _profile_hover_at(None, None)
+    return list(title_block(
+        "─── Profile ───", cols, blank_above=2, mouse_handler=clear_hover,
+    ))
 
 
 def _profile_footer_text():
     cols = _term_cols()
+    clear_hover = _profile_hover_at(None, None)
     footer = "↑↓ Cursor · Tab/←→ Cycle · Enter Activate · ESC Back"
-    return _profile_hover_clear_frags([
-        ("", "\n"),
-        ("", _pad_centre(footer, cols)),
-        (C_HINT, footer),
-    ])
+    pad = " " * max(0, (cols - len(footer)) // 2)
+    return [("", pad, clear_hover), (C_HINT, footer, clear_hover)]
 
 
 # --- Table render ----------------------------------------------------------
@@ -1405,7 +1402,7 @@ def _profile_format_row(name, cols, active_name):
                 l = pad // 2
                 r = pad - l
                 txt = " " * l + glyph + " " * r
-                style = C_ACCENT
+                style = C_OK
             else:
                 txt = " " * width
                 style = _S_LABEL
@@ -1465,8 +1462,10 @@ def _profile_table_text():
         is_cursor = (row_abs == _profile_table_cursor)
         is_hover  = (hover_panel == 0 and hover_row == row_abs)
 
-        if is_cursor:
-            row_bg = C_SELECTED
+        if is_cursor and table_focused:
+            row_bg = C_BUTTON_ACTIVE_FOCUSED
+        elif is_cursor:
+            row_bg = C_BUTTON_ACTIVE_UNFOCUSED
         elif is_hover:
             row_bg = C_HOVER
         else:
@@ -1509,44 +1508,40 @@ def _profile_table_scrollbar_text():
     return _profile_hover_clear_frags(frags)
 
 
-# --- Options widget render (right side of the profile table) --------------
+# --- Options widget render (left side of the profile table) --------------
 def _profile_options_text():
-    """Render the Options column: 'Options' header + flat buttons stacked
-    with no inter-button gap."""
+    """Render the button column: stacked `button_fragment` cells, no header.
+
+    The first button row sits at row 0 of the VSplit so it top-aligns with
+    the table's header row. State mapping per ADR 0085's button-cell
+    grammar: cursor + options focused → `selected_focused` (gold bg);
+    cursor + options unfocused → `selected_unfocused` (grey bg); hover on
+    a non-cursor enabled button → `hover`; disabled → `disabled`; else
+    `inactive`. Trailing blank rows pad the column down to the
+    table_row VSplit height."""
     inner_w = _PROFILE_BUTTON_W
     actions = _profile_menu_actions()
     options_focused = (_profile_focused == 1)
-    header_style = C_ACTIVE if options_focused else C_SECTION
     hover_panel, hover_row = _profile_hover
     clear_hover = _profile_hover_at(None, None)
 
     frags = []
-
-    # Header — "Options" centred within the button-column width.
-    header_label = "Options"
-    pad_l = max(0, (inner_w - len(header_label)) // 2)
-    pad_r = max(0, inner_w - len(header_label) - pad_l)
-    frags.append(("", " " * pad_l, clear_hover))
-    frags.append((header_style, header_label, clear_hover))
-    frags.append(("", " " * pad_r, clear_hover))
-    frags.append(("", "\n", clear_hover))
 
     for i, (label, _action, enabled) in enumerate(actions):
         is_cursor = (i == _profile_menu_cursor)
         is_hover  = (hover_panel == 1 and hover_row == i and enabled
                      and not is_cursor)
         if not enabled:
-            style = C_BUTTON_DISABLED
+            state = "disabled"
+        elif is_cursor and options_focused:
+            state = "selected_focused"
         elif is_cursor:
-            style = C_SELECTED
+            state = "selected_unfocused"
         elif is_hover:
-            style = C_BUTTON_HOVER
+            state = "hover"
         else:
-            style = C_BUTTON
-
-        pad_l = max(0, (inner_w - len(label)) // 2)
-        pad_r = max(0, inner_w - len(label) - pad_l)
-        cell_text = " " * pad_l + label + " " * pad_r
+            state = "inactive"
+        style, cell_text = button_fragment(label, inner_w, state)
 
         if enabled:
             def _click(ev, idx=i):
@@ -1562,8 +1557,9 @@ def _profile_options_text():
             frags.append((style, cell_text, clear_hover))
         frags.append(("", "\n", clear_hover))
 
-    # Pad trailing blank lines so the column fills the table_row height.
-    used = 1 + len(actions)
+    # Pad trailing blank lines so the column fills the table_row height
+    # (table_window_h = visible + 1 = header row + data rows).
+    used = len(actions)
     blanks = max(0, _profile_table_window_h() - used)
     for r in range(blanks):
         frags.append(("", " " * inner_w, clear_hover))
@@ -10185,16 +10181,16 @@ def _kb_profile_stab(event):
 
 @kb.add("right", filter=_in_frame("profile"))
 def _kb_profile_right(event):
-    # Spatial Tab — table → options. No-op when already on options.
-    if _profile_focused == 0:
-        _profile_set_focus(1)
+    # Spatial: options (left) → table (right). No-op on table.
+    if _profile_focused == 1:
+        _profile_set_focus(0)
 
 
 @kb.add("left", filter=_in_frame("profile"))
 def _kb_profile_left(event):
-    # Spatial Shift+Tab — options → table. No-op when already on table.
-    if _profile_focused == 1:
-        _profile_set_focus(0)
+    # Spatial: table (right) → options (left). No-op on options.
+    if _profile_focused == 0:
+        _profile_set_focus(1)
 
 
 @kb.add("up", filter=_in_frame("profile"))
@@ -11899,13 +11895,17 @@ def _build_history():
 
 
 def _build_profile():
-    """Build the Profile frame:
-        title · [table + options] · feedback · footer.
-    Returns the two focusable windows (table / options) plus the frame."""
+    """Build the Profile frame (P4):
+        title · [options | gap | table + scrollbar] · feedback · flex · footer.
+    Button column is left, table is right; the active profile's ✓ paints
+    green (`C_OK`) and the focused cursor row paints gold
+    (`C_BUTTON_ACTIVE_FOCUSED`). Returns the two focusable windows
+    (table / options) plus the frame."""
     title  = Window(content=FormattedTextControl(text=_profile_title_text, focusable=False),
-                    height=3, wrap_lines=False, always_hide_cursor=True)
+                    height=title_block_height(2),
+                    wrap_lines=False, always_hide_cursor=True)
     footer = Window(content=FormattedTextControl(text=_profile_footer_text, focusable=False),
-                    height=2, wrap_lines=False, always_hide_cursor=True)
+                    height=1, wrap_lines=False, always_hide_cursor=True)
 
     def _make_filler_text(width, rows_fn=None):
         def _fn():
@@ -11956,7 +11956,7 @@ def _build_profile():
         wrap_lines=False, always_hide_cursor=True,
     )
     table_row = VSplit(
-        [table_left_spacer, table_win, table_sb_win, gap_win, options_win,
+        [table_left_spacer, options_win, gap_win, table_win, table_sb_win,
          table_right_spacer],
         height=lambda: Dimension.exact(_profile_table_window_h()),
     )
@@ -11971,9 +11971,11 @@ def _build_profile():
         table_row,
         feedback_win,
     ])
+    # flex_spacer absorbs leftover terminal rows so the footer sits on the
+    # final terminal row (ADR 0085 footer-anchoring contract).
     flex_spacer = Window()
     return (table_win, options_win,
-            HSplit([title, body, footer, flex_spacer]))
+            HSplit([title, body, flex_spacer, footer]))
 
 
 def _build_history_rate():
