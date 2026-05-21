@@ -194,20 +194,20 @@ on validation failure, footer `Enter  Confirm · ESC  Cancel`.
 
 Pushed by the Edit Options-button on `profile`. The editor has two
 mutually exclusive views over the same in-memory `Profile`, flipped
-via a MENU/EDITOR toggle on the title row:
+via a LITE/EDITOR toggle on the title row:
 
-- **Menu mode** — form-based browse + edit. Vertical kind column
+- **Lite mode** — form-based browse + edit. Vertical kind column
   on the left, sorted entry list in the middle, per-kind detail
   panel on the right.
 - **Editor mode** — full-frame plain-text view of the serialised
   profile file, with line numbers, soft wrap, current-line
   highlight, and an inline scrollbar.
 
-Both modes live-bind to the same `Profile`: menu→editor serialises
-the items into the buffer; editor→menu parses the buffer back. ESC
+Both modes live-bind to the same `Profile`: lite→editor serialises
+the items into the buffer; editor→lite parses the buffer back. ESC
 in either mode parses if needed, then `save_profile`s and pops to
 the `profile` frame. Mode is **not** remembered across pushes —
-every `_enter_profile_editor` lands on menu mode.
+every `_enter_profile_editor` lands on lite mode.
 
 The flow took five earlier phases to reach this point: phase 1
 shipped the shell + round-trip parser; phase 2 made the Aliases tab
@@ -223,18 +223,18 @@ group separation on parse + serialize (ADR 0084), dropped the
 list-view sort header, redesigned the highlight palette (28-cell
 checkbox swatches with selection decoupled from cursor), stepwise
 Left-arrow fall-through across detail zones, Left/Right activates
-the MENU/EDITOR toggle, and footer hints stripped of arrow + Enter
-tokens. Phase 6.3 moved the kind buttons from a vertical left
-column to a horizontal row above the body (alphabetical order,
-Left/Right traverses), widened the list (23 → 38) and detail
-(30 → 35), normalised tt++'s `#write`-rewritten multi-line bodies
-on load for `action` / `alias` / `macro`, and dropped Bold from
-the highlight Style row.
+the LITE/EDITOR toggle (renamed from MENU/EDITOR in Phase 6.4), and
+footer hints stripped of arrow + Enter tokens. Phase 6.3 moved the
+kind buttons from a vertical left column to a horizontal row above
+the body (alphabetical order, Left/Right traverses), widened the
+list (23 → 38) and detail (30 → 35), normalised tt++'s
+`#write`-rewritten multi-line bodies on load for `action` / `alias`
+/ `macro`, and dropped Bold from the highlight Style row.
 
 #### Three-state colour grammar
 
 A uniform background-driven indicator applied across the kind
-buttons, the MENU/EDITOR toggle, the entry-list cursor row, and the
+buttons, the LITE/EDITOR toggle, the entry-list cursor row, and the
 detail-panel frame borders. Defined in `palette.py`.
 
 | State                      | Token                       | Used for                                                                          |
@@ -254,10 +254,10 @@ non-interactive (Phase 6.2: sorting is canonical, no toggle).
 
 #### Layout
 
-Top-to-bottom (menu mode — Phase 6.3):
+Top-to-bottom (lite mode — Phase 6.3):
 
 1. **Title row** — `─── Profile Editor: <name> ───` in `C_SECTION`,
-   centred on the terminal, with the MENU/EDITOR toggle
+   centred on the terminal, with the LITE/EDITOR toggle
    right-aligned on the same row.
 2. Blank row.
 3. **Kind-buttons row** — five 3-row-tall BG-filled blocks
@@ -279,18 +279,18 @@ Centred body widths: list 38 + scrollbar 1 + gap 3 + detail 35 =
 list (23 → 38), detail (30 → 35), and inter-panel gap (2 → 3) to
 reclaim the space freed by removing the kind column.
 
-#### MENU/EDITOR toggle
+#### LITE/EDITOR toggle
 
 Two 1-row blocks on the title row, uppercase, padded by one cell
-on each side (`MENU` becomes 6 cells, `EDITOR` becomes 8). A
+on each side (`LITE` becomes 6 cells, `EDITOR` becomes 8). A
 single space separates the blocks. The whole toggle is right-
 aligned so the `R` in `EDITOR` sits directly above the right `┐`
-of the menu-mode detail-panel Pattern frame below. If the centred
+of the lite-mode detail-panel Pattern frame below. If the centred
 title would collide with the toggle on a narrow terminal, the
 title's right-side decorative dashes truncate; the toggle is
 never sacrificed.
 
-- Activation (Phase 6.2): `Left` selects MENU, `Right` selects
+- Activation (Phase 6.2): `Left` selects LITE, `Right` selects
   EDITOR when the toggle has keyboard focus — no-op when the
   requested mode is already active. `Enter` and `Space` are no
   longer toggle activators (they're free for the buffer and other
@@ -298,12 +298,12 @@ never sacrificed.
   active block is a no-op. Mouse hover on the inactive block
   paints `C_BUTTON_ACTIVE_UNFOCUSED` (preview).
 - Focus: `_editor_toggle_focused` is a separate flag — when True,
-  no menu-mode editing zone responds to keys. `↑` on any
+  no lite-mode editing zone responds to keys. `↑` on any
   kind-buttons row button falls through to the toggle (Phase 6.3);
   the entry-list top row and detail.Pattern fall through to the
   kind-buttons row, not to the toggle. `↓` from the toggle drops
   into the first zone of the current mode (kind-buttons row in
-  menu, buffer in editor).
+  lite, buffer in editor).
 
 **No keystroke binds mode switching.** Pressing `m`, `e`, `M`, or
 `E` on any text-editing context (Pattern, Body, editor buffer,
@@ -311,7 +311,7 @@ sentinel hint, kind-list cursor) inserts the literal character.
 Mode flip is exclusively via toggle activation (focus + Left /
 Right, or click).
 
-#### Menu mode
+#### Lite mode
 
 **Kind buttons (horizontal row).** Phase 6.3 replaced the vertical
 left column with a single 3-row-tall row of five buttons that sits
@@ -326,7 +326,7 @@ and focuses the kind-buttons zone.
 Keyboard within the kind-buttons row:
 - `←` / `→` move between buttons. No wrap — `←` on `ACTIONS`
   and `→` on `SUBSTITUTES` are no-ops.
-- `↑` falls through to the MENU/EDITOR toggle.
+- `↑` falls through to the LITE/EDITOR toggle.
 - `↓` falls through to the entry list.
 
 The row sits between the toggle and the body in the new physical
@@ -530,7 +530,7 @@ and wrap count. Empty logical lines still occupy one visual row.
 the next keystroke). Click on the inline scrollbar's track above
 the thumb pages up by one viewport; click below pages down; click
 on the thumb itself is a no-op. Mouse drag-to-select is not wired
-(same constraint as menu mode); clicks also clear any active
+(same constraint as lite mode); clicks also clear any active
 keyboard selection.
 
 **Selection.** `_editor_buffer_anchor` (`int | None`) is the anchor
@@ -571,17 +571,17 @@ handler instead of one fragment + closure per cell.
 #### Focus model
 
 Two orthogonal axes:
-- `_editor_mode ∈ {"menu", "editor"}` selects the rendered view.
+- `_editor_mode ∈ {"lite", "editor"}` selects the rendered view.
 - `_editor_toggle_focused` is a flag: when True, only the toggle
   responds to keys; when False, the active mode's zones respond.
 
-Within menu mode, `_editor_focus ∈ {0=kind, 1=list, 2=detail}`
+Within lite mode, `_editor_focus ∈ {0=kind, 1=list, 2=detail}`
 selects the editing zone, and `_editor_detail_field` selects which
 detail field is under input (`0 = Pattern/Key`, `1 = Body` for
 text-bodied + macro; `0..3` for highlights).
 
 **Tab cycle:**
-- Menu mode: `toggle → kind → list → Pattern → Body → toggle`
+- Lite mode: `toggle → kind → list → Pattern → Body → toggle`
   (highlights extend to `Pattern → Style → Text → Background`).
 - Editor mode: `toggle → buffer → toggle`.
 
@@ -593,7 +593,7 @@ text-bodied + macro; `0..3` for highlights).
   row in editor mode).
 
 **Down-arrow:**
-- From toggle, menu mode → kind-buttons row.
+- From toggle, lite mode → kind-buttons row.
 - From any kind button → entry list (cursor at row 0).
 - From toggle, editor mode → buffer (cursor at offset 0).
 
@@ -627,16 +627,16 @@ they're intuitive from layout; kept tokens are the non-obvious
 ones):
 - Toggle: `Tab Cycle  ·  ESC Save & back`
 - Editor mode: `Tab Toggle  ·  ESC Save & back`
-- Menu / kind: `Tab Cycle  ·  ESC Save & back`
-- Menu / list: `n New  ·  Del Delete  ·  Tab Cycle  ·  ESC Save & back`
-- Menu / detail: `Tab Field  ·  ESC Save & back`
+- Lite / kind: `Tab Cycle  ·  ESC Save & back`
+- Lite / list: `n New  ·  Del Delete  ·  Tab Cycle  ·  ESC Save & back`
+- Lite / detail: `Tab Field  ·  ESC Save & back`
 
 #### Mode flip semantics
 
-- **Menu → editor.** `serialize_profile(_editor_data)` →
+- **Lite → editor.** `serialize_profile(_editor_data)` →
   `_editor_buffer_text`. Cursor lands at offset 0; scroll resets to
   0.
-- **Editor → menu.** `parse_profile(_editor_buffer_text, path)` →
+- **Editor → lite.** `parse_profile(_editor_buffer_text, path)` →
   replaces `_editor_data.items[:]` in place (the same `Profile`
   object) and re-attaches the parsed path. The entry-list cursor
   resets to 0; `_editor_refresh_buffers()` re-anchors the detail
@@ -647,20 +647,20 @@ ones):
   reformatted.
 
 Both modes are live-bound to the same in-memory `Profile`. Edits
-in menu fields commit on each keystroke via `Entry.__setattr__`.
-Edits in the editor buffer commit on flip-out via the parse step.
-ESC in either mode runs the parse-if-editor path then calls
-`save_profile`.
+in lite-mode fields commit on each keystroke via
+`Entry.__setattr__`. Edits in the editor buffer commit on flip-out
+via the parse step. ESC in either mode runs the parse-if-editor
+path then calls `save_profile`.
 
 #### Save semantics
 
 ESC writes the profile back to its `.tin` file via
 `profile_io.save_profile` (temp file + atomic rename). Unmodified
 entries emit their original source line verbatim; edited entries
-(via menu or editor mode) serialise canonically as
+(via lite or editor mode) serialise canonically as
 `#<kind> {pattern} {body}[ {priority}]`. The priority slot is
 preserved by the serializer even though it's not surfaced in the
-menu-mode UI, so loading a profile with `#alias {test} {body} {7}`
+lite-mode UI, so loading a profile with `#alias {test} {body} {7}`
 and editing `body` emits `#alias {test} {new body} {7}` with the
 priority intact. Entries whose `pattern.strip()` is empty are
 dropped before write (abandoned create attempts). `Passthrough`
@@ -722,7 +722,7 @@ hover-without-button, plus a coordinator that anchors at
 before `MOUSE_UP`. Prompt_toolkit's terminal mouse pipeline
 doesn't reliably surface the button state on motion reports in
 every host. **Use Shift+arrow / Shift+Home / Shift+End** to select
-text in the menu-mode Pattern / Commands fields. Editor mode does
+text in the lite-mode Pattern / Commands fields. Editor mode does
 not currently surface shift-select (out of scope for phase 6).
 
 #### Delete: no confirmation

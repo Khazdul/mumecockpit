@@ -215,15 +215,15 @@ _editor_list_scroll  = 0         # scroll offset for the list
 _editor_hover_row    = None      # row index in display view under cursor, or None
 _editor_list_sb      = None      # Scrollbar widget for the list panel
 # View-mode toggle. The profile editor has two mutually-exclusive views
-# over the same in-memory Profile: a form-based "menu" mode and a
+# over the same in-memory Profile: a form-based "lite" mode and a
 # plain-text "editor" mode that renders the full serialised file. The
 # toggle widget on the title row flips between them. Mode is *not*
-# remembered across pushes — every _enter_profile_editor lands on menu.
-_editor_mode            = "menu"   # "menu" | "editor"
+# remembered across pushes — every _enter_profile_editor lands on lite.
+_editor_mode            = "lite"   # "lite" | "editor"
 _editor_toggle_focused  = False    # True when the keyboard focus is on the toggle row
-_editor_toggle_hover    = None     # "menu" | "editor" | None — mouse hover
-# Editor-mode text buffer. Populated on every menu→editor flip by
-# serialize_profile(); parsed back into _editor_data on editor→menu.
+_editor_toggle_hover    = None     # "lite" | "editor" | None — mouse hover
+# Editor-mode text buffer. Populated on every lite→editor flip by
+# serialize_profile(); parsed back into _editor_data on editor→lite.
 _editor_buffer_text     = ""       # current text content of the editor buffer
 _editor_buffer_cursor   = 0        # absolute char offset (0..len(text))
 _editor_buffer_scroll   = 0        # first visible visual row (after wrap)
@@ -1870,7 +1870,7 @@ def _enter_profile_editor(path):
     _editor_body_col        = 0
     _editor_pattern_touched = False
     globals()["_editor_body_scroll"] = 0
-    globals()["_editor_mode"]           = "menu"
+    globals()["_editor_mode"]           = "lite"
     globals()["_editor_toggle_focused"] = False
     globals()["_editor_toggle_hover"]   = None
     globals()["_editor_buffer_text"]    = ""
@@ -3944,9 +3944,9 @@ def _editor_clear_outer_hover(ev):
 
 
 # ---------------------------------------------------------------------------
-# Mode toggle (MENU / EDITOR)
+# Mode toggle (LITE / EDITOR)
 # ---------------------------------------------------------------------------
-_EDITOR_TOGGLE_LABELS = ("MENU", "EDITOR")
+_EDITOR_TOGGLE_LABELS = ("LITE", "EDITOR")
 
 # Soft-wrap left padding for the line-number column ("999 " for ≤999-line
 # files; widens automatically when the file is longer). Computed at render.
@@ -3963,13 +3963,13 @@ def _editor_toggle_block(label):
 
 
 def _editor_toggle_widget_w():
-    """Total width of the MENU/EDITOR toggle including the single-space gap
+    """Total width of the LITE/EDITOR toggle including the single-space gap
     between the blocks."""
     return sum(len(_editor_toggle_block(s)) for s in _EDITOR_TOGGLE_LABELS) + 1
 
 
 def _editor_toggle_button_style(label_lower):
-    """Three-state colour for a toggle block. `label_lower` is "menu" or
+    """Three-state colour for a toggle block. `label_lower` is "lite" or
     "editor". Active = matches `_editor_mode`. Zone focus = the toggle row
     has keyboard focus. Hover on the inactive block previews active-
     unfocused (matches the kind-button convention)."""
@@ -3984,7 +3984,7 @@ def _editor_toggle_button_style(label_lower):
 
 def _editor_set_toggle_hover(label_lower):
     """Update the toggle-row hover state and invalidate. `label_lower` is
-    "menu", "editor", or None."""
+    "lite", "editor", or None."""
     global _editor_toggle_hover
     if _editor_toggle_hover != label_lower:
         _editor_toggle_hover = label_lower
@@ -4029,12 +4029,12 @@ def _editor_unfocus_toggle():
 
 
 def _editor_flip_mode():
-    """Toggle between menu and editor mode. Edits in either mode survive
+    """Toggle between lite and editor mode. Edits in either mode survive
     the flip:
-      • menu → editor — serialise the in-memory Profile into the text
+      • lite → editor — serialise the in-memory Profile into the text
         buffer; place the cursor at offset 0.
-      • editor → menu — parse the buffer back into the existing Profile;
-        re-anchor the menu cursors via `_editor_refresh_buffers`.
+      • editor → lite — parse the buffer back into the existing Profile;
+        re-anchor the lite-mode cursors via `_editor_refresh_buffers`.
 
     The lenient parser surfaces unrecognised lines as Passthrough so
     user-edited text never throws — the worst case is a previously-known
@@ -4045,7 +4045,7 @@ def _editor_flip_mode():
     global _editor_list_cursor, _editor_list_scroll
     if _editor_data is None:
         return
-    if _editor_mode == "menu":
+    if _editor_mode == "lite":
         _editor_buffer_text   = profile_io.serialize_profile(_editor_data)
         _editor_buffer_cursor = 0
         _editor_buffer_scroll = 0
@@ -4061,7 +4061,7 @@ def _editor_flip_mode():
         _editor_list_cursor = 0
         _editor_list_scroll = 0
         _editor_refresh_buffers()
-        _editor_mode = "menu"
+        _editor_mode = "lite"
     if _app:
         _app.invalidate()
 
@@ -4358,9 +4358,9 @@ def _editor_append_kind_button_row(frags, cols):
 def _profile_editor_text():
     """Render the editor frame as a single fragment list.
 
-    Layout (top to bottom, menu mode — Phase 6.3):
+    Layout (top to bottom, lite mode — Phase 6.3):
 
-        ─── Profile Editor: <name> ───                  MENU EDITOR
+        ─── Profile Editor: <name> ───                  LITE EDITOR
         <blank>
         ┌───────────┐  ┌───────────┐  ...  ┌───────────┐
         │  ACTIONS  │  │  ALIASES  │       │SUBSTITUTES│
@@ -4391,7 +4391,7 @@ def _profile_editor_text():
         _editor_append_footer(frags, cols)
         return frags
 
-    # Menu mode: kind-button row (3 rows) + blank separator, then body.
+    # Lite mode: kind-button row (3 rows) + blank separator, then body.
     _editor_append_kind_button_row(frags, cols)
     frags.append(("", "\n", _editor_clear_outer_hover))
 
@@ -4589,9 +4589,9 @@ def _profile_editor_text():
 
 
 def _editor_append_title_row(frags, title, cols):
-    """Render the title-row with the MENU/EDITOR toggle right-aligned so
+    """Render the title-row with the LITE/EDITOR toggle right-aligned so
     the `R` in EDITOR sits above the right `┐` of the detail panel's
-    Pattern frame in menu mode. Narrow terminals truncate the title's
+    Pattern frame in lite mode. Narrow terminals truncate the title's
     right-side decorative dashes; the toggle is never sacrificed."""
     package_w = _editor_package_w()
     left_pad  = _editor_left_pad()
@@ -10031,13 +10031,13 @@ def _too_small():
 
 # Profile-editor sub-state filters. The editor has three orthogonal
 # states overlaid on the same `profile_editor` frame:
-#   - Mode: menu | editor (rendered view)
-#   - Toggle focus: True when the MENU/EDITOR toggle row owns keys
+#   - Mode: lite | editor (rendered view)
+#   - Toggle focus: True when the LITE/EDITOR toggle row owns keys
 # Each handler picks the slice it needs. ESC and a few catch-all bindings
 # still use plain `_in_frame("profile_editor")` so they fire in any state.
-def _in_pe_menu():
+def _in_pe_lite():
     return Condition(lambda: _size_ok() and _current_frame == "profile_editor"
-                     and _editor_mode == "menu"
+                     and _editor_mode == "lite"
                      and not _editor_toggle_focused)
 
 
@@ -10188,12 +10188,12 @@ def _kb_profile_escape(event):
 # (tabs → list → detail.Pattern → detail.Body → tabs). Arrows and
 # printable input route through one handler per key, gated on the
 # current focus zone + active detail field.
-@kb.add("tab", filter=_in_pe_menu())
+@kb.add("tab", filter=_in_pe_lite())
 def _kb_peditor_tab(event):
     _profile_editor_cycle_focus(1)
 
 
-@kb.add("s-tab", filter=_in_pe_menu())
+@kb.add("s-tab", filter=_in_pe_lite())
 def _kb_peditor_stab(event):
     _profile_editor_cycle_focus(-1)
 
@@ -10326,7 +10326,7 @@ def _kb_peditor_palette_down():
                                      _editor_hl_bg_col)
 
 
-@kb.add("right", filter=_in_pe_menu())
+@kb.add("right", filter=_in_pe_lite())
 def _kb_peditor_right(event):
     if _editor_focus == 0:
         # Kind buttons row (Phase 6.3): Right moves to the next button.
@@ -10349,9 +10349,9 @@ def _kb_peditor_right(event):
             _editor_body_move_right()
 
 
-@kb.add("left", filter=_in_pe_menu())
+@kb.add("left", filter=_in_pe_lite())
 def _kb_peditor_left(event):
-    """Stepwise Left within the menu mode. Each detail-panel zone, when
+    """Stepwise Left within the lite mode. Each detail-panel zone, when
     its cursor sits at position 0, falls through one zone to the left:
     Body → Pattern (or Key for macros), Pattern / Key → entry list,
     list → kind buttons. On the kind-buttons row (Phase 6.3 — buttons
@@ -10404,11 +10404,11 @@ def _kb_peditor_left(event):
         _editor_body_move_left()
 
 
-@kb.add("up", filter=_in_pe_menu())
+@kb.add("up", filter=_in_pe_lite())
 def _kb_peditor_up(event):
     if _editor_focus == 0:
         # Kind buttons row (Phase 6.3): Up always falls through to the
-        # MENU/EDITOR toggle — the buttons are now a single horizontal
+        # LITE/EDITOR toggle — the buttons are now a single horizontal
         # row, not a vertical column.
         _editor_focus_toggle()
         return
@@ -10433,7 +10433,7 @@ def _kb_peditor_up(event):
         _profile_editor_set_focus(2, field=0)
 
 
-@kb.add("down", filter=_in_pe_menu())
+@kb.add("down", filter=_in_pe_lite())
 def _kb_peditor_down(event):
     if _editor_focus == 0:
         # Kind buttons row (Phase 6.3): Down always falls through to
@@ -10459,7 +10459,7 @@ def _kb_peditor_down(event):
 # Shift-arrow selection. Each handler arms the anchor (if not already
 # set) and reuses the regular movement primitive. The selection cell-
 # range is computed at render time from (anchor, cursor).
-@kb.add("s-right", filter=_in_pe_menu())
+@kb.add("s-right", filter=_in_pe_lite())
 def _kb_peditor_s_right(event):
     if _editor_focus != 2:
         return
@@ -10473,7 +10473,7 @@ def _kb_peditor_s_right(event):
         _editor_body_move_right()
 
 
-@kb.add("s-left", filter=_in_pe_menu())
+@kb.add("s-left", filter=_in_pe_lite())
 def _kb_peditor_s_left(event):
     if _editor_focus != 2:
         return
@@ -10487,7 +10487,7 @@ def _kb_peditor_s_left(event):
         _editor_body_move_left()
 
 
-@kb.add("s-up", filter=_in_pe_menu())
+@kb.add("s-up", filter=_in_pe_lite())
 def _kb_peditor_s_up(event):
     if _editor_focus != 2:
         return
@@ -10498,7 +10498,7 @@ def _kb_peditor_s_up(event):
     _editor_body_move_line(-1)
 
 
-@kb.add("s-down", filter=_in_pe_menu())
+@kb.add("s-down", filter=_in_pe_lite())
 def _kb_peditor_s_down(event):
     if _editor_focus != 2:
         return
@@ -10509,7 +10509,7 @@ def _kb_peditor_s_down(event):
     _editor_body_move_line(1)
 
 
-@kb.add("s-home", filter=_in_pe_menu())
+@kb.add("s-home", filter=_in_pe_lite())
 def _kb_peditor_s_home(event):
     if _editor_focus != 2:
         return
@@ -10523,7 +10523,7 @@ def _kb_peditor_s_home(event):
         _editor_body_move_home()
 
 
-@kb.add("s-end", filter=_in_pe_menu())
+@kb.add("s-end", filter=_in_pe_lite())
 def _kb_peditor_s_end(event):
     if _editor_focus != 2:
         return
@@ -10537,19 +10537,19 @@ def _kb_peditor_s_end(event):
         _editor_body_move_end()
 
 
-@kb.add("pageup", filter=_in_pe_menu())
+@kb.add("pageup", filter=_in_pe_lite())
 def _kb_peditor_pgup(event):
     if _editor_focus == 1:
         _profile_editor_move_cursor(-_editor_list_visible())
 
 
-@kb.add("pagedown", filter=_in_pe_menu())
+@kb.add("pagedown", filter=_in_pe_lite())
 def _kb_peditor_pgdn(event):
     if _editor_focus == 1:
         _profile_editor_move_cursor(_editor_list_visible())
 
 
-@kb.add("home", filter=_in_pe_menu())
+@kb.add("home", filter=_in_pe_lite())
 def _kb_peditor_home(event):
     if _editor_focus == 1:
         _profile_editor_jump_cursor(0)
@@ -10565,7 +10565,7 @@ def _kb_peditor_home(event):
             _editor_body_move_home()
 
 
-@kb.add("end", filter=_in_pe_menu())
+@kb.add("end", filter=_in_pe_lite())
 def _kb_peditor_end(event):
     if _editor_focus == 1:
         # End jumps to the sentinel row — the last selectable position.
@@ -10582,7 +10582,7 @@ def _kb_peditor_end(event):
             _editor_body_move_end()
 
 
-@kb.add("delete", filter=_in_pe_menu())
+@kb.add("delete", filter=_in_pe_lite())
 def _kb_peditor_kdelete(event):
     """`Del` semantics depend on focus zone:
     - List focus → delete the cursor entry immediately (no confirm).
@@ -10604,8 +10604,8 @@ def _kb_peditor_kdelete(event):
         _editor_body_forward_delete()
 
 
-@kb.add("n", filter=_in_pe_menu())
-@kb.add("N", filter=_in_pe_menu())
+@kb.add("n", filter=_in_pe_lite())
+@kb.add("N", filter=_in_pe_lite())
 def _kb_peditor_n(event):
     if _editor_focus == 1:
         _editor_create_new_entry()
@@ -10613,7 +10613,7 @@ def _kb_peditor_n(event):
         _kb_peditor_any(event)
 
 
-@kb.add("enter", filter=_in_pe_menu())
+@kb.add("enter", filter=_in_pe_lite())
 def _kb_peditor_enter(event):
     if _editor_focus == 1:
         if _editor_cursor_on_sentinel():
@@ -10647,7 +10647,7 @@ def _kb_peditor_enter(event):
         # Pattern: Enter is a no-op (use Tab / ↓ to advance).
 
 
-@kb.add("backspace", filter=_in_pe_menu())
+@kb.add("backspace", filter=_in_pe_lite())
 def _kb_peditor_backspace(event):
     if _editor_focus != 2:
         return
@@ -10663,7 +10663,7 @@ def _kb_peditor_backspace(event):
         _editor_body_backspace()
 
 
-@kb.add("<any>", filter=_in_pe_menu())
+@kb.add("<any>", filter=_in_pe_lite())
 def _kb_peditor_any(event):
     """Printable-char input on the detail panel. Pattern and Body
     accept any printable character; insertion happens at the in-buffer
@@ -10694,9 +10694,9 @@ def _kb_peditor_escape(event):
 
 
 # ---------------------------------------------------------------------------
-# Profile editor — MENU/EDITOR toggle key handlers
+# Profile editor — LITE/EDITOR toggle key handlers
 # ---------------------------------------------------------------------------
-# Phase 6.2: Left/Right select MENU/EDITOR respectively (two-button row;
+# Phase 6.2: Left/Right select LITE/EDITOR respectively (two-button row;
 # no-op when the requested mode is already active). Enter and Space no
 # longer activate the toggle — those keys are free for other zones.
 
@@ -10709,7 +10709,7 @@ def _kb_peditor_toggle_up(event):
 @kb.add("down", filter=_in_pe_toggle())
 def _kb_peditor_toggle_down(event):
     _editor_unfocus_toggle()
-    if _editor_mode == "menu":
+    if _editor_mode == "lite":
         _profile_editor_set_focus(0)
     # In editor mode the buffer is the only other zone — clearing the
     # toggle focus drops us straight into it.
@@ -10717,8 +10717,8 @@ def _kb_peditor_toggle_down(event):
 
 @kb.add("left", filter=_in_pe_toggle())
 def _kb_peditor_toggle_left(event):
-    # Left selects MENU. No-op when MENU is already active.
-    if _editor_mode != "menu":
+    # Left selects LITE. No-op when LITE is already active.
+    if _editor_mode != "lite":
         _editor_flip_mode()
 
 
