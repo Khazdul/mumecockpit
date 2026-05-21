@@ -338,16 +338,24 @@ toggle, as in Phase 6.2).
 `C_HINT` (muted grey) at all times. Labels come from
 `DETAIL_LABELS[active_kind]` so Highlights shows `Pattern + Color`,
 Substitutes shows `Text + New text`, etc. Pattern column is a fixed
-8 chars; Body column flexes and truncates with a trailing `…`. The
-Body cell skips leading blank/whitespace-only lines so a body whose
-first real content sits below empty lines still previews (the
-detail panel keeps the body verbatim — this only affects the list
-cell). The cursor row paints per the colour grammar (amber when
-list focused, grey when unfocused); hover paints `C_HOVER`. The
-reusable scrollbar (`bridge/launcher/widgets/scrollbar.py`) renders
-in the 1-cell column to the right of the list, with page-step
-click-to-jump and wheel-scroll support; the track appears only
-when entries overflow the visible window.
+8 chars; Body column flexes. The Body cell skips leading
+blank/whitespace-only lines so a body whose first real content sits
+below empty lines still previews (the detail panel keeps the body
+verbatim — this only affects the list cell). A trailing `…` is
+appended whenever the displayed cell does not show the body in
+full — either the first non-blank line had to be truncated to fit
+the column, *or* additional non-blank content follows it (Phase
+6.4). Example: a two-line body `testcommand1;\ntestcommand2` whose
+first line fits the column still renders as `testcommand1;…` so
+the list signals "there's more". `_list_body_preview` is the pure
+helper backing this and is unit-tested in
+`test_profile_editor.py:TestListBodyPreview`. The cursor row paints
+per the colour grammar (amber when list focused, grey when
+unfocused); hover paints `C_HOVER`. The reusable scrollbar
+(`bridge/launcher/widgets/scrollbar.py`) renders in the 1-cell
+column to the right of the list, with page-step click-to-jump and
+wheel-scroll support; the track appears only when entries overflow
+the visible window.
 
 A `+ New entry` sentinel row is rendered at the bottom of the list
 in `C_HINT`. The sentinel is selectable like any row; pressing

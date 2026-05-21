@@ -1262,6 +1262,58 @@ class TestPhase4HighlightListColorColumn(unittest.TestCase):
         self.assertEqual(style, launcher.C_ITEM)
 
 
+class TestListBodyPreview(unittest.TestCase):
+    """Pure-function tests for `_list_body_preview` — appends `…`
+    whenever the list-view body cell does not show the body in full
+    (truncated first line OR additional non-blank content follows)."""
+
+    def test_single_line_fits_no_ellipsis(self):
+        self.assertEqual(
+            launcher._list_body_preview("kill orc", 20),
+            "kill orc",
+        )
+
+    def test_truncated_line_gets_ellipsis(self):
+        # 25 chars, column 10 → 9 chars + `…`.
+        body = "abcdefghijklmnopqrstuvwxy"
+        out = launcher._list_body_preview(body, 10)
+        self.assertEqual(out, "abcdefghi…")
+        self.assertEqual(len(out), 10)
+
+    def test_multiline_first_fits_gets_ellipsis(self):
+        # Spec example: `testcommand1;\ntestcommand2` previews as
+        # `testcommand1;…` because more non-blank content follows.
+        out = launcher._list_body_preview(
+            "testcommand1;\ntestcommand2", 28)
+        self.assertEqual(out, "testcommand1;…")
+
+    def test_multiline_first_exactly_fills_column(self):
+        # First line is exactly column-wide; trailing `…` must replace
+        # the last char so the cell stays within the column.
+        body = "x" * 10 + "\nmore"
+        out = launcher._list_body_preview(body, 10)
+        self.assertEqual(out, "x" * 9 + "…")
+        self.assertEqual(len(out), 10)
+
+    def test_blank_only_extras_no_ellipsis(self):
+        # Trailing blank/whitespace-only lines do not count as "more".
+        self.assertEqual(
+            launcher._list_body_preview("hello\n   \n\n", 20),
+            "hello",
+        )
+
+    def test_leading_blanks_skipped(self):
+        # Phase 6.2 behaviour: leading blank lines are skipped.
+        self.assertEqual(
+            launcher._list_body_preview("\n\nhello", 20),
+            "hello",
+        )
+
+    def test_empty_body(self):
+        self.assertEqual(launcher._list_body_preview("", 20), "")
+        self.assertEqual(launcher._list_body_preview(None, 20), "")
+
+
 class TestPhase4CrossKindEditing(unittest.TestCase):
     """A multi-kind editing session: edit an alias, edit a highlight,
     delete an action — ESC writes exactly those three changes and

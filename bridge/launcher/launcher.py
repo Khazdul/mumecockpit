@@ -3780,6 +3780,49 @@ def _editor_hl_palette_row(r, text_focused, bg_focused):
     return frags
 
 
+def _list_body_first_line(body):
+    """Return the first non-blank line of `body` verbatim (uncapped).
+    Empty string when body is empty or only blank lines. Used for the
+    highlight colour-preview lookup, which must match the full token
+    irrespective of column-truncation."""
+    if not body:
+        return ""
+    for line in body.split("\n"):
+        if line.strip():
+            return line
+    return ""
+
+
+def _list_body_preview(body, body_col_w):
+    """Pure helper for the list-view body cell.
+
+    Picks the first non-blank line of `body` and returns up to
+    `body_col_w` cells of preview text. Appends `…` whenever the
+    rendered cell does NOT show the body in full — either the first
+    line had to be truncated to fit the column, or additional non-
+    blank content follows that line."""
+    if not body:
+        return ""
+    first_line = ""
+    has_more = False
+    seen_first = False
+    for line in body.split("\n"):
+        if not line.strip():
+            continue
+        if not seen_first:
+            first_line = line
+            seen_first = True
+        else:
+            has_more = True
+            break
+    truncated = len(first_line) > body_col_w
+    if truncated or (has_more and len(first_line) >= body_col_w):
+        return first_line[:max(0, body_col_w - 1)] + "…"
+    if has_more:
+        return first_line + "…"
+    return first_line
+
+
 def _editor_list_row_text(entry, is_cursor, is_hover):
     """Render one list row as a list of `(style, text)` fragments
     summing to `_EDITOR_LIST_W` cells.
@@ -3816,15 +3859,8 @@ def _editor_list_row_text(entry, is_cursor, is_hover):
     # first real content sits below empty lines still previews here. The
     # detail panel keeps the body verbatim — this only affects the list
     # preview cell.
-    body_full = ""
-    if entry.body:
-        for line in entry.body.split("\n"):
-            if line.strip():
-                body_full = line
-                break
-    body_one_line = body_full
-    if len(body_one_line) > body_col_w:
-        body_one_line = body_one_line[:max(0, body_col_w - 1)] + "…"
+    body_full = _list_body_first_line(entry.body)
+    body_one_line = _list_body_preview(entry.body, body_col_w)
     body_cell = body_one_line.ljust(body_col_w)
     full_text = (pat_cell + "  " + body_cell)[:w].ljust(w)
 
