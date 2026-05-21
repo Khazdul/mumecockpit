@@ -5132,7 +5132,7 @@ def _profile_rename_text():
     frags = []
     frags.append(("", "\n\n"))
     frags.append(("", _pad_centre(title, cols)))
-    frags.append((C_TITLE, title))
+    frags.append((C_SECTION, title))
     frags.append(("", "\n\n"))
     frags.append(("", _pad_centre(head, cols)))
     frags.append((C_HINT, head))
@@ -5217,7 +5217,7 @@ def _profile_create_name_text():
     frags = []
     frags.append(("", "\n\n"))
     frags.append(("", _pad_centre(title, cols)))
-    frags.append((C_TITLE, title))
+    frags.append((C_SECTION, title))
     frags.append(("", "\n\n\n"))
     frags.append(("", _pad_centre(line, cols)))
     frags.append((C_HINT, "> "))
@@ -5251,7 +5251,7 @@ def _profile_create_choose_text():
     frags = []
     frags.append(("", "\n\n"))
     frags.append(("", _pad_centre(title, cols)))
-    frags.append((C_TITLE, title))
+    frags.append((C_SECTION, title))
     frags.append(("", "\n\n"))
     frags.append(("", _pad_centre(name_l, cols)))
     frags.append((C_HINT, "Name:  "))
@@ -5340,7 +5340,7 @@ def _profile_create_copy_text():
         frags = []
         frags.append(("", "\n\n"))
         frags.append(("", _pad_centre(title, cols)))
-        frags.append((C_TITLE, title))
+        frags.append((C_SECTION, title))
         frags.append(("", "\n\n\n"))
         frags.append(("", _pad_centre(msg, cols)))
         frags.append((C_YELLOW, msg))
@@ -5358,7 +5358,7 @@ def _profile_create_copy_text():
     frags = []
     frags.append(("", "\n\n"))
     frags.append(("", _pad_centre(title, cols)))
-    frags.append((C_TITLE, title))
+    frags.append((C_SECTION, title))
     frags.append(("", "\n\n"))
     frags.append(("", _pad_centre(head, cols)))
     frags.append((C_HINT, head))
@@ -5439,7 +5439,7 @@ def _profile_delete_text():
     frags = []
     frags.append(("", "\n\n"))
     frags.append(("", _pad_centre(title, cols)))
-    frags.append((C_TITLE, title))
+    frags.append((C_SECTION, title))
     frags.append(("", "\n\n\n"))
     frags.append(("", _pad_centre(msg, cols)))
     frags.append((msg_style, msg))
@@ -6460,8 +6460,18 @@ _HISTORY_BUTTONS = [
 ]
 # Button column width: longest label + 1 cell of padding on each side.
 _HISTORY_BUTTON_W = max(len(lbl) for lbl, _ in _HISTORY_BUTTONS) + 2
-# 1-cell gap between the table's scrollbar column and the buttons.
+# 1-cell gap between zones (filter sidebar ↔ table ↔ options).
 _HISTORY_OPTIONS_GAP = 1
+
+
+def _history_filter_w():
+    """Width of the vertical filter sidebar — widest label (`All` or the
+    longest character name) plus 1 cell of padding on each side."""
+    base = len("All")
+    chars = _history_filter_items[1:] if _history_filter_items else []
+    if chars:
+        base = max(base, max(len(c) for c in chars))
+    return base + 2
 
 
 def _history_table_panel_w():
@@ -6471,9 +6481,14 @@ def _history_table_panel_w():
 
 
 def _history_package_width():
-    """Width of the centred [table | scrollbar | gap | options] package."""
-    # scrollbar(1) + gap(_HISTORY_OPTIONS_GAP) + button column(_HISTORY_BUTTON_W).
-    return _history_table_panel_w() + 1 + _HISTORY_OPTIONS_GAP + _HISTORY_BUTTON_W
+    """Width of the centred package
+    `[filter | gap | table | scrollbar | gap | options]` (P4 layout)."""
+    return (_history_filter_w()
+            + _HISTORY_OPTIONS_GAP
+            + _history_table_panel_w()
+            + 1
+            + _HISTORY_OPTIONS_GAP
+            + _HISTORY_BUTTON_W)
 
 
 def _history_left_pad():
@@ -6511,16 +6526,16 @@ def _enter_history_frame():
 
 
 def _history_table_visible():
-    """Visible data rows in the table — data-fit, with a floor so the Options
+    """Visible data rows in the table — data-fit, with a floor so the button
     column never clips.
 
-    Outer chrome (title 3 + footer 2 = 5) plus inner chrome (filter header 1 +
-    pill row 1 + blank above table 1 + feedback row 1 + table header row 1
-    = 5) reserves 10 terminal rows. Options is 1 header + N buttons; the
-    table window is `visible + 1` rows (header + data), so visible must be
-    at least len(_HISTORY_BUTTONS) for the Options widget to render in
-    full."""
-    max_by_terminal = max(1, _term_rows() - 3 - 2 - 5)
+    P4 chrome budget: title (4 rows, `title_block_height(2)`) + feedback
+    (1) + footer (1) + table header (1) = 7 reserved rows; flex_spacer
+    absorbs anything left over. The filter sidebar and the button column
+    have no headers in P4 — their first row aligns with the table header
+    row — so visible must be at least `len(_HISTORY_BUTTONS)` for the
+    button column to render in full."""
+    max_by_terminal = max(1, _term_rows() - 7)
     options_min = len(_HISTORY_BUTTONS)
     return min(max_by_terminal, max(options_min, len(_history_sessions)))
 
@@ -6685,11 +6700,15 @@ def _history_scroll_into_view(cursor, scroll, visible):
 
 
 def _history_move_filter(delta):
+    """Move the filter cursor one row up/down in the vertical sidebar.
+    Clamps at both ends — wrap belongs to the old horizontal pill row."""
     global _history_filter_cursor
     n = len(_history_filter_items)
     if not n:
         return
-    new_cursor = (_history_filter_cursor + delta) % n
+    new_cursor = max(0, min(n - 1, _history_filter_cursor + delta))
+    if new_cursor == _history_filter_cursor:
+        return
     _history_filter_cursor = new_cursor
     _history_set_filter(_history_filter_items[new_cursor])
 
@@ -7086,54 +7105,59 @@ def _history_clear_feedback():
 # --- Title / footer text ---------------------------------------------------
 def _history_title_text():
     cols = _term_cols()
-    title = "─── History ───"
-    return _hover_clear_frags([
-        ("", "\n"),
-        ("", _pad_centre(title, cols)),
-        (C_TITLE, title),
-        ("", "\n"),
-    ])
+    clear_hover = _hover_at(None, None)
+    return list(title_block(
+        "─── History ───", cols, blank_above=2, mouse_handler=clear_hover,
+    ))
 
 
 def _history_footer_text():
     cols = _term_cols()
-    footer = "↑↓ Cursor · Tab Cycle · Enter Activate · ESC Back"
-    return _hover_clear_frags([
-        ("", "\n"),
-        ("", _pad_centre(footer, cols)),
-        (C_HINT, footer),
-    ])
+    clear_hover = _hover_at(None, None)
+    footer = "↑↓ Cursor · Tab/←→ Cycle · Enter Activate · ESC Back"
+    pad = " " * max(0, (cols - len(footer)) // 2)
+    return [("", pad, clear_hover), (C_HINT, footer, clear_hover)]
 
 
-# --- Filter row (header + pills) ------------------------------------------
-def _history_filter_header_text():
-    pad_left = _history_left_pad()
-    label = "Filter"
-    style = C_ACTIVE if _history_focused == 0 else C_SECTION
-    return _hover_clear_frags([
-        ("", " " * pad_left),
-        (style, label),
-    ])
-
-
-def _history_filter_pills_text():
+# --- Filter sidebar render (left column of the runs-table package) ---------
+def _history_filter_sidebar_text():
+    """Render the vertical filter sidebar: one `button_fragment` row per
+    filter item (All + characters), starting at row 0 so the first row
+    top-aligns with the runs-table header row. Trailing blanks pad the
+    column down to the table_row VSplit height. Selecting a row applies
+    its filter immediately, matching the pre-P4 pill-row behaviour."""
     items = _history_filter_items
-    if not items:
-        return [("", "")]
-    pad_left = _history_left_pad()
-
+    inner_w = _history_filter_w()
+    filter_focused = (_history_focused == 0)
     hover_panel, hover_row = _history_hover
-    frags = [("", " " * pad_left, _hover_at(None, None))]
+    clear_hover = _hover_at(None, None)
 
-    for i, label in enumerate(items):
+    frags = []
+    if not items:
+        return [("", " " * inner_w, clear_hover)]
+
+    # Scroll the sidebar in parity with the table when the filter list is
+    # longer than the visible table window. Trim from the top by the same
+    # amount the table is scrolled, clamped so we never lose entries off
+    # the bottom unless we ran out.
+    visible_h = _history_table_window_h()
+    overflow  = max(0, len(items) - visible_h)
+    scroll    = min(_history_table_scroll, overflow)
+    sliced    = items[scroll:scroll + visible_h]
+
+    for vi, label in enumerate(sliced):
+        i = scroll + vi
         is_cursor = (i == _history_filter_cursor)
         is_hover  = (hover_panel == 0 and hover_row == i and not is_cursor)
-        if is_cursor:
-            style = C_SELECTED
+        if is_cursor and filter_focused:
+            state = "selected_focused"
+        elif is_cursor:
+            state = "selected_unfocused"
         elif is_hover:
-            style = C_HOVER
+            state = "hover"
         else:
-            style = C_ITEM
+            state = "inactive"
+        style, cell_text = button_fragment(label, inner_w, state)
 
         def _click(ev, row=i):
             if ev.event_type == MouseEventType.MOUSE_DOWN:
@@ -7141,10 +7165,15 @@ def _history_filter_pills_text():
                 _history_jump_filter(row)
                 return None
             return NotImplemented
+        frags.append((style, cell_text, _hover_at(0, i, on_event=_click)))
+        frags.append(("", "\n", clear_hover))
 
-        # Pills are adjacent — leading + trailing single space of padding.
-        pill_text = " " + label + " "
-        frags.append((style, pill_text, _hover_at(0, i, on_event=_click)))
+    # Pad trailing blank rows so the column fills the table_row height.
+    blanks = max(0, visible_h - len(sliced))
+    for r in range(blanks):
+        frags.append(("", " " * inner_w, clear_hover))
+        if r < blanks - 1:
+            frags.append(("", "\n", clear_hover))
     return frags
 
 
@@ -7262,8 +7291,10 @@ def _history_table_text():
         is_cursor = (row_abs == _history_table_cursor)
         is_hover  = (hover_panel == 1 and hover_row == row_abs)
 
-        if is_cursor:
-            row_bg = C_SELECTED
+        if is_cursor and table_focused:
+            row_bg = C_BUTTON_ACTIVE_FOCUSED
+        elif is_cursor:
+            row_bg = C_BUTTON_ACTIVE_UNFOCUSED
         elif is_hover:
             row_bg = C_HOVER
         else:
@@ -7303,46 +7334,40 @@ def _history_table_scrollbar_text():
     return _hover_clear_frags(frags)
 
 
-# --- Options widget render (right side of the runs table) ------------------
+# --- Options widget render (right column of the runs-table package) -------
 def _history_options_text():
-    """Render the Options column: 'Options' header + 5 flat buttons stacked
-    with no inter-button gap. Trailing blanks pad the column down to the
-    table_row height so the VSplit cell is opaque."""
+    """Render the button column: stacked `button_fragment` cells, no header.
+
+    The first button row sits at row 0 of the VSplit so it top-aligns with
+    the runs-table header row. State mapping per ADR 0085's button-cell
+    grammar: cursor + options focused → `selected_focused` (gold bg);
+    cursor + options unfocused → `selected_unfocused` (grey bg); hover on
+    a non-cursor enabled button → `hover`; disabled → `disabled`; else
+    `inactive`. Trailing blank rows pad the column down to the table_row
+    VSplit height."""
     inner_w = _HISTORY_BUTTON_W
     actions = _history_menu_actions()
     options_focused = (_history_focused == 2)
-    header_style = C_ACTIVE if options_focused else C_SECTION
     hover_panel, hover_row = _history_hover
     clear_hover = _hover_at(None, None)
 
     frags = []
 
-    # Header — "Options" centred within the button-column width.
-    header_label = "Options"
-    pad_l = max(0, (inner_w - len(header_label)) // 2)
-    pad_r = max(0, inner_w - len(header_label) - pad_l)
-    frags.append(("", " " * pad_l, clear_hover))
-    frags.append((header_style, header_label, clear_hover))
-    frags.append(("", " " * pad_r, clear_hover))
-    frags.append(("", "\n", clear_hover))
-
-    # Buttons — fixed-width, flat backgrounds, no inter-button gap.
     for i, (label, _action, enabled) in enumerate(actions):
         is_cursor = (i == _history_menu_cursor)
         is_hover  = (hover_panel == 2 and hover_row == i and enabled
                      and not is_cursor)
         if not enabled:
-            style = C_BUTTON_DISABLED
+            state = "disabled"
+        elif is_cursor and options_focused:
+            state = "selected_focused"
         elif is_cursor:
-            style = C_SELECTED
+            state = "selected_unfocused"
         elif is_hover:
-            style = C_BUTTON_HOVER
+            state = "hover"
         else:
-            style = C_BUTTON
-
-        pad_l = max(0, (inner_w - len(label)) // 2)
-        pad_r = max(0, inner_w - len(label) - pad_l)
-        cell_text = " " * pad_l + label + " " * pad_r
+            state = "inactive"
+        style, cell_text = button_fragment(label, inner_w, state)
 
         if enabled:
             def _click(ev, idx=i):
@@ -7358,10 +7383,9 @@ def _history_options_text():
             frags.append((style, cell_text, clear_hover))
         frags.append(("", "\n", clear_hover))
 
-    # Pad trailing blank lines so the column fills the table_row height.
-    # _history_table_window_h() = visible + 1 (header row). The widget body
-    # already used 1 (header) + len(actions) lines.
-    used = 1 + len(actions)
+    # Pad trailing blank lines so the column fills the table_row height
+    # (table_window_h = visible + 1 = header row + data rows).
+    used = len(actions)
     blanks = max(0, _history_table_window_h() - used)
     for r in range(blanks):
         frags.append(("", " " * inner_w, clear_hover))
@@ -7444,7 +7468,7 @@ def _history_rate_text():
     frags.append(("", "\n\n"))
     title = "─── Rate the session ───"
     frags.append(("", _pad_centre(title, cols)))
-    frags.append((C_TITLE, title))
+    frags.append((C_SECTION, title))
     frags.append(("", "\n\n"))
 
     rating = max(0, min(5, _history_rate_rating))
@@ -7513,7 +7537,7 @@ def _history_delete_confirm_text():
     title = "─── Delete session ───"
     frags.append(("", "\n\n"))
     frags.append(("", _pad_centre(title, cols)))
-    frags.append((C_HEADER, title))
+    frags.append((C_SECTION, title))
     frags.append(("", "\n\n"))
 
     runs = len(summary.run_ids)
@@ -11451,19 +11475,27 @@ def _kb_hist_stab(event):
 
 @kb.add("left", filter=_in_frame("history"))
 def _kb_hist_left(event):
-    if _history_focused == 0:
-        _history_move_filter(-1)
+    # Spatial step left: options(2) → table(1) → filter(0). No wrap.
+    if _history_focused == 2:
+        _history_set_focus(1)
+    elif _history_focused == 1:
+        _history_set_focus(0)
 
 
 @kb.add("right", filter=_in_frame("history"))
 def _kb_hist_right(event):
+    # Spatial step right: filter(0) → table(1) → options(2). No wrap.
     if _history_focused == 0:
-        _history_move_filter(1)
+        _history_set_focus(1)
+    elif _history_focused == 1:
+        _history_set_focus(2)
 
 
 @kb.add("up", filter=_in_frame("history"))
 def _kb_hist_up(event):
-    if _history_focused == 1:
+    if _history_focused == 0:
+        _history_move_filter(-1)
+    elif _history_focused == 1:
         _history_move_table(-1)
     elif _history_focused == 2:
         _history_menu_move(-1)
@@ -11471,7 +11503,9 @@ def _kb_hist_up(event):
 
 @kb.add("down", filter=_in_frame("history"))
 def _kb_hist_down(event):
-    if _history_focused == 1:
+    if _history_focused == 0:
+        _history_move_filter(1)
+    elif _history_focused == 1:
         _history_move_table(1)
     elif _history_focused == 2:
         _history_menu_move(1)
@@ -11784,22 +11818,17 @@ def _build_simple(text_fn):
 
 
 def _build_history():
-    """Build the History frame:
-        title · filter header · pill row · blank · [table + options] · feedback · footer.
-    Returns the three focusable windows (filter / table / options) plus the frame."""
+    """Build the History frame (P4):
+        title · [filter | gap | table + sb | gap | options] · feedback · flex · footer.
+    Filter sidebar is on the left, the runs table sits in the centre with
+    its scrollbar, and the button column stays on the right (header
+    dropped). Returns the three focusable windows
+    (filter / table / options) plus the frame."""
     title  = Window(content=FormattedTextControl(text=_history_title_text, focusable=False),
-                    height=3, wrap_lines=False, always_hide_cursor=True)
+                    height=title_block_height(2),
+                    wrap_lines=False, always_hide_cursor=True)
     footer = Window(content=FormattedTextControl(text=_history_footer_text, focusable=False),
-                    height=2, wrap_lines=False, always_hide_cursor=True)
-
-    filter_header_win = Window(
-        content=FormattedTextControl(text=_history_filter_header_text, focusable=False),
-        height=1, wrap_lines=False, always_hide_cursor=True,
-    )
-    filter_pills_win = Window(
-        content=FormattedTextControl(text=_history_filter_pills_text, focusable=True),
-        height=1, wrap_lines=False, always_hide_cursor=True,
-    )
+                    height=1, wrap_lines=False, always_hide_cursor=True)
 
     # Hover-clearing filler used by spacers and blanks. One " " per body
     # row so MOUSE_MOVE over padding fires _hover_at(None, None).
@@ -11815,19 +11844,14 @@ def _build_history():
             return out
         return _fn
 
-    blank_above_table = Window(
-        content=FormattedTextControl(text=_make_filler_text(1), focusable=False),
-        height=1, wrap_lines=False, always_hide_cursor=True,
+    # Centred package (P4): [left_spacer | filter | gap | table | sb | gap |
+    # options | right_spacer]
+    filter_win = Window(
+        content=FormattedTextControl(text=_history_filter_sidebar_text,
+                                     focusable=True),
+        wrap_lines=False, always_hide_cursor=True,
+        width=lambda: Dimension.exact(_history_filter_w()),
     )
-
-    # Centred package: [left_spacer | table | scrollbar | gap | options | right_spacer]
-    # Width contract:
-    #   table_left_spacer = _history_left_pad()
-    #   table_win         = _history_table_panel_w()
-    #   table_sb_win      = 1
-    #   gap_win           = _HISTORY_OPTIONS_GAP
-    #   options_win       = _HISTORY_BUTTON_W
-    #   table_right_spacer = remainder (flex)
     table_win = Window(
         content=_WheelScrollControl(text=_history_table_text, focusable=True,
                                     on_scroll=lambda d: _history_scroll_panel(1, d)),
@@ -11846,7 +11870,14 @@ def _build_history():
         wrap_lines=False, always_hide_cursor=True,
         width=lambda: Dimension.exact(_history_left_pad()),
     )
-    gap_win = Window(
+    filter_table_gap = Window(
+        content=FormattedTextControl(
+            text=_make_filler_text(1, rows_fn=_history_table_window_h),
+            focusable=False),
+        wrap_lines=False, always_hide_cursor=True,
+        width=Dimension.exact(_HISTORY_OPTIONS_GAP),
+    )
+    table_options_gap = Window(
         content=FormattedTextControl(
             text=_make_filler_text(1, rows_fn=_history_table_window_h),
             focusable=False),
@@ -11865,8 +11896,8 @@ def _build_history():
         wrap_lines=False, always_hide_cursor=True,
     )
     table_row = VSplit(
-        [table_left_spacer, table_win, table_sb_win, gap_win, options_win,
-         table_right_spacer],
+        [table_left_spacer, filter_win, filter_table_gap, table_win,
+         table_sb_win, table_options_gap, options_win, table_right_spacer],
         height=lambda: Dimension.exact(_history_table_window_h()),
     )
 
@@ -11880,18 +11911,14 @@ def _build_history():
     )
 
     body = HSplit([
-        filter_header_win,
-        filter_pills_win,
-        blank_above_table,
         table_row,
         feedback_win,
     ])
-    # flex_spacer sits below the footer and absorbs leftover terminal rows
-    # so the footer hint sits one row below the table package instead of
-    # pinning to the terminal's last row.
+    # flex_spacer absorbs leftover terminal rows so the footer sits on the
+    # final terminal row (ADR 0085 footer-anchoring contract).
     flex_spacer = Window()
-    return (filter_pills_win, table_win, options_win,
-            HSplit([title, body, footer, flex_spacer]))
+    return (filter_win, table_win, options_win,
+            HSplit([title, body, flex_spacer, footer]))
 
 
 def _build_profile():

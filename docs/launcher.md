@@ -72,30 +72,36 @@ Two interactive frames: `profile` (table + actions) and `profile_rename`
 
 ### `profile` frame
 
-Top-to-bottom:
+Top-to-bottom (P4 layout — see ADR 0088):
 
-1. Title row.
-2. **Centred package: `[ profile table | scrollbar | gap | Options widget ]`.**
+1. Title row — routed through `menu_chrome.title_block(...,
+   blank_above=2)` so the title paints `C_SECTION`.
+2. **Centred package: `[ button column | gap | profile table | scrollbar ]`.**
    Horizontally centred as one unit; the package drives all left/right
    positions on the frame and recentres on terminal resize.
+   - **Button column.** Vertical column of 7 `button_fragment` cells
+     (no inter-button gap, no border, no header): Select, New, Edit,
+     Rename, Delete, Export, Back. Column width = longest button
+     label + 2 cells of padding. The first button top-aligns with
+     the table's header row — there is no `Options` header in P4.
+     State mapping per ADR 0085's button-cell grammar: cursor +
+     button zone focused → `selected_focused` (gold bg); cursor +
+     button zone unfocused → `selected_unfocused` (grey bg); hover
+     on a non-cursor enabled button → `hover` (previews the
+     unfocused-selected look); disabled → `disabled`; else
+     `inactive`.
+   - **Gap.** 1 space between the button column and the table's left
+     edge.
    - **Profile table.** Two columns:
      - `Name` — dynamic width (longest profile name, floor = header
        width 4), left-aligned. Sortable: click toggles direction;
        default `Name ▲ asc`.
-     - `Selected` — fixed width 8, centred. `✓` in `C_ACCENT` (gold)
-       on the active profile, blank otherwise. Header is not
-       clickable and shows no sort indicator.
+     - `Selected` — fixed width 8, centred. `✓` in `C_OK` (green) on
+       the active profile, blank otherwise. Header is not clickable
+       and shows no sort indicator. The green ✓ is a persistent
+       active marker; gold is reserved for the transient focused
+       cursor.
      - One-space gap between columns.
-   - **Gap.** 1 space between the table's scrollbar column and the
-     Options widget's left edge.
-   - **Options widget.** Vertical column of 7 connected flat buttons
-     (no inter-button gap, no border): Select, New, Edit, Rename,
-     Delete, Export, Back. Column width = longest button label + 2
-     cells of padding. A centred `Options` header sits on the same
-     line as the table header, painted `C_SECTION` when the widget
-     is unfocused / `C_ACTIVE` when focused. Styling and state
-     palette match the History → Options widget; see that section
-     for the full state table.
 3. **Feedback row** — single row directly below the package; doubles
    as the spacing row above the footer. Holds transient feedback
    from Edit / Rename / Export (`Exported to ~/<name>.tin.` and
@@ -103,19 +109,25 @@ Top-to-bottom:
    `Save failed: …`, and `Export failed: …` in `C_HINT`) centred on
    the package width for ~3 s. Select does not flash — the ✓ in the
    Selected column is the confirmation.
-4. Footer hint: `↑↓ Cursor · Tab/←→ Cycle · Enter Activate · ESC Back`.
-   A flex spacer below the footer absorbs leftover terminal rows.
+4. Footer hint: `↑↓ Cursor · Tab/←→ Cycle · Enter Activate · ESC Back`,
+   anchored to the final terminal row via a flex_spacer between the
+   feedback row and the footer Window (matching the footer-anchoring
+   contract used elsewhere on the launcher).
 
 **Focus.** Two focusable Windows per the focus-on-push contract
 (ADR 0066): `_profile_table_window`, `_profile_options_window`.
-`_profile_focused: int` (0/1) routes navigation. Tab / Shift+Tab
-cycles between them (modulo 2). In addition, `→` focuses options
-and `←` focuses the table — non-wrapping (← on table and → on
-options are no-ops).
+`_profile_focused: int` (0 = table, 1 = options) routes navigation.
+Tab / Shift+Tab cycles between them (modulo 2). In addition, `←`
+focuses the button column and `→` focuses the table —
+non-wrapping (← on options and → on table are no-ops). The arrow
+semantics follow the new spatial layout: the button column is on
+the left, the table is on the right.
 
-**Cursor and hover.** The cursor element in each panel paints
-`C_SELECTED` in all focus states. Hover paints `C_HOVER` on
-non-cursor selectable elements; hover never overrides `C_SELECTED`.
+**Cursor and hover.** The cursor row in each panel adopts the same
+focused / unfocused grammar as the buttons: gold background
+(`C_BUTTON_ACTIVE_FOCUSED`) when its zone is focused, grey
+(`C_BUTTON_ACTIVE_UNFOCUSED`) when not. Hover paints `C_HOVER` on
+non-cursor selectable elements; cursor always wins over hover.
 
 **Disabled rules.**
 
@@ -123,8 +135,8 @@ non-cursor selectable elements; hover never overrides `C_SELECTED`.
 - **Rename**, **Delete** — disabled when the cursor row is `default`.
 - **Edit**, **New**, **Export**, **Back** — always enabled.
 
-The Options cursor moves through enabled buttons only (↑/↓ skips
-disabled), matching the History widget.
+The button-column cursor moves through enabled buttons only (↑/↓
+skips disabled), matching the History widget.
 
 **Keyboard.**
 
@@ -134,19 +146,19 @@ disabled), matching the History widget.
 | table   | PgUp/PgDn          | scroll 10                               |
 | table   | Home/End           | jump to ends                            |
 | table   | Enter / Space      | invoke Select (no-op if disabled)       |
-| table   | →                  | focus options (no-op when on options)   |
+| table   | ←                  | focus button column (no-op when there)  |
 | options | ↑/↓                | move cursor button (skip disabled)      |
 | options | Enter / Space      | activate selected button                |
-| options | ←                  | focus table (no-op when on table)       |
-| any     | Tab / Shift+Tab    | cycle focus (table ↔ options)           |
+| options | →                  | focus table (no-op when on table)       |
+| any     | Tab / Shift+Tab    | cycle focus (options ↔ table)           |
 | any     | ESC                | pop to main menu                        |
 
 **Mouse.** Click activates (and switches focus to that panel).
 Clicking a table row moves the cursor and focuses the table. Clicking
 the `Name` header toggles sort direction. Clicking a button focuses
-the Options widget and activates the button. The wheel scrolls the
+the button column and activates the button. The wheel scrolls the
 table without moving the cursor (`_WheelScrollControl`, shared with
-the History table); wheel over the gap / scrollbar / Options column
+the History table); wheel over the gap / scrollbar / button column
 is a no-op.
 
 **Action handlers.**
@@ -1076,47 +1088,50 @@ sidecar schema.
 
 ### `history` frame
 
-Top-to-bottom:
+Top-to-bottom (P4 layout — see ADR 0088):
 
-1. Title row.
-2. `Filter` header label (`C_ACTIVE` when the filter row is focused,
-   `C_SECTION` otherwise) — left-aligned with the runs table's
-   leftmost cell.
-3. **Filter pill row.** `All` followed by one pill per character
-   returned by `list_characters_with_runs()` (alphabetical).
-   Characters without sealed JSONLs are excluded. Each pill is
-   `" <name> "` (single-cell padding each side); pills are adjacent
-   with no extra spacer between them. The cursor pill paints
-   `C_SELECTED`. Hover paints `C_HOVER` on non-cursor pills; hover
-   never overrides cursor. The pill row's leftmost cell sits flush
-   with the runs table's leftmost column.
-4. **Centred package: `[ runs table | scrollbar | gap | Options widget ]`.**
-   Horizontally centred as one unit. The package is what drives all
-   left/right positions on the frame — the filter header and pill row
-   align flush with the package's left edge.
-   - **Runs table.** Columns: Char · Date · Time · Dur. · Expires ·
-     Rating. The header row is click-to-sort; an active column shows
-     ` ▲` / ` ▼` after its label. Default sort `Char asc` with
-     `start_ts desc` as the stable secondary key.
-   - **Gap.** 1 space of visual breathing room between the table's
-     scrollbar column and the Options widget's left edge.
-   - **Options widget.** Vertical column of 7 connected flat buttons
-     (no inter-button gap, no border): Run log, Stats, Rate, Save,
-     Export, Delete, Back. Column width = longest button label + 2
-     cells of padding (longest label: `Run log`, 7 chars).
-     A centred `Options` header sits on the same line as the runs-
-     table header row, painted `C_SECTION` when the widget is
-     unfocused / `C_ACTIVE` when focused.
-5. **Feedback row** — single row directly below the package, doubling
+1. Title row — routed through `menu_chrome.title_block(...,
+   blank_above=2)` so the title paints `C_SECTION`.
+2. **Centred package:
+   `[ filter sidebar | gap | runs table | scrollbar | gap | button column ]`.**
+   Horizontally centred as one unit; the package drives all
+   left/right positions on the frame and recentres on terminal
+   resize.
+   - **Filter sidebar (left).** Vertical column of `button_fragment`
+     cells, one per filter — `All` first, then one row per character
+     returned by `list_characters_with_runs()` (alphabetical).
+     Characters without sealed JSONLs are excluded. Column width =
+     widest label + 2 cells of padding. The first row top-aligns
+     with the runs-table header row — there is no `Filter` header
+     in P4. The cursor row uses the focused/unfocused button-cell
+     grammar (gold bg when the sidebar is focused, grey when not).
+     Selecting a row applies its filter immediately, matching the
+     pre-P4 pill-row apply semantics; only the layout changed. If
+     the sidebar is longer than the table area it scrolls in
+     parity with the table — both viewports use
+     `_history_table_scroll` as their top index.
+   - **Runs table (centre).** Columns: Char · Date · Time · Dur. ·
+     Expires · Rating. The header row is click-to-sort; an active
+     column shows ` ▲` / ` ▼` after its label. Default sort `Char
+     asc` with `start_ts desc` as the stable secondary key.
+   - **Gap.** 1 space of visual breathing room between the filter
+     sidebar and the table, and between the table's scrollbar
+     column and the button column.
+   - **Button column (right).** Vertical column of 7
+     `button_fragment` cells (no inter-button gap, no border, no
+     header): Run log, Stats, Rate, Save, Export, Delete, Back.
+     Column width = longest button label + 2 cells of padding
+     (longest label: `Run log`, 7 chars). The first button
+     top-aligns with the runs-table header row — there is no
+     `Options` header in P4.
+3. **Feedback row** — single row directly below the package, doubling
    as the spacing row between the table and the footer. Holds the
    Save / Rate / Export / Delete transient feedback message
    (`Saved to ~/<file>` in `C_ACCENT`, `Export failed: …` in
    `C_HINT`, etc.) centred on the package width for ~3 s, blank
    otherwise.
-6. Footer hint line. Sits one row below the feedback row; any
-   remaining vertical space lives below the footer via a flex
-   spacer, not above it, so the footer hint is anchored to the
-   package and rises/falls with the data-fit table.
+4. Footer hint line, anchored to the final terminal row via a
+   flex_spacer between the feedback row and the footer Window.
 
 Each row is a stitched chain (one session). Stitching uses the default
 `max_gap_seconds = 3600` from `list_sessions()`. The live
@@ -1138,34 +1153,20 @@ in either direction (stable: Saved sessions stay together, then
 numerics order normally within the unsaved group).
 
 **Focus.** Three focusable Windows per the focus-on-push contract
-(ADR 0066): `_history_filter_window` (pill row),
+(ADR 0066): `_history_filter_window` (filter sidebar),
 `_history_table_window`, `_history_options_window` (button column).
 `_history_focused: int` (0/1/2) routes navigation. Tab / Shift+Tab
 cycles forward / backward; `_focus_current_frame()` re-focuses the
 right window after push/pop and on focus changes within the frame.
 
-**Cursor and hover.** The cursor element in each panel paints
-`C_SELECTED` (black on light grey) in all focus states. Hover paints
-`C_HOVER` on non-cursor selectable elements; hover never overrides
-`C_SELECTED`. Hover clears on `MOUSE_MOVE` over any non-row fragment
-(title, footer, gap, padding, scrollbar track, disabled button) via
-the per-frame `_hover_at(panel, idx)` helper.
-
-**Options widget styling.** Flat-button style — no border; the
-background colour distinguishes each button from surrounding space.
-
-| State                    | Style                                       |
-|--------------------------|---------------------------------------------|
-| Normal                   | `C_BUTTON` — near-black bg, just above bg   |
-| Hover (non-cursor)       | `C_BUTTON_HOVER` — subtle lift over normal  |
-| Cursor (widget focused)  | `C_SELECTED` — black on light-grey bg       |
-| Disabled                 | `C_BUTTON_DISABLED` — dim fg, near-bg fill  |
-
-`C_BUTTON`, `C_BUTTON_HOVER`, and `C_BUTTON_DISABLED` are defined in
-`palette.py`. The widget is intentionally subdued so the surrounding
-backdrop dominates; only `C_SELECTED` is allowed to pop. Cursor state
-takes precedence over hover. Disabled buttons take no click and no
-hover highlight.
+**Cursor and hover.** The cursor row in each panel adopts the same
+focused / unfocused grammar as the buttons: gold background
+(`C_BUTTON_ACTIVE_FOCUSED`) when its zone is focused, grey
+(`C_BUTTON_ACTIVE_UNFOCUSED`) when not. Hover paints `C_HOVER` on
+non-cursor selectable elements; cursor always wins over hover.
+Hover clears on `MOUSE_MOVE` over any non-row fragment (title,
+footer, gap, padding, scrollbar track, disabled button) via the
+per-frame `_hover_at(panel, idx)` helper.
 
 **Disabled rules.**
 
@@ -1182,39 +1183,48 @@ hover highlight.
 - **Back** — always enabled. Pops to the launcher main menu (same
   effect as ESC).
 
-The Options cursor moves through enabled buttons only (↑/↓ skips
-disabled). Back is always enabled, so the cursor always has a
+The button-column cursor moves through enabled buttons only (↑/↓
+skips disabled). Back is always enabled, so the cursor always has a
 landing spot even with an empty table.
 
 **Keyboard.**
 
 | Focus   | Key                | Action                                |
 |---------|--------------------|---------------------------------------|
-| filter  | ←/→                | move cursor pill (wrap)               |
-| filter  | Enter / Space      | re-apply cursor pill's filter         |
+| filter  | ↑/↓                | move cursor filter row (clamp)        |
+| filter  | Enter / Space      | re-apply cursor row's filter          |
+| filter  | →                  | focus table (no-op on table)          |
 | table   | ↑/↓                | move cursor row (clamp)               |
 | table   | PgUp/PgDn          | scroll 10                             |
 | table   | Home/End           | jump to ends                          |
 | table   | Enter / Space      | open Run log when row has a log; otherwise no-op |
+| table   | ←                  | focus filter sidebar                  |
+| table   | →                  | focus button column                   |
 | options | ↑/↓                | move cursor button (skip disabled)    |
 | options | Enter / Space      | activate selected button              |
+| options | ←                  | focus table                           |
 | any     | Tab / Shift+Tab    | cycle focus (filter → table → options)|
 | any     | ESC                | pop to main menu                      |
 
+`←` / `→` step left and right between zones (no-wrap; `←` on filter
+and `→` on options are no-ops). The vertical sidebar replaces the
+old horizontal pill row, so cursor movement within the sidebar is
+↑ / ↓ rather than ← / →.
+
 **Filter behaviour.** Cursor equals the active filter; moving the
-cursor with ←/→ or clicking a pill re-filters immediately. Filter
+cursor with ↑/↓ or clicking a row re-filters immediately. Filter
 resets to `All` on every frame push. Filter change resets table scroll
 and cursor to 0; sort state is preserved.
 
 **Mouse.** Click activates (and switches focus to that panel).
 Clicking a runs-table row with `has_log` true opens `log_view` for
 that chain (same destination as Enter / Space on the row, or the
-Run log Options button); clicking a row with no log moves the
-cursor only — Stats is reachable from the Options widget. Wheel
-scrolls the table when hovered (`_WheelScrollControl`, the shared
+Run log button); clicking a row with no log moves the cursor only —
+Stats is reachable from the button column. Wheel scrolls the table
+when hovered (`_WheelScrollControl`, the shared
 `FormattedTextControl` subclass that intercepts `SCROLL_UP` /
 `SCROLL_DOWN` and forwards them to a per-frame callback); wheel
-over filter row or menu is a no-op. The table's
+over the filter sidebar or button column is a no-op. The table's
 click-to-jump scrollbar uses `bridge/launcher/widgets/scrollbar.py`.
 
 **Action handlers.** All operate on the row currently under the table
@@ -2006,8 +2016,10 @@ attribute carries the gold:
 - Persistent active marker → green (`C_OK`).
 
 The legacy near-black `C_BUTTON` / `C_BUTTON_HOVER` constants are
-retained for the History and Profile Options widgets and retire when
-those widgets adopt the three-state grammar.
+retained for the popup's Options widgets and retire when P5 adopts
+the three-state grammar there. The launcher's Profile and History
+button columns moved to the `button_fragment` grammar in P4 (ADR
+0088) and no longer use those tokens.
 
 ### Shared menu chrome
 
