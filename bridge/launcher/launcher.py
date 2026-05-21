@@ -5670,11 +5670,11 @@ def _options_panes_text():
     headers_on    = (_conf.get("show_pane_dividers") == "1")
     headers_label = f"[{'X' if headers_on else ' '}] Display pane headers"
     back_label    = "Back"
-    # Headers + Back share one centred block, left-aligned on the
-    # widest composed row so the `[X]` glyph and "Back" stack at the
-    # same column. `menu_row` no longer pads the label, so the right
-    # pad is computed per row from its actual width.
-    label_col_w   = max(len(headers_label), len(back_label))
+    # Headers is a glyph row, so it gets the centred-block left
+    # margin. Back is a plain `<< label >>` row and centres per row
+    # (computed below). The block here is degenerate — one row — but
+    # the structure mirrors the multi-row glyph blocks elsewhere.
+    label_col_w   = len(headers_label)
     block_w       = label_col_w + 6
     left_pad      = max(0, (cols - block_w) // 2)
 
@@ -5722,7 +5722,8 @@ def _options_panes_text():
     # Blank row between headers and Back.
     frags.append(("", "\n", clear_hover))
 
-    # Back — << label >> menu-row grammar.
+    # Back — plain << label >> row, centred per row (no leading glyph
+    # to stack with the headers toggle above).
     state_b = "selected" if cur_row == _PANES_BACK_ROW else "inactive"
 
     def _back_handler(ev):
@@ -5732,8 +5733,10 @@ def _options_panes_text():
         if ev.event_type == MouseEventType.MOUSE_DOWN:
             _options_panes_back()
 
-    back_right_pad = max(0, cols - left_pad - len(back_label) - 6)
-    frags.append(("", " " * left_pad, clear_hover))
+    back_row_w     = len(back_label) + 6
+    back_left_pad  = max(0, (cols - back_row_w) // 2)
+    back_right_pad = max(0, cols - back_left_pad - back_row_w)
+    frags.append(("", " " * back_left_pad, clear_hover))
     frags.extend(menu_row(
         back_label, state_b, mouse_handler=_back_handler,
     ))
@@ -5805,12 +5808,11 @@ def _options_connection_text():
     # transient cursor and hover. The block is left-aligned on a shared
     # column inside a centred block so the radio glyphs stack vertically.
     rows = _CONNECTION_MODES_ROWS(cur, custom_detail)
-    labels = rows + ["Back"]
-    # Glyph menu: every row left-aligns at the same column inside a
-    # centred block. The block is centred on the widest composed row;
-    # `menu_row` no longer pads the label, so the right pad is
-    # computed per row from its actual width.
-    label_col_w = max(len(l) for l in labels)
+    back_label = "Back"
+    # Glyph menu: the mode rows left-align at the same column inside
+    # a centred block so the (•) / ( ) glyphs stack. `Back` is a
+    # plain `<< label >>` row and centres per row (below the block).
+    label_col_w = max(len(l) for l in rows)
     block_w     = label_col_w + 6
     left_pad    = max(0, (cols - block_w) // 2)
 
@@ -5819,15 +5821,10 @@ def _options_connection_text():
         title, cols, blank_above=2, mouse_handler=clear_hover,
     ))
 
-    back_idx = len(rows)   # Back is appended below the mode rows
-    blank_rows = 0
+    back_idx = len(rows)   # Back is rendered below the mode rows
     n_rows = len(rows) + 1
 
-    for i, label in enumerate(labels):
-        if i == back_idx:
-            frags.append(("", "\n", clear_hover))
-            blank_rows += 1
-
+    for i, label in enumerate(rows):
         is_active = (i == _sel_options_connection)
         is_hover  = (i == _hover_options_connection)
         state     = _menu_row_state(is_active, is_hover)
@@ -5850,7 +5847,31 @@ def _options_connection_text():
         frags.append(("", " " * right_pad, clear_hover))
         frags.append(("", "\n", clear_hover))
 
-    content_rows = title_block_height(2) + n_rows + blank_rows
+    # Blank row before Back, then the per-row-centred Back row.
+    frags.append(("", "\n", clear_hover))
+
+    is_active = (back_idx == _sel_options_connection)
+    is_hover  = (back_idx == _hover_options_connection)
+    state     = _menu_row_state(is_active, is_hover)
+
+    def _back_handler(ev):
+        global _sel_options_connection
+        if ev.event_type == MouseEventType.MOUSE_MOVE:
+            _set_hover("options_connection", back_idx)
+            return
+        if ev.event_type == MouseEventType.MOUSE_DOWN:
+            _sel_options_connection = back_idx
+            _options_connection_activate(back_idx)
+
+    back_row_w     = len(back_label) + 6
+    back_left_pad  = max(0, (cols - back_row_w) // 2)
+    back_right_pad = max(0, cols - back_left_pad - back_row_w)
+    frags.append(("", " " * back_left_pad, clear_hover))
+    frags.extend(menu_row(back_label, state, mouse_handler=_back_handler))
+    frags.append(("", " " * back_right_pad, clear_hover))
+    frags.append(("", "\n", clear_hover))
+
+    content_rows = title_block_height(2) + n_rows + 1
     frags.extend(footer_block(
         footer, cols, rows_h, content_rows, mouse_handler=clear_hover,
     ))
@@ -6029,11 +6050,12 @@ def _options_spotlights_text():
             labels.append("")
         elif kind == "back":
             labels.append("Back")
-    # Glyph menu: every row left-aligns at the same column inside a
-    # centred block. The block is centred on the widest composed row;
-    # `menu_row` no longer pads the label, so the right pad is
-    # computed per row from its actual width.
-    label_col_w = max((len(l) for l in labels if l), default=0)
+    # Glyph menu: the toggle rows left-align at the same column inside
+    # a centred block so the [X] / [ ] glyphs stack. `Back` is a plain
+    # `<< label >>` row and centres per row (handled inline below).
+    toggle_labels = [labels[i] for i, (kind, _, _) in enumerate(rows)
+                     if kind == "toggle"]
+    label_col_w = max((len(l) for l in toggle_labels), default=0)
     block_w     = label_col_w + 6
     left_pad    = max(0, (cols - block_w) // 2)
 
@@ -6066,10 +6088,17 @@ def _options_spotlights_text():
             return _h
 
         h = _make_handler()
-        right_pad = max(0, cols - left_pad - len(label) - 6)
-        frags.append(("", " " * left_pad, clear_hover))
+        if kind == "back":
+            # Per-row centring — Back is a plain << label >> row.
+            row_w     = len(label) + 6
+            row_left  = max(0, (cols - row_w) // 2)
+            row_right = max(0, cols - row_left - row_w)
+        else:
+            row_left  = left_pad
+            row_right = max(0, cols - left_pad - len(label) - 6)
+        frags.append(("", " " * row_left, clear_hover))
         frags.extend(menu_row(label, state, mouse_handler=h))
-        frags.append(("", " " * right_pad, clear_hover))
+        frags.append(("", " " * row_right, clear_hover))
         frags.append(("", "\n", clear_hover))
         body_rows += 1
 

@@ -2087,34 +2087,42 @@ state:
   signal "not ready yet"; selected / hover states still pick up
   the normal menu-row grammar.
 
-**Alignment convention.** Menu frames use one of two centring rules,
-chosen by whether the frame's rows carry leading `[ ]` / `( )` glyphs
-that need to stack vertically:
+**Alignment convention.** The choice is per-row, not per-frame: a
+row carrying a leading `[ ]` / `( )` glyph that must stack with its
+neighbours uses the **glyph-block** rule; every other plain
+`<< label >>` row — `Back` included — uses the **per-row centring**
+rule.
 
-- **Plain `<< label >>` menus** — `main` and `options`. Each row is
-  centred *independently* on its own width (`len(label) + 6`), so
-  the menu is ragged-centred. Because the prefix and suffix are the
-  same width (3 cells) in every state, the label sits at the same
-  column within the row in inactive / hover / selected — it does
-  not shift when a row is selected. There is no shared block here.
-- **Glyph menus** — `options_connection`, `options_spotlights`, and
-  the headers-toggle + `Back` block of `options_panes`. Every row
-  left-aligns on a shared column inside a single centred block. The
-  block is `label_col_w + 6` cells wide, where `label_col_w` is the
-  widest composed label across the frame's rows; the caller prepends
-  the same left margin to every row so the leading `[X]` / `(•)`
-  glyphs stack vertically at one column. `menu_row` does not pad the
-  label, so the per-row right pad is computed from each row's actual
-  width to fill out to the right screen edge (and carries the
-  clear-hover handler).
+- **Per-row centring** — plain `<< label >>` rows. Each row centres
+  *independently* on its own width (`len(label) + 6`), so the menu
+  is ragged-centred. Because the prefix and suffix are the same
+  width (3 cells) in every state, the label sits at the same column
+  within the row in inactive / hover / selected — it does not shift
+  when a row is selected. Applied throughout `main` and `options`,
+  and to the `Back` row of `options_panes`, `options_spotlights`,
+  and `options_connection`.
+- **Glyph-block left-alignment** — rows whose leading `[ ]` / `( )`
+  glyph must stack vertically with sibling rows. Every row in the
+  block left-aligns on a shared column inside a single centred
+  block. The block is `label_col_w + 6` cells wide, where
+  `label_col_w` is the widest composed label across the block's
+  rows; the caller prepends the same left margin to every row so
+  the glyphs stack at one column. `menu_row` does not pad the label,
+  so the per-row right pad is computed from each row's actual width
+  to fill out to the right screen edge (and carries the clear-hover
+  handler). Applied to the `(•) / ( )` mode rows of
+  `options_connection`, the `[X] / [ ]` toggle rows of
+  `options_spotlights`, and the `[X] / [ ]` headers-toggle row of
+  `options_panes`. `Back` is not part of these blocks — it is
+  always per-row centred, even when it sits below a glyph block.
 
 In both rules, the row geometry re-centres on every render so a
 resize is immediate, and the `<< >>` arrows hug the label with one
 space of breathing room — no trailing pad before the closing arrow.
 The `options_panes` frame is the one place where two centred zones
 coexist on the same page: the colour grid sits in its own centred
-block above, and the headers-toggle + `Back` rows sit in a second
-centred block below (the glyph-menu rule).
+block above, and the headers-toggle row sits in a (degenerate,
+single-row) glyph block below, with `Back` per-row centred beneath.
 
 **Hover-clear invariant.** In a menu frame, every emitted fragment is
 either a selectable row (carries a MOUSE_MOVE handler that sets the
