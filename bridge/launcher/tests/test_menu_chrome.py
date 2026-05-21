@@ -13,11 +13,15 @@ if SCRIPT_DIR not in sys.path:
 
 import menu_chrome  # noqa: E402
 from palette import (  # noqa: E402
+    C_ACTIVE,
     C_BUTTON_ACTIVE_FOCUSED,
     C_BUTTON_ACTIVE_UNFOCUSED,
     C_BUTTON_DISABLED,
     C_BUTTON_INACTIVE,
+    C_CURSOR_CELL,
     C_HINT,
+    C_HOVER,
+    C_ITEM,
     C_SECTION,
 )
 
@@ -175,6 +179,120 @@ class TestButtonFragment(unittest.TestCase):
         out = menu_chrome.button_fragment("OK", 4, "inactive")
         self.assertIsInstance(out, tuple)
         self.assertEqual(len(out), 2)
+
+
+class TestMenuRow(unittest.TestCase):
+    def test_selected_uses_gold_arrows_and_active_label(self):
+        # selected → "<< " and " >>" in gold (C_CURSOR_CELL); label in
+        # C_ACTIVE; label left-padded to label_col_w.
+        frags = menu_chrome.menu_row("Options", 10, "selected")
+        self.assertEqual(frags[0], (C_CURSOR_CELL, "<< "))
+        self.assertEqual(frags[1], (C_ACTIVE,      "Options   "))
+        self.assertEqual(frags[2], (C_CURSOR_CELL, " >>"))
+
+    def test_hover_uses_blank_arrows_and_hover_label(self):
+        # hover → three-space prefix/suffix, label in C_HOVER.
+        frags = menu_chrome.menu_row("Options", 10, "hover")
+        self.assertEqual(frags[0], ("",      "   "))
+        self.assertEqual(frags[1], (C_HOVER, "Options   "))
+        self.assertEqual(frags[2], ("",      "   "))
+
+    def test_inactive_uses_blank_arrows_and_item_label(self):
+        # inactive → three-space prefix/suffix, label in C_ITEM by default.
+        frags = menu_chrome.menu_row("Options", 10, "inactive")
+        self.assertEqual(frags[0], ("",     "   "))
+        self.assertEqual(frags[1], (C_ITEM, "Options   "))
+        self.assertEqual(frags[2], ("",     "   "))
+
+    def test_inactive_style_override(self):
+        # inactive with explicit inactive_style (e.g. C_HINT for the
+        # Text-layout placeholder) recolours only the label.
+        frags = menu_chrome.menu_row("Text layout", 12, "inactive",
+                                     inactive_style=C_HINT)
+        self.assertEqual(frags[1][0], C_HINT)
+        # hover state ignores inactive_style.
+        frags = menu_chrome.menu_row("Text layout", 12, "hover",
+                                     inactive_style=C_HINT)
+        self.assertEqual(frags[1][0], C_HOVER)
+        # selected state ignores inactive_style.
+        frags = menu_chrome.menu_row("Text layout", 12, "selected",
+                                     inactive_style=C_HINT)
+        self.assertEqual(frags[1][0], C_ACTIVE)
+
+    def test_label_left_padded_to_col_w(self):
+        # Shorter label is right-padded with spaces so the leading
+        # column aligns and the suffix sits at a fixed cell.
+        frags = menu_chrome.menu_row("[ ] X", 12, "inactive")
+        self.assertEqual(frags[1][1], "[ ] X" + " " * 7)
+
+    def test_label_at_col_w_unchanged(self):
+        # Exact-width label is not padded.
+        frags = menu_chrome.menu_row("Exactly10!", 10, "inactive")
+        self.assertEqual(frags[1][1], "Exactly10!")
+
+    def test_label_longer_than_col_w_unchanged(self):
+        # Longer label is not truncated (menu_row trusts the caller's
+        # label_col_w to be ≥ all composed labels in the frame).
+        frags = menu_chrome.menu_row("Too long label", 5, "inactive")
+        self.assertEqual(frags[1][1], "Too long label")
+
+    def test_fixed_three_cell_prefix_suffix(self):
+        # The "<<"/">>"/" " bits are always exactly 3 cells, regardless
+        # of label_col_w — leading glyphs stack vertically only because
+        # of the label-pad, not because the chrome shifts.
+        for state in ("selected", "hover", "inactive"):
+            frags = menu_chrome.menu_row("X", 1, state)
+            self.assertEqual(len(frags[0][1]), 3)
+            self.assertEqual(len(frags[2][1]), 3)
+
+    def test_mouse_handler_passthrough(self):
+        sentinel = object()
+        frags = menu_chrome.menu_row(
+            "Options", 10, "selected", mouse_handler=sentinel,
+        )
+        self.assertEqual(len(frags), 3)
+        for f in frags:
+            self.assertEqual(len(f), 3)
+            self.assertIs(f[2], sentinel)
+
+    def test_no_mouse_handler_gives_two_tuples(self):
+        frags = menu_chrome.menu_row("Options", 10, "inactive")
+        for f in frags:
+            self.assertEqual(len(f), 2)
+
+
+class TestTitleBlockMouseHandler(unittest.TestCase):
+    def test_handler_attached_to_every_fragment(self):
+        sentinel = object()
+        frags = menu_chrome.title_block(
+            "─── Panes ───", 40, 2, mouse_handler=sentinel,
+        )
+        self.assertTrue(frags)
+        for f in frags:
+            self.assertEqual(len(f), 3)
+            self.assertIs(f[2], sentinel)
+
+    def test_no_handler_gives_two_tuples(self):
+        frags = menu_chrome.title_block("─── x ───", 20, 1)
+        for f in frags:
+            self.assertEqual(len(f), 2)
+
+
+class TestFooterBlockMouseHandler(unittest.TestCase):
+    def test_handler_attached_to_every_fragment(self):
+        sentinel = object()
+        frags = menu_chrome.footer_block(
+            "ESC Back", 80, 24, 10, mouse_handler=sentinel,
+        )
+        self.assertTrue(frags)
+        for f in frags:
+            self.assertEqual(len(f), 3)
+            self.assertIs(f[2], sentinel)
+
+    def test_no_handler_gives_two_tuples(self):
+        frags = menu_chrome.footer_block("ESC", 80, 24, 10)
+        for f in frags:
+            self.assertEqual(len(f), 2)
 
 
 if __name__ == "__main__":

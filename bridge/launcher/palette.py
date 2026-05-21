@@ -77,7 +77,10 @@ C_BUTTON_ACTIVE_FOCUSED   = "fg:#000000 bg:#ffaf00"
 #     (C_CURSOR_CELL) applied to the `[ ]` glyphs only; the swatch keeps
 #     its own colour. Palette / swatch zones are gold-or-nothing — they
 #     have no unfocused carry-over (the cursor index is per-zone scratch,
-#     not a persistent selection).
+#     not a persistent selection). The same C_CURSOR_CELL token also
+#     paints the gold `<<` / `>>` arrows on selected menu rows (menu_row
+#     in menu_chrome.py), so the swatch brackets and the menu-row arrows
+#     share one cursor-mark hue.
 #   - Selected but owning zone unfocused → grey background
 #     (C_BUTTON_ACTIVE_UNFOCUSED). Applies only to persistent selections
 #     (active kind, active mode, edited list row); never to palette/swatch

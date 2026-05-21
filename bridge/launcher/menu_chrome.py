@@ -1,18 +1,23 @@
 # bridge/launcher/menu_chrome.py — shared menu chrome helpers.
 #
 # Pure functions that emit prompt_toolkit-style fragment lists / tuples
-# for the title block, footer block, and three-state button cell used by
-# the launcher (launcher.py) and the in-game popup (ingame_menu.py).
-# No prompt_toolkit import — fragments are plain `(style, text)` tuples
-# the caller appends to its own frags list and the styles come from
-# palette.py. No global state.
+# for the title block, footer block, `<< label >>` menu row, and
+# three-state button cell used by the launcher (launcher.py) and the
+# in-game popup (ingame_menu.py). No prompt_toolkit import — fragments
+# are plain `(style, text)` tuples (or 3-tuples carrying a mouse
+# handler) the caller appends to its own frags list and the styles come
+# from palette.py. No global state.
 
 from palette import (
+    C_ACTIVE,
     C_BUTTON_ACTIVE_FOCUSED,
     C_BUTTON_ACTIVE_UNFOCUSED,
     C_BUTTON_DISABLED,
     C_BUTTON_INACTIVE,
+    C_CURSOR_CELL,
     C_HINT,
+    C_HOVER,
+    C_ITEM,
     C_SECTION,
 )
 
@@ -26,7 +31,15 @@ _BUTTON_STYLES = {
 }
 
 
-def title_block(title, term_cols, blank_above):
+def _attach(frags, mouse_handler):
+    """Return `frags` as 3-tuples carrying `mouse_handler`, or unchanged
+    when no handler was provided."""
+    if mouse_handler is None:
+        return frags
+    return [(f[0], f[1], mouse_handler) for f in frags]
+
+
+def title_block(title, term_cols, blank_above, mouse_handler=None):
     """Fragments for a centred title row plus surrounding blanks.
 
     Emits `blank_above` blank rows, then `title` centred in `term_cols`
@@ -35,6 +48,11 @@ def title_block(title, term_cols, blank_above):
     `title` is already decorated (e.g. "─── Panes ───"); the helper does
     not add the dashes. `blank_above` is 2 for the launcher, 1 for the
     popup. Total visual rows produced = blank_above + 2.
+
+    When `mouse_handler` is given, every emitted fragment carries it —
+    callers use this to attach a clear-hover handler to the title-block
+    chrome so MOUSE_MOVE above the first menu row resets the frame's
+    hover index instead of leaving the previous row highlighted.
     """
     frags = []
     for _ in range(blank_above):
@@ -44,7 +62,7 @@ def title_block(title, term_cols, blank_above):
     frags.append((C_SECTION, title))
     frags.append(("", "\n"))
     frags.append(("", "\n"))
-    return frags
+    return _attach(frags, mouse_handler)
 
 
 def title_block_height(blank_above):
@@ -54,7 +72,8 @@ def title_block_height(blank_above):
     return blank_above + 2
 
 
-def footer_block(footer_text, term_cols, term_rows, content_rows):
+def footer_block(footer_text, term_cols, term_rows, content_rows,
+                 mouse_handler=None):
     """Fragments that anchor `footer_text` on the final terminal row.
 
     `content_rows` is the number of visual rows the frame already
@@ -62,6 +81,11 @@ def footer_block(footer_text, term_cols, term_rows, content_rows):
     `max(0, term_rows - content_rows - 1)` blank rows, then `footer_text`
     centred in `term_cols` and styled `C_HINT`. When content fills or
     overflows the terminal, the pad is zero — never negative.
+
+    When `mouse_handler` is given, every emitted fragment carries it —
+    callers use this to attach a clear-hover handler to the footer
+    chrome so MOUSE_MOVE below the last menu row resets the frame's
+    hover index instead of leaving the previous row highlighted.
     """
     frags = []
     pad_rows = max(0, term_rows - content_rows - 1)
@@ -70,7 +94,57 @@ def footer_block(footer_text, term_cols, term_rows, content_rows):
     pad = " " * max(0, (term_cols - len(footer_text)) // 2)
     frags.append(("", pad))
     frags.append((C_HINT, footer_text))
-    return frags
+    return _attach(frags, mouse_handler)
+
+
+def menu_row(label, label_col_w, state, mouse_handler=None,
+             inactive_style=C_ITEM):
+    """Fragments for one `<< label >>` selectable menu row.
+
+    Layout is a fixed 3-cell prefix (`<< ` or `   `) + `label` left-
+    padded to `label_col_w` + a fixed 3-cell suffix (` >>` or `   `).
+    The caller is responsible for prepending the centring pad that
+    aligns the whole vertical block within the terminal; this helper
+    only emits the row.
+
+    `state ∈ {"inactive", "hover", "selected"}`:
+      - `selected`  — `<<` / `>>` arrows in gold (`C_CURSOR_CELL`),
+                       label in `C_ACTIVE`. Selection (keyboard cursor)
+                       wins over hover.
+      - `hover`     — three-space prefix / suffix, label in `C_HOVER`
+                       (text lightens — the pre-P3 hover behaviour).
+      - `inactive`  — three-space prefix / suffix, label in
+                       `inactive_style` (`C_ITEM` by default; `C_HINT`
+                       for placeholder rows such as Options'
+                       "Text layout" entry).
+
+    `label` is composed by the caller, including any `[ ]` / `( )`
+    glyph. The left-pad to `label_col_w` means leading glyphs stack
+    vertically when the caller computes `label_col_w` as the widest
+    composed label in the frame.
+
+    When `mouse_handler` is given, every fragment is emitted as a
+    3-tuple carrying it.
+    """
+    if len(label) < label_col_w:
+        label_text = label + " " * (label_col_w - len(label))
+    else:
+        label_text = label
+
+    if state == "selected":
+        prefix = (C_CURSOR_CELL, "<< ")
+        body   = (C_ACTIVE,      label_text)
+        suffix = (C_CURSOR_CELL, " >>")
+    elif state == "hover":
+        prefix = ("",            "   ")
+        body   = (C_HOVER,       label_text)
+        suffix = ("",            "   ")
+    else:
+        prefix = ("",            "   ")
+        body   = (inactive_style, label_text)
+        suffix = ("",            "   ")
+
+    return _attach([prefix, body, suffix], mouse_handler)
 
 
 def button_fragment(label, width, state):
