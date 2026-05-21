@@ -1826,12 +1826,20 @@ def _editor_kind_left_pad():
 
 
 def _editor_body_h():
-    """Body row height — enough for the detail panel's field chain
-    (Pattern + Commands + error + hint block), grows with terminal.
-    Reserves rows for the kind-button row + its blank-line separator
-    above the body (3 + 1 = 4) on top of the existing chrome budget.
-    The kind column was removed in Phase 6.3 — buttons now live in a
-    horizontal row above the body."""
+    """Body row height — branches on `_editor_mode`.
+
+    Lite mode budget reserves rows for the title row, blank separator,
+    horizontal kind-button row + its blank-line separator, footer
+    blank, and footer text (13 rows of chrome total). The detail
+    panel's field chain (Pattern + Commands + error + hint block)
+    needs ~15 rows minimum.
+
+    Editor mode has no kind-button row and no detail panel; only the
+    title row, one blank, the buffer, the footer blank, and the
+    footer text. Reserve 4 chrome rows total so the buffer fills the
+    full terminal height with no dead rows at the bottom."""
+    if _editor_mode == "editor":
+        return max(15, _term_rows() - 4)
     return max(15, _term_rows() - 13)
 
 
