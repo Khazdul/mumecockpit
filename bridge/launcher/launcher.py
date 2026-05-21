@@ -934,11 +934,12 @@ def _main_text():
 
     items = _main_items
     sel_idx = _sel_main if 0 <= _sel_main < len(items) else 0
-    label_col_w = max(len(l) for l in items)
-    block_w     = label_col_w + 6
-    left_pad    = max(0, (cols - block_w) // 2)
-    right_pad   = max(0, cols - left_pad - block_w)
 
+    # Plain `<< label >>` menu: centre each row independently
+    # (ragged-centred). The row width is `len(label) + 6` (3-cell
+    # prefix + label + 3-cell suffix); centring on that width keeps
+    # the label fixed between states because the prefix and suffix
+    # are the same width in every state.
     for i, label in enumerate(items):
         state = _menu_row_state(i == sel_idx, i == _hover_main)
 
@@ -952,10 +953,12 @@ def _main_text():
             return _h
 
         h = _make_handler()
-        right_pad_main = max(0, cols - left_pad - len(label) - 6)
+        row_w     = len(label) + 6
+        left_pad  = max(0, (cols - row_w) // 2)
+        right_pad = max(0, cols - left_pad - row_w)
         frags.append(("", " " * left_pad, clear_hover))
         frags.extend(menu_row(label, state, mouse_handler=h))
-        frags.append(("", " " * right_pad_main, clear_hover))
+        frags.append(("", " " * right_pad, clear_hover))
         frags.append(("", "\n", clear_hover))
 
     frags.append(("", "\n", clear_hover))
@@ -5508,10 +5511,6 @@ def _options_text():
     footer = "↑↓ Navigate · Enter Select · ESC Back"
     clear_hover = _options_clear_hover
 
-    label_col_w = max(len(label) for _, label in _OPTIONS_ROWS)
-    block_w     = label_col_w + 6
-    left_pad    = max(0, (cols - block_w) // 2)
-
     frags = []
     frags.extend(title_block(
         title, cols, blank_above=2, mouse_handler=clear_hover,
@@ -5520,6 +5519,8 @@ def _options_text():
     back_idx = len(_OPTIONS_ROWS) - 1
     blank_rows = 0
 
+    # Plain `<< label >>` menu: centre each row independently
+    # (ragged-centred). Same per-row width as the main frame.
     for i, (action, label) in enumerate(_OPTIONS_ROWS):
         if i == back_idx:
             frags.append(("", "\n", clear_hover))   # blank before Back
@@ -5544,7 +5545,9 @@ def _options_text():
             return _h
 
         h = _make_handler()
-        right_pad = max(0, cols - left_pad - len(label) - 6)
+        row_w     = len(label) + 6
+        left_pad  = max(0, (cols - row_w) // 2)
+        right_pad = max(0, cols - left_pad - row_w)
         frags.append(("", " " * left_pad, clear_hover))
         frags.extend(menu_row(
             label, state,
