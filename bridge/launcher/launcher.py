@@ -6461,18 +6461,8 @@ _HISTORY_BUTTONS = [
 ]
 # Button column width: longest label + 1 cell of padding on each side.
 _HISTORY_BUTTON_W = max(len(lbl) for lbl, _ in _HISTORY_BUTTONS) + 2
-# 1-cell gap between zones (filter sidebar ↔ table ↔ options).
-_HISTORY_OPTIONS_GAP = 1
-
-
-def _history_filter_w():
-    """Width of the vertical filter sidebar — widest label (`All` or the
-    longest character name) plus 1 cell of padding on each side."""
-    base = len("All")
-    chars = _history_filter_items[1:] if _history_filter_items else []
-    if chars:
-        base = max(base, max(len(c) for c in chars))
-    return base + 2
+# 2-cell gap between the options column and the runs table (P4.1).
+_HISTORY_OPTIONS_GAP = 2
 
 
 def _history_table_panel_w():
@@ -6483,13 +6473,12 @@ def _history_table_panel_w():
 
 def _history_package_width():
     """Width of the centred package
-    `[filter | gap | table | scrollbar | gap | options]` (P4 layout)."""
-    return (_history_filter_w()
+    `[options | gap | table | scrollbar]` (P4.1 layout).
+    The horizontal filter pill row centres on the terminal independently."""
+    return (_HISTORY_BUTTON_W
             + _HISTORY_OPTIONS_GAP
             + _history_table_panel_w()
-            + 1
-            + _HISTORY_OPTIONS_GAP
-            + _HISTORY_BUTTON_W)
+            + 1)
 
 
 def _history_left_pad():
@@ -6530,13 +6519,13 @@ def _history_table_visible():
     """Visible data rows in the table — data-fit, with a floor so the button
     column never clips.
 
-    P4 chrome budget: title (4 rows, `title_block_height(2)`) + feedback
-    (1) + footer (1) + table header (1) = 7 reserved rows; flex_spacer
-    absorbs anything left over. The filter sidebar and the button column
-    have no headers in P4 — their first row aligns with the table header
-    row — so visible must be at least `len(_HISTORY_BUTTONS)` for the
-    button column to render in full."""
-    max_by_terminal = max(1, _term_rows() - 7)
+    P4.1 chrome budget: title (4 rows, `title_block_height(2)`) + filter
+    pill row (1) + blank (1) + table header (1) + feedback (1) +
+    footer (1) = 9 reserved rows; flex_spacer absorbs anything left
+    over. The button column has no header in P4.1 — its first row
+    aligns with the table header row — so visible must be at least
+    `len(_HISTORY_BUTTONS)` for the column to render in full."""
+    max_by_terminal = max(1, _term_rows() - 9)
     options_min = len(_HISTORY_BUTTONS)
     return min(max_by_terminal, max(options_min, len(_history_sessions)))
 
@@ -6701,8 +6690,8 @@ def _history_scroll_into_view(cursor, scroll, visible):
 
 
 def _history_move_filter(delta):
-    """Move the filter cursor one row up/down in the vertical sidebar.
-    Clamps at both ends — wrap belongs to the old horizontal pill row."""
+    """Move the filter pill cursor one step left/right in the horizontal
+    pill row (P4.1). Clamps at both ends — no wrap."""
     global _history_filter_cursor
     n = len(_history_filter_items)
     if not n:
@@ -7120,45 +7109,38 @@ def _history_footer_text():
     return [("", pad, clear_hover), (C_HINT, footer, clear_hover)]
 
 
-# --- Filter sidebar render (left column of the runs-table package) ---------
-def _history_filter_sidebar_text():
-    """Render the vertical filter sidebar: one `button_fragment` row per
-    filter item (All + characters), starting at row 0 so the first row
-    top-aligns with the runs-table header row. Trailing blanks pad the
-    column down to the table_row VSplit height. Selecting a row applies
-    its filter immediately, matching the pre-P4 pill-row behaviour."""
+# --- Filter pill row render (horizontal, centred under the title) ---------
+def _history_filter_pills_text():
+    """Render the horizontal filter pill row, centred on the terminal.
+
+    One pill per filter item (`All` first, then characters alphabetically).
+    Pre-P4 visual grammar: cursor → C_SELECTED (black on light grey);
+    hover → C_HOVER; otherwise C_ITEM. Selecting a pill applies its
+    filter immediately. Horizontal-overflow scrolling is P4.2 — for now
+    the row paints as wide as the items demand and may run past the
+    terminal edge on very narrow widths."""
+    cols  = _term_cols()
     items = _history_filter_items
-    inner_w = _history_filter_w()
-    filter_focused = (_history_focused == 0)
-    hover_panel, hover_row = _history_hover
     clear_hover = _hover_at(None, None)
-
-    frags = []
     if not items:
-        return [("", " " * inner_w, clear_hover)]
+        return [("", "", clear_hover)]
+    # Each pill is "  <label>  ", joined by a 2-space separator.
+    pill_widths = [len(it) + 4 for it in items]
+    total_w = sum(pill_widths) + 2 * (len(items) - 1)
+    pad_left = max(0, (cols - total_w) // 2)
 
-    # Scroll the sidebar in parity with the table when the filter list is
-    # longer than the visible table window. Trim from the top by the same
-    # amount the table is scrolled, clamped so we never lose entries off
-    # the bottom unless we ran out.
-    visible_h = _history_table_window_h()
-    overflow  = max(0, len(items) - visible_h)
-    scroll    = min(_history_table_scroll, overflow)
-    sliced    = items[scroll:scroll + visible_h]
+    hover_panel, hover_row = _history_hover
+    frags = [("", " " * pad_left, clear_hover)]
 
-    for vi, label in enumerate(sliced):
-        i = scroll + vi
+    for i, label in enumerate(items):
         is_cursor = (i == _history_filter_cursor)
         is_hover  = (hover_panel == 0 and hover_row == i and not is_cursor)
-        if is_cursor and filter_focused:
-            state = "selected_focused"
-        elif is_cursor:
-            state = "selected_unfocused"
+        if is_cursor:
+            style = C_SELECTED
         elif is_hover:
-            state = "hover"
+            style = C_HOVER
         else:
-            state = "inactive"
-        style, cell_text = button_fragment(label, inner_w, state)
+            style = C_ITEM
 
         def _click(ev, row=i):
             if ev.event_type == MouseEventType.MOUSE_DOWN:
@@ -7166,15 +7148,11 @@ def _history_filter_sidebar_text():
                 _history_jump_filter(row)
                 return None
             return NotImplemented
-        frags.append((style, cell_text, _hover_at(0, i, on_event=_click)))
-        frags.append(("", "\n", clear_hover))
 
-    # Pad trailing blank rows so the column fills the table_row height.
-    blanks = max(0, visible_h - len(sliced))
-    for r in range(blanks):
-        frags.append(("", " " * inner_w, clear_hover))
-        if r < blanks - 1:
-            frags.append(("", "\n", clear_hover))
+        pill_text = "  " + label + "  "
+        frags.append((style, pill_text, _hover_at(0, i, on_event=_click)))
+        if i < len(items) - 1:
+            frags.append(("", "  ", clear_hover))
     return frags
 
 
@@ -11477,36 +11455,44 @@ def _kb_hist_stab(event):
 
 @kb.add("left", filter=_in_frame("history"))
 def _kb_hist_left(event):
-    # Spatial step left: options(2) → table(1) → filter(0). No wrap.
-    if _history_focused == 2:
-        _history_set_focus(1)
-    elif _history_focused == 1:
-        _history_set_focus(0)
-
-
-@kb.add("right", filter=_in_frame("history"))
-def _kb_hist_right(event):
-    # Spatial step right: filter(0) → table(1) → options(2). No wrap.
+    # Spatial: options is left of the table. On the filter pill row it
+    # moves the pill cursor; on the table it focuses options; on options
+    # it's a no-op.
     if _history_focused == 0:
-        _history_set_focus(1)
+        _history_move_filter(-1)
     elif _history_focused == 1:
         _history_set_focus(2)
 
 
+@kb.add("right", filter=_in_frame("history"))
+def _kb_hist_right(event):
+    # Spatial: options(2) → table(1); on the table it's a no-op; on the
+    # filter pill row it moves the pill cursor.
+    if _history_focused == 0:
+        _history_move_filter(1)
+    elif _history_focused == 2:
+        _history_set_focus(1)
+
+
 @kb.add("up", filter=_in_frame("history"))
 def _kb_hist_up(event):
-    if _history_focused == 0:
-        _history_move_filter(-1)
-    elif _history_focused == 1:
-        _history_move_table(-1)
+    # Filter sits above the table; ↑ at row 0 of the table falls
+    # through to the filter pill row. Within the filter row ↑ is a
+    # no-op — pills are arranged horizontally.
+    if _history_focused == 1:
+        if _history_table_cursor == 0:
+            _history_set_focus(0)
+        else:
+            _history_move_table(-1)
     elif _history_focused == 2:
         _history_menu_move(-1)
 
 
 @kb.add("down", filter=_in_frame("history"))
 def _kb_hist_down(event):
+    # ↓ on the filter row drops into the table.
     if _history_focused == 0:
-        _history_move_filter(1)
+        _history_set_focus(1)
     elif _history_focused == 1:
         _history_move_table(1)
     elif _history_focused == 2:
@@ -11846,14 +11832,23 @@ def _build_history():
             return out
         return _fn
 
-    # Centred package (P4): [left_spacer | filter | gap | table | sb | gap |
-    # options | right_spacer]
+    # Horizontal filter pill row, centred on the terminal. Single
+    # focusable Window so the filter zone retains its own focus target
+    # (focus-on-push, ADR 0066). A blank row separates the pill row from
+    # the table package below.
     filter_win = Window(
-        content=FormattedTextControl(text=_history_filter_sidebar_text,
+        content=FormattedTextControl(text=_history_filter_pills_text,
                                      focusable=True),
-        wrap_lines=False, always_hide_cursor=True,
-        width=lambda: Dimension.exact(_history_filter_w()),
+        height=1, wrap_lines=False, always_hide_cursor=True,
     )
+    blank_below_filter = Window(
+        content=FormattedTextControl(text=_make_filler_text(1), focusable=False),
+        height=1, wrap_lines=False, always_hide_cursor=True,
+    )
+
+    # Centred package (P4.1): [left_spacer | options | gap | table | sb |
+    # right_spacer] — options column left, table right, no inter-pane gap
+    # after the scrollbar.
     table_win = Window(
         content=_WheelScrollControl(text=_history_table_text, focusable=True,
                                     on_scroll=lambda d: _history_scroll_panel(1, d)),
@@ -11872,14 +11867,7 @@ def _build_history():
         wrap_lines=False, always_hide_cursor=True,
         width=lambda: Dimension.exact(_history_left_pad()),
     )
-    filter_table_gap = Window(
-        content=FormattedTextControl(
-            text=_make_filler_text(1, rows_fn=_history_table_window_h),
-            focusable=False),
-        wrap_lines=False, always_hide_cursor=True,
-        width=Dimension.exact(_HISTORY_OPTIONS_GAP),
-    )
-    table_options_gap = Window(
+    options_table_gap = Window(
         content=FormattedTextControl(
             text=_make_filler_text(1, rows_fn=_history_table_window_h),
             focusable=False),
@@ -11898,8 +11886,8 @@ def _build_history():
         wrap_lines=False, always_hide_cursor=True,
     )
     table_row = VSplit(
-        [table_left_spacer, filter_win, filter_table_gap, table_win,
-         table_sb_win, table_options_gap, options_win, table_right_spacer],
+        [table_left_spacer, options_win, options_table_gap, table_win,
+         table_sb_win, table_right_spacer],
         height=lambda: Dimension.exact(_history_table_window_h()),
     )
 
@@ -11913,6 +11901,8 @@ def _build_history():
     )
 
     body = HSplit([
+        filter_win,
+        blank_below_filter,
         table_row,
         feedback_win,
     ])

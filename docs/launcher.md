@@ -80,18 +80,20 @@ Top-to-bottom (P4 layout — see ADR 0088):
    Horizontally centred as one unit; the package drives all left/right
    positions on the frame and recentres on terminal resize.
    - **Button column.** Vertical column of 7 `button_fragment` cells
-     (no inter-button gap, no border, no header): Select, New, Edit,
-     Rename, Delete, Export, Back. Column width = longest button
-     label + 2 cells of padding. The first button top-aligns with
-     the table's header row — there is no `Options` header in P4.
-     State mapping per ADR 0085's button-cell grammar: cursor +
+     (no inter-button gap, no border, no header): SELECT, NEW, EDIT,
+     RENAME, DELETE, EXPORT, BACK. Labels are uppercase so the
+     control surface reads as commands. Column width = longest
+     button label + 2 cells of padding. The first button top-aligns
+     with the table's header row — there is no `Options` header in
+     P4. State mapping per ADR 0085's button-cell grammar: cursor +
      button zone focused → `selected_focused` (gold bg); cursor +
      button zone unfocused → `selected_unfocused` (grey bg); hover
      on a non-cursor enabled button → `hover` (previews the
-     unfocused-selected look); disabled → `disabled`; else
-     `inactive`.
-   - **Gap.** 1 space between the button column and the table's left
-     edge.
+     unfocused-selected look); disabled → `disabled` (dim grey
+     foreground with no background block, so disabled buttons read
+     as inert space rather than dark slots); else `inactive`.
+   - **Gap.** 2 cells between the button column and the table's
+     left edge.
    - **Profile table.** Two columns:
      - `Name` — dynamic width (longest profile name, floor = header
        width 4), left-aligned. Sortable: click toggles direction;
@@ -102,6 +104,12 @@ Top-to-bottom (P4 layout — see ADR 0088):
        active marker; gold is reserved for the transient focused
        cursor.
      - One-space gap between columns.
+     - Column-header row paints `C_HINT` (muted grey) at all times,
+       regardless of focus. The sort-indicator glyph (`▲` / `▼`)
+       carries the active-column signal; focus is signalled by the
+       cursor-row background, not the header row. Matches the
+       panes-grid header row and the LITE editor's "headers stay
+       muted grey" rule.
 3. **Feedback row** — single row directly below the package; doubles
    as the spacing row above the footer. Holds transient feedback
    from Edit / Rename / Export (`Exported to ~/<name>.tin.` and
@@ -1088,49 +1096,54 @@ sidecar schema.
 
 ### `history` frame
 
-Top-to-bottom (P4 layout — see ADR 0088):
+Top-to-bottom (P4.1 layout — see ADR 0088 and its P4.1 amendment):
 
 1. Title row — routed through `menu_chrome.title_block(...,
    blank_above=2)` so the title paints `C_SECTION`.
-2. **Centred package:
-   `[ filter sidebar | gap | runs table | scrollbar | gap | button column ]`.**
-   Horizontally centred as one unit; the package drives all
-   left/right positions on the frame and recentres on terminal
-   resize.
-   - **Filter sidebar (left).** Vertical column of `button_fragment`
-     cells, one per filter — `All` first, then one row per character
-     returned by `list_characters_with_runs()` (alphabetical).
-     Characters without sealed JSONLs are excluded. Column width =
-     widest label + 2 cells of padding. The first row top-aligns
-     with the runs-table header row — there is no `Filter` header
-     in P4. The cursor row uses the focused/unfocused button-cell
-     grammar (gold bg when the sidebar is focused, grey when not).
-     Selecting a row applies its filter immediately, matching the
-     pre-P4 pill-row apply semantics; only the layout changed. If
-     the sidebar is longer than the table area it scrolls in
-     parity with the table — both viewports use
-     `_history_table_scroll` as their top index.
-   - **Runs table (centre).** Columns: Char · Date · Time · Dur. ·
-     Expires · Rating. The header row is click-to-sort; an active
-     column shows ` ▲` / ` ▼` after its label. Default sort `Char
-     asc` with `start_ts desc` as the stable secondary key.
-   - **Gap.** 1 space of visual breathing room between the filter
-     sidebar and the table, and between the table's scrollbar
-     column and the button column.
-   - **Button column (right).** Vertical column of 7
+2. **Filter pill row.** Horizontal row of pills — `All` first, then
+   one pill per character returned by `list_characters_with_runs()`
+   (alphabetical). Characters without sealed JSONLs are excluded.
+   Centred on the **terminal** (not the package). Pre-P4 visual
+   grammar: cursor → `C_SELECTED` (black on light grey); hover →
+   `C_HOVER`; otherwise `C_ITEM`. Selecting a pill applies its
+   filter immediately. There is no `Filter` header. Horizontal-
+   overflow scrolling for long character lists is P4.2.
+3. Blank row.
+4. **Centred package:
+   `[ button column | gap | runs table | scrollbar ]`.** Horizontally
+   centred as one unit; the package drives the left/right positions
+   of the table area and recentres on terminal resize.
+   - **Button column (left).** Vertical column of 7
      `button_fragment` cells (no inter-button gap, no border, no
-     header): Run log, Stats, Rate, Save, Export, Delete, Back.
+     header): RUN LOG, STATS, RATE, SAVE, EXPORT, DELETE, BACK.
+     Labels are uppercase so the control surface reads as commands.
      Column width = longest button label + 2 cells of padding
-     (longest label: `Run log`, 7 chars). The first button
+     (longest label: `RUN LOG`, 7 chars). The first button
      top-aligns with the runs-table header row — there is no
-     `Options` header in P4.
-3. **Feedback row** — single row directly below the package, doubling
+     `Options` header. State mapping per ADR 0085's button-cell
+     grammar: cursor + button zone focused → `selected_focused`
+     (gold bg); cursor + button zone unfocused → `selected_unfocused`
+     (grey bg); hover on a non-cursor enabled button → `hover`
+     (previews the unfocused-selected look); disabled → `disabled`
+     (dim grey foreground with no background block, so disabled
+     buttons read as inert space rather than dark slots); else
+     `inactive`.
+   - **Gap.** 2 cells between the button column and the runs table.
+   - **Runs table (right).** Columns: Char · Date · Time · Dur. ·
+     Expires · Rating. Click on a column header toggles sort; an
+     active column shows ` ▲` / ` ▼` after its label. Default sort
+     `Char asc` with `start_ts desc` as the stable secondary key.
+     The column-header row paints `C_HINT` (muted grey) at all
+     times, regardless of focus — the sort-indicator glyph
+     carries the active-column signal; focus is signalled by the
+     cursor-row background, not the header row.
+5. **Feedback row** — single row directly below the package, doubling
    as the spacing row between the table and the footer. Holds the
    Save / Rate / Export / Delete transient feedback message
    (`Saved to ~/<file>` in `C_ACCENT`, `Export failed: …` in
    `C_HINT`, etc.) centred on the package width for ~3 s, blank
    otherwise.
-4. Footer hint line, anchored to the final terminal row via a
+6. Footer hint line, anchored to the final terminal row via a
    flex_spacer between the feedback row and the footer Window.
 
 Each row is a stitched chain (one session). Stitching uses the default
@@ -1153,11 +1166,13 @@ in either direction (stable: Saved sessions stay together, then
 numerics order normally within the unsaved group).
 
 **Focus.** Three focusable Windows per the focus-on-push contract
-(ADR 0066): `_history_filter_window` (filter sidebar),
+(ADR 0066): `_history_filter_window` (filter pill row),
 `_history_table_window`, `_history_options_window` (button column).
 `_history_focused: int` (0/1/2) routes navigation. Tab / Shift+Tab
 cycles forward / backward; `_focus_current_frame()` re-focuses the
 right window after push/pop and on focus changes within the frame.
+The filter pill row sits above the table, the button column to the
+table's left.
 
 **Cursor and hover.** The cursor row in each panel adopts the same
 focused / unfocused grammar as the buttons: gold background
@@ -1191,28 +1206,30 @@ landing spot even with an empty table.
 
 | Focus   | Key                | Action                                |
 |---------|--------------------|---------------------------------------|
-| filter  | ↑/↓                | move cursor filter row (clamp)        |
-| filter  | Enter / Space      | re-apply cursor row's filter          |
-| filter  | →                  | focus table (no-op on table)          |
-| table   | ↑/↓                | move cursor row (clamp)               |
+| filter  | ←/→                | move pill cursor (clamp, no wrap)     |
+| filter  | Enter / Space      | re-apply cursor pill's filter         |
+| filter  | ↓                  | focus table                           |
+| table   | ↑                  | move cursor up; falls through to the filter row when on row 0 |
+| table   | ↓                  | move cursor down (clamp)              |
 | table   | PgUp/PgDn          | scroll 10                             |
 | table   | Home/End           | jump to ends                          |
 | table   | Enter / Space      | open Run log when row has a log; otherwise no-op |
-| table   | ←                  | focus filter sidebar                  |
-| table   | →                  | focus button column                   |
+| table   | ←                  | focus button column                   |
 | options | ↑/↓                | move cursor button (skip disabled)    |
 | options | Enter / Space      | activate selected button              |
-| options | ←                  | focus table                           |
+| options | →                  | focus table                           |
 | any     | Tab / Shift+Tab    | cycle focus (filter → table → options)|
 | any     | ESC                | pop to main menu                      |
 
-`←` / `→` step left and right between zones (no-wrap; `←` on filter
-and `→` on options are no-ops). The vertical sidebar replaces the
-old horizontal pill row, so cursor movement within the sidebar is
-↑ / ↓ rather than ← / →.
+`←` / `→` move the pill cursor while on the filter row (clamped, no
+wrap, re-filters immediately). On the table they focus the button
+column (`←` only — `→` is a no-op since nothing sits right of the
+table). On the button column `→` focuses the table; `←` is a no-op.
+The filter row is reached above the table (↑ at row 0 of the table,
+or Tab).
 
 **Filter behaviour.** Cursor equals the active filter; moving the
-cursor with ↑/↓ or clicking a row re-filters immediately. Filter
+cursor with ←/→ or clicking a pill re-filters immediately. Filter
 resets to `All` on every frame push. Filter change resets table scroll
 and cursor to 0; sort state is preserved.
 
@@ -1224,7 +1241,7 @@ Stats is reachable from the button column. Wheel scrolls the table
 when hovered (`_WheelScrollControl`, the shared
 `FormattedTextControl` subclass that intercepts `SCROLL_UP` /
 `SCROLL_DOWN` and forwards them to a per-frame callback); wheel
-over the filter sidebar or button column is a no-op. The table's
+over the filter pill row or button column is a no-op. The table's
 click-to-jump scrollbar uses `bridge/launcher/widgets/scrollbar.py`.
 
 **Action handlers.** All operate on the row currently under the table

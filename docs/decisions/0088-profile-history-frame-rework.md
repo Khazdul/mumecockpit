@@ -181,3 +181,61 @@ its own choice.
 the three-zone one and the Profile frame is the simpler two-zone
 case. Verifying the Profile frame end-to-end before touching History
 gives a known-good two-zone implementation to mirror.
+
+## Amendment — P4.1 (2026-05-22)
+
+Review of P4 surfaced four follow-up corrections, applied without
+inverting any of the decisions above.
+
+1. **History filter is a horizontal centred top row, not a left
+   sidebar.** The vertical sidebar of `button_fragment` rows
+   introduced for the History frame turned out to read poorly: the
+   filter cells visually competed with the action column for the
+   same affordance, and the sidebar's character names crowded the
+   table on narrow terminals. P4.1 restores the pre-P4 horizontal
+   pill row (`All` followed by one pill per character, pre-P4
+   visual grammar: `C_SELECTED` / `C_HOVER` / `C_ITEM`) and centres
+   it on the terminal under the title. The apply semantics are
+   unchanged — moving the pill cursor or clicking a pill re-filters
+   immediately. `_history_focused == 0` continues to mean "filter
+   zone is active"; the zone is now reached above the table rather
+   than to its left. Horizontal-overflow scrolling for long
+   character lists is deferred to P4.2.
+
+2. **History button column moves to the left of the runs table.**
+   The right-side column shape that P4 introduced for History is
+   replaced by the same left-of-table layout the Profile frame
+   uses, so the two table frames share one body shape: button
+   column on the left, table on the right. `←` on the table
+   focuses the button column; `→` on the column focuses the table.
+   `_history_focused` 0/1/2 (filter / table / options) and every
+   action handler are unchanged.
+
+3. **Uppercase button labels.** Profile (`SELECT NEW EDIT RENAME
+   DELETE EXPORT BACK`) and History (`RUN LOG STATS RATE SAVE
+   EXPORT DELETE BACK`) both render their button labels in
+   uppercase. Buttons are the control surface — uppercase reads as
+   "commands"; the table rows read as data. The internal action
+   ids are unchanged; only the displayed text is uppercase.
+
+4. **Disabled buttons drop the background block.** `C_BUTTON_DISABLED`
+   changes from `fg:#585858 bg:#0f0f0f` to `fg:#585858` (no `bg:`),
+   so a disabled button paints as dim grey text on the bare
+   backdrop rather than a darker dead slot. Disabled rows now read
+   as inert space instead of competing visually with the inactive
+   `C_BUTTON_INACTIVE` (black bg) state. `button_fragment`'s
+   `disabled` state picks the new style up automatically.
+
+5. **Grey table headers in both frames.** Both column-header rows
+   now paint `C_HINT` (muted grey) at all times, dropping the
+   focus-dependent `C_SECTION` / `C_ACTIVE` toggle. The
+   `▲` / `▼` sort-indicator glyph carries the active-column signal
+   and the cursor-row background carries the focus signal; the
+   header row stays muted, matching the panes grid header row and
+   the LITE editor's "headers stay grey" rule.
+
+6. **Wider gap between the button column and the table.** P4 used
+   1 cell of breathing room on both frames; with uppercase button
+   labels and the dim disabled state the column reads as more of a
+   single block, so the 1-cell gap looked cramped. P4.1 widens the
+   gap to 2 cells in both frames.
