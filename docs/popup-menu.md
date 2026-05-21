@@ -15,12 +15,12 @@ wrapper that `exec`s the Python entry; both the tmux root binding and
 the Lua auto-open path in `lua/brain/connection.lua` invoke the wrapper.
 
 The UI is a frame stack: a single `DynamicContainer` swaps between
-`main`, `options`, `panes`, `pane`, `scripts`, `statistics`,
+`main`, `options`, `panes`, `scripts`, `statistics`,
 `rate_session`, and `exit_confirm` containers, pushed and popped via
 `_push_frame` / `_pop_frame`. Each frame owns its own `KeyBindings`
-filter so navigation, scroll, and ESC behave per-frame. There is one
-shared `pane` subframe — the target pane is selected via
-`_panes_target` on push; per-pane subframes do not have distinct names.
+filter so navigation, scroll, and ESC behave per-frame. The Panes
+submenu is a single `panes` frame backed by the shared `panes_grid`
+module (ADR 0086); there is no per-pane subframe.
 
 The top menu items are context-aware, rebuilt from `bridge/runtime/connection.state`
 on every render:
@@ -40,11 +40,11 @@ before the disconnect step — see "Auto-open on disconnect" below.
 ## Input
 
 - **ESC** — on the main frame, dismisses the popup. On any submenu
-  (`options`, `panes`, `pane`, `scripts`, `statistics`, `rate_session`,
+  (`options`, `panes`, `scripts`, `statistics`, `rate_session`,
   `exit_confirm`), pops one frame back toward `main`. The frame stack
-  is honoured: ESC inside `pane` returns to `panes`, ESC inside `panes`
-  or `scripts` returns to `options`, ESC inside `options` returns to
-  `main`. ESC bindings use `eager=True` to bypass
+  is honoured: ESC inside `panes` or `scripts` returns to `options`,
+  ESC inside `options` returns to `main`. ESC bindings use `eager=True`
+  to bypass
   prompt_toolkit's key-disambiguation timeout; `app.ttimeoutlen` /
   `app.timeoutlen` are also lowered to 50 ms so bare ESC feels instant.
 - **Arrow keys** — navigate within the current frame's selectable rows
@@ -55,12 +55,14 @@ before the disconnect step — see "Auto-open on disconnect" below.
 - **Mouse click** — clicks on a row both select and activate it in a
   single click. Implemented as per-fragment `mouse_handler` callbacks
   on `MouseEventType.MOUSE_DOWN`.
-- **Mouse hover** — main, options, panes, and per-pane rows light up in `C_HOVER` on
-  hover, matching the launcher (see
-  [docs/launcher.md](launcher.md) "Mouse hover / click"). Best-effort
-  on terminals that report cell-motion mouse events; click-to-activate
-  is the documented fallback. The save-success `C_ACCENT` flash wins
-  over hover for its ~1 s window.
+- **Mouse hover** — main and options rows light up in `C_HOVER` on hover,
+  matching the launcher (see [docs/launcher.md](launcher.md) "Mouse
+  hover / click"). Best-effort on terminals that report cell-motion
+  mouse events; click-to-activate is the documented fallback. The
+  save-success `C_ACCENT` flash wins over hover for its ~1 s window.
+  The Panes submenu's grid does not use a separate hover style —
+  hovering a cell moves the cursor to that cell instead, so the gold
+  cursor highlight is the only visible response.
 - **Mouse wheel** — not used inside the popup. See Scope trims.
 
 ## Status header
@@ -99,9 +101,9 @@ versions). ESC inside `options` pops back to `main`; ESC inside
 `panes` or `scripts` pops back to `options`. Source of truth is
 `_OPTIONS_ROWS` in `ingame_menu.py`.
 
-Frame titles in `options`, `panes`, and the per-pane subframe now
-emit a blank row between the centred title and the first content row,
-matching the launcher's title spacing.
+Frame titles in `options` and `panes` emit a blank row between the
+centred title and the first content row, matching the launcher's
+title spacing.
 
 Title, footer, and three-state button chrome are shared with the
 launcher via `bridge/launcher/menu_chrome.py` — see
@@ -112,58 +114,69 @@ the rationale.
 ## Panes submenu
 
 `Options → Panes`. Source of truth is `_PANE_TARGETS` in
-`ingame_menu.py`.
+`ingame_menu.py`; the grid render and toggle logic live in
+`bridge/launcher/panes_grid.py` (shared with the launcher — see the
+[Panes colour grid model](launcher.md#panes-colour-grid-model) section
+in `docs/launcher.md` and ADR 0086).
 
-The `panes` frame lists the six right-column panes (Character / Buffs /
-Group / Communication / UI / Developer) followed by a blank row, a
-`[x] Display pane headers` toggle, another blank row, and Back. The
-headers toggle routes through `toggle_pane.sh headers --persist` (live
-tmux border status + `show_pane_dividers` in `startup.conf`);
-enabled-state for each pane row is re-probed from tmux on every
-render.
+The `panes` frame renders a **pane × colour grid**: rows are the six
+right-column panes (Character / Buffs / Group / Communication / UI /
+Developer), columns are the seven palette entries (Black / Red /
+Green / Blue / Grey / Orange / Purple). Each cell renders as `[X]███`
+or `[ ]███` — a 3-cell checkbox and a 3-cell colour swatch. Below the
+grid sit a blank row, a `[X] Display pane headers` toggle, a blank
+row, and `Back`. The frame uses `menu_chrome.title_block` /
+`footer_block` (`blank_above=1` for the popup) and the
+`menu_chrome.button_fragment` filled-button grammar for the headers
+toggle and `Back`.
 
-Selecting a pane row pushes its `pane` subframe — same shape for all
-six panes (title takes the form `--- <Name> pane ---`):
+Per row, **0 or 1 cells are checked**: zero checked means the pane is
+off (and the row paints dim end-to-end via `C_PANE_OFF`); one checked
+means the pane is on with that colour. Pane open-state is re-probed
+from tmux on every render; the current colour for each row comes from
+`startup.conf`.
 
-```
---- Character pane ---
-                                  (blank row)
-[x] Enabled
-                                  (blank row)
-Pane color
-( ) Black   ███
-( ) Red     ███
-( ) Green   ███
-( ) Blue    ███
-( ) Grey    ███
-( ) Orange  ███
-( ) Purple  ███
-                                  (blank row)
-Back
-```
+Click / Enter semantics (`panes_grid.apply_cell_toggle`):
 
-`[x] Enabled` toggles the pane via `toggle_pane.sh <target> --persist`,
-so the pane opens/closes immediately and `show_<pane>` in
-`startup.conf` updates in step. The seven colour radios write
-`pane_color_<target>=<name>` directly to `bridge/runtime/startup.conf`
-(in-place edit, not the launcher's whole-file rewrite) and **live
-re-tint** the open pane via `tmux select-pane -t mume:cockpit.<idx> -P
-bg=<hex|default>`. If the pane is currently closed the new colour
-persists only — it takes effect the next time the pane is opened, since
-`bridge/launcher/open_pane.sh` reads the same key via `_pane_bg_for` on
-every cold start. Each radio row trails three full-block glyphs rendered
-with a solid `bg=<hex>` fill; the `Black` entry uses `bg=fg=#000000`, so
-the swatch reads as solid black even though the actual pane behaviour
-for `Black` is still no tmux bg override. The colour name → hex mapping
-lives in `PANE_COLORS` (`bridge/launcher/palette.py`); see the table in
-[docs/launcher.md](launcher.md#per-pane-colour-palette) for the values
-and the `palette.py` ↔ `open_pane.sh` mirror convention.
+- On a grid cell — if the cell is the pane's currently-checked colour,
+  uncheck it (the pane closes); otherwise check it (the pane opens
+  with that colour, clearing any other checked cell in the row). The
+  delta drives `toggle_pane.sh <target> --persist` (when the pane's
+  open/closed state changes) and `tmux select-pane -t
+  mume:cockpit.<idx> -P bg=<hex|default>` (when the pane is — or has
+  just become — open). The colour name is also written to
+  `startup.conf` via the in-place `_persist_conf_key` helper so it
+  survives the next cold start (the cockpit's `open_pane.sh`
+  `_pane_bg_for` reads the same key).
+- On the headers toggle row — `toggle_pane.sh headers --persist`
+  (live tmux border status + `show_pane_dividers` in `startup.conf`).
+- On `Back` — pops back to `options`.
 
 This is the persistence asymmetry vs. the launcher: the popup writes
-each toggle / colour choice immediately and re-tints the open pane on
-the spot, while the launcher Options batches writes to Back/ESC and
-defers visible effect to the next cockpit start. Both surfaces write
-the same `startup.conf` keys.
+each cell click immediately and live-applies to tmux, while the
+launcher Options batches writes to Back / ESC and defers the visible
+effect to the next cockpit start. Both surfaces write the same
+`startup.conf` keys.
+
+Cell render rules per the shared model: cursor cell brackets paint
+gold (`C_CURSOR_CELL`); on an enabled row, checked brackets paint
+bright (`C_ACTIVE`), unchecked paint dim (`C_HINT`); on a disabled
+row every cell paints `C_PANE_OFF` except the cursor cell's brackets
+which stay gold. Swatches paint solid `bg:<hex> fg:<hex>` on enabled
+rows (Black is a literal `#000000` swatch even though the actual
+pane behaviour for `Black` is `bg=default`) and `C_PANE_OFF` on
+disabled rows. The colour name → hex mapping lives in `PANE_COLORS`
+(`bridge/launcher/palette.py`); see
+[docs/launcher.md](launcher.md#per-pane-colour-palette) for the
+table and the `palette.py` ↔ `open_pane.sh` mirror convention.
+
+**Cursor / navigation.** Eight navigable rows: the six grid rows, the
+headers-toggle row, and the `Back` row. `↑` / `↓` move between them
+(clamped). `←` / `→` move the column only while the cursor is on a
+grid row, clamped 0..6; the column persists across grid rows and
+across visits to the headers / Back rows. Mouse hover on any
+selectable target moves the cursor there — there is no separate hover
+style on the grid. Footer: `↑↓←→ Move · Enter Toggle · ESC Back`.
 
 Connection mode (MMapper / Direct / Custom) and profile switch are
 deliberately **not** present in the popup — they require a restart and
@@ -511,7 +524,7 @@ one contract for mouse routing to work:
 
 1. **Each frame builder constructs at least one focusable `Window` and
    stores it at module level.** Today: `_main_window`, `_options_window`,
-   `_panes_window`, `_pane_window`, `_scripts_window`,
+   `_panes_window`, `_scripts_window`,
    `_statistics_window`, `_exit_confirm_window`, `_rate_session_window`.
    The
    "primary" window of a frame is the one that receives keyboard focus

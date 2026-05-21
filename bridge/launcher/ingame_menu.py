@@ -28,6 +28,10 @@ import sys
 
 import run_meta
 import run_stats
+from menu_chrome import (
+    button_fragment, footer_block, title_block, title_block_height,
+)
+from panes_grid import apply_cell_toggle, panes_grid_fragments
 from widgets.scrollbar import Scrollbar
 
 # ---------------------------------------------------------------------------
@@ -94,16 +98,19 @@ _current_frame    = "main"
 _frame_stack      = []          # navigation stack: [(frame, ...) for ancestor frames]
 _sel_main         = 0
 _sel_options      = 0           # cursor within the popup Options grouping (Panes / Scripts / Back)
-_sel_panes        = 0           # cursor within the Panes submenu (selectable rows)
-_sel_pane         = 0           # cursor within a per-pane subframe (selectable rows)
-_panes_target     = "status"    # which pane is currently being edited
+# Panes submenu (colour grid). Eight navigable rows:
+#   0..5 — pane rows × 7 colour columns (←/→ moves the column; the column
+#          persists across grid rows).
+#   6    — Display pane headers toggle.
+#   7    — Back.
+_panes_row        = 0
+_panes_col        = 0
 _scripts_scroll   = 0
 _rate_session_rating = 0        # 0..5; reset on every push of the rate_session frame
 _app                 = None
 _main_window         = None     # set in main(); referenced for focus
 _options_window      = None     # set in main(); referenced for focus
 _panes_window        = None     # set in main(); referenced for focus
-_pane_window         = None     # set in main(); referenced for focus
 _scripts_window      = None     # set in main(); referenced for render_info / focus
 _statistics_window   = None     # set in main(); referenced for focus
 _exit_confirm_window = None     # set in main(); referenced for focus
@@ -125,8 +132,6 @@ _achievements_sb   = None
 # a new frame updates it immediately so the stale value is invisible.
 _hover_main        = -1
 _hover_options     = -1
-_hover_panes       = -1
-_hover_pane        = -1
 
 
 # ---------------------------------------------------------------------------
@@ -275,7 +280,6 @@ def _focus_current_frame():
         "main":         _main_window,
         "options":      _options_window,
         "panes":        _panes_window,
-        "pane":         _pane_window,
         "scripts":      _scripts_window,
         "statistics":   _statistics_window,
         "exit_confirm": _exit_confirm_window,
@@ -314,19 +318,13 @@ def _pop_frame():
 # ---------------------------------------------------------------------------
 def _set_hover(frame, idx):
     """Update hover index for the named frame; invalidate if changed."""
-    global _hover_main, _hover_options, _hover_panes, _hover_pane
+    global _hover_main, _hover_options
     changed = False
     if frame == "main" and _hover_main != idx:
         _hover_main = idx
         changed = True
     elif frame == "options" and _hover_options != idx:
         _hover_options = idx
-        changed = True
-    elif frame == "panes" and _hover_panes != idx:
-        _hover_panes = idx
-        changed = True
-    elif frame == "pane" and _hover_pane != idx:
-        _hover_pane = idx
         changed = True
     if changed and _app:
         _app.invalidate()
@@ -404,7 +402,7 @@ def _main_selectable_indices():
 
 
 def _activate_main_item(action):
-    global _scripts_scroll, _sel_panes, _sel_options, _rate_session_rating
+    global _scripts_scroll, _sel_options, _rate_session_rating
     if action == "continue":
         _app.exit()
     elif action == "reconnect":
@@ -570,12 +568,13 @@ def _options_selectable_indices():
 
 
 def _options_activate(row_idx):
-    global _sel_panes, _scripts_scroll
+    global _scripts_scroll, _panes_row, _panes_col
     if not (0 <= row_idx < len(_OPTIONS_ROWS)):
         return
     action, _label = _OPTIONS_ROWS[row_idx]
     if action == "panes":
-        _sel_panes = 0
+        _panes_row = 0
+        _panes_col = 0
         _push_frame("panes")
     elif action == "scripts":
         _scripts_scroll = 0
@@ -654,154 +653,40 @@ def _options_footer_text():
 
 
 # ---------------------------------------------------------------------------
-# Panes submenu (Options → Panes). Mirrors the launcher's per-pane list with
-# a trailing "Display pane headers" toggle and Back. Per-pane state is read
-# live from tmux; colour writes route through _persist_conf_key in the
-# per-pane subframe below.
+# Panes submenu (Options → Panes): pane × colour grid (single frame).
 # ---------------------------------------------------------------------------
-def _panes_rows():
-    rows = []
-    for target, label, _color_key in _PANE_TARGETS:
-        rows.append(("pane", (target, label)))
-    rows.append(("sep", None))
-    rows.append(("headers", None))
-    rows.append(("sep", None))
-    rows.append(("back", None))
-    return rows
+# Six pane rows × seven colour columns: each (pane, colour) cell is either
+# checked or unchecked. A row with no checked cell is off; exactly one
+# checked cell is on with that colour. apply_cell_toggle handles on/off /
+# switch-colour; rendering goes through panes_grid_fragments. Three extra
+# navigable rows hang below the grid: a blank, a [X] Display pane headers
+# toggle, a blank, and Back.
+#
+# Persistence is immediate and live: clicking a cell writes the new state
+# to startup.conf in-place AND drives tmux directly. Opening / closing a
+# pane goes through toggle_pane.sh; recolouring an open pane goes through
+# tmux select-pane -P bg=…. Pane open-state is re-probed from tmux on
+# every render, matching the previous popup behaviour.
+
+_PANES_GRID_ROWS   = len(_PANE_TARGETS)            # 6
+_PANES_HEADERS_ROW = _PANES_GRID_ROWS              # 6
+_PANES_BACK_ROW    = _PANES_GRID_ROWS + 1          # 7
+_PANES_LAST_ROW    = _PANES_BACK_ROW
+_PANES_LAST_COL    = len(PANE_COLOR_ORDER) - 1     # 6
 
 
-def _panes_selectable_indices():
-    return [i for i, (k, _) in enumerate(_panes_rows()) if k != "sep"]
-
-
-def _panes_activate(row_idx):
-    global _panes_target, _sel_pane
-    rows = _panes_rows()
-    if not (0 <= row_idx < len(rows)):
-        return
-    kind, payload = rows[row_idx]
-    if kind == "pane":
-        target, _ = payload
-        _panes_target = target
-        _sel_pane = 0
-        _push_frame("pane")
-    elif kind == "headers":
-        _toggle_pane("headers")
-        if _app:
-            _app.invalidate()
-    elif kind == "back":
-        _pop_frame()
-
-
-def _panes_title_text():
-    cols  = _term_cols()
-    title = "─── Panes ───"
-    return [
-        ("", "\n"),
-        ("", _pad_centre(title, cols)),
-        (C_TITLE, title),
-        ("", "\n"),
-    ]
-
-
-def _panes_content_text():
-    cols       = _term_cols()
-    rows       = _panes_rows()
-    headers_on = (_tmux_border_status() != "off")
-
-    labels = []
-    for kind, payload in rows:
-        if kind == "pane":
-            _target, lbl = payload
-            labels.append(lbl)
-        elif kind == "sep":
-            labels.append("")
-        elif kind == "headers":
-            box = "[x]" if headers_on else "[ ]"
-            labels.append(f"{box} Display pane headers")
-        elif kind == "back":
-            labels.append("Back")
-
-    maxw = max((len(l) for l in labels), default=0)
-    pad  = max(0, (cols - (maxw + 6)) // 2)
-
-    sel_indices = _panes_selectable_indices()
-    sel = _sel_panes
-    if sel >= len(sel_indices):
-        sel = len(sel_indices) - 1
-    sel_row = sel_indices[sel] if sel_indices else -1
-
-    frags = []
-    for i, (kind, payload) in enumerate(rows):
-        if kind == "sep":
-            frags.append(("", "\n"))
-            continue
-
-        label = labels[i]
-        is_active = (i == sel_row)
-        is_hover  = (i == _hover_panes)
-        style    = _row_style(is_active, is_hover)
-        prefix   = "<< " if is_active else "   "
-        suffix   = " >>" if is_active else "   "
-
-        def _make_handler(row_idx=i, sel_pos=sel_indices.index(i) if i in sel_indices else 0):
-            def _handler(ev):
-                if ev.event_type == MouseEventType.MOUSE_MOVE:
-                    _set_hover("panes", row_idx)
-                    return
-                if ev.event_type != MouseEventType.MOUSE_DOWN:
-                    return
-                global _sel_panes
-                _sel_panes = sel_pos
-                _panes_activate(row_idx)
-                if _app:
-                    _app.invalidate()
-            return _handler
-
-        h = _make_handler()
-        frags.append(("", " " * pad))
-        frags.append((style, prefix, h))
-        frags.append((style, label, h))
-        frags.append((style, suffix, h))
-        frags.append(("", "\n"))
-
-    return frags
-
-
-def _panes_footer_text():
-    cols   = _term_cols()
-    footer = "↑↓ Navigate · Enter Select · ESC Back"
-    return [
-        ("", "\n"),
-        ("", _pad_centre(footer, cols)),
-        (C_HINT, footer),
-    ]
-
-
-# ---------------------------------------------------------------------------
-# Per-pane subframe (Enabled + colour radios + Back). Mirrors the launcher's
-# options_pane frame; selection of a colour persists to startup.conf *and*
-# triggers a live tmux select-pane -P re-tint when the pane is open.
-# ---------------------------------------------------------------------------
-_PANE_ROW_ENABLED  = 0
-_PANE_ROW_SECTION  = 2
-_PANE_ROW_COLOR_LO = 3
-_PANE_ROW_COLOR_HI = _PANE_ROW_COLOR_LO + len(PANE_COLOR_ORDER) - 1
-_PANE_ROW_BACK     = _PANE_ROW_COLOR_HI + 2
-
-
-def _pane_selectable_indices():
-    out = [_PANE_ROW_ENABLED]
-    out.extend(range(_PANE_ROW_COLOR_LO, _PANE_ROW_COLOR_HI + 1))
-    out.append(_PANE_ROW_BACK)
-    return out
-
-
-def _current_pane_meta():
-    for target, label, color_key in _PANE_TARGETS:
-        if target == _panes_target:
-            return target, label, color_key
-    return _PANE_TARGETS[0]
+def _set_panes_cursor(row, col=None):
+    """Update the popup panes cursor; invalidate on change."""
+    global _panes_row, _panes_col
+    changed = False
+    if row != _panes_row:
+        _panes_row = row
+        changed = True
+    if col is not None and col != _panes_col:
+        _panes_col = col
+        changed = True
+    if changed and _app:
+        _app.invalidate()
 
 
 def _persist_conf_key(key, val):
@@ -861,132 +746,129 @@ def _retint_pane(target, color_name):
         pass
 
 
-def _pane_activate(row_idx):
-    target, _label, color_key = _current_pane_meta()
-    if row_idx == _PANE_ROW_ENABLED:
-        _toggle_pane(target)
-        if _app:
-            _app.invalidate()
-        return
-    if _PANE_ROW_COLOR_LO <= row_idx <= _PANE_ROW_COLOR_HI:
-        name = PANE_COLOR_ORDER[row_idx - _PANE_ROW_COLOR_LO]
-        _persist_conf_key(color_key, name)
-        _retint_pane(target, name)
-        if _app:
-            _app.invalidate()
-        return
-    if row_idx == _PANE_ROW_BACK:
-        _pop_frame()
+def _apply_panes_grid_toggle(row, col):
+    """Apply a click on grid cell (row, col): open/close and/or re-tint.
 
-
-def _pane_title_text():
-    cols = _term_cols()
-    _target, label, _color_key = _current_pane_meta()
-    title = f"─── {label} pane ───"
-    return [
-        ("", "\n"),
-        ("", _pad_centre(title, cols)),
-        (C_TITLE, title),
-        ("", "\n"),
-    ]
-
-
-def _pane_content_text():
-    cols = _term_cols()
-    target, _label, color_key = _current_pane_meta()
-    titles_set = set(_tmux_pane_titles())
-    enabled = (target in titles_set)
+    The new (enabled, colour) state comes from apply_cell_toggle; the
+    delta from the current tmux state drives toggle_pane.sh and a live
+    re-tint when the pane is (or just became) open.
+    """
+    target, _label, color_key = _PANE_TARGETS[row]
+    titles = set(_tmux_pane_titles())
+    enabled = (target in titles)
     conf = _parse_keyval(STARTUP_CONF_PATH)
-    cur_color = conf.get(color_key, "black")
+    cur_color = conf.get(color_key, "")
+    try:
+        cur_idx = PANE_COLOR_ORDER.index(cur_color)
+    except ValueError:
+        cur_idx = 0
 
-    rows = []
-    enabled_label = ("[x] Enabled" if enabled else "[ ] Enabled")
-    rows.append((enabled_label, "toggle"))
-    rows.append(("", "sep"))
-    rows.append(("Pane color", "section"))
-    for name in PANE_COLOR_ORDER:
-        dot = "(•)" if cur_color == name else "( )"
-        rows.append((f"{dot} {name.capitalize()}", "radio"))
-    rows.append(("", "sep"))
-    rows.append(("Back", "back"))
+    new_enabled, new_idx = apply_cell_toggle(enabled, cur_idx, col)
+    new_color = PANE_COLOR_ORDER[new_idx]
 
-    label_w = max(len(r[0]) for r in rows if r[1] != "sep")
-    radio_extra = 2 + 3
-    block_w = max(label_w + 6, label_w + 6 + radio_extra)
-    pad = max(0, (cols - block_w) // 2)
+    if new_enabled != enabled:
+        _toggle_pane(target)
+    if new_enabled:
+        if new_color != cur_color:
+            _persist_conf_key(color_key, new_color)
+        _retint_pane(target, new_color)
+    if _app:
+        _app.invalidate()
 
-    sel_indices = _pane_selectable_indices()
-    sel = _sel_pane
-    if not (0 <= sel < len(sel_indices)):
-        sel = 0
-    sel_row = sel_indices[sel]
+
+def _toggle_pane_headers():
+    """Flip the pane-divider headers (live tmux + persisted)."""
+    _toggle_pane("headers")
+    if _app:
+        _app.invalidate()
+
+
+def _panes_text():
+    cols   = _term_cols()
+    rows_h = _term_rows()
+
+    # Live grid state: pane-open from tmux, current colour from startup.conf.
+    titles_set = set(_tmux_pane_titles())
+    conf       = _parse_keyval(STARTUP_CONF_PATH)
+    grid_rows = []
+    for target, label, color_key in _PANE_TARGETS:
+        enabled = (target in titles_set)
+        cur_color = conf.get(color_key, "")
+        try:
+            colour_index = PANE_COLOR_ORDER.index(cur_color)
+        except ValueError:
+            colour_index = 0
+        grid_rows.append((label, enabled, colour_index))
+
+    cur_row = _panes_row
+    cur_col = _panes_col
+    grid_cursor = (cur_row, cur_col) if cur_row < _PANES_GRID_ROWS else None
+
+    headers_on    = (_tmux_border_status() != "off")
+    headers_label = f"[{'X' if headers_on else ' '}] Display pane headers"
+    headers_w     = len(headers_label) + 4
+    back_label    = "Back"
+    back_w        = 8
 
     frags = []
-    for i, (text, kind) in enumerate(rows):
-        if kind == "sep":
-            frags.append(("", "\n"))
-            continue
+    frags.extend(title_block("─── Panes ───", cols, blank_above=1))
 
-        if kind == "section":
-            frags.append(("", " " * (pad + 3)))
-            frags.append((C_SECTION, text))
-            frags.append(("", "\n"))
-            continue
+    def _make_cell_handler(ri, ci):
+        def _h(ev):
+            if ev.event_type == MouseEventType.MOUSE_MOVE:
+                _set_panes_cursor(ri, ci)
+                return
+            if ev.event_type == MouseEventType.MOUSE_DOWN:
+                _set_panes_cursor(ri, ci)
+                _apply_panes_grid_toggle(ri, ci)
+        return _h
 
-        is_active = (i == sel_row)
-        is_hover  = (i == _hover_pane)
-        style    = _row_style(is_active, is_hover)
-        prefix   = "<< " if is_active else "   "
-        suffix   = " >>" if is_active else "   "
+    frags.extend(panes_grid_fragments(
+        grid_rows, cols, grid_cursor, cell_handler=_make_cell_handler,
+    ))
 
-        try:
-            sel_pos = sel_indices.index(i)
-        except ValueError:
-            sel_pos = 0
+    frags.append(("", "\n"))
 
-        def _make_handler(row_idx=i, pos=sel_pos):
-            def _handler(ev):
-                if ev.event_type == MouseEventType.MOUSE_MOVE:
-                    _set_hover("pane", row_idx)
-                    return
-                if ev.event_type != MouseEventType.MOUSE_DOWN:
-                    return
-                global _sel_pane
-                _sel_pane = pos
-                _pane_activate(row_idx)
-                if _app:
-                    _app.invalidate()
-            return _handler
+    state_h = "selected_focused" if cur_row == _PANES_HEADERS_ROW else "inactive"
+    style_h, text_h = button_fragment(headers_label, headers_w, state_h)
 
-        h = _make_handler()
-        padded_label = text + " " * max(0, label_w - len(text))
-        frags.append(("", " " * pad))
-        frags.append((style, prefix, h))
-        frags.append((style, padded_label, h))
+    def _headers_handler(ev):
+        if ev.event_type == MouseEventType.MOUSE_MOVE:
+            _set_panes_cursor(_PANES_HEADERS_ROW)
+            return
+        if ev.event_type == MouseEventType.MOUSE_DOWN:
+            _set_panes_cursor(_PANES_HEADERS_ROW)
+            _toggle_pane_headers()
 
-        if kind == "radio":
-            name = PANE_COLOR_ORDER[i - _PANE_ROW_COLOR_LO]
-            hex_color = PANE_COLORS.get(name)
-            frags.append((style, "  ", h))
-            if hex_color is None:
-                frags.append(("bg:#000000 fg:#000000", "███", h))
-            else:
-                frags.append((f"bg:{hex_color} fg:{hex_color}", "███", h))
+    pad_h = max(0, (cols - headers_w) // 2)
+    frags.append(("", " " * pad_h))
+    frags.append((style_h, text_h, _headers_handler))
+    frags.append(("", "\n"))
 
-        frags.append((style, suffix, h))
-        frags.append(("", "\n"))
+    frags.append(("", "\n"))
+
+    state_b = "selected_focused" if cur_row == _PANES_BACK_ROW else "inactive"
+    style_b, text_b = button_fragment(back_label, back_w, state_b)
+
+    def _back_handler(ev):
+        if ev.event_type == MouseEventType.MOUSE_MOVE:
+            _set_panes_cursor(_PANES_BACK_ROW)
+            return
+        if ev.event_type == MouseEventType.MOUSE_DOWN:
+            _pop_frame()
+
+    pad_b = max(0, (cols - back_w) // 2)
+    frags.append(("", " " * pad_b))
+    frags.append((style_b, text_b, _back_handler))
+    frags.append(("", "\n"))
+
+    # title block (3 rows for popup) + grid header (1) + 6 pane rows
+    # + blank + headers + blank + Back (4 rows).
+    content_rows = title_block_height(1) + 1 + _PANES_GRID_ROWS + 4
+    footer = "↑↓←→ Move · Enter Toggle · ESC Back"
+    frags.extend(footer_block(footer, cols, rows_h, content_rows))
 
     return frags
-
-
-def _pane_footer_text():
-    cols   = _term_cols()
-    footer = "↑↓ Navigate · Enter Select · ESC Back"
-    return [
-        ("", "\n"),
-        ("", _pad_centre(footer, cols)),
-        (C_HINT, footer),
-    ]
 
 
 # ---------------------------------------------------------------------------
@@ -2171,10 +2053,6 @@ def _panes_max_scroll():
     return _window_max_scroll(_panes_window)
 
 
-def _pane_max_scroll():
-    return _window_max_scroll(_pane_window)
-
-
 # ---------------------------------------------------------------------------
 # Key bindings
 # ---------------------------------------------------------------------------
@@ -2255,67 +2133,46 @@ def _opt_escape(event):
     _pop_frame()
 
 
-# Panes frame
+# Panes frame (colour grid). Eight navigable rows; ←/→ moves the column
+# only on grid rows, persisting across grid rows.
 @kb.add("up", filter=_in_frame("panes"))
 def _panes_up(event):
-    global _sel_panes
-    n = len(_panes_selectable_indices())
-    if n:
-        _sel_panes = (_sel_panes - 1) % n
+    if _panes_row > 0:
+        _set_panes_cursor(_panes_row - 1)
 
 
 @kb.add("down", filter=_in_frame("panes"))
 def _panes_down(event):
-    global _sel_panes
-    n = len(_panes_selectable_indices())
-    if n:
-        _sel_panes = (_sel_panes + 1) % n
+    if _panes_row < _PANES_LAST_ROW:
+        _set_panes_cursor(_panes_row + 1)
+
+
+@kb.add("left", filter=_in_frame("panes"))
+def _panes_left(event):
+    if _panes_row < _PANES_GRID_ROWS and _panes_col > 0:
+        _set_panes_cursor(_panes_row, _panes_col - 1)
+
+
+@kb.add("right", filter=_in_frame("panes"))
+def _panes_right(event):
+    if _panes_row < _PANES_GRID_ROWS and _panes_col < _PANES_LAST_COL:
+        _set_panes_cursor(_panes_row, _panes_col + 1)
 
 
 @kb.add("enter", filter=_in_frame("panes"))
 @kb.add(" ",     filter=_in_frame("panes"))
 def _panes_select(event):
-    sel_indices = _panes_selectable_indices()
-    if not sel_indices:
-        return
-    idx = _sel_panes if _sel_panes < len(sel_indices) else len(sel_indices) - 1
-    _panes_activate(sel_indices[idx])
+    r = _panes_row
+    if r < _PANES_GRID_ROWS:
+        _apply_panes_grid_toggle(r, _panes_col)
+    elif r == _PANES_HEADERS_ROW:
+        _toggle_pane_headers()
+    elif r == _PANES_BACK_ROW:
+        _pop_frame()
 
 
 @kb.add("escape", filter=_in_frame("panes"), eager=True)
 def _panes_escape(event):
-    _pop_frame()
-
-
-# Per-pane subframe
-@kb.add("up", filter=_in_frame("pane"))
-def _pane_up(event):
-    global _sel_pane
-    n = len(_pane_selectable_indices())
-    if n:
-        _sel_pane = (_sel_pane - 1) % n
-
-
-@kb.add("down", filter=_in_frame("pane"))
-def _pane_down(event):
-    global _sel_pane
-    n = len(_pane_selectable_indices())
-    if n:
-        _sel_pane = (_sel_pane + 1) % n
-
-
-@kb.add("enter", filter=_in_frame("pane"))
-@kb.add(" ",     filter=_in_frame("pane"))
-def _pane_select(event):
-    sel_indices = _pane_selectable_indices()
-    if not sel_indices:
-        return
-    idx = _sel_pane if _sel_pane < len(sel_indices) else len(sel_indices) - 1
-    _pane_activate(sel_indices[idx])
-
-
-@kb.add("escape", filter=_in_frame("pane"), eager=True)
-def _pane_escape(event):
     _pop_frame()
 
 
@@ -2540,84 +2397,15 @@ def _build_options_container():
 
 def _build_panes_container():
     global _panes_window
-
-    title_window = Window(
-        content=_ScrollControl(
-            text=_panes_title_text,
-            focusable=False,
-            get_scroll=_get_panes_scroll,
-            set_scroll=_set_panes_scroll,
-            get_max=_panes_max_scroll,
-        ),
-        height=3,
-        wrap_lines=False,
-    )
-    content_window = Window(
-        content=_ScrollControl(
-            text=_panes_content_text,
-            focusable=True,
-            get_scroll=_get_panes_scroll,
-            set_scroll=_set_panes_scroll,
-            get_max=_panes_max_scroll,
-        ),
+    # Single FormattedTextControl Window — the grid frame emits the title
+    # block, grid, controls and footer as one fragment list and footer_block
+    # pads the trailing rows so the footer lands at the bottom of the popup.
+    _panes_window = Window(
+        content=FormattedTextControl(text=_panes_text, focusable=True),
         wrap_lines=False,
         always_hide_cursor=True,
-        get_vertical_scroll=lambda w: min(_panes_scroll, _window_max_scroll(w)),
     )
-    footer_window = Window(
-        content=_ScrollControl(
-            text=_panes_footer_text,
-            focusable=False,
-            get_scroll=_get_panes_scroll,
-            set_scroll=_set_panes_scroll,
-            get_max=_panes_max_scroll,
-        ),
-        height=2,
-        wrap_lines=False,
-    )
-    _panes_window = content_window
-    return HSplit([title_window, content_window, footer_window])
-
-
-def _build_pane_container():
-    global _pane_window
-
-    title_window = Window(
-        content=_ScrollControl(
-            text=_pane_title_text,
-            focusable=False,
-            get_scroll=_get_panes_scroll,
-            set_scroll=_set_panes_scroll,
-            get_max=_pane_max_scroll,
-        ),
-        height=3,
-        wrap_lines=False,
-    )
-    content_window = Window(
-        content=_ScrollControl(
-            text=_pane_content_text,
-            focusable=True,
-            get_scroll=_get_panes_scroll,
-            set_scroll=_set_panes_scroll,
-            get_max=_pane_max_scroll,
-        ),
-        wrap_lines=False,
-        always_hide_cursor=True,
-        get_vertical_scroll=lambda w: min(_panes_scroll, _window_max_scroll(w)),
-    )
-    footer_window = Window(
-        content=_ScrollControl(
-            text=_pane_footer_text,
-            focusable=False,
-            get_scroll=_get_panes_scroll,
-            set_scroll=_set_panes_scroll,
-            get_max=_pane_max_scroll,
-        ),
-        height=2,
-        wrap_lines=False,
-    )
-    _pane_window = content_window
-    return HSplit([title_window, content_window, footer_window])
+    return _panes_window
 
 
 def _build_scripts_container():
@@ -2714,7 +2502,6 @@ def main():
         "main":         _build_main_container(),
         "options":      _build_options_container(),
         "panes":        _build_panes_container(),
-        "pane":         _build_pane_container(),
         "scripts":      _build_scripts_container(),
         "statistics":   _build_statistics_container(),
         "exit_confirm": _build_exit_confirm_container(),
