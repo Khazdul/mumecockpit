@@ -992,16 +992,16 @@ def _main_text():
 # Profile frame
 # ---------------------------------------------------------------------------
 _PROFILE_BUTTONS = [
-    ("Select", "select"),
-    ("New",    "new"),
-    ("Edit",   "edit"),
-    ("Rename", "rename"),
-    ("Delete", "delete"),
-    ("Export", "export"),
-    ("Back",   "back"),
+    ("SELECT", "select"),
+    ("NEW",    "new"),
+    ("EDIT",   "edit"),
+    ("RENAME", "rename"),
+    ("DELETE", "delete"),
+    ("EXPORT", "export"),
+    ("BACK",   "back"),
 ]
 _PROFILE_BUTTON_W   = max(len(lbl) for lbl, _ in _PROFILE_BUTTONS) + 2
-_PROFILE_OPTIONS_GAP = 1
+_PROFILE_OPTIONS_GAP = 2
 
 
 def _profile_table_panel_w():
@@ -1201,13 +1201,13 @@ def _profile_menu_actions():
     active = _conf.get("profile", "default")
     is_default = (name == "default")
     return [
-        ("Select", "select", has and name != active),
-        ("New",    "new",    True),
-        ("Edit",   "edit",   has),
-        ("Rename", "rename", has and not is_default),
-        ("Delete", "delete", has and not is_default),
-        ("Export", "export", has),
-        ("Back",   "back",   True),
+        ("SELECT", "select", has and name != active),
+        ("NEW",    "new",    True),
+        ("EDIT",   "edit",   has),
+        ("RENAME", "rename", has and not is_default),
+        ("DELETE", "delete", has and not is_default),
+        ("EXPORT", "export", has),
+        ("BACK",   "back",   True),
     ]
 
 
@@ -1421,8 +1421,9 @@ def _profile_table_text():
     clear_hover          = _profile_hover_at(None, None)
     frags = []
 
-    # Header row.
-    header_style = C_ACTIVE if table_focused else C_SECTION
+    # Header row — always muted grey (C_HINT), regardless of focus.
+    # The sort indicator glyph carries the active-column signal.
+    header_style = C_HINT
     for i, (key, base, width, align, sortable) in enumerate(cols_layout):
         is_active_sort = sortable and (key == sort_col)
         label = _profile_header_label(base, is_active_sort, sort_dir, align, width)
@@ -6450,13 +6451,13 @@ def _scroll_about(delta):
 # top-to-bottom and ↑/↓ skips disabled rows. Back is the keyboard ESC made
 # clickable; always enabled.
 _HISTORY_BUTTONS = [
-    ("Run log", "run_log"),
-    ("Stats",   "statistics"),
-    ("Rate",    "rate"),
-    ("Save",    "save"),
-    ("Export",  "export"),
-    ("Delete",  "delete"),
-    ("Back",    "back"),
+    ("RUN LOG", "run_log"),
+    ("STATS",   "statistics"),
+    ("RATE",    "rate"),
+    ("SAVE",    "save"),
+    ("EXPORT",  "export"),
+    ("DELETE",  "delete"),
+    ("BACK",    "back"),
 ]
 # Button column width: longest label + 1 cell of padding on each side.
 _HISTORY_BUTTON_W = max(len(lbl) for lbl, _ in _HISTORY_BUTTONS) + 2
@@ -6890,13 +6891,13 @@ def _history_menu_actions():
     summary = _history_current_summary()
     has = summary is not None
     return [
-        ("Run log", "run_log",    has and bool(summary.has_log)),
-        ("Stats",   "statistics", has),
-        ("Rate",    "rate",       has),
-        ("Save",    "save",       has and not summary.saved),
-        ("Export",  "export",     has and bool(summary.has_log)),
-        ("Delete",  "delete",     has),
-        ("Back",    "back",       True),
+        ("RUN LOG", "run_log",    has and bool(summary.has_log)),
+        ("STATS",   "statistics", has),
+        ("RATE",    "rate",       has),
+        ("SAVE",    "save",       has and not summary.saved),
+        ("EXPORT",  "export",     has and bool(summary.has_log)),
+        ("DELETE",  "delete",     has),
+        ("BACK",    "back",       True),
     ]
 
 
@@ -7254,8 +7255,9 @@ def _history_table_text():
             frags.append(("", "\n", clear_hover))
         return frags
 
-    # Header row.
-    header_style = C_ACTIVE if table_focused else C_SECTION
+    # Header row — always muted grey (C_HINT), regardless of focus.
+    # The sort indicator glyph carries the active-column signal.
+    header_style = C_HINT
     for i, (key, base, width, align, _ctype) in enumerate(cols_layout):
         is_active_sort = (key == sort_col)
         label = _history_header_label(base, is_active_sort, sort_dir, align, width)

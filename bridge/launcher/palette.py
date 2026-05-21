@@ -51,7 +51,7 @@ C_SELECTED   = "fg:#000000 bg:#bcbcbc"   # active sidebar filter — black on li
 # distinguishable from the surrounding empty space.
 C_BUTTON          = "fg:#bcbcbc bg:#1a1a1a"   # normal flat button
 C_BUTTON_HOVER    = "fg:#bcbcbc bg:#2a2a2a"   # mouse-hover, non-cursor
-C_BUTTON_DISABLED = "fg:#585858 bg:#0f0f0f"   # disabled — dim grey on near-bg
+C_BUTTON_DISABLED = "fg:#585858"              # disabled — dim grey, no bg block
 
 # Three-state button colour grammar — used by the profile editor's kind
 # column, the MENU/EDITOR mode toggle, the entry-list cursor row, and the
