@@ -1836,14 +1836,14 @@ def _editor_body_h():
     panel's field chain (Pattern + Commands + error + hint block)
     needs ~15 rows minimum.
 
-    Editor mode has no kind-button row and no detail panel; only the
-    leading blank, title row, one blank below the title, the buffer,
-    the footer blank, and the footer text. Reserve 5 chrome rows
-    total so the buffer fills the full terminal height with no dead
-    rows at the bottom. Sync with `_profile_editor_text`'s leading
-    blank — change them together."""
+    Editor mode has no kind-button row and no detail panel; only two
+    leading blanks, the title row, one blank below the title, the
+    buffer, the footer blank, and the footer text. Reserve 6 chrome
+    rows total so the buffer fills the full terminal height with no
+    dead rows at the bottom. Sync with `_profile_editor_text`'s
+    leading blanks — change them together."""
     if _editor_mode == "editor":
-        return max(15, _term_rows() - 5)
+        return max(15, _term_rows() - 6)
     return max(15, _term_rows() - 13)
 
 
@@ -4422,9 +4422,10 @@ def _profile_editor_text():
         ...                                 ...
 
     Editor mode replaces steps 2-5 with the full-height text buffer,
-    and emits an explicit leading blank above the title row (lite
-    mode's leading blank comes from `_centered` for free; editor
-    mode fills the terminal exactly so it has to be emitted).
+    and emits two explicit leading blank rows above the title row
+    (lite mode's leading blank comes from `_centered` for free;
+    editor mode fills the terminal exactly so the blanks have to be
+    emitted).
 
     The five 13-cell kind buttons sit in a horizontal row, BG-filled,
     centred on the terminal. The colour grammar (`C_BUTTON_*`) carries
@@ -4439,13 +4440,15 @@ def _profile_editor_text():
 
     frags = []
     # Editor mode is sized to fill the terminal exactly, so the leading
-    # blank above the title has to be emitted explicitly here — vertical
-    # centering can't supply it. Lite mode is shorter than the terminal
-    # and picks up its leading blank from `_centered` for free, so no
-    # extra `\n` there (adding one would shift its centering). The
-    # editor-mode buffer-height overhead in `_editor_body_h` accounts
-    # for this leading blank — change them together.
+    # blank rows above the title have to be emitted explicitly here —
+    # vertical centering can't supply them. Lite mode is shorter than
+    # the terminal and picks up its leading blank from `_centered` for
+    # free, so no extra `\n` there (adding any would shift its
+    # centering). The editor-mode buffer-height overhead in
+    # `_editor_body_h` accounts for these two leading blanks — change
+    # them together.
     if _editor_mode == "editor":
+        frags.append(("", "\n", _editor_clear_outer_hover))
         frags.append(("", "\n", _editor_clear_outer_hover))
     _editor_append_title_row(frags, title, cols)
     frags.append(("", "\n", _editor_clear_outer_hover))
