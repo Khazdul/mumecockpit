@@ -105,11 +105,32 @@ Frame titles in `options` and `panes` emit a blank row between the
 centred title and the first content row, matching the launcher's
 title spacing.
 
-Title, footer, and three-state button chrome are shared with the
-launcher via `bridge/launcher/menu_chrome.py` — see
+Title, footer, menu-row, and three-state button chrome are shared with
+the launcher via `bridge/launcher/menu_chrome.py` — see
 [docs/launcher.md](launcher.md#shared-menu-chrome) for the helper
 contracts and [ADR 0085](decisions/0085-shared-menu-chrome.md) for
-the rationale.
+the rationale. The popup's `main`, `options`, and `scripts` frames are
+all single `FormattedTextControl` Windows emitting `title_block` (with
+`blank_above=1`) + body + `footer_block` in one fragment list — the
+footer is anchored to the popup's final row. The `main` frame keeps
+its ASCII banner in `C_TITLE` (the logo, not a section title — so it
+does not go through `title_block`). Selectable menu rows render
+through `menu_chrome.menu_row`: gold `<< >>` on the cursor row, hover
+lightens the label (`C_HOVER`). The dead-grey "Save run" row reuses
+the `menu_row` "inactive" state with `inactive_style=C_HINT` and no
+row handler. Modal dialogs (`exit_confirm`, `rate_session`) keep their
+existing vertical layout — no footer anchoring — and adopt
+`C_SECTION` for the title row to match the swept menu chrome.
+
+**Hover-clear invariant.** Each frame with hover state attaches a
+small clear-hover handler (resets the frame's hover index on
+MOUSE_MOVE) to its `title_block` / `footer_block` chrome, blank
+separator rows, status header (on `main`), banner rows, dead-grey
+"Save run" row, and per-row left/right padding so the hover highlight
+clears the moment the pointer moves off a selectable row — above the
+top, below the bottom, between rows, or to the side. Selectable rows
+own their own MOUSE_MOVE handler that sets hover to that row instead.
+Mirrors the launcher's hover-clear contract.
 
 ## Panes submenu
 

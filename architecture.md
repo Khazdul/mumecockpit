@@ -417,6 +417,16 @@ those land in follow-up phases. See
 for the deferred unification of `bridge/launcher/macro_keys.py` and
 `bridge/panes/input_pane.py`.
 
+The menu visual pass is complete. The launcher and the in-game popup
+now share one chrome grammar — `menu_chrome.title_block` /
+`footer_block` for frame chrome and `menu_chrome.menu_row` for `<<
+label >>` selectable rows, with the three-state `button_fragment`
+grammar for filled-button cells (ADR 0085). The popup's `main`,
+`options`, and `scripts` frames join `panes` as single
+`FormattedTextControl` Windows with footer anchored to the popup's
+final row; the modal `exit_confirm` / `rate_session` dialogs adopt
+`C_SECTION` for the title row to match.
+
 ## See also
 
 - [docs/ui-messaging.md](docs/ui-messaging.md) — UI helpers, colour constants, and style rules. Touched when writing almost any script.

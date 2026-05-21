@@ -8,7 +8,7 @@ try:
     from prompt_toolkit.filters import Condition
     from prompt_toolkit.key_binding import KeyBindings
     from prompt_toolkit.layout import DynamicContainer, Layout
-    from prompt_toolkit.layout.containers import ConditionalContainer, HSplit, Window
+    from prompt_toolkit.layout.containers import Window
     from prompt_toolkit.layout.controls import FormattedTextControl
     from prompt_toolkit.mouse_events import MouseEventType
     from prompt_toolkit.output import ColorDepth
@@ -29,7 +29,7 @@ import sys
 import run_meta
 import run_stats
 from menu_chrome import (
-    button_fragment, footer_block, title_block, title_block_height,
+    button_fragment, footer_block, menu_row, title_block, title_block_height,
 )
 from panes_grid import apply_cell_toggle, panes_grid_fragments
 from widgets.scrollbar import Scrollbar
@@ -111,7 +111,7 @@ _app                 = None
 _main_window         = None     # set in main(); referenced for focus
 _options_window      = None     # set in main(); referenced for focus
 _panes_window        = None     # set in main(); referenced for focus
-_scripts_window      = None     # set in main(); referenced for render_info / focus
+_scripts_window      = None     # set in main(); referenced for focus
 _statistics_window   = None     # set in main(); referenced for focus
 _exit_confirm_window = None     # set in main(); referenced for focus
 _rate_session_window = None     # set in main(); referenced for focus
@@ -330,12 +330,24 @@ def _set_hover(frame, idx):
         _app.invalidate()
 
 
-def _row_style(is_active, is_hovered, inactive_style=C_ITEM):
+def _menu_row_state(is_active, is_hover):
+    """Map (active, hover) to a `menu_chrome.menu_row` state name.
+    Selection (keyboard cursor) wins over hover."""
     if is_active:
-        return C_ACTIVE
-    if is_hovered:
-        return C_HOVER
-    return inactive_style
+        return "selected"
+    if is_hover:
+        return "hover"
+    return "inactive"
+
+
+def _main_clear_hover(ev):
+    if ev.event_type == MouseEventType.MOUSE_MOVE:
+        _set_hover("main", -1)
+
+
+def _options_clear_hover(ev):
+    if ev.event_type == MouseEventType.MOUSE_MOVE:
+        _set_hover("options", -1)
 
 
 # ---------------------------------------------------------------------------
@@ -429,8 +441,10 @@ def _activate_main_item(action):
         _push_frame("exit_confirm")
 
 
-def _append_status_header(frags, cols):
-    """Centred Profile · Mode · Link line. Same form on main and rate_session."""
+def _append_status_header(frags, cols, clear_hover=None):
+    """Centred Profile · Mode · Link line. Same form on main and rate_session.
+    When `clear_hover` is given, every emitted fragment carries it so
+    MOUSE_MOVE over the status header clears the frame's hover index."""
     conf = _parse_keyval(STARTUP_CONF_PATH)
     profile    = conf.get("profile") or "default"
     conn_mode  = conf.get("connection_mode") or "mmapper"
@@ -453,14 +467,21 @@ def _append_status_header(frags, cols):
         plain += "  ·  Link: " + ("timeout" if latest == "TIMEOUT" else f"{latest}ms")
         if quality:
             plain += f" ({quality})"
-    frags.append(("", _pad_centre(plain, cols)))
-    frags.append((C_BODY, base))
-    if latest:
-        frags.append((C_BODY, "  ·  Link: "))
-        if latest == "TIMEOUT":
-            frags.append((C_ERR, "timeout"))
+
+    def _push(style, text):
+        if clear_hover is None:
+            frags.append((style, text))
         else:
-            frags.append((C_BODY, f"{latest}ms"))
+            frags.append((style, text, clear_hover))
+
+    _push("", _pad_centre(plain, cols))
+    _push(C_BODY, base)
+    if latest:
+        _push(C_BODY, "  ·  Link: ")
+        if latest == "TIMEOUT":
+            _push(C_ERR, "timeout")
+        else:
+            _push(C_BODY, f"{latest}ms")
         if quality:
             if quality in ("stable", "ok"):
                 q_style = C_BODY
@@ -468,55 +489,61 @@ def _append_status_header(frags, cols):
                 q_style = C_YELLOW
             else:
                 q_style = C_ERR
-            frags.append((C_BODY, " ("))
-            frags.append((q_style, quality))
-            frags.append((C_BODY, ")"))
+            _push(C_BODY, " (")
+            _push(q_style, quality)
+            _push(C_BODY, ")")
 
 
 def _main_text():
-    cols  = _term_cols()
-    frags = []
+    cols   = _term_cols()
+    rows_h = _term_rows()
+    frags  = []
+    clear_hover = _main_clear_hover
 
-    # ASCII title
-    frags.append(("", "\n"))
+    # ASCII banner — the logo stays in C_TITLE; it is not a section title
+    # and does not go through `menu_chrome.title_block`.
+    frags.append(("", "\n", clear_hover))
     for line in _MUME_LINES:
-        frags.append(("", _pad_centre(line, cols)))
-        frags.append((C_TITLE, line))
-        frags.append(("", "\n"))
+        frags.append(("", _pad_centre(line, cols), clear_hover))
+        frags.append((C_TITLE, line, clear_hover))
+        frags.append(("", "\n", clear_hover))
     for line in _COCKPIT_LINES:
-        frags.append(("", _pad_centre(line, cols)))
-        frags.append((C_TITLE, line))
-        frags.append(("", "\n"))
-    frags.append(("", "\n"))
+        frags.append(("", _pad_centre(line, cols), clear_hover))
+        frags.append((C_TITLE, line, clear_hover))
+        frags.append(("", "\n", clear_hover))
+    frags.append(("", "\n", clear_hover))
+    banner_rows = 1 + len(_MUME_LINES) + len(_COCKPIT_LINES) + 1
 
-    _append_status_header(frags, cols)
-    frags.append(("", "\n\n"))
+    _append_status_header(frags, cols, clear_hover=clear_hover)
+    frags.append(("", "\n\n", clear_hover))
+    status_rows = 2
 
-    # Menu rows
+    # Menu rows — plain `<< label >>` grammar, centred per row.
     items   = _main_items()
     sel_idx = _sel_main
     if sel_idx >= len(items):
         sel_idx = len(items) - 1
 
     for i, (label, action, kind, payload) in enumerate(items):
+        row_w     = len(label) + 6
+        left_pad  = max(0, (cols - row_w) // 2)
+        right_pad = max(0, cols - left_pad - row_w)
+
         if kind == "saved":
-            # Dead-grey one-shot row: just the label, no handlers (clicks and
-            # Enter are no-ops; keyboard navigation skips this index).
-            prefix = "   "
-            suffix = "   "
-            full   = f"{prefix}{label}{suffix}"
-            frags.append(("", _pad_centre(full, cols)))
-            frags.append((C_HINT, full))
-            frags.append(("", "\n"))
+            # Dead-grey one-shot row: label painted dim, no row handler
+            # (keyboard navigation skips this index; clicks are no-ops).
+            # The chrome's clear_hover handler rides on the padding so
+            # MOUSE_MOVE here clears hover instead of leaving it stuck.
+            frags.append(("", " " * left_pad, clear_hover))
+            frags.extend(menu_row(
+                label, "inactive",
+                mouse_handler=clear_hover, inactive_style=C_HINT,
+            ))
+            frags.append(("", " " * right_pad, clear_hover))
+            frags.append(("", "\n", clear_hover))
             continue
 
-        is_active = (i == sel_idx)
-        is_hover  = (i == _hover_main)
-        display = label
-        style   = _row_style(is_active, is_hover)
-        prefix  = "<< " if is_active else "   "
-        suffix  = " >>" if is_active else "   "
-        full    = f"{prefix}{display}{suffix}"
+        state = _menu_row_state(i == sel_idx, i == _hover_main)
 
         def _make_handler(idx=i, act=action):
             def _handler(ev):
@@ -533,19 +560,16 @@ def _main_text():
             return _handler
 
         h = _make_handler()
-        frags.append(("", _pad_centre(full, cols)))
-        frags.append((style, prefix, h))
-        frags.append((style, display, h))
-        frags.append((style, suffix, h))
-        frags.append(("", "\n"))
+        frags.append(("", " " * left_pad, clear_hover))
+        frags.extend(menu_row(label, state, mouse_handler=h))
+        frags.append(("", " " * right_pad, clear_hover))
+        frags.append(("", "\n", clear_hover))
 
-    frags.append(("", "\n"))
-
-    # Footer
     footer = "↑↓ Navigate · Enter Select · ESC Dismiss"
-    frags.append(("", _pad_centre(footer, cols)))
-    frags.append((C_HINT, footer))
-
+    content_rows = banner_rows + status_rows + len(items)
+    frags.extend(footer_block(
+        footer, cols, rows_h, content_rows, mouse_handler=clear_hover,
+    ))
     return frags
 
 
@@ -583,40 +607,34 @@ def _options_activate(row_idx):
         _pop_frame()
 
 
-def _options_title_text():
-    cols  = _term_cols()
-    title = "─── Options ───"
-    return [
-        ("", "\n"),
-        ("", _pad_centre(title, cols)),
-        (C_TITLE, title),
-        ("", "\n"),
-    ]
+def _options_text():
+    cols   = _term_cols()
+    rows_h = _term_rows()
+    title  = "─── Options ───"
+    footer = "↑↓ Navigate · Enter Select · ESC Back"
+    clear_hover = _options_clear_hover
 
-
-def _options_content_text():
-    cols = _term_cols()
     sel_indices = _options_selectable_indices()
     sel = _sel_options
     if sel >= len(sel_indices):
         sel = len(sel_indices) - 1
     sel_row = sel_indices[sel] if sel_indices else -1
 
-    labels = [lbl if kind != "sep" else "" for kind, lbl in _OPTIONS_ROWS]
-    maxw   = max((len(l) for l in labels), default=0)
-    pad    = max(0, (cols - (maxw + 6)) // 2)
-
     frags = []
+    frags.extend(title_block(
+        title, cols, blank_above=1, mouse_handler=clear_hover,
+    ))
+
+    body_rows = 0
     for i, (kind, label) in enumerate(_OPTIONS_ROWS):
         if kind == "sep":
-            frags.append(("", "\n"))
+            frags.append(("", "\n", clear_hover))
+            body_rows += 1
             continue
 
         is_active = (i == sel_row)
         is_hover  = (i == _hover_options)
-        style    = _row_style(is_active, is_hover)
-        prefix   = "<< " if is_active else "   "
-        suffix   = " >>" if is_active else "   "
+        state     = _menu_row_state(is_active, is_hover)
 
         def _make_handler(row_idx=i, sel_pos=sel_indices.index(i) if i in sel_indices else 0):
             def _handler(ev):
@@ -632,24 +650,21 @@ def _options_content_text():
                     _app.invalidate()
             return _handler
 
-        h = _make_handler()
-        frags.append(("", " " * pad))
-        frags.append((style, prefix, h))
-        frags.append((style, label, h))
-        frags.append((style, suffix, h))
-        frags.append(("", "\n"))
+        h         = _make_handler()
+        row_w     = len(label) + 6
+        left_pad  = max(0, (cols - row_w) // 2)
+        right_pad = max(0, cols - left_pad - row_w)
+        frags.append(("", " " * left_pad, clear_hover))
+        frags.extend(menu_row(label, state, mouse_handler=h))
+        frags.append(("", " " * right_pad, clear_hover))
+        frags.append(("", "\n", clear_hover))
+        body_rows += 1
 
+    content_rows = title_block_height(1) + body_rows
+    frags.extend(footer_block(
+        footer, cols, rows_h, content_rows, mouse_handler=clear_hover,
+    ))
     return frags
-
-
-def _options_footer_text():
-    cols   = _term_cols()
-    footer = "↑↓ Navigate · Enter Select · ESC Back"
-    return [
-        ("", "\n"),
-        ("", _pad_centre(footer, cols)),
-        (C_HINT, footer),
-    ]
 
 
 # ---------------------------------------------------------------------------
@@ -901,69 +916,55 @@ def _scripts_parsed_lines():
 
 
 def _scripts_visible_rows():
-    # Content window height = popup rows − title (3) − footer (2).
-    return max(1, _term_rows() - 3 - 2)
+    """Visible body rows = popup rows minus the title block (3 for the
+    popup's `blank_above=1`) and the single footer row anchored at the
+    bottom by `footer_block`."""
+    return max(1, _term_rows() - title_block_height(1) - 1)
 
 
-def _scripts_content_text():
-    """Render script entries in a centred 60-col block, sliced by _scripts_scroll."""
+def _scripts_text():
+    """Single-frame renderer for the popup's Scripts page. Mirrors the
+    launcher's `_scripts_text`: title block, viewport-sized body padded
+    with blanks, footer anchored to the final terminal row."""
     global _scripts_scroll
     cols   = _term_cols()
+    rows_h = _term_rows()
     pad    = max(0, (cols - 60) // 2)
     p      = " " * pad
     parsed = _scripts_parsed_lines()
 
-    # One fragment list per visual line; we slice by _scripts_scroll below.
-    visual_lines = []
+    visual = []
     for tag, text in parsed:
         if tag == "A":
-            visual_lines.append([("", p), (C_ACCENT, "▶ "), (C_ACTIVE, text.upper())])
+            visual.append([("", p), (C_ACCENT, "▶ "), (C_ACTIVE, text.upper())])
         elif tag == "S":
-            visual_lines.append([("", p + "  "), (C_BODY, text)])
+            visual.append([("", p + "  "), (C_BODY, text)])
         elif tag == "H":
-            visual_lines.append([("", p + "  "), (C_ITEM, text)])
+            visual.append([("", p + "  "), (C_ITEM, text)])
         elif tag == "B":
-            visual_lines.append([])
+            visual.append([])
         elif tag == "M":
-            visual_lines.append([("", p), (C_BODY, text)])
+            visual.append([("", p), (C_BODY, text)])
 
-    # Re-clamp in case content or terminal size shrank since last scroll.
-    max_scroll = max(0, len(visual_lines) - _scripts_visible_rows())
+    viewport   = _scripts_visible_rows()
+    max_scroll = max(0, len(visual) - viewport)
     if _scripts_scroll > max_scroll:
         _scripts_scroll = max_scroll
 
-    sliced = visual_lines[_scripts_scroll:]
-    frags  = []
-    for i, line_frags in enumerate(sliced):
-        frags.extend(line_frags)
-        if i < len(sliced) - 1:
-            frags.append(("", "\n"))
+    frags = []
+    frags.extend(title_block("─── Scripts ───", cols, blank_above=1))
+
+    sliced = visual[_scripts_scroll:_scripts_scroll + viewport]
+    for i in range(viewport):
+        if i < len(sliced):
+            frags.extend(sliced[i])
+        frags.append(("", "\n"))
+
+    overflow = len(visual) > viewport
+    footer = "↑↓ Scroll · ESC Back" if overflow else "ESC  Back"
+    content_rows = title_block_height(1) + viewport
+    frags.extend(footer_block(footer, cols, rows_h, content_rows))
     return frags
-
-
-def _scripts_title_text():
-    cols  = _term_cols()
-    title = "─── Scripts ───"
-    return [
-        ("", "\n"),
-        ("", _pad_centre(title, cols)),
-        (C_TITLE, title),
-        ("", "\n"),
-    ]
-
-
-def _scripts_has_overflow():
-    return len(_scripts_parsed_lines()) > _scripts_visible_rows()
-
-
-def _scripts_footer_text():
-    cols   = _term_cols()
-    footer = "↑↓ Scroll · ESC Back" if _scripts_has_overflow() else "ESC  Back"
-    return [
-        ("", "\n"),
-        ("", _pad_centre(footer, cols)),
-        (C_HINT, footer),
-    ]
 
 
 # ---------------------------------------------------------------------------
@@ -974,10 +975,13 @@ def _exit_confirm_text():
     msg   = "Exit to main menu?  Y to confirm, any other key to cancel."
     warn  = "Attention! This terminates the current session."
     hint  = "↑↓ · ESC  Back to menu"
+    # Modal dialog: vertically positioned by leading blanks; no footer
+    # anchoring. Title adopts the `C_SECTION` colour shared with the
+    # swept menu chrome.
     return [
         ("", "\n\n"),
         ("", _pad_centre(msg, cols)),
-        (C_ACTIVE, msg),
+        (C_SECTION, msg),
         ("", "\n\n"),
         ("", _pad_centre(warn, cols)),
         (C_ERR, warn),
@@ -1000,7 +1004,7 @@ def _rate_session_text():
 
     title = "─── Rate the run ───"
     frags.append(("", _pad_centre(title, cols)))
-    frags.append((C_TITLE, title))
+    frags.append((C_SECTION, title))
     frags.append(("", "\n\n"))
 
     # Star row: ★ ★ ★ ★ ★ (single-space separators). First `rating` stars
@@ -1974,52 +1978,10 @@ def _statistics_text():
 
 
 # ---------------------------------------------------------------------------
-# Scrollable control: handles mouse-wheel SCROLL_UP/SCROLL_DOWN.
+# Scripts scroll helper. Mouse-wheel scroll is not delivered to the popup
+# (tmux display-popup forwards only click events), so the keyboard bindings
+# in `kb` are the documented path; this helper bounds-clamps the offset.
 # ---------------------------------------------------------------------------
-class _ScrollControl(FormattedTextControl):
-    def __init__(self, *args, get_scroll, set_scroll, get_max, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._get_scroll = get_scroll
-        self._set_scroll = set_scroll
-        self._get_max    = get_max
-
-    def mouse_handler(self, ev):
-        result = super().mouse_handler(ev)
-        if result is NotImplemented:
-            if ev.event_type == MouseEventType.SCROLL_UP:
-                cur = self._get_scroll()
-                if cur > 0:
-                    self._set_scroll(max(0, cur - 1))
-                    if _app:
-                        _app.invalidate()
-                return None
-            if ev.event_type == MouseEventType.SCROLL_DOWN:
-                cur = self._get_scroll()
-                mx  = self._get_max()
-                if cur < mx:
-                    self._set_scroll(min(mx, cur + 1))
-                    if _app:
-                        _app.invalidate()
-                return None
-        return result
-
-
-def _window_max_scroll(win):
-    if win is None or win.render_info is None:
-        return 0
-    info = win.render_info
-    return max(0, info.content_height - info.window_height)
-
-
-def _get_scripts_scroll():
-    return _scripts_scroll
-
-
-def _set_scripts_scroll(v):
-    global _scripts_scroll
-    _scripts_scroll = v
-
-
 def _scripts_max_scroll():
     return max(0, len(_scripts_parsed_lines()) - _scripts_visible_rows())
 
@@ -2032,25 +1994,6 @@ def _scroll_scripts(delta):
         _scripts_scroll = new_val
         if _app:
             _app.invalidate()
-
-
-# Panes / pane subframe scroll helpers — the submenus fit in the popup body
-# with no scrolling, but the _ScrollControl wiring is shared with Scripts so
-# we expose no-op scroll getters/setters keyed off a single shared global.
-_panes_scroll = 0
-
-
-def _get_panes_scroll():
-    return _panes_scroll
-
-
-def _set_panes_scroll(v):
-    global _panes_scroll
-    _panes_scroll = v
-
-
-def _panes_max_scroll():
-    return _window_max_scroll(_panes_window)
 
 
 # ---------------------------------------------------------------------------
@@ -2356,43 +2299,16 @@ def _build_main_container():
 
 def _build_options_container():
     global _options_window
-
-    title_window = Window(
-        content=_ScrollControl(
-            text=_options_title_text,
-            focusable=False,
-            get_scroll=_get_panes_scroll,
-            set_scroll=_set_panes_scroll,
-            get_max=_panes_max_scroll,
-        ),
-        height=3,
-        wrap_lines=False,
-    )
-    content_window = Window(
-        content=_ScrollControl(
-            text=_options_content_text,
-            focusable=True,
-            get_scroll=_get_panes_scroll,
-            set_scroll=_set_panes_scroll,
-            get_max=_panes_max_scroll,
-        ),
+    # Single FormattedTextControl Window — the frame emits the title
+    # block, menu rows, and footer as one fragment list; footer_block
+    # pads the trailing rows so the footer lands at the bottom of the
+    # popup. Mirrors the launcher's `_build_simple` for Options.
+    _options_window = Window(
+        content=FormattedTextControl(text=_options_text, focusable=True),
         wrap_lines=False,
         always_hide_cursor=True,
-        get_vertical_scroll=lambda w: min(_panes_scroll, _window_max_scroll(w)),
     )
-    footer_window = Window(
-        content=_ScrollControl(
-            text=_options_footer_text,
-            focusable=False,
-            get_scroll=_get_panes_scroll,
-            set_scroll=_set_panes_scroll,
-            get_max=_panes_max_scroll,
-        ),
-        height=2,
-        wrap_lines=False,
-    )
-    _options_window = content_window
-    return HSplit([title_window, content_window, footer_window])
+    return _options_window
 
 
 def _build_panes_container():
@@ -2410,44 +2326,15 @@ def _build_panes_container():
 
 def _build_scripts_container():
     global _scripts_window
-
-    title_window = Window(
-        content=_ScrollControl(
-            text=_scripts_title_text,
-            focusable=False,
-            get_scroll=_get_scripts_scroll,
-            set_scroll=_set_scripts_scroll,
-            get_max=_scripts_max_scroll,
-        ),
-        height=3,
-        wrap_lines=False,
-    )
-    # No get_vertical_scroll: _scripts_content_text already slices by
-    # _scripts_scroll, so the Window just renders the visible chunk.
-    content_window = Window(
-        content=_ScrollControl(
-            text=_scripts_content_text,
-            focusable=True,
-            get_scroll=_get_scripts_scroll,
-            set_scroll=_set_scripts_scroll,
-            get_max=_scripts_max_scroll,
-        ),
+    # Single FormattedTextControl Window — _scripts_text emits the
+    # title block, viewport-padded body sliced by _scripts_scroll, and
+    # footer in one fragment list. Mirrors the launcher's Scripts frame.
+    _scripts_window = Window(
+        content=FormattedTextControl(text=_scripts_text, focusable=True),
         wrap_lines=False,
         always_hide_cursor=True,
     )
-    footer_window = Window(
-        content=_ScrollControl(
-            text=_scripts_footer_text,
-            focusable=False,
-            get_scroll=_get_scripts_scroll,
-            set_scroll=_set_scripts_scroll,
-            get_max=_scripts_max_scroll,
-        ),
-        height=2,
-        wrap_lines=False,
-    )
-    _scripts_window = content_window
-    return HSplit([title_window, content_window, footer_window])
+    return _scripts_window
 
 
 def _build_exit_confirm_container():
