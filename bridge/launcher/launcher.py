@@ -3702,12 +3702,15 @@ def _editor_hl_style_row(focused):
     """Build the inline Style toggle row:
     `[X]Undersc. [X]Blink [X]Reverse` (Phase 6.3).
 
-    Each toggle's checkbox reflects whether the style is currently in
-    the active set; the cursor cell paints `C_BUTTON_ACTIVE_FOCUSED`
-    (amber, matching the entry-list cursor and kind buttons); the label
-    is coloured `C_ACCENT` when active, `C_HINT` otherwise, `C_HOVER`
-    on mouse hover. Cursor + focused wins over hover and active. Cells
-    are centred within the detail panel width."""
+    Each toggle's on/off state is conveyed solely by the `[X]` / `[ ]`
+    checkbox glyph — colour is a pure cursor/focus indicator, never
+    keyed off `is_active`. The cursor cell mirrors the entry-list
+    cursor row: `C_BUTTON_ACTIVE_FOCUSED` (amber) when the Style zone
+    is focused, `C_BUTTON_ACTIVE_UNFOCUSED` (grey) when the cursor
+    parks there but the zone is unfocused. Hover paints `C_HOVER` on
+    non-cursor toggles; the default is `C_HINT`. Precedence, highest
+    first: cursor (focused → amber, unfocused → grey) > hover >
+    default. Cells are centred within the detail panel width."""
     tokens = _HL_STYLE_TOKENS
     active = _editor_hl_active_styles()
     cell_labels = [_HL_STYLE_LABELS[t] for t in tokens]
@@ -3718,25 +3721,19 @@ def _editor_hl_style_row(focused):
     pad_r = max(0, _EDITOR_DETAIL_W - pad_l - total_w)
     frags = [("", " " * pad_l)]
     for i, (tok, lbl) in enumerate(zip(tokens, cell_labels)):
-        is_cursor = focused and i == _editor_hl_style_cursor
+        is_cursor = (i == _editor_hl_style_cursor)
         is_hover  = (_editor_hl_hover == ("style", 0, i)
                      and not is_cursor)
-        is_active = tok in active
-        checkbox = f"[{'X' if is_active else ' '}]"
+        checkbox = f"[{'X' if tok in active else ' '}]"
         if is_cursor:
-            cb_style = C_BUTTON_ACTIVE_FOCUSED
+            cell_style = (C_BUTTON_ACTIVE_FOCUSED if focused
+                          else C_BUTTON_ACTIVE_UNFOCUSED)
         elif is_hover:
-            cb_style = C_HOVER
+            cell_style = C_HOVER
         else:
-            cb_style = C_ACCENT if is_active else C_HINT
-        if is_cursor:
-            lbl_style = C_BUTTON_ACTIVE_FOCUSED
-        elif is_hover:
-            lbl_style = C_HOVER
-        elif is_active:
-            lbl_style = C_ACCENT
-        else:
-            lbl_style = C_HINT
+            cell_style = C_HINT
+        cb_style  = cell_style
+        lbl_style = cell_style
         h = _editor_hl_make_style_handler(i)
         frags.append((cb_style, checkbox, h))
         frags.append((lbl_style, lbl, h))
@@ -4337,10 +4334,16 @@ def _editor_buffer_scroll_into_view(cols, viewport_h):
 def _editor_kind_button_style(idx):
     """Return the three-state colour token for the kind button at index
     `idx` (0..len(_PROFILE_EDITOR_TABS)-1). Hover on an inactive button
-    previews the active-unfocused state."""
+    previews the active-unfocused state.
+
+    The kind-button row counts as focused only when `_editor_focus == 0`
+    AND the toggle row does not hold the keyboard claim — moving focus
+    up to the LITE | EDITOR toggle leaves `_editor_focus` at 0, so the
+    toggle-focused flag must be checked explicitly to keep amber from
+    leaking outside the focused zone."""
     is_active    = (idx == _editor_active_tab)
     is_hover     = (_editor_hover_tab == idx and not is_active)
-    zone_focused = (_editor_focus == 0)
+    zone_focused = (_editor_focus == 0 and not _editor_toggle_focused)
     if is_active and zone_focused:
         return C_BUTTON_ACTIVE_FOCUSED
     if is_active or is_hover:
