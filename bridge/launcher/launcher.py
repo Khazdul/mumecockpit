@@ -822,6 +822,27 @@ def _row_style(is_active, is_hovered, inactive_style=None):
     return inactive_style or C_ITEM
 
 
+def _menu_button_state(is_active, is_hover):
+    """Map (active, hover) to a `menu_chrome.button_fragment` state name."""
+    if is_active:
+        return "selected_focused"
+    if is_hover:
+        return "hover"
+    return "inactive"
+
+
+def _centre_in_width(label, width):
+    """Pad / truncate `label` to `width` cells, centred. Mirrors
+    `menu_chrome.button_fragment`'s own centring so a row that opts out
+    of the filled-button look (e.g. the Text-layout placeholder) still
+    aligns under the column."""
+    if len(label) >= width:
+        return label[:width]
+    pad = width - len(label)
+    left = pad // 2
+    return " " * left + label + " " * (pad - left)
+
+
 # ---------------------------------------------------------------------------
 # Main frame
 # ---------------------------------------------------------------------------
@@ -897,9 +918,11 @@ def _activate_main(idx):
 def _main_text():
     _check_cache_change()
     cols = _term_cols()
+    rows_h = _term_rows()
     frags = []
 
-    # ASCII title
+    # ASCII banner — the logo stays in C_TITLE; it is not a section title
+    # and does not go through `menu_chrome.title_block`.
     frags.append(("", "\n"))
     for line in _MUME_LINES:
         frags.append(("", _pad_centre(line, cols)))
@@ -910,17 +933,16 @@ def _main_text():
         frags.append((C_TITLE, line))
         frags.append(("", "\n"))
     frags.append(("", "\n"))
+    banner_rows = 1 + len(_MUME_LINES) + len(_COCKPIT_LINES) + 1
 
     items = _main_items
     sel_idx = _sel_main if 0 <= _sel_main < len(items) else 0
+    btn_w = max(len(l) for l in items) + 4
+    btn_pad = " " * max(0, (cols - btn_w) // 2)
 
     for i, label in enumerate(items):
-        is_active = (i == sel_idx)
-        is_hover  = (i == _hover_main)
-        style = _row_style(is_active, is_hover)
-        prefix = "<< " if is_active else "   "
-        suffix = " >>" if is_active else "   "
-        full = f"{prefix}{label}{suffix}"
+        state = _menu_button_state(i == sel_idx, i == _hover_main)
+        style, text = button_fragment(label, btn_w, state)
 
         def _make_handler(row=i):
             def _h(ev):
@@ -932,30 +954,31 @@ def _main_text():
             return _h
 
         h = _make_handler()
-        frags.append(("", _pad_centre(full, cols)))
-        frags.append((style, prefix, h))
-        frags.append((style, label, h))
-        frags.append((style, suffix, h))
+        frags.append(("", btn_pad))
+        frags.append((style, text, h))
         frags.append(("", "\n"))
 
     frags.append(("", "\n"))
 
-    # Quote
+    quote_rows = 0
     if _quote_text:
         quoted = f'"{_quote_text}"'
         frags.append(("", _pad_centre(quoted, cols)))
         frags.append((C_QUOTE, quoted))
         frags.append(("", "\n"))
+        quote_rows += 1
         if _quote_attr:
             attr = f"— {_quote_attr}"
             frags.append(("", _pad_centre(attr, cols)))
             frags.append((C_QUOTE_ATTR, attr))
             frags.append(("", "\n"))
+            quote_rows += 1
         frags.append(("", "\n"))
+        quote_rows += 1
 
     footer = "↑↓ Navigate · Enter/Space Select"
-    frags.append(("", _pad_centre(footer, cols)))
-    frags.append((C_HINT, footer))
+    content_rows = banner_rows + len(items) + 1 + quote_rows
+    frags.extend(footer_block(footer, cols, rows_h, content_rows))
     return frags
 
 
@@ -5473,33 +5496,37 @@ def _activate_option(idx):
 
 def _options_text():
     cols   = _term_cols()
+    rows_h = _term_rows()
     title  = "─── Options ───"
     footer = "↑↓ Navigate · Enter Select · ESC Back"
 
-    maxw = max(len(label) for _, label in _OPTIONS_ROWS)
-    pad  = max(0, (cols - (maxw + 6)) // 2)
+    btn_w = max(len(label) for _, label in _OPTIONS_ROWS) + 4
+    btn_pad = " " * max(0, (cols - btn_w) // 2)
 
     frags = []
-    frags.append(("", "\n\n"))
-    frags.append(("", _pad_centre(title, cols)))
-    frags.append((C_TITLE, title))
-    frags.append(("", "\n\n"))
+    frags.extend(title_block(title, cols, blank_above=2))
 
     back_idx = len(_OPTIONS_ROWS) - 1
+    blank_rows = 0
 
     for i, (action, label) in enumerate(_OPTIONS_ROWS):
         if i == back_idx:
-            frags.append(("", "\n"))  # blank before Back
+            frags.append(("", "\n"))   # blank before Back
+            blank_rows += 1
 
         is_active = (i == _sel_options)
         is_hover  = (i == _hover_options)
+        state     = _menu_button_state(is_active, is_hover)
+
         # Text layout is a placeholder row — render its inactive state in
-        # C_HINT (no bg fill) so it reads as "not ready yet" without the
-        # disabled-button look. Active / hover still use the normal styles.
-        inactive  = C_HINT if action == "text_layout" else C_ITEM
-        style     = _row_style(is_active, is_hover, inactive)
-        prefix    = "<< " if is_active else "   "
-        suffix    = " >>" if is_active else "   "
+        # dim C_HINT (no bg fill) so it reads as "not ready yet" without
+        # the filled-button look. Active / hover still use the normal
+        # three-state grammar.
+        if action == "text_layout" and state == "inactive":
+            style = C_HINT
+            text  = _centre_in_width(label, btn_w)
+        else:
+            style, text = button_fragment(label, btn_w, state)
 
         def _make_handler(row=i):
             def _h(ev):
@@ -5511,15 +5538,12 @@ def _options_text():
             return _h
 
         h = _make_handler()
-        frags.append(("", " " * pad))
-        frags.append((style, prefix, h))
-        frags.append((style, label, h))
-        frags.append((style, suffix, h))
+        frags.append(("", btn_pad))
+        frags.append((style, text, h))
         frags.append(("", "\n"))
 
-    frags.append(("", "\n"))
-    frags.append(("", _pad_centre(footer, cols)))
-    frags.append((C_HINT, footer))
+    content_rows = title_block_height(2) + len(_OPTIONS_ROWS) + blank_rows
+    frags.extend(footer_block(footer, cols, rows_h, content_rows))
     return frags
 
 
@@ -5714,6 +5738,7 @@ def _options_connection_activate(idx):
 
 def _options_connection_text():
     cols   = _term_cols()
+    rows_h = _term_rows()
     title  = "─── Connection ───"
     footer = "↑↓ Navigate · Enter Select · ESC Back"
 
@@ -5722,38 +5747,32 @@ def _options_connection_text():
     port = _conf.get("connection_port", "4242")
     custom_detail = f"<{host}>:<{port}>"
 
-    rows = []
-    for mode, lbl, detail in _CONNECTION_MODES:
-        dot = "(•)" if cur == mode else "( )"
-        if mode == "custom":
-            rows.append((f"{dot} {lbl}", custom_detail, mode))
-        else:
-            rows.append((f"{dot} {lbl}", detail, mode))
-    rows.append(("Back", None, None))
-
-    # Width: left label + 2-space gap + widest detail
-    label_w  = max(len(r[0]) for r in rows)
-    detail_w = max((len(r[1]) for r in rows if r[1]), default=0)
-    block_w  = label_w + (2 + detail_w if detail_w else 0) + 6  # +6 for << / >>
-    pad      = max(0, (cols - block_w) // 2)
+    # Each row's full label includes the radio glyph and (for the three
+    # modes) the host:port detail; the leading (•) / ( ) glyph carries
+    # the persistent on / active state — colour is reserved for the
+    # transient cursor and hover. Width is the widest label + 4 cells of
+    # padding, matching the rest of the launcher's button-cell grammar.
+    rows = _CONNECTION_MODES_ROWS(cur, custom_detail)
+    label_w = max(len(r) for r in rows)
+    btn_w   = max(label_w, len("Back")) + 4
+    btn_pad = " " * max(0, (cols - btn_w) // 2)
 
     frags = []
-    frags.append(("", "\n\n"))
-    frags.append(("", _pad_centre(title, cols)))
-    frags.append((C_TITLE, title))
-    frags.append(("", "\n\n"))
+    frags.extend(title_block(title, cols, blank_above=2))
 
-    back_idx = len(rows) - 1
+    back_idx = len(rows)   # Back is appended below the mode rows
+    blank_rows = 0
+    n_rows = len(rows) + 1
 
-    for i, (left, detail, mode) in enumerate(rows):
+    for i, label in enumerate(rows + ["Back"]):
         if i == back_idx:
             frags.append(("", "\n"))
+            blank_rows += 1
 
         is_active = (i == _sel_options_connection)
         is_hover  = (i == _hover_options_connection)
-        style     = _row_style(is_active, is_hover)
-        prefix    = "<< " if is_active else "   "
-        suffix    = " >>" if is_active else "   "
+        state     = _menu_button_state(is_active, is_hover)
+        style, text = button_fragment(label, btn_w, state)
 
         def _make_handler(row=i):
             def _h(ev):
@@ -5767,29 +5786,26 @@ def _options_connection_text():
             return _h
 
         h = _make_handler()
-
-        frags.append(("", " " * pad))
-        frags.append((style, prefix, h))
-
-        padded_left = left + " " * max(0, label_w - len(left))
-        frags.append((style, padded_left, h))
-
-        if detail is not None:
-            frags.append((style, "  ", h))
-            # Highlight Custom's host:port string in C_ACTIVE-ish when active,
-            # otherwise dim C_HINT.
-            if mode == "custom" and cur == "custom":
-                frags.append((C_ACCENT, detail, h))
-            else:
-                frags.append((C_HINT, detail, h))
-
-        frags.append((style, suffix, h))
+        frags.append(("", btn_pad))
+        frags.append((style, text, h))
         frags.append(("", "\n"))
 
-    frags.append(("", "\n"))
-    frags.append(("", _pad_centre(footer, cols)))
-    frags.append((C_HINT, footer))
+    content_rows = title_block_height(2) + n_rows + blank_rows
+    frags.extend(footer_block(footer, cols, rows_h, content_rows))
     return frags
+
+
+def _CONNECTION_MODES_ROWS(cur, custom_detail):
+    """Mode-row labels for the Connection submenu. The leading (•) / ( )
+    glyph is part of the button label so the cursor / hover grammar
+    rendered by `menu_chrome.button_fragment` does not need to overlay
+    a separate persistent-active style."""
+    rows = []
+    for mode, lbl, detail in _CONNECTION_MODES:
+        dot = "(•)" if cur == mode else "( )"
+        suffix = custom_detail if mode == "custom" else detail
+        rows.append(f"{dot} {lbl}  {suffix}")
+    return rows
 
 
 # ---------------------------------------------------------------------------
@@ -5834,19 +5850,16 @@ def _options_connection_custom_save():
 
 def _options_connection_custom_text():
     cols   = _term_cols()
+    rows_h = _term_rows()
     title  = "─── Custom Connection ───"
     hint   = "Tab to switch field · Enter to save · ESC to cancel"
 
     host_label = "Host: "
     port_label = "Port: "
-    host_line  = f"{host_label}{_conn_host_buf}"
-    port_line  = f"{port_label}{_conn_port_buf}"
 
     frags = []
-    frags.append(("", "\n\n"))
-    frags.append(("", _pad_centre(title, cols)))
-    frags.append((C_TITLE, title))
-    frags.append(("", "\n\n\n"))
+    frags.extend(title_block(title, cols, blank_above=2))
+    frags.append(("", "\n"))
 
     # Host field
     cursor_host = "_" if _conn_field == 0 else ""
@@ -5868,15 +5881,17 @@ def _options_connection_custom_text():
         frags.append((C_HINT, "_"))
     frags.append(("", "\n"))
 
+    body_rows = 1 + 1 + 1 + 1  # blank · host · blank · port
+
     if _conn_err:
         frags.append(("", "\n"))
         frags.append(("", _pad_centre(_conn_err, cols)))
         frags.append((C_ERR, _conn_err))
         frags.append(("", "\n"))
+        body_rows += 2
 
-    frags.append(("", "\n"))
-    frags.append(("", _pad_centre(hint, cols)))
-    frags.append((C_HINT, hint))
+    content_rows = title_block_height(2) + body_rows
+    frags.extend(footer_block(hint, cols, rows_h, content_rows))
     return frags
 
 
@@ -5923,6 +5938,7 @@ def _options_spotlights_activate(row_idx):
 
 def _options_spotlights_text():
     cols   = _term_cols()
+    rows_h = _term_rows()
     title  = "─── Spotlights ───"
     footer = "↑↓ Navigate · Enter Select · ESC Back"
 
@@ -5936,32 +5952,33 @@ def _options_spotlights_text():
     labels = []
     for kind, key, label in rows:
         if kind == "toggle":
-            box = "[x]" if _conf.get(key) == "1" else "[ ]"
+            # The leading [X] / [ ] glyph carries the persistent on /
+            # active state, so the row's transient cursor / hover colour
+            # can ride on the shared button grammar without overloading.
+            box = "[X]" if _conf.get(key) == "1" else "[ ]"
             labels.append(f"{box} {label}")
         elif kind == "sep":
             labels.append("")
         elif kind == "back":
             labels.append("Back")
-    maxw = max((len(l) for l in labels), default=0)
-    pad  = max(0, (cols - (maxw + 6)) // 2)
+    btn_w = max((len(l) for l in labels if l), default=0) + 4
+    btn_pad = " " * max(0, (cols - btn_w) // 2)
 
     frags = []
-    frags.append(("", "\n\n"))
-    frags.append(("", _pad_centre(title, cols)))
-    frags.append((C_TITLE, title))
-    frags.append(("", "\n\n"))
+    frags.extend(title_block(title, cols, blank_above=2))
 
+    body_rows = 0
     for i, (kind, _key, _label) in enumerate(rows):
         if kind == "sep":
             frags.append(("", "\n"))
+            body_rows += 1
             continue
 
         label = labels[i]
         is_active = (i == sel_row)
         is_hover  = (i == _hover_options_spotlights)
-        style     = _row_style(is_active, is_hover)
-        prefix    = "<< " if is_active else "   "
-        suffix    = " >>" if is_active else "   "
+        state     = _menu_button_state(is_active, is_hover)
+        style, text = button_fragment(label, btn_w, state)
 
         def _make_handler(row=i, pos=(sel_indices.index(i) if i in sel_indices else 0)):
             def _h(ev):
@@ -5975,15 +5992,13 @@ def _options_spotlights_text():
             return _h
 
         h = _make_handler()
-        frags.append(("", " " * pad))
-        frags.append((style, prefix, h))
-        frags.append((style, label, h))
-        frags.append((style, suffix, h))
+        frags.append(("", btn_pad))
+        frags.append((style, text, h))
         frags.append(("", "\n"))
+        body_rows += 1
 
-    frags.append(("", "\n"))
-    frags.append(("", _pad_centre(footer, cols)))
-    frags.append((C_HINT, footer))
+    content_rows = title_block_height(2) + body_rows
+    frags.extend(footer_block(footer, cols, rows_h, content_rows))
     return frags
 
 
@@ -6040,24 +6055,22 @@ def _spotlights_empty_text():
 
 
 def _options_coming_soon_text():
-    cols = _term_cols()
+    cols   = _term_cols()
+    rows_h = _term_rows()
     title  = "─── Text layout ───"
     footer = "Any key to return"
     body_w = max(20, min(72, cols - 4))
     wrapped = _wrap_text(_COMING_SOON_BODY, body_w)
 
     frags = []
-    frags.append(("", "\n\n"))
-    frags.append(("", _pad_centre(title, cols)))
-    frags.append((C_TITLE, title))
-    frags.append(("", "\n\n"))
+    frags.extend(title_block(title, cols, blank_above=2))
     for line in wrapped:
         frags.append(("", _pad_centre(line, cols)))
         frags.append((C_BODY, line))
         frags.append(("", "\n"))
-    frags.append(("", "\n"))
-    frags.append(("", _pad_centre(footer, cols)))
-    frags.append((C_HINT, footer))
+
+    content_rows = title_block_height(2) + len(wrapped)
+    frags.extend(footer_block(footer, cols, rows_h, content_rows))
     return frags
 
 

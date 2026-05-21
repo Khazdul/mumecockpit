@@ -868,9 +868,10 @@ Navigation hub pushed by activating "Options" on the main frame. Children:
 - **Spotlights** → `options_spotlights` — per-kind toggles for the
   Spotlights reel (deaths, level-ups, PvP kills, achievements).
 - **Text layout** → `options_coming_soon` — placeholder for future
-  layout/typography options. The row paints in `C_HINT` (dim grey) in its
-  inactive state to signal "not ready yet"; active and hover states look
-  normal.
+  layout/typography options. The row paints in `C_HINT` (dim grey,
+  no background fill) in its inactive state to signal "not ready yet";
+  cursor and hover states pick up the normal three-state
+  `button_fragment` grammar.
 - **Connection** → `options_connection` — MMapper / Direct / Custom
   selector; Custom pushes a host/port input subframe.
 
@@ -990,6 +991,11 @@ current `connection_mode` in `startup.conf`. Selecting MMapper or
 Direct writes `connection_mode` and pops on Back/ESC. Selecting Custom
 writes `connection_mode=custom` and pushes `options_connection_custom`.
 
+Each row's full label (`(•) MMapper  (localhost:4242)`, etc.) goes
+through `menu_chrome.button_fragment` as a single button cell — the
+leading `(•)` / `( )` glyph carries the persistent on / active state
+and the cursor / hover colour rides on the shared three-state grammar.
+
 `bridge/launcher/read_config.sh` consumes the resulting keys at tt++
 startup and produces the `_host`, `_port`, `_ses_cmd` tt++ variables
 (MMapper and Custom use `ses` / plain telnet; Direct uses `ssl` / TLS).
@@ -1005,9 +1011,12 @@ and pops back to `options_connection`.
 ### `options_spotlights` frame
 
 Per-kind toggles for the [Spotlights reel](#spotlights-sub-menu). Four
-`[x]` / `[ ]` rows followed by a blank row and `Back`, styled identically
-to the `Display pane headers` toggle in `options_panes`. Enter / Space /
-click flips the row; ESC or `Back` saves and pops back to `options`.
+`[X]` / `[ ]` rows followed by a blank row and `Back`, rendered through
+`menu_chrome.button_fragment` so the leading `[X]` / `[ ]` glyph carries
+the persistent on / active state and the row's background colour stays
+reserved for the transient cursor and hover — identical grammar to the
+`Display pane headers` toggle in `options_panes`. Enter / Space / click
+flips the row; ESC or `Back` saves and pops back to `options`.
 
 | Row              | `startup.conf` key                | JSONL `event`  |
 |------------------|-----------------------------------|----------------|
