@@ -2969,6 +2969,25 @@ def _profile_editor_scroll_list(delta):
         _app.invalidate()
 
 
+def _editor_list_wheel(delta):
+    """Mouse-wheel scroll on the lite-mode entry list: shifts the
+    viewport by `delta` rows through the Scrollbar widget so its
+    internal offset stays the authoritative one; read it back into
+    `_editor_list_scroll`. The list cursor stays put."""
+    global _editor_list_scroll
+    if _editor_list_sb is None:
+        _profile_editor_scroll_list(delta)
+        return
+    visible = _editor_list_visible()
+    total   = _profile_editor_display_total()
+    _editor_list_sb.update(total, visible, height=visible)
+    _editor_list_sb.scroll_to(_editor_list_scroll)
+    _editor_list_sb.scroll_by(delta)
+    _editor_list_scroll = _editor_list_sb.scroll_offset
+    if _app:
+        _app.invalidate()
+
+
 def _profile_editor_request_delete():
     """`Del` handler: remove the cursor Entry from `Profile.items`,
     clamp the cursor, and re-render. No confirmation — the friction-
@@ -3083,6 +3102,25 @@ def _editor_body_lines_for_entry(entry):
     return entry.body.split("\n") if entry.body else [""]
 
 
+def _editor_body_wheel(delta):
+    """Mouse-wheel scroll on the lite-mode Body field. No-op when the
+    body fits inside the 10-row cap; otherwise adjusts
+    `_editor_body_scroll` by `delta` lines, clamped. The body cursor
+    stays put — the next cursor-moving keystroke pulls the viewport
+    back via `_editor_body_viewport`."""
+    global _editor_body_scroll
+    cap = _EDITOR_BODY_CAP_ROWS
+    line_count = len(_editor_body_lines())
+    if line_count <= cap:
+        return
+    mx = max(0, line_count - cap)
+    new_scroll = max(0, min(mx, _editor_body_scroll + delta))
+    if new_scroll != _editor_body_scroll:
+        _editor_body_scroll = new_scroll
+        if _app:
+            _app.invalidate()
+
+
 def _editor_body_viewport(line_count):
     """Clamp `_editor_body_scroll` so the cursor stays inside the 10-row
     Commands viewport, then return `(scroll, visible_count, overflow)`.
@@ -3116,6 +3154,12 @@ def _editor_body_scrollbar_cell(visible_row, scroll, total, visible, focused):
         style, glyph = "fg:#585858", "░"
 
     def _handler(ev, row=visible_row, t=top, h=thumb_h):
+        if ev.event_type == MouseEventType.SCROLL_UP:
+            _editor_body_wheel(-3)
+            return None
+        if ev.event_type == MouseEventType.SCROLL_DOWN:
+            _editor_body_wheel(3)
+            return None
         if ev.event_type != MouseEventType.MOUSE_DOWN:
             return None if ev.event_type == MouseEventType.MOUSE_MOVE \
                 else NotImplemented
@@ -3296,7 +3340,12 @@ def _editor_box_content_row(text, border_focused, cursor_col=None,
 
     view_cursor = (cur_for_scroll - start_col) if cursor_col is not None else None
 
-    frags = [(border_style, "│ ", None)]
+    # Body borders carry the body's focus handler so wheel events landing
+    # on the vertical bars scroll the body viewport (when overflow). Other
+    # fields keep the default `None` handler — there is nothing to scroll.
+    border_h = (_editor_make_field_focus_handler("body")
+                if field_id == "body" else None)
+    frags = [(border_style, "│ ", border_h)]
 
     for i in range(inner):
         ch = view_text[i] if i < len(view_text) else " "
@@ -3324,7 +3373,7 @@ def _editor_box_content_row(text, border_focused, cursor_col=None,
         frags.append(scrollbar_cell if len(scrollbar_cell) == 3
                      else (scrollbar_cell[0], scrollbar_cell[1], None))
 
-    frags.append((border_style, " │", None))
+    frags.append((border_style, " │", border_h))
     return frags
 
 
@@ -3342,6 +3391,16 @@ def _editor_make_field_click_handler(field_id, visible_col, line_idx,
     def _handler(ev):
         if ev.event_type == MouseEventType.MOUSE_MOVE:
             return None
+        if ev.event_type == MouseEventType.SCROLL_UP:
+            if field_id == "body":
+                _editor_body_wheel(-3)
+                return None
+            return NotImplemented
+        if ev.event_type == MouseEventType.SCROLL_DOWN:
+            if field_id == "body":
+                _editor_body_wheel(3)
+                return None
+            return NotImplemented
         if ev.event_type != MouseEventType.MOUSE_DOWN:
             return NotImplemented
         global _editor_pattern_cursor, _editor_pattern_anchor
@@ -3414,10 +3473,22 @@ def _editor_make_field_focus_handler(field_id):
     repositioning the in-buffer cursor at a column. Used by the label
     row, the top/bottom border rows, and the side-padding cells so a
     click anywhere on a field's outer bounding box brings it into
-    focus."""
+    focus. Wheel events on the body's chrome (label/borders) scroll the
+    body viewport when it overflows the 10-row cap; pattern chrome
+    ignores wheel."""
     def _handler(ev):
         if ev.event_type == MouseEventType.MOUSE_MOVE:
             return None
+        if ev.event_type == MouseEventType.SCROLL_UP:
+            if field_id == "body":
+                _editor_body_wheel(-3)
+                return None
+            return NotImplemented
+        if ev.event_type == MouseEventType.SCROLL_DOWN:
+            if field_id == "body":
+                _editor_body_wheel(3)
+                return None
+            return NotImplemented
         if ev.event_type != MouseEventType.MOUSE_DOWN:
             return NotImplemented
         entry = _editor_current_entry()
@@ -5305,6 +5376,39 @@ def _editor_buffer_scroll_into_view(cols, viewport_h):
     _editor_buffer_scroll = max(0, min(max_scroll, _editor_buffer_scroll))
 
 
+def _editor_buffer_wheel(delta):
+    """Mouse-wheel scroll on the editor-mode buffer: shift the viewport
+    by `delta` visual rows, clamped. The buffer cursor stays put — the
+    next cursor-moving keystroke pulls the viewport back. Mirrors the
+    decoupling that scrollbar clicks already implement."""
+    global _editor_buffer_scroll
+    cols = _term_cols()
+    _wrap_w, total, _l2v = _editor_buffer_visual_layout(cols)
+    viewport_h = _editor_body_h()
+    max_scroll = max(0, total - viewport_h)
+    new_scroll = max(0, min(max_scroll, _editor_buffer_scroll + delta))
+    if new_scroll != _editor_buffer_scroll:
+        _editor_buffer_scroll = new_scroll
+        if _app:
+            _app.invalidate()
+
+
+def _editor_buffer_chrome_wheel_handler(ev):
+    """Handler for editor-mode buffer chrome cells (line-number column)
+    that need to clear outer hover on MOUSE_MOVE and forward wheel
+    events to the buffer viewport."""
+    if ev.event_type == MouseEventType.MOUSE_MOVE:
+        _profile_editor_clear_hover()
+        return None
+    if ev.event_type == MouseEventType.SCROLL_UP:
+        _editor_buffer_wheel(-3)
+        return None
+    if ev.event_type == MouseEventType.SCROLL_DOWN:
+        _editor_buffer_wheel(3)
+        return None
+    return NotImplemented
+
+
 def _editor_kind_button_style(idx):
     """Return the three-state colour token for the kind button at index
     `idx` (0..len(_PROFILE_EDITOR_TABS)-1). Hover on an inactive button
@@ -5492,10 +5596,10 @@ def _profile_editor_text():
                                 _app.invalidate()
                             return None
                         if ev.event_type == MouseEventType.SCROLL_UP:
-                            _profile_editor_scroll_list(-1)
+                            _editor_list_wheel(-3)
                             return None
                         if ev.event_type == MouseEventType.SCROLL_DOWN:
-                            _profile_editor_scroll_list(1)
+                            _editor_list_wheel(3)
                             return None
                         return NotImplemented
 
@@ -5535,10 +5639,10 @@ def _profile_editor_text():
                                 _app.invalidate()
                             return None
                         if ev.event_type == MouseEventType.SCROLL_UP:
-                            _profile_editor_scroll_list(-1)
+                            _editor_list_wheel(-3)
                             return None
                         if ev.event_type == MouseEventType.SCROLL_DOWN:
-                            _profile_editor_scroll_list(1)
+                            _editor_list_wheel(3)
                             return None
                         return NotImplemented
 
@@ -5550,10 +5654,10 @@ def _profile_editor_text():
                             _profile_editor_set_hover_row(None)
                             return None
                         if ev.event_type == MouseEventType.SCROLL_UP:
-                            _profile_editor_scroll_list(-1)
+                            _editor_list_wheel(-3)
                             return None
                         if ev.event_type == MouseEventType.SCROLL_DOWN:
-                            _profile_editor_scroll_list(1)
+                            _editor_list_wheel(3)
                             return None
                         return NotImplemented
                     left_frags = [("", " " * _EDITOR_LIST_W,
@@ -5588,6 +5692,12 @@ def _profile_editor_text():
                         return None
                     if ev.event_type == MouseEventType.MOUSE_MOVE:
                         _profile_editor_set_hover_row(None)
+                        return None
+                    if ev.event_type == MouseEventType.SCROLL_UP:
+                        _editor_list_wheel(-3)
+                        return None
+                    if ev.event_type == MouseEventType.SCROLL_DOWN:
+                        _editor_list_wheel(3)
                         return None
                     return NotImplemented
 
@@ -5845,11 +5955,13 @@ def _editor_append_editor_body(frags, cols):
         else:
             ln_text = (str(info[0] + 1).rjust(ln_w - 1) + " ")
         ln_style = f"fg:#585858 {row_bg}".strip()
-        frags.append((ln_style, ln_text, _editor_clear_outer_hover))
+        frags.append((ln_style, ln_text,
+                      _editor_buffer_chrome_wheel_handler))
 
         # ----- Content cells (one row = 1-5 style runs) -----
         if info is None:
-            frags.append((row_bg, " " * wrap_w, _editor_clear_outer_hover))
+            frags.append((row_bg, " " * wrap_w,
+                          _editor_buffer_chrome_wheel_handler))
         else:
             logical_line, wrap_idx = info
             line_start_abs = starts[logical_line]
@@ -5952,6 +6064,12 @@ def _editor_buffer_row_click_handler(logical_line, wrap_start,
     def _h(ev):
         if ev.event_type == MouseEventType.MOUSE_MOVE:
             return None
+        if ev.event_type == MouseEventType.SCROLL_UP:
+            _editor_buffer_wheel(-3)
+            return None
+        if ev.event_type == MouseEventType.SCROLL_DOWN:
+            _editor_buffer_wheel(3)
+            return None
         if ev.event_type != MouseEventType.MOUSE_DOWN:
             return NotImplemented
         col_in_content = ev.position.x - content_x_offset
@@ -5981,6 +6099,12 @@ def _editor_buffer_scrollbar_click_handler(vrow, sb_top, sb_thumb_h,
     """Page-step click on the editor-mode scrollbar. Clicks above the
     thumb page up by one viewport, clicks below page down."""
     def _h(ev, row=vrow, top=sb_top, h=sb_thumb_h, t=total, v=viewport_h):
+        if ev.event_type == MouseEventType.SCROLL_UP:
+            _editor_buffer_wheel(-3)
+            return None
+        if ev.event_type == MouseEventType.SCROLL_DOWN:
+            _editor_buffer_wheel(3)
+            return None
         if ev.event_type != MouseEventType.MOUSE_DOWN:
             return None if ev.event_type == MouseEventType.MOUSE_MOVE \
                 else NotImplemented

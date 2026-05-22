@@ -3335,5 +3335,253 @@ class TestEditorLiteBodyDoubleTripleClick(unittest.TestCase):
         self.assertEqual(launcher._editor_body_col, 2)
 
 
+class TestEditorWheelScroll(unittest.TestCase):
+    """Phase G: mouse-wheel scrolling.
+
+    Three independent surfaces — editor-mode buffer, lite-mode entry list,
+    lite-mode Body field (when overflowing the 10-row cap) — each move
+    ±3 rows/tick under SCROLL_UP / SCROLL_DOWN, clamp to their bounds,
+    and never move their associated cursor. Wheel over a non-overflowing
+    region is a no-op."""
+
+    def setUp(self):
+        # Fix terminal size so body_h / list_visible / max_scroll are
+        # deterministic across host environments.
+        self._real_get_terminal_size = launcher.shutil.get_terminal_size
+        launcher.shutil.get_terminal_size = lambda: os.terminal_size((80, 30))
+
+    def tearDown(self):
+        launcher.shutil.get_terminal_size = self._real_get_terminal_size
+
+    # ------------------------------------------------------------------
+    # Editor-mode buffer
+    # ------------------------------------------------------------------
+    def _setup_buffer(self, line_count):
+        prof, _src, _td = _make_profile("")
+        _reset_editor_state(prof)
+        launcher._editor_mode            = "editor"
+        launcher._editor_toggle_focused  = False
+        launcher._editor_buffer_text     = "\n".join(
+            f"line{i}" for i in range(line_count))
+        launcher._editor_buffer_cursor   = 0
+        launcher._editor_buffer_scroll   = 0
+        launcher._editor_buffer_anchor   = None
+
+    def _row_handler(self):
+        # Per-row click handler used by editor-mode buffer rows. Args mirror
+        # the live render call site; for wheel events only the event_type
+        # branch is exercised.
+        return launcher._editor_buffer_row_click_handler(
+            logical_line=0, wrap_start=0, content_x_offset=0, line_len=5)
+
+    def test_buffer_wheel_down_scrolls_by_three(self):
+        self._setup_buffer(50)
+        h = self._row_handler()
+        h(_MouseEv(0, 0, MouseEventType.SCROLL_DOWN))
+        self.assertEqual(launcher._editor_buffer_scroll, 3)
+
+    def test_buffer_wheel_up_scrolls_by_three(self):
+        self._setup_buffer(50)
+        launcher._editor_buffer_scroll = 10
+        h = self._row_handler()
+        h(_MouseEv(0, 0, MouseEventType.SCROLL_UP))
+        self.assertEqual(launcher._editor_buffer_scroll, 7)
+
+    def test_buffer_wheel_clamps_at_top(self):
+        self._setup_buffer(50)
+        launcher._editor_buffer_scroll = 2
+        h = self._row_handler()
+        h(_MouseEv(0, 0, MouseEventType.SCROLL_UP))
+        self.assertEqual(launcher._editor_buffer_scroll, 0)
+        h(_MouseEv(0, 0, MouseEventType.SCROLL_UP))
+        self.assertEqual(launcher._editor_buffer_scroll, 0)
+
+    def test_buffer_wheel_clamps_at_bottom(self):
+        self._setup_buffer(50)
+        cols = launcher._term_cols()
+        _wrap_w, total, _l2v = launcher._editor_buffer_visual_layout(cols)
+        viewport_h = launcher._editor_body_h()
+        mx = max(0, total - viewport_h)
+        launcher._editor_buffer_scroll = mx - 1
+        h = self._row_handler()
+        h(_MouseEv(0, 0, MouseEventType.SCROLL_DOWN))
+        self.assertEqual(launcher._editor_buffer_scroll, mx)
+        h(_MouseEv(0, 0, MouseEventType.SCROLL_DOWN))
+        self.assertEqual(launcher._editor_buffer_scroll, mx)
+
+    def test_buffer_wheel_does_not_move_cursor(self):
+        self._setup_buffer(50)
+        launcher._editor_buffer_cursor = 7
+        h = self._row_handler()
+        h(_MouseEv(0, 0, MouseEventType.SCROLL_DOWN))
+        h(_MouseEv(0, 0, MouseEventType.SCROLL_DOWN))
+        self.assertEqual(launcher._editor_buffer_scroll, 6)
+        self.assertEqual(launcher._editor_buffer_cursor, 7)
+
+    def test_buffer_wheel_noop_when_no_overflow(self):
+        # 3 short lines and a viewport ≥ 15 rows → nothing to scroll.
+        self._setup_buffer(3)
+        h = self._row_handler()
+        h(_MouseEv(0, 0, MouseEventType.SCROLL_DOWN))
+        h(_MouseEv(0, 0, MouseEventType.SCROLL_DOWN))
+        self.assertEqual(launcher._editor_buffer_scroll, 0)
+
+    def test_buffer_scrollbar_handler_also_scrolls(self):
+        # The scrollbar cell handler must accept SCROLL events too — wheel
+        # on the bar should behave the same as wheel on the content area.
+        self._setup_buffer(50)
+        h = launcher._editor_buffer_scrollbar_click_handler(
+            vrow=0, sb_top=0, sb_thumb_h=2, total=50, viewport_h=15)
+        h(_MouseEv(0, 0, MouseEventType.SCROLL_DOWN))
+        self.assertEqual(launcher._editor_buffer_scroll, 3)
+
+    def test_buffer_chrome_wheel_handler_scrolls(self):
+        # The line-number cells route wheel events through the dedicated
+        # chrome handler.
+        self._setup_buffer(50)
+        launcher._editor_buffer_chrome_wheel_handler(
+            _MouseEv(0, 0, MouseEventType.SCROLL_DOWN))
+        self.assertEqual(launcher._editor_buffer_scroll, 3)
+
+    # ------------------------------------------------------------------
+    # Lite-mode entry list
+    # ------------------------------------------------------------------
+    def _setup_list(self, n_entries):
+        body = "\n".join(
+            f"#alias {{a{i:02d}}} {{cmd{i}}}" for i in range(n_entries))
+        prof, _src, _td = _make_profile(body)
+        _reset_editor_state(prof, focus=1)
+        launcher._editor_list_sb = launcher.Scrollbar(
+            launcher._profile_editor_display_total(),
+            launcher._editor_list_visible(),
+            launcher._editor_list_visible(),
+        )
+        launcher._editor_list_scroll = 0
+        launcher._editor_list_cursor = 0
+        return prof
+
+    def test_list_wheel_down_scrolls_by_three(self):
+        self._setup_list(60)
+        launcher._editor_list_wheel(3)
+        self.assertEqual(launcher._editor_list_scroll, 3)
+        self.assertEqual(launcher._editor_list_sb.scroll_offset, 3)
+
+    def test_list_wheel_up_clamps_at_zero(self):
+        self._setup_list(60)
+        launcher._editor_list_scroll = 2
+        launcher._editor_list_sb.scroll_to(2)
+        launcher._editor_list_wheel(-3)
+        self.assertEqual(launcher._editor_list_scroll, 0)
+
+    def test_list_wheel_clamps_at_bottom(self):
+        self._setup_list(60)
+        total = launcher._profile_editor_display_total()
+        visible = launcher._editor_list_visible()
+        mx = max(0, total - visible)
+        launcher._editor_list_scroll = mx - 1
+        launcher._editor_list_sb.scroll_to(mx - 1)
+        launcher._editor_list_wheel(3)
+        self.assertEqual(launcher._editor_list_scroll, mx)
+        launcher._editor_list_wheel(3)
+        self.assertEqual(launcher._editor_list_scroll, mx)
+
+    def test_list_wheel_does_not_move_cursor(self):
+        self._setup_list(60)
+        launcher._editor_list_cursor = 4
+        launcher._editor_list_wheel(3)
+        launcher._editor_list_wheel(3)
+        self.assertEqual(launcher._editor_list_scroll, 6)
+        self.assertEqual(launcher._editor_list_cursor, 4)
+
+    def test_list_wheel_noop_when_no_overflow(self):
+        # Two entries + sentinel → 3 rows, list_visible is ~28. No scroll.
+        self._setup_list(2)
+        launcher._editor_list_wheel(3)
+        self.assertEqual(launcher._editor_list_scroll, 0)
+
+    # ------------------------------------------------------------------
+    # Lite-mode Body field
+    # ------------------------------------------------------------------
+    def _setup_body(self, body_line_count):
+        prof, _src, _td = _make_profile("#alias {p} {one-liner}\n")
+        # Mutate the entry's body to span `body_line_count` lines. Going
+        # through the source-parse path would require literal newlines
+        # inside the brace group, which is fiddlier; setting the body
+        # directly is the same surface the live editor mutates.
+        entry = prof.entries_of("alias")[0]
+        entry.body = "\n".join(f"line{i}" for i in range(body_line_count))
+        _reset_editor_state(prof, focus=2)
+        launcher._editor_detail_field = 1     # body field
+        launcher._editor_body_scroll  = 0
+        launcher._editor_body_line    = 0
+        launcher._editor_body_col     = 0
+        return prof
+
+    def test_body_wheel_down_scrolls_by_three(self):
+        self._setup_body(20)
+        launcher._editor_body_wheel(3)
+        self.assertEqual(launcher._editor_body_scroll, 3)
+
+    def test_body_wheel_up_clamps_at_zero(self):
+        self._setup_body(20)
+        launcher._editor_body_scroll = 2
+        launcher._editor_body_wheel(-3)
+        self.assertEqual(launcher._editor_body_scroll, 0)
+
+    def test_body_wheel_clamps_at_bottom(self):
+        self._setup_body(20)
+        mx = 20 - launcher._EDITOR_BODY_CAP_ROWS    # 10
+        launcher._editor_body_scroll = mx - 1
+        launcher._editor_body_wheel(3)
+        self.assertEqual(launcher._editor_body_scroll, mx)
+        launcher._editor_body_wheel(3)
+        self.assertEqual(launcher._editor_body_scroll, mx)
+
+    def test_body_wheel_noop_when_no_overflow(self):
+        self._setup_body(5)
+        launcher._editor_body_wheel(3)
+        self.assertEqual(launcher._editor_body_scroll, 0)
+
+    def test_body_wheel_does_not_move_body_cursor(self):
+        self._setup_body(20)
+        launcher._editor_body_line = 4
+        launcher._editor_body_col  = 2
+        launcher._editor_body_wheel(3)
+        launcher._editor_body_wheel(3)
+        self.assertEqual(launcher._editor_body_scroll, 6)
+        self.assertEqual(launcher._editor_body_line, 4)
+        self.assertEqual(launcher._editor_body_col, 2)
+
+    def test_body_field_click_handler_routes_wheel(self):
+        # Per-cell body handler must forward SCROLL_UP / SCROLL_DOWN to
+        # the body wheel helper.
+        self._setup_body(20)
+        h = launcher._editor_make_field_click_handler(
+            "body", visible_col=0, line_idx=0, start=0)
+        h(_MouseEv(0, 0, MouseEventType.SCROLL_DOWN))
+        self.assertEqual(launcher._editor_body_scroll, 3)
+        self.assertEqual(launcher._editor_body_line, 0)
+        self.assertEqual(launcher._editor_body_col, 0)
+
+    def test_body_focus_handler_routes_wheel(self):
+        # Wheel landing on the body's chrome (label, top/bottom border, or
+        # the vertical `│` bars) routes through the focus handler.
+        self._setup_body(20)
+        h = launcher._editor_make_field_focus_handler("body")
+        h(_MouseEv(0, 0, MouseEventType.SCROLL_DOWN))
+        self.assertEqual(launcher._editor_body_scroll, 3)
+
+    def test_pattern_field_click_handler_ignores_wheel(self):
+        # Pattern is single-line: wheel must NOT scroll the body.
+        self._setup_body(20)
+        h = launcher._editor_make_field_click_handler(
+            "pattern", visible_col=0, line_idx=None, start=0)
+        result = h(_MouseEv(0, 0, MouseEventType.SCROLL_DOWN))
+        # Handler returns NotImplemented for unhandled events so the parent
+        # control falls through; body scroll must not have moved.
+        self.assertIs(result, NotImplemented)
+        self.assertEqual(launcher._editor_body_scroll, 0)
+
+
 if __name__ == "__main__":
     unittest.main()
