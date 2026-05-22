@@ -32,6 +32,7 @@ from menu_chrome import (
     button_fragment, footer_block, menu_row, title_block, title_block_height,
 )
 from panes_grid import apply_cell_toggle, panes_grid_fragments
+import scripts_view
 from widgets.scrollbar import Scrollbar
 
 # ---------------------------------------------------------------------------
@@ -105,7 +106,15 @@ _sel_options      = 0           # cursor within the popup Options grouping (Pane
 #   7    — Back.
 _panes_row        = 0
 _panes_col        = 0
-_scripts_scroll   = 0
+# Scripts (read-only popup view) — frozen snapshot of scripts.cache,
+# loaded on every push of the frame. The cursor browses the list and
+# updates the detail panel; PageUp/PageDown scrolls the detail. No
+# toggling, no live re-scan: the popup must never disagree with the
+# brain's currently-running set, which the cache represents.
+_scripts_catalog       = []
+_scripts_cursor        = 0
+_scripts_list_scroll   = 0
+_scripts_detail_scroll = 0
 _rate_session_rating = 0        # 0..5; reset on every push of the rate_session frame
 _app                 = None
 _main_window         = None     # set in main(); referenced for focus
@@ -414,7 +423,7 @@ def _main_selectable_indices():
 
 
 def _activate_main_item(action):
-    global _scripts_scroll, _sel_options, _rate_session_rating
+    global _sel_options, _rate_session_rating
     if action == "continue":
         _app.exit()
     elif action == "reconnect":
@@ -429,8 +438,7 @@ def _activate_main_item(action):
         _sel_options = 0
         _push_frame("options")
     elif action == "scripts":
-        _scripts_scroll = 0
-        _push_frame("scripts")
+        _enter_scripts_frame()
     elif action == "statistics":
         char = _statistics_character()
         if char:
@@ -592,7 +600,7 @@ def _options_selectable_indices():
 
 
 def _options_activate(row_idx):
-    global _scripts_scroll, _panes_row, _panes_col
+    global _panes_row, _panes_col
     if not (0 <= row_idx < len(_OPTIONS_ROWS)):
         return
     action, _label = _OPTIONS_ROWS[row_idx]
@@ -601,8 +609,7 @@ def _options_activate(row_idx):
         _panes_col = 0
         _push_frame("panes")
     elif action == "scripts":
-        _scripts_scroll = 0
-        _push_frame("scripts")
+        _enter_scripts_frame()
     elif action == "back":
         _pop_frame()
 
@@ -887,32 +894,27 @@ def _panes_text():
 
 
 # ---------------------------------------------------------------------------
-# Scripts frame
+# Scripts frame — read-only two-column [ list | detail ] view.
+#
+# Sourced from `bridge/runtime/scripts.cache` (the brain-written snapshot)
+# rather than a live filesystem scan, so the popup always reflects the
+# enabled set that's currently loaded into the brain — including disabled
+# scripts and their metadata. Toggling is intentionally absent: enabled
+# scripts may have registered aliases / triggers / event subscriptions
+# without a universal teardown contract, so toggling mid-session would
+# leave phantom registrations. See ADR 0093 and docs/scripts.md.
 # ---------------------------------------------------------------------------
-def _scripts_parsed_lines():
-    """Read scripts.cache and return list of (tag, text) tuples,
-    matching the bash format A:/S:/H:/B:/M:."""
-    out = []
-    if not os.path.exists(SCRIPTS_CACHE_PATH) or os.path.getsize(SCRIPTS_CACHE_PATH) == 0:
-        out.append(("M", "No scripts cached yet — start the client once to populate."))
-        return out
-    in_script = False
-    try:
-        with open(SCRIPTS_CACHE_PATH) as fh:
-            for line in fh:
-                line = line.rstrip("\n")
-                if line.startswith("SCRIPT:"):
-                    if in_script:
-                        out.append(("B", ""))
-                    in_script = True
-                    out.append(("A", line[len("SCRIPT:"):]))
-                elif line.startswith("SUMMARY:"):
-                    out.append(("S", line[len("SUMMARY:"):]))
-                elif line.startswith("HELP:"):
-                    out.append(("H", line[len("HELP:"):]))
-    except OSError:
-        pass
-    return out
+def _enter_scripts_frame():
+    """Load the cache, seat the cursor at row 0, push the frame."""
+    global _scripts_catalog, _scripts_cursor
+    global _scripts_list_scroll, _scripts_detail_scroll
+    _scripts_catalog       = scripts_view.parse_scripts_cache(
+        SCRIPTS_CACHE_PATH,
+    )
+    _scripts_cursor        = 0
+    _scripts_list_scroll   = 0
+    _scripts_detail_scroll = 0
+    _push_frame("scripts")
 
 
 def _scripts_visible_rows():
@@ -922,47 +924,82 @@ def _scripts_visible_rows():
     return max(1, _term_rows() - title_block_height(1) - 1)
 
 
+def _scripts_detail_total():
+    """Number of detail-panel rows for the cursor script, used to clamp
+    detail-pane scroll bounds. Mirrors the launcher's helper."""
+    if not _scripts_catalog:
+        return _scripts_visible_rows()
+    cur = _scripts_catalog[max(0, min(_scripts_cursor,
+                                      len(_scripts_catalog) - 1))]
+    list_w   = scripts_view.list_panel_width(_scripts_catalog)
+    detail_w = scripts_view.detail_panel_width(_term_cols(), list_w)
+    return len(scripts_view.render_detail_lines(cur, detail_w))
+
+
+def _scripts_move_cursor(delta):
+    """Move the browse cursor by `delta`, clamp to the catalog, reset
+    the detail scroll so the new entry starts from the top."""
+    global _scripts_cursor, _scripts_detail_scroll, _scripts_list_scroll
+    n = len(_scripts_catalog)
+    if n == 0:
+        return
+    new = max(0, min(n - 1, _scripts_cursor + delta))
+    if new == _scripts_cursor:
+        return
+    _scripts_cursor = new
+    _scripts_detail_scroll = 0
+    body = _scripts_visible_rows()
+    if _scripts_cursor < _scripts_list_scroll:
+        _scripts_list_scroll = _scripts_cursor
+    elif _scripts_cursor >= _scripts_list_scroll + body:
+        _scripts_list_scroll = _scripts_cursor - body + 1
+    if _app:
+        _app.invalidate()
+
+
+def _scripts_scroll_detail(delta):
+    """Page the detail viewport by `delta` rows, clamped to the detail
+    content total. PageUp/PageDown is the keyboard-only scroll path —
+    the popup intentionally has no mouse-wheel binding."""
+    global _scripts_detail_scroll
+    total = _scripts_detail_total()
+    body  = _scripts_visible_rows()
+    mx    = max(0, total - body)
+    new   = max(0, min(mx, _scripts_detail_scroll + delta))
+    if new != _scripts_detail_scroll:
+        _scripts_detail_scroll = new
+        if _app:
+            _app.invalidate()
+
+
 def _scripts_text():
-    """Single-frame renderer for the popup's Scripts page. Mirrors the
-    launcher's `_scripts_text`: title block, viewport-sized body padded
-    with blanks, footer anchored to the final terminal row."""
-    global _scripts_scroll
+    """Renderer for the popup's read-only Scripts page. Same shared
+    body renderer the launcher uses, parameterised with `mode="readonly"`
+    so no hover treatment is applied. The footer omits the Toggle key —
+    its absence is the read-only signal."""
     cols   = _term_cols()
     rows_h = _term_rows()
-    pad    = max(0, (cols - 60) // 2)
-    p      = " " * pad
-    parsed = _scripts_parsed_lines()
-
-    visual = []
-    for tag, text in parsed:
-        if tag == "A":
-            visual.append([("", p), (C_ACCENT, "▶ "), (C_ACTIVE, text.upper())])
-        elif tag == "S":
-            visual.append([("", p + "  "), (C_BODY, text)])
-        elif tag == "H":
-            visual.append([("", p + "  "), (C_ITEM, text)])
-        elif tag == "B":
-            visual.append([])
-        elif tag == "M":
-            visual.append([("", p), (C_BODY, text)])
-
-    viewport   = _scripts_visible_rows()
-    max_scroll = max(0, len(visual) - viewport)
-    if _scripts_scroll > max_scroll:
-        _scripts_scroll = max_scroll
+    body_h = _scripts_visible_rows()
 
     frags = []
     frags.extend(title_block("─── Scripts ───", cols, blank_above=1))
 
-    sliced = visual[_scripts_scroll:_scripts_scroll + viewport]
-    for i in range(viewport):
-        if i < len(sliced):
-            frags.extend(sliced[i])
-        frags.append(("", "\n"))
+    frags.extend(scripts_view.render_body(
+        _scripts_catalog,
+        cursor_idx=_scripts_cursor,
+        list_scroll=_scripts_list_scroll,
+        detail_scroll=_scripts_detail_scroll,
+        term_cols=cols,
+        body_h=body_h,
+        focus="list",
+        mode="readonly",
+    ))
 
-    overflow = len(visual) > viewport
-    footer = "↑↓ Scroll · ESC Back" if overflow else "ESC Back"
-    content_rows = title_block_height(1) + viewport
+    if _scripts_catalog:
+        footer = "↑↓ Move · PgUp/PgDn Scroll · ESC Back"
+    else:
+        footer = "ESC Back"
+    content_rows = title_block_height(1) + body_h
     frags.extend(footer_block(footer, cols, rows_h, content_rows))
     return frags
 
@@ -1977,23 +2014,6 @@ def _statistics_text():
     return frags
 
 
-# ---------------------------------------------------------------------------
-# Scripts scroll helper. Mouse-wheel scroll is not delivered to the popup
-# (tmux display-popup forwards only click events), so the keyboard bindings
-# in `kb` are the documented path; this helper bounds-clamps the offset.
-# ---------------------------------------------------------------------------
-def _scripts_max_scroll():
-    return max(0, len(_scripts_parsed_lines()) - _scripts_visible_rows())
-
-
-def _scroll_scripts(delta):
-    global _scripts_scroll
-    mx = _scripts_max_scroll()
-    new_val = max(0, min(mx, _scripts_scroll + delta))
-    if new_val != _scripts_scroll:
-        _scripts_scroll = new_val
-        if _app:
-            _app.invalidate()
 
 
 # ---------------------------------------------------------------------------
@@ -2119,25 +2139,37 @@ def _panes_escape(event):
     _pop_frame()
 
 
-# Scripts frame
+# Scripts frame — read-only two-column view. Up/Down moves the browse
+# cursor (updates the detail); PageUp/PageDown scrolls the detail panel
+# (keyboard-only — the popup intentionally has no mouse-wheel binding).
 @kb.add("up", filter=_in_frame("scripts"))
 def _scr_up(event):
-    _scroll_scripts(-1)
+    _scripts_move_cursor(-1)
 
 
 @kb.add("down", filter=_in_frame("scripts"))
 def _scr_down(event):
-    _scroll_scripts(1)
+    _scripts_move_cursor(1)
 
 
 @kb.add("pageup", filter=_in_frame("scripts"))
 def _scr_pageup(event):
-    _scroll_scripts(-10)
+    _scripts_scroll_detail(-_scripts_visible_rows())
 
 
 @kb.add("pagedown", filter=_in_frame("scripts"))
 def _scr_pagedown(event):
-    _scroll_scripts(10)
+    _scripts_scroll_detail(_scripts_visible_rows())
+
+
+@kb.add("home", filter=_in_frame("scripts"))
+def _scr_home(event):
+    _scripts_move_cursor(-len(_scripts_catalog))
+
+
+@kb.add("end", filter=_in_frame("scripts"))
+def _scr_end(event):
+    _scripts_move_cursor(len(_scripts_catalog))
 
 
 @kb.add("escape", filter=_in_frame("scripts"), eager=True)
@@ -2326,9 +2358,10 @@ def _build_panes_container():
 
 def _build_scripts_container():
     global _scripts_window
-    # Single FormattedTextControl Window — _scripts_text emits the
-    # title block, viewport-padded body sliced by _scripts_scroll, and
-    # footer in one fragment list. Mirrors the launcher's Scripts frame.
+    # Single FormattedTextControl Window — `_scripts_text` emits the
+    # title block, two-column body (shared `scripts_view.render_body`),
+    # and footer in one fragment list. Mirrors the launcher's Scripts
+    # frame; mode="readonly" suppresses hover treatment in the body.
     _scripts_window = Window(
         content=FormattedTextControl(text=_scripts_text, focusable=True),
         wrap_lines=False,
