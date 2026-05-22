@@ -1,5 +1,5 @@
 -- Passive GMCP collector for Core.* messages.
--- No alias, no register_script — background collector only.
+-- No alias, no metadata header — background collector only.
 
 gmcp.handlers["Core.Goodbye"] = function(body)
     dbg(string.format("[CORE] goodbye: %s", tostring(body)))

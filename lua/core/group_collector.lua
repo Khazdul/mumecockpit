@@ -1,6 +1,6 @@
 -- Always-on GMCP collector and primary writer for state.group.*.
 -- Populates from Group.Set / Group.Add / Group.Update / Group.Remove.
--- No alias, no register_script. Pair with lua/core/group_state.lua (serializer).
+-- No alias, no metadata header. Pair with lua/core/group_state.lua (serializer).
 
 local _band = {
     hp = {

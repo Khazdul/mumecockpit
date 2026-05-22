@@ -1,7 +1,7 @@
 -- Passive character-state collector.
 -- Merges Char.Name, Char.StatusVars, Char.Vitals into state.char.*
 -- using generic flat-copy (kebab-case keys converted to snake_case).
--- No alias, no register_script — background collector only.
+-- No alias, no metadata header — background collector only.
 
 local function merge_flat(body)
     body = body or {}

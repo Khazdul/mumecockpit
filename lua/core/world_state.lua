@@ -1,6 +1,6 @@
 -- Passive world-state collector.
 -- Stores Event.Darkness, Event.Moon, Event.Moved, and Event.Sun bodies into state.world.
--- No alias, no register_script — background collector only.
+-- No alias, no metadata header — background collector only.
 
 gmcp.handlers["Event.Darkness"] = function(body)
     state.world.darkness = body

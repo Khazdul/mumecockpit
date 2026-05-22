@@ -1,6 +1,10 @@
 -- lua/brain/registry.lua
--- Exports: register_script, _write_scripts_cache, _register_cockpit_help, _build_box
--- Depends on: tintin_cmd (io.lua), dbg (ui.lua), _scripts (brain.lua skeleton)
+-- Exports: _build_box, _register_script_help, _register_cockpit_help, _write_scripts_cache
+-- Depends on: tintin_cmd (io.lua), dbg (ui.lua)
+--
+-- Catalog records (built by lua/brain/loader.lua) have the shape:
+--   { name=<stem>, path=<file>, enabled=<bool>,
+--     summary=<string|nil>, aliases={{name=,desc=},...}, help={...} }
 
 local _BOX_W = 50  -- inner width: chars between ║ borders
 
@@ -38,26 +42,37 @@ function _build_box(title, body_lines)
     return parts
 end
 
--- register_script(meta) — called by scripts at load time.
--- meta = { alias="name", summary="short desc (<=22 chars)", help={"line", ...} }
--- Registers cockpit -<alias> showing a detailed help box.
-function register_script(meta)
-    _scripts[meta.alias] = meta
+-- Registers `cp -<name>` for a single enabled script, rendered from its
+-- parsed metadata. Called by the loader once per enabled script.
+function _register_script_help(s)
     local body = {}
-    if meta.summary then
-        body[#body+1] = "  " .. meta.summary
+    if s.summary and s.summary ~= "" then
+        body[#body+1] = "  " .. s.summary
         body[#body+1] = ""
     end
-    for _, l in ipairs(meta.help or {}) do
+    if s.aliases and #s.aliases > 0 then
+        body[#body+1] = "  Aliases:"
+        for _, a in ipairs(s.aliases) do
+            if a.desc and a.desc ~= "" then
+                body[#body+1] = string.format("    %-10s %s", a.name, a.desc)
+            else
+                body[#body+1] = "    " .. a.name
+            end
+        end
+        body[#body+1] = ""
+    end
+    for _, l in ipairs(s.help or {}) do
         body[#body+1] = "  " .. l
     end
-    local parts = _build_box("  " .. meta.alias:upper(), body)
-    tintin_cmd("gts", "#alias {cp -" .. meta.alias .. "} {" .. table.concat(parts, ";") .. "}")
+    local parts = _build_box("  " .. s.name:upper(), body)
+    tintin_cmd("gts", "#alias {cp -" .. s.name .. "} {" .. table.concat(parts, ";") .. "}")
 end
 
--- Called after all scripts load. Builds cockpit / cockpit -help dynamically
--- so the Scripts section reflects whatever scripts are actually installed.
-function _register_cockpit_help()
+-- Called after all scripts load. Builds `cp` / `cp -help` from the catalog
+-- so the Scripts section reflects whatever scripts are actually enabled.
+-- Disabled scripts are not listed here — they are surfaced in the launcher's
+-- Scripts view (via scripts.cache) instead.
+function _register_cockpit_help(catalog)
     local body = {
         "  Connection:",
         "   connect    connect to MUME",
@@ -74,14 +89,14 @@ function _register_cockpit_help()
         "   cp -e       full system shutdown",
         "",
     }
-    if next(_scripts) then
+    local enabled = {}
+    for _, s in ipairs(catalog) do
+        if s.enabled then enabled[#enabled+1] = s end
+    end
+    if #enabled > 0 then
         body[#body+1] = "  Scripts  (type cp -<name> for details):"
-        local aliases = {}
-        for a in pairs(_scripts) do aliases[#aliases+1] = a end
-        table.sort(aliases)
-        for _, a in ipairs(aliases) do
-            local m = _scripts[a]
-            body[#body+1] = string.format("   %-18s %s", "cp -" .. a, m.summary or "")
+        for _, s in ipairs(enabled) do
+            body[#body+1] = string.format("   %-18s %s", "cp -" .. s.name, s.summary or "")
         end
         body[#body+1] = ""
     end
@@ -91,23 +106,24 @@ function _register_cockpit_help()
     tintin_cmd("gts", "#alias {_cockpit_help} {" .. body_str .. "}")
 end
 
--- Writes _scripts registry to bridge/runtime/scripts.cache for the startup menu.
--- Called after all scripts have called register_script() and
--- _register_cockpit_help() has run. Overwrites on every startup.
-function _write_scripts_cache()
+-- Writes the full catalog (enabled + disabled) to bridge/runtime/scripts.cache
+-- for the launcher and in-game popup to render. Overwrites on every startup.
+function _write_scripts_cache(catalog)
     local fh, err = io.open("bridge/runtime/scripts.cache", "w")
     if not fh then
         dbg("scripts.cache: failed to open — " .. tostring(err))
         return
     end
-    local aliases = {}
-    for a in pairs(_scripts) do aliases[#aliases + 1] = a end
-    table.sort(aliases)
-    for _, a in ipairs(aliases) do
-        local m = _scripts[a]
-        fh:write("SCRIPT:" .. a .. "\n")
-        if m.summary then fh:write("SUMMARY:" .. m.summary .. "\n") end
-        for _, h in ipairs(m.help or {}) do
+    for _, s in ipairs(catalog) do
+        fh:write("SCRIPT:" .. s.name .. "\n")
+        fh:write("ENABLED:" .. (s.enabled and "1" or "0") .. "\n")
+        if s.summary and s.summary ~= "" then
+            fh:write("SUMMARY:" .. s.summary .. "\n")
+        end
+        for _, a in ipairs(s.aliases or {}) do
+            fh:write("ALIAS:" .. a.name .. "|" .. (a.desc or "") .. "\n")
+        end
+        for _, h in ipairs(s.help or {}) do
             fh:write("HELP:" .. h .. "\n")
         end
     end

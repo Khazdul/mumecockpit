@@ -1,7 +1,7 @@
 -- Passive communication logger.
 -- Handles Comm.Channel.Text (message history, ring-buffered) and
 -- Comm.Channel.List (channel enabling via gmcp_enable_channel alias).
--- No alias, no register_script — background collector only.
+-- No alias, no metadata header — background collector only.
 -- body.text is stored verbatim (ANSI codes preserved for future search/filter UI).
 
 gmcp.handlers["Comm.Channel.Text"] = function(body)

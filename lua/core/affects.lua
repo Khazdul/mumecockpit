@@ -1,6 +1,6 @@
 -- Affect tracker: tracks active affects per character, learns durations from
 -- up to 3 observed samples, persists per character to data/characters/<name>/.
--- No alias, no register_script — background collector only.
+-- No alias, no metadata header — background collector only.
 --
 -- affects_data.lua is loaded explicitly via dofile() below.
 -- gmcp_char_name and char_reset subscriptions are registered at load time;

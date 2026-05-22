@@ -10,19 +10,18 @@ local TT_SESSION = "gts"
 scripts  = {}
 state    = { char = {}, room = {}, comm = { history = {}, channels = {}, max_size = 1000 }, core = {}, world = {} }
 gmcp     = { handlers = {} }
-_scripts = {}
 handlers = {}  -- handle_event() dispatch table
 
 -- Load order matters: ui first because everything logs; io before connection
 -- because game_cmd/session_cmd must exist when GAME_SESSION is first set;
 -- events before gmcp because dispatch calls events.emit; registry before
--- loader because register_script must exist when scripts load.
+-- loader because the registry helpers must exist when load_scripts() runs.
 dofile("lua/brain/ui.lua")           -- loggers + UI helpers
 dofile("lua/brain/io.lua")           -- tt++ relay (uses dbg)
 dofile("lua/brain/events.lua")       -- event bus (uses dbg)
 dofile("lua/brain/gmcp.lua")         -- GMCP dispatch (uses events.emit, dbg)
 dofile("lua/brain/connection.lua")   -- MUME state + popups (uses system_ui, dbg)
-dofile("lua/brain/registry.lua")     -- register_script + cockpit help
+dofile("lua/brain/registry.lua")     -- cp help box drawing + scripts.cache writer
 dofile("lua/brain/loader.lua")       -- core + scripts loader
 
 gmcp.null = require("dkjson").null
