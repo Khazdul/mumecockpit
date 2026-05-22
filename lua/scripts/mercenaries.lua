@@ -218,8 +218,52 @@ local function _footer_row(count)
     return _wrap_row(table.concat(s))
 end
 
+local function _empty_state()
+    local ses = GAME_SESSION or "gts"
+
+    local function _centered(text, color)
+        local pad = math.floor((PANEL_W - #text) / 2)
+        return _wrap_row(string.rep(" ", pad) .. color .. text .. R
+            .. string.rep(" ", PANEL_W - pad - #text))
+    end
+
+    local function _left(text)
+        return _wrap_row("   " .. WHITE .. text .. R
+            .. string.rep(" ", PANEL_W - 3 - #text))
+    end
+
+    tintin_show(ses, _top_border())
+    tintin_show(ses, _empty_row())
+    tintin_show(ses, _centered("You have no mercenaries right now.", WHITE))
+    tintin_show(ses, _empty_row())
+    tintin_show(ses, _left("Hire one by giving 10 silver to a citizen mercenary:"))
+    tintin_show(ses, _centered("give 10 silver mercenary", GOLD_FG))
+    tintin_show(ses, _empty_row())
+    tintin_show(ses, _left("A mercenary fights alongside you and follows for ~24 minutes,"))
+    tintin_show(ses, _left("then asks to be paid again. This panel tracks each mercenary's"))
+    tintin_show(ses, _left("HP, time remaining and total cost."))
+    tintin_show(ses, _empty_row())
+
+    -- Tip with inline highlighted command.
+    local pre  = "Tip: `"
+    local cmd  = "merc autopay"
+    local post = "` pays your mercenaries automatically."
+    local vlen = #pre + #cmd + #post
+    tintin_show(ses, _wrap_row("   "
+        .. WHITE .. pre .. R
+        .. GOLD_FG .. cmd .. R
+        .. WHITE .. post .. R
+        .. string.rep(" ", PANEL_W - 3 - vlen)))
+
+    tintin_show(ses, _empty_row())
+    tintin_show(ses, _bottom_border())
+end
+
 local function _render_panel()
-    if next(mercs) == nil then return end
+    if next(mercs) == nil then
+        _empty_state()
+        return
+    end
     local ses = GAME_SESSION or "gts"
 
     local list = {}
