@@ -3073,7 +3073,7 @@ class TestEditorBufferDoubleTripleClick(unittest.TestCase):
         self.assertIsNone(launcher._editor_buffer_anchor)
         self.assertEqual(launcher._editor_buffer_cursor, 2)
 
-    def test_triple_click_selects_logical_line_with_newline(self):
+    def test_triple_click_selects_line_text_only(self):
         self._setup_buffer("foo\nbar\nbaz\n")
         h = self._row_handler(1, len("bar"))
         h(_MouseEv(1, 0))
@@ -3081,11 +3081,12 @@ class TestEditorBufferDoubleTripleClick(unittest.TestCase):
         h(_MouseEv(1, 0))                      # count 2
         self.clock.advance(0.1)
         h(_MouseEv(1, 0))                      # count 3
-        # Line 1 starts at 4, line 2 starts at 8 → "bar\n".
+        # Line 1 spans offsets 4..7 ("bar"); the `\n` at 7 is excluded
+        # so the highlight stops at end-of-line.
         self.assertEqual(launcher._editor_buffer_anchor, 4)
-        self.assertEqual(launcher._editor_buffer_cursor, 8)
+        self.assertEqual(launcher._editor_buffer_cursor, 7)
         launcher._editor_buffer_copy()
-        self.assertEqual(launcher._editor_clipboard, "bar\n")
+        self.assertEqual(launcher._editor_clipboard, "bar")
 
     def test_triple_click_last_line_without_trailing_newline(self):
         self._setup_buffer("foo\nbar")
@@ -3289,7 +3290,7 @@ class TestEditorLiteBodyDoubleTripleClick(unittest.TestCase):
         self.assertEqual(launcher._editor_body_line, 0)
         self.assertEqual(launcher._editor_body_col, 2)
 
-    def test_triple_click_selects_line_with_newline(self):
+    def test_triple_click_selects_line_text_only(self):
         self._setup("foo\nbar\nbaz")
         h = self._handler(1, 1)                 # line 1 has a trailing \n
         h(_MouseEv(1, 1))
@@ -3297,15 +3298,16 @@ class TestEditorLiteBodyDoubleTripleClick(unittest.TestCase):
         h(_MouseEv(1, 1))
         self.clock.advance(0.1)
         h(_MouseEv(1, 1))
-        # Anchor at (1, 0), cursor at (2, 0) — selection covers "bar\n".
+        # Anchor at (1, 0), cursor at (1, 3) — selection stops at the
+        # last text char so the highlight doesn't bleed into line 2.
         self.assertEqual(
             (launcher._editor_body_anchor_line,
              launcher._editor_body_anchor_col), (1, 0))
         self.assertEqual(
             (launcher._editor_body_line, launcher._editor_body_col),
-            (2, 0))
+            (1, 3))
         launcher._editor_body_copy()
-        self.assertEqual(launcher._editor_clipboard, "bar\n")
+        self.assertEqual(launcher._editor_clipboard, "bar")
 
     def test_triple_click_last_line_without_newline(self):
         self._setup("foo\nbar")

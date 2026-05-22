@@ -3391,14 +3391,13 @@ def _editor_make_field_click_handler(field_id, visible_col, line_idx,
                     _editor_body_line = line
                     _editor_body_col  = e
             elif count == 3:
+                # End the selection at the line's last text character;
+                # excluding the trailing `\n` keeps the highlight off
+                # the next line's first cell.
                 _editor_body_anchor_line = line
                 _editor_body_anchor_col  = 0
-                if line + 1 < len(lines):
-                    _editor_body_line = line + 1
-                    _editor_body_col  = 0
-                else:
-                    _editor_body_line = line
-                    _editor_body_col  = len(lines[line])
+                _editor_body_line = line
+                _editor_body_col  = len(lines[line])
             else:
                 _editor_body_line = line
                 _editor_body_col  = max(0, min(len(lines[line]),
@@ -4502,15 +4501,17 @@ def _editor_buffer_select_word_at(logical_line, col):
 
 
 def _editor_buffer_select_logical_line(logical_line):
-    """Editor-buffer triple-click target. Select `logical_line`
-    including its trailing `\\n`; the last line without a trailing
-    newline selects just the line text."""
+    """Editor-buffer triple-click target. Select the text of
+    `logical_line` only — the trailing `\\n` is excluded so the
+    rendered highlight stops at end-of-line instead of bleeding onto
+    the first cell of the next line. The last line (no trailing
+    newline) selects through end-of-buffer."""
     global _editor_buffer_cursor, _editor_buffer_anchor
     text = _editor_buffer_text
     starts = _editor_buffer_line_starts()
     line = max(0, min(len(starts) - 1, logical_line))
     start = starts[line]
-    end = starts[line + 1] if line + 1 < len(starts) else len(text)
+    end = starts[line + 1] - 1 if line + 1 < len(starts) else len(text)
     _editor_buffer_anchor = start
     _editor_buffer_cursor = end
 
