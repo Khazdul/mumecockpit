@@ -671,6 +671,53 @@ are `C_SYN_COMMAND`, `C_SYN_BRACE`, `C_SYN_DELIM`, `C_SYN_VAR`,
 `C_SELECTED` selection band. Lite mode is untouched, and the
 lite ↔ editor round-trip is unaffected.
 
+**Brace assistance.** Editor mode only; the lite-mode Pattern /
+Commands fields are not affected. Three coupled features.
+
+1. **Auto-close `{`.** Typing `{` inserts `{}` and leaves the
+   cursor between them — but only when the character immediately
+   after the cursor is end-of-buffer, whitespace, or `}`. Otherwise
+   a literal `{` is inserted. The guard prevents auto-close from
+   firing when the user is editing into existing non-whitespace
+   text. The auto-inserted `}` is *tentative*: typing `}` next, or
+   pressing `→`, steps over it instead of inserting a second
+   `}`. Pressing `Backspace` immediately after the auto-insert
+   removes both braces as one operation. `()` and `[]` are not
+   auto-closed — `{` only.
+
+   Tracking lives in `_editor_pending_closers` (a list of absolute
+   offsets of every tentative `}`). The four buffer mutators
+   (`_editor_buffer_insert`, `_editor_buffer_backspace`,
+   `_editor_buffer_delete`,
+   `_editor_buffer_consume_selection`) shift the list across
+   inserts/deletes so the offsets stay valid. Any editor action
+   other than a printable insert, `Backspace`/`Delete`, the `}`
+   overtype, and `→` clears the list — arrows up/down/left,
+   `Home`/`End`, `PgUp`/`PgDn`, shift-selection, mouse click, and
+   the lite ↔ editor flip all end tracking. `→` itself only drops
+   offsets now strictly behind the cursor — stepping over a
+   tentative closer ends its tracking without flushing the rest.
+   The auto-close logic sits in the `{`/`}` *key* handlers, not
+   in `_editor_buffer_insert`, so a future paste path can never
+   trigger it.
+
+2. **Matching-brace highlight.** When the cursor is adjacent to a
+   structural brace — the character at or just before the cursor
+   is a `{`/`}` that appears as a `"brace"`-kind token — its
+   partner is found via a depth scan over the brace-kind offsets
+   only and both cells are painted with `C_SYN_BRACE_MATCH` (a
+   subtle background lift). Braces inside `${...}` and `\{` are
+   not structural — the tokeniser excludes them, so they never
+   match. An unbalanced brace highlights nothing. Compose order
+   for a brace cell's final style: selection bg (if selected) >
+   match bg > current-line bg tint.
+
+3. **Balance indicator.** A short right-aligned segment on the
+   editor-mode footer row reports unclosed `{` (final depth > 0)
+   and/or stray `}` (depth ever went negative) — e.g. `3 unclosed
+   {` or `2 stray }`. Rendered in `C_DANGER`. When braces
+   balance, no indicator is shown.
+
 #### Focus model
 
 Two orthogonal axes:

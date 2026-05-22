@@ -55,6 +55,7 @@ from palette import (  # noqa: E402
     PANE_COLOR_ORDER,
     TTPP_COLOR_STYLES, TTPP_COLOR_NAMES,
     C_SYN_COMMAND, C_SYN_BRACE, C_SYN_DELIM, C_SYN_VAR, C_SYN_CODE,
+    C_SYN_BRACE_MATCH,
 )
 import ttpp_syntax  # noqa: E402
 import credits  # noqa: E402
@@ -250,6 +251,13 @@ _editor_buffer_syntax_cache       = (None, None)
 #   for Editor-mode syntax highlighting. Same identity-keyed invalidation
 #   pattern as the other two caches: every buffer mutation allocates a
 #   fresh string, so an `is`-miss triggers retokenisation.
+# Absolute offsets of auto-inserted `}` characters still "tentative" —
+# typing `{` inserts `{}` and appends the closer's offset here so a
+# follow-up `}` overtypes, `→` steps over, and Backspace pair-deletes.
+# Cleared on every action other than printable insert, backspace/delete,
+# the `}` overtype, and `right`. See docs/launcher.md → profile_editor
+# → Editor mode → Brace assistance.
+_editor_pending_closers           = []
 # Detail-panel editing state. Phase 3.5 covers Pattern + Body text inputs;
 # phase 4 adds Highlights' palette grid (sharing the detail_field == 1 slot
 # with Body, dispatched on active kind).
@@ -1921,6 +1929,7 @@ def _enter_profile_editor(path):
     globals()["_editor_buffer_cursor"]  = 0
     globals()["_editor_buffer_scroll"]  = 0
     globals()["_editor_buffer_anchor"]  = None
+    globals()["_editor_pending_closers"] = []
     _editor_list_sb = Scrollbar(
         0, _editor_list_visible(), _editor_list_visible(),
     )
@@ -4121,6 +4130,7 @@ def _editor_flip_mode():
     global _editor_list_cursor, _editor_list_scroll
     if _editor_data is None:
         return
+    _editor_clear_pending_closers()
     if _editor_mode == "lite":
         _editor_buffer_text   = profile_io.serialize_profile(_editor_data)
         _editor_buffer_cursor = 0
@@ -4193,6 +4203,87 @@ _EDITOR_SYNTAX_STYLE = {
 }
 
 
+def _editor_buffer_brace_offsets():
+    """List of absolute offsets of `"brace"`-kind spans, in ascending
+    order. Used by the matching-brace highlight and the balance
+    indicator. Braces consumed inside `${...}` or `\\{` are NOT
+    structural — the tokeniser already excludes them, so this list
+    contains only matchable braces."""
+    return [s[0] for s in _editor_buffer_syntax_spans() if s[2] == "brace"]
+
+
+def _editor_brace_match_positions():
+    """If the cursor is adjacent to a structural `{`/`}`, return a
+    `(pos, partner_pos)` tuple in ascending order. Otherwise return
+    None — including the unbalanced case, where the brace has no
+    partner. Prefers the brace at `cursor - 1` (most recently typed)
+    when both sides are matchable."""
+    text   = _editor_buffer_text
+    cur    = _editor_buffer_cursor
+    braces = _editor_buffer_brace_offsets()
+    if not braces:
+        return None
+    brace_set = set(braces)
+    candidates = []
+    if cur - 1 >= 0 and (cur - 1) in brace_set:
+        candidates.append(cur - 1)
+    if cur < len(text) and cur in brace_set:
+        candidates.append(cur)
+    for pos in candidates:
+        ch = text[pos]
+        if ch == "{":
+            depth = 1
+            for off in braces:
+                if off <= pos:
+                    continue
+                depth += 1 if text[off] == "{" else -1
+                if depth == 0:
+                    return (pos, off) if pos < off else (off, pos)
+        elif ch == "}":
+            depth = 1
+            for off in reversed(braces):
+                if off >= pos:
+                    continue
+                depth += 1 if text[off] == "}" else -1
+                if depth == 0:
+                    return (off, pos) if off < pos else (pos, off)
+    return None
+
+
+def _editor_buffer_brace_balance():
+    """Return `(unclosed, stray)` — the number of unmatched opening `{`
+    and unmatched closing `}` among the buffer's structural braces.
+    `unclosed > 0` means the final depth is positive; `stray > 0` means
+    the depth went negative at some point and never recovered. Both can
+    be non-zero for a buffer like `} {`. Drives the footer indicator."""
+    text     = _editor_buffer_text
+    braces   = _editor_buffer_brace_offsets()
+    depth    = 0
+    stray    = 0
+    for off in braces:
+        if text[off] == "{":
+            depth += 1
+        else:
+            if depth == 0:
+                stray += 1
+            else:
+                depth -= 1
+    return depth, stray
+
+
+def _editor_brace_balance_text():
+    """Footer indicator string for the current buffer. Empty when
+    balanced, `"N unclosed {"`, `"N stray }"`, or both joined by `  ·  `
+    when both are non-zero."""
+    unclosed, stray = _editor_buffer_brace_balance()
+    parts = []
+    if unclosed:
+        parts.append(f"{unclosed} unclosed {{")
+    if stray:
+        parts.append(f"{stray} stray }}")
+    return "  ·  ".join(parts)
+
+
 def _editor_buffer_line_count():
     """Number of logical lines in the buffer.
 
@@ -4258,6 +4349,7 @@ def _editor_buffer_consume_selection():
     _editor_buffer_text = _editor_buffer_text[:lo] + _editor_buffer_text[hi:]
     _editor_buffer_cursor = lo
     _editor_buffer_anchor = None
+    _editor_shift_pending_closers_on_delete(lo, hi - lo)
     return True
 
 
@@ -4271,6 +4363,7 @@ def _editor_buffer_insert(text_to_insert):
         _editor_buffer_text[:cur] + text_to_insert
         + _editor_buffer_text[cur:])
     _editor_buffer_cursor = cur + len(text_to_insert)
+    _editor_shift_pending_closers_on_insert(cur, len(text_to_insert))
 
 
 def _editor_buffer_backspace():
@@ -4285,6 +4378,7 @@ def _editor_buffer_backspace():
     _editor_buffer_text = (
         _editor_buffer_text[:cur - 1] + _editor_buffer_text[cur:])
     _editor_buffer_cursor = cur - 1
+    _editor_shift_pending_closers_on_delete(cur - 1, 1)
 
 
 def _editor_buffer_delete():
@@ -4298,12 +4392,126 @@ def _editor_buffer_delete():
         return
     _editor_buffer_text = (
         _editor_buffer_text[:cur] + _editor_buffer_text[cur + 1:])
+    _editor_shift_pending_closers_on_delete(cur, 1)
 
 
 def _editor_buffer_clear_selection():
     """Drop any active shift-arrow selection anchor."""
     global _editor_buffer_anchor
     _editor_buffer_anchor = None
+
+
+def _editor_clear_pending_closers():
+    """Drop the auto-close tracking list. Called by every editor action
+    other than a printable insert, backspace/delete, the `}` overtype,
+    and `right` — stepping away from a tentative `}` ends its
+    tracking."""
+    global _editor_pending_closers
+    if _editor_pending_closers:
+        _editor_pending_closers = []
+
+
+def _editor_shift_pending_closers_on_insert(start, length):
+    """Inserts shift every offset `>= start` right by `length`. Called
+    from `_editor_buffer_insert` after the buffer mutates so the offsets
+    keep pointing at the same characters."""
+    global _editor_pending_closers
+    if not _editor_pending_closers or length <= 0:
+        return
+    _editor_pending_closers = [
+        off + length if off >= start else off
+        for off in _editor_pending_closers
+    ]
+
+
+def _editor_shift_pending_closers_on_delete(start, length):
+    """Deletes drop any offset pointing INTO the removed range
+    `[start, start+length)` and shift offsets `>= start+length` left by
+    `length`. Used by backspace, forward-delete, and selection
+    consumption."""
+    global _editor_pending_closers
+    if not _editor_pending_closers or length <= 0:
+        return
+    end = start + length
+    _editor_pending_closers = [
+        (off - length if off >= end else off)
+        for off in _editor_pending_closers
+        if off < start or off >= end
+    ]
+
+
+def _editor_buffer_open_brace():
+    """Handle a `{` key press in editor mode. Auto-close when the next
+    character is end-of-buffer, whitespace, or `}` — otherwise insert a
+    bare `{`. See docs/launcher.md → profile_editor → Editor mode →
+    Brace assistance. Kept distinct from `_editor_buffer_insert` so a
+    future paste path can never trigger auto-close."""
+    global _editor_pending_closers
+    global _editor_buffer_cursor
+    _editor_buffer_consume_selection()
+    cur = _editor_buffer_cursor
+    text = _editor_buffer_text
+    nxt = text[cur] if cur < len(text) else ""
+    if nxt == "" or nxt in (" ", "\t", "\n", "}"):
+        _editor_buffer_insert("{}")
+        # `_editor_buffer_insert` shifted the existing list across the
+        # 2-char insert at `cur`; the new closer sits at `cur + 1`.
+        _editor_pending_closers.append(cur + 1)
+        _editor_pending_closers.sort()
+        _editor_buffer_cursor = cur + 1
+    else:
+        _editor_buffer_insert("{")
+
+
+def _editor_buffer_close_brace():
+    """Handle a `}` key press in editor mode. Overtype an auto-inserted
+    `}` at the cursor (move right, drop the offset); otherwise insert a
+    literal `}`."""
+    global _editor_pending_closers
+    global _editor_buffer_cursor
+    cur = _editor_buffer_cursor
+    text = _editor_buffer_text
+    if (_editor_buffer_anchor is None
+            and cur < len(text)
+            and text[cur] == "}"
+            and cur in _editor_pending_closers):
+        _editor_buffer_cursor = cur + 1
+        _editor_pending_closers = [
+            off for off in _editor_pending_closers if off != cur
+        ]
+        return
+    _editor_buffer_insert("}")
+
+
+def _editor_buffer_backspace_pair():
+    """Backspace with auto-close pair-delete. If the cursor sits between
+    `{` and a tentative `}`, delete both as one operation; otherwise
+    normal backspace."""
+    cur = _editor_buffer_cursor
+    text = _editor_buffer_text
+    if (_editor_buffer_anchor is None
+            and 0 < cur < len(text)
+            and text[cur - 1] == "{"
+            and text[cur] == "}"
+            and cur in _editor_pending_closers):
+        _editor_buffer_delete()       # drop the `}` at cursor
+        _editor_buffer_backspace()    # drop the `{` before cursor
+        return
+    _editor_buffer_backspace()
+
+
+def _editor_buffer_step_over_pending_closer():
+    """Drop pending-closer offsets now strictly behind the cursor. The
+    `→` handler calls this after the cursor moves — stepping over a
+    tentative `}` ends its tracking without flushing the rest of the
+    list."""
+    global _editor_pending_closers
+    if not _editor_pending_closers:
+        return
+    cur = _editor_buffer_cursor
+    _editor_pending_closers = [
+        off for off in _editor_pending_closers if off >= cur
+    ]
 
 
 def _editor_buffer_begin_selection_if_needed():
@@ -4786,8 +4994,21 @@ def _editor_append_footer(frags, cols):
                   "ESC Save & back")
     else:
         footer = "Tab Field  ·  ESC Save & back"
-    frags.append(("", _pad_centre(footer, cols), _editor_clear_outer_hover))
+    leading_pad = _pad_centre(footer, cols)
+    frags.append(("", leading_pad, _editor_clear_outer_hover))
     frags.append((C_HINT, footer, _editor_clear_outer_hover))
+    # Editor-mode brace-balance indicator. Right-aligned on the footer
+    # row in C_DANGER when the buffer has unmatched braces; absent when
+    # balanced. See docs/launcher.md → profile_editor → Editor mode →
+    # Brace assistance.
+    if _editor_mode == "editor":
+        balance_text = _editor_brace_balance_text()
+        if balance_text:
+            used = len(leading_pad) + len(footer)
+            pad = max(1, cols - used - len(balance_text))
+            frags.append(("", " " * pad, _editor_clear_outer_hover))
+            frags.append((C_DANGER, balance_text,
+                          _editor_clear_outer_hover))
     if _editor_feedback_text:
         frags.append(("", "\n", _editor_clear_outer_hover))
         frags.append((
@@ -4879,6 +5100,14 @@ def _editor_append_editor_body(frags, cols):
         if a != c:
             sel_lo, sel_hi = (a, c) if a < c else (c, a)
 
+    # Matching-brace highlight: the brace adjacent to the cursor and
+    # its partner. `None` when the cursor is not next to a brace or
+    # when the partner can't be found (unbalanced). The renderer
+    # checks `abs_off in match_offsets` per cell — constant-time even
+    # though the helper itself scans the brace list.
+    bm = _editor_brace_match_positions()
+    match_offsets = (bm[0], bm[1]) if bm is not None else ()
+
     for vrow in range(body_h):
         info = visible_rows[vrow]
         is_cursor_line = (info is not None and info[0] == cursor_line)
@@ -4922,6 +5151,7 @@ def _editor_append_editor_body(frags, cols):
             cell_chars  = [" "] * wrap_w
             for ccol in range(wrap_w):
                 token_fg = None
+                is_brace_match = False
                 if ccol < chunk_len:
                     ch = chunk[ccol]
                     cell_chars[ccol] = ch
@@ -4938,12 +5168,15 @@ def _editor_append_editor_body(frags, cols):
                             and syn_spans[syn_cursor][0] <= abs_off):
                         token_fg = _EDITOR_SYNTAX_STYLE[
                             syn_spans[syn_cursor][2]]
+                    is_brace_match = abs_off in match_offsets
                 else:
                     ch = " "
                     in_sel = False
                 is_cursor_cell = (ccol == cursor_cell)
                 if (is_cursor_cell and buffer_focused) or in_sel:
                     cell_styles[ccol] = C_SELECTED
+                elif is_brace_match:
+                    cell_styles[ccol] = C_SYN_BRACE_MATCH
                 elif token_fg is not None:
                     cell_styles[ccol] = (
                         f"{token_fg} {row_bg}".strip() if row_bg
@@ -4999,6 +5232,7 @@ def _editor_buffer_row_click_handler(logical_line, wrap_start,
         _editor_unfocus_toggle()
         _editor_buffer_set_cursor_from_line_col(logical_line, abs_col)
         _editor_buffer_clear_selection()
+        _editor_clear_pending_closers()
         _editor_buffer_scroll_cursor_into_view()
         if _app:
             _app.invalidate()
@@ -10984,6 +11218,7 @@ def _kb_peditor_buffer_move_cursor(delta_line, delta_col=0):
 @kb.add("left",  filter=_in_pe_editor())
 def _kb_peditor_buffer_left(event):
     _editor_buffer_clear_selection()
+    _editor_clear_pending_closers()
     _kb_peditor_buffer_move_cursor(0, -1)
     _editor_buffer_scroll_cursor_into_view()
 
@@ -10992,12 +11227,14 @@ def _kb_peditor_buffer_left(event):
 def _kb_peditor_buffer_right(event):
     _editor_buffer_clear_selection()
     _kb_peditor_buffer_move_cursor(0, +1)
+    _editor_buffer_step_over_pending_closer()
     _editor_buffer_scroll_cursor_into_view()
 
 
 @kb.add("up", filter=_in_pe_editor())
 def _kb_peditor_buffer_up(event):
     _editor_buffer_clear_selection()
+    _editor_clear_pending_closers()
     if not _kb_peditor_buffer_move_cursor(-1):
         _editor_focus_toggle()
     else:
@@ -11007,6 +11244,7 @@ def _kb_peditor_buffer_up(event):
 @kb.add("down", filter=_in_pe_editor())
 def _kb_peditor_buffer_down(event):
     _editor_buffer_clear_selection()
+    _editor_clear_pending_closers()
     _kb_peditor_buffer_move_cursor(+1)
     _editor_buffer_scroll_cursor_into_view()
 
@@ -11014,6 +11252,7 @@ def _kb_peditor_buffer_down(event):
 @kb.add("home", filter=_in_pe_editor())
 def _kb_peditor_buffer_home(event):
     _editor_buffer_clear_selection()
+    _editor_clear_pending_closers()
     line, _col = _editor_buffer_cursor_to_line_col()
     _editor_buffer_set_cursor_from_line_col(line, 0)
     _editor_buffer_scroll_cursor_into_view()
@@ -11022,6 +11261,7 @@ def _kb_peditor_buffer_home(event):
 @kb.add("end", filter=_in_pe_editor())
 def _kb_peditor_buffer_end(event):
     _editor_buffer_clear_selection()
+    _editor_clear_pending_closers()
     line, _col = _editor_buffer_cursor_to_line_col()
     _editor_buffer_set_cursor_from_line_col(
         line, len(_editor_buffer_line_text(line)))
@@ -11031,6 +11271,7 @@ def _kb_peditor_buffer_end(event):
 @kb.add("pageup", filter=_in_pe_editor())
 def _kb_peditor_buffer_pgup(event):
     _editor_buffer_clear_selection()
+    _editor_clear_pending_closers()
     line, col = _editor_buffer_cursor_to_line_col()
     step = max(1, _editor_body_h())
     target_line = max(0, line - step)
@@ -11042,6 +11283,7 @@ def _kb_peditor_buffer_pgup(event):
 @kb.add("pagedown", filter=_in_pe_editor())
 def _kb_peditor_buffer_pgdn(event):
     _editor_buffer_clear_selection()
+    _editor_clear_pending_closers()
     line, col = _editor_buffer_cursor_to_line_col()
     step = max(1, _editor_body_h())
     last = _editor_buffer_line_count() - 1
@@ -11062,6 +11304,7 @@ def _kb_peditor_buffer_pgdn(event):
 @kb.add("s-left",  filter=_in_pe_editor())
 def _kb_peditor_buffer_s_left(event):
     _editor_buffer_begin_selection_if_needed()
+    _editor_clear_pending_closers()
     _kb_peditor_buffer_move_cursor(0, -1)
     _editor_buffer_scroll_cursor_into_view()
 
@@ -11069,6 +11312,7 @@ def _kb_peditor_buffer_s_left(event):
 @kb.add("s-right", filter=_in_pe_editor())
 def _kb_peditor_buffer_s_right(event):
     _editor_buffer_begin_selection_if_needed()
+    _editor_clear_pending_closers()
     _kb_peditor_buffer_move_cursor(0, +1)
     _editor_buffer_scroll_cursor_into_view()
 
@@ -11076,6 +11320,7 @@ def _kb_peditor_buffer_s_right(event):
 @kb.add("s-up", filter=_in_pe_editor())
 def _kb_peditor_buffer_s_up(event):
     _editor_buffer_begin_selection_if_needed()
+    _editor_clear_pending_closers()
     _kb_peditor_buffer_move_cursor(-1)
     _editor_buffer_scroll_cursor_into_view()
 
@@ -11083,6 +11328,7 @@ def _kb_peditor_buffer_s_up(event):
 @kb.add("s-down", filter=_in_pe_editor())
 def _kb_peditor_buffer_s_down(event):
     _editor_buffer_begin_selection_if_needed()
+    _editor_clear_pending_closers()
     _kb_peditor_buffer_move_cursor(+1)
     _editor_buffer_scroll_cursor_into_view()
 
@@ -11090,6 +11336,7 @@ def _kb_peditor_buffer_s_down(event):
 @kb.add("s-home", filter=_in_pe_editor())
 def _kb_peditor_buffer_s_home(event):
     _editor_buffer_begin_selection_if_needed()
+    _editor_clear_pending_closers()
     line, _col = _editor_buffer_cursor_to_line_col()
     _editor_buffer_set_cursor_from_line_col(line, 0)
     _editor_buffer_scroll_cursor_into_view()
@@ -11098,6 +11345,7 @@ def _kb_peditor_buffer_s_home(event):
 @kb.add("s-end", filter=_in_pe_editor())
 def _kb_peditor_buffer_s_end(event):
     _editor_buffer_begin_selection_if_needed()
+    _editor_clear_pending_closers()
     line, _col = _editor_buffer_cursor_to_line_col()
     _editor_buffer_set_cursor_from_line_col(
         line, len(_editor_buffer_line_text(line)))
@@ -11106,7 +11354,7 @@ def _kb_peditor_buffer_s_end(event):
 
 @kb.add("backspace", filter=_in_pe_editor())
 def _kb_peditor_buffer_backspace(event):
-    _editor_buffer_backspace()
+    _editor_buffer_backspace_pair()
     _editor_buffer_scroll_cursor_into_view()
 
 
@@ -11118,17 +11366,40 @@ def _kb_peditor_buffer_delete(event):
 
 @kb.add("enter", filter=_in_pe_editor())
 def _kb_peditor_buffer_enter(event):
+    _editor_clear_pending_closers()
     _editor_buffer_insert("\n")
+    _editor_buffer_scroll_cursor_into_view()
+
+
+# --- Brace assistance ------------------------------------------------
+# Auto-close `{` to `{}` (cursor between), with `}` overtype, `→`
+# step-over, and Backspace pair-delete. State lives in
+# `_editor_pending_closers`. See docs/launcher.md → profile_editor →
+# Editor mode → Brace assistance for the full lifetime rules. The
+# logic deliberately sits in the key-bound helpers (not in
+# `_editor_buffer_insert`) so a future paste path inserts text
+# verbatim without ever auto-closing.
+@kb.add("{", filter=_in_pe_editor())
+def _kb_peditor_buffer_open_brace(event):
+    _editor_buffer_open_brace()
+    _editor_buffer_scroll_cursor_into_view()
+
+
+@kb.add("}", filter=_in_pe_editor())
+def _kb_peditor_buffer_close_brace(event):
+    _editor_buffer_close_brace()
     _editor_buffer_scroll_cursor_into_view()
 
 
 @kb.add("tab", filter=_in_pe_editor())
 def _kb_peditor_buffer_tab(event):
+    _editor_clear_pending_closers()
     _profile_editor_cycle_focus(1)
 
 
 @kb.add("s-tab", filter=_in_pe_editor())
 def _kb_peditor_buffer_stab(event):
+    _editor_clear_pending_closers()
     _profile_editor_cycle_focus(-1)
 
 

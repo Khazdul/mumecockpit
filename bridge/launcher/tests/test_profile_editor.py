@@ -1620,5 +1620,276 @@ class TestEditorModeToggle(unittest.TestCase):
         )
 
 
+class TestEditorModeBraceAssistance(unittest.TestCase):
+    """Phase B — `{` auto-close + `}` overtype + `→` step-over + Backspace
+    pair-delete, plus the brace-balance footer count. Logic lives in
+    `_editor_buffer_open_brace` / `_editor_buffer_close_brace` /
+    `_editor_buffer_backspace_pair` / `_editor_buffer_step_over_pending_closer`,
+    not in `_editor_buffer_insert`, so paste paths can never trigger
+    auto-close."""
+
+    def _setup_buffer(self, text, cursor=0):
+        prof, _src, _td = _make_profile("")
+        _reset_editor_state(prof)
+        launcher._editor_mode             = "editor"
+        launcher._editor_toggle_focused   = False
+        launcher._editor_buffer_text      = text
+        launcher._editor_buffer_cursor    = cursor
+        launcher._editor_buffer_scroll    = 0
+        launcher._editor_buffer_anchor    = None
+        launcher._editor_pending_closers  = []
+
+    # --- auto-close + guard ----------------------------------------
+    def test_open_brace_at_end_auto_closes(self):
+        self._setup_buffer("abc", cursor=3)
+        launcher._editor_buffer_open_brace()
+        self.assertEqual(launcher._editor_buffer_text, "abc{}")
+        # Cursor lands between the two braces.
+        self.assertEqual(launcher._editor_buffer_cursor, 4)
+        self.assertEqual(launcher._editor_pending_closers, [4])
+
+    def test_open_brace_before_whitespace_auto_closes(self):
+        self._setup_buffer("ab cd", cursor=2)
+        launcher._editor_buffer_open_brace()
+        self.assertEqual(launcher._editor_buffer_text, "ab{} cd")
+        self.assertEqual(launcher._editor_buffer_cursor, 3)
+        self.assertEqual(launcher._editor_pending_closers, [3])
+
+    def test_open_brace_before_newline_auto_closes(self):
+        self._setup_buffer("ab\ncd", cursor=2)
+        launcher._editor_buffer_open_brace()
+        self.assertEqual(launcher._editor_buffer_text, "ab{}\ncd")
+        self.assertEqual(launcher._editor_buffer_cursor, 3)
+
+    def test_open_brace_before_close_brace_auto_closes(self):
+        # Guard explicitly allows `}` as the next char — nested braces
+        # should still get an inner pair. Only the newly auto-inserted
+        # closer is tracked; the pre-existing `}` was not created by
+        # auto-close so it never enters the list.
+        self._setup_buffer("{}", cursor=1)
+        launcher._editor_buffer_open_brace()
+        self.assertEqual(launcher._editor_buffer_text, "{{}}")
+        self.assertEqual(launcher._editor_buffer_cursor, 2)
+        self.assertEqual(launcher._editor_pending_closers, [2])
+
+    def test_open_brace_before_non_whitespace_inserts_literal(self):
+        # Guard rejects: next char is a regular letter, so no auto-close.
+        self._setup_buffer("abc", cursor=1)
+        launcher._editor_buffer_open_brace()
+        self.assertEqual(launcher._editor_buffer_text, "a{bc")
+        self.assertEqual(launcher._editor_buffer_cursor, 2)
+        self.assertEqual(launcher._editor_pending_closers, [])
+
+    # --- `}` overtype ----------------------------------------------
+    def test_close_brace_overtypes_pending_closer(self):
+        self._setup_buffer("abc", cursor=3)
+        launcher._editor_buffer_open_brace()       # → "abc{}", cur=4
+        launcher._editor_buffer_close_brace()      # should overtype
+        self.assertEqual(launcher._editor_buffer_text, "abc{}")
+        self.assertEqual(launcher._editor_buffer_cursor, 5)
+        self.assertEqual(launcher._editor_pending_closers, [])
+
+    def test_close_brace_without_pending_inserts_literal(self):
+        # No tentative `}` tracked → typing `}` is a plain insert.
+        self._setup_buffer("abc", cursor=3)
+        launcher._editor_buffer_close_brace()
+        self.assertEqual(launcher._editor_buffer_text, "abc}")
+        self.assertEqual(launcher._editor_buffer_cursor, 4)
+
+    def test_close_brace_at_non_pending_close_inserts_literal(self):
+        # A `}` is at cursor, but its offset is NOT in the pending
+        # list — treat as a regular insert.
+        self._setup_buffer("ab}c", cursor=2)
+        launcher._editor_buffer_close_brace()
+        self.assertEqual(launcher._editor_buffer_text, "ab}}c")
+        self.assertEqual(launcher._editor_buffer_cursor, 3)
+
+    # --- `→` step-over ---------------------------------------------
+    def test_right_arrow_steps_over_pending_closer(self):
+        self._setup_buffer("abc", cursor=3)
+        launcher._editor_buffer_open_brace()       # → "abc{}", cur=4, pend=[4]
+        # Simulate `→`: advance cursor, drop pending entries behind it.
+        launcher._editor_buffer_cursor = 5
+        launcher._editor_buffer_step_over_pending_closer()
+        self.assertEqual(launcher._editor_pending_closers, [])
+
+    def test_step_over_preserves_offsets_ahead_of_cursor(self):
+        # Two nested auto-closes; stepping over the inner closer must
+        # leave the outer one tracked.
+        self._setup_buffer("", cursor=0)
+        launcher._editor_pending_closers = [3, 5]   # outer, inner sentinels
+        launcher._editor_buffer_cursor = 4
+        launcher._editor_buffer_step_over_pending_closer()
+        self.assertEqual(launcher._editor_pending_closers, [5])
+
+    # --- Backspace pair-delete -------------------------------------
+    def test_backspace_after_auto_close_removes_both(self):
+        self._setup_buffer("abc", cursor=3)
+        launcher._editor_buffer_open_brace()       # → "abc{}", cur=4
+        launcher._editor_buffer_backspace_pair()
+        self.assertEqual(launcher._editor_buffer_text, "abc")
+        self.assertEqual(launcher._editor_buffer_cursor, 3)
+        self.assertEqual(launcher._editor_pending_closers, [])
+
+    def test_backspace_without_pending_does_normal_delete(self):
+        # `{}` exists in the buffer but the closer offset is NOT in the
+        # pending list — backspace must NOT pair-delete the `}`.
+        self._setup_buffer("a{}b", cursor=2)
+        launcher._editor_buffer_backspace_pair()
+        self.assertEqual(launcher._editor_buffer_text, "a}b")
+        self.assertEqual(launcher._editor_buffer_cursor, 1)
+
+    # --- Offset bookkeeping ----------------------------------------
+    def test_insert_shifts_pending_offsets_right(self):
+        # Insert a printable between the cursor and an existing tentative
+        # closer: the closer's tracked offset shifts by the insert
+        # length.
+        self._setup_buffer("abc", cursor=3)
+        launcher._editor_buffer_open_brace()       # → "abc{}", cur=4, pend=[4]
+        launcher._editor_buffer_insert("X")        # → "abc{X}", cur=5
+        self.assertEqual(launcher._editor_buffer_text, "abc{X}")
+        self.assertEqual(launcher._editor_pending_closers, [5])
+        # Subsequent overtype still steps over the (now shifted) closer.
+        launcher._editor_buffer_close_brace()
+        self.assertEqual(launcher._editor_buffer_text, "abc{X}")
+        self.assertEqual(launcher._editor_buffer_cursor, 6)
+
+    def test_delete_drops_pending_offset_pointing_into_range(self):
+        # A forward-delete that consumes the tentative `}` must drop
+        # its offset from the pending list, not silently keep a stale
+        # entry pointing at the next character.
+        self._setup_buffer("", cursor=0)
+        launcher._editor_buffer_open_brace()       # → "{}", cur=1, pend=[1]
+        launcher._editor_buffer_delete()           # remove the `}`
+        self.assertEqual(launcher._editor_buffer_text, "{")
+        self.assertEqual(launcher._editor_pending_closers, [])
+
+    def test_delete_before_pending_shifts_offset_left(self):
+        # Delete a character that sits BEFORE the tentative closer
+        # shifts the closer's tracked offset left by one.
+        self._setup_buffer("abc", cursor=3)
+        launcher._editor_buffer_open_brace()       # → "abc{}", cur=4, pend=[4]
+        launcher._editor_buffer_cursor = 0
+        launcher._editor_buffer_delete()           # drops "a", text="bc{}"
+        self.assertEqual(launcher._editor_buffer_text, "bc{}")
+        self.assertEqual(launcher._editor_pending_closers, [3])
+
+    # --- Balance count ---------------------------------------------
+    def test_balance_balanced_returns_zero(self):
+        self._setup_buffer("{a{b}c}")
+        self.assertEqual(launcher._editor_buffer_brace_balance(), (0, 0))
+        self.assertEqual(launcher._editor_brace_balance_text(), "")
+
+    def test_balance_unclosed(self):
+        self._setup_buffer("{a{b}")
+        self.assertEqual(launcher._editor_buffer_brace_balance(), (1, 0))
+        self.assertIn("unclosed", launcher._editor_brace_balance_text())
+
+    def test_balance_stray_close(self):
+        # Depth goes negative on the first `}`, so it's a stray.
+        self._setup_buffer("a}b")
+        self.assertEqual(launcher._editor_buffer_brace_balance(), (0, 1))
+        self.assertIn("stray", launcher._editor_brace_balance_text())
+
+    def test_balance_both_unclosed_and_stray(self):
+        self._setup_buffer("} {")
+        self.assertEqual(launcher._editor_buffer_brace_balance(), (1, 1))
+        text = launcher._editor_brace_balance_text()
+        self.assertIn("unclosed", text)
+        self.assertIn("stray", text)
+
+    def test_balance_escaped_brace_does_not_count(self):
+        # `\{` is a `code` span, not a `brace` span — it must not
+        # contribute to the balance.
+        self._setup_buffer(r"\{abc")
+        self.assertEqual(launcher._editor_buffer_brace_balance(), (0, 0))
+
+    def test_balance_var_expansion_brace_does_not_count(self):
+        # The braces inside `${...}` are part of the `var` span and
+        # never reported as structural.
+        self._setup_buffer("${foo}")
+        self.assertEqual(launcher._editor_buffer_brace_balance(), (0, 0))
+
+
+class TestEditorModeBraceMatch(unittest.TestCase):
+    """Matching-brace highlight positions. The renderer paints both
+    cells with C_SYN_BRACE_MATCH when the cursor sits adjacent to a
+    structural brace and a partner is found."""
+
+    def _setup_buffer(self, text, cursor=0):
+        prof, _src, _td = _make_profile("")
+        _reset_editor_state(prof)
+        launcher._editor_mode             = "editor"
+        launcher._editor_toggle_focused   = False
+        launcher._editor_buffer_text      = text
+        launcher._editor_buffer_cursor    = cursor
+        launcher._editor_buffer_scroll    = 0
+        launcher._editor_buffer_anchor    = None
+        launcher._editor_pending_closers  = []
+
+    def test_cursor_at_open_brace_finds_partner(self):
+        self._setup_buffer("{a{b}c}", cursor=0)
+        self.assertEqual(launcher._editor_brace_match_positions(), (0, 6))
+
+    def test_cursor_after_close_brace_finds_partner(self):
+        self._setup_buffer("{a}", cursor=3)
+        self.assertEqual(launcher._editor_brace_match_positions(), (0, 2))
+
+    def test_cursor_between_paired_braces_matches_open(self):
+        # cursor=1: text[0]='{', text[1]='}'. Spec: prefer cursor-1
+        # candidate first → match the `{` and find `}` as partner.
+        self._setup_buffer("{}", cursor=1)
+        self.assertEqual(launcher._editor_brace_match_positions(), (0, 1))
+
+    def test_no_match_when_cursor_not_adjacent_to_brace(self):
+        self._setup_buffer("{abc}", cursor=2)   # between 'a' and 'b'
+        self.assertIsNone(launcher._editor_brace_match_positions())
+
+    def test_unbalanced_returns_none(self):
+        self._setup_buffer("{ab", cursor=0)
+        self.assertIsNone(launcher._editor_brace_match_positions())
+
+    def test_escaped_brace_is_not_structural(self):
+        # `\{` is part of a `code` span, not `brace` — the cursor
+        # adjacent to it has nothing to match.
+        self._setup_buffer(r"\{abc", cursor=2)
+        self.assertIsNone(launcher._editor_brace_match_positions())
+
+
+class TestEditorModePendingClearedOnNonEditingActions(unittest.TestCase):
+    """Lifetime: any editor action other than printable insert,
+    Backspace/Delete, `}` overtype, and `→` clears
+    `_editor_pending_closers`."""
+
+    def _setup_with_pending(self):
+        prof, _src, _td = _make_profile("")
+        _reset_editor_state(prof)
+        launcher._editor_mode             = "editor"
+        launcher._editor_toggle_focused   = False
+        launcher._editor_buffer_text      = "abc{}"
+        launcher._editor_buffer_cursor    = 4
+        launcher._editor_buffer_scroll    = 0
+        launcher._editor_buffer_anchor    = None
+        launcher._editor_pending_closers  = [4]
+
+    def test_enter_profile_editor_resets_pending(self):
+        prof, _src, _td = _make_profile("")
+        launcher._editor_pending_closers = [1, 2, 3]
+        launcher._enter_profile_editor(prof.path)
+        self.assertEqual(launcher._editor_pending_closers, [])
+
+    def test_flip_mode_clears_pending(self):
+        self._setup_with_pending()
+        launcher._editor_flip_mode()        # editor → lite
+        self.assertEqual(launcher._editor_pending_closers, [])
+
+    def test_helper_clear_pending_is_idempotent(self):
+        self._setup_with_pending()
+        launcher._editor_clear_pending_closers()
+        self.assertEqual(launcher._editor_pending_closers, [])
+        launcher._editor_clear_pending_closers()
+        self.assertEqual(launcher._editor_pending_closers, [])
+
+
 if __name__ == "__main__":
     unittest.main()

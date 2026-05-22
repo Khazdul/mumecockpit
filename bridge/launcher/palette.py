@@ -24,6 +24,7 @@ __all__ = [
     "PANE_COLORS", "PANE_COLOR_ORDER", "pane_color_hex",
     "TTPP_COLOR_STYLES", "TTPP_COLOR_NAMES",
     "C_SYN_COMMAND", "C_SYN_BRACE", "C_SYN_DELIM", "C_SYN_VAR", "C_SYN_CODE",
+    "C_SYN_BRACE_MATCH",
 ]
 
 # ---------------------------------------------------------------------------
@@ -246,3 +247,9 @@ C_SYN_DELIM   = "fg:#c8a060"   # `;`                  — dim amber
 C_SYN_VAR     = "fg:#87af87"   # `$x`, `${x}`, `&x`,
                                # `%1`, `%*`           — sage green
 C_SYN_CODE    = "fg:#9b86b3"   # `<088>`, `\n`, `\xFF` — muted lavender
+
+# Painted on the brace at the cursor and its partner when the cursor is
+# adjacent to a structural `{`/`}`. A subtle background lift on both
+# partner cells, composed under the selection band and over the current-
+# line tint. Editor mode only; see docs/launcher.md → profile_editor.
+C_SYN_BRACE_MATCH = "fg:#dadada bg:#3a3a3a"
