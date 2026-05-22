@@ -155,10 +155,15 @@ members — notably key NPCs and hired mercenaries (whose `name` is a generic
 string like `"citizen mercenary"`). The group pane renderer prefers `label`
 over `name` when present.
 
+MUME emits `label` on every `type:"npc"` member: the integer `0` when the
+NPC is unlabeled and a non-empty string once labeled (e.g. `"label":0`
+vs `"label":"MIN"`). "Labeled" therefore means **a non-empty string** —
+nil, `gmcp.null`, integer `0`, and `""` are all treated as unlabeled.
+
 `type` is one of `"ally"`, `"npc"`, `"you"`. Members where `type` is `"you"`
 are silently excluded from `state.group.members`. Members where `type` is
-`"npc"` are excluded **unless** they arrive with a non-null `label` — labeled
-NPCs (key NPCs, mercenaries) are included. See
+`"npc"` are excluded **unless** they arrive with a non-empty string `label`
+— labeled NPCs (key NPCs, mercenaries) are included. See
 [ADR 0094](decisions/0094-labeled-npcs-in-group.md). The predicate lives in
 `group_collector.lua`.
 

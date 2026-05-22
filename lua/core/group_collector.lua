@@ -109,14 +109,19 @@ end
 
 -- ── helpers ───────────────────────────────────────────────────────────────────
 
+-- MUME sends the label field on every NPC member: integer 0 when unlabeled,
+-- non-empty string once labeled. A label counts as present only when it is a
+-- non-empty string.
+local function _is_label(v)
+    return type(v) == "string" and v ~= ""
+end
+
 -- Exclude "you" and unlabeled NPCs; labeled NPCs (key NPCs, mercenaries) are
 -- in. See ADR 0094.
 local function _should_include(entry)
     local t = entry.type
     if t == "you" then return false end
-    if t == "npc" and (entry.label == nil or entry.label == gmcp.null) then
-        return false
-    end
+    if t == "npc" and not _is_label(entry.label) then return false end
     return true
 end
 
@@ -147,6 +152,7 @@ gmcp.handlers["Group.Set"] = function(body)
                 local v = entry[gmcp_key]
                 if v ~= nil and v ~= gmcp.null then member[state_key] = v end
             end
+            if not _is_label(member.label) then member.label = nil end
             state.group.members[member.id] = member
             new_ids[member.id] = true
         end
@@ -171,6 +177,7 @@ gmcp.handlers["Group.Add"] = function(body)
         local v = body[gmcp_key]
         if v ~= nil and v ~= gmcp.null then member[state_key] = v end
     end
+    if not _is_label(member.label) then member.label = nil end
     state.group.members[member.id] = member
     events.emit("group_member_added", member)
     events.emit("group_changed")
