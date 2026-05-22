@@ -410,9 +410,13 @@ helper backing this and is unit-tested in
 per the colour grammar (amber when list focused, grey when
 unfocused); hover paints `C_HOVER`. The reusable scrollbar
 (`bridge/launcher/widgets/scrollbar.py`) renders in the 1-cell
-column to the right of the list, with page-step click-to-jump and
-wheel-scroll support; the track appears only when entries overflow
-the visible window.
+column to the right of the list, with page-step click-to-jump
+support; the track appears only when entries overflow the visible
+window. Wheel ticks anywhere on a list row or its scrollbar cell
+shift the viewport by `±3` rows through `_editor_list_wheel`
+without moving the list cursor; a click-and-hold on a track row
+above or below the thumb arms the shared auto-scroll controller
+documented under Editor mode.
 
 A `+ New entry` sentinel row is rendered at the bottom of the list
 in `C_HINT`. The sentinel is selectable like any row; pressing
@@ -440,6 +444,9 @@ sort by display name so F-keys cluster before numpad before Alt).
 
 - **Pattern field** — single-line bordered field bound to
   `entry.pattern`. Pattern is required; see *Validation*.
+  Double-click selects the same-class run under the pointer;
+  triple-click selects the whole field (Pattern is single-line, so
+  word-vs-line behave identically once the run covers the field).
 - **Body field** (text-bodied kinds) — multi-line bordered field
   bound to `entry.body`. **Capped at 10 visible rows** via
   `_EDITOR_BODY_CAP_ROWS`; bodies that exceed the cap render with
@@ -448,6 +455,16 @@ sort by display name so F-keys cluster before numpad before Alt).
   `Enter` splits the current line at the cursor; `←`/`→` traverse
   line boundaries; `↑`/`↓` move the cursor between lines while
   preserving column (clamped to the destination line's length).
+  Double-click and triple-click select the same-class run or the
+  body line under the pointer — same `_editor_click_tick` plumbing
+  as the editor buffer; the trailing `\n` is excluded from a
+  triple-click line selection. Mouse-wheel ticks scroll the body
+  viewport when content overflows the 10-row cap (no-op
+  otherwise); the body cursor stays put and the next cursor-
+  moving keystroke pulls the viewport back. The inline scrollbar
+  honours click-and-hold auto-scroll on its track. (Alt+↑ / Alt+↓
+  is editor-mode-only — bare `↑` / `↓` is already the cursor
+  move inside Body, so there is no lite-mode swap-lines analogue.)
 - **Detail-panel frame borders** transition colour with field
   focus: unfocused → `C_HINT` (muted grey); focused → `C_ACCENT`
   (amber). This is the sole focus indicator for the field's
@@ -601,6 +618,12 @@ and wrap count. Empty logical lines still occupy one visual row.
 - `←` / `→` — move cursor by one character.
 - `↑` / `↓` — move by one logical line, preserving column.
 - `↑` at top of buffer — fall through to the toggle.
+- `Alt` + `↑` / `↓` — swap the cursor's logical line with the one
+  above / below. The cursor follows the moved line with its
+  column preserved (clamped to the new line's length); no-op at
+  the buffer ends. Recorded as a single atomic undo transaction,
+  clears any pending auto-close offsets, and drops any active
+  selection — multi-line block move is out of scope.
 - `Home` / `End` — line start / end.
 - `PgUp` / `PgDn` — viewport-sized vertical move.
 - `Shift` + `←` / `→` / `↑` / `↓` / `Home` / `End` — extend
@@ -615,13 +638,31 @@ and wrap count. Empty logical lines still occupy one visual row.
 - Printable `<any>` — insert at cursor. Replaces any active
   selection first.
 
-**Mouse.** Click in the buffer positions the cursor on the clicked
-`(line, col)` and clears toggle focus (so the buffer responds to
-the next keystroke). Click on the inline scrollbar's track above
-the thumb pages up by one viewport; click below pages down; click
-on the thumb itself is a no-op. Mouse drag-to-select is not wired
-(same constraint as lite mode); clicks also clear any active
-keyboard selection.
+The `profile_editor` frame's bare `escape` binding is registered
+*without* `eager=True` so prompt_toolkit waits briefly for a
+follower key before firing ESC. Alt+↑ / Alt+↓ arrive as the
+escape-prefix chords `(escape, up)` / `(escape, down)`, and an
+eager bare ESC would save-and-close before the arrow could
+disambiguate; the cost is a short, terminal-dependent delay on
+bare ESC (capped by `timeoutlen` / `ttimeoutlen`, both lowered to
+50 ms). The same trade-off applies to the macro-keybind overlay's
+ESC binding so Alt+letter capture works there too.
+
+**Mouse.** Single click in the buffer positions the cursor on the
+clicked `(line, col)`, clears any active keyboard selection, and
+clears toggle focus (so the buffer responds to the next
+keystroke). Double-click selects the same-class run under the
+pointer (word / whitespace / punctuation); triple-click selects
+the logical line — see **Double / triple-click selection** below.
+Wheel ticks scroll the viewport without moving the cursor — see
+**Mouse-wheel scrolling** below. Click on the inline scrollbar's
+track above the thumb pages up by one viewport; click below pages
+down; click on the thumb itself is a no-op. Holding the button on
+a track row above or below the thumb arms click-and-hold
+auto-scroll — see **Click-and-hold auto-scroll** below. Drag-to-
+select is still not wired (see the
+[Mouse-drag selection is not wired](#mouse-drag-selection-is-not-wired)
+note further down for the constraint).
 
 **Selection.** `_editor_buffer_anchor` (`int | None`) is the anchor
 char offset; `None` means no selection. Pressing any
@@ -630,22 +671,104 @@ unset) and moves; the selection range is
 `[min(anchor, cursor), max(anchor, cursor))`. The selection band
 paints with `C_SELECTED` styling on every covered cell, spanning
 multiple visual rows when the selection crosses wraps or logical
-lines. Plain (unshifted) cursor movement, a content click, mode
-flip, or any successful mutation clears the anchor. Typing or
-`Backspace`/`Delete` with an active selection replaces or deletes
-the selection as a single operation. Clipboard (Ctrl-C / X / V)
-for the buffer is not wired — selection still composes with type-
-to-replace and `Delete` to drop a range.
+lines. Plain (unshifted) cursor movement, a single content click,
+mode flip, or any successful mutation clears the anchor. Typing
+or `Backspace`/`Delete` with an active selection replaces or
+deletes the selection as a single operation. The clipboard
+triplet (`c-c` / `c-x` / `c-v`) operates on whichever selection
+is active, including selections produced by double/triple-click —
+see **Clipboard** below. Double-click and triple-click set the
+anchor and cursor directly to the run / line bounds; the same
+clear-on-plain-move rule then applies.
+
+**Double / triple-click selection.** prompt_toolkit only delivers
+single MOUSE_DOWN events, so the editor rebuilds the click count
+itself. `_editor_click_tick` compares each click's `(t, x, y)`
+against the previous one, cycles the count `1 → 2 → 3 → 1` while
+the click falls within `_EDITOR_CLICK_WINDOW` (0.4 s) at the same
+cell, and resets to 1 outside the window or at a different cell —
+no timer or debounce, the count is rebuilt on every click. The
+clock source is indirected via `_editor_click_now` so tests drive
+the count deterministically rather than sleeping.
+
+Double-click calls `_editor_buffer_select_word_at`, which expands
+the selection to the same-class run that contains the clicked
+character. `_editor_word_class` is a three-way classifier:
+`word` (alphanumerics + `_`), `ws` (space / tab), and `other`
+(everything else — punctuation, symbols, non-latin printables);
+the run is extended in both directions while neighbouring
+characters share the click's class. A double-click at or past
+end-of-line places the cursor at line-end with no selection —
+word selection never crosses a line boundary. Triple-click calls
+`_editor_buffer_select_logical_line`, which anchors at the line's
+start offset and parks the cursor at the last character of the
+line; the trailing `\n` is deliberately excluded so the highlight
+stops at end-of-line instead of bleeding onto the first cell of
+the next line. The classification is deliberately plain lexical —
+double-click ignores the syntax tokeniser, so a click inside
+`${var}` selects `var` and not the full `${...}` token.
+
+The same click-count plumbing drives double/triple-click in the
+lite-mode Pattern and Body fields (see **Lite mode → Detail
+panel** below). Editor-mode and lite-mode counts share
+`_editor_click_count`; a click in Pattern after a double-click in
+the editor buffer resets to 1 because the `(x, y)` differs.
 
 **Scroll decoupling.** `_editor_buffer_scroll_into_view` is invoked
 only from cursor-mutating actions (keystrokes, content clicks,
 shift-arrow selection moves, mutations) — never unconditionally
-on render. Scrollbar clicks therefore move the viewport away from
-the cursor and the viewport stays where the click placed it
-across subsequent renders until the user moves the cursor with
-the keyboard or clicks in the buffer (the next cursor move pulls
-the viewport back to the cursor, matching the convention in code
-editors).
+on render. Scrollbar clicks, wheel ticks, and click-and-hold
+auto-scroll therefore move the viewport away from the cursor and
+the viewport stays where they placed it across subsequent renders
+until the user moves the cursor with the keyboard or clicks in
+the buffer (the next cursor move pulls the viewport back to the
+cursor, matching the convention in code editors).
+
+**Mouse-wheel scrolling.** Wheel ticks on the editor buffer route
+through `_editor_buffer_wheel`, which shifts `_editor_buffer_scroll`
+by `±3` visual rows per `SCROLL_UP` / `SCROLL_DOWN` event. The
+buffer cursor stays put; the next cursor-moving keystroke pulls
+the viewport back via `_editor_buffer_scroll_cursor_into_view`,
+matching the scrollbar-click decoupling. Wheel events delivered
+over the line-number gutter forward to the same handler so the
+gutter edge is not a dead zone. Lite-mode equivalents share the
+same `±3` step: `_editor_list_wheel` drives the entry list's
+Scrollbar widget so its internal offset stays authoritative;
+`_editor_body_wheel` shifts `_editor_body_scroll` on the
+multi-line Body field and is a no-op when the body fits inside
+the 10-row cap. All three keep the cursor decoupled — viewports
+move freely, the next keystroke pulls the viewport back to the
+cursor.
+
+**Click-and-hold auto-scroll.** Holding the mouse button on a
+scrollbar **track** row above or below the thumb pages the
+viewport once immediately (the same step a single click would
+take), then — after `_AUTOSCROLL_INITIAL_DELAY` (~300 ms) —
+auto-repeats the page-step toward the held row roughly every
+`_AUTOSCROLL_REPEAT_INTERVAL` (~100 ms), stopping when the thumb
+covers the held row. A click-and-hold on the thumb itself is a
+no-op (drag is out of scope; arming only fires on track rows). A
+launcher-level controller — `_autoscroll_arm` / `_autoscroll_tick`
+/ `_autoscroll_set_target` / `_autoscroll_disarm` — owns the
+single in-flight handle through `_app_loop.call_later`; each
+scrollbar contributes its own `step_fn`
+(`_editor_buffer_autoscroll_step`, `_editor_list_autoscroll_step`,
+`_editor_body_autoscroll_step`) that re-reads the live thumb
+geometry against `_autoscroll_target` and pages one viewport
+toward it. `MOUSE_UP` on the track disarms early as a fast path;
+`MOUSE_MOVE` updates the target so the held position can drift,
+best-effort because terminals don't all surface motion under a
+button hold. A missed `MOUSE_UP` degrades to "scrolled to the
+clicked position and stopped" rather than running forever — the
+self-terminating target is the load-bearing invariant. Auto-scroll
+moves only the viewport offset, never the cursor, consistent with
+the wheel/scrollbar cursor decoupling, and is disarmed on
+`_enter_profile_editor`, `_profile_editor_save_and_close`, and
+every `_editor_flip_mode` so it never outlives the editor frame.
+See
+[ADR 0092](decisions/0092-profile-editor-scrollbar-autoscroll.md)
+for the self-terminating-target design and the rejected
+"repeat until `MOUSE_UP`" / "fixed budget" alternatives.
 
 **Layout caches.** `_editor_buffer_line_starts_cache`,
 `_editor_buffer_visual_cache`, and `_editor_buffer_syntax_cache`
@@ -719,6 +842,22 @@ Commands fields are not affected. Three coupled features.
    and/or stray `}` (depth ever went negative) — e.g. `3 unclosed
    {` or `2 stray }`. Rendered in `C_DANGER`. When braces
    balance, no indicator is shown.
+
+**Footer Ln/Col indicator.** The editor-mode footer row carries an
+always-on `Ln <N>, Col <N>` segment (1-indexed; converted from
+`_editor_buffer_cursor_to_line_col`'s 0-indexed pair by
+`_editor_line_col_text`) right-aligned to the terminal edge. The
+brace-balance segment, when present, sits immediately to its left
+joined by `  ·  `; Ln/Col stays at column
+`cols - len(lc_text)` regardless of whether the brace segment is
+present, so the cursor coordinates do not jitter as braces come
+in and out of balance. A live `c-c` / `c-x` flash takes over the
+centred message slot and suppresses the brace-balance segment for
+the duration of the flash, but Ln/Col remains pinned to the right
+edge — the brace indicator yields, the cursor coordinates do not.
+Lite mode does not render the indicator: Pattern is single-line
+and Body is capped at 10 rows, so position is obvious from the
+field's own cursor.
 
 **Undo / redo.** Editor mode only; the lite-mode Pattern / Commands
 fields are not affected.
@@ -898,15 +1037,19 @@ invariants without disk I/O — useful for the editor's mode flip:
 #### Mouse-drag selection is not wired
 
 The editor's mouse event model is per-cell click handlers that
-fire on `MOUSE_DOWN` plus `MOUSE_MOVE` for hover. Drag-to-select
-would require distinguishing motion-with-button-held from
-hover-without-button, plus a coordinator that anchors at
-`MOUSE_DOWN` and extends across the run of `MOUSE_MOVE` events
-before `MOUSE_UP`. Prompt_toolkit's terminal mouse pipeline
-doesn't reliably surface the button state on motion reports in
-every host. **Use Shift+arrow / Shift+Home / Shift+End** to select
-text in the lite-mode Pattern / Commands fields. Editor mode does
-not currently surface shift-select (out of scope for phase 6).
+fire on `MOUSE_DOWN` plus `MOUSE_MOVE` for hover and best-effort
+auto-scroll target tracking. Drag-to-select would require
+distinguishing motion-with-button-held from hover-without-button,
+plus a coordinator that anchors at `MOUSE_DOWN` and extends
+across the run of `MOUSE_MOVE` events before `MOUSE_UP` — and
+prompt_toolkit's terminal mouse pipeline doesn't reliably surface
+the button state on motion reports in every host. The wired
+alternatives cover the common cases: double-click selects the
+word / whitespace / punctuation run under the pointer,
+triple-click selects the logical line (newline excluded), and
+`Shift+arrow` / `Shift+Home` / `Shift+End` extend the keyboard
+selection — all three work in editor mode and in the lite-mode
+Pattern / Body fields.
 
 #### Clipboard
 

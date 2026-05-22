@@ -70,6 +70,9 @@ tracking, and UI feedback.
 │   │   ├── macro_keys.py     # Bidirectional macro-key map (tt++ escape ↔ prompt_toolkit
 │   │   │                     #   key ↔ display name) for the editor's Macros tab;
 │   │   │                     #   mirrors input_pane's forwardable-key set (ADR 0082)
+│   │   ├── ttpp_syntax.py    # Lexical tokeniser for the profile editor's Editor-mode
+│   │   │                     #   syntax highlighting (commands, braces, delimiters,
+│   │   │                     #   variables, colour codes / escapes — ADR 0089)
 │   │   ├── run_stats.py      # JSONL run-statistics aggregator — shared by the popup
 │   │   │                     #   Statistics frame and the future launcher run-browser (ADR 0065)
 │   │   ├── spotlights.py     # Cross-character spotlight reel aggregator + playback
@@ -410,9 +413,17 @@ command kinds (aliases, actions, macros, highlights, substitutes):
 five-tab navigation, per-kind detail panels, click + keyboard editing,
 the key-capture overlay for macros, and a round-trip parser /
 serializer that preserves unknown commands and entry priorities
-byte-exact. Raw-mode editing (direct `.tin`-text editing for advanced
-users) and in-game popup access to the editor are not yet wired —
-those land in follow-up phases. See
+byte-exact. The code-editor (Editor) mode is also feature-complete:
+LITE↔EDITOR toggle for direct `.tin`-text editing, syntax highlight
++ matching-brace highlight + balance indicator (ADR 0089), shift-
+arrow selection + clipboard with OSC 52 system-clipboard write
+(ADR 0090), snapshot-based undo / redo with typing coalescing
+(ADR 0091), Alt+↑/↓ line move, an always-on `Ln/Col` footer
+indicator, double/triple-click word and line selection,
+mouse-wheel scrolling on all three scrollables, and click-and-hold
+auto-scroll on the three editor scrollbars (ADR 0092). In-game
+popup access to the editor is not yet wired — that lands in a
+follow-up phase. See
 [ADR 0082](docs/decisions/0082-macro-keys-duplicates-input-pane.md)
 for the deferred unification of `bridge/launcher/macro_keys.py` and
 `bridge/panes/input_pane.py`.
