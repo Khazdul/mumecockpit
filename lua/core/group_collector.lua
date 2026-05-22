@@ -66,6 +66,12 @@ local _vital_skip = {
     ["mp"] = true, ["mp-string"] = true,
 }
 
+-- Holding pen for type:"npc" members that arrive (or become) unlabeled.
+-- Promoted into state.group.members if a later Group.Update gives them a
+-- label; demoted back here if a labeled NPC is unlabeled again. Not part of
+-- the public state.group surface — the renderer only sees members.
+local _excluded = {}
+
 -- ── state.group ──────────────────────────────────────────────────────────────
 
 state.group = {
@@ -75,6 +81,9 @@ state.group = {
 function state.group.reset()
     for k in pairs(state.group.members) do
         state.group.members[k] = nil
+    end
+    for k in pairs(_excluded) do
+        _excluded[k] = nil
     end
     events.emit("group_changed")
 end
@@ -110,25 +119,42 @@ end
 -- ── helpers ───────────────────────────────────────────────────────────────────
 
 -- MUME sends the label field on every NPC member: integer 0 when unlabeled,
--- non-empty string once labeled. A label counts as present only when it is a
--- non-empty string.
-local function _is_label(v)
-    return type(v) == "string" and v ~= ""
-end
-
--- Exclude "you" and unlabeled NPCs; labeled NPCs (key NPCs, mercenaries) are
--- in. See ADR 0094.
-local function _should_include(entry)
-    local t = entry.type
-    if t == "you" then return false end
-    if t == "npc" and not _is_label(entry.label) then return false end
-    return true
+-- non-empty string once labeled. Normalise to either a non-empty string or
+-- nil so a labeled-NPC check is just `member.label ~= nil`. Members must
+-- never carry label = 0, "", or gmcp.null.
+local function _norm_label(v)
+    if type(v) == "string" and v ~= "" then return v end
+    return nil
 end
 
 local function _warn_unknown_type(t)
     if t ~= "ally" and t ~= "npc" and t ~= "you" then
         dbg("[GROUP] unknown member type: " .. tostring(t))
     end
+end
+
+-- Classify a projected member after _norm_label has been applied. See
+-- ADR 0094. Unknown types fall through to "include" (parity with prior
+-- behaviour).
+--   "drop"    → type "you"; not stored anywhere.
+--   "exclude" → type "npc" without a label; goes to _excluded.
+--   "include" → goes to state.group.members.
+local function _classify(member)
+    if member.type == "you" then return "drop" end
+    if member.type == "npc" and member.label == nil then return "exclude" end
+    return "include"
+end
+
+-- Project a GMCP entry into a member object, applying _norm_label so the
+-- label field is either a non-empty string or nil.
+local function _project(body)
+    local member = {}
+    for gmcp_key, state_key in pairs(_field_map) do
+        local v = body[gmcp_key]
+        if v ~= nil and v ~= gmcp.null then member[state_key] = v end
+    end
+    member.label = _norm_label(member.label)
+    return member
 end
 
 -- ── GMCP handlers ────────────────────────────────────────────────────────────
@@ -142,19 +168,18 @@ gmcp.handlers["Group.Set"] = function(body)
     local old_ids = {}
     for id in pairs(state.group.members) do old_ids[id] = true end
     for k in pairs(state.group.members) do state.group.members[k] = nil end
+    for k in pairs(_excluded) do _excluded[k] = nil end
 
     local new_ids = {}
     for _, entry in ipairs(body) do
         _warn_unknown_type(entry.type)
-        if _should_include(entry) then
-            local member = {}
-            for gmcp_key, state_key in pairs(_field_map) do
-                local v = entry[gmcp_key]
-                if v ~= nil and v ~= gmcp.null then member[state_key] = v end
-            end
-            if not _is_label(member.label) then member.label = nil end
+        local member = _project(entry)
+        local where = _classify(member)
+        if where == "include" then
             state.group.members[member.id] = member
             new_ids[member.id] = true
+        elseif where == "exclude" then
+            _excluded[member.id] = member
         end
     end
 
@@ -170,14 +195,15 @@ end
 gmcp.handlers["Group.Add"] = function(body)
     body = body or {}
     _warn_unknown_type(body.type)
-    if not _should_include(body) then return end
 
-    local member = {}
-    for gmcp_key, state_key in pairs(_field_map) do
-        local v = body[gmcp_key]
-        if v ~= nil and v ~= gmcp.null then member[state_key] = v end
+    local member = _project(body)
+    local where = _classify(member)
+    if where == "drop" then return end
+    if where == "exclude" then
+        _excluded[member.id] = member
+        return
     end
-    if not _is_label(member.label) then member.label = nil end
+
     state.group.members[member.id] = member
     events.emit("group_member_added", member)
     events.emit("group_changed")
@@ -185,9 +211,12 @@ end
 
 gmcp.handlers["Group.Update"] = function(body)
     body = body or {}
-    local existing = state.group.members[body.id]
+    local id = body.id
+    local existing = state.group.members[id]
+    local was_in_members = existing ~= nil
+    if existing == nil then existing = _excluded[id] end
     if existing == nil then
-        dbg("[GROUP] update for unknown id " .. tostring(body.id) .. ", ignoring")
+        dbg("[GROUP] update for unknown id " .. tostring(id) .. ", ignoring")
         return
     end
 
@@ -201,6 +230,7 @@ gmcp.handlers["Group.Update"] = function(body)
             end
         end
     end
+    existing.label = _norm_label(existing.label)
 
     -- Vital pairs: freshness inference per pair.
     for _, pair in ipairs(_vital_pairs) do
@@ -237,7 +267,24 @@ gmcp.handlers["Group.Update"] = function(body)
         end
     end
 
-    events.emit("group_member_updated", existing)
+    -- Re-evaluate inclusion. A promotion/demotion emits exactly one
+    -- membership event; a plain in-place update emits group_member_updated.
+    local has_label = existing.label ~= nil
+    local is_npc    = existing.type == "npc"
+
+    if not was_in_members and has_label then
+        _excluded[id] = nil
+        state.group.members[id] = existing
+        events.emit("group_member_added", existing)
+    elseif was_in_members and is_npc and not has_label then
+        state.group.members[id] = nil
+        _excluded[id] = existing
+        events.emit("group_member_removed", id)
+    elseif was_in_members then
+        events.emit("group_member_updated", existing)
+    end
+    -- excluded → excluded: no membership event.
+
     events.emit("group_changed")
 end
 
@@ -247,12 +294,14 @@ gmcp.handlers["Group.Remove"] = function(body)
         dbg("[GROUP] Remove: expected integer payload, got " .. tostring(body))
         return
     end
-    if state.group.members[id] == nil then
-        return
+    if state.group.members[id] ~= nil then
+        state.group.members[id] = nil
+        _excluded[id] = nil
+        events.emit("group_member_removed", id)
+        events.emit("group_changed")
+    elseif _excluded[id] ~= nil then
+        _excluded[id] = nil
     end
-    state.group.members[id] = nil
-    events.emit("group_member_removed", id)
-    events.emit("group_changed")
 end
 
 -- ── reset on disconnect ───────────────────────────────────────────────────────

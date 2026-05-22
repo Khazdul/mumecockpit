@@ -158,7 +158,10 @@ over `name` when present.
 MUME emits `label` on every `type:"npc"` member: the integer `0` when the
 NPC is unlabeled and a non-empty string once labeled (e.g. `"label":0`
 vs `"label":"MIN"`). "Labeled" therefore means **a non-empty string** —
-nil, `gmcp.null`, integer `0`, and `""` are all treated as unlabeled.
+nil, `gmcp.null`, integer `0`, and `""` are all treated as unlabeled. The
+`_norm_label` helper in `group_collector.lua` enforces this so a member
+in `state.group.members` always carries `label` as either a non-empty
+string or `nil` — never `0` or `""`.
 
 `type` is one of `"ally"`, `"npc"`, `"you"`. Members where `type` is `"you"`
 are silently excluded from `state.group.members`. Members where `type` is
@@ -167,10 +170,21 @@ are silently excluded from `state.group.members`. Members where `type` is
 [ADR 0094](decisions/0094-labeled-npcs-in-group.md). The predicate lives in
 `group_collector.lua`.
 
+Labeling and unlabeling are handled live. An unlabeled NPC grouped via
+`Group.Add` is held in a private `_excluded` table inside
+`group_collector.lua` (not part of the `state.group` surface). When a later
+`Group.Update` carries a non-empty string `label` for that id, the NPC is
+promoted into `state.group.members` and a `group_member_added` event is
+emitted; if a subsequent update unlabels it (`label:0`, `null`, or `""`),
+it is demoted back into `_excluded` and `group_member_removed` fires. A
+promote/demote packet emits exactly one membership event — never
+`group_member_updated` — and `group_changed` always fires afterwards. No
+full `Group.Set` re-sync is needed.
+
 `Group.Remove` delivers a bare JSON integer (not an object). The handler converts it via
-`tonumber(body)` before removing the entry from `state.group.members`. Removals for ids
-not present in `state.group.members` — e.g. NPCs filtered out at add time — are silently
-ignored; no events are emitted.
+`tonumber(body)` before removing the entry from `state.group.members` (or, for an
+unlabeled NPC still being held, from `_excluded`). Removals for ids in `_excluded` only
+are silent — no events are emitted. Removals for ids in neither table are no-ops.
 
 `Group.Update` is incremental — a single packet carries either the numeric value for a vital
 (e.g. `{"id":2,"hp":200}`) or its band-string (`{"id":2,"hp-string":"fine"}`) but not always
