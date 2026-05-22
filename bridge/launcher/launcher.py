@@ -318,6 +318,16 @@ _editor_keybind_just_created   = False # True when the overlay was auto-pushed b
 _editor_feedback_text   = None
 _editor_feedback_style  = ""
 _editor_feedback_handle = None
+# Transient flash shown IN the editor footer's centred slot — currently
+# fed by c-c / c-x to surface "Copied" / "Cut". Mirrors the profile-frame
+# feedback pattern (text + style + timer handle, ~1.5 s auto-clear).
+# Distinct from `_editor_feedback_*` (which renders on its own line under
+# the footer for macro-bind confirmations) because the flash supersedes
+# the brace-imbalance indicator in editor mode and the static hint
+# tokens in lite mode.
+_editor_flash_text   = None
+_editor_flash_style  = ""
+_editor_flash_handle = None
 
 # Options — top-level (Panes / Game text-layout / Connection / Back)
 _sel_options              = 0
@@ -1942,6 +1952,7 @@ def _enter_profile_editor(path):
     _editor_list_sb = Scrollbar(
         0, _editor_list_visible(), _editor_list_visible(),
     )
+    _editor_clear_flash()
     _push_frame("profile_editor")
     _editor_refresh_buffers()
 
@@ -1968,6 +1979,7 @@ def _profile_editor_save_and_close():
                 if _editor_profile_path is not None else "")
         except OSError as exc:
             err_msg = f"Save failed: {exc.strerror or exc}"
+    _editor_clear_flash()
     _pop_frame()
     if err_msg:
         _profile_set_feedback(err_msg, C_HINT)
@@ -4140,6 +4152,7 @@ def _editor_flip_mode():
     if _editor_data is None:
         return
     _editor_clear_pending_closers()
+    _editor_clear_flash()
     if _editor_mode == "lite":
         _editor_buffer_text   = profile_io.serialize_profile(_editor_data)
         _editor_buffer_cursor = 0
@@ -5337,21 +5350,31 @@ def _editor_append_footer(frags, cols):
                   "ESC Save & back")
     else:
         footer = "Tab Field  ·  ESC Save & back"
-    leading_pad = _pad_centre(footer, cols)
-    frags.append(("", leading_pad, _editor_clear_outer_hover))
-    frags.append((C_HINT, footer, _editor_clear_outer_hover))
-    # Editor-mode brace-balance indicator. Right-aligned on the footer
-    # row in C_DANGER when the buffer has unmatched braces; absent when
-    # balanced. See docs/launcher.md → profile_editor → Editor mode →
-    # Brace assistance.
-    if _editor_mode == "editor":
-        balance_text = _editor_brace_balance_text()
-        if balance_text:
-            used = len(leading_pad) + len(footer)
-            pad = max(1, cols - used - len(balance_text))
-            frags.append(("", " " * pad, _editor_clear_outer_hover))
-            frags.append((C_DANGER, balance_text,
-                          _editor_clear_outer_hover))
+    # A live c-c / c-x flash takes over the centred message slot. It also
+    # suppresses the editor-mode brace indicator so the two never share
+    # the row. Static hint tokens return on the next render after the
+    # auto-clear timer fires.
+    if _editor_flash_text:
+        flash = _editor_flash_text
+        leading_pad = _pad_centre(flash, cols)
+        frags.append(("", leading_pad, _editor_clear_outer_hover))
+        frags.append((_editor_flash_style, flash, _editor_clear_outer_hover))
+    else:
+        leading_pad = _pad_centre(footer, cols)
+        frags.append(("", leading_pad, _editor_clear_outer_hover))
+        frags.append((C_HINT, footer, _editor_clear_outer_hover))
+        # Editor-mode brace-balance indicator. Right-aligned on the footer
+        # row in C_DANGER when the buffer has unmatched braces; absent when
+        # balanced. See docs/launcher.md → profile_editor → Editor mode →
+        # Brace assistance.
+        if _editor_mode == "editor":
+            balance_text = _editor_brace_balance_text()
+            if balance_text:
+                used = len(leading_pad) + len(footer)
+                pad = max(1, cols - used - len(balance_text))
+                frags.append(("", " " * pad, _editor_clear_outer_hover))
+                frags.append((C_DANGER, balance_text,
+                              _editor_clear_outer_hover))
     if _editor_feedback_text:
         frags.append(("", "\n", _editor_clear_outer_hover))
         frags.append((
@@ -5631,6 +5654,41 @@ def _editor_clear_feedback():
     _editor_feedback_text  = None
     _editor_feedback_style = ""
     _editor_feedback_handle = None
+    if _app:
+        _app.invalidate()
+
+
+def _editor_flash(text, style=C_ACCENT, ttl_seconds=1.5):
+    """Flash a short confirmation in the editor footer's message slot —
+    e.g. "Copied" / "Cut" after a successful c-c / c-x. While the flash
+    is live the centred hint text is replaced and the editor-mode brace
+    indicator yields; both return on the next render after auto-clear."""
+    global _editor_flash_text, _editor_flash_style, _editor_flash_handle
+    _editor_flash_text  = text
+    _editor_flash_style = style
+    if _editor_flash_handle is not None:
+        try:
+            _editor_flash_handle.cancel()
+        except Exception:
+            pass
+        _editor_flash_handle = None
+    if _app_loop is not None:
+        _editor_flash_handle = _app_loop.call_later(
+            ttl_seconds, _editor_clear_flash)
+    if _app:
+        _app.invalidate()
+
+
+def _editor_clear_flash():
+    global _editor_flash_text, _editor_flash_style, _editor_flash_handle
+    _editor_flash_text  = None
+    _editor_flash_style = ""
+    if _editor_flash_handle is not None:
+        try:
+            _editor_flash_handle.cancel()
+        except Exception:
+            pass
+        _editor_flash_handle = None
     if _app:
         _app.invalidate()
 
@@ -11489,30 +11547,37 @@ def _kb_peditor_any(event):
 # Dispatch mirrors `_kb_peditor_any`: only the Pattern (detail_field 0)
 # and Body (detail_field 1, non-palette, non-macro-Key) text fields
 # respond. Tab buttons, the list, the palette zones and the macro Key
-# cell are all no-ops.
+# cell are all no-ops. Returns True when one of the fns ran — callers
+# use this to gate the c-c / c-x confirmation flash to text contexts.
 def _kb_peditor_lite_dispatch(pattern_fn, body_fn):
     if _editor_focus != 2:
-        return
+        return False
     if _editor_in_palette_focus():
-        return
+        return False
     if _editor_in_macro_key_focus():
-        return
+        return False
+    ran = False
     if _editor_detail_field == 0:
         pattern_fn()
+        ran = True
     elif _editor_detail_field == 1:
         body_fn()
+        ran = True
     if _app:
         _app.invalidate()
+    return ran
 
 
 @kb.add("c-c", filter=_in_pe_lite())
 def _kb_peditor_lite_copy(event):
-    _kb_peditor_lite_dispatch(_editor_pattern_copy, _editor_body_copy)
+    if _kb_peditor_lite_dispatch(_editor_pattern_copy, _editor_body_copy):
+        _editor_flash("Copied")
 
 
 @kb.add("c-x", filter=_in_pe_lite())
 def _kb_peditor_lite_cut(event):
-    _kb_peditor_lite_dispatch(_editor_pattern_cut, _editor_body_cut)
+    if _kb_peditor_lite_dispatch(_editor_pattern_cut, _editor_body_cut):
+        _editor_flash("Cut")
 
 
 @kb.add("c-v", filter=_in_pe_lite())
@@ -11798,12 +11863,14 @@ def _kb_peditor_buffer_stab(event):
 def _kb_peditor_buffer_copy(event):
     # Copy never mutates, so `_editor_pending_closers` is preserved.
     _editor_buffer_copy()
+    _editor_flash("Copied")
 
 
 @kb.add("c-x", filter=_in_pe_editor())
 def _kb_peditor_buffer_cut(event):
     _editor_buffer_cut()
     _editor_buffer_scroll_cursor_into_view()
+    _editor_flash("Cut")
 
 
 @kb.add("c-v", filter=_in_pe_editor())

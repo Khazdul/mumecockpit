@@ -2187,6 +2187,168 @@ class TestProfileEditorClipboardLiteBody(unittest.TestCase):
         self.assertEqual(launcher._editor_current_entry().body, "abone\ntwo")
 
 
+class TestProfileEditorCopyCutFlash(unittest.TestCase):
+    """Transient `Copied` / `Cut` confirmation flash in the profile-editor
+    footer. Set on a successful c-c / c-x, never on c-v. Cleared on the
+    1.5 s timer (or explicit `_editor_clear_flash`). Suppressed in no-op
+    contexts — palette / macro Key / kind buttons / list — because the
+    lite-mode dispatcher returns False before the flash call runs."""
+
+    def setUp(self):
+        # `_app_loop is None` in tests: the setter writes the text and
+        # style but skips scheduling — exactly what we want here.
+        launcher._editor_clear_flash()
+
+    def tearDown(self):
+        launcher._editor_clear_flash()
+
+    # --- Editor-mode buffer ------------------------------------------
+    def test_editor_buffer_copy_sets_flash_copied(self):
+        prof, _src, _td = _make_profile("")
+        _reset_editor_state(prof)
+        launcher._editor_mode             = "editor"
+        launcher._editor_toggle_focused   = False
+        launcher._editor_buffer_text      = "abc"
+        launcher._editor_buffer_cursor    = 1
+        launcher._editor_buffer_anchor    = None
+        launcher._editor_clipboard        = ""
+        launcher._kb_peditor_buffer_copy(None)
+        self.assertEqual(launcher._editor_flash_text, "Copied")
+
+    def test_editor_buffer_cut_sets_flash_cut(self):
+        prof, _src, _td = _make_profile("")
+        _reset_editor_state(prof)
+        launcher._editor_mode             = "editor"
+        launcher._editor_toggle_focused   = False
+        launcher._editor_buffer_text      = "abc"
+        launcher._editor_buffer_cursor    = 1
+        launcher._editor_buffer_anchor    = None
+        launcher._editor_clipboard        = ""
+        launcher._kb_peditor_buffer_cut(None)
+        self.assertEqual(launcher._editor_flash_text, "Cut")
+
+    def test_editor_buffer_paste_does_not_flash(self):
+        prof, _src, _td = _make_profile("")
+        _reset_editor_state(prof)
+        launcher._editor_mode             = "editor"
+        launcher._editor_toggle_focused   = False
+        launcher._editor_buffer_text      = "abc"
+        launcher._editor_buffer_cursor    = 1
+        launcher._editor_buffer_anchor    = None
+        launcher._editor_clipboard        = "X"
+        launcher._kb_peditor_buffer_paste(None)
+        self.assertIsNone(launcher._editor_flash_text)
+
+    def test_editor_bracketed_paste_does_not_flash(self):
+        prof, _src, _td = _make_profile("")
+        _reset_editor_state(prof)
+        launcher._editor_mode             = "editor"
+        launcher._editor_toggle_focused   = False
+        launcher._editor_buffer_text      = ""
+        launcher._editor_buffer_cursor    = 0
+        launcher._editor_buffer_anchor    = None
+        # Synthesise a minimal bracketed-paste event stub.
+        class _Ev:
+            data = "hello"
+        launcher._kb_peditor_buffer_bracketed_paste(_Ev())
+        self.assertIsNone(launcher._editor_flash_text)
+
+    # --- Lite Pattern -----------------------------------------------
+    def test_lite_pattern_copy_sets_flash_copied(self):
+        prof, _src, _td = _make_profile("#alias {abc} {body}\n")
+        _reset_editor_state(prof, focus=2)
+        launcher._editor_detail_field    = 0
+        launcher._editor_pattern_cursor  = 0
+        launcher._editor_pattern_anchor  = None
+        launcher._editor_clipboard       = ""
+        launcher._kb_peditor_lite_copy(None)
+        self.assertEqual(launcher._editor_flash_text, "Copied")
+
+    def test_lite_pattern_cut_sets_flash_cut(self):
+        prof, _src, _td = _make_profile("#alias {abc} {body}\n")
+        _reset_editor_state(prof, focus=2)
+        launcher._editor_detail_field    = 0
+        launcher._editor_pattern_cursor  = 0
+        launcher._editor_pattern_anchor  = None
+        launcher._editor_clipboard       = ""
+        launcher._kb_peditor_lite_cut(None)
+        self.assertEqual(launcher._editor_flash_text, "Cut")
+
+    # --- Lite Body --------------------------------------------------
+    def test_lite_body_copy_sets_flash_copied(self):
+        prof, _src, _td = _make_profile("#alias {k} {body}\n")
+        _reset_editor_state(prof, focus=2)
+        launcher._editor_detail_field    = 1
+        launcher._editor_body_line       = 0
+        launcher._editor_body_col        = 0
+        launcher._editor_body_anchor_line = None
+        launcher._editor_body_anchor_col  = None
+        launcher._editor_clipboard       = ""
+        launcher._kb_peditor_lite_copy(None)
+        self.assertEqual(launcher._editor_flash_text, "Copied")
+
+    def test_lite_body_cut_sets_flash_cut(self):
+        prof, _src, _td = _make_profile("#alias {k} {body}\n")
+        _reset_editor_state(prof, focus=2)
+        launcher._editor_detail_field    = 1
+        launcher._editor_body_line       = 0
+        launcher._editor_body_col        = 0
+        launcher._editor_body_anchor_line = None
+        launcher._editor_body_anchor_col  = None
+        launcher._editor_clipboard       = ""
+        launcher._kb_peditor_lite_cut(None)
+        self.assertEqual(launcher._editor_flash_text, "Cut")
+
+    def test_lite_paste_does_not_flash(self):
+        prof, _src, _td = _make_profile("#alias {abc} {body}\n")
+        _reset_editor_state(prof, focus=2)
+        launcher._editor_detail_field    = 0
+        launcher._editor_pattern_cursor  = 0
+        launcher._editor_pattern_anchor  = None
+        launcher._editor_clipboard       = "X"
+        launcher._kb_peditor_lite_paste(None)
+        self.assertIsNone(launcher._editor_flash_text)
+
+    # --- No-op contexts (lite mode) ---------------------------------
+    def test_lite_copy_in_list_focus_does_not_flash(self):
+        # `_editor_focus = 1` → list. Dispatcher returns False, no flash.
+        prof, _src, _td = _make_profile("#alias {abc} {body}\n")
+        _reset_editor_state(prof, focus=1)
+        launcher._kb_peditor_lite_copy(None)
+        self.assertIsNone(launcher._editor_flash_text)
+
+    def test_lite_copy_in_kind_focus_does_not_flash(self):
+        prof, _src, _td = _make_profile("#alias {abc} {body}\n")
+        _reset_editor_state(prof, focus=0)
+        launcher._kb_peditor_lite_copy(None)
+        self.assertIsNone(launcher._editor_flash_text)
+
+    def test_lite_copy_in_palette_focus_does_not_flash(self):
+        # Highlights tab, detail_field = 2 (Text palette) — palette focus.
+        prof, _src, _td = _make_profile("#highlight {abc} {white}\n")
+        _reset_editor_state(prof, focus=2, kind="highlight")
+        launcher._editor_detail_field = 2
+        launcher._kb_peditor_lite_copy(None)
+        self.assertIsNone(launcher._editor_flash_text)
+
+    def test_lite_copy_in_macro_key_focus_does_not_flash(self):
+        # Macros tab, detail_field = 0 → macro Key cell.
+        prof, _src, _td = _make_profile("#macro {\\eOP} {body}\n")
+        _reset_editor_state(prof, focus=2, kind="macro")
+        launcher._editor_detail_field = 0
+        launcher._kb_peditor_lite_copy(None)
+        self.assertIsNone(launcher._editor_flash_text)
+
+    # --- Clearing ---------------------------------------------------
+    def test_clear_flash_resets_text_and_style(self):
+        launcher._editor_flash("Copied")
+        self.assertEqual(launcher._editor_flash_text, "Copied")
+        launcher._editor_clear_flash()
+        self.assertIsNone(launcher._editor_flash_text)
+        self.assertEqual(launcher._editor_flash_style, "")
+        self.assertIsNone(launcher._editor_flash_handle)
+
+
 class TestClipboardCtrlCFilter(unittest.TestCase):
     """Phase C — the global `c-c` quit must NOT fire inside the
     profile_editor frame. ESC is the documented editor exit."""

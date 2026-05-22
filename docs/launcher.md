@@ -907,6 +907,23 @@ The global `c-c` quit binding is suppressed inside the
 `profile_editor` frame so the same key can copy text; ESC remains
 the documented way to exit the editor.
 
+**Confirmation flash.** A successful `c-c` / `c-x` writes a transient
+"Copied" / "Cut" message into the centred footer slot in `C_ACCENT`,
+auto-clearing after ~1.5 s (`_editor_flash` / `_editor_clear_flash`,
+mirroring the `profile`-frame feedback pattern). `c-v` and bracketed
+paste never flash. The text is terminal-independent — on terminals
+without OSC 52 the bytes reached only the in-app register, so a
+clipboard-specific claim would mislead.
+
+While the flash is live, the editor-mode brace-imbalance indicator
+yields the row (no overlap); both the static hint tokens and the
+indicator return on the next render after the timer fires. A
+`c-c` / `c-x` in a no-op context (kind buttons, list, palette zone,
+macro Key cell) does not flash — the lite-mode dispatcher returns
+before the flash call runs. The flash is also cleared on
+`_enter_profile_editor`, on the lite ↔ editor flip, and on
+`_profile_editor_save_and_close`, so it never outlives the frame.
+
 #### Delete: no confirmation
 
 `Del` on a selected list row removes the cursor Entry from
