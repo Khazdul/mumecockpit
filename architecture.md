@@ -45,17 +45,21 @@ tracking, and UI feedback.
 │   │                     #   events.lua     — event bus (subscribe/emit/unsubscribe/trace)
 │   │                     #   gmcp.lua       — GMCP namespace, dispatch, module_to_event
 │   │                     #   connection.lua — MUME connection state, popup helpers
-│   │                     #   registry.lua   — register_script, cockpit help, box drawing
+│   │                     #   registry.lua   — cp help box drawing, scripts.cache writer
 │   │                     #   loader.lua     — lua/core + lua/scripts auto-loader
+│   │                     #                    (parses @-tagged headers, resolves scripts.conf)
 │   ├── lib/              # Bundled Lua libraries (on package.path)
 │   │                     #   dkjson.lua  — pure-Lua JSON parser (MIT, David Kolf)
 │   ├── core/             # Always-on GMCP collectors and serializers — no alias,
-│   │                     # no register_script. Examples:
+│   │                     # no @-header. Examples:
 │   │                     #   char_state.lua    — Char.* → state.char.*
 │   │                     #   comm_log.lua      — Comm.Channel.* → state.comm.*
 │   │                     #   status_state.lua  — state.char → bridge/runtime/status.state (runtime)
 │   │                     # See CLAUDE.md and per-area docs/*.md for the full list.
-│   └── scripts/          # Opt-in automation modules — must call register_script(meta)
+│   └── scripts/          # Opt-in automation modules — see docs/scripts.md. Each
+│                         #   file carries an @-tagged metadata header parsed
+│                         #   statically by the loader; enable state in
+│                         #   bridge/runtime/scripts.conf (shadows template).
 │
 ├── bridge/
 │   ├── launcher/             # Pre-tmux menu, tmux orchestration, Windows entry
@@ -129,7 +133,7 @@ tracking, and UI feedback.
 │   │   ├── connection.state  # Runtime state written by Lua on SESSION CONNECTED
 │   │   ├── version.cache     # Cached latest-release tag (6h TTL)
 │   │   ├── ping.cache        # Ping ring buffer: latest, quality, 60-sample history
-│   │   ├── scripts.cache     # Script registry written at brain startup
+│   │   ├── scripts.cache     # Full script catalog (enabled + disabled) written at brain startup
 │   │   ├── .layout_ready     # Sentinel: build_initial_layout.sh → wait_for_layout.sh
 │   │   ├── .layout_lock      # Lockfile: prevents resize feedback loop
 │   │   ├── .ping_pid         # Single-instance guard for ping_monitor.sh
@@ -212,16 +216,21 @@ registration in `main.tin` is needed when adding a new module.
 `brain.lua` performs a two-tier load at startup via `io.popen("ls ...")` +
 `dofile()`, in alphabetical order within each tier:
 
-1. **`lua/core/`** — always-on GMCP collectors. These have no alias and never
-   call `register_script()`. They populate `state.*` fields that other code
-   may read at load time.
-2. **`lua/scripts/`** — opt-in automation modules. Each must call
-   `register_script(meta)` so it appears in `cp` help and the launcher's
-   Scripts page.
+1. **`lua/core/`** — always-on GMCP collectors. These have no alias and no
+   metadata header. They populate `state.*` fields that other code may read
+   at load time. Every file is loaded unconditionally.
+2. **`lua/scripts/`** — opt-in automation modules. Each file carries an
+   `@`-tagged metadata header (`@summary`, `@alias`, `@help`) parsed
+   statically by the loader; only files enabled via `scripts.conf` are
+   `dofile()`'d. The loader writes the full catalog (enabled + disabled)
+   to `bridge/runtime/scripts.cache` so the launcher and in-game popup
+   can list every installed script. See [docs/scripts.md](docs/scripts.md)
+   for the header format, conf-file resolution, and ADR 0093 for the
+   rationale.
 
 Rule for new files: if a file has no alias and only listens to GMCP to write
-`state.*`, it belongs in `lua/core/`. If it provides a player-facing feature
-and calls `register_script()`, it belongs in `lua/scripts/`.
+`state.*`, it belongs in `lua/core/`. If it provides a player-facing feature,
+add the metadata header and drop it in `lua/scripts/`.
 
 Each script runs in the global environment and has access to all infrastructure
 functions from `brain.lua`:
@@ -241,7 +250,6 @@ functions from `brain.lua`:
     session_cmd(cmd)          — register in GAME_SESSION only
     set_game_session(ses)     — called by SESSION CONNECTED event
     clear_game_session(ses)   — called by SESSION DISCONNECTED event
-    register_script(meta)     — register script in cockpit help system
     scripts                   — namespace for script public APIs
     state.char/.room/.comm    — namespace for shared game state
     gmcp                      — GMCP subsystem (handlers, dispatch, modules)
@@ -317,9 +325,8 @@ registrations never leak into saved profiles.
 (`dbg`, `ui`, `ui_var`, `script_ui`, `system_ui`, `ui_warn`, `ui_err`,
 `tintin`, `tintin_cmd`, `tintin_show`, `send`, `game_cmd`, `session_cmd`),
 session identity (`GAME_SESSION`, `set_game_session`, `clear_game_session`),
-and the tt++/Lua contract surface (`handle_event`, `register_script`).
-These stay global because they are called from everywhere and short names
-reduce noise.
+and the tt++/Lua contract surface (`handle_event`). These stay global because
+they are called from everywhere and short names reduce noise.
 
 **`scripts.<name>.<fn>`** — the script's public API. Any function called from
 tt++ via `#lua` must live here. Private helpers remain in file-local `local`
@@ -362,12 +369,14 @@ game_cmd('#alias {...} {#lua {scripts.myscript.start(...)}}')
 5. **Single source of truth** — Lua owns all game state.
 6. **Self-contained Lua modules** — every file in `lua/core/` and
    `lua/scripts/` is a single `.lua` file with no paired `.tin` file.
-   `lua/core/` files are always-on collectors: no alias, no
-   `register_script()`, only GMCP handlers that write `state.*`.
-   `lua/scripts/` files are opt-in automation: they register their own
-   aliases via `game_cmd()`, triggers via `session_cmd()`, and MUD
-   commands via `send()` at load time, and call `register_script(meta)`.
-   Never hardcode session names in either tier.
+   `lua/core/` files are always-on collectors: no alias, no metadata
+   header, only GMCP handlers that write `state.*`.
+   `lua/scripts/` files are opt-in automation: they declare themselves
+   via an `@`-tagged metadata header (parsed without execution by the
+   loader) and register their own aliases via `game_cmd()`, triggers
+   via `session_cmd()`, and MUD commands via `send()` at load time.
+   Never hardcode session names in either tier. See
+   [docs/scripts.md](docs/scripts.md).
 7. **Anchored core actions** — every `#action` registered from
    `ttpp/core/*.tin` or `lua/core/*.lua` that matches a single complete
    server-emitted line uses `^...$`. Anchoring blocks false triggers
@@ -394,8 +403,9 @@ Unified window and system management via `cp` commands:
 | `cp -<alias>` | Show help for installed script  |
 
 The `cp` help box is dynamically generated by Lua after all scripts load,
-so the Scripts section always reflects installed scripts. Each script
-registers itself via `register_script(meta)` — no changes to core needed.
+so the Scripts section always reflects enabled scripts. Each script
+declares itself via the `@`-tagged metadata header at the top of its file
+(see [docs/scripts.md](docs/scripts.md)) — no changes to core needed.
 
 See [docs/popup-menu.md](docs/popup-menu.md) for Options/Scripts submenu
 implementations, `cp -s` internals, and toggle-pane persistence details.
@@ -444,6 +454,7 @@ final row; the modal `exit_confirm` / `rate_session` dialogs adopt
 - [docs/gmcp.md](docs/gmcp.md) — GMCP module reference, schemas, negotiation. Touched when adding a GMCP collector or subscribing to a new module.
 - [docs/events.md](docs/events.md) — Event bus API and catalogue. Touched when adding a core MUD trigger or subscribing a script to a Lua-side event.
 - [docs/ipc.md](docs/ipc.md) — tt++ ↔ Lua IPC contract, relay actions, startup ordering. Touched when changing how tt++ and Lua communicate.
+- [docs/scripts.md](docs/scripts.md) — Scripting guide for `lua/scripts/`: metadata header format, enable/disable via `scripts.conf`, `scripts.cache` schema, infrastructure surface available to a script. Touched when changing the script contract or adding a new opt-in module.
 - [docs/session-lifecycle.md](docs/session-lifecycle.md) — Session connect/disconnect, connection.state, settings persistence. Touched when changing session handling or startup flow.
 - [docs/input-pane.md](docs/input-pane.md) — Input pane key forwarding, Enter semantics, history navigation, clock strip. Touched when changing input behaviour, forwarded keys, or the clock strip.
 - [docs/tmux-bindings.md](docs/tmux-bindings.md) — tmux root-table bindings, mouse model, clipboard. Touched when changing tmux key bindings or mouse behaviour.

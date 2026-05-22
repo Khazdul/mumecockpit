@@ -263,7 +263,7 @@ These rules apply to every message written to `ui.log` through any helper
 - Function entry points for debugging (`get_state called`, `get_tells called`)
 - Unknown or unhandled events
 
-**Script load messages.** On load, a script emits a single `dbg()` line of the form `[SCRIPTNAME] loaded` — nothing more. Alias/trigger registration details belong in the script's `cp -<name>` help box (via `register_script`), not in the startup log. The load line is a liveness signal, not a manifest.
+**Script load messages.** On load, a script emits a single `dbg()` line of the form `[SCRIPTNAME] loaded` — nothing more. Alias/trigger registration details belong in the script's `cp -<name>` help box (rendered from the `@`-tagged header at the top of the file — see [docs/scripts.md](scripts.md)), not in the startup log. The load line is a liveness signal, not a manifest.
 
 **Rules:**
 - Never log the same event to both panes redundantly — `ui()` already mirrors to dev with a `UI:` prefix, so never follow a `ui()` call with a `dbg()` for the same message

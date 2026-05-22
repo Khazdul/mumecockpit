@@ -27,6 +27,7 @@ with a scripting brain on top.
 - `docs/ui-pane.md` — UI pane: renderer, scroll, log-tail mechanics.
 - `docs/clock.md` — game clock: sync sources, state schema, degradation rules.
 - `docs/affects.md` — affect tracker: data flow, schemas, persistence, tick lifecycle.
+- `docs/scripts.md` — scripting guide for `lua/scripts/`: metadata header format, opt-in loading, scripts.cache schema.
 - `docs/launcher.md` — pre-tmux menu rendering and flow.
 - `docs/popup-menu.md` — in-game ESC popup (ingame_menu.sh).
 - `docs/bridge-services.md` — ping monitor, version check, self-update.
@@ -39,10 +40,13 @@ with a scripting brain on top.
 
 - **tt++ for reflexes, Lua for cognition.** Latency-critical paths stay in tt++.
 - **Two-tier Lua loading.** Always-on GMCP collectors (no alias, no
-  `register_script`) go in `lua/core/*.lua`. Opt-in automation modules
-  (must call `register_script(meta)`) go in `lua/scripts/*.lua`. Both
-  are auto-loaded at startup — core first, then scripts. No edits to
-  `brain.lua` or `main.tin` needed.
+  metadata header) go in `lua/core/*.lua`. Opt-in automation modules
+  go in `lua/scripts/*.lua` with an `@`-tagged metadata header at the
+  top of the file (`@summary`, `@alias`, `@help`); enable state lives
+  in `bridge/runtime/scripts.conf` (shadows
+  `bridge/launcher/templates/scripts.conf`). Core loads
+  unconditionally; only enabled scripts are `dofile()`'d. No edits to
+  `brain.lua` or `main.tin` needed. See `docs/scripts.md` and ADR 0093.
 - **Self-contained tt++ modules.** New modules go in `ttpp/core/*.tin`.
   Auto-loaded by `main.tin`.
 - **`#nop` is not opaque to `;`** — text after a semicolon inside an
@@ -64,8 +68,8 @@ with a scripting brain on top.
 - **Dev log is developer-facing.** `dbg()` is terse `key: value`, no
   trailing period. UI helpers write full sentences with a trailing period.
 - **Scripts self-describe.** Aliases, summaries, and per-script help live
-  in the script itself via `register_script(meta)`, surfaced through
-  `cp -<alias>`. Do not maintain duplicate lists elsewhere.
+  in the script's `@`-tagged header, surfaced through `cp -<name>` and
+  the launcher's Scripts view. Do not maintain duplicate lists elsewhere.
 - **Shared state lives in `state`.** `state.char`, `state.room`,
   `state.comm`, `state.core`, `state.world`. No other cross-script storage.
 - **One primary writer per GMCP module.** The file in `lua/core/` that owns

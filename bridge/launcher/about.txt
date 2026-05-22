@@ -40,12 +40,12 @@ SCRIPTING
 
 Everyday reflexes — aliases, triggers, macros, highlights — live in
 tt++ where they fire fastest. More complex automation lives on the Lua
-layer above. Drop a self-contained .lua file in lua/scripts/, call
-register_script(), and it auto-loads at startup, registers its own
-commands, and shows up in cp help and on the launcher Scripts page.
-Remove the file and the feature is gone — no leftover state. A small
-set of automation scripts ships with the client; writing your own is
-the intended use.
+layer above. Drop a self-contained .lua file in lua/scripts/, declare
+its metadata in an @-tagged header at the top, and it shows up on the
+launcher Scripts page (enabled or disabled); when enabled, it loads at
+startup and registers its own commands. Remove the file and the
+feature is gone — no leftover state. A small set of example scripts
+ships with the client; writing your own is the intended use.
 
 
 PANES

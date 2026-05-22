@@ -91,12 +91,14 @@ pane background colour, scripts), and Exit. Auto-opens on
 disconnect.
 
 **Scripting** — Drop a self-contained `.lua` file in `lua/scripts/`,
-call `register_script()`, and the cockpit auto-loads it at startup,
-registers its commands, and lists it in `cp` help and on the
-launcher Scripts page. Remove the file and the feature is gone —
-no leftover state. Always-on GMCP collectors live in `lua/core/`;
-per-profile triggers, aliases, macros, and highlights live in
-`.tin` files under `ttpp/profiles/`.
+declare its metadata in an `@`-tagged header at the top of the file,
+and the cockpit picks it up at startup: parses the header without
+running the file, lists it on the launcher's Scripts page (enabled
+or disabled), and — if enabled in `scripts.conf` — registers its
+commands and lists it in `cp` help. Remove the file and the feature
+is gone — no leftover state. Always-on GMCP collectors live in
+`lua/core/`; per-profile triggers, aliases, macros, and highlights
+live in `.tin` files under `ttpp/profiles/`.
 
 **Launcher** — pre-tmux startup menu with profile picker
 (create / copy / delete), per-pane options including background

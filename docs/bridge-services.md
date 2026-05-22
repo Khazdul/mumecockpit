@@ -2,7 +2,8 @@
 
 Background services and persisted configuration files in `bridge/`. Touch
 this file when changing the version check, self-update flow, ping monitor,
-`scripts.cache` format, `startup.conf` keys, or layout persistence.
+`scripts.cache` / `scripts.conf` format, `startup.conf` keys, or layout
+persistence.
 
 ## Version check (`bridge/services/version_check.sh` + `bridge/runtime/version.cache`)
 
@@ -178,18 +179,52 @@ baseline is "noticeable unstable"; ~50 ms is "directly felt"; >100 ms is
 
 ## scripts.cache (`bridge/runtime/scripts.cache`, gitignored)
 
-Written by `brain.lua` at every client startup (inside `load_scripts()` after
-`_register_cockpit_help()`). Parsed by the Scripts page in `bridge/launcher/launcher.sh`.
+Written by `brain.lua` at every client startup (inside `load_scripts()`).
+Contains the **full catalog** — every script in `lua/scripts/`, enabled or
+disabled — so the launcher's Scripts page and the in-game popup's Scripts
+view can render every installed script regardless of its current enable
+state (ADR 0093). Parsed by `bridge/launcher/launcher.py` and
+`bridge/launcher/ingame_menu.py`.
 
-Format (line-prefixed, one block per script, alphabetical by alias):
+Format (line-prefixed, one block per script, alphabetical by name):
 ```
-SCRIPT:autostab
-SUMMARY:backstab/escape loop
-HELP:Usage: as<dir>
-HELP:...
 SCRIPT:autobow
+ENABLED:0
+SUMMARY:Bow/crossbow shoot-and-escape loop
+ALIAS:ash<dir>|e.g. ashe = autobow east (set target first)
+HELP:Weapon type is auto-detected on the first shot:
+HELP:...
+SCRIPT:autostab
+ENABLED:1
 ...
 ```
+
+`SCRIPT:` starts a new record. `ENABLED:` is `0` or `1`. `SUMMARY:`,
+`ALIAS:` (`name|description`), and `HELP:` may appear zero-to-many times.
+
+## scripts.conf (`bridge/runtime/scripts.conf`, gitignored)
+
+Per-script enable state. Flat key=value file, same conventions as
+`startup.conf` and `layout.conf`.
+
+```
+# Comments and blank lines are ignored.
+autobow=0
+autostab=0
+coinlooter=1
+```
+
+Resolution at brain startup (ADR 0093):
+
+1. `bridge/runtime/scripts.conf` if it exists, else
+2. `bridge/launcher/templates/scripts.conf` (shipped template, every
+   example script disabled — mirrors ADR 0042's blank-profile pattern),
+   else
+3. a script absent from both files defaults to **enabled**.
+
+The runtime file is written by the launcher's Scripts view. The brain
+only reads. See [docs/scripts.md](scripts.md) for the script-author
+contract.
 
 ## startup.conf keys (`bridge/runtime/startup.conf`, gitignored)
 
@@ -284,6 +319,7 @@ bridge/runtime/startup.conf
 bridge/runtime/version.cache
 bridge/runtime/ping.cache
 bridge/runtime/scripts.cache
+bridge/runtime/scripts.conf
 bridge/runtime/.layout_ready
 bridge/runtime/.layout_lock
 bridge/runtime/.pane_resize_pid
