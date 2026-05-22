@@ -961,7 +961,7 @@ def _scripts_text():
         frags.append(("", "\n"))
 
     overflow = len(visual) > viewport
-    footer = "↑↓ Scroll · ESC Back" if overflow else "ESC  Back"
+    footer = "↑↓ Scroll · ESC Back" if overflow else "ESC Back"
     content_rows = title_block_height(1) + viewport
     frags.extend(footer_block(footer, cols, rows_h, content_rows))
     return frags
@@ -972,9 +972,9 @@ def _scripts_text():
 # ---------------------------------------------------------------------------
 def _exit_confirm_text():
     cols  = _term_cols()
-    msg   = "Exit to main menu?  Y to confirm, any other key to cancel."
+    msg   = "Exit to main menu?  Y to confirm · any other key to cancel"
     warn  = "Attention! This terminates the current session."
-    hint  = "↑↓ · ESC  Back to menu"
+    hint  = "ESC Back"
     # Modal dialog: vertically positioned by leading blanks; no footer
     # anchoring. Title adopts the `C_SECTION` colour shared with the
     # swept menu chrome.
@@ -1030,7 +1030,7 @@ def _rate_session_text():
         frags.append((style, "★", _make_star_handler()))
     frags.append(("", "\n\n"))
 
-    footer = "0-5 Set · ← → Adjust · Enter Save · ESC Cancel"
+    footer = "0-5 Set · ←→ Adjust · Enter Save · ESC Cancel"
     frags.append(("", _pad_centre(footer, cols)))
     frags.append((C_HINT, footer))
 
@@ -1970,7 +1970,7 @@ def _statistics_text():
 
     _append_xp_linjalen(frags, stats, cols)
 
-    footer = "ESC Back     ↑↓ Scroll     Tab/Shift+Tab Switch table"
+    footer = "ESC Back · ↑↓ Scroll · Tab/Shift+Tab Switch table"
     frags.append(("", _pad_centre(footer, cols)))
     frags.append((_S_HINT, footer))
 

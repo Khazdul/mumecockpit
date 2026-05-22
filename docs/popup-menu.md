@@ -393,7 +393,7 @@ Key bindings on the frame:
 - **R / r** — immediate refresh. Re-invokes the aggregator and re-reads
   `status.state` (or, after run-end, only adopts a freshly active run).
 
-Footer: `ESC Back     ↑↓ Scroll     R Refresh`.
+Footer: `ESC Back · ↑↓ Scroll · Tab/Shift+Tab Switch table`.
 
 **Parked.** Export of the current run to a file (the placeholder `E`
 keybinding was removed when the feature was cancelled); drag-to-scroll
@@ -434,7 +434,7 @@ Pushing the row presents `─── Rate the run ───` over the same
 Profile · Mode · Link status header used on the main frame, a centred
 row of five `★` glyphs (single-space separated; gold for the first
 `_rate_session_rating` stars, grey for the rest), and the footer
-`0-5 Set · ← → Adjust · Enter Save · ESC Cancel`. The frame follows
+`0-5 Set · ←→ Adjust · Enter Save · ESC Cancel`. The frame follows
 the focus-on-push contract (ADR 0066): `_rate_session_window` is
 registered in `_focus_current_frame()` so per-star click handlers
 route correctly.
