@@ -425,15 +425,19 @@ def render_body(scripts, cursor_idx, list_scroll, detail_scroll,
                         the last-browsed script stays visible while
                         the cursor sits on Back.
       extra_left_rows — optional list of pre-rendered fragment lists
-                        (one per row) to render at the bottom of the
-                        left column. The list scrollarea shrinks by
-                        `len(extra_left_rows)`; the detail panel
-                        still fills the full `body_h`. Each fragment
-                        list should cover exactly `list_w` cells —
-                        the renderer pads with trailing blanks if
-                        short. Used by the launcher to attach the
-                        blank-spacer + Back row beneath its script
-                        list.
+                        (one per row) to render in the left column
+                        immediately below the last visible script row
+                        (not pinned to the bottom). The script list is
+                        sized to `min(len(scripts), body_h - extra_n)`,
+                        the extras follow directly underneath, and any
+                        remaining rows are emitted as blank filler in
+                        the left column. The detail panel still fills
+                        the full `body_h`. Each fragment list should
+                        cover exactly `list_w` cells — the renderer
+                        pads with trailing blanks if short. Used by
+                        the launcher and the popup to attach the
+                        blank-spacer + Back row beneath their script
+                        lists.
 
     The function never raises on a too-narrow terminal — `detail_w` is
     floored at 20 cells and the package may overflow rather than be
@@ -446,9 +450,13 @@ def render_body(scripts, cursor_idx, list_scroll, detail_scroll,
 
     extra = list(extra_left_rows or [])
     extra_n = len(extra)
-    # Trailing extra rows are emitted at the bottom of the left
-    # column; the list-scroll viewport shrinks by `extra_n` rows.
-    list_h = max(0, body_h - extra_n)
+    # List capacity is `body_h - extra_n`; the actual list area is
+    # `min(len(scripts), capacity)` so extras follow directly under
+    # the last visible script row (not pinned to the bottom of the
+    # column). Remaining rows below the extras are blank filler.
+    list_capacity = max(0, body_h - extra_n)
+    list_h = min(len(scripts), list_capacity)
+    extras_end = list_h + extra_n
 
     # ----- List geometry --------------------------------------------------
     n = len(scripts)
@@ -493,7 +501,7 @@ def render_body(scripts, cursor_idx, list_scroll, detail_scroll,
     for body_row in range(body_h):
         frags.append(("", " " * left_pad))
 
-        # ----- Left column: list cell or extra row -----
+        # ----- Left column: list cell, extra row, or blank filler -----
         if body_row < list_h:
             list_row = list_scroll + body_row
             list_frag = _list_cell_frag(
@@ -501,9 +509,9 @@ def render_body(scripts, cursor_idx, list_scroll, detail_scroll,
                 list_w, row_handler,
             )
             frags.append(list_frag)
-        else:
+        elif body_row < extras_end:
             extra_idx = body_row - list_h
-            extra_frags = list(extra[extra_idx]) if extra_idx < extra_n else []
+            extra_frags = list(extra[extra_idx])
             used = sum(len(t) for _, t in (
                 (f[0], f[1]) if len(f) == 3 else f for f in extra_frags
             ))
@@ -512,6 +520,8 @@ def render_body(scripts, cursor_idx, list_scroll, detail_scroll,
                 frags.append(f)
             if pad > 0:
                 frags.append(("", " " * pad))
+        else:
+            frags.append(("", " " * list_w))
 
         # ----- List scrollbar cell -----
         if body_row < list_h and list_sb_visible:

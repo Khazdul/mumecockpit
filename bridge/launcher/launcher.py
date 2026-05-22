@@ -7927,32 +7927,29 @@ def _scripts_back_row_frags(list_w):
     """Pre-rendered fragments for the in-column Back row.
 
     Layout: `list_w` cells total — outer blank padding + a centred
-    `Back` button (`button_fragment`) + outer blank padding. The
-    button state mirrors the panes-grid Back grammar:
-      cursor on Back        → selected_focused (amber bg)
-      mouse hover on Back   → hover            (preview)
-      otherwise             → inactive
+    `<< Back >>` row (`menu_chrome.menu_row`) + outer blank padding.
+    Grammatically identical to the `options_spotlights` Back row:
+      cursor on Back        → gold `<< Back >>` (selected)
+      mouse hover on Back   → light label (`C_HOVER`)
+      otherwise             → inactive label (`C_ITEM`)
     Outer padding carries the same handler so MOUSE_MOVE anywhere on
     the row sets the Back hover."""
     label = "Back"
-    btn_w = max(8, len(label) + 4)
-    if btn_w > list_w:
-        btn_w = list_w
-    pad   = max(0, list_w - btn_w)
+    row_w = len(label) + 6       # `<< ` + label + ` >>`
+    pad   = max(0, list_w - row_w)
     left  = pad // 2
     right = pad - left
 
     if _scripts_on_back:
-        state = "selected_focused"
+        state = "selected"
     elif _scripts_hover_back:
         state = "hover"
     else:
         state = "inactive"
-    style, text = button_fragment(label, btn_w, state)
     h = _scripts_back_handler()
     return [
         ("", " " * left,  h),
-        (style, text,     h),
+        *menu_row(label, state, mouse_handler=h),
         ("", " " * right, h),
     ]
 

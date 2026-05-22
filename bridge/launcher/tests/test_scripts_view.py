@@ -26,6 +26,23 @@ from palette import (  # noqa: E402
 )
 
 
+def _split_rows(frags):
+    """Reconstruct the rendered body row-by-row by splitting on the
+    newline fragments the renderer emits at the end of each row."""
+    rows = []
+    buf = ""
+    for f in frags:
+        text = f[1]
+        if text == "\n":
+            rows.append(buf)
+            buf = ""
+        else:
+            buf += text
+    if buf:
+        rows.append(buf)
+    return rows
+
+
 SAMPLE_HEADER = textwrap.dedent("""\
     -- ============================================================
     --  coinlooter
@@ -443,26 +460,30 @@ class TestRenderBody(unittest.TestCase):
         # coinlooter (index 2)'s summary should be in the detail panel.
         self.assertIn("Loot coins", text)
 
-    def test_extra_left_rows_replace_bottom_list_rows(self):
-        # extra_left_rows shrinks the script list area and emits its
-        # own fragments at the bottom of the left column. The detail
-        # panel still fills the full body.
+    def test_extra_left_rows_follow_last_script_row(self):
+        # extra_left_rows are emitted in the left column immediately
+        # below the last visible script row (not pinned to the bottom
+        # of the body). The detail panel still fills the full body.
         marker = "★Back★"
         extra = [
-            [("", "    " * 4)],            # blank row
-            [("fg:#ffaf00", marker)],       # mock Back button
+            [("", " " * 6)],                # blank row
+            [("fg:#ffaf00", marker)],       # mock Back row
         ]
         frags = scripts_view.render_body(
             self._scripts(), cursor_idx=0, list_scroll=0, detail_scroll=0,
             term_cols=120, body_h=8, focus="list", mode="interactive",
             extra_left_rows=extra,
         )
-        text = "".join(f[1] for f in frags)
-        self.assertIn(marker, text)
+        rows = _split_rows(frags)
+        # 3 scripts → list_h=3; extras at rows 3 (blank) and 4 (Back).
+        # The Back marker must land on body row 4, not the trailing
+        # filler rows 5/6/7.
+        self.assertIn(marker, rows[4])
+        self.assertNotIn(marker, rows[7])
 
     def test_extra_left_rows_shrink_visible_list(self):
         # With 5 scripts in a 4-row body that reserves 2 rows for
-        # extras, only 2 script rows fit visibly.
+        # extras, the list capacity is 4-2=2 — only 2 script rows fit.
         many = [
             scripts_view.Script(name=f"s{i}", enabled=True) for i in range(5)
         ]
