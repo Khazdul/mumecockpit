@@ -4,9 +4,9 @@
 -- @summary  Track hired citizen mercenaries (auto-label, timer, gold)
 -- @alias    merc       Render the mercenary panel
 -- @alias    mercs      Alias for `merc`
--- @help     Auto-labels each hired citizen mercenary with a comic
--- @help     name and groups it. Tracks remaining contract time
--- @help     (24 minutes per 10 silver) and total silver paid.
+-- @help     Auto-labels each hired citizen mercenary with a random
+-- @help     name from a built-in list and groups it. Tracks remaining
+-- @help     contract time (24 minutes per 10 silver) and total silver paid.
 -- @help
 -- @help     Subcommands:
 -- @help       merc           Render the framed panel
@@ -24,7 +24,7 @@
 local PANEL_W = 67
 local BAR_W   = 20
 
--- Comic name pool — kept short to stay under the 33-char script_ui budget.
+-- Name pool — kept short to stay under the 33-char script_ui budget.
 local NAME_POOL = {
     "Bubba", "Hank", "Cletus", "Leroy", "Billybob", "Earl", "Jeb",
     "Roscoe", "Boomer", "Buford", "Cooter", "Dwayne", "Gomer", "Junior",
@@ -50,7 +50,7 @@ local R       = "<099>"
 local M = {}
 scripts.mercenaries = M
 
--- mercs: keyed by lower-cased comic name (the label — stable identity).
+-- mercs: keyed by lower-cased name (the label — stable identity).
 -- Record: { name, label_lc, gmcp_id, present, expiry, silver_paid, state,
 --          warned_5min, hp_band, mp_band }
 --   gmcp_id  transient; bound while the merc is in our room, nil otherwise.
@@ -146,7 +146,7 @@ local function _name_row(rec)
     local name_color = rec.present and WHITE or DIM
     local name_text  = rec.present and rec.name or (rec.name .. " (away)")
     local gold_str   = _format_silver(rec.silver_paid)
-    local name_vlen  = #name_text    -- comic names are ASCII
+    local name_vlen  = #name_text    -- names are ASCII
     local gold_vlen  = #gold_str
 
     local s = {}
