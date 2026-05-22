@@ -117,7 +117,7 @@ Top-to-bottom (P4 layout — see ADR 0088):
    `Save failed: …`, and `Export failed: …` in `C_HINT`) centred on
    the package width for ~3 s. Select does not flash — the ✓ in the
    Selected column is the confirmation.
-4. Footer hint: `↑↓ Cursor · Tab/←→ Cycle · Enter Activate · ESC Back`,
+4. Footer hint: `↑↓ Navigate · Tab/←→ Cycle · Enter Select · ESC Back`,
    anchored to the final terminal row via a flex_spacer between the
    feedback row and the footer Window (matching the footer-anchoring
    contract used elsewhere on the launcher).
@@ -196,7 +196,7 @@ is a no-op.
 Single-input sub-frame pushed by the Rename Options button. Mirrors
 the shape of `profile_create_name`: title `─── Profile ───`,
 `Rename "<old>" to:` head, single-line input prompt, inline error
-on validation failure, footer `Enter  Confirm · ESC  Cancel`.
+on validation failure, footer `Enter Confirm · ESC Cancel`.
 
 - Input is validated with `_validate_profile_name` — same rules as
   Create (must start with a letter; letters, digits, `_` only; max
@@ -963,11 +963,11 @@ phase-5 doc).
 they're intuitive from layout; kept tokens are the non-obvious
 ones). The Tab token is uniformly `Tab Cycle` everywhere — it
 describes what the key does, not the size of the focus chain:
-- Toggle: `Tab Cycle  ·  ESC Save & back`
-- Editor mode: `Tab Cycle  ·  ESC Save & back`
-- Lite / kind: `Tab Cycle  ·  ESC Save & back`
-- Lite / list: `n New  ·  Del Delete  ·  Tab Cycle  ·  ESC Save & back`
-- Lite / detail: `Tab Cycle  ·  ESC Save & back`
+- Toggle: `Tab Cycle · ESC Save & back`
+- Editor mode: `Tab Cycle · ESC Save & back`
+- Lite / kind: `Tab Cycle · ESC Save & back`
+- Lite / list: `n New · Del Delete · Tab Cycle · ESC Save & back`
+- Lite / detail: `Tab Cycle · ESC Save & back`
 
 The footer hint sits on the final terminal row in both modes,
 anchored via a flex_spacer between the body Window and the footer
@@ -1173,7 +1173,7 @@ Press the key to bind…
 
    <error line — only when an attempt failed, in C_DANGER>
 
-   ESC  Cancel
+   ESC Cancel
 ```
 
 The known-keys set is the single source of truth for what
@@ -1775,7 +1775,7 @@ forcing double work; layout overhaul) are recorded in
 **Footer.**
 
 ```
-ESC Back     ↑↓ Scroll     Tab/Shift+Tab Switch table
+ESC Back · ↑↓ Scroll · Tab/Shift+Tab Switch table
 ```
 
 ## Spotlights sub-menu
@@ -1937,7 +1937,7 @@ mode's `HH:MM` and `<elapsed>` segments are intentionally dropped in
 spotlight mode: the floating info box already surfaces the active
 spotlight's countdown and the freed left-side budget makes room for
 the keyboard hint on the right). The right-aligned hint is
-`ESC Back  ·  ←/→ Prev/next`.
+`ESC Back · ←→ Prev/next`.
 
 **Floating info box (top-right).** A 30×8 framed rectangle pinned to
 `top=2, right=2` — a 2-cell margin from both the top and right edges
@@ -2220,7 +2220,7 @@ the trailing area past the line's text.
 **Overlays.** Two row-tall overlays float over the log: the top
 header (`_LOG_OVERLAY_HEADER_W = 80` inner cells, centred)
 showing `<character> (L<level>)  ·  Run X of Y  ·  YYYY-MM-DD HH:MM
-·  <elapsed>` on the left and `ESC to return` on the right, and
+·  <elapsed>` on the left and `ESC Back` on the right, and
 the bottom controls (`_LOG_OVERLAY_CONTROLS_W = 70` inner cells,
 centred) carrying a rewind button, a play/pause button (icon
 reflects the action a click would take), a 30-cell scrubber

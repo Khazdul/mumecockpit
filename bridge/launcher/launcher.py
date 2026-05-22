@@ -1420,7 +1420,7 @@ def _profile_title_text():
 def _profile_footer_text():
     cols = _term_cols()
     clear_hover = _profile_hover_at(None, None)
-    footer = "↑↓ Cursor · Tab/←→ Cycle · Enter Activate · ESC Back"
+    footer = "↑↓ Navigate · Tab/←→ Cycle · Enter Select · ESC Back"
     pad = " " * max(0, (cols - len(footer)) // 2)
     return [("", pad, clear_hover), (C_HINT, footer, clear_hover)]
 
@@ -5855,16 +5855,16 @@ def _editor_append_footer(frags, cols):
     the blank separator row above the hint within that Window."""
     frags.append(("", "\n", _editor_clear_outer_hover))
     if _editor_toggle_focused:
-        footer = "Tab Cycle  ·  ESC Save & back"
+        footer = "Tab Cycle · ESC Save & back"
     elif _editor_mode == "editor":
-        footer = "Tab Cycle  ·  ESC Save & back"
+        footer = "Tab Cycle · ESC Save & back"
     elif _editor_focus == 0:
-        footer = "Tab Cycle  ·  ESC Save & back"
+        footer = "Tab Cycle · ESC Save & back"
     elif _editor_focus == 1:
-        footer = ("n New  ·  Del Delete  ·  Tab Cycle  ·  "
+        footer = ("n New · Del Delete · Tab Cycle · "
                   "ESC Save & back")
     else:
-        footer = "Tab Cycle  ·  ESC Save & back"
+        footer = "Tab Cycle · ESC Save & back"
     # A live c-c / c-x flash takes over the centred message slot. The
     # editor-mode Ln/Col indicator stays pinned to the right edge in
     # both branches; the brace-balance segment only joins it on the
@@ -6502,12 +6502,12 @@ def _profile_editor_keybind_text():
         <blank>
            <error line — only when an attempt failed>
         <blank>
-           ESC  Cancel
+           ESC Cancel
     """
     cols = _term_cols()
     title  = "─── Bind key ───"
     prompt = "Press the key to bind…"
-    footer = "ESC  Cancel"
+    footer = "ESC Cancel"
     frags = []
     frags.append(("", "\n\n"))
     frags.append(("", _pad_centre(title, cols)))
@@ -6544,7 +6544,7 @@ def _profile_rename_text():
     title  = "─── Profile ───"
     head   = f'Rename "{_rename_old_name}" to:'
     hint   = "letters and _ only · must start with a letter · max 32"
-    footer = "Enter  Confirm · ESC  Cancel"
+    footer = "Enter Confirm · ESC Cancel"
     line   = f"> {_rename_name_buf}_"
     frags = []
     frags.append(("", "\n\n"))
@@ -6629,7 +6629,7 @@ def _profile_create_name_text():
     cols = _term_cols()
     title  = "─── Create New Profile ───"
     hint   = "letters and _ only · must start with a letter · max 32"
-    footer = "Enter  Confirm · ESC  Cancel"
+    footer = "Enter Confirm · ESC Cancel"
     line   = f"> {_create_name_buf}_"
     frags = []
     frags.append(("", "\n\n"))
@@ -6664,7 +6664,7 @@ def _profile_create_choose_text():
     cols = _term_cols()
     title   = "─── Create New Profile ───"
     name_l  = f"Name:  {_new_profile_name}"
-    footer  = "B  Blank profile · C  Copy from existing · ESC  Cancel"
+    footer  = "B Blank profile · C Copy from existing · ESC Cancel"
     frags = []
     frags.append(("", "\n\n"))
     frags.append(("", _pad_centre(title, cols)))
@@ -6766,7 +6766,7 @@ def _profile_create_copy_text():
         frags.append((C_HINT, hint))
         return frags
 
-    footer = "↑↓ Navigate · Enter  Select · ESC  Cancel"
+    footer = "↑↓ Navigate · Enter Select · ESC Cancel"
     head   = "Copy from:"
     labels = list(_create_src_profiles)
     maxw   = max(len(l) for l in labels)
@@ -7348,7 +7348,7 @@ def _options_connection_custom_text():
     cols   = _term_cols()
     rows_h = _term_rows()
     title  = "─── Custom Connection ───"
-    hint   = "Tab to switch field · Enter to save · ESC to cancel"
+    hint   = "Tab Cycle · Enter Save · ESC Cancel"
 
     host_label = "Host: "
     port_label = "Port: "
@@ -7679,7 +7679,7 @@ def _scripts_text():
         frags.append(("", "\n"))
 
     overflow = _scripts_sb is not None and _scripts_sb.visible
-    footer = "↑↓ Scroll · ESC Back" if overflow else "ESC  Back"
+    footer = "↑↓ Scroll · ESC Back" if overflow else "ESC Back"
     content_rows = title_block_height(2) + viewport
     frags.extend(footer_block(footer, cols, rows_h, content_rows))
     return frags
@@ -7842,7 +7842,7 @@ def _about_text():
         frags.append(("", "\n"))
 
     overflow = _about_sb is not None and _about_sb.visible
-    footer = "↑↓ Scroll · ESC Back" if overflow else "ESC  Back"
+    footer = "↑↓ Scroll · ESC Back" if overflow else "ESC Back"
     content_rows = title_block_height(2) + viewport
     frags.extend(footer_block(footer, cols, rows_h, content_rows))
     return frags
@@ -8553,7 +8553,7 @@ def _history_title_text():
 def _history_footer_text():
     cols = _term_cols()
     clear_hover = _hover_at(None, None)
-    footer = "↑↓ Cursor · Tab/←→ Cycle · Enter Activate · ESC Back"
+    footer = "↑↓ Navigate · Tab/←→ Cycle · Enter Select · ESC Back"
     pad = " " * max(0, (cols - len(footer)) // 2)
     return [("", pad, clear_hover), (C_HINT, footer, clear_hover)]
 
@@ -8971,7 +8971,7 @@ def _history_rate_text():
         frags.append((style, "★", _make_star_handler()))
     frags.append(("", "\n\n"))
 
-    footer = "0-5 Set · ← → Adjust · Enter Save · ESC Cancel"
+    footer = "0-5 Set · ←→ Adjust · Enter Save · ESC Cancel"
     frags.append(("", _pad_centre(footer, cols)))
     frags.append((C_HINT, footer))
     return frags
@@ -9053,7 +9053,7 @@ def _history_delete_confirm_text():
         frags.append(("", "\n"))
 
     frags.append(("", "\n"))
-    footer = "Y  Delete       Any other key  Cancel"
+    footer = "Y to confirm · any other key to cancel"
     frags.append(("", _pad_centre(footer, cols)))
     frags.append((C_HINT, footer))
     return frags
@@ -9943,7 +9943,7 @@ def _history_detail_text():
     frags.extend(_hover_clear_frags(body))
 
     # --- Footer -----------------------------------------------------------
-    footer = "ESC Back     ↑↓ Scroll     Tab/Shift+Tab Switch table"
+    footer = "ESC Back · ↑↓ Scroll · Tab/Shift+Tab Switch table"
     frags.append(("", _pad_centre(footer, cols), clear))
     frags.append((_S_HINT, footer, clear))
     return frags
@@ -10860,7 +10860,7 @@ def _log_header_text():
     else:
         elapsed_part = elapsed
 
-    hint = "ESC to return"
+    hint = "ESC Back"
 
     left_pieces = [char_part, run_part]
     if when_part:
@@ -10941,7 +10941,7 @@ def _log_spotlight_header_text(cols):
     first_ts = spot.events[0].ts
     when_part = time.strftime("%Y-%m-%d", time.localtime(first_ts))
 
-    hint = "ESC Back  ·  ←/→ Prev/next"
+    hint = "ESC Back · ←→ Prev/next"
     left_text = "  ·  ".join([char_part, n_part, when_part])
 
     inner_w = min(_LOG_OVERLAY_HEADER_W, cols)
