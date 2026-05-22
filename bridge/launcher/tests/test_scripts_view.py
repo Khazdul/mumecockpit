@@ -219,9 +219,19 @@ class TestLayoutWidths(unittest.TestCase):
         # Tiny terminal — detail floored at 20 even if package overflows.
         self.assertEqual(scripts_view.detail_panel_width(40, 16), 20)
 
-    def test_detail_width_takes_remainder_on_wide(self):
-        # cols=120, list=16: 120 - 2*OUTER_MARGIN(4) - 16 - SB(1) - GAP(3) = 96.
-        self.assertEqual(scripts_view.detail_panel_width(120, 16), 96)
+    def test_detail_width_caps_on_wide_terminal(self):
+        # The detail panel is capped at MAX_DETAIL_W so the package
+        # has visible slack on wide terminals — the launcher's
+        # "centred package" pattern needs that slack to read as centred.
+        self.assertEqual(
+            scripts_view.detail_panel_width(200, 16),
+            scripts_view.MAX_DETAIL_W,
+        )
+
+    def test_detail_width_takes_remainder_under_cap(self):
+        # cols=100, list=16: 100 - 2*OUTER_MARGIN(4) - 16 - SB(1) - GAP(3) = 76.
+        # Under MAX_DETAIL_W=80, so the cap doesn't engage.
+        self.assertEqual(scripts_view.detail_panel_width(100, 16), 76)
 
 
 class TestDetailLines(unittest.TestCase):
@@ -406,6 +416,67 @@ class TestRenderBody(unittest.TestCase):
         text = "".join(f[1] for f in frags)
         self.assertIn("No scripts found", text)
         self.assertIn("see docs/scripts.md", text)
+
+    def test_cursor_idx_minus_one_suppresses_highlight(self):
+        # cursor_idx=-1 (used by the launcher when the cursor sits on
+        # the in-column Back row) should leave every script row in its
+        # default styling.
+        frags = scripts_view.render_body(
+            self._scripts(), cursor_idx=-1, list_scroll=0, detail_scroll=0,
+            term_cols=120, body_h=6, focus="list", mode="interactive",
+        )
+        # No script row should paint amber-on-black.
+        for f in frags:
+            if f[0] == C_BUTTON_ACTIVE_FOCUSED:
+                self.fail(f"cursor=-1 still highlighted: {f}")
+
+    def test_detail_idx_drives_detail_when_set(self):
+        # When detail_idx is supplied, the detail panel shows that
+        # script regardless of cursor_idx (the launcher uses this so
+        # Back doesn't lose the previously-browsed script's preview).
+        frags = scripts_view.render_body(
+            self._scripts(), cursor_idx=-1, list_scroll=0, detail_scroll=0,
+            term_cols=120, body_h=6, focus="list", mode="interactive",
+            detail_idx=2,
+        )
+        text = "".join(f[1] for f in frags)
+        # coinlooter (index 2)'s summary should be in the detail panel.
+        self.assertIn("Loot coins", text)
+
+    def test_extra_left_rows_replace_bottom_list_rows(self):
+        # extra_left_rows shrinks the script list area and emits its
+        # own fragments at the bottom of the left column. The detail
+        # panel still fills the full body.
+        marker = "★Back★"
+        extra = [
+            [("", "    " * 4)],            # blank row
+            [("fg:#ffaf00", marker)],       # mock Back button
+        ]
+        frags = scripts_view.render_body(
+            self._scripts(), cursor_idx=0, list_scroll=0, detail_scroll=0,
+            term_cols=120, body_h=8, focus="list", mode="interactive",
+            extra_left_rows=extra,
+        )
+        text = "".join(f[1] for f in frags)
+        self.assertIn(marker, text)
+
+    def test_extra_left_rows_shrink_visible_list(self):
+        # With 5 scripts in a 4-row body that reserves 2 rows for
+        # extras, only 2 script rows fit visibly.
+        many = [
+            scripts_view.Script(name=f"s{i}", enabled=True) for i in range(5)
+        ]
+        extra = [[("", " " * 16)], [("", " " * 16)]]
+        frags = scripts_view.render_body(
+            many, cursor_idx=0, list_scroll=0, detail_scroll=0,
+            term_cols=120, body_h=4, focus="list", mode="interactive",
+            extra_left_rows=extra,
+        )
+        text = "".join(f[1] for f in frags)
+        # s0 and s1 are visible; s2/s3/s4 aren't.
+        self.assertIn("s0", text)
+        self.assertIn("s1", text)
+        self.assertNotIn("s2", text)
 
 
 if __name__ == "__main__":

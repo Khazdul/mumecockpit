@@ -1333,32 +1333,49 @@ the launcher runs pre-tmux and must reflect the folder as it is right
 now, including a script that was just added or removed since the last
 cockpit run.
 
-**Layout.** The body region is centred horizontally as a package of
-`list-width + 1 (sb) + 3 (gap) + detail-width` cells; the list is
-biased narrow (`[X] ` + the longest script name + 1 right-pad,
-floored at `MIN_LIST_W = 16`) so the detail panel takes the
-remainder. The detail panel itself reserves its rightmost cell for an
-inline scrollbar whenever its content overflows the body. Widths and
-spacing live in obvious constants in `scripts_view.py` (`MIN_LIST_W`,
-`SB_W`, `GAP`, `OUTER_MARGIN`) — a visual pass can tune them without
-touching the renderer.
+**Centred package.** The body region is a `[ left column | sb | gap |
+detail panel ]` package centred horizontally as one unit and
+re-centred on terminal resize, the same way the `profile` frame
+centres its package. The list column width is `[X] ` + the longest
+script name + 1 right-pad (floored at `MIN_LIST_W = 16`); the detail
+panel is the remainder, capped at `MAX_DETAIL_W = 80` so the package
+keeps visible slack on wide terminals instead of stretching
+edge-to-edge. Widths and spacing live in obvious constants in
+`scripts_view.py` (`MIN_LIST_W`, `MAX_DETAIL_W`, `SB_W`, `GAP`,
+`OUTER_MARGIN`) — a visual pass can tune them without touching the
+renderer.
 
-**List rows.** Each row is `[X]` / `[ ]` + script name, padded to the
-list column width. The colour grammar matches the panes-grid /
+**Left column** is one navigable column structured identically to
+`options_spotlights` (toggle rows + blank + Back):
+
+1. **Script rows** — `[X]` / `[ ]` + name, left-aligned inside the
+   column, padded to the column width.
+2. **Blank spacer** — one row, not selectable.
+3. **Back row** — `Back` rendered through `menu_chrome.button_fragment`
+   and horizontally centred inside the column width. Carries no
+   checkbox.
+
+The list-row colour grammar matches the panes-grid /
 profile-editor pattern:
 
-- cursor row, list focused → `C_BUTTON_ACTIVE_FOCUSED` (amber bg,
+- cursor on a script row → `C_BUTTON_ACTIVE_FOCUSED` (amber bg,
   black fg — the whole row, including the checkbox glyph, paints
   black-on-amber);
-- cursor row, list unfocused → `C_BUTTON_ACTIVE_UNFOCUSED` (grey bg);
 - non-cursor enabled row → `C_ITEM` (bright text on the default bg);
 - non-cursor disabled row → `C_PANE_OFF` (dim grey across the whole
   row — same token the panes grid uses for an off pane, so the
   "this is inert" signal is consistent across both frames);
 - hover on a non-cursor row → `C_HOVER` (text-only hover lift).
 
+The Back row uses the three-state button grammar from
+`menu_chrome.button_fragment`: `selected_focused` (amber bg) when the
+cursor is on it, `hover` (preview) when the mouse hovers, `inactive`
+otherwise.
+
 A scrollbar cell sits in the column immediately to the right of the
-list when the catalog exceeds the visible body rows.
+list when the script count exceeds the visible list rows. The list
+window is `body_h - 2` rows tall (the spacer + Back claim two rows at
+the bottom of the column).
 
 **Detail panel.** Sections, top to bottom (omitted when empty):
 
@@ -1368,49 +1385,72 @@ list when the catalog exceeds the visible body rows.
    in language a screen reader can announce.
 3. Summary, word-wrapped to the detail width in `C_BODY`.
 4. `Aliases` header (`C_HINT`) followed by one row per alias —
-   alias name in `C_ACCENT`, description in `C_BODY`, indented
-   continuation lines aligned under the description column.
+   alias name in `C_ACTIVE` (bright white; gold and blue are
+   reserved for cursor / channel signals), description in `C_BODY`,
+   indented continuation lines aligned under the description column.
 5. `Help` header (`C_HINT`) followed by the script's `@help` lines,
    word-wrapped to the detail width in `C_ITEM`. Blank `@help` lines
    round-trip as blank rows so the source's paragraph breaks survive.
 
-When the detail content exceeds the body region the inline scrollbar
-appears in the detail panel's rightmost cell and the launcher's
-detail-panel scroll state (`_scripts_detail_scroll`) tracks it. The
-cursor moving to a new script resets the scroll to 0.
+The detail panel fills the full `body_h` (the script-list shrinks
+around it, not the other way around) so the spacer + Back rows in
+the left column sit alongside detail content. When the detail content
+exceeds `body_h` the inline scrollbar appears in the detail panel's
+rightmost cell and the launcher's detail-panel scroll state
+(`_scripts_detail_scroll`) tracks it. The cursor moving to a new
+script resets the scroll to 0.
 
-**Focus model.** Two zones — `list` and `detail`. `Tab` /
-`Shift+Tab` cycles; `Left` snaps focus to the list, `Right` snaps
-focus to the detail (same arrow-snap model as the
-`profile_editor` LITE pattern). `↑` / `↓` and `PgUp` / `PgDn` move
-the list cursor when the list is focused and scroll the detail when
-the detail is focused; `Home` / `End` jump to the ends of whichever
-panel is focused. The mouse wheel scrolls whichever panel is under
-the pointer.
+**Navigation — single column, no focus zones.** The frame has no
+list/detail focus split. State lives in two flags:
 
-**Toggling.** `Enter` and `Space` on a focused list row flip that
-script's `enabled` flag in memory and set `_scripts_dirty`. Mouse
-click on a list row jumps the cursor and toggles in one motion.
-Toggling on the detail zone is intentionally inert (`Space` does
-nothing there) — toggles are a list-zone action only.
+- `_scripts_cursor` — latched index into the script catalog. Drives
+  which script's detail is shown.
+- `_scripts_on_back` — `True` when the cursor visually sits on the
+  Back row (the latched `_scripts_cursor` does not move while
+  `_scripts_on_back` is True, so the detail keeps showing the
+  most-recently-browsed script).
 
-**Persistence — deferred.** The toggle never writes to disk; on
+Keyboard:
+
+| Key                | Action                                                           |
+|--------------------|------------------------------------------------------------------|
+| `↑` / `↓`          | step the cursor through script rows and Back, skipping the blank spacer |
+| `PgUp` / `PgDn`    | scroll the detail panel by one body's worth of rows              |
+| `Enter` / `Space`  | toggle the latched script's enabled state, or pop the frame when the cursor is on Back |
+| `ESC`              | save pending toggles and pop (same as Back)                      |
+
+Mouse:
+
+- Click on a list row jumps the cursor and toggles in one motion.
+- Click on Back pops the frame (saving pending toggles).
+- Wheel over a list row / list scrollbar moves the cursor one row per
+  notch — mirrors `↑` / `↓`.
+- Wheel over the detail panel / detail scrollbar scrolls the detail
+  by 3 rows per notch.
+- Click on the list / detail scrollbar page-steps in the click
+  direction.
+
+**Persistence — deferred.** Toggles never write to disk inline; on
 `Back` / `ESC`, the frame writes `bridge/runtime/scripts.conf` via
 `scripts_view.write_scripts_conf` (atomic via sibling `.tmp` +
 `os.replace`) with an explicit `<name>=0/1` line for every script in
-the catalog — same shape as the shipped template, same write-everything-
-on-save behaviour as the Panes and Spotlights submenus. Changes take
-effect at the **next cockpit start**; nothing happens live. ADR 0093
-covers why mid-session toggling is intentionally out of scope.
+the catalog — same shape as the shipped template, same write-
+everything-on-save behaviour as the Panes and Spotlights submenus.
+Changes take effect at the **next cockpit start**; nothing happens
+live. ADR 0093 covers why mid-session toggling is intentionally out
+of scope.
 
 **Empty state.** When `lua/scripts/` contains no `.lua` files the
 list is empty, the detail panel centres a two-line message — *"No
 scripts found — drop a .lua file in lua/scripts/"* — with a dim *"see
-docs/scripts.md"* pointer below it. The footer collapses to `ESC
-Back` (no Toggle key, since there's nothing to toggle).
+docs/scripts.md"* pointer below it. The cursor lands on Back
+automatically (it's the only navigable row), so `Enter` / `Space` /
+`ESC` all pop. The footer drops the Toggle hint.
 
-**Footer hint.** `↑↓ Move · Space Toggle · Tab Focus · ESC Back` when
-the catalog has at least one entry; `ESC Back` on the empty state.
+**Footer hint.** `↑↓ Move · Space Toggle · PgUp/PgDn Scroll · ESC
+Back` with at least one script in the catalog; `↑↓ Move · PgUp/PgDn
+Scroll · ESC Back` on the empty state (Toggle key omitted, since
+there's nothing to toggle).
 
 ### `options_connection` frame
 

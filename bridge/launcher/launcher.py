@@ -394,13 +394,22 @@ _conn_err                 = ""
 # template). Toggles mutate the catalog in memory; the write to
 # scripts.conf is deferred to Back/ESC. Mirrors the Panes/Spotlights
 # pattern. See docs/launcher.md → Scripts page.
+#
+# Single-column navigation model: the cursor moves through script rows
+# (0..n-1) and the in-column Back row (`_scripts_on_back == True`)
+# below a blank spacer. There is no list/detail focus split — Up/Down
+# moves the cursor, PageUp/PageDown scrolls the detail panel
+# unconditionally. When the cursor sits on Back the detail still shows
+# the last-cursored script (`_scripts_cursor` is latched and not
+# moved), so navigating down toward Back doesn't lose the preview.
 _scripts_catalog       = []        # list[scripts_view.Script]
 _scripts_dirty         = False     # True after a toggle; drives the write on pop
-_scripts_cursor        = 0         # list cursor index
+_scripts_cursor        = 0         # latched script-row index (drives the detail)
+_scripts_on_back       = False     # True when the cursor visually sits on Back
 _scripts_list_scroll   = 0         # first visible list row
 _scripts_detail_scroll = 0         # first visible detail row
-_scripts_focus         = "list"    # "list" | "detail"
 _scripts_hover         = None      # list row under the mouse, or None
+_scripts_hover_back    = False     # True when the mouse is over the Back row
 
 # About
 _about_lines         = []
@@ -7605,7 +7614,7 @@ def _options_coming_soon_text():
 
 
 # ---------------------------------------------------------------------------
-# Scripts frame — two-column [ list | detail ] manager.
+# Scripts frame — centred two-column [ list | detail ] manager.
 #
 # The launcher does a live scan of `lua/scripts/*.lua` on every frame
 # entry and resolves enable state from `runtime/scripts.conf` (falling
@@ -7616,14 +7625,21 @@ def _options_coming_soon_text():
 # Toggles mutate the catalog in memory; the deferred write on Back/ESC
 # follows the Panes / Spotlights pattern. Changes take effect at the
 # next cockpit start — there is no live effect.
+#
+# Navigation is single-column (no focus zones): the cursor steps
+# through script rows and a centred Back row beneath a blank spacer,
+# mirroring `options_spotlights` (toggle rows + blank + Back).
+# PageUp/PageDown scrolls the detail panel unconditionally — no focus
+# state to consult.
 # ---------------------------------------------------------------------------
 def _enter_scripts_frame():
     """Live-scan lua/scripts/ on push and seat the cursor at row 0.
     `_scripts_dirty` is reset so the previous session's toggles don't
     bleed into this push."""
     global _scripts_catalog, _scripts_dirty
-    global _scripts_cursor, _scripts_list_scroll, _scripts_detail_scroll
-    global _scripts_focus, _scripts_hover
+    global _scripts_cursor, _scripts_on_back
+    global _scripts_list_scroll, _scripts_detail_scroll
+    global _scripts_hover, _scripts_hover_back
     conf = scripts_view.resolve_scripts_conf(
         SCRIPTS_CONF_PATH, SCRIPTS_CONF_TEMPLATE,
     )
@@ -7632,10 +7648,13 @@ def _enter_scripts_frame():
     )
     _scripts_dirty         = False
     _scripts_cursor        = 0
+    # When the catalog is empty there is no script row to highlight,
+    # so the cursor lands on Back.
+    _scripts_on_back       = (len(_scripts_catalog) == 0)
     _scripts_list_scroll   = 0
     _scripts_detail_scroll = 0
-    _scripts_focus         = "list"
     _scripts_hover         = None
+    _scripts_hover_back    = False
     _push_frame("scripts")
 
 
@@ -7643,6 +7662,12 @@ def _scripts_visible_rows():
     """Visible body rows = terminal rows minus the title block (4) and
     the single footer row anchored at the bottom by `footer_block`."""
     return max(1, _term_rows() - title_block_height(2) - 1)
+
+
+def _scripts_list_rows():
+    """Rows available to the script list — body minus the 2 trailing
+    rows the left column reserves for the blank spacer + Back."""
+    return max(1, _scripts_visible_rows() - 2)
 
 
 def _scripts_save_and_pop():
@@ -7657,8 +7682,8 @@ def _scripts_save_and_pop():
 
 
 def _scripts_detail_total():
-    """Number of detail-panel rows for the cursor script (or the empty-
-    state pane when the catalog is empty). Used by the page-step
+    """Number of detail-panel rows for the latched script (or the
+    empty-state pane when the catalog is empty). Used by the page-step
     handler to clamp the detail scroll."""
     if not _scripts_catalog:
         return _scripts_visible_rows()
@@ -7669,46 +7694,63 @@ def _scripts_detail_total():
     return len(scripts_view.render_detail_lines(cur, detail_w))
 
 
-def _scripts_clamp_detail_scroll():
-    """Re-clamp `_scripts_detail_scroll` against the current cursor
-    script's detail-row count. Called after every cursor move so the
-    new detail content scrolls into view from the top."""
-    global _scripts_detail_scroll
-    total = _scripts_detail_total()
-    body  = _scripts_visible_rows()
-    mx    = max(0, total - body)
-    if _scripts_detail_scroll > mx:
-        _scripts_detail_scroll = mx
-    if _scripts_detail_scroll < 0:
-        _scripts_detail_scroll = 0
-
-
-def _scripts_move_cursor(delta):
-    """Move the list cursor by `delta`, clamping to the catalog, and
-    reset the detail scroll so the new entry starts from the top."""
-    global _scripts_cursor, _scripts_detail_scroll
+def _scripts_move_up():
+    """Step the cursor one row up: Back → last script; first script
+    → no-op (clamp). Resets the detail scroll on a script change."""
+    global _scripts_cursor, _scripts_on_back
+    global _scripts_detail_scroll, _scripts_list_scroll
     n = len(_scripts_catalog)
-    if n == 0:
+    if _scripts_on_back:
+        if n == 0:
+            return
+        _scripts_on_back = False
+        _scripts_cursor  = n - 1
+        _scripts_detail_scroll = 0
+    elif _scripts_cursor > 0:
+        _scripts_cursor -= 1
+        _scripts_detail_scroll = 0
+    else:
         return
-    new = max(0, min(n - 1, _scripts_cursor + delta))
-    if new == _scripts_cursor:
-        return
-    _scripts_cursor = new
-    _scripts_detail_scroll = 0
-    # Keep the cursor inside the visible list window.
-    body = _scripts_visible_rows()
-    global _scripts_list_scroll
-    if _scripts_cursor < _scripts_list_scroll:
-        _scripts_list_scroll = _scripts_cursor
-    elif _scripts_cursor >= _scripts_list_scroll + body:
-        _scripts_list_scroll = _scripts_cursor - body + 1
+    _scripts_ensure_cursor_visible()
     if _app:
         _app.invalidate()
 
 
+def _scripts_move_down():
+    """Step the cursor one row down: last script → Back; Back → no-op
+    (clamp). Resets the detail scroll on a script change."""
+    global _scripts_cursor, _scripts_on_back
+    global _scripts_detail_scroll, _scripts_list_scroll
+    n = len(_scripts_catalog)
+    if _scripts_on_back or n == 0:
+        return
+    if _scripts_cursor < n - 1:
+        _scripts_cursor += 1
+        _scripts_detail_scroll = 0
+    else:
+        _scripts_on_back = True
+    _scripts_ensure_cursor_visible()
+    if _app:
+        _app.invalidate()
+
+
+def _scripts_ensure_cursor_visible():
+    """Pull `_scripts_list_scroll` so the cursor stays inside the
+    visible list window. No-op when the cursor sits on Back — the
+    list scroll doesn't follow Back, which lives below the spacer."""
+    global _scripts_list_scroll
+    if _scripts_on_back:
+        return
+    body = _scripts_list_rows()
+    if _scripts_cursor < _scripts_list_scroll:
+        _scripts_list_scroll = _scripts_cursor
+    elif _scripts_cursor >= _scripts_list_scroll + body:
+        _scripts_list_scroll = _scripts_cursor - body + 1
+
+
 def _scripts_scroll_detail(delta):
-    """Shift the detail-panel viewport by `delta` rows, clamping to the
-    detail-row total. No-op when content fits in the body."""
+    """Shift the detail-panel viewport by `delta` rows, clamping to
+    the detail-row total. No-op when content fits in the body."""
     global _scripts_detail_scroll
     total = _scripts_detail_total()
     body  = _scripts_visible_rows()
@@ -7720,22 +7762,13 @@ def _scripts_scroll_detail(delta):
             _app.invalidate()
 
 
-def _scripts_set_focus(zone):
-    """Switch keyboard focus between "list" and "detail". Cursor
-    colours flip from amber-gold (focused) to grey (unfocused)."""
-    global _scripts_focus
-    if zone != _scripts_focus:
-        _scripts_focus = zone
-        if _app:
-            _app.invalidate()
-
-
 def _scripts_toggle_cursor():
-    """Flip the cursor script's enabled state. Sets `_scripts_dirty` so
-    the conf gets written on the next Back/ESC."""
+    """Flip the latched script's enabled state. Sets `_scripts_dirty`
+    so the conf gets written on the next Back/ESC. No-op when the
+    cursor is on Back or the catalog is empty."""
     global _scripts_dirty
     n = len(_scripts_catalog)
-    if n == 0:
+    if n == 0 or _scripts_on_back:
         return
     idx = max(0, min(n - 1, _scripts_cursor))
     _scripts_catalog[idx].enabled = not _scripts_catalog[idx].enabled
@@ -7744,74 +7777,119 @@ def _scripts_toggle_cursor():
         _app.invalidate()
 
 
+def _scripts_activate_cursor():
+    """Enter/Space dispatch: toggle the latched script, or pop the
+    frame when the cursor is on Back."""
+    if _scripts_on_back:
+        _scripts_save_and_pop()
+    else:
+        _scripts_toggle_cursor()
+
+
 def _scripts_set_hover(row):
     """Update the row under the mouse pointer (or None when over
-    chrome). Only repaints when the value actually changes."""
-    global _scripts_hover
+    chrome). Also clears the Back hover — only one row can be hovered
+    at a time. Only repaints when something actually changes."""
+    global _scripts_hover, _scripts_hover_back
+    changed = False
     if _scripts_hover != row:
         _scripts_hover = row
-        if _app:
-            _app.invalidate()
+        changed = True
+    if _scripts_hover_back:
+        _scripts_hover_back = False
+        changed = True
+    if changed and _app:
+        _app.invalidate()
+
+
+def _scripts_set_hover_back(on):
+    """Mark the Back row as hovered. Clears the list hover too."""
+    global _scripts_hover, _scripts_hover_back
+    changed = False
+    if _scripts_hover_back != on:
+        _scripts_hover_back = on
+        changed = True
+    if _scripts_hover is not None:
+        _scripts_hover = None
+        changed = True
+    if changed and _app:
+        _app.invalidate()
 
 
 def _scripts_row_handler(row_idx):
     """Mouse handler for one list row — click jumps the cursor and
-    toggles; wheel scrolls the list; MOUSE_MOVE updates hover."""
+    toggles; wheel moves the cursor one row per notch; MOUSE_MOVE
+    updates hover."""
     def _h(ev):
-        global _scripts_cursor, _scripts_detail_scroll
+        global _scripts_cursor, _scripts_on_back, _scripts_detail_scroll
         if ev.event_type == MouseEventType.MOUSE_MOVE:
             _scripts_set_hover(row_idx)
             return None
         if ev.event_type == MouseEventType.MOUSE_DOWN:
-            _scripts_set_focus("list")
-            if row_idx != _scripts_cursor:
+            if row_idx != _scripts_cursor or _scripts_on_back:
                 _scripts_cursor = row_idx
+                _scripts_on_back = False
                 _scripts_detail_scroll = 0
+                _scripts_ensure_cursor_visible()
             _scripts_toggle_cursor()
             return None
         if ev.event_type == MouseEventType.SCROLL_UP:
-            _scripts_move_cursor(-1) if _scripts_focus == "list" \
-                else _scripts_scroll_detail(-3)
+            _scripts_move_up()
             return None
         if ev.event_type == MouseEventType.SCROLL_DOWN:
-            _scripts_move_cursor(1) if _scripts_focus == "list" \
-                else _scripts_scroll_detail(3)
+            _scripts_move_down()
             return None
         return NotImplemented
     return _h
 
 
 def _scripts_list_sb_handler(local_row):
-    """Click on the list scrollbar — page-step toward the click row."""
+    """Click on the list scrollbar — page-step toward the click row.
+    Wheel forwarded to the cursor-movement handlers so the list and
+    its scrollbar feel like one surface."""
     def _h(ev):
+        if ev.event_type == MouseEventType.SCROLL_UP:
+            _scripts_move_up()
+            return None
+        if ev.event_type == MouseEventType.SCROLL_DOWN:
+            _scripts_move_down()
+            return None
         if ev.event_type != MouseEventType.MOUSE_DOWN:
             return NotImplemented
-        n = len(_scripts_catalog)
-        body = _scripts_visible_rows()
-        # Half-page step toward the click row, biased by direction.
+        body = _scripts_list_rows()
         if local_row < body // 2:
-            _scripts_move_cursor(-body)
+            for _ in range(body):
+                _scripts_move_up()
         else:
-            _scripts_move_cursor(body)
-        # Defensive: ensure scroll honours the new cursor.
-        global _scripts_list_scroll
-        _scripts_list_scroll = max(
-            0, min(max(0, n - body), _scripts_list_scroll),
-        )
+            for _ in range(body):
+                _scripts_move_down()
         return None
     return _h
 
 
+def _scripts_back_handler():
+    """Mouse handler for the in-column Back row — click pops (saving
+    any pending toggles); MOUSE_MOVE highlights Back; wheel is a
+    no-op (the detail panel is the wheel-active surface)."""
+    def _h(ev):
+        if ev.event_type == MouseEventType.MOUSE_MOVE:
+            _scripts_set_hover_back(True)
+            return None
+        if ev.event_type == MouseEventType.MOUSE_DOWN:
+            _scripts_save_and_pop()
+            return None
+        return NotImplemented
+    return _h
+
+
 def _scripts_detail_handler(body_row):
-    """Mouse handler over a detail-panel cell — click focuses the
-    detail, wheel scrolls it. MOUSE_MOVE clears the list hover so the
-    list row under the previous hover stops glowing."""
+    """Mouse handler over a detail-panel cell — wheel scrolls the
+    detail; MOUSE_MOVE clears the list/Back hover state so previously-
+    glowing rows stop glowing. Click is a no-op; the detail panel is
+    read-only."""
     def _h(ev):
         if ev.event_type == MouseEventType.MOUSE_MOVE:
             _scripts_set_hover(None)
-            return None
-        if ev.event_type == MouseEventType.MOUSE_DOWN:
-            _scripts_set_focus("detail")
             return None
         if ev.event_type == MouseEventType.SCROLL_UP:
             _scripts_scroll_detail(-3)
@@ -7824,8 +7902,16 @@ def _scripts_detail_handler(body_row):
 
 
 def _scripts_detail_sb_handler(local_row):
-    """Click on the detail scrollbar — page-step toward the click row."""
+    """Click on the detail scrollbar — page-step toward the click row.
+    Wheel scrolls the detail panel (so the scrollbar cell behaves like
+    the panel it serves)."""
     def _h(ev):
+        if ev.event_type == MouseEventType.SCROLL_UP:
+            _scripts_scroll_detail(-3)
+            return None
+        if ev.event_type == MouseEventType.SCROLL_DOWN:
+            _scripts_scroll_detail(3)
+            return None
         if ev.event_type != MouseEventType.MOUSE_DOWN:
             return NotImplemented
         body = _scripts_visible_rows()
@@ -7837,19 +7923,66 @@ def _scripts_detail_sb_handler(local_row):
     return _h
 
 
+def _scripts_back_row_frags(list_w):
+    """Pre-rendered fragments for the in-column Back row.
+
+    Layout: `list_w` cells total — outer blank padding + a centred
+    `Back` button (`button_fragment`) + outer blank padding. The
+    button state mirrors the panes-grid Back grammar:
+      cursor on Back        → selected_focused (amber bg)
+      mouse hover on Back   → hover            (preview)
+      otherwise             → inactive
+    Outer padding carries the same handler so MOUSE_MOVE anywhere on
+    the row sets the Back hover."""
+    label = "Back"
+    btn_w = max(8, len(label) + 4)
+    if btn_w > list_w:
+        btn_w = list_w
+    pad   = max(0, list_w - btn_w)
+    left  = pad // 2
+    right = pad - left
+
+    if _scripts_on_back:
+        state = "selected_focused"
+    elif _scripts_hover_back:
+        state = "hover"
+    else:
+        state = "inactive"
+    style, text = button_fragment(label, btn_w, state)
+    h = _scripts_back_handler()
+    return [
+        ("", " " * left,  h),
+        (style, text,     h),
+        ("", " " * right, h),
+    ]
+
+
+def _scripts_blank_row_frags(list_w):
+    """Blank spacer row in the left column. Carries no hover handler
+    — the row above (last script or scrollbar gutter) and the row
+    below (Back) own the hover state on either side."""
+    return [("", " " * list_w)]
+
+
 def _scripts_text():
-    """Renderer for the two-column Scripts page.
+    """Renderer for the centred two-column Scripts page.
 
     Title block, body region (shared `scripts_view.render_body`),
     footer hint anchored to the final terminal row by
-    `menu_chrome.footer_block`. Hint depends on focus and whether the
-    catalog is empty."""
+    `menu_chrome.footer_block`."""
     cols   = _term_cols()
     rows_h = _term_rows()
     body_h = _scripts_visible_rows()
 
     frags = []
     frags.extend(title_block("─── Scripts ───", cols, blank_above=2))
+
+    list_w = (scripts_view.list_panel_width(_scripts_catalog)
+              if _scripts_catalog else scripts_view.MIN_LIST_W)
+    extra_left = [
+        _scripts_blank_row_frags(list_w),
+        _scripts_back_row_frags(list_w),
+    ]
 
     if _scripts_catalog:
         row_h  = _scripts_row_handler
@@ -7858,29 +7991,38 @@ def _scripts_text():
         det_sb = _scripts_detail_sb_handler
         hover  = _scripts_hover
     else:
-        row_h = sb_h = det_h = det_sb = None
-        hover = None
+        row_h = sb_h = None
+        det_h  = _scripts_detail_handler
+        det_sb = _scripts_detail_sb_handler
+        hover  = None
+
+    # When the cursor sits on Back, suppress the list-row highlight
+    # (`cursor_idx=-1`) but keep the detail panel showing the latched
+    # script via `detail_idx=_scripts_cursor`.
+    cursor_idx = -1 if _scripts_on_back else _scripts_cursor
 
     frags.extend(scripts_view.render_body(
         _scripts_catalog,
-        cursor_idx=_scripts_cursor,
+        cursor_idx=cursor_idx,
         list_scroll=_scripts_list_scroll,
         detail_scroll=_scripts_detail_scroll,
         term_cols=cols,
         body_h=body_h,
-        focus=_scripts_focus,
+        focus="list",
         mode="interactive",
         row_handler=row_h,
         sb_handler=sb_h,
         detail_handler=det_h,
         detail_sb_handler=det_sb,
         hover_row=hover,
+        detail_idx=_scripts_cursor,
+        extra_left_rows=extra_left,
     ))
 
     if _scripts_catalog:
-        footer = "↑↓ Move · Space Toggle · Tab Focus · ESC Back"
+        footer = "↑↓ Move · Space Toggle · PgUp/PgDn Scroll · ESC Back"
     else:
-        footer = "ESC Back"
+        footer = "↑↓ Move · PgUp/PgDn Scroll · ESC Back"
     content_rows = title_block_height(2) + body_h
     frags.extend(footer_block(footer, cols, rows_h, content_rows))
     return frags
@@ -13270,79 +13412,35 @@ def _kb_spemp_any(event):
     _pop_frame()
 
 
-# Scripts — two-column [ list | detail ] frame. Up/Down moves the list
-# cursor when the list is focused, scrolls the detail when the detail
-# is focused; PageUp/PageDown is the same axis at one body's worth at
-# a time. Tab / Shift+Tab and Left / Right cycle focus zones. Space /
-# Enter on a list row toggles that script's enabled state. ESC writes
-# scripts.conf (when dirty) and pops.
+# Scripts — single-column navigation. Up/Down steps the cursor through
+# script rows and Back (skipping the blank spacer). PageUp/PageDown
+# scrolls the detail panel unconditionally — there is no focus model
+# to consult. Space / Enter on a script row toggles it; on Back, pops
+# the frame (saving any pending toggles). ESC is the same exit.
 @kb.add("up", filter=_in_frame("scripts"))
 def _kb_scr_up(event):
-    if _scripts_focus == "list":
-        _scripts_move_cursor(-1)
-    else:
-        _scripts_scroll_detail(-1)
+    _scripts_move_up()
 
 
 @kb.add("down", filter=_in_frame("scripts"))
 def _kb_scr_down(event):
-    if _scripts_focus == "list":
-        _scripts_move_cursor(1)
-    else:
-        _scripts_scroll_detail(1)
+    _scripts_move_down()
 
 
 @kb.add("pageup", filter=_in_frame("scripts"))
 def _kb_scr_pgup(event):
-    body = _scripts_visible_rows()
-    if _scripts_focus == "list":
-        _scripts_move_cursor(-body)
-    else:
-        _scripts_scroll_detail(-body)
+    _scripts_scroll_detail(-_scripts_visible_rows())
 
 
 @kb.add("pagedown", filter=_in_frame("scripts"))
 def _kb_scr_pgdn(event):
-    body = _scripts_visible_rows()
-    if _scripts_focus == "list":
-        _scripts_move_cursor(body)
-    else:
-        _scripts_scroll_detail(body)
-
-
-@kb.add("home", filter=_in_frame("scripts"))
-def _kb_scr_home(event):
-    if _scripts_focus == "list":
-        _scripts_move_cursor(-len(_scripts_catalog))
-    else:
-        _scripts_scroll_detail(-_scripts_detail_total())
-
-
-@kb.add("end", filter=_in_frame("scripts"))
-def _kb_scr_end(event):
-    if _scripts_focus == "list":
-        _scripts_move_cursor(len(_scripts_catalog))
-    else:
-        _scripts_scroll_detail(_scripts_detail_total())
-
-
-@kb.add("tab", filter=_in_frame("scripts"))
-@kb.add("right", filter=_in_frame("scripts"))
-def _kb_scr_focus_detail(event):
-    _scripts_set_focus("detail")
-
-
-@kb.add("s-tab", filter=_in_frame("scripts"))
-@kb.add("left", filter=_in_frame("scripts"))
-def _kb_scr_focus_list(event):
-    _scripts_set_focus("list")
+    _scripts_scroll_detail(_scripts_visible_rows())
 
 
 @kb.add(" ", filter=_in_frame("scripts"))
 @kb.add("enter", filter=_in_frame("scripts"))
-def _kb_scr_toggle(event):
-    if _scripts_focus == "list":
-        _scripts_toggle_cursor()
+def _kb_scr_activate(event):
+    _scripts_activate_cursor()
 
 
 @kb.add("escape", filter=_in_frame("scripts"), eager=True)

@@ -66,6 +66,9 @@ MIN_LIST_W   = 16   # floor for the list column ("[X] coinlooter" + slack)
 SB_W         = 1    # scrollbar cell width (list + detail)
 GAP          = 3    # cells between the list/sb and the detail panel
 OUTER_MARGIN = 2    # minimum cells of slack on each side of the package
+MAX_DETAIL_W = 80   # cap on the detail panel — bounds the package width so
+                    # the launcher's centred package has visible slack on
+                    # wide terminals rather than stretching to fill them
 
 _SB_THUMB_STYLE = "bold fg:#ffffff"
 _SB_TRACK_STYLE = "fg:#585858"
@@ -273,9 +276,13 @@ def list_panel_width(scripts):
 
 def detail_panel_width(term_cols, list_w):
     """Cells available for detail content (including the rightmost cell
-    that the detail scrollbar will claim when content overflows)."""
+    that the detail scrollbar will claim when content overflows).
+
+    Floored at 20 cells and capped at `MAX_DETAIL_W` — the cap bounds
+    the package width so the launcher's centred package keeps visible
+    slack on wide terminals instead of stretching edge-to-edge."""
     package_inner = term_cols - 2 * OUTER_MARGIN - list_w - SB_W - GAP
-    return max(20, package_inner)
+    return max(20, min(MAX_DETAIL_W, package_inner))
 
 
 def package_width(term_cols, list_w):
@@ -370,7 +377,9 @@ def render_body(scripts, cursor_idx, list_scroll, detail_scroll,
                 term_cols, body_h, focus, mode,
                 row_handler=None, sb_handler=None,
                 detail_handler=None, detail_sb_handler=None,
-                hover_row=None):
+                hover_row=None,
+                detail_idx=None,
+                extra_left_rows=None):
     """Render `body_h` rows of the two-column body region.
 
     Layout per row:
@@ -380,7 +389,11 @@ def render_body(scripts, cursor_idx, list_scroll, detail_scroll,
     Arguments:
       scripts        — list of `Script`; may be empty (renders the
                         empty-state pane in the detail area).
-      cursor_idx     — index into `scripts` of the list cursor row.
+      cursor_idx     — index of the list row to highlight. Pass -1 (or
+                        any out-of-range value) to suppress the
+                        highlight — used by the launcher when the
+                        cursor sits on an extra-left row (e.g. Back)
+                        and no script row should glow.
       list_scroll    — first list row visible at body row 0.
       detail_scroll  — first detail row visible at body row 0.
       term_cols      — terminal width.
@@ -403,6 +416,24 @@ def render_body(scripts, cursor_idx, list_scroll, detail_scroll,
                         scrollbar cell. None → 2-tuple.
       hover_row      — list row currently under the mouse pointer, or
                         None. Ignored when `mode == "readonly"`.
+      detail_idx     — index of the script whose detail content fills
+                        the right column. Defaults to `cursor_idx` (so
+                        the popup, which never passes this, keeps the
+                        cursor-drives-detail behaviour). The launcher
+                        passes the latched script index when the
+                        cursor moves onto its in-column Back row, so
+                        the last-browsed script stays visible while
+                        the cursor sits on Back.
+      extra_left_rows — optional list of pre-rendered fragment lists
+                        (one per row) to render at the bottom of the
+                        left column. The list scrollarea shrinks by
+                        `len(extra_left_rows)`; the detail panel
+                        still fills the full `body_h`. Each fragment
+                        list should cover exactly `list_w` cells —
+                        the renderer pads with trailing blanks if
+                        short. Used by the launcher to attach the
+                        blank-spacer + Back row beneath its script
+                        list.
 
     The function never raises on a too-narrow terminal — `detail_w` is
     floored at 20 cells and the package may overflow rather than be
@@ -413,18 +444,26 @@ def render_body(scripts, cursor_idx, list_scroll, detail_scroll,
     left_pad = max(OUTER_MARGIN, (term_cols - pkg_w) // 2)
     right_pad = max(0, term_cols - left_pad - pkg_w)
 
+    extra = list(extra_left_rows or [])
+    extra_n = len(extra)
+    # Trailing extra rows are emitted at the bottom of the left
+    # column; the list-scroll viewport shrinks by `extra_n` rows.
+    list_h = max(0, body_h - extra_n)
+
     # ----- List geometry --------------------------------------------------
     n = len(scripts)
-    list_visible = body_h
     list_total   = n
+    list_visible = list_h
     list_sb_top, list_sb_thumb_h = _thumb_geom(
-        list_total, list_visible, body_h, list_scroll,
-    )
-    list_sb_visible = list_total > body_h
+        list_total, list_visible, list_h, list_scroll,
+    ) if list_h > 0 else (0, 0)
+    list_sb_visible = list_total > list_h and list_h > 0
 
     # ----- Detail rows + geometry ----------------------------------------
     if scripts:
-        cur = scripts[max(0, min(cursor_idx, n - 1))]
+        d_anchor = cursor_idx if detail_idx is None else detail_idx
+        d_anchor = max(0, min(d_anchor, n - 1))
+        cur = scripts[d_anchor]
         d_rows_all = render_detail_lines(cur, detail_w)
     else:
         d_rows_all = _centred_empty_state(detail_w, body_h)
@@ -444,26 +483,38 @@ def render_body(scripts, cursor_idx, list_scroll, detail_scroll,
         detail_scroll = 0
     elif detail_scroll > detail_total - body_h:
         detail_scroll = detail_total - body_h
-    if list_total <= body_h:
+    if list_total <= list_h:
         list_scroll = 0
-    elif list_scroll > list_total - body_h:
-        list_scroll = list_total - body_h
+    elif list_scroll > list_total - list_h:
+        list_scroll = list_total - list_h
 
     frags = []
 
     for body_row in range(body_h):
         frags.append(("", " " * left_pad))
 
-        # ----- List cell -----
-        list_row = list_scroll + body_row
-        list_frag = _list_cell_frag(
-            scripts, n, list_row, cursor_idx, focus, mode, hover_row,
-            list_w, row_handler,
-        )
-        frags.append(list_frag)
+        # ----- Left column: list cell or extra row -----
+        if body_row < list_h:
+            list_row = list_scroll + body_row
+            list_frag = _list_cell_frag(
+                scripts, n, list_row, cursor_idx, focus, mode, hover_row,
+                list_w, row_handler,
+            )
+            frags.append(list_frag)
+        else:
+            extra_idx = body_row - list_h
+            extra_frags = list(extra[extra_idx]) if extra_idx < extra_n else []
+            used = sum(len(t) for _, t in (
+                (f[0], f[1]) if len(f) == 3 else f for f in extra_frags
+            ))
+            pad = max(0, list_w - used)
+            for f in extra_frags:
+                frags.append(f)
+            if pad > 0:
+                frags.append(("", " " * pad))
 
         # ----- List scrollbar cell -----
-        if list_sb_visible:
+        if body_row < list_h and list_sb_visible:
             frags.append(_sb_cell(
                 body_row, list_sb_top, list_sb_thumb_h, sb_handler,
             ))
