@@ -4676,6 +4676,196 @@ def _editor_buffer_bracketed_paste(text):
     _editor_clear_pending_closers()
 
 
+# --- Lite Pattern field — copy / cut / paste / bracketed paste -------
+
+def _editor_pattern_selected_text():
+    """Substring covered by the live Pattern selection, or empty."""
+    entry = _editor_current_entry()
+    sel = _editor_pattern_selection()
+    if entry is None or sel is None:
+        return ""
+    s, e = sel
+    return entry.pattern[s:e]
+
+
+def _editor_pattern_copy():
+    entry = _editor_current_entry()
+    if entry is None:
+        return
+    sel_text = _editor_pattern_selected_text()
+    if sel_text:
+        _clipboard_write(sel_text)
+        return
+    # No selection → copy the whole pattern + trailing newline so the
+    # line-copy semantics match the editor-mode and Body behaviour.
+    if entry.pattern == "":
+        return
+    _clipboard_write(entry.pattern + "\n")
+
+
+def _editor_pattern_cut():
+    global _editor_pattern_cursor
+    entry = _editor_current_entry()
+    if entry is None:
+        return
+    sel_text = _editor_pattern_selected_text()
+    if sel_text:
+        _clipboard_write(sel_text)
+        _editor_pattern_delete_selection()
+        return
+    if entry.pattern == "":
+        return
+    _clipboard_write(entry.pattern + "\n")
+    _editor_set_pattern("")
+    _editor_pattern_cursor = 0
+
+
+def _editor_pattern_paste():
+    """Paste the shared register into Pattern at the cursor. Pattern is
+    single-line — flatten any newlines to spaces first."""
+    if not _editor_clipboard:
+        return
+    text = _editor_clipboard.replace("\r\n", "\n").replace("\r", "\n")
+    text = text.replace("\n", " ")
+    _editor_pattern_insert_text(text)
+
+
+def _editor_pattern_bracketed_paste(text):
+    """Insert pasted `text` into the Pattern field. Normalised newlines
+    are flattened to spaces because Pattern is single-line."""
+    text = _bracketed_paste_normalise(text).replace("\n", " ")
+    if not text:
+        return
+    _editor_pattern_insert_text(text)
+
+
+def _editor_pattern_insert_text(text):
+    """Insert a multi-character string at the Pattern cursor. Replaces
+    any live selection first."""
+    global _editor_pattern_cursor
+    entry = _editor_current_entry()
+    if entry is None or not text:
+        return
+    _editor_pattern_delete_selection()
+    pat = entry.pattern
+    col = max(0, min(len(pat), _editor_pattern_cursor))
+    _editor_set_pattern(pat[:col] + text + pat[col:])
+    _editor_pattern_cursor = col + len(text)
+
+
+# --- Lite Body field — copy / cut / paste / bracketed paste ----------
+
+def _editor_body_selected_text():
+    """Substring covered by the live Body selection, or empty."""
+    sel = _editor_body_selection()
+    if sel is None:
+        return ""
+    (sl, sc), (el, ec) = sel
+    lines = _editor_body_lines()
+    if not lines:
+        return ""
+    sl = max(0, min(len(lines) - 1, sl))
+    el = max(0, min(len(lines) - 1, el))
+    sc = max(0, min(len(lines[sl]), sc))
+    ec = max(0, min(len(lines[el]), ec))
+    if sl == el:
+        return lines[sl][sc:ec]
+    parts = [lines[sl][sc:]]
+    parts.extend(lines[sl + 1:el])
+    parts.append(lines[el][:ec])
+    return "\n".join(parts)
+
+
+def _editor_body_current_line_text():
+    """The text of the current Body line, without trailing newline."""
+    lines = _editor_body_lines()
+    if not lines:
+        return ""
+    line = max(0, min(len(lines) - 1, _editor_body_line))
+    return lines[line]
+
+
+def _editor_body_copy():
+    sel_text = _editor_body_selected_text()
+    if sel_text:
+        _clipboard_write(sel_text)
+        return
+    line_text = _editor_body_current_line_text()
+    if line_text == "" and len(_editor_body_lines()) <= 1:
+        return
+    _clipboard_write(line_text + "\n")
+
+
+def _editor_body_cut():
+    global _editor_body_line, _editor_body_col
+    sel_text = _editor_body_selected_text()
+    if sel_text:
+        _clipboard_write(sel_text)
+        _editor_body_delete_selection()
+        return
+    lines = _editor_body_lines()
+    if not lines:
+        return
+    line = max(0, min(len(lines) - 1, _editor_body_line))
+    if lines[line] == "" and len(lines) == 1:
+        return
+    _clipboard_write(lines[line] + "\n")
+    # Remove the line; if it was the only one, leave a single empty
+    # line so the body model stays well-formed.
+    if len(lines) == 1:
+        new_lines = [""]
+        _editor_body_line = 0
+    else:
+        new_lines = lines[:line] + lines[line + 1:]
+        if line >= len(new_lines):
+            _editor_body_line = len(new_lines) - 1
+    _editor_body_col = 0
+    _editor_body_set_lines(new_lines)
+
+
+def _editor_body_paste():
+    if not _editor_clipboard:
+        return
+    _editor_body_insert_text(_editor_clipboard)
+
+
+def _editor_body_bracketed_paste(text):
+    text = _bracketed_paste_normalise(text)
+    if not text:
+        return
+    _editor_body_insert_text(text)
+
+
+def _editor_body_insert_text(text):
+    """Insert a (possibly multi-line) string at the Body cursor.
+    Replaces any live selection first. Splits on `\\n`."""
+    global _editor_body_line, _editor_body_col
+    entry = _editor_current_entry()
+    if entry is None or not text:
+        return
+    _editor_body_delete_selection()
+    lines = _editor_body_lines()
+    if not lines:
+        lines = [""]
+    line = max(0, min(len(lines) - 1, _editor_body_line))
+    col  = max(0, min(len(lines[line]), _editor_body_col))
+    head = lines[line][:col]
+    tail = lines[line][col:]
+    pieces = text.split("\n")
+    if len(pieces) == 1:
+        lines[line] = head + pieces[0] + tail
+        new_line = line
+        new_col  = col + len(pieces[0])
+    else:
+        new_block = [head + pieces[0]] + list(pieces[1:-1]) + [pieces[-1] + tail]
+        lines = lines[:line] + new_block + lines[line + 1:]
+        new_line = line + len(pieces) - 1
+        new_col  = len(pieces[-1])
+    _editor_body_set_lines(lines)
+    _editor_body_line = new_line
+    _editor_body_col  = new_col
+
+
 def _editor_buffer_content_width(cols):
     """Width of the visible text-buffer region in editor mode. Equals the
     terminal width minus the line-number column and the right-edge
@@ -11293,6 +11483,50 @@ def _kb_peditor_any(event):
         _editor_body_insert_char(data)
         if _app:
             _app.invalidate()
+
+
+# --- Lite-mode clipboard (copy / cut / paste) ------------------------
+# Dispatch mirrors `_kb_peditor_any`: only the Pattern (detail_field 0)
+# and Body (detail_field 1, non-palette, non-macro-Key) text fields
+# respond. Tab buttons, the list, the palette zones and the macro Key
+# cell are all no-ops.
+def _kb_peditor_lite_dispatch(pattern_fn, body_fn):
+    if _editor_focus != 2:
+        return
+    if _editor_in_palette_focus():
+        return
+    if _editor_in_macro_key_focus():
+        return
+    if _editor_detail_field == 0:
+        pattern_fn()
+    elif _editor_detail_field == 1:
+        body_fn()
+    if _app:
+        _app.invalidate()
+
+
+@kb.add("c-c", filter=_in_pe_lite())
+def _kb_peditor_lite_copy(event):
+    _kb_peditor_lite_dispatch(_editor_pattern_copy, _editor_body_copy)
+
+
+@kb.add("c-x", filter=_in_pe_lite())
+def _kb_peditor_lite_cut(event):
+    _kb_peditor_lite_dispatch(_editor_pattern_cut, _editor_body_cut)
+
+
+@kb.add("c-v", filter=_in_pe_lite())
+def _kb_peditor_lite_paste(event):
+    _kb_peditor_lite_dispatch(_editor_pattern_paste, _editor_body_paste)
+
+
+@kb.add(Keys.BracketedPaste, filter=_in_pe_lite())
+def _kb_peditor_lite_bracketed_paste(event):
+    data = event.data or ""
+    _kb_peditor_lite_dispatch(
+        lambda: _editor_pattern_bracketed_paste(data),
+        lambda: _editor_body_bracketed_paste(data),
+    )
 
 
 @kb.add("escape", filter=_in_frame("profile_editor"), eager=True)

@@ -2011,6 +2011,182 @@ class TestProfileEditorClipboardEditorMode(unittest.TestCase):
         self.assertEqual(launcher._editor_pending_closers, [3])
 
 
+class TestProfileEditorClipboardLitePattern(unittest.TestCase):
+    """Phase C — clipboard in the Lite Pattern field. Single-line, so
+    bracketed paste flattens newlines to spaces."""
+
+    def _setup(self, pattern, cursor=0):
+        prof, _src, _td = _make_profile(f"#alias {{{pattern}}} {{body}}\n")
+        _reset_editor_state(prof, focus=2)
+        launcher._editor_detail_field    = 0
+        launcher._editor_pattern_cursor  = cursor
+        launcher._editor_pattern_anchor  = None
+        launcher._editor_clipboard       = ""
+
+    def test_copy_selection_writes_register(self):
+        self._setup("abcdef", cursor=5)
+        launcher._editor_pattern_anchor = 2   # selection "cde"
+        launcher._editor_pattern_copy()
+        self.assertEqual(launcher._editor_clipboard, "cde")
+
+    def test_copy_without_selection_copies_whole_pattern_with_newline(self):
+        self._setup("abcdef", cursor=3)
+        launcher._editor_pattern_copy()
+        self.assertEqual(launcher._editor_clipboard, "abcdef\n")
+
+    def test_copy_empty_pattern_is_noop(self):
+        self._setup("ab", cursor=2)
+        launcher._editor_set_pattern("")     # blank Pattern
+        launcher._editor_pattern_cursor = 0
+        launcher._editor_pattern_copy()
+        self.assertEqual(launcher._editor_clipboard, "")
+
+    def test_cut_selection_deletes_and_copies(self):
+        self._setup("abcdef", cursor=5)
+        launcher._editor_pattern_anchor = 2
+        launcher._editor_pattern_cut()
+        self.assertEqual(launcher._editor_clipboard, "cde")
+        self.assertEqual(launcher._editor_current_entry().pattern, "abf")
+        self.assertEqual(launcher._editor_pattern_cursor, 2)
+
+    def test_cut_without_selection_clears_pattern(self):
+        self._setup("abcdef", cursor=3)
+        launcher._editor_pattern_cut()
+        self.assertEqual(launcher._editor_clipboard, "abcdef\n")
+        self.assertEqual(launcher._editor_current_entry().pattern, "")
+        self.assertEqual(launcher._editor_pattern_cursor, 0)
+
+    def test_paste_inserts_register_at_cursor(self):
+        self._setup("abc", cursor=2)
+        launcher._editor_clipboard = "XY"
+        launcher._editor_pattern_paste()
+        self.assertEqual(launcher._editor_current_entry().pattern, "abXYc")
+        self.assertEqual(launcher._editor_pattern_cursor, 4)
+
+    def test_paste_over_selection_replaces_it(self):
+        self._setup("abcdef", cursor=5)
+        launcher._editor_pattern_anchor = 2   # selection "cde"
+        launcher._editor_clipboard = "XYZ"
+        launcher._editor_pattern_paste()
+        self.assertEqual(launcher._editor_current_entry().pattern, "abXYZf")
+        self.assertEqual(launcher._editor_pattern_cursor, 5)
+
+    def test_paste_flattens_register_newlines_to_spaces(self):
+        # Register populated from a multi-line source — Pattern is
+        # single-line, so newlines flatten.
+        self._setup("ab", cursor=2)
+        launcher._editor_clipboard = "X\nY\nZ"
+        launcher._editor_pattern_paste()
+        self.assertEqual(launcher._editor_current_entry().pattern,
+                         "abX Y Z")
+
+    def test_bracketed_paste_flattens_newlines(self):
+        self._setup("ab", cursor=2)
+        launcher._editor_pattern_bracketed_paste("one\r\ntwo\rthree")
+        # \r\n and \r normalised to \n, then flattened to spaces.
+        self.assertEqual(launcher._editor_current_entry().pattern,
+                         "abone two three")
+
+
+class TestProfileEditorClipboardLiteBody(unittest.TestCase):
+    """Phase C — clipboard in the Lite Body field. Multi-line; paste
+    preserves embedded newlines."""
+
+    def _setup(self, body, line=0, col=0):
+        prof, _src, _td = _make_profile(f"#alias {{k}} {{{body}}}\n")
+        _reset_editor_state(prof, focus=2)
+        launcher._editor_detail_field        = 1
+        launcher._editor_body_line           = line
+        launcher._editor_body_col            = col
+        launcher._editor_body_anchor_line    = None
+        launcher._editor_body_anchor_col     = None
+        launcher._editor_clipboard           = ""
+
+    def test_copy_single_line_selection(self):
+        self._setup("abcdef", line=0, col=5)
+        launcher._editor_body_anchor_line = 0
+        launcher._editor_body_anchor_col  = 2   # selection "cde"
+        launcher._editor_body_copy()
+        self.assertEqual(launcher._editor_clipboard, "cde")
+
+    def test_copy_multi_line_selection(self):
+        # Body splits on `\n`, so seed with explicit newlines.
+        prof, _src, _td = _make_profile("#alias {k} {a}\n")
+        _reset_editor_state(prof, focus=2)
+        launcher._editor_detail_field        = 1
+        launcher._editor_current_entry().body = "one\ntwo\nthree"
+        launcher._editor_body_line       = 2
+        launcher._editor_body_col        = 2     # middle of "three"
+        launcher._editor_body_anchor_line = 0
+        launcher._editor_body_anchor_col  = 1    # middle of "one"
+        launcher._editor_clipboard       = ""
+        launcher._editor_body_copy()
+        self.assertEqual(launcher._editor_clipboard, "ne\ntwo\nth")
+
+    def test_copy_without_selection_copies_current_line_with_newline(self):
+        prof, _src, _td = _make_profile("#alias {k} {a}\n")
+        _reset_editor_state(prof, focus=2)
+        launcher._editor_detail_field = 1
+        launcher._editor_current_entry().body = "one\ntwo\nthree"
+        launcher._editor_body_line    = 1   # "two"
+        launcher._editor_body_col     = 0
+        launcher._editor_clipboard    = ""
+        launcher._editor_body_copy()
+        self.assertEqual(launcher._editor_clipboard, "two\n")
+
+    def test_cut_selection_deletes_and_copies(self):
+        self._setup("abcdef", line=0, col=5)
+        launcher._editor_body_anchor_line = 0
+        launcher._editor_body_anchor_col  = 2
+        launcher._editor_body_cut()
+        self.assertEqual(launcher._editor_clipboard, "cde")
+        self.assertEqual(launcher._editor_current_entry().body, "abf")
+
+    def test_cut_without_selection_drops_line(self):
+        prof, _src, _td = _make_profile("#alias {k} {a}\n")
+        _reset_editor_state(prof, focus=2)
+        launcher._editor_detail_field = 1
+        launcher._editor_current_entry().body = "one\ntwo\nthree"
+        launcher._editor_body_line    = 1   # "two"
+        launcher._editor_body_col     = 0
+        launcher._editor_clipboard    = ""
+        launcher._editor_body_cut()
+        self.assertEqual(launcher._editor_clipboard, "two\n")
+        # Body re-joined with the surviving lines.
+        self.assertEqual(launcher._editor_current_entry().body, "one\nthree")
+
+    def test_paste_inserts_at_cursor(self):
+        self._setup("abc", line=0, col=2)
+        launcher._editor_clipboard = "XY"
+        launcher._editor_body_paste()
+        self.assertEqual(launcher._editor_current_entry().body, "abXYc")
+        self.assertEqual(launcher._editor_body_col, 4)
+
+    def test_paste_preserves_embedded_newlines(self):
+        self._setup("abc", line=0, col=2)
+        launcher._editor_clipboard = "X\nY"
+        launcher._editor_body_paste()
+        # Body is multi-line — paste splits the line at the cursor.
+        # Stored body joins lines with `\n`.
+        self.assertEqual(launcher._editor_current_entry().body, "abX\nYc")
+        self.assertEqual(launcher._editor_body_line, 1)
+        self.assertEqual(launcher._editor_body_col,  1)
+
+    def test_paste_over_selection_replaces_it(self):
+        self._setup("abcdef", line=0, col=5)
+        launcher._editor_body_anchor_line = 0
+        launcher._editor_body_anchor_col  = 2
+        launcher._editor_clipboard = "Z"
+        launcher._editor_body_paste()
+        self.assertEqual(launcher._editor_current_entry().body, "abZf")
+
+    def test_bracketed_paste_keeps_newlines(self):
+        self._setup("ab", line=0, col=2)
+        launcher._editor_body_bracketed_paste("one\r\ntwo")
+        # \r\n normalised to \n; preserved in Body as a `\n` separator.
+        self.assertEqual(launcher._editor_current_entry().body, "abone\ntwo")
+
+
 class TestClipboardCtrlCFilter(unittest.TestCase):
     """Phase C — the global `c-c` quit must NOT fire inside the
     profile_editor frame. ESC is the documented editor exit."""

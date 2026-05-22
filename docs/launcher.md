@@ -875,6 +875,38 @@ every host. **Use Shift+arrow / Shift+Home / Shift+End** to select
 text in the lite-mode Pattern / Commands fields. Editor mode does
 not currently surface shift-select (out of scope for phase 6).
 
+#### Clipboard
+
+All three editor text contexts — Editor-mode buffer, Lite Pattern,
+Lite Body — share a single in-app register (`_editor_clipboard`) for
+copy/cut/paste, and use the same key triplet:
+
+- `c-c` — copy selection; with no selection, copy the current logical
+  line including its trailing newline. Cursor and buffer unchanged.
+- `c-x` — cut selection; with no selection, cut the current line.
+  Removes one adjacent newline so no blank line is left behind.
+- `c-v` — insert the in-app register at the cursor, replacing any
+  active selection. Pattern is a single-line field, so a paste that
+  contains newlines flattens them to spaces; Body and Editor mode
+  preserve them.
+
+Copy and cut additionally emit an OSC 52 sequence so the text lands
+on the system clipboard on terminals that implement it (most modern
+ones do — the sequence is silently discarded otherwise). Pasting
+from another application uses the **terminal's own paste shortcut**
+(`Cmd-V` / `Ctrl-Shift-V` / right-click, depending on the terminal),
+which arrives as bracketed paste — the launcher normalises CRLF /
+lone CR to `\n`, then routes the text through the same insert paths
+as `c-v`. `c-v` itself deliberately does NOT read from the system
+clipboard; the asymmetry, and the trade-offs, are
+documented in `docs/decisions/0090-profile-editor-clipboard-osc52.md`.
+
+The palette zones in the Highlights tab and the macro Key cell are
+selection-only — they ignore `c-c`/`c-x`/`c-v` and bracketed paste.
+The global `c-c` quit binding is suppressed inside the
+`profile_editor` frame so the same key can copy text; ESC remains
+the documented way to exit the editor.
+
 #### Delete: no confirmation
 
 `Del` on a selected list row removes the cursor Entry from
