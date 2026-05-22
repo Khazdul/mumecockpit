@@ -3353,7 +3353,14 @@ def _editor_box_content_row(text, border_focused, cursor_col=None,
         in_sel = (sel_range is not None
                   and sel_range[0] <= abs_col < sel_range[1])
         is_cursor = (view_cursor is not None and i == view_cursor)
-        if is_cursor or in_sel:
+        # When a selection is active, the cursor sits at one boundary —
+        # for a forward run that boundary is `sel_range[1]`, i.e. the
+        # first cell *outside* the selection. Painting that cell as
+        # C_SELECTED visually extended the highlight by one (e.g.
+        # double-click in `{word}` looked like `word}`). Suppress the
+        # cursor paint when a selection covers the run; the selection
+        # cells themselves convey the extent.
+        if in_sel or (is_cursor and sel_range is None):
             style = C_SELECTED
         else:
             style = C_ITEM if ch != " " else ""
@@ -6011,7 +6018,12 @@ def _editor_append_editor_body(frags, cols):
                     ch = " "
                     in_sel = False
                 is_cursor_cell = (ccol == cursor_cell)
-                if (is_cursor_cell and buffer_focused) or in_sel:
+                # See `_editor_box_content_row`: when a selection is
+                # active the cursor sits at the run boundary, so painting
+                # its cell would visually extend the highlight by one
+                # (e.g. double-click `{word}` looked like `word}`).
+                if in_sel or (is_cursor_cell and buffer_focused
+                              and sel_lo is None):
                     cell_styles[ccol] = C_SELECTED
                 elif is_brace_match:
                     cell_styles[ccol] = C_SYN_BRACE_MATCH

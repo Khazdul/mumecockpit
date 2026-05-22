@@ -2975,6 +2975,37 @@ class TestEditorWordBounds(unittest.TestCase):
         self.assertIsNone(launcher._editor_word_bounds("hi", 2))
         self.assertIsNone(launcher._editor_word_bounds("", 0))
 
+    # --- Regression: run boundary must be end-exclusive on the right ---
+    # Earlier the visual highlight bled one cell past the run because the
+    # cursor cell at `e` was painted alongside `[s, e)`. The bounds
+    # contract is unchanged — `text[s:e]` is exactly the run.
+    def test_word_run_inside_braces(self):
+        self.assertEqual(launcher._editor_word_bounds("{word}", 1),
+                         (1, 5))
+        self.assertEqual(launcher._editor_word_bounds("{word}", 4),
+                         (1, 5))
+
+    def test_word_run_inside_quoted_dollar(self):
+        # `"` and `$` are `other`; the word run is just `abody`.
+        self.assertEqual(launcher._editor_word_bounds('"$abody"', 2),
+                         (2, 7))
+        self.assertEqual(launcher._editor_word_bounds('"$abody"', 6),
+                         (2, 7))
+
+    def test_word_run_before_trailing_space(self):
+        # `{#if {` — clicking `if` stops at the space; the run is just
+        # `if`, not `if ` (whitespace is a different class).
+        self.assertEqual(launcher._editor_word_bounds("{#if {", 2),
+                         (2, 4))
+        self.assertEqual(launcher._editor_word_bounds("{#if {", 3),
+                         (2, 4))
+
+    def test_left_edge_stops_at_class_change(self):
+        # `{` is `other`; the `word` run starts at the `w` — left walk
+        # must not pull `{` into the run.
+        self.assertEqual(launcher._editor_word_bounds("{word}", 1),
+                         (1, 5))
+
 
 class TestEditorBufferDoubleTripleClick(unittest.TestCase):
     """The editor-mode buffer row click handler: count 1 positions the
@@ -3049,6 +3080,42 @@ class TestEditorBufferDoubleTripleClick(unittest.TestCase):
         self.assertEqual(launcher._editor_buffer_cursor, 5)
         launcher._editor_buffer_copy()
         self.assertEqual(launcher._editor_clipboard, "!!!")
+
+    # Regression: the run's right edge must not absorb the first
+    # out-of-class character. Earlier the cursor cell at `e` was painted
+    # alongside `[s, e)`, so visually `{word}` looked like `word}`.
+    def test_double_click_word_inside_braces(self):
+        self._setup_buffer("{word}")
+        h = self._row_handler(0, len("{word}"))
+        h(_MouseEv(2, 0))                      # over `o` in `word`
+        self.clock.advance(0.1)
+        h(_MouseEv(2, 0))
+        self.assertEqual(launcher._editor_buffer_anchor, 1)
+        self.assertEqual(launcher._editor_buffer_cursor, 5)
+        launcher._editor_buffer_copy()
+        self.assertEqual(launcher._editor_clipboard, "word")
+
+    def test_double_click_word_after_dollar_quoted(self):
+        self._setup_buffer('"$abody"')
+        h = self._row_handler(0, len('"$abody"'))
+        h(_MouseEv(3, 0))                      # over `b` in `abody`
+        self.clock.advance(0.1)
+        h(_MouseEv(3, 0))
+        self.assertEqual(launcher._editor_buffer_anchor, 2)
+        self.assertEqual(launcher._editor_buffer_cursor, 7)
+        launcher._editor_buffer_copy()
+        self.assertEqual(launcher._editor_clipboard, "abody")
+
+    def test_double_click_if_before_trailing_space(self):
+        self._setup_buffer("{#if {")
+        h = self._row_handler(0, len("{#if {"))
+        h(_MouseEv(2, 0))                      # over `i` in `if`
+        self.clock.advance(0.1)
+        h(_MouseEv(2, 0))
+        self.assertEqual(launcher._editor_buffer_anchor, 2)
+        self.assertEqual(launcher._editor_buffer_cursor, 4)
+        launcher._editor_buffer_copy()
+        self.assertEqual(launcher._editor_clipboard, "if")
 
     def test_double_click_does_not_cross_line_boundary(self):
         self._setup_buffer("foo\nbar")
@@ -3170,6 +3237,34 @@ class TestEditorLitePatternDoubleTripleClick(unittest.TestCase):
         self.assertEqual(launcher._editor_pattern_anchor, 2)
         self.assertEqual(launcher._editor_pattern_cursor, 4)
 
+    # Regression: same-class run stops at the first out-of-class char on
+    # the right — `word}` / `abody"` / `if ` were over-selecting. The
+    # raw `#alias` source can't carry literal braces in the pattern, so
+    # set them directly on the entry after a benign setup.
+    def test_double_click_word_inside_braces(self):
+        self._setup("placeholder")
+        launcher._editor_current_entry().pattern = "{word}"
+        h = self._handler(2)
+        h(_MouseEv(2, 0))
+        self.clock.advance(0.1)
+        h(_MouseEv(2, 0))
+        self.assertEqual(launcher._editor_pattern_anchor, 1)
+        self.assertEqual(launcher._editor_pattern_cursor, 5)
+        launcher._editor_pattern_copy()
+        self.assertEqual(launcher._editor_clipboard, "word")
+
+    def test_double_click_if_before_trailing_space(self):
+        self._setup("placeholder")
+        launcher._editor_current_entry().pattern = "{#if {"
+        h = self._handler(2)
+        h(_MouseEv(2, 0))
+        self.clock.advance(0.1)
+        h(_MouseEv(2, 0))
+        self.assertEqual(launcher._editor_pattern_anchor, 2)
+        self.assertEqual(launcher._editor_pattern_cursor, 4)
+        launcher._editor_pattern_copy()
+        self.assertEqual(launcher._editor_clipboard, "if")
+
     def test_double_click_past_end_selects_nothing(self):
         self._setup("hi")
         h = self._handler(5)
@@ -3279,6 +3374,34 @@ class TestEditorLiteBodyDoubleTripleClick(unittest.TestCase):
         h(_MouseEv(2, 0))
         self.assertEqual(launcher._editor_body_anchor_col, 1)
         self.assertEqual(launcher._editor_body_col, 4)
+
+    # Regression: run's right edge is end-exclusive — the cell at `e` is
+    # NOT part of the selection, even when the cursor lands there. The
+    # raw `#action` source can't carry literal braces in the body, so
+    # set them directly on the entry after a benign setup.
+    def test_double_click_word_inside_braces(self):
+        self._setup("placeholder")
+        launcher._editor_current_entry().body = "{word}"
+        h = self._handler(2, 0)
+        h(_MouseEv(2, 0))
+        self.clock.advance(0.1)
+        h(_MouseEv(2, 0))
+        self.assertEqual(launcher._editor_body_anchor_col, 1)
+        self.assertEqual(launcher._editor_body_col, 5)
+        launcher._editor_body_copy()
+        self.assertEqual(launcher._editor_clipboard, "word")
+
+    def test_double_click_if_before_trailing_space(self):
+        self._setup("placeholder")
+        launcher._editor_current_entry().body = "{#if {"
+        h = self._handler(2, 0)
+        h(_MouseEv(2, 0))
+        self.clock.advance(0.1)
+        h(_MouseEv(2, 0))
+        self.assertEqual(launcher._editor_body_anchor_col, 2)
+        self.assertEqual(launcher._editor_body_col, 4)
+        launcher._editor_body_copy()
+        self.assertEqual(launcher._editor_clipboard, "if")
 
     def test_double_click_past_eol_selects_nothing(self):
         self._setup("hi\nyo")
