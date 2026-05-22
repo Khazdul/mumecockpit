@@ -1920,19 +1920,23 @@ def _editor_body_h():
     """Body row height — branches on `_editor_mode`.
 
     Lite mode budget reserves rows for the leading blank, title row,
-    blank separator, horizontal kind-button row + its blank-line
-    separator, footer blank, and footer text (13 rows of chrome
-    total — lite mode is shorter than the terminal so it gets its
-    leading blank from vertical centering for free). The detail
-    panel's field chain (Pattern + Commands + error + hint block)
-    needs ~15 rows minimum.
+    blank separator, and the horizontal kind-button row + its
+    blank-line separator (the footer blank + hint live in the
+    dedicated footer Window, with a flex_spacer absorbing the
+    remaining slack between body and footer — see
+    `_build_profile_editor`). 13 rows of chrome total: 7 chrome
+    rows inside the body, 2 in the footer Window, 4 of spacer
+    slack. The detail panel's field chain (Pattern + Commands +
+    error + hint block) needs ~15 rows minimum.
 
     Editor mode has no kind-button row and no detail panel; only two
-    leading blanks, the title row, one blank below the title, the
-    buffer, the footer blank, and the footer text. Reserve 6 chrome
-    rows total so the buffer fills the full terminal height with no
-    dead rows at the bottom. Sync with `_profile_editor_text`'s
-    leading blanks — change them together."""
+    leading blanks, the title row, one blank below the title, and
+    the buffer. The footer blank + hint live in the footer Window
+    (2 rows). Reserve 6 chrome rows total so the buffer + body chrome
+    + footer Window sum to the terminal height exactly (the
+    flex_spacer collapses to zero, preserving the editor-mode
+    anchoring). Sync with `_profile_editor_text`'s leading blanks —
+    change them together."""
     if _editor_mode == "editor":
         return max(15, _term_rows() - 6)
     return max(15, _term_rows() - 13)
@@ -5536,23 +5540,23 @@ def _profile_editor_text():
     title  = f"─── Profile Editor: {name} ───"
 
     frags = []
-    # Editor mode is sized to fill the terminal exactly, so the leading
-    # blank rows above the title have to be emitted explicitly here —
-    # vertical centering can't supply them. Lite mode is shorter than
-    # the terminal and picks up its leading blank from `_centered` for
-    # free, so no extra `\n` there (adding any would shift its
-    # centering). The editor-mode buffer-height overhead in
-    # `_editor_body_h` accounts for these two leading blanks — change
-    # them together.
+    # Both modes emit their leading blank rows explicitly: the frame uses
+    # `HSplit([body, flex_spacer, footer])` (no vertical centering), so
+    # the body anchors to the top of the available space. Editor mode
+    # gets two leading blanks (its body fills the terminal exactly so
+    # there is no slack); lite mode gets one (the spacer absorbs the
+    # slack between body and footer). The chrome budgets in
+    # `_editor_body_h` count these blanks — change them together.
     if _editor_mode == "editor":
         frags.append(("", "\n", _editor_clear_outer_hover))
+        frags.append(("", "\n", _editor_clear_outer_hover))
+    else:
         frags.append(("", "\n", _editor_clear_outer_hover))
     _editor_append_title_row(frags, title, cols)
     frags.append(("", "\n", _editor_clear_outer_hover))
 
     if _editor_mode == "editor":
         _editor_append_editor_body(frags, cols)
-        _editor_append_footer(frags, cols)
         return frags
 
     # Lite mode: kind-button row (3 rows) + blank separator, then body.
@@ -5764,8 +5768,25 @@ def _profile_editor_text():
             frags.append(("", " " * right_pad, _editor_clear_outer_hover))
         frags.append(("", "\n", _editor_clear_outer_hover))
 
-    _editor_append_footer(frags, cols)
     return frags
+
+
+def _profile_editor_footer_text():
+    """Footer-hint row + optional feedback flash, rendered into the
+    dedicated footer Window so a flex_spacer between body and footer
+    pins the hint to the final terminal row in both modes (matches the
+    `profile` / `history` footer-anchoring contract)."""
+    frags = []
+    _editor_append_footer(frags, _term_cols())
+    return frags
+
+
+def _profile_editor_footer_h():
+    """Height of the footer Window: 2 rows (blank + hint) normally,
+    grows to 4 (blank + hint + blank + feedback) while a key-capture
+    feedback flash is live. Keeps the hint on the bottom row whenever
+    no feedback is showing."""
+    return 4 if _editor_feedback_text else 2
 
 
 def _editor_append_title_row(frags, title, cols):
@@ -5826,20 +5847,24 @@ def _editor_append_footer(frags, cols):
 
     Phase 6.2: arrow-key and Enter tokens are removed from all editor
     footers — they're intuitive enough from layout to skip the hint.
-    Kept tokens: `Tab Cycle` / `Shift+Tab`, `n New`, `Del Delete`,
-    `ESC Save & back`."""
+    The Tab token is uniformly `Tab Cycle` everywhere — it describes
+    what the key does, not the size of the focus chain. Kept tokens:
+    `Tab Cycle` / `Shift+Tab`, `n New`, `Del Delete`, `ESC Save & back`.
+
+    Called from the footer-Window text fn; the leading `\\n` produces
+    the blank separator row above the hint within that Window."""
     frags.append(("", "\n", _editor_clear_outer_hover))
     if _editor_toggle_focused:
         footer = "Tab Cycle  ·  ESC Save & back"
     elif _editor_mode == "editor":
-        footer = "Tab Toggle  ·  ESC Save & back"
+        footer = "Tab Cycle  ·  ESC Save & back"
     elif _editor_focus == 0:
         footer = "Tab Cycle  ·  ESC Save & back"
     elif _editor_focus == 1:
         footer = ("n New  ·  Del Delete  ·  Tab Cycle  ·  "
                   "ESC Save & back")
     else:
-        footer = "Tab Field  ·  ESC Save & back"
+        footer = "Tab Cycle  ·  ESC Save & back"
     # A live c-c / c-x flash takes over the centred message slot. The
     # editor-mode Ln/Col indicator stays pinned to the right edge in
     # both branches; the brace-balance segment only joins it on the
@@ -13673,6 +13698,28 @@ def _build_profile():
             HSplit([title, body, flex_spacer, footer]))
 
 
+def _build_profile_editor():
+    """Build the Profile editor frame: body Window · flex_spacer · footer
+    Window. Splitting the footer into its own Window (with the spacer
+    above it) anchors the hint to the final terminal row in both modes,
+    matching the `profile` / `history` footer-anchoring contract.
+
+    In editor mode the body's chrome budget still fills the terminal
+    exactly (chrome `term_rows - 6` + footer Window 2 = `term_rows`),
+    so the spacer collapses to zero and the existing editor-mode
+    anchoring is preserved. In lite mode the body is shorter than the
+    terminal and the spacer absorbs the slack."""
+    body_win = _make_window(_profile_editor_text, focusable=True)
+    footer_win = Window(
+        content=FormattedTextControl(text=_profile_editor_footer_text,
+                                     focusable=False),
+        height=lambda: Dimension.exact(_profile_editor_footer_h()),
+        wrap_lines=False, always_hide_cursor=True,
+    )
+    flex_spacer = Window()
+    return body_win, HSplit([body_win, flex_spacer, footer_win])
+
+
 def _build_history_rate():
     """Build the History rate-session frame — single centred Window with the
     star widget and footer hint. Mirrors the popup's rate_session shape."""
@@ -13728,7 +13775,7 @@ def main():
     _profile_create_choose_window, pcc_frame                 = _build_simple(_profile_create_choose_text)
     _profile_create_copy_window,   pcp_frame                 = _build_simple(_profile_create_copy_text)
     _profile_delete_window,        pd_frame                  = _build_simple(_profile_delete_text)
-    _profile_editor_window,        profile_editor_frame      = _build_simple(_profile_editor_text)
+    _profile_editor_window,        profile_editor_frame      = _build_profile_editor()
     _profile_editor_keybind_window, peditor_keybind_frame    = _build_simple(_profile_editor_keybind_text)
     _options_window,                    options_frame                  = _build_simple(_options_text)
     _options_panes_window,              options_panes_frame            = _build_simple(_options_panes_text)

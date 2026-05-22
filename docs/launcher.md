@@ -321,12 +321,27 @@ all the way down to the footer's blank + hint row. The vertical
 chrome budget in editor mode is `2 blanks + title + 1 blank +
 buffer + 1 blank + footer hint` (6 chrome rows around a buffer
 sized to `term_rows - 6`), so there are no dead rows at the
-bottom. The two leading blanks above the title are emitted
-explicitly in editor mode — lite mode is shorter than the terminal
-so its leading blank comes from `_centered` for free; editor mode
-fills the terminal exactly, so the two `\n` rows have to be in the
-fragment list and the overhead constant has to match (sync them
-together). `_editor_body_h()` branches on `_editor_mode` for this
+bottom.
+
+The frame itself is `HSplit([body, flex_spacer, footer])` (built by
+`_build_profile_editor`, not `_build_simple`): the body emits
+chrome + body region, the footer Window emits the blank + hint
+row, and the flex_spacer absorbs leftover terminal rows so the
+footer hint sits on the final terminal row in both modes — the
+same anchoring contract the `profile` / `history` frames use. In
+editor mode the body + footer sum to `term_rows` exactly so the
+spacer collapses to zero and the existing editor anchoring is
+preserved. In lite mode the body is shorter than the terminal and
+the spacer absorbs the slack between body and footer.
+
+Because the frame no longer runs through `_centered`, the body
+anchors to the top of the available space and the leading blank
+rows above the title are emitted explicitly in both modes — two
+in editor mode (body fills exactly so there is no slack to
+distribute), one in lite mode (matching the leading blank that
+vertical centering used to supply "for free"). The overhead
+constants in `_editor_body_h` count these blanks — sync them
+together. `_editor_body_h()` branches on `_editor_mode` for this
 — lite keeps the wider lite-mode chrome budget; editor uses the
 smaller one.
 
@@ -946,12 +961,18 @@ phase-5 doc).
 
 **Dynamic footer** (Phase 6.2 — arrow + Enter tokens removed since
 they're intuitive from layout; kept tokens are the non-obvious
-ones):
+ones). The Tab token is uniformly `Tab Cycle` everywhere — it
+describes what the key does, not the size of the focus chain:
 - Toggle: `Tab Cycle  ·  ESC Save & back`
-- Editor mode: `Tab Toggle  ·  ESC Save & back`
+- Editor mode: `Tab Cycle  ·  ESC Save & back`
 - Lite / kind: `Tab Cycle  ·  ESC Save & back`
 - Lite / list: `n New  ·  Del Delete  ·  Tab Cycle  ·  ESC Save & back`
-- Lite / detail: `Tab Field  ·  ESC Save & back`
+- Lite / detail: `Tab Cycle  ·  ESC Save & back`
+
+The footer hint sits on the final terminal row in both modes,
+anchored via a flex_spacer between the body Window and the footer
+Window (matching the `profile` / `history` footer-anchoring
+contract). See *Layout* for the chrome budget.
 
 #### Mode flip semantics
 
@@ -2273,7 +2294,7 @@ All frames render through `prompt_toolkit` controls. Layout building blocks:
   primary `Window` is stored at module level and focused on push so
   keyboard handlers fire reliably.
 - **Centered frames** — `main`, `profile_rename`, the profile-create
-  sub-frames, `profile_delete_confirm`, `profile_editor`,
+  sub-frames, `profile_delete_confirm`,
   `profile_editor_macro_keybind`, `options`,
   `options_panes`, `options_connection`,
   `options_connection_custom`, `options_coming_soon`, `history_detail`,
@@ -2285,7 +2306,9 @@ All frames render through `prompt_toolkit` controls. Layout building blocks:
   `[ table | scrollbar | gap | Options ]` package anchored at the top
   with a feedback row and footer below; a flex spacer absorbs leftover
   rows so the package, feedback row, and footer hug together at the top
-  of the frame.
+  of the frame. `profile_editor` uses the same body + flex_spacer +
+  footer-Window contract (see `_build_profile_editor`) to anchor its
+  footer hint to the final terminal row in both lite and editor mode.
 - **Scrolling frames** — `scripts` and `about` are single-window
   frames that render `title_block` (4 rows), a viewport-sized body
   (always emits `_term_rows() - 5` lines, padding with blanks when the
