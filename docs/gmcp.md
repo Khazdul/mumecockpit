@@ -62,7 +62,7 @@ pick from a known map without re-reading help files.
 | Char.Login      | → server  | `{name, password}`             | not sent       |
 | Char.Name       | ← server  | `{name, fullname}`             | lua/core/char_state.lua (primary writer; also drives connection.state); downstream via `gmcp_char_name` event: status_state.lua, server_prefs.lua, buffs_state.lua, comm_store.lua, affects.lua, stored_spells.lua |
 | Char.StatusVars | ← server  | name/caption pairs (see below) | lua/core/char_state.lua |
-| Char.Vitals     | ← server  | flat object (see below)        | lua/core/char_state.lua |
+| Char.Vitals     | ← server  | flat object (see below)        | lua/core/char_state.lua (primary writer); downstream via `gmcp_char_vitals` event: group_collector.lua (cross-applies buffer/opponent HP onto state.group.members) |
 
 Char.Vitals fields:
 
@@ -91,6 +91,28 @@ Char.Vitals fields:
     buffer-hits    ("healthy", "fine", ...)
 
 Note: hp/mana/mp may be rounded — the *-string variants carry a qualitative description when precision is limited.
+
+The `buffer` / `opponent` / `buffer-hits` / `opponent-hits` quad is incremental
+in the same way the Group vital pairs are. At fight start one packet carries
+the identity strings (`buffer`, `opponent`) plus the HP band strings
+(`buffer-hits`, `opponent-hits`); subsequent mid-fight packets carry only the
+band strings. The identity strings take several forms — NPC
+`"<description> (LABEL)"`, unlabeled ally `"<Name>"`, or labeled ally as the
+bare label, the bare name, or `"<Name> (LABEL)"`.
+
+`lua/core/group_collector.lua` subscribes to `gmcp_char_vitals` and uses these
+fields to keep group-member HP live mid-fight: it caches the latest `buffer` /
+`opponent` identity strings, and on every `*-hits` packet resolves the cached
+identity against `state.group.members` (case-insensitive token match against
+each member's label and name, label preferred) and applies the band string as
+that member's `hp_string` via Case C of
+[ADR 0052](decisions/0052-group-vital-pair-freshness.md) — the same string-only
+merge used by `Group.Update`. `char_state.lua` remains the single primary
+writer for `state.char.*`; this is a subscriber, not a second writer for
+`state.group.*` (which still has `group_collector.lua` as its single writer).
+The cached identity strings are cleared on `char_reset` and `run_started`.
+Only HP is cross-applied this way (there is no `buffer-mana`); mana/moves
+bars keep their last `Group.Update` value mid-fight.
 
 Char.StatusVars fields:
 

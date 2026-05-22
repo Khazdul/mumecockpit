@@ -50,9 +50,12 @@ local _field_map = {
 }
 
 -- Vital pairs: value + string fields managed by freshness inference in Group.Update.
+local _hp_pair = {
+    gmcp_value = "hp",   gmcp_str = "hp-string",   gmcp_maxv = "maxhp",
+    key_value  = "hp",   key_str  = "hp_string",   key_maxv  = "maxhp",   kind = "hp",
+}
 local _vital_pairs = {
-    { gmcp_value = "hp",   gmcp_str = "hp-string",   gmcp_maxv = "maxhp",
-      key_value  = "hp",   key_str  = "hp_string",   key_maxv  = "maxhp",   kind = "hp" },
+    _hp_pair,
     { gmcp_value = "mana", gmcp_str = "mana-string", gmcp_maxv = "maxmana",
       key_value  = "mana", key_str  = "mana_string", key_maxv  = "maxmana", kind = "mana" },
     { gmcp_value = "mp",   gmcp_str = "mp-string",   gmcp_maxv = "maxmp",
@@ -143,6 +146,26 @@ local function _classify(member)
     if member.type == "you" then return "drop" end
     if member.type == "npc" and member.label == nil then return "exclude" end
     return "include"
+end
+
+-- Case C of ADR 0052: apply a string-only vital update onto a member.
+-- If cached value/max allow a percentage, check it against the band of the
+-- new label; clear a contradictory value. Always store the string (may be
+-- nil to clear). Used by Group.Update and by the Char.Vitals
+-- buffer/opponent cross-application.
+local function _apply_string_only(member, pair, str)
+    local cached_val = member[pair.key_value]
+    local cached_max = member[pair.key_maxv]
+    if cached_val ~= nil and cached_max ~= nil and cached_max > 0 then
+        local pct_int = math.floor(100 * cached_val / cached_max)
+        local check = state.group.in_band(pair.kind, pct_int, str)
+        if check == false then
+            member[pair.key_value] = nil
+        elseif check == nil then
+            dbg("[GROUP] unknown " .. pair.kind .. " label: " .. tostring(str))
+        end
+    end
+    member[pair.key_str] = str
 end
 
 -- Project a GMCP entry into a member object, applying _norm_label so the
@@ -252,18 +275,7 @@ gmcp.handlers["Group.Update"] = function(body)
         else
             -- Case C: string only; check band consistency with cached value.
             local str = (str_raw ~= gmcp.null) and str_raw or nil
-            local cached_val = existing[pair.key_value]
-            local cached_max = existing[pair.key_maxv]
-            if cached_val ~= nil and cached_max ~= nil and cached_max > 0 then
-                local pct_int = math.floor(100 * cached_val / cached_max)
-                local check = state.group.in_band(pair.kind, pct_int, str)
-                if check == false then
-                    existing[pair.key_value] = nil
-                elseif check == nil then
-                    dbg("[GROUP] unknown " .. pair.kind .. " label: " .. tostring(str))
-                end
-            end
-            existing[pair.key_str] = str
+            _apply_string_only(existing, pair, str)
         end
     end
 
@@ -304,8 +316,109 @@ gmcp.handlers["Group.Remove"] = function(body)
     end
 end
 
+-- ── Char.Vitals cross-update: buffer / opponent HP ───────────────────────────
+--
+-- Mid-fight, MUME delivers a group member's HP changes through Char.Vitals
+-- rather than Group.Update: at fight start the packet carries identity
+-- strings (buffer / opponent) plus HP band strings (buffer-hits /
+-- opponent-hits); subsequent packets carry only the *-hits values. To keep
+-- the group pane live we cache the latest identity strings here and, on
+-- every *-hits packet, resolve them against state.group.members and apply
+-- the band string as that member's hp_string via Case C of ADR 0052.
+
+local _buffer
+local _opponent
+
+-- Resolve a buffer/opponent identity string to a member of
+-- state.group.members. The string can take several forms — NPC
+-- "<description> (LABEL)", unlabeled ally "<Name>", or labeled ally as
+-- bare label, bare name, or "<Name> (LABEL)" — so we build a candidate
+-- token set and match case-insensitively against each member's label
+-- (preferred) and name. Returns the matched member or nil.
+local function _resolve_identity(ident)
+    if type(ident) ~= "string" or ident == "" then return nil end
+
+    local tokens = { ident:lower() }
+    local before, paren = ident:match("^(.-)%s*%(([^()]+)%)%s*$")
+    if paren then
+        tokens[#tokens+1] = paren:lower()
+        if before and before ~= "" then
+            tokens[#tokens+1] = before:lower()
+        end
+    end
+
+    for _, member in pairs(state.group.members) do
+        if member.label then
+            local mlabel = member.label:lower()
+            for _, t in ipairs(tokens) do
+                if t == mlabel then return member end
+            end
+        end
+    end
+    for _, member in pairs(state.group.members) do
+        if member.name then
+            local mname = member.name:lower()
+            for _, t in ipairs(tokens) do
+                if t == mname then return member end
+            end
+        end
+    end
+    return nil
+end
+
+events.subscribe("gmcp_char_vitals", function(body)
+    if type(body) ~= "table" then return end
+
+    -- Identity strings persist across the partial packets that follow.
+    -- Resolution to a member happens fresh on every *-hits packet —
+    -- members come and go (room-scoped), so a cached reference would
+    -- go stale.
+    if body.buffer ~= nil then
+        _buffer = (body.buffer ~= gmcp.null) and body.buffer or nil
+    end
+    if body.opponent ~= nil then
+        _opponent = (body.opponent ~= gmcp.null) and body.opponent or nil
+    end
+
+    local changed
+    local buf_hits = body["buffer-hits"]
+    if buf_hits ~= nil and buf_hits ~= gmcp.null then
+        local m = _resolve_identity(_buffer)
+        if m then
+            _apply_string_only(m, _hp_pair, buf_hits)
+            changed = changed or {}
+            changed[m] = true
+        end
+    end
+    local opp_hits = body["opponent-hits"]
+    if opp_hits ~= nil and opp_hits ~= gmcp.null then
+        local m = _resolve_identity(_opponent)
+        if m then
+            _apply_string_only(m, _hp_pair, opp_hits)
+            changed = changed or {}
+            changed[m] = true
+        end
+    end
+
+    if changed then
+        for m in pairs(changed) do
+            events.emit("group_member_updated", m)
+        end
+        events.emit("group_changed")
+    end
+end)
+
 -- ── reset on disconnect ───────────────────────────────────────────────────────
 
-events.subscribe("char_reset", function() state.group.reset() end)
+events.subscribe("char_reset", function()
+    _buffer = nil
+    _opponent = nil
+    state.group.reset()
+end)
+
+events.subscribe("run_started", function()
+    _buffer = nil
+    _opponent = nil
+end)
 
 dbg("[GROUP] loaded")
