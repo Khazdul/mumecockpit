@@ -64,13 +64,18 @@ local autopay     = false
 
 local function _dbg(msg) dbg("[MERC] " .. msg) end
 
+-- Seeded so the first-hire name varies across sessions; default seed is constant.
+math.randomseed(os.time())
+
 local function _pick_unused_name()
     local used = {}
     for _, rec in pairs(mercs) do used[rec.name:lower()] = true end
+    local unused = {}
     for _, n in ipairs(NAME_POOL) do
-        if not used[n:lower()] then return n end
+        if not used[n:lower()] then unused[#unused+1] = n end
     end
-    return nil
+    if #unused == 0 then return nil end
+    return unused[math.random(#unused)]
 end
 
 local function _format_time(seconds)
