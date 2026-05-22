@@ -17,8 +17,8 @@ local _band = {
         icy     = {1,   10},
         cold    = {11,  25},
         warm    = {26,  45},
-        hot     = {46,  70},
-        burning = {71,  99},
+        hot     = {46,  75},
+        burning = {76,  99},
         full    = {100, 100},
     },
     mp = {
