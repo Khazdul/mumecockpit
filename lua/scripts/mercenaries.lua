@@ -15,9 +15,11 @@
 -- @help     Status lines (▶ MERC) report hire, tap, payment,
 -- @help     renew, expiry warnings, and removal.
 
--- Self-contained script. Records survive link loss; on reconnect a
--- 10s timer rebinds GMCP ids by label, then drops any merc that did
--- not re-appear.
+-- Self-contained script. Records are keyed by label (the stable identity);
+-- GMCP group membership is room-scoped, so ids are transient presence
+-- handles. Records survive link loss and room exits — only the leaves/death
+-- text triggers or the periodic expiry timer drop a merc. See docs/gmcp.md
+-- (Group section) for the room-scope semantics.
 
 local PANEL_W = 67
 local BAR_W   = 20
@@ -48,14 +50,15 @@ local R       = "<099>"
 local M = {}
 scripts.mercenaries = M
 
--- mercs: keyed by lower-cased comic name (the label).
--- Record: { name, label_lc, gmcp_id, expiry, silver_paid, state,
+-- mercs: keyed by lower-cased comic name (the label — stable identity).
+-- Record: { name, label_lc, gmcp_id, present, expiry, silver_paid, state,
 --          warned_5min, hp_band, mp_band }
--- state: "active" | "grace" | "unconfirmed"
+--   gmcp_id  transient; bound while the merc is in our room, nil otherwise.
+--   present  true while the merc is in our room (has a bound gmcp_id).
+--   state    "active" | "grace" (grace = pay due, 1-minute window).
 local mercs       = {}
 local id_to_label = {}   -- gmcp id → label_lc (rebuilt from group_member_added)
 local autopay     = false
-local recent_left = {}   -- label_lc → epoch of "leaves" trigger fire
 
 -- ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -132,16 +135,18 @@ local function _name_row(rec)
         time_color = RED
     else
         warn_seg   = "  "
-        time_color = WHITE
+        time_color = rec.present and WHITE or DIM
     end
 
-    local gold_str  = _format_silver(rec.silver_paid)
-    local name_vlen = #rec.name      -- comic names are ASCII
-    local gold_vlen = #gold_str
+    local name_color = rec.present and WHITE or DIM
+    local name_text  = rec.present and rec.name or (rec.name .. " (away)")
+    local gold_str   = _format_silver(rec.silver_paid)
+    local name_vlen  = #name_text    -- comic names are ASCII
+    local gold_vlen  = #gold_str
 
     local s = {}
     s[#s+1] = "  "
-    s[#s+1] = WHITE .. rec.name .. R
+    s[#s+1] = name_color .. name_text .. R
     s[#s+1] = string.rep(" ", 28 - name_vlen)
     s[#s+1] = warn_seg
     s[#s+1] = time_color .. "time " .. time_str .. R
@@ -152,7 +157,7 @@ local function _name_row(rec)
     return _wrap_row(table.concat(s))
 end
 
-local function _bars_row(label, pct, band, default_fg)
+local function _bars_row(label, pct, band, default_fg, present)
     local fill
     if pct == nil then
         fill = 0
@@ -163,7 +168,9 @@ local function _bars_row(label, pct, band, default_fg)
     end
 
     local bar_fg
-    if pct == nil then
+    if not present then
+        bar_fg = DIM                              -- away: last-known, greyed
+    elseif pct == nil then
         bar_fg = DIM
     elseif pct <= 0.25 then
         bar_fg = RED
@@ -225,8 +232,8 @@ local function _render_panel()
         local hp_pct = state.group.pct_for("hp", nil, nil, rec.hp_band)
         local mp_pct = state.group.pct_for("mp", nil, nil, rec.mp_band)
         tintin_show(ses, _name_row(rec))
-        tintin_show(ses, _bars_row("HP",    hp_pct, rec.hp_band, GREEN))
-        tintin_show(ses, _bars_row("Moves", mp_pct, rec.mp_band, OLIVE))
+        tintin_show(ses, _bars_row("HP",    hp_pct, rec.hp_band, GREEN, rec.present))
+        tintin_show(ses, _bars_row("Moves", mp_pct, rec.mp_band, OLIVE, rec.present))
         tintin_show(ses, _empty_row())
     end
     tintin_show(ses, _divider())
@@ -253,8 +260,9 @@ local function _register_triggers()
     session_cmd("#action {^A citizen mercenary (%1) says 'Thank you. I am at your service.'$} {#lua {scripts.mercenaries.on_renew(\"%1\")}}")
     session_cmd("#action {^A citizen mercenary (%1) leaves and goes to seek another employer.$} {#lua {scripts.mercenaries.on_leave(\"%1\")}}")
     -- TODO: the exact MUME death line for a mercenary is not yet known.
-    -- Until provided, a Group.Remove with no preceding "leaves" trigger
-    -- within ~2s is reported as "lost" via the group_member_removed handler.
+    -- Until provided, a dead merc is only removed by the periodic expiry
+    -- timer (~90s past contract end). Group.Remove is room-scoped presence
+    -- and never removes a record.
 end
 
 -- ── tick / reconnect ────────────────────────────────────────────────────────
@@ -267,6 +275,7 @@ end
 
 function M._tick()
     local now = os.time()
+    local expired = {}
     for _, rec in pairs(mercs) do
         if rec.state == "active" then
             local remaining = rec.expiry - now
@@ -275,17 +284,20 @@ function M._tick()
                 script_ui("MERC", rec.name .. " expires soon.")
             end
         end
-    end
-    _arm_tick()
-end
-
-function M._reconnect_timeout()
-    for label_lc, rec in pairs(mercs) do
-        if rec.state == "unconfirmed" then
-            mercs[label_lc] = nil
-            script_ui("MERC", rec.name .. " lost.")
+        -- Wall-clock anchored expiry: drops any merc whose contract ended
+        -- more than ~90s ago (covers the 1-minute grace plus slack). For
+        -- a present merc this is the safety net after triggers; for an
+        -- away merc it is the only removal path.
+        if now - rec.expiry > 90 then
+            expired[#expired+1] = rec
         end
     end
+    for _, rec in ipairs(expired) do
+        if rec.gmcp_id then id_to_label[rec.gmcp_id] = nil end
+        mercs[rec.label_lc] = nil
+        script_ui("MERC", rec.name .. " expired.")
+    end
+    _arm_tick()
 end
 
 -- ── trigger handlers (public — called from tt++ #action bodies) ────────────
@@ -302,6 +314,7 @@ function M.on_hire()
         name        = name,
         label_lc    = label_lc,
         gmcp_id     = nil,
+        present     = false,
         expiry      = os.time() + 24 * 60,
         silver_paid = 10,
         state       = "active",
@@ -341,13 +354,11 @@ end
 
 function M.on_leave(label)
     local label_lc = label:lower()
-    recent_left[label_lc] = os.time()
     local rec = mercs[label_lc]
-    if rec then
-        if rec.gmcp_id then id_to_label[rec.gmcp_id] = nil end
-        mercs[label_lc] = nil
-        script_ui("MERC", rec.name .. " left.")
-    end
+    if not rec then return end
+    if rec.gmcp_id then id_to_label[rec.gmcp_id] = nil end
+    mercs[label_lc] = nil
+    script_ui("MERC", rec.name .. " left.")
 end
 
 -- ── alias body ──────────────────────────────────────────────────────────────
@@ -369,6 +380,9 @@ end
 
 -- ── GMCP subscribers ────────────────────────────────────────────────────────
 
+-- Group.Add covers both fresh hires and mercs re-entering our room (room-scoped
+-- GMCP assigns a NEW id on each arrival). Same path: bind id, mark present,
+-- refresh vitals. Never creates or removes records.
 events.subscribe("group_member_added", function(member)
     local mname = (member.name or ""):lower()
     if mname ~= "citizen mercenary" then return end
@@ -381,10 +395,8 @@ events.subscribe("group_member_added", function(member)
         return
     end
     rec.gmcp_id = member.id
+    rec.present = true
     id_to_label[member.id] = label_lc
-    if rec.state == "unconfirmed" then
-        rec.state = "active"
-    end
     _update_vitals(rec, member)
 end)
 
@@ -396,38 +408,32 @@ events.subscribe("group_member_updated", function(member)
     _update_vitals(rec, member)
 end)
 
+-- Group.Remove is room-scoped: it means the merc left our room, not that the
+-- contract ended. Mark away; the record persists until a text trigger or the
+-- expiry timer removes it. No script_ui — silent presence change.
 events.subscribe("group_member_removed", function(id)
     local label_lc = id_to_label[id]
     if not label_lc then return end
     id_to_label[id] = nil
     local rec = mercs[label_lc]
     if not rec then return end
-    local left_at = recent_left[label_lc]
-    if left_at and os.time() - left_at <= 2 then
-        recent_left[label_lc] = nil
-        mercs[label_lc] = nil
-        script_ui("MERC", rec.name .. " left.")
-    else
-        mercs[label_lc] = nil
-        script_ui("MERC", rec.name .. " lost.")
-    end
+    rec.gmcp_id = nil
+    rec.present = false
+    _dbg("away label=" .. rec.label_lc)
 end)
 
 -- ── session lifecycle ───────────────────────────────────────────────────────
 
 events.subscribe("run_started", function()
-    -- Records survive link loss; bands and gmcp ids do not.
+    -- Records survive link loss; gmcp ids and presence do not. Incoming
+    -- Group.Add events will re-bind ids by label; the periodic timer drops
+    -- anything that genuinely expired while we were disconnected.
     id_to_label = {}
-    local any_unconfirmed = false
     for _, rec in pairs(mercs) do
         rec.gmcp_id = nil
-        rec.state   = "unconfirmed"
-        any_unconfirmed = true
+        rec.present = false
     end
     _register_triggers()
-    if any_unconfirmed then
-        session_cmd("#delay {merc_reconnect} {#lua {scripts.mercenaries._reconnect_timeout()}} {10}")
-    end
     _arm_tick()
 end)
 

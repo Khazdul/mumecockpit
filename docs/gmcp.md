@@ -143,6 +143,14 @@ All Event handlers store the decoded body as-is under the corresponding `state.w
 | Group.Update  | ← server  | partial member object (by id)  | lua/core/group_collector.lua   |
 | Group.Remove  | ← server  | naked integer (member id)      | lua/core/group_collector.lua   |
 
+**Room-scoped membership.** Group.* tracks the subset of your group currently
+in your room, not your entire group roster. When you or a member changes rooms,
+Group.Remove fires for the absent ids; on reunion Group.Add re-adds them with a
+**new id** — ids are presence handles reassigned on each Group.Add, not stable
+identities across room changes. For mercenaries and other labeled NPCs the
+stable identity is the `label` field; consumers that need to recognise a
+member across room changes must key on `label`, not `id`.
+
 Member object fields (kebab-case from server, stored snake_case in `state.group.members`):
 
     id, type, name, label
