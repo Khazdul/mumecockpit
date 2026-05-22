@@ -279,6 +279,18 @@ _EDITOR_UNDO_MAX_DEPTH            = 200
 # terminal's own paste shortcut, so `c-v` deliberately never reads the
 # system clipboard — see docs/decisions/0090-osc52-write-not-read.md.
 _editor_clipboard                 = ""
+# Click-count tracking for double/triple-click word/line selection in the
+# profile editor (Editor mode + Lite Pattern/Body fields). prompt_toolkit
+# only delivers single MOUSE_DOWN events; `_editor_click_tick` upgrades
+# them by comparing each click's `(t, x, y)` against the previous one.
+# Within `_EDITOR_CLICK_WINDOW` AND the same `(x, y)` the count bumps
+# 1→2→3→1; otherwise it resets to 1. The clock source is indirected so
+# tests drive the count deterministically rather than sleeping.
+_EDITOR_CLICK_WINDOW              = 0.4
+_editor_click_count               = 0
+_editor_click_last_t              = 0.0
+_editor_click_last_xy             = (-1, -1)
+_editor_click_now                 = time.monotonic
 # Detail-panel editing state. Phase 3.5 covers Pattern + Body text inputs;
 # phase 4 adds Highlights' palette grid (sharing the detail_field == 1 slot
 # with Body, dispatched on active kind).
@@ -3321,23 +3333,43 @@ def _editor_make_field_click_handler(field_id, visible_col, line_idx,
     """Build a `MOUSE_DOWN` handler that focuses the named detail
     field and positions the in-buffer cursor at the clicked column.
     `start` is the scroll offset of the visible view into the buffer
-    so the click maps back to the right absolute column. Clicks clear
-    any live selection on that field."""
+    so the click maps back to the right absolute column.
+
+    A count-1 click clears any live selection on that field. A count-2
+    click selects the word at the clicked position. A count-3 click
+    selects the whole logical line in Body (incl. trailing `\\n` when
+    present) or the entire single-line Pattern field."""
     def _handler(ev):
         if ev.event_type == MouseEventType.MOUSE_MOVE:
             return None
         if ev.event_type != MouseEventType.MOUSE_DOWN:
             return NotImplemented
-        global _editor_pattern_cursor, _editor_body_line, _editor_body_col
+        global _editor_pattern_cursor, _editor_pattern_anchor
+        global _editor_body_line, _editor_body_col
+        global _editor_body_anchor_line, _editor_body_anchor_col
         target_col = max(0, start + visible_col)
+        count = _editor_click_tick(ev)
         if field_id == "pattern":
             entry = _editor_current_entry()
             if entry is None:
                 return None
             _profile_editor_set_focus(2, field=0)
-            _editor_pattern_cursor = max(0, min(len(entry.pattern),
-                                                target_col))
-            _editor_clear_pattern_selection()
+            pat = entry.pattern
+            if count == 2:
+                bounds = _editor_word_bounds(pat, target_col)
+                if bounds is None:
+                    _editor_pattern_cursor = len(pat)
+                    _editor_clear_pattern_selection()
+                else:
+                    s, e = bounds
+                    _editor_pattern_anchor = s
+                    _editor_pattern_cursor = e
+            elif count == 3:
+                _editor_pattern_anchor = 0
+                _editor_pattern_cursor = len(pat)
+            else:
+                _editor_pattern_cursor = max(0, min(len(pat), target_col))
+                _editor_clear_pattern_selection()
         elif field_id == "body":
             entry = _editor_current_entry()
             if entry is None:
@@ -3346,9 +3378,32 @@ def _editor_make_field_click_handler(field_id, visible_col, line_idx,
             lines = _editor_body_lines()
             line = max(0, min(len(lines) - 1,
                               line_idx if line_idx is not None else 0))
-            _editor_body_line = line
-            _editor_body_col  = max(0, min(len(lines[line]), target_col))
-            _editor_clear_body_selection()
+            if count == 2:
+                bounds = _editor_word_bounds(lines[line], target_col)
+                if bounds is None:
+                    _editor_body_line = line
+                    _editor_body_col  = len(lines[line])
+                    _editor_clear_body_selection()
+                else:
+                    s, e = bounds
+                    _editor_body_anchor_line = line
+                    _editor_body_anchor_col  = s
+                    _editor_body_line = line
+                    _editor_body_col  = e
+            elif count == 3:
+                _editor_body_anchor_line = line
+                _editor_body_anchor_col  = 0
+                if line + 1 < len(lines):
+                    _editor_body_line = line + 1
+                    _editor_body_col  = 0
+                else:
+                    _editor_body_line = line
+                    _editor_body_col  = len(lines[line])
+            else:
+                _editor_body_line = line
+                _editor_body_col  = max(0, min(len(lines[line]),
+                                               target_col))
+                _editor_clear_body_selection()
         if _app:
             _app.invalidate()
         return None
@@ -4374,6 +4429,90 @@ def _editor_buffer_set_cursor_from_line_col(line, col):
     line_len = len(_editor_buffer_line_text(line))
     col = max(0, min(line_len, col))
     _editor_buffer_cursor = starts[line] + col
+
+
+def _editor_click_tick(ev):
+    """Update click-count tracking for `ev` and return the new count
+    (1, 2, or 3). Within `_EDITOR_CLICK_WINDOW` seconds of the previous
+    click at the same `(x, y)` the count cycles 1 → 2 → 3 → 1; outside
+    the window or at a different `(x, y)` it resets to 1. prompt_toolkit
+    only delivers single MOUSE_DOWN events, so the count is rebuilt on
+    each click — there is no timer or debounce."""
+    global _editor_click_count, _editor_click_last_t, _editor_click_last_xy
+    now = _editor_click_now()
+    xy = (ev.position.x, ev.position.y)
+    same_spot = (xy == _editor_click_last_xy)
+    in_window = (now - _editor_click_last_t) <= _EDITOR_CLICK_WINDOW
+    if same_spot and in_window and _editor_click_count > 0:
+        _editor_click_count = (_editor_click_count % 3) + 1
+    else:
+        _editor_click_count = 1
+    _editor_click_last_t  = now
+    _editor_click_last_xy = xy
+    return _editor_click_count
+
+
+def _editor_word_class(ch):
+    """Three-way classification used by double-click word selection.
+    `word` covers alphanumerics and `_`; `ws` covers space and tab;
+    everything else (punctuation, symbols, non-latin printables) is
+    `other`. Word selection walks a same-class run in both directions."""
+    if ch.isalnum() or ch == "_":
+        return "word"
+    if ch in (" ", "\t"):
+        return "ws"
+    return "other"
+
+
+def _editor_word_bounds(line_text, col):
+    """Return `(start, end)` of the same-class run that contains the
+    character at `col` (end-exclusive — `line_text[start:end]` is the
+    word). Returns None for a click at or past end-of-line: word
+    selection never crosses a line boundary, and there is nothing to
+    extend over past the last character."""
+    if col < 0 or col >= len(line_text):
+        return None
+    cls = _editor_word_class(line_text[col])
+    s = col
+    while s > 0 and _editor_word_class(line_text[s - 1]) == cls:
+        s -= 1
+    e = col
+    while e < len(line_text) and _editor_word_class(line_text[e]) == cls:
+        e += 1
+    return (s, e)
+
+
+def _editor_buffer_select_word_at(logical_line, col):
+    """Editor-buffer double-click target. Set the buffer selection to
+    the same-class run at `(logical_line, col)`. A click at or past
+    end-of-line clears the selection and places the cursor at line-end
+    instead."""
+    global _editor_buffer_cursor, _editor_buffer_anchor
+    line_text = _editor_buffer_line_text(logical_line)
+    bounds = _editor_word_bounds(line_text, col)
+    if bounds is None:
+        _editor_buffer_set_cursor_from_line_col(logical_line, len(line_text))
+        _editor_buffer_anchor = None
+        return
+    s, e = bounds
+    starts = _editor_buffer_line_starts()
+    base = starts[logical_line]
+    _editor_buffer_anchor = base + s
+    _editor_buffer_cursor = base + e
+
+
+def _editor_buffer_select_logical_line(logical_line):
+    """Editor-buffer triple-click target. Select `logical_line`
+    including its trailing `\\n`; the last line without a trailing
+    newline selects just the line text."""
+    global _editor_buffer_cursor, _editor_buffer_anchor
+    text = _editor_buffer_text
+    starts = _editor_buffer_line_starts()
+    line = max(0, min(len(starts) - 1, logical_line))
+    start = starts[line]
+    end = starts[line + 1] if line + 1 < len(starts) else len(text)
+    _editor_buffer_anchor = start
+    _editor_buffer_cursor = end
 
 
 def _editor_buffer_consume_selection():
@@ -5799,9 +5938,12 @@ def _editor_append_editor_body(frags, cols):
 
 def _editor_buffer_row_click_handler(logical_line, wrap_start,
                                      content_x_offset, line_len):
-    """One mouse handler per visible row. Click lands the cursor on the
-    `(logical_line, col)` derived from `ev.position.x`; selection is
-    cleared. Move events are silent (no per-row hover in editor mode).
+    """One mouse handler per visible row. A count-1 click lands the
+    cursor on the `(logical_line, col)` derived from `ev.position.x`
+    and clears any selection. A count-2 click selects the word at that
+    position; a count-3 click selects the whole logical line (incl. its
+    trailing `\\n`, when present). Move events are silent (no per-row
+    hover in editor mode).
 
     Pre-Phase-6.1 this was one closure per cell — ~80×24 closures per
     frame. Now one closure per visible row, interpreting the column at
@@ -5815,11 +5957,17 @@ def _editor_buffer_row_click_handler(logical_line, wrap_start,
         if col_in_content < 0:
             col_in_content = 0
         abs_col = min(line_len, wrap_start + col_in_content)
+        count = _editor_click_tick(ev)
         _editor_unfocus_toggle()
-        _editor_buffer_set_cursor_from_line_col(logical_line, abs_col)
-        _editor_buffer_clear_selection()
         _editor_clear_pending_closers()
         _editor_undo_close()
+        if count == 2:
+            _editor_buffer_select_word_at(logical_line, abs_col)
+        elif count == 3:
+            _editor_buffer_select_logical_line(logical_line)
+        else:
+            _editor_buffer_set_cursor_from_line_col(logical_line, abs_col)
+            _editor_buffer_clear_selection()
         _editor_buffer_scroll_cursor_into_view()
         if _app:
             _app.invalidate()

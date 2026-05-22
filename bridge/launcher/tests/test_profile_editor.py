@@ -2848,5 +2848,490 @@ class TestEditorModeLineColIndicator(unittest.TestCase):
                          "Ln 2, Col 1")
 
 
+# ---------------------------------------------------------------------------
+# Phase F — double/triple-click word and line selection
+# ---------------------------------------------------------------------------
+# prompt_toolkit ships only MOUSE_DOWN/UP/MOVE; click counts are rebuilt by
+# `_editor_click_tick` from a `(t, x, y)` history. Tests drive both the
+# tracker and the wired-in row/field click handlers with a stub event +
+# an injected monotonic clock.
+
+import time  # noqa: E402  — used by tearDown to restore the real clock
+
+from prompt_toolkit.data_structures import Point  # noqa: E402
+from prompt_toolkit.mouse_events import MouseEventType  # noqa: E402
+
+
+class _MouseEv:
+    """Minimal prompt_toolkit MouseEvent stand-in: only `position` and
+    `event_type` are read by the editor's click handlers."""
+
+    def __init__(self, x, y, event_type=None):
+        self.position   = Point(x=x, y=y)
+        self.event_type = (event_type if event_type is not None
+                           else MouseEventType.MOUSE_DOWN)
+
+
+class _FakeClock:
+    """Injectable monotonic clock — every read returns the current `t`."""
+
+    def __init__(self, start=1000.0):
+        self.t = start
+
+    def __call__(self):
+        return self.t
+
+    def advance(self, dt):
+        self.t += dt
+
+
+def _reset_click_state(clock=None):
+    launcher._editor_click_count   = 0
+    launcher._editor_click_last_t  = 0.0
+    launcher._editor_click_last_xy = (-1, -1)
+    if clock is not None:
+        launcher._editor_click_now = clock
+
+
+class TestEditorClickCount(unittest.TestCase):
+    """`_editor_click_tick` cycles 1 → 2 → 3 → 1 within the click window
+    at the same `(x, y)`; otherwise resets to 1."""
+
+    def setUp(self):
+        self.clock = _FakeClock()
+        _reset_click_state(self.clock)
+
+    def tearDown(self):
+        _reset_click_state(time.monotonic)
+
+    def test_first_click_is_one(self):
+        self.assertEqual(
+            launcher._editor_click_tick(_MouseEv(10, 5)), 1)
+
+    def test_rapid_repeat_at_same_xy_increments(self):
+        ev = _MouseEv(10, 5)
+        self.assertEqual(launcher._editor_click_tick(ev), 1)
+        self.clock.advance(0.1)
+        self.assertEqual(launcher._editor_click_tick(ev), 2)
+        self.clock.advance(0.1)
+        self.assertEqual(launcher._editor_click_tick(ev), 3)
+
+    def test_fourth_rapid_click_cycles_to_one(self):
+        ev = _MouseEv(10, 5)
+        for expected in (1, 2, 3, 1):
+            self.assertEqual(launcher._editor_click_tick(ev), expected)
+            self.clock.advance(0.1)
+
+    def test_slow_second_click_resets_to_one(self):
+        # A click outside the window resets the count even at the same xy.
+        ev = _MouseEv(10, 5)
+        self.assertEqual(launcher._editor_click_tick(ev), 1)
+        self.clock.advance(0.5)                                  # > 0.4 s
+        self.assertEqual(launcher._editor_click_tick(ev), 1)
+
+    def test_different_xy_resets_to_one(self):
+        self.assertEqual(launcher._editor_click_tick(_MouseEv(10, 5)), 1)
+        self.clock.advance(0.1)
+        self.assertEqual(launcher._editor_click_tick(_MouseEv(11, 5)), 1)
+        self.clock.advance(0.1)
+        self.assertEqual(launcher._editor_click_tick(_MouseEv(11, 6)), 1)
+
+
+class TestEditorWordBounds(unittest.TestCase):
+    """`_editor_word_bounds` classifies word-chars (alnum + `_`),
+    whitespace (space/tab), and `other` (punctuation), and extends the
+    run in both directions over the same class."""
+
+    def test_word_char_run(self):
+        self.assertEqual(launcher._editor_word_bounds("foo bar", 1),
+                         (0, 3))
+
+    def test_word_includes_underscore_and_digits(self):
+        # "ab_42c" is one same-class run; whitespace at col 6 is the boundary.
+        self.assertEqual(launcher._editor_word_bounds("ab_42c x", 3),
+                         (0, 6))
+
+    def test_whitespace_run(self):
+        # Three spaces in a row → ws class.
+        self.assertEqual(launcher._editor_word_bounds("a   b", 2),
+                         (1, 4))
+
+    def test_punctuation_run(self):
+        # `!!!` is an "other" run that the boundary walk groups together.
+        self.assertEqual(launcher._editor_word_bounds("hi!!!there", 3),
+                         (2, 5))
+
+    def test_punctuation_does_not_merge_with_word(self):
+        # `,` is `other`; `word` is the surrounding letters. Class change
+        # stops the walk.
+        self.assertEqual(launcher._editor_word_bounds("hi,bye", 0),
+                         (0, 2))
+        self.assertEqual(launcher._editor_word_bounds("hi,bye", 2),
+                         (2, 3))
+        self.assertEqual(launcher._editor_word_bounds("hi,bye", 3),
+                         (3, 6))
+
+    def test_past_end_of_line_returns_none(self):
+        self.assertIsNone(launcher._editor_word_bounds("hi", 2))
+        self.assertIsNone(launcher._editor_word_bounds("", 0))
+
+
+class TestEditorBufferDoubleTripleClick(unittest.TestCase):
+    """The editor-mode buffer row click handler: count 1 positions the
+    cursor, count 2 selects the word, count 3 selects the logical line
+    including its trailing `\\n`. Clipboard copy reads the selected
+    text."""
+
+    def setUp(self):
+        self.clock = _FakeClock()
+        _reset_click_state(self.clock)
+
+    def tearDown(self):
+        _reset_click_state(time.monotonic)
+
+    def _setup_buffer(self, text):
+        prof, _src, _td = _make_profile("")
+        _reset_editor_state(prof)
+        launcher._editor_mode             = "editor"
+        launcher._editor_toggle_focused   = False
+        launcher._editor_buffer_text      = text
+        launcher._editor_buffer_cursor    = 0
+        launcher._editor_buffer_scroll    = 0
+        launcher._editor_buffer_anchor    = None
+        launcher._editor_pending_closers  = []
+        launcher._editor_clipboard        = ""
+
+    def _row_handler(self, logical_line, line_len):
+        # content_x_offset=0 and wrap_start=0 — ev.position.x is then the
+        # absolute column directly. line_len = len(line_text) for the
+        # clicked logical line.
+        return launcher._editor_buffer_row_click_handler(
+            logical_line, wrap_start=0, content_x_offset=0,
+            line_len=line_len)
+
+    def test_single_click_positions_cursor_and_clears_selection(self):
+        self._setup_buffer("hello world")
+        h = self._row_handler(0, len("hello world"))
+        h(_MouseEv(2, 0))
+        self.assertEqual(launcher._editor_buffer_cursor, 2)
+        self.assertIsNone(launcher._editor_buffer_anchor)
+
+    def test_double_click_selects_word(self):
+        self._setup_buffer("hello world")
+        h = self._row_handler(0, len("hello world"))
+        h(_MouseEv(2, 0))                      # count 1 at col 2
+        self.clock.advance(0.1)
+        h(_MouseEv(2, 0))                      # count 2 at col 2
+        self.assertEqual(launcher._editor_buffer_anchor, 0)
+        self.assertEqual(launcher._editor_buffer_cursor, 5)
+        # Clipboard copy reads the selected word.
+        launcher._editor_buffer_copy()
+        self.assertEqual(launcher._editor_clipboard, "hello")
+
+    def test_double_click_whitespace_selects_run(self):
+        self._setup_buffer("a    b")
+        h = self._row_handler(0, len("a    b"))
+        h(_MouseEv(3, 0))
+        self.clock.advance(0.1)
+        h(_MouseEv(3, 0))
+        self.assertEqual(launcher._editor_buffer_anchor, 1)
+        self.assertEqual(launcher._editor_buffer_cursor, 5)
+        launcher._editor_buffer_copy()
+        self.assertEqual(launcher._editor_clipboard, "    ")
+
+    def test_double_click_punctuation_selects_run(self):
+        self._setup_buffer("hi!!!there")
+        h = self._row_handler(0, len("hi!!!there"))
+        h(_MouseEv(3, 0))
+        self.clock.advance(0.1)
+        h(_MouseEv(3, 0))
+        self.assertEqual(launcher._editor_buffer_anchor, 2)
+        self.assertEqual(launcher._editor_buffer_cursor, 5)
+        launcher._editor_buffer_copy()
+        self.assertEqual(launcher._editor_clipboard, "!!!")
+
+    def test_double_click_does_not_cross_line_boundary(self):
+        self._setup_buffer("foo\nbar")
+        # Click on line 1, col 1 (the `a` in `bar`) — line 0's content is
+        # exclusive of the trailing `\n`, so the word selection on line 1
+        # must stay within line 1.
+        h = self._row_handler(1, len("bar"))
+        h(_MouseEv(1, 0))
+        self.clock.advance(0.1)
+        h(_MouseEv(1, 0))
+        # Line 1 starts at offset 4 (after "foo\n"); word "bar" occupies
+        # offsets 4..7.
+        self.assertEqual(launcher._editor_buffer_anchor, 4)
+        self.assertEqual(launcher._editor_buffer_cursor, 7)
+
+    def test_double_click_past_eol_selects_nothing(self):
+        self._setup_buffer("hi")
+        h = self._row_handler(0, len("hi"))
+        h(_MouseEv(10, 0))                     # well past EOL → clamps to 2
+        self.clock.advance(0.1)
+        h(_MouseEv(10, 0))
+        self.assertIsNone(launcher._editor_buffer_anchor)
+        self.assertEqual(launcher._editor_buffer_cursor, 2)
+
+    def test_triple_click_selects_logical_line_with_newline(self):
+        self._setup_buffer("foo\nbar\nbaz\n")
+        h = self._row_handler(1, len("bar"))
+        h(_MouseEv(1, 0))
+        self.clock.advance(0.1)
+        h(_MouseEv(1, 0))                      # count 2
+        self.clock.advance(0.1)
+        h(_MouseEv(1, 0))                      # count 3
+        # Line 1 starts at 4, line 2 starts at 8 → "bar\n".
+        self.assertEqual(launcher._editor_buffer_anchor, 4)
+        self.assertEqual(launcher._editor_buffer_cursor, 8)
+        launcher._editor_buffer_copy()
+        self.assertEqual(launcher._editor_clipboard, "bar\n")
+
+    def test_triple_click_last_line_without_trailing_newline(self):
+        self._setup_buffer("foo\nbar")
+        h = self._row_handler(1, len("bar"))
+        h(_MouseEv(1, 0))
+        self.clock.advance(0.1)
+        h(_MouseEv(1, 0))
+        self.clock.advance(0.1)
+        h(_MouseEv(1, 0))
+        # Last line — selection is just the line text, no \n.
+        self.assertEqual(launcher._editor_buffer_anchor, 4)
+        self.assertEqual(launcher._editor_buffer_cursor, 7)
+
+    def test_fourth_rapid_click_cycles_to_single_click(self):
+        self._setup_buffer("hello world")
+        h = self._row_handler(0, len("hello world"))
+        for _ in range(4):
+            h(_MouseEv(2, 0))
+            self.clock.advance(0.1)
+        # After the 4th rapid click we're back to count 1 — cursor lands,
+        # selection cleared.
+        self.assertIsNone(launcher._editor_buffer_anchor)
+        self.assertEqual(launcher._editor_buffer_cursor, 2)
+
+    def test_slow_second_click_does_not_upgrade_to_double(self):
+        self._setup_buffer("hello world")
+        h = self._row_handler(0, len("hello world"))
+        h(_MouseEv(2, 0))
+        self.clock.advance(0.5)                # > 0.4 s window
+        h(_MouseEv(2, 0))
+        self.assertIsNone(launcher._editor_buffer_anchor)
+
+
+class TestEditorLitePatternDoubleTripleClick(unittest.TestCase):
+    """Lite-mode Pattern field click handler: double-click selects the
+    word; triple-click selects the whole single-line field."""
+
+    def setUp(self):
+        self.clock = _FakeClock()
+        _reset_click_state(self.clock)
+
+    def tearDown(self):
+        _reset_click_state(time.monotonic)
+
+    def _setup(self, pattern):
+        prof, _src, _td = _make_profile(
+            f"#alias {{{pattern}}} {{body}}\n")
+        _reset_editor_state(prof, focus=2)
+        launcher._editor_detail_field    = 0
+        launcher._editor_pattern_cursor  = 0
+        launcher._editor_pattern_anchor  = None
+        launcher._editor_clipboard       = ""
+
+    def _handler(self, visible_col):
+        return launcher._editor_make_field_click_handler(
+            "pattern", visible_col=visible_col, line_idx=None, start=0)
+
+    def test_single_click_positions_cursor_and_clears_selection(self):
+        self._setup("hello world")
+        self._handler(2)(_MouseEv(2, 0))
+        self.assertEqual(launcher._editor_pattern_cursor, 2)
+        self.assertIsNone(launcher._editor_pattern_anchor)
+
+    def test_double_click_selects_word(self):
+        self._setup("hello world")
+        h = self._handler(7)                    # col 7 → inside "world"
+        h(_MouseEv(7, 0))                       # count 1
+        self.clock.advance(0.1)
+        h(_MouseEv(7, 0))                       # count 2
+        self.assertEqual(launcher._editor_pattern_anchor, 6)
+        self.assertEqual(launcher._editor_pattern_cursor, 11)
+        launcher._editor_pattern_copy()
+        self.assertEqual(launcher._editor_clipboard, "world")
+
+    def test_double_click_punctuation_run(self):
+        self._setup("ab!!cd")
+        h = self._handler(3)
+        h(_MouseEv(3, 0))
+        self.clock.advance(0.1)
+        h(_MouseEv(3, 0))
+        self.assertEqual(launcher._editor_pattern_anchor, 2)
+        self.assertEqual(launcher._editor_pattern_cursor, 4)
+
+    def test_double_click_past_end_selects_nothing(self):
+        self._setup("hi")
+        h = self._handler(5)
+        h(_MouseEv(5, 0))
+        self.clock.advance(0.1)
+        h(_MouseEv(5, 0))
+        self.assertIsNone(launcher._editor_pattern_anchor)
+        self.assertEqual(launcher._editor_pattern_cursor, 2)
+
+    def test_triple_click_selects_whole_field(self):
+        self._setup("hello world")
+        h = self._handler(7)
+        h(_MouseEv(7, 0))
+        self.clock.advance(0.1)
+        h(_MouseEv(7, 0))
+        self.clock.advance(0.1)
+        h(_MouseEv(7, 0))
+        self.assertEqual(launcher._editor_pattern_anchor, 0)
+        self.assertEqual(launcher._editor_pattern_cursor,
+                         len("hello world"))
+        launcher._editor_pattern_copy()
+        self.assertEqual(launcher._editor_clipboard, "hello world")
+
+    def test_click_count_resets_outside_window(self):
+        self._setup("hello world")
+        h = self._handler(7)
+        h(_MouseEv(7, 0))
+        self.clock.advance(0.5)                 # outside window
+        h(_MouseEv(7, 0))
+        # No upgrade — still single click, no selection.
+        self.assertIsNone(launcher._editor_pattern_anchor)
+
+
+class TestEditorLiteBodyDoubleTripleClick(unittest.TestCase):
+    """Lite-mode Body field click handler: double-click selects the
+    word, triple-click selects the logical line (incl. trailing `\\n`
+    except on the unterminated last line)."""
+
+    def setUp(self):
+        self.clock = _FakeClock()
+        _reset_click_state(self.clock)
+
+    def tearDown(self):
+        _reset_click_state(time.monotonic)
+
+    def _setup(self, body):
+        # Use #action so a multi-line body is wrapped in `{...}` cleanly;
+        # `\n` literal becomes a literal newline through profile_io.
+        body_lit = body.replace("\n", "\\n")
+        prof, _src, _td = _make_profile(
+            f"#action {{pat}} {{{body_lit}}}\n")
+        _reset_editor_state(prof, focus=2, kind="action")
+        # Backfill the body — `\\n` in the source survives parsing as a
+        # literal `\n` pair; replace with actual newlines so the Body
+        # selection paths see a multi-line body.
+        entry = launcher._editor_current_entry()
+        entry.body = body
+        launcher._editor_detail_field    = 1
+        launcher._editor_body_line       = 0
+        launcher._editor_body_col        = 0
+        launcher._editor_body_anchor_line = None
+        launcher._editor_body_anchor_col  = None
+        launcher._editor_clipboard       = ""
+
+    def _handler(self, visible_col, line_idx):
+        return launcher._editor_make_field_click_handler(
+            "body", visible_col=visible_col, line_idx=line_idx, start=0)
+
+    def test_single_click_positions_cursor_and_clears_selection(self):
+        self._setup("hello world")
+        self._handler(2, 0)(_MouseEv(2, 0))
+        self.assertEqual(launcher._editor_body_line, 0)
+        self.assertEqual(launcher._editor_body_col, 2)
+        self.assertIsNone(launcher._editor_body_anchor_line)
+
+    def test_double_click_selects_word(self):
+        self._setup("alpha bravo charlie")
+        h = self._handler(8, 0)                 # col 8 → inside "bravo"
+        h(_MouseEv(8, 0))
+        self.clock.advance(0.1)
+        h(_MouseEv(8, 0))
+        self.assertEqual(launcher._editor_body_anchor_line, 0)
+        self.assertEqual(launcher._editor_body_anchor_col, 6)
+        self.assertEqual(launcher._editor_body_line, 0)
+        self.assertEqual(launcher._editor_body_col, 11)
+        launcher._editor_body_copy()
+        self.assertEqual(launcher._editor_clipboard, "bravo")
+
+    def test_double_click_does_not_cross_line_boundary(self):
+        self._setup("foo bar\nbaz qux")
+        h = self._handler(0, 1)                 # col 0 of line 1 → "baz"
+        h(_MouseEv(0, 1))
+        self.clock.advance(0.1)
+        h(_MouseEv(0, 1))
+        self.assertEqual(
+            (launcher._editor_body_anchor_line,
+             launcher._editor_body_anchor_col), (1, 0))
+        self.assertEqual(
+            (launcher._editor_body_line, launcher._editor_body_col),
+            (1, 3))
+
+    def test_double_click_whitespace_run(self):
+        self._setup("a   b")
+        h = self._handler(2, 0)
+        h(_MouseEv(2, 0))
+        self.clock.advance(0.1)
+        h(_MouseEv(2, 0))
+        self.assertEqual(launcher._editor_body_anchor_col, 1)
+        self.assertEqual(launcher._editor_body_col, 4)
+
+    def test_double_click_past_eol_selects_nothing(self):
+        self._setup("hi\nyo")
+        h = self._handler(10, 0)
+        h(_MouseEv(10, 0))
+        self.clock.advance(0.1)
+        h(_MouseEv(10, 0))
+        self.assertIsNone(launcher._editor_body_anchor_line)
+        self.assertEqual(launcher._editor_body_line, 0)
+        self.assertEqual(launcher._editor_body_col, 2)
+
+    def test_triple_click_selects_line_with_newline(self):
+        self._setup("foo\nbar\nbaz")
+        h = self._handler(1, 1)                 # line 1 has a trailing \n
+        h(_MouseEv(1, 1))
+        self.clock.advance(0.1)
+        h(_MouseEv(1, 1))
+        self.clock.advance(0.1)
+        h(_MouseEv(1, 1))
+        # Anchor at (1, 0), cursor at (2, 0) — selection covers "bar\n".
+        self.assertEqual(
+            (launcher._editor_body_anchor_line,
+             launcher._editor_body_anchor_col), (1, 0))
+        self.assertEqual(
+            (launcher._editor_body_line, launcher._editor_body_col),
+            (2, 0))
+        launcher._editor_body_copy()
+        self.assertEqual(launcher._editor_clipboard, "bar\n")
+
+    def test_triple_click_last_line_without_newline(self):
+        self._setup("foo\nbar")
+        h = self._handler(1, 1)                 # last line, no trailing \n
+        h(_MouseEv(1, 1))
+        self.clock.advance(0.1)
+        h(_MouseEv(1, 1))
+        self.clock.advance(0.1)
+        h(_MouseEv(1, 1))
+        # Selection ends at line-end, no phantom newline crossed.
+        self.assertEqual(
+            (launcher._editor_body_anchor_line,
+             launcher._editor_body_anchor_col), (1, 0))
+        self.assertEqual(
+            (launcher._editor_body_line, launcher._editor_body_col),
+            (1, len("bar")))
+
+    def test_fourth_rapid_click_cycles_to_single(self):
+        self._setup("hello world")
+        h = self._handler(2, 0)
+        for _ in range(4):
+            h(_MouseEv(2, 0))
+            self.clock.advance(0.1)
+        self.assertIsNone(launcher._editor_body_anchor_line)
+        self.assertEqual(launcher._editor_body_col, 2)
+
+
 if __name__ == "__main__":
     unittest.main()
