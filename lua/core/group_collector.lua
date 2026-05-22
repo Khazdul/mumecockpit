@@ -330,27 +330,51 @@ end
 local _buffer
 local _opponent
 
+-- Maps UTF-8 Latin-1 Supplement letters to ASCII base; both cases map to
+-- lowercase so callers can lowercase ASCII once and fold in one pass.
+local _fold_map = {
+    ["á"]="a", ["à"]="a", ["â"]="a", ["ã"]="a", ["ä"]="a", ["å"]="a",
+    ["Á"]="a", ["À"]="a", ["Â"]="a", ["Ã"]="a", ["Ä"]="a", ["Å"]="a",
+    ["é"]="e", ["è"]="e", ["ê"]="e", ["ë"]="e",
+    ["É"]="e", ["È"]="e", ["Ê"]="e", ["Ë"]="e",
+    ["í"]="i", ["ì"]="i", ["î"]="i", ["ï"]="i",
+    ["Í"]="i", ["Ì"]="i", ["Î"]="i", ["Ï"]="i",
+    ["ó"]="o", ["ò"]="o", ["ô"]="o", ["õ"]="o", ["ö"]="o", ["ø"]="o",
+    ["Ó"]="o", ["Ò"]="o", ["Ô"]="o", ["Õ"]="o", ["Ö"]="o", ["Ø"]="o",
+    ["ú"]="u", ["ù"]="u", ["û"]="u", ["ü"]="u",
+    ["Ú"]="u", ["Ù"]="u", ["Û"]="u", ["Ü"]="u",
+    ["ñ"]="n", ["Ñ"]="n",
+    ["ç"]="c", ["Ç"]="c",
+    ["ý"]="y", ["ÿ"]="y", ["Ý"]="y",
+}
+
+local function _fold(s)
+    s = s:lower()
+    return (s:gsub("[\194\195][\128-\191]", _fold_map))
+end
+
 -- Resolve a buffer/opponent identity string to a member of
 -- state.group.members. The string can take several forms — NPC
 -- "<description> (LABEL)", unlabeled ally "<Name>", or labeled ally as
 -- bare label, bare name, or "<Name> (LABEL)" — so we build a candidate
--- token set and match case-insensitively against each member's label
--- (preferred) and name. Returns the matched member or nil.
+-- token set and match each member's label (preferred) and name after
+-- lowercase + accent-fold (so a case difference on an accented letter
+-- doesn't defeat the match). Returns the matched member or nil.
 local function _resolve_identity(ident)
     if type(ident) ~= "string" or ident == "" then return nil end
 
-    local tokens = { ident:lower() }
+    local tokens = { _fold(ident) }
     local before, paren = ident:match("^(.-)%s*%(([^()]+)%)%s*$")
     if paren then
-        tokens[#tokens+1] = paren:lower()
+        tokens[#tokens+1] = _fold(paren)
         if before and before ~= "" then
-            tokens[#tokens+1] = before:lower()
+            tokens[#tokens+1] = _fold(before)
         end
     end
 
     for _, member in pairs(state.group.members) do
         if member.label then
-            local mlabel = member.label:lower()
+            local mlabel = _fold(member.label)
             for _, t in ipairs(tokens) do
                 if t == mlabel then return member end
             end
@@ -358,7 +382,7 @@ local function _resolve_identity(ident)
     end
     for _, member in pairs(state.group.members) do
         if member.name then
-            local mname = member.name:lower()
+            local mname = _fold(member.name)
             for _, t in ipairs(tokens) do
                 if t == mname then return member end
             end
