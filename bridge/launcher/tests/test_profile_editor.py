@@ -3706,5 +3706,231 @@ class TestEditorWheelScroll(unittest.TestCase):
         self.assertEqual(launcher._editor_body_scroll, 0)
 
 
+class TestEditorScrollbarAutoScroll(unittest.TestCase):
+    """Phase H: click-and-hold auto-scroll on the three profile-editor
+    scrollbars (Editor-mode buffer, lite-mode entry list, lite-mode Body).
+
+    Auto-scroll is bounded by a TARGET (the held track row) and
+    self-terminates once the thumb covers that row or no further scroll
+    is possible — see ADR 0092. Tests drive `_autoscroll_tick` directly
+    so they exercise the timer mechanism without sleeping for the
+    initial delay or repeat interval."""
+
+    def setUp(self):
+        self._real_get_terminal_size = launcher.shutil.get_terminal_size
+        launcher.shutil.get_terminal_size = lambda: os.terminal_size((80, 30))
+        launcher._autoscroll_disarm()
+
+    def tearDown(self):
+        launcher.shutil.get_terminal_size = self._real_get_terminal_size
+        launcher._autoscroll_disarm()
+
+    # The arm path schedules a real asyncio timer when `_app_loop` is
+    # live; in unit tests it is None, so `_autoscroll_handle` stays None
+    # and tests can call `_autoscroll_tick` directly with no setup.
+
+    # ------------------------------------------------------------------
+    # Editor-mode buffer scrollbar
+    # ------------------------------------------------------------------
+    def _setup_buffer(self, line_count):
+        prof, _src, _td = _make_profile("")
+        _reset_editor_state(prof)
+        launcher._editor_mode             = "editor"
+        launcher._editor_toggle_focused   = False
+        launcher._editor_buffer_text      = "\n".join(
+            f"line{i}" for i in range(line_count))
+        launcher._editor_buffer_cursor    = 0
+        launcher._editor_buffer_scroll    = 0
+        launcher._editor_buffer_anchor    = None
+
+    def test_buffer_arm_performs_immediate_step(self):
+        # MOUSE_DOWN below the thumb pages by one viewport AND arms.
+        self._setup_buffer(100)
+        h = launcher._editor_buffer_scrollbar_click_handler(
+            vrow=23, sb_top=0, sb_thumb_h=5, total=100, viewport_h=24)
+        h(_MouseEv(0, 0, MouseEventType.MOUSE_DOWN))
+        self.assertEqual(launcher._editor_buffer_scroll, 24)
+        self.assertTrue(launcher._autoscroll_armed())
+
+    def test_buffer_tick_pages_toward_target(self):
+        # Each tick pages one viewport toward the held row.
+        self._setup_buffer(200)
+        h = launcher._editor_buffer_scrollbar_click_handler(
+            vrow=23, sb_top=0, sb_thumb_h=3, total=200, viewport_h=24)
+        h(_MouseEv(0, 0, MouseEventType.MOUSE_DOWN))
+        self.assertEqual(launcher._editor_buffer_scroll, 24)
+        launcher._autoscroll_tick()
+        self.assertEqual(launcher._editor_buffer_scroll, 48)
+        launcher._autoscroll_tick()
+        self.assertEqual(launcher._editor_buffer_scroll, 72)
+
+    def test_buffer_tick_self_terminates_at_target_without_mouseup(self):
+        # Holding the bottom row pages until the thumb covers it, then
+        # the step_fn returns False and disarms — MOUSE_UP not needed.
+        self._setup_buffer(100)
+        h = launcher._editor_buffer_scrollbar_click_handler(
+            vrow=23, sb_top=0, sb_thumb_h=6, total=100, viewport_h=24)
+        h(_MouseEv(0, 0, MouseEventType.MOUSE_DOWN))
+        for _ in range(20):
+            if not launcher._autoscroll_armed():
+                break
+            launcher._autoscroll_tick()
+        self.assertFalse(launcher._autoscroll_armed())
+        # body_h=24, total_visual=100 → max_scroll=76.
+        self.assertEqual(launcher._editor_buffer_scroll, 76)
+
+    def test_buffer_tick_clamps_at_bottom_then_disarms(self):
+        # Small buffer: one immediate step reaches max_scroll; the next
+        # tick sees no further movement possible and disarms.
+        self._setup_buffer(30)
+        h = launcher._editor_buffer_scrollbar_click_handler(
+            vrow=23, sb_top=0, sb_thumb_h=18, total=30, viewport_h=24)
+        h(_MouseEv(0, 0, MouseEventType.MOUSE_DOWN))
+        # max_scroll = 30 - 24 = 6.
+        self.assertEqual(launcher._editor_buffer_scroll, 6)
+        launcher._autoscroll_tick()
+        self.assertFalse(launcher._autoscroll_armed())
+        self.assertEqual(launcher._editor_buffer_scroll, 6)
+
+    def test_buffer_mouseup_disarms_early(self):
+        self._setup_buffer(100)
+        h = launcher._editor_buffer_scrollbar_click_handler(
+            vrow=23, sb_top=0, sb_thumb_h=5, total=100, viewport_h=24)
+        h(_MouseEv(0, 0, MouseEventType.MOUSE_DOWN))
+        self.assertTrue(launcher._autoscroll_armed())
+        h(_MouseEv(0, 0, MouseEventType.MOUSE_UP))
+        self.assertFalse(launcher._autoscroll_armed())
+
+    def test_buffer_disarm_explicit_cancels_further_ticks(self):
+        # _autoscroll_disarm() prevents subsequent ticks from running.
+        self._setup_buffer(100)
+        h = launcher._editor_buffer_scrollbar_click_handler(
+            vrow=23, sb_top=0, sb_thumb_h=5, total=100, viewport_h=24)
+        h(_MouseEv(0, 0, MouseEventType.MOUSE_DOWN))
+        launcher._autoscroll_disarm()
+        before = launcher._editor_buffer_scroll
+        launcher._autoscroll_tick()
+        self.assertEqual(launcher._editor_buffer_scroll, before)
+
+    def test_buffer_thumb_click_does_not_arm(self):
+        # Click on the thumb is a no-op and must not arm auto-scroll.
+        self._setup_buffer(100)
+        h = launcher._editor_buffer_scrollbar_click_handler(
+            vrow=2, sb_top=0, sb_thumb_h=5, total=100, viewport_h=24)
+        h(_MouseEv(0, 0, MouseEventType.MOUSE_DOWN))
+        self.assertEqual(launcher._editor_buffer_scroll, 0)
+        self.assertFalse(launcher._autoscroll_armed())
+
+    def test_buffer_autoscroll_tick_does_not_move_cursor(self):
+        # Phase G decoupling: scrollbar moves only the viewport, not the
+        # cursor. Auto-scroll ticks inherit that — `_editor_buffer_cursor`
+        # is untouched even after several ticks pull the viewport away.
+        self._setup_buffer(100)
+        launcher._editor_buffer_cursor = 7
+        h = launcher._editor_buffer_scrollbar_click_handler(
+            vrow=23, sb_top=0, sb_thumb_h=5, total=100, viewport_h=24)
+        h(_MouseEv(0, 0, MouseEventType.MOUSE_DOWN))
+        launcher._autoscroll_tick()
+        launcher._autoscroll_tick()
+        self.assertEqual(launcher._editor_buffer_cursor, 7)
+
+    # ------------------------------------------------------------------
+    # Lite-mode entry-list scrollbar
+    # ------------------------------------------------------------------
+    def _setup_list(self, n_entries):
+        body = "\n".join(
+            f"#alias {{a{i:02d}}} {{cmd{i}}}" for i in range(n_entries))
+        prof, _src, _td = _make_profile(body)
+        _reset_editor_state(prof, focus=1)
+        launcher._editor_list_sb = launcher.Scrollbar(
+            launcher._profile_editor_display_total(),
+            launcher._editor_list_visible(),
+            launcher._editor_list_visible(),
+        )
+        launcher._editor_list_scroll = 0
+        launcher._editor_list_cursor = 0
+
+    def test_list_step_pages_toward_target_and_self_terminates(self):
+        # Drive the list step_fn directly: arm with the bottom row of the
+        # bar as the held target. Each tick pages by `_editor_list_visible`
+        # toward it; the loop stops once the thumb covers the target row.
+        self._setup_list(100)
+        visible = launcher._editor_list_visible()
+        total = launcher._profile_editor_display_total()
+        max_scroll = max(0, total - visible)
+        target = visible - 1   # bottom track row
+        launcher._autoscroll_arm(
+            launcher._editor_list_autoscroll_step, target)
+        launcher._autoscroll_tick()
+        self.assertEqual(launcher._editor_list_scroll, visible)
+        for _ in range(20):
+            if not launcher._autoscroll_armed():
+                break
+            launcher._autoscroll_tick()
+        self.assertFalse(launcher._autoscroll_armed())
+        self.assertEqual(launcher._editor_list_scroll, max_scroll)
+
+    def test_list_autoscroll_tick_does_not_move_cursor(self):
+        self._setup_list(100)
+        launcher._editor_list_cursor = 3
+        visible = launcher._editor_list_visible()
+        launcher._autoscroll_arm(
+            launcher._editor_list_autoscroll_step, visible - 1)
+        launcher._autoscroll_tick()
+        launcher._autoscroll_tick()
+        self.assertEqual(launcher._editor_list_cursor, 3)
+
+    # ------------------------------------------------------------------
+    # Lite-mode Body-field scrollbar
+    # ------------------------------------------------------------------
+    def _setup_body(self, body_line_count):
+        prof, _src, _td = _make_profile("#alias {p} {one-liner}\n")
+        entry = prof.entries_of("alias")[0]
+        entry.body = "\n".join(f"line{i}" for i in range(body_line_count))
+        _reset_editor_state(prof, focus=2)
+        launcher._editor_detail_field = 1
+        launcher._editor_body_scroll  = 0
+        launcher._editor_body_line    = 0
+        launcher._editor_body_col     = 0
+
+    def test_body_step_pages_toward_target_and_self_terminates(self):
+        # cap=10 → page-step is 10 lines. Hold the bottom track row;
+        # each tick pages by cap until the thumb covers it.
+        self._setup_body(50)
+        cap = launcher._EDITOR_BODY_CAP_ROWS
+        launcher._autoscroll_arm(
+            launcher._editor_body_autoscroll_step, cap - 1)
+        launcher._autoscroll_tick()
+        self.assertEqual(launcher._editor_body_scroll, cap)
+        for _ in range(20):
+            if not launcher._autoscroll_armed():
+                break
+            launcher._autoscroll_tick()
+        self.assertFalse(launcher._autoscroll_armed())
+        self.assertEqual(launcher._editor_body_scroll, 50 - cap)
+
+    def test_body_step_noop_when_no_overflow(self):
+        # 5 lines fits inside the cap → step_fn returns False on first tick.
+        self._setup_body(5)
+        launcher._autoscroll_arm(
+            launcher._editor_body_autoscroll_step,
+            launcher._EDITOR_BODY_CAP_ROWS - 1)
+        launcher._autoscroll_tick()
+        self.assertEqual(launcher._editor_body_scroll, 0)
+        self.assertFalse(launcher._autoscroll_armed())
+
+    def test_body_autoscroll_tick_does_not_move_cursor(self):
+        self._setup_body(50)
+        launcher._editor_body_line = 4
+        launcher._editor_body_col  = 2
+        launcher._autoscroll_arm(
+            launcher._editor_body_autoscroll_step,
+            launcher._EDITOR_BODY_CAP_ROWS - 1)
+        launcher._autoscroll_tick()
+        launcher._autoscroll_tick()
+        self.assertEqual(launcher._editor_body_line, 4)
+        self.assertEqual(launcher._editor_body_col, 2)
+
+
 if __name__ == "__main__":
     unittest.main()

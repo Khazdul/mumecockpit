@@ -353,6 +353,14 @@ _editor_flash_text   = None
 _editor_flash_style  = ""
 _editor_flash_handle = None
 
+# Profile-editor scrollbar auto-scroll (click-and-hold on a track). See
+# ADR 0092 for the self-terminating-target design.
+_AUTOSCROLL_INITIAL_DELAY   = 0.30
+_AUTOSCROLL_REPEAT_INTERVAL = 0.10
+_autoscroll_step_fn = None     # callable() -> bool (True = keep going)
+_autoscroll_handle  = None     # asyncio handle for the next scheduled tick
+_autoscroll_target  = None     # held track row in scrollbar-cell coords
+
 # Options — top-level (Panes / Game text-layout / Connection / Back)
 _sel_options              = 0
 _hover_options            = -1
@@ -1978,6 +1986,7 @@ def _enter_profile_editor(path):
         0, _editor_list_visible(), _editor_list_visible(),
     )
     _editor_clear_flash()
+    _autoscroll_disarm()
     _push_frame("profile_editor")
     _editor_refresh_buffers()
 
@@ -2005,6 +2014,7 @@ def _profile_editor_save_and_close():
         except OSError as exc:
             err_msg = f"Save failed: {exc.strerror or exc}"
     _editor_clear_flash()
+    _autoscroll_disarm()
     _pop_frame()
     if err_msg:
         _profile_set_feedback(err_msg, C_HINT)
@@ -3160,9 +3170,14 @@ def _editor_body_scrollbar_cell(visible_row, scroll, total, visible, focused):
         if ev.event_type == MouseEventType.SCROLL_DOWN:
             _editor_body_wheel(3)
             return None
+        if ev.event_type == MouseEventType.MOUSE_UP:
+            _autoscroll_disarm()
+            return None
+        if ev.event_type == MouseEventType.MOUSE_MOVE:
+            _autoscroll_set_target(row)
+            return None
         if ev.event_type != MouseEventType.MOUSE_DOWN:
-            return None if ev.event_type == MouseEventType.MOUSE_MOVE \
-                else NotImplemented
+            return NotImplemented
         global _editor_body_scroll, _editor_body_line
         mx = max(0, total - visible)
         if row < t:
@@ -3177,6 +3192,7 @@ def _editor_body_scrollbar_cell(visible_row, scroll, total, visible, focused):
             _editor_body_line = _editor_body_scroll
         elif _editor_body_line >= _editor_body_scroll + visible:
             _editor_body_line = _editor_body_scroll + visible - 1
+        _autoscroll_arm(_editor_body_autoscroll_step, row)
         if _app:
             _app.invalidate()
         return None
@@ -4298,6 +4314,7 @@ def _editor_flip_mode():
         return
     _editor_clear_pending_closers()
     _editor_clear_flash()
+    _autoscroll_disarm()
     _editor_undo_reset()
     if _editor_mode == "lite":
         _editor_buffer_text   = profile_io.serialize_profile(_editor_data)
@@ -5686,19 +5703,29 @@ def _profile_editor_text():
                     sb_style = "fg:#585858"
                     sb_ch    = "░"
 
-                def _sb_handler(ev, row=sb_row):
+                def _sb_handler(ev, row=sb_row,
+                                t=total, v=visible):
                     if ev.event_type == MouseEventType.MOUSE_DOWN:
+                        top, thumb_h = _editor_sb_thumb_geom(t, v, v)
+                        on_thumb = (top <= row < top + thumb_h)
                         off = _editor_sb_click_to_offset(
-                            row, total, visible, visible)
+                            row, t, v, v)
                         global _editor_list_scroll
                         _editor_list_scroll = off
                         if _editor_list_sb is not None:
                             _editor_list_sb.scroll_to(off)
+                        if not on_thumb:
+                            _autoscroll_arm(
+                                _editor_list_autoscroll_step, row)
                         if _app:
                             _app.invalidate()
                         return None
+                    if ev.event_type == MouseEventType.MOUSE_UP:
+                        _autoscroll_disarm()
+                        return None
                     if ev.event_type == MouseEventType.MOUSE_MOVE:
                         _profile_editor_set_hover_row(None)
+                        _autoscroll_set_target(row)
                         return None
                     if ev.event_type == MouseEventType.SCROLL_UP:
                         _editor_list_wheel(-3)
@@ -6109,7 +6136,9 @@ def _editor_buffer_row_click_handler(logical_line, wrap_start,
 def _editor_buffer_scrollbar_click_handler(vrow, sb_top, sb_thumb_h,
                                            total, viewport_h):
     """Page-step click on the editor-mode scrollbar. Clicks above the
-    thumb page up by one viewport, clicks below page down."""
+    thumb page up by one viewport, clicks below page down. Holding the
+    button on a track row arms `_autoscroll_*` to repeat the page-step
+    toward the held row until the thumb covers it (see ADR 0092)."""
     def _h(ev, row=vrow, top=sb_top, h=sb_thumb_h, t=total, v=viewport_h):
         if ev.event_type == MouseEventType.SCROLL_UP:
             _editor_buffer_wheel(-3)
@@ -6117,16 +6146,24 @@ def _editor_buffer_scrollbar_click_handler(vrow, sb_top, sb_thumb_h,
         if ev.event_type == MouseEventType.SCROLL_DOWN:
             _editor_buffer_wheel(3)
             return None
+        if ev.event_type == MouseEventType.MOUSE_UP:
+            _autoscroll_disarm()
+            return None
+        if ev.event_type == MouseEventType.MOUSE_MOVE:
+            _autoscroll_set_target(row)
+            return None
         if ev.event_type != MouseEventType.MOUSE_DOWN:
-            return None if ev.event_type == MouseEventType.MOUSE_MOVE \
-                else NotImplemented
+            return NotImplemented
         global _editor_buffer_scroll
         max_scroll = max(0, t - v)
+        on_thumb = (top <= row < top + h)
         if row < top:
             _editor_buffer_scroll = max(0, _editor_buffer_scroll - v)
         elif row >= top + h:
             _editor_buffer_scroll = min(max_scroll,
                                         _editor_buffer_scroll + v)
+        if not on_thumb:
+            _autoscroll_arm(_editor_buffer_autoscroll_step, row)
         if _app:
             _app.invalidate()
         return None
@@ -6197,6 +6234,158 @@ def _editor_clear_flash():
         _editor_flash_handle = None
     if _app:
         _app.invalidate()
+
+
+# --- Profile editor — scrollbar click-and-hold auto-scroll ----------------
+# prompt_toolkit delivers no "button held" event stream between MOUSE_DOWN
+# and MOUSE_UP, and MOUSE_UP reaches only the fragment under the pointer
+# at release — so it cannot be the sole stop signal. Auto-scroll is
+# bounded by a TARGET (the held track row) and self-terminates once the
+# thumb covers that row, or the scroll clamps. MOUSE_UP, when received,
+# disarms early. See ADR 0092.
+def _autoscroll_arm(step_fn, target_row):
+    """Disarm any existing auto-scroll, then schedule the first tick
+    after `_AUTOSCROLL_INITIAL_DELAY`. `step_fn` performs one page-step
+    toward `_autoscroll_target` and returns True to keep going, False to
+    stop. The target lives in module state so MOUSE_MOVE handlers can
+    update it without re-arming."""
+    global _autoscroll_step_fn, _autoscroll_target
+    _autoscroll_disarm()
+    _autoscroll_step_fn = step_fn
+    _autoscroll_target  = target_row
+    if _app_loop is not None:
+        global _autoscroll_handle
+        _autoscroll_handle = _app_loop.call_later(
+            _AUTOSCROLL_INITIAL_DELAY, _autoscroll_tick)
+
+
+def _autoscroll_tick():
+    """One auto-scroll step: invoke `step_fn`, invalidate the app, then
+    either reschedule (continue) or disarm (target reached / clamped).
+    Exposed at module scope so tests can drive it directly without
+    sleeping for the timer."""
+    global _autoscroll_handle
+    _autoscroll_handle = None
+    if _autoscroll_step_fn is None:
+        return
+    try:
+        keep_going = bool(_autoscroll_step_fn())
+    except Exception:
+        keep_going = False
+    if _app:
+        _app.invalidate()
+    if not keep_going:
+        _autoscroll_disarm()
+        return
+    if _app_loop is not None:
+        _autoscroll_handle = _app_loop.call_later(
+            _AUTOSCROLL_REPEAT_INTERVAL, _autoscroll_tick)
+
+
+def _autoscroll_set_target(target_row):
+    """Best-effort target-follows-pointer update for MOUSE_MOVE while a
+    button is held. No-op when auto-scroll is not armed."""
+    global _autoscroll_target
+    if _autoscroll_step_fn is not None:
+        _autoscroll_target = target_row
+
+
+def _autoscroll_disarm():
+    """Cancel any pending tick and clear auto-scroll state. Safe to call
+    multiple times; safe to call when nothing is armed."""
+    global _autoscroll_step_fn, _autoscroll_handle, _autoscroll_target
+    _autoscroll_step_fn = None
+    _autoscroll_target  = None
+    if _autoscroll_handle is not None:
+        try:
+            _autoscroll_handle.cancel()
+        except Exception:
+            pass
+        _autoscroll_handle = None
+
+
+def _autoscroll_armed():
+    """True while a scrollbar auto-scroll is armed — for tests."""
+    return _autoscroll_step_fn is not None
+
+
+# Per-scrollbar step functions. Each re-reads the CURRENT thumb geometry
+# against `_autoscroll_target` and pages one viewport toward it; returns
+# False once the thumb covers the target row or no further scroll is
+# possible. The step function captures NO geometry — captured thumb_top
+# values go stale as the thumb moves.
+def _editor_buffer_autoscroll_step():
+    global _editor_buffer_scroll
+    target = _autoscroll_target
+    if target is None:
+        return False
+    cols = _term_cols()
+    body_h = _editor_body_h()
+    _wrap_w, total_visual, _l2v = _editor_buffer_visual_layout(cols)
+    if total_visual <= body_h:
+        return False
+    max_scroll = max(0, total_visual - body_h)
+    top, thumb_h = _editor_sb_thumb_geom_generic(
+        total_visual, body_h, body_h, _editor_buffer_scroll)
+    if top <= target < top + thumb_h:
+        return False
+    if target < top:
+        new_scroll = max(0, _editor_buffer_scroll - body_h)
+    else:
+        new_scroll = min(max_scroll, _editor_buffer_scroll + body_h)
+    if new_scroll == _editor_buffer_scroll:
+        return False
+    _editor_buffer_scroll = new_scroll
+    return True
+
+
+def _editor_list_autoscroll_step():
+    global _editor_list_scroll
+    target = _autoscroll_target
+    if target is None:
+        return False
+    visible = _editor_list_visible()
+    total = _profile_editor_display_total()
+    if total <= visible:
+        return False
+    max_scroll = max(0, total - visible)
+    top, thumb_h = _editor_sb_thumb_geom(total, visible, visible)
+    if top <= target < top + thumb_h:
+        return False
+    if target < top:
+        new_scroll = max(0, _editor_list_scroll - visible)
+    else:
+        new_scroll = min(max_scroll, _editor_list_scroll + visible)
+    if new_scroll == _editor_list_scroll:
+        return False
+    _editor_list_scroll = new_scroll
+    if _editor_list_sb is not None:
+        _editor_list_sb.scroll_to(new_scroll)
+    return True
+
+
+def _editor_body_autoscroll_step():
+    global _editor_body_scroll
+    target = _autoscroll_target
+    if target is None:
+        return False
+    cap = _EDITOR_BODY_CAP_ROWS
+    line_count = len(_editor_body_lines())
+    if line_count <= cap:
+        return False
+    max_scroll = max(0, line_count - cap)
+    top, thumb_h = _editor_sb_thumb_geom_generic(
+        line_count, cap, cap, _editor_body_scroll)
+    if top <= target < top + thumb_h:
+        return False
+    if target < top:
+        new_scroll = max(0, _editor_body_scroll - cap)
+    else:
+        new_scroll = min(max_scroll, _editor_body_scroll + cap)
+    if new_scroll == _editor_body_scroll:
+        return False
+    _editor_body_scroll = new_scroll
+    return True
 
 
 # --- Profile editor — macro key-capture overlay ---------------------------
