@@ -26,7 +26,7 @@ import textwrap
 from dataclasses import dataclass, field
 
 from palette import (
-    C_ACCENT,
+    C_ACTIVE,
     C_BODY,
     C_BUTTON_ACTIVE_FOCUSED,
     C_BUTTON_ACTIVE_UNFOCUSED,
@@ -313,7 +313,8 @@ def render_detail_lines(script, detail_w):
         for line in (textwrap.wrap(script.summary, detail_w) or [""]):
             rows.append([(C_BODY, line)])
 
-    # Aliases.
+    # Aliases. Names render in `C_ACTIVE` (bright white) — gold is
+    # reserved for cursor / focus indicators, blue for comm channels.
     if script.aliases:
         rows.append([])
         rows.append([(C_HINT, "Aliases")])
@@ -325,7 +326,7 @@ def render_detail_lines(script, detail_w):
             wrapped = textwrap.wrap(desc, avail) if desc else []
             if wrapped:
                 rows.append([
-                    (C_ACCENT, label),
+                    (C_ACTIVE, label),
                     (C_BODY,   sep + wrapped[0]),
                 ])
                 for cont in wrapped[1:]:
@@ -334,7 +335,7 @@ def render_detail_lines(script, detail_w):
                         (C_BODY, cont),
                     ])
             else:
-                rows.append([(C_ACCENT, label)])
+                rows.append([(C_ACTIVE, label)])
 
     # Help.
     if script.help:

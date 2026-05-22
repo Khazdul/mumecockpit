@@ -15,6 +15,7 @@ if SCRIPT_DIR not in sys.path:
 
 import scripts_view  # noqa: E402
 from palette import (  # noqa: E402
+    C_ACTIVE,
     C_BUTTON_ACTIVE_FOCUSED,
     C_BUTTON_ACTIVE_UNFOCUSED,
     C_HOVER,
@@ -244,6 +245,21 @@ class TestDetailLines(unittest.TestCase):
         rows = scripts_view.render_detail_lines(s, 40)
         self.assertEqual(rows[0][0][0], C_SECTION)
         self.assertEqual(rows[0][0][1], "autobow")
+
+    def test_alias_name_uses_c_active(self):
+        # Alias names render white (C_ACTIVE / bold #ffffff) — gold and
+        # blue are reserved for cursor / channel signals.
+        s = scripts_view.Script(
+            name="x", enabled=True,
+            aliases=[("foo", "do a thing")],
+        )
+        rows = scripts_view.render_detail_lines(s, 40)
+        # Find the row whose first fragment is the alias label.
+        for r in rows:
+            if r and r[0][1] == "  foo":
+                self.assertEqual(r[0][0], C_ACTIVE)
+                return
+        self.fail("alias row missing")
 
     def test_help_wraps_to_detail_w(self):
         s = scripts_view.Script(
