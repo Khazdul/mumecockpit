@@ -22,12 +22,13 @@ local _band = {
         full    = {100, 100},
     },
     mp = {
-        -- placeholder ranges; calibrate against server once data is available
         exhausted = {0,   0},
-        fainting  = {1,   25},
-        weak      = {26,  50},
-        slow      = {51,  75},
-        tired     = {76,  99},
+        fainting  = {1,   4},
+        weak      = {5,   14},
+        slow      = {15,  29},
+        tired     = {30,  49},
+        rested    = {50,  69},
+        steadfast = {70,  99},
         unwearied = {100, 100},
     },
 }

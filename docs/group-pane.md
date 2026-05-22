@@ -111,12 +111,6 @@ Default colours:
 | Mana | `#0F38B0` |
 | MP   | `#8A7838` |
 
-> **Note — MP thresholds:** MP bands in `group_collector.lua` are still
-> placeholder (calibration pending server data; see ADR 0052). At band
-> boundaries the midpoint may misclassify — the renderer applies the
-> ≤45 %/≤25 % threshold on whatever `mp_pct` it receives. Mis-categorisation
-> is visible (orange or red MP bar) and accepted; it is not hidden.
-
 ### Name overlay (full row)
 
 The member overlay text is left-aligned from column 0 across the row (`W`
