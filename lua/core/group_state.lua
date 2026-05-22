@@ -18,6 +18,7 @@ local function serialize()
             id          = m.id          or json.null,
             type        = m.type        or json.null,
             name        = m.name        or json.null,
+            label       = m.label       or json.null,
             hp          = m.hp          or json.null,
             maxhp       = m.maxhp       or json.null,
             hp_string   = m.hp_string   or json.null,

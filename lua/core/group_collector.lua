@@ -37,6 +37,7 @@ local _field_map = {
     ["id"]          = "id",
     ["type"]        = "type",
     ["name"]        = "name",
+    ["label"]       = "label",
     ["hp"]          = "hp",
     ["hp-string"]   = "hp_string",
     ["maxhp"]       = "maxhp",
@@ -108,8 +109,15 @@ end
 
 -- ── helpers ───────────────────────────────────────────────────────────────────
 
-local function _is_denied(t)
-    return t == "npc" or t == "you"
+-- Exclude "you" and unlabeled NPCs; labeled NPCs (key NPCs, mercenaries) are
+-- in. See ADR 0094.
+local function _should_include(entry)
+    local t = entry.type
+    if t == "you" then return false end
+    if t == "npc" and (entry.label == nil or entry.label == gmcp.null) then
+        return false
+    end
+    return true
 end
 
 local function _warn_unknown_type(t)
@@ -133,7 +141,7 @@ gmcp.handlers["Group.Set"] = function(body)
     local new_ids = {}
     for _, entry in ipairs(body) do
         _warn_unknown_type(entry.type)
-        if not _is_denied(entry.type) then
+        if _should_include(entry) then
             local member = {}
             for gmcp_key, state_key in pairs(_field_map) do
                 local v = entry[gmcp_key]
@@ -156,7 +164,7 @@ end
 gmcp.handlers["Group.Add"] = function(body)
     body = body or {}
     _warn_unknown_type(body.type)
-    if _is_denied(body.type) then return end
+    if not _should_include(body) then return end
 
     local member = {}
     for gmcp_key, state_key in pairs(_field_map) do

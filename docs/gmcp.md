@@ -145,13 +145,22 @@ All Event handlers store the decoded body as-is under the corresponding `state.w
 
 Member object fields (kebab-case from server, stored snake_case in `state.group.members`):
 
-    id, type, name
+    id, type, name, label
     hp, hp-string, maxhp
     mana, mana-string, maxmana
     mp, mp-string, maxmp
 
-`type` is one of `"ally"`, `"npc"`, `"you"`. Members where `type` is `"npc"` or `"you"` are
-silently excluded from `state.group.members` (denylist in `group_collector.lua`).
+`label` is a player-facing display name supplied by the server for some
+members — notably key NPCs and hired mercenaries (whose `name` is a generic
+string like `"citizen mercenary"`). The group pane renderer prefers `label`
+over `name` when present.
+
+`type` is one of `"ally"`, `"npc"`, `"you"`. Members where `type` is `"you"`
+are silently excluded from `state.group.members`. Members where `type` is
+`"npc"` are excluded **unless** they arrive with a non-null `label` — labeled
+NPCs (key NPCs, mercenaries) are included. See
+[ADR 0094](decisions/0094-labeled-npcs-in-group.md). The predicate lives in
+`group_collector.lua`.
 
 `Group.Remove` delivers a bare JSON integer (not an object). The handler converts it via
 `tonumber(body)` before removing the entry from `state.group.members`. Removals for ids

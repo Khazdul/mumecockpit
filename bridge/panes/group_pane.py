@@ -105,7 +105,7 @@ def _member_frags(member, W):
     hp_pct   = member.get("hp_pct")
     mana_pct = member.get("mana_pct")
     mp_pct   = member.get("mp_pct")
-    name     = member.get("name") or ""
+    name     = member.get("label") or member.get("name") or ""
 
     bar_hp_w, bar_mana_w, bar_mp_w = _bar_widths(W)
     bar_widths_list = [bar_hp_w, bar_mana_w, bar_mp_w]

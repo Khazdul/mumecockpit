@@ -40,6 +40,7 @@ Each member entry contains the raw vitals (`hp`, `maxhp`, `mana`, `maxmana`,
 
 | Field        | Type           | Meaning                                                  |
 |--------------|----------------|----------------------------------------------------------|
+| `label`      | `string\|null` | Player-facing name override (e.g. mercenary's given name); preferred by the renderer when non-null |
 | `hp_pct`     | `number\|null` | HP fraction in [0,1]; `null` if unresolvable             |
 | `hp_known`   | `bool`         | `true` = computed from value/maxv; `false` = band midpoint |
 | `mana_pct`   | `number\|null` | Mana fraction; `null` if unresolvable                    |
@@ -118,13 +119,13 @@ Default colours:
 
 ### Name overlay (full row)
 
-The member `name` is left-aligned from column 0 across the row (`W` columns),
-truncated to `W` chars without an ellipsis:
+The member overlay text is left-aligned from column 0 across the row (`W`
+columns), truncated to `W` chars without an ellipsis. The overlay prefers
+`label` over `name` — labeled NPCs (key NPCs, hired mercenaries) display
+their player-facing label rather than the generic `name`:
 
 ```python
-name_trunc = name[:W]
-name_start = 0
-name_end   = len(name_trunc)
+overlay = member.get("label") or member.get("name") or ""
 ```
 
 At narrow widths a long name visibly extends across HP / Mana / MP bar
@@ -136,8 +137,8 @@ and whether that column is within the bar's fill:
 | `local < bar_fill`      | `#000000` | that bar's BG|
 | `local >= bar_fill`     | `#cccccc` | terminal BG  |
 
-When `member.name` is `null` in the state file, no overlay is rendered
-(all columns follow plain-bar fill rules with spaces).
+When both `member.label` and `member.name` are `null` in the state file, no
+overlay is rendered (all columns follow plain-bar fill rules with spaces).
 
 ### Overflow indicator
 
