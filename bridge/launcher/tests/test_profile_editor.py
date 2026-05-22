@@ -1891,5 +1891,146 @@ class TestEditorModePendingClearedOnNonEditingActions(unittest.TestCase):
         self.assertEqual(launcher._editor_pending_closers, [])
 
 
+class TestProfileEditorClipboardEditorMode(unittest.TestCase):
+    """Phase C — clipboard in the Editor-mode text buffer. Shared
+    `_editor_clipboard` register; OSC 52 write rides along but is a
+    no-op in tests (`_app is None`)."""
+
+    def _setup_buffer(self, text, cursor=0):
+        prof, _src, _td = _make_profile("")
+        _reset_editor_state(prof)
+        launcher._editor_mode             = "editor"
+        launcher._editor_toggle_focused   = False
+        launcher._editor_buffer_text      = text
+        launcher._editor_buffer_cursor    = cursor
+        launcher._editor_buffer_scroll    = 0
+        launcher._editor_buffer_anchor    = None
+        launcher._editor_pending_closers  = []
+        launcher._editor_clipboard        = ""
+
+    def test_copy_selection_writes_register(self):
+        self._setup_buffer("abcdef", cursor=4)
+        launcher._editor_buffer_anchor = 1   # selection "bcd"
+        launcher._editor_buffer_copy()
+        self.assertEqual(launcher._editor_clipboard, "bcd")
+        # Cursor and buffer unchanged.
+        self.assertEqual(launcher._editor_buffer_text, "abcdef")
+        self.assertEqual(launcher._editor_buffer_cursor, 4)
+
+    def test_copy_without_selection_copies_line_with_newline(self):
+        self._setup_buffer("aa\nbb\ncc\n", cursor=4)   # mid line 1 ("bb")
+        launcher._editor_buffer_copy()
+        self.assertEqual(launcher._editor_clipboard, "bb\n")
+
+    def test_copy_last_line_without_trailing_newline_adds_one(self):
+        # Line-copy semantics include a trailing newline even when the
+        # last line is unterminated.
+        self._setup_buffer("xx\nyy", cursor=4)
+        launcher._editor_buffer_copy()
+        self.assertEqual(launcher._editor_clipboard, "yy\n")
+
+    def test_cut_selection_deletes_and_copies(self):
+        self._setup_buffer("abcdef", cursor=4)
+        launcher._editor_buffer_anchor = 1
+        launcher._editor_buffer_cut()
+        self.assertEqual(launcher._editor_clipboard, "bcd")
+        self.assertEqual(launcher._editor_buffer_text, "aef")
+        self.assertEqual(launcher._editor_buffer_cursor, 1)
+        self.assertIsNone(launcher._editor_buffer_anchor)
+
+    def test_cut_without_selection_drops_line_with_trailing_newline(self):
+        # The cursor's line is `bb\n`; both go.
+        self._setup_buffer("aa\nbb\ncc\n", cursor=4)
+        launcher._editor_buffer_cut()
+        self.assertEqual(launcher._editor_clipboard, "bb\n")
+        self.assertEqual(launcher._editor_buffer_text, "aa\ncc\n")
+
+    def test_cut_last_line_eats_preceding_newline(self):
+        # Last line has no trailing `\n` — to avoid leaving a blank
+        # line, the cut consumes the preceding `\n` instead.
+        self._setup_buffer("aa\nyy", cursor=4)
+        launcher._editor_buffer_cut()
+        self.assertEqual(launcher._editor_clipboard, "yy\n")
+        self.assertEqual(launcher._editor_buffer_text, "aa")
+
+    def test_paste_inserts_register_at_cursor(self):
+        self._setup_buffer("ace", cursor=1)
+        launcher._editor_clipboard = "bd"
+        launcher._editor_buffer_paste()
+        self.assertEqual(launcher._editor_buffer_text, "abdce")
+        self.assertEqual(launcher._editor_buffer_cursor, 3)
+
+    def test_paste_over_selection_replaces_it(self):
+        self._setup_buffer("abcdef", cursor=4)
+        launcher._editor_buffer_anchor = 1   # selection "bcd"
+        launcher._editor_clipboard = "XYZ"
+        launcher._editor_buffer_paste()
+        self.assertEqual(launcher._editor_buffer_text, "aXYZef")
+        self.assertEqual(launcher._editor_buffer_cursor, 4)
+        self.assertIsNone(launcher._editor_buffer_anchor)
+
+    def test_bracketed_paste_normalises_crlf(self):
+        self._setup_buffer("", cursor=0)
+        launcher._editor_buffer_bracketed_paste("one\r\ntwo\rthree")
+        self.assertEqual(launcher._editor_buffer_text, "one\ntwo\nthree")
+
+    def test_bracketed_paste_multi_line_inserts_inline(self):
+        self._setup_buffer("ab", cursor=2)
+        launcher._editor_buffer_bracketed_paste("XX\nYY")
+        self.assertEqual(launcher._editor_buffer_text, "abXX\nYY")
+        # Cursor lands after the last inserted character.
+        self.assertEqual(launcher._editor_buffer_cursor,
+                         len("abXX\nYY"))
+
+    def test_cut_clears_pending_closers(self):
+        self._setup_buffer("ab{}", cursor=3)
+        launcher._editor_pending_closers = [3]
+        launcher._editor_buffer_anchor = 2   # selection "{"
+        launcher._editor_buffer_cut()
+        self.assertEqual(launcher._editor_pending_closers, [])
+
+    def test_paste_clears_pending_closers(self):
+        self._setup_buffer("ab{}", cursor=3)
+        launcher._editor_pending_closers = [3]
+        launcher._editor_clipboard = "Z"
+        launcher._editor_buffer_paste()
+        self.assertEqual(launcher._editor_pending_closers, [])
+
+    def test_bracketed_paste_clears_pending_closers(self):
+        self._setup_buffer("ab{}", cursor=3)
+        launcher._editor_pending_closers = [3]
+        launcher._editor_buffer_bracketed_paste("Z")
+        self.assertEqual(launcher._editor_pending_closers, [])
+
+    def test_copy_leaves_pending_closers_intact(self):
+        self._setup_buffer("ab{}", cursor=3)
+        launcher._editor_pending_closers = [3]
+        launcher._editor_buffer_anchor = 2
+        launcher._editor_buffer_copy()
+        # Copy is non-mutating — pending closers untouched.
+        self.assertEqual(launcher._editor_pending_closers, [3])
+
+
+class TestClipboardCtrlCFilter(unittest.TestCase):
+    """Phase C — the global `c-c` quit must NOT fire inside the
+    profile_editor frame. ESC is the documented editor exit."""
+
+    def test_global_c_c_quit_filter_evaluates_per_frame(self):
+        # The handler is registered with `filter=~_in_frame("profile_editor")`.
+        # We can't easily introspect the bound filter, but the same
+        # `_in_frame` helper is module-public — confirm it flips state
+        # as the frame changes.
+        cond = launcher._in_frame("profile_editor")
+        # Force a sane terminal size so `_size_ok()` is True in tests.
+        prev_frame = launcher._current_frame
+        try:
+            launcher._current_frame = "profile_editor"
+            self.assertTrue(cond())
+            launcher._current_frame = "main"
+            self.assertFalse(cond())
+        finally:
+            launcher._current_frame = prev_frame
+
+
 if __name__ == "__main__":
     unittest.main()

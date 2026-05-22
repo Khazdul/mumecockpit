@@ -6,6 +6,7 @@ try:
     from prompt_toolkit import Application
     from prompt_toolkit.filters import Condition
     from prompt_toolkit.key_binding import KeyBindings
+    from prompt_toolkit.keys import Keys
     from prompt_toolkit.layout import DynamicContainer, Layout, VerticalAlign
     from prompt_toolkit.layout.containers import (
         ConditionalContainer, Float, FloatContainer, HSplit, VSplit, Window,
@@ -21,6 +22,7 @@ except ImportError:
 
 import asyncio
 import atexit
+import base64
 import bisect
 import glob
 import os
@@ -258,6 +260,13 @@ _editor_buffer_syntax_cache       = (None, None)
 # the `}` overtype, and `right`. See docs/launcher.md → profile_editor
 # → Editor mode → Brace assistance.
 _editor_pending_closers           = []
+# Shared in-app clipboard register, used by both Editor mode and the Lite
+# Pattern / Body text fields. Copy / cut write here AND emit an OSC 52
+# system-clipboard sequence (see `_emit_osc52_copy`); paste reads from
+# here only. Bracketed paste from another application is handled by the
+# terminal's own paste shortcut, so `c-v` deliberately never reads the
+# system clipboard — see docs/decisions/0090-osc52-write-not-read.md.
+_editor_clipboard                 = ""
 # Detail-panel editing state. Phase 3.5 covers Pattern + Body text inputs;
 # phase 4 adds Highlights' palette grid (sharing the detail_field == 1 slot
 # with Body, dispatched on active kind).
@@ -4521,6 +4530,150 @@ def _editor_buffer_begin_selection_if_needed():
     if _editor_buffer_anchor is None:
         _editor_buffer_anchor = max(
             0, min(len(_editor_buffer_text), _editor_buffer_cursor))
+
+
+# ---------------------------------------------------------------------------
+# Clipboard — shared register + OSC 52 system-clipboard write
+# ---------------------------------------------------------------------------
+# Editor mode and the Lite Pattern / Body fields share `_editor_clipboard`
+# as an in-app register. Copy and cut also emit an OSC 52 sequence so the
+# system clipboard receives the same text on terminals that implement it
+# (most modern ones do). Paste reads only from the in-app register —
+# bringing text in from another application uses the terminal's own
+# bracketed-paste shortcut. See docs/decisions/0090-osc52-write-not-read.md.
+
+def _emit_osc52_copy(text):
+    """Push `text` to the system clipboard via the OSC 52 escape sequence.
+
+    Best-effort: when the terminal doesn't support OSC 52 the sequence is
+    silently discarded; the in-app register still works either way. We
+    write through the prompt_toolkit output (it owns the screen) and
+    guard on `_app` so calls before the application boots are no-ops."""
+    if _app is None or not text:
+        return
+    try:
+        payload = base64.b64encode(text.encode("utf-8")).decode("ascii")
+        seq = f"\x1b]52;c;{payload}\x07"
+        out = _app.output
+        out.write_raw(seq)
+        out.flush()
+    except Exception:
+        # OSC 52 is a courtesy — never let it raise into a key handler.
+        pass
+
+
+def _clipboard_write(text):
+    """Place `text` into the in-app register and best-effort onto the
+    system clipboard via OSC 52."""
+    global _editor_clipboard
+    _editor_clipboard = text
+    _emit_osc52_copy(text)
+
+
+def _bracketed_paste_normalise(text):
+    """Normalise terminal-paste line endings to `\\n`. Bracketed paste
+    delivers `\\r\\n` on Windows-clipboard sources and lone `\\r` from
+    some macOS pasteboards; the editor model only understands `\\n`."""
+    return text.replace("\r\n", "\n").replace("\r", "\n")
+
+
+# --- Editor-mode (buffer) copy / cut / paste -------------------------
+
+def _editor_buffer_selection_range():
+    """`(lo, hi)` for the live editor-mode selection, or None when no
+    selection is set or the anchor coincides with the cursor."""
+    if _editor_buffer_anchor is None:
+        return None
+    cur = max(0, min(len(_editor_buffer_text), _editor_buffer_cursor))
+    anchor = max(0, min(len(_editor_buffer_text), _editor_buffer_anchor))
+    if cur == anchor:
+        return None
+    return (min(cur, anchor), max(cur, anchor))
+
+
+def _editor_buffer_current_line_span():
+    """Return `(start, end)` covering the current line PLUS its trailing
+    `\\n` (when present). Used by the no-selection copy/cut path."""
+    text = _editor_buffer_text
+    starts = _editor_buffer_line_starts()
+    line, _col = _editor_buffer_cursor_to_line_col()
+    start = starts[line]
+    end = starts[line + 1] if line + 1 < len(starts) else len(text)
+    return start, end
+
+
+def _editor_buffer_copy():
+    """Copy selection — or the current line + its `\\n` — into the shared
+    register and out via OSC 52. Cursor and buffer unchanged."""
+    sel = _editor_buffer_selection_range()
+    if sel is not None:
+        lo, hi = sel
+        _clipboard_write(_editor_buffer_text[lo:hi])
+        return
+    lo, hi = _editor_buffer_current_line_span()
+    if lo == hi:
+        return
+    text = _editor_buffer_text[lo:hi]
+    if not text.endswith("\n"):
+        text = text + "\n"
+    _clipboard_write(text)
+
+
+def _editor_buffer_cut():
+    """Cut selection — or the current line — into the shared register.
+    With no selection, removes one adjacent newline so no blank line is
+    left behind. Clears `_editor_pending_closers` like any other
+    structural mutation."""
+    global _editor_buffer_text, _editor_buffer_cursor
+    sel = _editor_buffer_selection_range()
+    if sel is not None:
+        lo, hi = sel
+        _clipboard_write(_editor_buffer_text[lo:hi])
+        _editor_buffer_consume_selection()
+        _editor_clear_pending_closers()
+        return
+    lo, hi = _editor_buffer_current_line_span()
+    text = _editor_buffer_text[lo:hi]
+    if not text:
+        return
+    copied = text if text.endswith("\n") else text + "\n"
+    _clipboard_write(copied)
+    # Drop the line. If the line has a trailing `\n`, that's already in
+    # [lo, hi); otherwise (last line, no trailing `\n`) eat the preceding
+    # `\n` instead, so the previous line isn't left dangling.
+    if text.endswith("\n"):
+        new_lo, new_hi = lo, hi
+    elif lo > 0 and _editor_buffer_text[lo - 1] == "\n":
+        new_lo, new_hi = lo - 1, hi
+    else:
+        new_lo, new_hi = lo, hi
+    _editor_buffer_text = (
+        _editor_buffer_text[:new_lo] + _editor_buffer_text[new_hi:])
+    _editor_buffer_cursor = min(new_lo, len(_editor_buffer_text))
+    _editor_shift_pending_closers_on_delete(new_lo, new_hi - new_lo)
+    _editor_clear_pending_closers()
+
+
+def _editor_buffer_paste():
+    """Paste the shared register at the cursor. Replaces any live
+    selection. Clears `_editor_pending_closers` so a tentative `}`
+    cannot survive a paste."""
+    if not _editor_clipboard:
+        return
+    _editor_buffer_insert(_editor_clipboard)
+    _editor_clear_pending_closers()
+
+
+def _editor_buffer_bracketed_paste(text):
+    """Insert pasted `text` at the cursor — used by the terminal's
+    bracketed-paste path. Normalises CRLF / lone CR first; replaces any
+    live selection; deliberately does NOT route through the `{` key
+    handler so auto-close never fires on pasted text."""
+    text = _bracketed_paste_normalise(text)
+    if not text:
+        return
+    _editor_buffer_insert(text)
+    _editor_clear_pending_closers()
 
 
 def _editor_buffer_content_width(cols):
@@ -10505,8 +10658,12 @@ def _in_pe_toggle():
 kb = KeyBindings()
 
 
-@kb.add("c-c")
+@kb.add("c-c", filter=~_in_frame("profile_editor"))
 def _kb_ctrl_c(event):
+    # `c-c` quits everywhere EXCEPT the profile editor, where the same
+    # key copies text. ESC remains the documented editor exit; removing
+    # the quit footgun here protects users from a stray ctrl-C wiping a
+    # session of unsaved edits.
     event.app.exit()
 
 
@@ -11401,6 +11558,30 @@ def _kb_peditor_buffer_tab(event):
 def _kb_peditor_buffer_stab(event):
     _editor_clear_pending_closers()
     _profile_editor_cycle_focus(-1)
+
+
+@kb.add("c-c", filter=_in_pe_editor())
+def _kb_peditor_buffer_copy(event):
+    # Copy never mutates, so `_editor_pending_closers` is preserved.
+    _editor_buffer_copy()
+
+
+@kb.add("c-x", filter=_in_pe_editor())
+def _kb_peditor_buffer_cut(event):
+    _editor_buffer_cut()
+    _editor_buffer_scroll_cursor_into_view()
+
+
+@kb.add("c-v", filter=_in_pe_editor())
+def _kb_peditor_buffer_paste(event):
+    _editor_buffer_paste()
+    _editor_buffer_scroll_cursor_into_view()
+
+
+@kb.add(Keys.BracketedPaste, filter=_in_pe_editor())
+def _kb_peditor_buffer_bracketed_paste(event):
+    _editor_buffer_bracketed_paste(event.data or "")
+    _editor_buffer_scroll_cursor_into_view()
 
 
 @kb.add("<any>", filter=_in_pe_editor())
