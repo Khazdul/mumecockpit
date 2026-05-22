@@ -239,20 +239,46 @@ have no universal teardown contract, so toggling mid-session would
 leave phantom registrations; the launcher's Scripts page (reached via
 the Exit-to-main-menu path) is the intended toggle workflow. The
 footer omits the Toggle key — `↑↓ Move · PgUp/PgDn Scroll · ESC Back` —
-and the absence is the read-only signal.
+and the absence is the read-only signal. Clicks on script rows are
+select-only; they move the browse cursor without flipping the
+checkbox.
 
-**Keyboard.** `↑` / `↓` moves the browse cursor through the list
-(updating the detail). `Home` / `End` jumps to the ends.
-`PgUp` / `PgDn` scrolls the detail panel by one body's worth of rows
-(clamped to the detail content total). Mouse wheel is intentionally
-not wired here — tmux `display-popup` only forwards click events, so
-keyboard is the documented scroll path. ESC pops back to `options`.
+**Left column — Back inline.** The body layout matches the
+launcher's Scripts page: script rows, then a blank spacer, then an
+in-column `<< Back >>` row rendered through `menu_chrome.menu_row`
+(`selected` / `hover` / `inactive` grammar — gold arrows on the
+cursor, light `C_HOVER` label on mouse hover, `C_ITEM` label
+otherwise). The browse cursor traverses script rows and Back via
+`↑` / `↓`; while the cursor sits on Back the detail panel keeps
+showing the latched script (`detail_idx=_scripts_cursor` is passed
+to the shared renderer). Clicking Back pops the frame, same as ESC.
+
+**Keyboard.** `↑` / `↓` steps the browse cursor through script rows
+and Back, skipping the blank spacer (mirrors the launcher).
+`Home` / `End` jumps to the first / last script. `Enter` on Back
+pops the frame; `Enter` on a script row is a no-op (the popup is
+read-only). `PgUp` / `PgDn` scrolls the detail panel by one body's
+worth of rows (clamped to the detail content total). Mouse wheel is
+intentionally not wired here — tmux `display-popup` only forwards
+click events, so keyboard is the documented scroll path. ESC pops
+back to `options`.
+
+**Mouse.** Hover lights the row under the pointer (`C_HOVER` on
+script rows; light `<< Back >>` on Back). A click on a script row
+moves the browse cursor to that row and resets the detail scroll —
+read-only, no toggle. A click on the list or detail scrollbar gutter
+page-steps in the click direction (no wheel branch — the popup is
+wheel-free). The hover-clear invariant applies: title / footer
+chrome, blank spacer, and per-row padding around `<< Back >>` carry
+a clear-hover handler so the highlight does not stick when the
+pointer moves off a selectable row.
 
 **Empty state.** When the cache is missing or empty (e.g. before the
 first brain startup of a fresh install) the body region shows the
 shared centred *"No scripts found — drop a .lua file in lua/scripts/"*
-message with a dim *"see docs/scripts.md"* pointer; the footer
-collapses to `ESC Back`.
+message with a dim *"see docs/scripts.md"* pointer; the cursor lands
+on Back automatically (it's the only navigable row), so `Enter` /
+click on Back / `ESC` all pop. The footer collapses to `ESC Back`.
 
 Not covered: live script state (IDLE/RUNNING/FIRING) and a
 stop-all-scripts button — both parked.

@@ -1350,10 +1350,11 @@ renderer.
 
 1. **Script rows** — `[X]` / `[ ]` + name, left-aligned inside the
    column, padded to the column width.
-2. **Blank spacer** — one row, not selectable.
-3. **Back row** — `Back` rendered through `menu_chrome.button_fragment`
-   and horizontally centred inside the column width. Carries no
-   checkbox.
+2. **Blank spacer** — one row, not selectable, sitting immediately
+   below the last script row.
+3. **Back row** — `Back` rendered through `menu_chrome.menu_row`
+   (`<< Back >>` grammar) and horizontally centred inside the column
+   width. Carries no checkbox.
 
 The list-row colour grammar matches the panes-grid /
 profile-editor pattern:
@@ -1367,15 +1368,20 @@ profile-editor pattern:
   "this is inert" signal is consistent across both frames);
 - hover on a non-cursor row → `C_HOVER` (text-only hover lift).
 
-The Back row uses the three-state button grammar from
-`menu_chrome.button_fragment`: `selected_focused` (amber bg) when the
-cursor is on it, `hover` (preview) when the mouse hovers, `inactive`
-otherwise.
+The Back row uses the `menu_chrome.menu_row` grammar — grammatically
+identical to the `options_spotlights` Back row: `selected` (gold
+`<< Back >>`) when the cursor is on it, `hover` (light `C_HOVER`
+label) when the mouse hovers, `inactive` (`C_ITEM` label) otherwise.
+No background block in any state — the cursor signal is the gold
+arrows, never an inverted/filled button.
 
 A scrollbar cell sits in the column immediately to the right of the
 list when the script count exceeds the visible list rows. The list
-window is `body_h - 2` rows tall (the spacer + Back claim two rows at
-the bottom of the column).
+column reserves two trailing rows for the spacer + Back, so the
+list window is at most `body_h - 2` rows tall; with a shorter
+catalog the list shrinks to its visible-script count and the spacer
++ Back sit directly below the last script (any remaining rows under
+Back are blank filler).
 
 **Detail panel.** Sections, top to bottom (omitted when empty):
 
