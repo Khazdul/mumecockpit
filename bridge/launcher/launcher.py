@@ -4320,6 +4320,13 @@ def _editor_brace_balance_text():
     return "  ·  ".join(parts)
 
 
+def _editor_line_col_text():
+    """Always-on footer indicator for the editor cursor's 1-indexed
+    line and column. `_editor_buffer_cursor_to_line_col` is 0-indexed."""
+    line, col = _editor_buffer_cursor_to_line_col()
+    return f"Ln {line + 1}, Col {col + 1}"
+
+
 def _editor_buffer_line_count():
     """Number of logical lines in the buffer.
 
@@ -4579,6 +4586,58 @@ def _editor_buffer_begin_selection_if_needed():
     if _editor_buffer_anchor is None:
         _editor_buffer_anchor = max(
             0, min(len(_editor_buffer_text), _editor_buffer_cursor))
+
+
+def _editor_buffer_move_line(direction):
+    """Swap the cursor's logical line with the one above (`-1`) or below
+    (`+1`). The cursor follows the moved line with its column preserved
+    (clamped to the new line's length). Returns True if the buffer
+    mutated; False (with no undo entry, no closer reset) at the buffer
+    ends.
+
+    Newline structure is preserved by swapping only the line bodies in
+    place — newline positions don't move. This makes the last-line-
+    without-trailing-newline edge a no-op for line structure.
+
+    Recorded as a single atomic undo transaction; clears any pending
+    auto-close offsets (a move is a structural mutation, like cut/paste).
+    Any active selection is dropped — multi-line block move is out of
+    scope per Phase E."""
+    global _editor_buffer_text
+    if direction not in (-1, +1):
+        return False
+    line, col = _editor_buffer_cursor_to_line_col()
+    last = _editor_buffer_line_count() - 1
+    if direction == -1 and line == 0:
+        return False
+    if direction == +1 and line >= last:
+        return False
+
+    _editor_clear_pending_closers()
+    _editor_buffer_clear_selection()
+    _editor_undo_record(None)
+
+    top_line = line - 1 if direction == -1 else line
+    bot_line = top_line + 1
+    new_line = top_line if direction == -1 else bot_line
+
+    starts = _editor_buffer_line_starts()
+    text = _editor_buffer_text
+    top_start = starts[top_line]
+    bot_start = starts[bot_line]
+    bot_end = (starts[bot_line + 1]
+               if bot_line + 1 < len(starts) else len(text))
+    top_seg = text[top_start:bot_start]
+    bot_seg = text[bot_start:bot_end]
+    top_has_nl = top_seg.endswith("\n")
+    bot_has_nl = bot_seg.endswith("\n")
+    top_body = top_seg[:-1] if top_has_nl else top_seg
+    bot_body = bot_seg[:-1] if bot_has_nl else bot_seg
+    new_middle = (bot_body + ("\n" if top_has_nl else "")
+                  + top_body + ("\n" if bot_has_nl else ""))
+    _editor_buffer_text = text[:top_start] + new_middle + text[bot_end:]
+    _editor_buffer_set_cursor_from_line_col(new_line, col)
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -5497,31 +5556,45 @@ def _editor_append_footer(frags, cols):
                   "ESC Save & back")
     else:
         footer = "Tab Field  ·  ESC Save & back"
-    # A live c-c / c-x flash takes over the centred message slot. It also
-    # suppresses the editor-mode brace indicator so the two never share
-    # the row. Static hint tokens return on the next render after the
-    # auto-clear timer fires.
+    # A live c-c / c-x flash takes over the centred message slot. The
+    # editor-mode Ln/Col indicator stays pinned to the right edge in
+    # both branches; the brace-balance segment only joins it on the
+    # static-hint branch (the flash branch keeps the row uncluttered).
     if _editor_flash_text:
         flash = _editor_flash_text
         leading_pad = _pad_centre(flash, cols)
         frags.append(("", leading_pad, _editor_clear_outer_hover))
         frags.append((_editor_flash_style, flash, _editor_clear_outer_hover))
+        if _editor_mode == "editor":
+            lc_text = _editor_line_col_text()
+            used = len(leading_pad) + len(flash)
+            pad = max(1, cols - used - len(lc_text))
+            frags.append(("", " " * pad, _editor_clear_outer_hover))
+            frags.append((C_HINT, lc_text, _editor_clear_outer_hover))
     else:
         leading_pad = _pad_centre(footer, cols)
         frags.append(("", leading_pad, _editor_clear_outer_hover))
         frags.append((C_HINT, footer, _editor_clear_outer_hover))
-        # Editor-mode brace-balance indicator. Right-aligned on the footer
-        # row in C_DANGER when the buffer has unmatched braces; absent when
-        # balanced. See docs/launcher.md → profile_editor → Editor mode →
-        # Brace assistance.
+        # Right-aligned: brace-balance (C_DANGER, when unbalanced) sits
+        # immediately left of the always-on Ln/Col, joined by `  ·  `.
+        # Ln/Col stays at column (cols - len(lc_text)) regardless of
+        # whether the brace segment is present. See docs/launcher.md →
+        # profile_editor → Editor mode.
         if _editor_mode == "editor":
+            lc_text = _editor_line_col_text()
             balance_text = _editor_brace_balance_text()
+            sep = "  ·  "
+            used = len(leading_pad) + len(footer)
+            right_w = len(lc_text)
             if balance_text:
-                used = len(leading_pad) + len(footer)
-                pad = max(1, cols - used - len(balance_text))
-                frags.append(("", " " * pad, _editor_clear_outer_hover))
+                right_w += len(balance_text) + len(sep)
+            pad = max(1, cols - used - right_w)
+            frags.append(("", " " * pad, _editor_clear_outer_hover))
+            if balance_text:
                 frags.append((C_DANGER, balance_text,
                               _editor_clear_outer_hover))
+                frags.append((C_HINT, sep, _editor_clear_outer_hover))
+            frags.append((C_HINT, lc_text, _editor_clear_outer_hover))
     if _editor_feedback_text:
         frags.append(("", "\n", _editor_clear_outer_hover))
         frags.append((
@@ -11742,7 +11815,14 @@ def _kb_peditor_lite_bracketed_paste(event):
     )
 
 
-@kb.add("escape", filter=_in_frame("profile_editor"), eager=True)
+# `eager=True` is deliberately omitted: the Alt+↑/↓ line-move bindings
+# arrive as the escape-prefix chords `("escape", "up")` / `("escape",
+# "down")`. prompt_toolkit needs the brief follow-key wait to choose
+# between a bare ESC and a chord; an eager bare ESC would fire before
+# the arrow could disambiguate. The only user-visible cost is a short
+# delay before ESC save-and-close. See also the same trade-off on the
+# macro-keybind overlay's ESC binding.
+@kb.add("escape", filter=_in_frame("profile_editor"))
 def _kb_peditor_escape(event):
     _profile_editor_save_and_close()
 
@@ -11857,6 +11937,24 @@ def _kb_peditor_buffer_down(event):
     _editor_undo_close()
     _kb_peditor_buffer_move_cursor(+1)
     _editor_buffer_scroll_cursor_into_view()
+
+
+# Alt+↑ / Alt+↓ move the cursor's logical line up or down. prompt_toolkit
+# delivers Alt+arrow as the escape-prefix chord (`escape`, then `up` /
+# `down`), so the bare ESC binding above must NOT be `eager=True` — see
+# the comment there. `_editor_buffer_move_line` records the move as a
+# single atomic undo transaction and clears pending closers; no-op at
+# the buffer ends does not push an undo entry.
+@kb.add("escape", "up", filter=_in_pe_editor())
+def _kb_peditor_buffer_alt_up(event):
+    if _editor_buffer_move_line(-1):
+        _editor_buffer_scroll_cursor_into_view()
+
+
+@kb.add("escape", "down", filter=_in_pe_editor())
+def _kb_peditor_buffer_alt_down(event):
+    if _editor_buffer_move_line(+1):
+        _editor_buffer_scroll_cursor_into_view()
 
 
 @kb.add("home", filter=_in_pe_editor())

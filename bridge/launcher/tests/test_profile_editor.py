@@ -2666,5 +2666,187 @@ class TestEditorModeUndoRedo(unittest.TestCase):
         self.assertLessEqual(len(launcher._editor_undo_stack), cap)
 
 
+class TestEditorModeMoveLine(unittest.TestCase):
+    """Phase E — Alt+↑/↓ swaps the cursor's logical line with its
+    neighbour. The cursor follows the moved line with its column
+    preserved (clamped to the new line's length). Newline structure is
+    preserved by swapping line bodies in place, so moving the last
+    line — which may lack a trailing `\\n` — does not corrupt the
+    buffer. The move is recorded as a single atomic undo transaction
+    and clears `_editor_pending_closers`."""
+
+    def _setup(self, text="", cursor=0):
+        prof, _src, _td = _make_profile("")
+        _reset_editor_state(prof)
+        launcher._editor_mode             = "editor"
+        launcher._editor_toggle_focused   = False
+        launcher._editor_buffer_text      = text
+        launcher._editor_buffer_cursor    = cursor
+        launcher._editor_buffer_scroll    = 0
+        launcher._editor_buffer_anchor    = None
+        launcher._editor_pending_closers  = []
+        launcher._editor_clipboard        = ""
+        launcher._editor_undo_reset()
+
+    # --- Basic swap behaviour --------------------------------------
+    def test_move_up_swaps_lines(self):
+        self._setup(text="aaa\nbbb\nccc\n", cursor=4)   # start of line 1
+        self.assertTrue(launcher._editor_buffer_move_line(-1))
+        self.assertEqual(launcher._editor_buffer_text, "bbb\naaa\nccc\n")
+
+    def test_move_down_swaps_lines(self):
+        self._setup(text="aaa\nbbb\nccc\n", cursor=0)   # start of line 0
+        self.assertTrue(launcher._editor_buffer_move_line(+1))
+        self.assertEqual(launcher._editor_buffer_text, "bbb\naaa\nccc\n")
+
+    # --- No-op at the buffer ends ----------------------------------
+    def test_move_up_at_top_is_noop(self):
+        self._setup(text="aaa\nbbb\n", cursor=1)        # line 0
+        self.assertFalse(launcher._editor_buffer_move_line(-1))
+        self.assertEqual(launcher._editor_buffer_text, "aaa\nbbb\n")
+        self.assertEqual(launcher._editor_buffer_cursor, 1)
+        # No undo entry on a no-op move.
+        self.assertEqual(launcher._editor_undo_stack, [])
+
+    def test_move_down_at_bottom_is_noop(self):
+        self._setup(text="aaa\nbbb", cursor=5)          # mid line 1 (last)
+        self.assertFalse(launcher._editor_buffer_move_line(+1))
+        self.assertEqual(launcher._editor_buffer_text, "aaa\nbbb")
+        self.assertEqual(launcher._editor_buffer_cursor, 5)
+        self.assertEqual(launcher._editor_undo_stack, [])
+
+    def test_single_line_buffer_both_directions_are_noop(self):
+        self._setup(text="solo", cursor=2)
+        self.assertFalse(launcher._editor_buffer_move_line(-1))
+        self.assertFalse(launcher._editor_buffer_move_line(+1))
+        self.assertEqual(launcher._editor_buffer_text, "solo")
+
+    # --- Cursor + column follow the moved line ---------------------
+    def test_cursor_follows_moved_line_up(self):
+        # Column 2 on line 1; after move-up, cursor on line 0, col 2.
+        self._setup(text="aaaa\nbbbb\ncccc\n", cursor=7)    # line 1, col 2
+        self.assertTrue(launcher._editor_buffer_move_line(-1))
+        line, col = launcher._editor_buffer_cursor_to_line_col()
+        self.assertEqual((line, col), (0, 2))
+
+    def test_cursor_follows_moved_line_down(self):
+        self._setup(text="aaaa\nbbbb\ncccc\n", cursor=2)    # line 0, col 2
+        self.assertTrue(launcher._editor_buffer_move_line(+1))
+        line, col = launcher._editor_buffer_cursor_to_line_col()
+        self.assertEqual((line, col), (1, 2))
+
+    def test_column_preserved_when_destination_line_is_shorter(self):
+        # Cursor on a long line, neighbour is shorter. Since the moved
+        # line's text travels with it, the cursor stays at the same
+        # column without truncation — the move never widens the gap.
+        self._setup(text="a\nbbbb\ncc\n", cursor=6)         # line 1, col 4
+        self.assertTrue(launcher._editor_buffer_move_line(-1))
+        # Line 1 ("bbbb") is now at position 0; cursor still at col 4.
+        self.assertEqual(launcher._editor_buffer_text, "bbbb\na\ncc\n")
+        line, col = launcher._editor_buffer_cursor_to_line_col()
+        self.assertEqual((line, col), (0, 4))
+
+    # --- Trailing-newline edge -------------------------------------
+    def test_last_line_without_trailing_newline_move_up(self):
+        # The last line has no trailing `\n`. Move-up must preserve
+        # the trailing-no-newline shape (still 2 lines, last has no nl).
+        self._setup(text="aaa\nbbb", cursor=4)              # line 1, col 0
+        self.assertTrue(launcher._editor_buffer_move_line(-1))
+        self.assertEqual(launcher._editor_buffer_text, "bbb\naaa")
+        self.assertEqual(launcher._editor_buffer_line_count(), 2)
+        self.assertFalse(launcher._editor_buffer_text.endswith("\n"))
+        line, col = launcher._editor_buffer_cursor_to_line_col()
+        self.assertEqual((line, col), (0, 0))
+
+    def test_move_down_into_last_line_position_preserves_shape(self):
+        # Moving line 0 down so it becomes the (newline-less) last line.
+        self._setup(text="aaa\nbbb", cursor=0)
+        self.assertTrue(launcher._editor_buffer_move_line(+1))
+        self.assertEqual(launcher._editor_buffer_text, "bbb\naaa")
+        self.assertFalse(launcher._editor_buffer_text.endswith("\n"))
+        line, col = launcher._editor_buffer_cursor_to_line_col()
+        self.assertEqual((line, col), (1, 0))
+
+    def test_move_last_line_up_then_down_round_trips(self):
+        self._setup(text="aaa\nbbb", cursor=4)
+        self.assertTrue(launcher._editor_buffer_move_line(-1))
+        self.assertEqual(launcher._editor_buffer_text, "bbb\naaa")
+        self.assertTrue(launcher._editor_buffer_move_line(+1))
+        self.assertEqual(launcher._editor_buffer_text, "aaa\nbbb")
+
+    # --- Undo: a move is one transaction ---------------------------
+    def test_move_is_one_undo_transaction(self):
+        self._setup(text="aaa\nbbb\nccc\n", cursor=4)
+        self.assertTrue(launcher._editor_buffer_move_line(-1))
+        self.assertEqual(launcher._editor_buffer_text, "bbb\naaa\nccc\n")
+        launcher._editor_undo()
+        self.assertEqual(launcher._editor_buffer_text, "aaa\nbbb\nccc\n")
+        self.assertEqual(launcher._editor_buffer_cursor, 4)
+
+    def test_move_round_trip_with_redo(self):
+        self._setup(text="aaa\nbbb\nccc\n", cursor=4)
+        launcher._editor_buffer_move_line(-1)
+        launcher._editor_undo()
+        launcher._editor_redo()
+        self.assertEqual(launcher._editor_buffer_text, "bbb\naaa\nccc\n")
+
+    def test_move_clears_pending_closers(self):
+        self._setup(text="aaa\nbbb\nccc\n", cursor=4)
+        launcher._editor_pending_closers = [10]
+        self.assertTrue(launcher._editor_buffer_move_line(-1))
+        self.assertEqual(launcher._editor_pending_closers, [])
+
+    def test_move_clears_active_selection(self):
+        # Selection is dropped: multi-line block move is out of scope.
+        self._setup(text="aaa\nbbb\nccc\n", cursor=4)
+        launcher._editor_buffer_anchor = 6              # selection within line 1
+        self.assertTrue(launcher._editor_buffer_move_line(-1))
+        self.assertIsNone(launcher._editor_buffer_anchor)
+
+
+class TestEditorModeLineColIndicator(unittest.TestCase):
+    """Phase E — `Ln L, Col C` is 1-indexed and tracks the cursor."""
+
+    def _setup(self, text="", cursor=0):
+        prof, _src, _td = _make_profile("")
+        _reset_editor_state(prof)
+        launcher._editor_mode             = "editor"
+        launcher._editor_toggle_focused   = False
+        launcher._editor_buffer_text      = text
+        launcher._editor_buffer_cursor    = cursor
+        launcher._editor_buffer_anchor    = None
+
+    def test_empty_buffer_reports_ln1_col1(self):
+        self._setup()
+        self.assertEqual(launcher._editor_line_col_text(),
+                         "Ln 1, Col 1")
+
+    def test_first_line_offset_reports_ln1_col_n_plus_1(self):
+        # Cursor in the middle of the first line — col is 1-indexed.
+        self._setup(text="abcdef", cursor=3)
+        self.assertEqual(launcher._editor_line_col_text(),
+                         "Ln 1, Col 4")
+
+    def test_second_line_reports_ln2(self):
+        self._setup(text="aaa\nbbb", cursor=5)            # line 1, col 1
+        self.assertEqual(launcher._editor_line_col_text(),
+                         "Ln 2, Col 2")
+
+    def test_end_of_buffer_with_trailing_newline_reports_phantom_line(self):
+        # Trailing `\n` creates a phantom empty line; cursor at end
+        # lands on its start → 1-indexed Ln 3, Col 1.
+        self._setup(text="aa\nbb\n", cursor=6)
+        self.assertEqual(launcher._editor_line_col_text(),
+                         "Ln 3, Col 1")
+
+    def test_tracks_cursor_after_move(self):
+        self._setup(text="aaa\nbbb\nccc\n", cursor=0)
+        self.assertEqual(launcher._editor_line_col_text(),
+                         "Ln 1, Col 1")
+        launcher._editor_buffer_cursor = 4               # start of line 1
+        self.assertEqual(launcher._editor_line_col_text(),
+                         "Ln 2, Col 1")
+
+
 if __name__ == "__main__":
     unittest.main()
