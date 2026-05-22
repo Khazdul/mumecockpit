@@ -364,7 +364,7 @@ function M.on_hire()
         label_lc    = label_lc,
         gmcp_id     = nil,
         present     = false,
-        expiry      = os.time() + 24 * 60,
+        expiry      = os.time() + 25 * 60,
         silver_paid = 10,
         state       = "active",
         warned_5min = false,
