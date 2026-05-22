@@ -48,8 +48,9 @@ before the disconnect step — see "Auto-open on disconnect" below.
   prompt_toolkit's key-disambiguation timeout; `app.ttimeoutlen` /
   `app.timeoutlen` are also lowered to 50 ms so bare ESC feels instant.
 - **Arrow keys** — navigate within the current frame's selectable rows
-  (wrap-around). PageUp/PageDown in the Scripts frame scrolls by ten
-  rows.
+  (wrap-around). In the two-column Scripts frame, `↑` / `↓` moves the
+  browse cursor through the list; `PgUp` / `PgDn` scrolls the detail
+  panel by one body's worth of rows.
 - **Enter / Space** — activates the highlighted row. In `exit_confirm`,
   Y confirms; any other key cancels back to main.
 - **Mouse click** — clicks on a row both select and activate it in a
@@ -212,16 +213,49 @@ popup's Panes submenu only.
 
 ## Scripts submenu
 
-Ports the launcher's Scripts page into the popup. Reads `bridge/runtime/scripts.cache`
-on each render — always reflects the cache as written at the most recent
-brain startup. Scroll is keyboard-only: UP/DOWN moves one row, PageUp/PageDown
-moves ten. **Mouse wheel does not scroll** the Scripts list — see Scope trims
-for the cause. A scroll hint appears in the footer only when content exceeds
-the visible rows. Rendering matches the launcher (A:/S:/H:/B:/M: tags,
-60-col block centred); the parser is reimplemented in Python rather than
-extracted into a shared helper, to keep the launcher's bash renderer stable.
-Not covered: live script state (IDLE/RUNNING/FIRING) and a stop-all-scripts
-button — both parked.
+Two-column `[ list | detail ]` browser of the brain's currently-loaded
+script catalog. Layout is rendered through the shared
+`bridge/launcher/scripts_view.py` module (precedent: `panes_grid`, ADR
+0086) so the popup and the launcher's Scripts page paint pixel-for-pixel
+the same body region — only the title-block chrome differs (`blank_above=1`
+in the popup, `blank_above=2` in the launcher).
+
+**Source — `scripts.cache`, frozen at brain startup.** The popup reads
+`bridge/runtime/scripts.cache` once on every frame push and renders that
+catalog verbatim. `scripts.cache` is written by the brain's two-tier
+loader once at startup with every script in `lua/scripts/` — both
+enabled and disabled — including each script's `@summary`, `@alias`,
+and `@help` metadata. Disabled scripts therefore appear in the popup's
+list with `[ ]` and dimmed styling, and clicking a disabled row updates
+the detail panel just like an enabled row. A mid-session addition to
+`lua/scripts/` is intentionally **not** shown — the popup must agree
+with the brain's loaded set, which only changes on the next cockpit
+start. See [docs/scripts.md](scripts.md) and [ADR 0093](decisions/0093-script-metadata-headers-and-opt-in-loading.md)
+for the cache format and the loader's design.
+
+**Read-only by design.** The popup never toggles a script's enabled
+state. An enabled script's aliases, triggers, and event subscriptions
+have no universal teardown contract, so toggling mid-session would
+leave phantom registrations; the launcher's Scripts page (reached via
+the Exit-to-main-menu path) is the intended toggle workflow. The
+footer omits the Toggle key — `↑↓ Move · PgUp/PgDn Scroll · ESC Back` —
+and the absence is the read-only signal.
+
+**Keyboard.** `↑` / `↓` moves the browse cursor through the list
+(updating the detail). `Home` / `End` jumps to the ends.
+`PgUp` / `PgDn` scrolls the detail panel by one body's worth of rows
+(clamped to the detail content total). Mouse wheel is intentionally
+not wired here — tmux `display-popup` only forwards click events, so
+keyboard is the documented scroll path. ESC pops back to `options`.
+
+**Empty state.** When the cache is missing or empty (e.g. before the
+first brain startup of a fresh install) the body region shows the
+shared centred *"No scripts found — drop a .lua file in lua/scripts/"*
+message with a dim *"see docs/scripts.md"* pointer; the footer
+collapses to `ESC Back`.
+
+Not covered: live script state (IDLE/RUNNING/FIRING) and a
+stop-all-scripts button — both parked.
 
 ## Statistics frame
 

@@ -56,7 +56,7 @@ no longer a per-pane subframe.
 | Session detect | `tmux has-session -t mume` + `list-clients` re-probed on every render → top item is "Enter MUME", "Resume MUME", or "Mirror MUME (attached elsewhere)" |
 | Profile page | Sortable table of `ttpp/profiles/*.tin` (Name + Selected columns) paired with a centred Options widget — Select, New, Edit, Rename, Delete, Export, Back. See the [Profile sub-menu](#profile-sub-menu) section below. `default` cannot be renamed or deleted. "Create blank" copies from `bridge/launcher/templates/blank_profile.tin` (single source of truth — see ADR 0042). The active profile is written to `startup.conf` and consumed by `ttpp/core/config.tin` at tt++ startup. |
 | Options page | Navigation hub: **Panes**, **Scripts**, **Spotlights**, **Text layout** (placeholder), **Connection**, blank row, **Back**. See the [Options sub-menu](#options-sub-menu) section below for each child frame. All Options changes persist to `bridge/runtime/startup.conf` on Back / ESC. |
-| Scripts page | Opened from Options → Scripts. Reads `bridge/runtime/scripts.cache`; scrollable via UP/DOWN, PageUp/PageDown |
+| Scripts page | Opened from Options → Scripts. Two-column `[ list \| detail ]` manager of `lua/scripts/<name>.lua`; toggles enabled state via `bridge/runtime/scripts.conf` (deferred write on Back/ESC). See [`options_scripts` frame](#options_scripts-frame) below. |
 | Spotlights | Cross-character reel of deaths, level-ups, pvp-kills, and achievements aggregated from every character's sealed runs. Opens `log_view` in spotlight mode; empty-state frame when nothing has been captured yet. See the [Spotlights sub-menu](#spotlights-sub-menu) section and ADR 0077. |
 | About page | Reads `bridge/launcher/about.txt`; word-wrapped, cached per resize, scrollable. Current version on the right of the title; an "Update available: vX.Y.Z" line appears in `C_ACCENT` when `version.cache` contains a newer tag |
 | Update flow | Selecting "Update" runs `bridge/release/update.sh` in a worker thread; result keyed off update.sh's exit codes (0/10/20/21/22/other → complete/no-update/aborted/failed). rc==0 re-execs `bridge/launcher/launcher.sh` to pick up the new code |
@@ -1191,8 +1191,10 @@ out in ADR 0082.
 Navigation hub pushed by activating "Options" on the main frame. Children:
 
 - **Panes** → `options_panes` — per-pane enable/disable + colour selection.
-- **Scripts** → `scripts` — opens the same Scripts frame documented in the
-  feature table above. ESC returns to `options`.
+- **Scripts** → `scripts` — opens the two-column Scripts manager
+  documented under [`options_scripts` frame](#options_scripts-frame).
+  ESC saves any pending toggles to `bridge/runtime/scripts.conf` and
+  returns to `options`.
 - **Spotlights** → `options_spotlights` — per-kind toggles for the
   Spotlights reel (deaths, level-ups, PvP kills, achievements).
 - **Text layout** → `options_coming_soon` — placeholder for future
@@ -1310,6 +1312,105 @@ painted across every cell of a disabled grid row — label, brackets,
 and swatch all share it so the row reads as unmistakably off. The
 cursor cell's brackets escape the dim treatment so a disabled row
 stays navigable.
+
+### `options_scripts` frame
+
+Single frame for the Scripts submenu, pushed from Options → Scripts.
+Two-column `[ list (+scrollbar) | detail ]` layout shared with the
+in-game popup via the `scripts_view` module (precedent: `panes_grid`,
+ADR 0086). Title `─── Scripts ───` through `menu_chrome.title_block(...,
+blank_above=2)`; footer hint through `menu_chrome.footer_block`.
+
+**Data source — live scan.** On every push of the frame the launcher
+walks `lua/scripts/*.lua`, parses each file's `@`-tagged metadata
+header (`scripts_view.parse_script_header`) and joins the result with
+the enabled state resolved from `bridge/runtime/scripts.conf` (falling
+back to `bridge/launcher/templates/scripts.conf`; see ADR 0093 and
+`docs/scripts.md`). `lua/core/` is **not** shown — it loads
+unconditionally and has no opt-in story. The launcher does **not**
+read `scripts.cache`: that file is the brain's snapshot for the popup;
+the launcher runs pre-tmux and must reflect the folder as it is right
+now, including a script that was just added or removed since the last
+cockpit run.
+
+**Layout.** The body region is centred horizontally as a package of
+`list-width + 1 (sb) + 3 (gap) + detail-width` cells; the list is
+biased narrow (`[X] ` + the longest script name + 1 right-pad,
+floored at `MIN_LIST_W = 16`) so the detail panel takes the
+remainder. The detail panel itself reserves its rightmost cell for an
+inline scrollbar whenever its content overflows the body. Widths and
+spacing live in obvious constants in `scripts_view.py` (`MIN_LIST_W`,
+`SB_W`, `GAP`, `OUTER_MARGIN`) — a visual pass can tune them without
+touching the renderer.
+
+**List rows.** Each row is `[X]` / `[ ]` + script name, padded to the
+list column width. The colour grammar matches the panes-grid /
+profile-editor pattern:
+
+- cursor row, list focused → `C_BUTTON_ACTIVE_FOCUSED` (amber bg,
+  black fg — the whole row, including the checkbox glyph, paints
+  black-on-amber);
+- cursor row, list unfocused → `C_BUTTON_ACTIVE_UNFOCUSED` (grey bg);
+- non-cursor enabled row → `C_ITEM` (bright text on the default bg);
+- non-cursor disabled row → `C_PANE_OFF` (dim grey across the whole
+  row — same token the panes grid uses for an off pane, so the
+  "this is inert" signal is consistent across both frames);
+- hover on a non-cursor row → `C_HOVER` (text-only hover lift).
+
+A scrollbar cell sits in the column immediately to the right of the
+list when the catalog exceeds the visible body rows.
+
+**Detail panel.** Sections, top to bottom (omitted when empty):
+
+1. Script name in `C_SECTION`.
+2. Status line — `● Enabled` in `C_OK` (green) or `○ Disabled` in
+   `C_PANE_OFF` (dim grey). Mirrors the cursor row's enabled glyph
+   in language a screen reader can announce.
+3. Summary, word-wrapped to the detail width in `C_BODY`.
+4. `Aliases` header (`C_HINT`) followed by one row per alias —
+   alias name in `C_ACCENT`, description in `C_BODY`, indented
+   continuation lines aligned under the description column.
+5. `Help` header (`C_HINT`) followed by the script's `@help` lines,
+   word-wrapped to the detail width in `C_ITEM`. Blank `@help` lines
+   round-trip as blank rows so the source's paragraph breaks survive.
+
+When the detail content exceeds the body region the inline scrollbar
+appears in the detail panel's rightmost cell and the launcher's
+detail-panel scroll state (`_scripts_detail_scroll`) tracks it. The
+cursor moving to a new script resets the scroll to 0.
+
+**Focus model.** Two zones — `list` and `detail`. `Tab` /
+`Shift+Tab` cycles; `Left` snaps focus to the list, `Right` snaps
+focus to the detail (same arrow-snap model as the
+`profile_editor` LITE pattern). `↑` / `↓` and `PgUp` / `PgDn` move
+the list cursor when the list is focused and scroll the detail when
+the detail is focused; `Home` / `End` jump to the ends of whichever
+panel is focused. The mouse wheel scrolls whichever panel is under
+the pointer.
+
+**Toggling.** `Enter` and `Space` on a focused list row flip that
+script's `enabled` flag in memory and set `_scripts_dirty`. Mouse
+click on a list row jumps the cursor and toggles in one motion.
+Toggling on the detail zone is intentionally inert (`Space` does
+nothing there) — toggles are a list-zone action only.
+
+**Persistence — deferred.** The toggle never writes to disk; on
+`Back` / `ESC`, the frame writes `bridge/runtime/scripts.conf` via
+`scripts_view.write_scripts_conf` (atomic via sibling `.tmp` +
+`os.replace`) with an explicit `<name>=0/1` line for every script in
+the catalog — same shape as the shipped template, same write-everything-
+on-save behaviour as the Panes and Spotlights submenus. Changes take
+effect at the **next cockpit start**; nothing happens live. ADR 0093
+covers why mid-session toggling is intentionally out of scope.
+
+**Empty state.** When `lua/scripts/` contains no `.lua` files the
+list is empty, the detail panel centres a two-line message — *"No
+scripts found — drop a .lua file in lua/scripts/"* — with a dim *"see
+docs/scripts.md"* pointer below it. The footer collapses to `ESC
+Back` (no Toggle key, since there's nothing to toggle).
+
+**Footer hint.** `↑↓ Move · Space Toggle · Tab Focus · ESC Back` when
+the catalog has at least one entry; `ESC Back` on the empty state.
 
 ### `options_connection` frame
 
@@ -2309,12 +2410,14 @@ All frames render through `prompt_toolkit` controls. Layout building blocks:
   of the frame. `profile_editor` uses the same body + flex_spacer +
   footer-Window contract (see `_build_profile_editor`) to anchor its
   footer hint to the final terminal row in both lite and editor mode.
-- **Scrolling frames** — `scripts` and `about` are single-window
-  frames that render `title_block` (4 rows), a viewport-sized body
-  (always emits `_term_rows() - 5` lines, padding with blanks when the
-  content list is shorter), and `footer_block` on the final terminal
-  row. The body slices its lines list by `_scripts_scroll` /
-  `_about_scroll`; scroll keybinds key off the same viewport height.
+- **Scrolling frames** — `about` is a single-window frame that
+  renders `title_block` (4 rows), a viewport-sized body (always emits
+  `_term_rows() - 5` lines, padding with blanks when the content list
+  is shorter), and `footer_block` on the final terminal row. The body
+  slices its lines list by `_about_scroll`; scroll keybinds key off
+  the same viewport height. (`scripts` was a member of this family
+  until it was replaced with the two-column `[ list | detail ]`
+  manager — see [`options_scripts` frame](#options_scripts-frame).)
 - **Minimum-size gate** — when `cols < 60` or `rows < 18`, the root getter
   returns a single "Terminal too small" container instead of the active
   frame. A `<any>`-filter binding swallows key input while the gate is
