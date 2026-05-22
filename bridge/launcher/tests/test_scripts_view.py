@@ -376,19 +376,24 @@ class TestRenderBody(unittest.TestCase):
                 return
         self.fail("autobow row missing")
 
-    def test_hover_applied_only_in_interactive_mode(self):
-        # readonly mode must not paint hover even when hover_row is set.
-        frags = scripts_view.render_body(
-            self._scripts(), cursor_idx=0, list_scroll=0, detail_scroll=0,
-            term_cols=120, body_h=6, focus="list", mode="readonly",
-            hover_row=1,
-        )
-        for f in frags:
-            text = f[1]
-            if "autostab" in text and text.startswith("[X]"):
-                self.assertEqual(f[0], C_ITEM)
-                return
-        self.fail("autostab row missing")
+    def test_hover_paints_c_hover_in_both_modes(self):
+        # Hover styling is applied in both interactive and readonly
+        # modes — the popup needs hover too, and the read-only contract
+        # is enforced by the mouse handlers (no toggling), not by the
+        # renderer.
+        for mode in ("interactive", "readonly"):
+            frags = scripts_view.render_body(
+                self._scripts(), cursor_idx=0, list_scroll=0,
+                detail_scroll=0, term_cols=120, body_h=6, focus="list",
+                mode=mode, hover_row=1,
+            )
+            for f in frags:
+                text = f[1]
+                if "autostab" in text and text.startswith("[X]"):
+                    self.assertEqual(f[0], C_HOVER, f"mode={mode}")
+                    break
+            else:
+                self.fail(f"autostab hover row missing (mode={mode})")
 
     def test_hover_paints_c_hover_in_interactive(self):
         frags = scripts_view.render_body(

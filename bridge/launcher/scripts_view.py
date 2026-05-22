@@ -15,10 +15,11 @@
 #     when overflowing), gap, detail (also with an inline scrollbar when
 #     overflowing).
 #
-# The renderer is parameterised by mode — `interactive` (launcher: cursor
-# row paints amber-gold for focus, mouse handlers attach to every cell)
-# vs `readonly` (popup: same layout, no hover treatment, handler
-# factories return None).
+# The renderer is parameterised by mode — `interactive` (launcher:
+# script rows are toggleable) vs `readonly` (popup: same layout,
+# no toggling). Both modes support hover and mouse handlers; the
+# popup's read-only contract is enforced by its mouse handlers
+# (clicks move the cursor without toggling), not by the renderer.
 
 import os
 import re
@@ -403,8 +404,9 @@ def render_body(scripts, cursor_idx, list_scroll, detail_scroll,
                         otherwise — matches the panes-grid /
                         profile-editor colour grammar).
       mode           — "interactive" (launcher) or "readonly" (popup).
-                        readonly suppresses hover treatment; the
-                        checkbox glyphs render either way.
+                        The renderer treats both modes identically;
+                        the mode flag is reserved for future read-only
+                        affordances.
       row_handler    — `f(list_row_idx) -> mouse_handler` attached to
                         every fragment on a list row. None → 2-tuples.
       sb_handler     — `f(body_row) -> mouse_handler` for the list
@@ -415,7 +417,7 @@ def render_body(scripts, cursor_idx, list_scroll, detail_scroll,
       detail_sb_handler — `f(body_row) -> mouse_handler` for the detail
                         scrollbar cell. None → 2-tuple.
       hover_row      — list row currently under the mouse pointer, or
-                        None. Ignored when `mode == "readonly"`.
+                        None. Applied in both modes.
       detail_idx     — index of the script whose detail content fills
                         the right column. Defaults to `cursor_idx` (so
                         the popup, which never passes this, keeps the
@@ -575,8 +577,7 @@ def _list_cell_frag(scripts, n, list_row, cursor_idx, focus, mode,
 
     script = scripts[list_row]
     is_cursor = (list_row == cursor_idx)
-    is_hover  = (mode == "interactive"
-                 and hover_row is not None
+    is_hover  = (hover_row is not None
                  and hover_row == list_row
                  and not is_cursor)
     ck = "[X]" if script.enabled else "[ ]"
