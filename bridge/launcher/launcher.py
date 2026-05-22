@@ -54,7 +54,9 @@ from palette import (  # noqa: E402
     _S_HINT, _S_PVP, _S_ALLY, _S_STAR,
     PANE_COLOR_ORDER,
     TTPP_COLOR_STYLES, TTPP_COLOR_NAMES,
+    C_SYN_COMMAND, C_SYN_BRACE, C_SYN_DELIM, C_SYN_VAR, C_SYN_CODE,
 )
+import ttpp_syntax  # noqa: E402
 import credits  # noqa: E402
 import history_filter  # noqa: E402
 import log_player  # noqa: E402
@@ -243,6 +245,11 @@ _editor_buffer_line_starts_cache  = (None, None)
 #   (text_ref, starts_list)
 _editor_buffer_visual_cache       = (None, None, None)
 #   (text_ref, cols, (wrap_w, total, line_to_visual))
+_editor_buffer_syntax_cache       = (None, None)
+#   (text_ref, spans) — best-effort lexical tokens from ttpp_syntax.tokenize()
+#   for Editor-mode syntax highlighting. Same identity-keyed invalidation
+#   pattern as the other two caches: every buffer mutation allocates a
+#   fresh string, so an `is`-miss triggers retokenisation.
 # Detail-panel editing state. Phase 3.5 covers Pattern + Body text inputs;
 # phase 4 adds Highlights' palette grid (sharing the detail_field == 1 slot
 # with Body, dispatched on active kind).
@@ -4159,6 +4166,33 @@ def _editor_buffer_line_starts():
     return starts
 
 
+def _editor_buffer_syntax_spans():
+    """Return the lexical token spans for the current buffer text — list
+    of `(start, end, kind)` tuples in ascending, non-overlapping order.
+    Wraps `ttpp_syntax.tokenize()` with an identity-keyed cache so
+    tokenisation runs once per buffer mutation, not once per render
+    frame."""
+    global _editor_buffer_syntax_cache
+    text = _editor_buffer_text
+    cached_text, cached_spans = _editor_buffer_syntax_cache
+    if cached_text is text and cached_spans is not None:
+        return cached_spans
+    spans = ttpp_syntax.tokenize(text)
+    _editor_buffer_syntax_cache = (text, spans)
+    return spans
+
+
+# Map from tokeniser kind → palette fg style. Kept module-local so the
+# renderer can do a single dict lookup per token span without re-computing.
+_EDITOR_SYNTAX_STYLE = {
+    "command": C_SYN_COMMAND,
+    "brace":   C_SYN_BRACE,
+    "delim":   C_SYN_DELIM,
+    "var":     C_SYN_VAR,
+    "code":    C_SYN_CODE,
+}
+
+
 def _editor_buffer_line_count():
     """Number of logical lines in the buffer.
 
@@ -4802,6 +4836,15 @@ def _editor_append_editor_body(frags, cols):
         total_visual, body_h, body_h, scroll)
     sb_visible = overflow
 
+    # Syntax-highlight spans for the whole buffer (identity-cached, so
+    # cheap on every frame after the first post-mutation tokenisation).
+    # `syn_cursor` walks forward through `syn_spans` across all visible
+    # rows; it never rewinds because visible rows iterate in ascending
+    # absolute-offset order.
+    syn_spans  = _editor_buffer_syntax_spans()
+    syn_n      = len(syn_spans)
+    syn_cursor = 0
+
     # Pre-compute (logical_line, wrap_idx) for each visible visual row.
     # `l2v[line_idx] = (start_visual, wrap_count)`; we walk forward from
     # the line that contains the first visible visual row.
@@ -4878,17 +4921,33 @@ def _editor_append_editor_body(frags, cols):
             cell_styles = [None] * wrap_w
             cell_chars  = [" "] * wrap_w
             for ccol in range(wrap_w):
+                token_fg = None
                 if ccol < chunk_len:
                     ch = chunk[ccol]
                     cell_chars[ccol] = ch
+                    abs_off = chunk_lo + ccol
                     in_sel = (sel_lo is not None
-                              and sel_lo <= chunk_lo + ccol < sel_hi)
+                              and sel_lo <= abs_off < sel_hi)
+                    # Skip spans that end at/before this cell, then peek
+                    # at the next span — if it starts at/before us we're
+                    # inside it. Monotonic across the whole frame.
+                    while (syn_cursor < syn_n
+                           and syn_spans[syn_cursor][1] <= abs_off):
+                        syn_cursor += 1
+                    if (syn_cursor < syn_n
+                            and syn_spans[syn_cursor][0] <= abs_off):
+                        token_fg = _EDITOR_SYNTAX_STYLE[
+                            syn_spans[syn_cursor][2]]
                 else:
                     ch = " "
                     in_sel = False
                 is_cursor_cell = (ccol == cursor_cell)
                 if (is_cursor_cell and buffer_focused) or in_sel:
                     cell_styles[ccol] = C_SELECTED
+                elif token_fg is not None:
+                    cell_styles[ccol] = (
+                        f"{token_fg} {row_bg}".strip() if row_bg
+                        else token_fg)
                 elif ch != " ":
                     cell_styles[ccol] = content_text_style
                 else:

@@ -23,6 +23,7 @@ __all__ = [
     "_S_HINT", "_S_PVP", "_S_ALLY", "_S_STAR",
     "PANE_COLORS", "PANE_COLOR_ORDER", "pane_color_hex",
     "TTPP_COLOR_STYLES", "TTPP_COLOR_NAMES",
+    "C_SYN_COMMAND", "C_SYN_BRACE", "C_SYN_DELIM", "C_SYN_VAR", "C_SYN_CODE",
 ]
 
 # ---------------------------------------------------------------------------
@@ -229,3 +230,19 @@ TTPP_COLOR_STYLES = {
 # value is "in the palette" (cursor lands on its swatch) or a custom value
 # (rendered as plain text, also surfaced in the Custom slot).
 TTPP_COLOR_NAMES = frozenset(TTPP_COLOR_STYLES.keys())
+
+# ---------------------------------------------------------------------------
+# tt++ syntax-highlight palette (profile editor — Editor mode).
+#
+# Five muted hues painted on top of the editor body's base C_ITEM, by the
+# lexical tokeniser in ttpp_syntax.py. First-pass values meant to be tuned
+# after live use — they read as "coloured but not loud" against the
+# dark backdrop and compose cleanly with the current-line tint and the
+# C_SELECTED selection band.
+# ---------------------------------------------------------------------------
+C_SYN_COMMAND = "fg:#5fafaf"   # `#command`           — muted teal
+C_SYN_BRACE   = "fg:#8290a0"   # `{` and `}`          — slate
+C_SYN_DELIM   = "fg:#c8a060"   # `;`                  — dim amber
+C_SYN_VAR     = "fg:#87af87"   # `$x`, `${x}`, `&x`,
+                               # `%1`, `%*`           — sage green
+C_SYN_CODE    = "fg:#9b86b3"   # `<088>`, `\n`, `\xFF` — muted lavender

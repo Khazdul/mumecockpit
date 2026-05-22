@@ -645,16 +645,31 @@ the keyboard or clicks in the buffer (the next cursor move pulls
 the viewport back to the cursor, matching the convention in code
 editors).
 
-**Layout caches.** `_editor_buffer_line_starts_cache` and
-`_editor_buffer_visual_cache` are keyed off the buffer text's
-*identity* (`is` compare); Python strings are immutable, so every
-mutator allocates a fresh string and invalidates both caches
-automatically. Without them, the three layout passes per render
-(one direct, two via `_editor_buffer_cursor_visual_row`) would
-each be O(N·L) over the full buffer — visibly laggy on files of
-~20+ lines. The renderer also emits per-row style runs (line-num
-cell + 1–5 content runs + scrollbar) with a single per-row mouse
-handler instead of one fragment + closure per cell.
+**Layout caches.** `_editor_buffer_line_starts_cache`,
+`_editor_buffer_visual_cache`, and `_editor_buffer_syntax_cache`
+are keyed off the buffer text's *identity* (`is` compare); Python
+strings are immutable, so every mutator allocates a fresh string
+and invalidates all three caches automatically. Without them, the
+three layout passes per render (one direct, two via
+`_editor_buffer_cursor_visual_row`) would each be O(N·L) over the
+full buffer — visibly laggy on files of ~20+ lines. The renderer
+also emits per-row style runs (line-num cell + 1–5 content runs +
+scrollbar) with a single per-row mouse handler instead of one
+fragment + closure per cell.
+
+**Syntax highlighting.** Editor mode renders five token classes in
+muted colours on top of the C_ITEM base — tt++ commands
+(`#alias`), braces, `;` delimiters, variables (`$x`, `${x}`,
+`&x`, `%1`, `%*`), and `<>` colour codes / `\`-escapes. The
+tokeniser lives in [`ttpp_syntax.py`](../bridge/launcher/ttpp_syntax.py);
+it is purely lexical (no grammar awareness) and single-pass, so
+an occasional `;` inside an action body or a `#` inside a string
+literal will be coloured — accepted as a harmless cost for the
+much simpler implementation (see ADR 0089). The palette tokens
+are `C_SYN_COMMAND`, `C_SYN_BRACE`, `C_SYN_DELIM`, `C_SYN_VAR`,
+`C_SYN_CODE`; they compose with the current-line tint and the
+`C_SELECTED` selection band. Lite mode is untouched, and the
+lite ↔ editor round-trip is unaffected.
 
 #### Focus model
 
