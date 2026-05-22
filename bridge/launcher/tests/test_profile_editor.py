@@ -2370,5 +2370,301 @@ class TestClipboardCtrlCFilter(unittest.TestCase):
             launcher._current_frame = prev_frame
 
 
+class TestEditorModeUndoRedo(unittest.TestCase):
+    """Phase D — snapshot-based undo/redo for the Editor-mode text
+    buffer. Single-character typing coalesces; paste / cut / auto-close
+    / overtype / pair-delete / newline each form their own undoable
+    unit; a cursor move (or any focus / mode change) forces a
+    coalescing boundary. See ADR 0091."""
+
+    def _setup(self, text="", cursor=0):
+        prof, _src, _td = _make_profile("")
+        _reset_editor_state(prof)
+        launcher._editor_mode             = "editor"
+        launcher._editor_toggle_focused   = False
+        launcher._editor_buffer_text      = text
+        launcher._editor_buffer_cursor    = cursor
+        launcher._editor_buffer_scroll    = 0
+        launcher._editor_buffer_anchor    = None
+        launcher._editor_pending_closers  = []
+        launcher._editor_clipboard        = ""
+        launcher._editor_undo_reset()
+
+    # Helpers that mirror the relevant key-handler flow without
+    # invoking prompt_toolkit's key parser. Each pairs the kind label
+    # the live handler passes with the matching buffer mutator.
+    def _type(self, s):
+        for ch in s:
+            kind = None if launcher._editor_buffer_anchor is not None else "insert"
+            launcher._editor_undo_record(kind)
+            launcher._editor_buffer_insert(ch)
+
+    def _backspace(self):
+        # Mimics the `backspace` key handler, which delegates to
+        # `_editor_buffer_backspace_pair` (records the transaction
+        # internally — pair-delete is atomic, plain backspace coalesces).
+        launcher._editor_buffer_backspace_pair()
+
+    def _delete(self):
+        kind = None if launcher._editor_buffer_anchor is not None else "delete"
+        launcher._editor_undo_record(kind)
+        launcher._editor_buffer_delete()
+
+    def _move_cursor(self, new_pos):
+        # Cursor moves close any open coalescing run. We bypass the
+        # line/col helpers and write the offset directly for terseness.
+        launcher._editor_undo_close()
+        launcher._editor_buffer_cursor = new_pos
+        launcher._editor_buffer_clear_selection()
+
+    def _enter(self):
+        launcher._editor_undo_record(None)
+        launcher._editor_buffer_insert("\n")
+
+    # --- Coalesced typing -------------------------------------------
+    def test_typing_a_word_undoes_in_one_step(self):
+        self._setup()
+        self._type("hello")
+        self.assertEqual(launcher._editor_buffer_text, "hello")
+        self.assertEqual(launcher._editor_buffer_cursor, 5)
+        launcher._editor_undo()
+        self.assertEqual(launcher._editor_buffer_text, "")
+        self.assertEqual(launcher._editor_buffer_cursor, 0)
+
+    def test_redo_restores_typed_word(self):
+        self._setup()
+        self._type("hello")
+        launcher._editor_undo()
+        launcher._editor_redo()
+        self.assertEqual(launcher._editor_buffer_text, "hello")
+        self.assertEqual(launcher._editor_buffer_cursor, 5)
+
+    # --- Cursor-move boundary ---------------------------------------
+    def test_cursor_move_splits_typing_run(self):
+        self._setup(text="abc", cursor=3)
+        self._type("XY")            # run 1
+        self.assertEqual(launcher._editor_buffer_text, "abcXY")
+        self._move_cursor(0)
+        self._type("Z")             # run 2 — fresh transaction
+        self.assertEqual(launcher._editor_buffer_text, "ZabcXY")
+        launcher._editor_undo()     # undo only the "Z" run
+        self.assertEqual(launcher._editor_buffer_text, "abcXY")
+        launcher._editor_undo()     # undo the "XY" run
+        self.assertEqual(launcher._editor_buffer_text, "abc")
+
+    # --- Insert ↔ delete boundary -----------------------------------
+    def test_insert_then_delete_each_own_transaction(self):
+        self._setup()
+        self._type("ab")
+        self._backspace()           # type-switch forces a boundary
+        self.assertEqual(launcher._editor_buffer_text, "a")
+        launcher._editor_undo()     # undo the delete
+        self.assertEqual(launcher._editor_buffer_text, "ab")
+        launcher._editor_undo()     # undo the typing run
+        self.assertEqual(launcher._editor_buffer_text, "")
+
+    def test_backspace_then_insert_each_own_transaction(self):
+        self._setup(text="abc", cursor=3)
+        self._backspace()
+        self._backspace()           # coalesces with the previous backspace
+        self.assertEqual(launcher._editor_buffer_text, "a")
+        self._type("Z")
+        self.assertEqual(launcher._editor_buffer_text, "aZ")
+        launcher._editor_undo()     # undo the insert
+        self.assertEqual(launcher._editor_buffer_text, "a")
+        launcher._editor_undo()     # undo the coalesced delete run
+        self.assertEqual(launcher._editor_buffer_text, "abc")
+
+    # --- Paste / cut / bracketed paste are atomic units -------------
+    def test_paste_is_atomic(self):
+        self._setup(text="ab", cursor=2)
+        launcher._editor_clipboard = "XYZ"
+        launcher._editor_buffer_paste()
+        self.assertEqual(launcher._editor_buffer_text, "abXYZ")
+        launcher._editor_undo()
+        self.assertEqual(launcher._editor_buffer_text, "ab")
+        self.assertEqual(launcher._editor_buffer_cursor, 2)
+
+    def test_cut_selection_is_atomic(self):
+        self._setup(text="abcdef", cursor=4)
+        launcher._editor_buffer_anchor = 1   # selection "bcd"
+        launcher._editor_buffer_cut()
+        self.assertEqual(launcher._editor_buffer_text, "aef")
+        launcher._editor_undo()
+        self.assertEqual(launcher._editor_buffer_text, "abcdef")
+
+    def test_cut_line_is_atomic(self):
+        self._setup(text="aa\nbb\ncc\n", cursor=4)   # mid "bb"
+        launcher._editor_buffer_cut()
+        self.assertEqual(launcher._editor_buffer_text, "aa\ncc\n")
+        launcher._editor_undo()
+        self.assertEqual(launcher._editor_buffer_text, "aa\nbb\ncc\n")
+
+    def test_bracketed_paste_is_atomic(self):
+        self._setup(text="ab", cursor=2)
+        launcher._editor_buffer_bracketed_paste("XX\nYY")
+        self.assertEqual(launcher._editor_buffer_text, "abXX\nYY")
+        launcher._editor_undo()
+        self.assertEqual(launcher._editor_buffer_text, "ab")
+
+    # --- Auto-close `{}` as a single unit ---------------------------
+    def test_autoclose_brace_is_atomic(self):
+        self._setup(text="abc", cursor=3)
+        launcher._editor_buffer_open_brace()
+        self.assertEqual(launcher._editor_buffer_text, "abc{}")
+        self.assertEqual(launcher._editor_buffer_cursor, 4)
+        launcher._editor_undo()
+        self.assertEqual(launcher._editor_buffer_text, "abc")
+        self.assertEqual(launcher._editor_buffer_cursor, 3)
+
+    def test_autoclose_then_typed_word_two_undos(self):
+        # Typing inside the auto-closed pair is a separate insert run;
+        # two undos peel back: first the typed word, then the `{}`.
+        self._setup(text="abc", cursor=3)
+        launcher._editor_buffer_open_brace()    # → "abc{}", cur=4
+        self._type("Xy")                         # → "abc{Xy}"
+        self.assertEqual(launcher._editor_buffer_text, "abc{Xy}")
+        launcher._editor_undo()                  # undo typing
+        self.assertEqual(launcher._editor_buffer_text, "abc{}")
+        launcher._editor_undo()                  # undo auto-close
+        self.assertEqual(launcher._editor_buffer_text, "abc")
+
+    # --- Pair-delete and overtype are atomic ------------------------
+    def test_pair_delete_is_atomic(self):
+        self._setup(text="abc", cursor=3)
+        launcher._editor_buffer_open_brace()    # → "abc{}", pending=[4]
+        launcher._editor_buffer_backspace_pair()
+        self.assertEqual(launcher._editor_buffer_text, "abc")
+        # Two atomic transactions → two undos.
+        launcher._editor_undo()
+        self.assertEqual(launcher._editor_buffer_text, "abc{}")
+        launcher._editor_undo()
+        self.assertEqual(launcher._editor_buffer_text, "abc")
+
+    # --- Newline forces a boundary ----------------------------------
+    def test_newline_forces_boundary(self):
+        self._setup()
+        self._type("ab")
+        self._enter()
+        self._type("cd")
+        self.assertEqual(launcher._editor_buffer_text, "ab\ncd")
+        launcher._editor_undo()
+        self.assertEqual(launcher._editor_buffer_text, "ab\n")
+        launcher._editor_undo()
+        self.assertEqual(launcher._editor_buffer_text, "ab")
+        launcher._editor_undo()
+        self.assertEqual(launcher._editor_buffer_text, "")
+
+    # --- Empty-stack no-op ------------------------------------------
+    def test_undo_on_empty_stack_is_noop(self):
+        self._setup(text="abc", cursor=1)
+        # Stack is empty after _setup → _editor_undo_reset.
+        self.assertEqual(launcher._editor_undo_stack, [])
+        launcher._editor_undo()
+        self.assertEqual(launcher._editor_buffer_text, "abc")
+        self.assertEqual(launcher._editor_buffer_cursor, 1)
+
+    def test_redo_on_empty_stack_is_noop(self):
+        self._setup(text="abc", cursor=1)
+        launcher._editor_redo()
+        self.assertEqual(launcher._editor_buffer_text, "abc")
+        self.assertEqual(launcher._editor_buffer_cursor, 1)
+
+    def test_undo_past_history_eventually_noop(self):
+        # Type one transaction, undo it, undo again — second undo is
+        # a no-op (stack already drained).
+        self._setup()
+        self._type("hi")
+        launcher._editor_undo()
+        self.assertEqual(launcher._editor_buffer_text, "")
+        self.assertEqual(launcher._editor_undo_stack, [])
+        launcher._editor_undo()      # no-op
+        self.assertEqual(launcher._editor_buffer_text, "")
+
+    # --- Redo cleared by a new edit ---------------------------------
+    def test_new_edit_clears_redo_stack(self):
+        self._setup()
+        self._type("ab")
+        launcher._editor_undo()
+        self.assertEqual(launcher._editor_buffer_text, "")
+        # Redo stack has the just-undone transaction.
+        self.assertEqual(len(launcher._editor_redo_stack), 1)
+        # A fresh edit invalidates the redo future.
+        self._type("XY")
+        self.assertEqual(launcher._editor_redo_stack, [])
+        # A subsequent redo is now a no-op.
+        before = launcher._editor_buffer_text
+        launcher._editor_redo()
+        self.assertEqual(launcher._editor_buffer_text, before)
+
+    # --- Stack reset on mode flip -----------------------------------
+    def test_undo_state_resets_on_mode_flip(self):
+        # Round-trip through a real flip from lite → editor → lite.
+        prof, _src, _td = _make_profile("#alias {k} {kill}\n")
+        _reset_editor_state(prof)
+        launcher._editor_mode             = "lite"
+        launcher._editor_toggle_focused   = False
+        launcher._editor_buffer_text      = ""
+        launcher._editor_buffer_cursor    = 0
+        launcher._editor_buffer_anchor    = None
+        launcher._editor_pending_closers  = []
+        launcher._editor_undo_reset()
+        launcher._editor_flip_mode()   # lite → editor
+        self.assertEqual(launcher._editor_undo_stack, [])
+        self.assertEqual(launcher._editor_redo_stack, [])
+        # Build a transaction and an entry on the redo stack.
+        self._type("X")
+        self.assertGreater(len(launcher._editor_undo_stack), 0)
+        launcher._editor_undo()
+        self.assertGreater(len(launcher._editor_redo_stack), 0)
+        # Flipping back to lite wipes both stacks.
+        launcher._editor_flip_mode()   # editor → lite
+        self.assertEqual(launcher._editor_undo_stack, [])
+        self.assertEqual(launcher._editor_redo_stack, [])
+
+    def test_undo_state_resets_on_enter_profile_editor(self):
+        # Seed stacks with some entries, then re-enter the editor —
+        # state must be wiped so undo can't reach the previous frame.
+        self._setup()
+        self._type("abc")
+        self.assertGreater(len(launcher._editor_undo_stack), 0)
+        # `_enter_profile_editor` calls `_editor_undo_reset` after
+        # clearing the buffer; we exercise the reset directly here
+        # because the full enter-path needs a valid file on disk.
+        launcher._editor_undo_reset()
+        self.assertEqual(launcher._editor_undo_stack, [])
+        self.assertEqual(launcher._editor_redo_stack, [])
+
+    # --- Post-undo invariants ---------------------------------------
+    def test_undo_clears_pending_closers(self):
+        self._setup(text="abc", cursor=3)
+        launcher._editor_buffer_open_brace()
+        self.assertEqual(launcher._editor_pending_closers, [4])
+        launcher._editor_undo()
+        self.assertEqual(launcher._editor_pending_closers, [])
+
+    def test_undo_restores_anchor(self):
+        # Selection-replace through a type captures the anchor in the
+        # snapshot; undo brings the selection back.
+        self._setup(text="abcdef", cursor=4)
+        launcher._editor_buffer_anchor = 1   # selection "bcd"
+        self._type("X")
+        self.assertEqual(launcher._editor_buffer_text, "aXef")
+        self.assertIsNone(launcher._editor_buffer_anchor)
+        launcher._editor_undo()
+        self.assertEqual(launcher._editor_buffer_text, "abcdef")
+        self.assertEqual(launcher._editor_buffer_cursor, 4)
+        self.assertEqual(launcher._editor_buffer_anchor, 1)
+
+    # --- Stack-depth cap --------------------------------------------
+    def test_undo_stack_respects_max_depth(self):
+        self._setup()
+        cap = launcher._EDITOR_UNDO_MAX_DEPTH
+        # Each `_enter` is an atomic transaction → one stack entry per call.
+        for _ in range(cap + 25):
+            self._enter()
+        self.assertLessEqual(len(launcher._editor_undo_stack), cap)
+
+
 if __name__ == "__main__":
     unittest.main()

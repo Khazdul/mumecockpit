@@ -610,6 +610,8 @@ and wrap count. Empty logical lines still occupy one visual row.
 - `Enter` — insert `\n`. Replaces any active selection first.
 - `Tab` — cycle focus to the toggle (does **not** insert a literal
   tab).
+- `c-z` / `c-y` — undo / redo. Snapshot-based, with typing
+  coalescing. See **Undo / redo** below.
 - Printable `<any>` — insert at cursor. Replaces any active
   selection first.
 
@@ -717,6 +719,37 @@ Commands fields are not affected. Three coupled features.
    and/or stray `}` (depth ever went negative) — e.g. `3 unclosed
    {` or `2 stray }`. Rendered in `C_DANGER`. When braces
    balance, no indicator is shown.
+
+**Undo / redo.** Editor mode only; the lite-mode Pattern / Commands
+fields are not affected.
+
+- `c-z` undoes the most recent transaction; `c-y` redoes. Empty stack
+  → no-op.
+- A snapshot is the whole buffer state: `(text, cursor, anchor)`.
+  Strings are immutable, so snapshots store references — full-buffer
+  history of a few-KB profile is cheap. Two module-level stacks
+  (`_editor_undo_stack`, `_editor_redo_stack`) hold the snapshots;
+  the undo stack is capped at `_EDITOR_UNDO_MAX_DEPTH` (200) with
+  the oldest entry dropped on overflow.
+- Both stacks reset on `_enter_profile_editor` and on every
+  lite ↔ editor flip — undo history never survives leaving the
+  editor or a mode change.
+- **Coalescing** keeps a word's worth of typing under a single c-z.
+  Consecutive single-character `<any>` inserts merge into one
+  transaction; consecutive Backspace / Delete keystrokes likewise
+  merge. A boundary (the current run ends, the next edit starts a
+  fresh transaction) is forced by any of: a newline insert, any
+  cursor move (arrow / Home / End / PgUp / PgDn / mouse click), a
+  switch between insert and delete edit kinds, a paste / cut /
+  auto-close `{}` / `}` overtype / pair-delete (each its own unit),
+  or a focus change / mode flip. The boundary rule is a kind-and-
+  flag check — not a wall-clock typing timeout — so behaviour is
+  deterministic and testable. See ADR 0091.
+- A fresh edit after one or more undos clears the redo stack — the
+  future you didn't take is gone. Undo or redo close any open
+  coalescing run, clear `_editor_pending_closers` (offsets aren't
+  valid against the restored text), and scroll the cursor into
+  view.
 
 #### Focus model
 

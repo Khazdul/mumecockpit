@@ -260,6 +260,18 @@ _editor_buffer_syntax_cache       = (None, None)
 # the `}` overtype, and `right`. See docs/launcher.md → profile_editor
 # → Editor mode → Brace assistance.
 _editor_pending_closers           = []
+# Undo / redo for Editor mode (Phase D). Snapshot-based: each stack entry
+# is a `(text, cursor, anchor)` tuple capturing the buffer state. The
+# `_editor_undo_record` helper pushes a pre-edit snapshot onto the undo
+# stack before a mutating transaction commits; runs of single-character
+# typing or backspace/delete coalesce into one transaction. See
+# docs/launcher.md → profile_editor → Editor mode → Undo/redo and
+# docs/decisions/0091-profile-editor-undo-coalescing.md.
+_editor_undo_stack                = []     # list[(text, cursor, anchor)]
+_editor_redo_stack                = []     # list[(text, cursor, anchor)]
+_editor_undo_open                 = False  # True while a coalescing run is open
+_editor_undo_last_kind            = None   # "insert" | "delete" | None
+_EDITOR_UNDO_MAX_DEPTH            = 200
 # Shared in-app clipboard register, used by both Editor mode and the Lite
 # Pattern / Body text fields. Copy / cut write here AND emit an OSC 52
 # system-clipboard sequence (see `_emit_osc52_copy`); paste reads from
@@ -1949,6 +1961,7 @@ def _enter_profile_editor(path):
     globals()["_editor_buffer_scroll"]  = 0
     globals()["_editor_buffer_anchor"]  = None
     globals()["_editor_pending_closers"] = []
+    _editor_undo_reset()
     _editor_list_sb = Scrollbar(
         0, _editor_list_visible(), _editor_list_visible(),
     )
@@ -4153,6 +4166,7 @@ def _editor_flip_mode():
         return
     _editor_clear_pending_closers()
     _editor_clear_flash()
+    _editor_undo_reset()
     if _editor_mode == "lite":
         _editor_buffer_text   = profile_io.serialize_profile(_editor_data)
         _editor_buffer_cursor = 0
@@ -4470,6 +4484,14 @@ def _editor_buffer_open_brace():
     future paste path can never trigger auto-close."""
     global _editor_pending_closers
     global _editor_buffer_cursor
+    has_selection = _editor_buffer_anchor is not None
+    cur = _editor_buffer_cursor
+    text = _editor_buffer_text
+    nxt = text[cur] if cur < len(text) else ""
+    will_auto_close = nxt == "" or nxt in (" ", "\t", "\n", "}")
+    # Selection-replace and auto-close are atomic units; a plain literal
+    # `{` insert coalesces with surrounding typing.
+    _editor_undo_record(None if (has_selection or will_auto_close) else "insert")
     _editor_buffer_consume_selection()
     cur = _editor_buffer_cursor
     text = _editor_buffer_text
@@ -4497,11 +4519,20 @@ def _editor_buffer_close_brace():
             and cur < len(text)
             and text[cur] == "}"
             and cur in _editor_pending_closers):
+        # Overtype is atomic — the buffer text doesn't change, but the
+        # cursor move is still a transaction boundary that ends any
+        # in-progress typing run. We record so a c-z right after the
+        # overtype rewinds to before this `{}` pair was finalised.
+        _editor_undo_record(None)
         _editor_buffer_cursor = cur + 1
         _editor_pending_closers = [
             off for off in _editor_pending_closers if off != cur
         ]
         return
+    # Literal `}` insert coalesces with surrounding typing; selection
+    # replace is atomic.
+    has_selection = _editor_buffer_anchor is not None
+    _editor_undo_record(None if has_selection else "insert")
     _editor_buffer_insert("}")
 
 
@@ -4511,11 +4542,16 @@ def _editor_buffer_backspace_pair():
     normal backspace."""
     cur = _editor_buffer_cursor
     text = _editor_buffer_text
-    if (_editor_buffer_anchor is None
-            and 0 < cur < len(text)
-            and text[cur - 1] == "{"
-            and text[cur] == "}"
-            and cur in _editor_pending_closers):
+    has_selection = _editor_buffer_anchor is not None
+    is_pair = (not has_selection
+               and 0 < cur < len(text)
+               and text[cur - 1] == "{"
+               and text[cur] == "}"
+               and cur in _editor_pending_closers)
+    # Pair-delete and selection-consume are atomic; a normal backspace
+    # coalesces with neighbouring backspaces/deletes into one "delete" run.
+    _editor_undo_record(None if (is_pair or has_selection) else "delete")
+    if is_pair:
         _editor_buffer_delete()       # drop the `}` at cursor
         _editor_buffer_backspace()    # drop the `{` before cursor
         return
@@ -4543,6 +4579,111 @@ def _editor_buffer_begin_selection_if_needed():
     if _editor_buffer_anchor is None:
         _editor_buffer_anchor = max(
             0, min(len(_editor_buffer_text), _editor_buffer_cursor))
+
+
+# ---------------------------------------------------------------------------
+# Editor-mode undo / redo
+# ---------------------------------------------------------------------------
+# Snapshot-based: each stack entry is `(text, cursor, anchor)`. Strings are
+# immutable, so a snapshot holds references — no copy needed. The
+# `_editor_undo_record(kind)` helper is called BEFORE a mutating
+# transaction commits; runs of single-character `kind="insert"` typing
+# (or `kind="delete"` backspace/delete) coalesce so a word's worth of
+# typing is one undoable unit. Paste, cut, auto-close, overtype, and
+# pair-delete pass `kind=None` for an atomic unit that does not coalesce.
+# See docs/launcher.md and docs/decisions/0091-profile-editor-undo-coalescing.md.
+
+def _editor_undo_snapshot():
+    return (_editor_buffer_text, _editor_buffer_cursor, _editor_buffer_anchor)
+
+
+def _editor_undo_reset():
+    """Drop both stacks and close any open coalescing run. Called from
+    `_enter_profile_editor` and on every lite↔editor flip — undo state
+    never survives leaving the editor or a mode flip."""
+    global _editor_undo_open, _editor_undo_last_kind
+    _editor_undo_stack[:] = []
+    _editor_redo_stack[:] = []
+    _editor_undo_open      = False
+    _editor_undo_last_kind = None
+
+
+def _editor_undo_close():
+    """Force a coalescing boundary without pushing a snapshot. The next
+    mutating transaction starts a fresh undo entry. Called from every
+    cursor-move / focus-change / mouse-click handler so a follow-up edit
+    can't coalesce across the move."""
+    global _editor_undo_open, _editor_undo_last_kind
+    _editor_undo_open      = False
+    _editor_undo_last_kind = None
+
+
+def _editor_undo_record(kind):
+    """Begin a transaction. Push the current `(text, cursor, anchor)`
+    snapshot onto the undo stack unless we're inside an open coalescing
+    run of the same kind (in which case the pre-edit snapshot is already
+    at the top of the stack). Any push also clears the redo stack — a
+    fresh edit after some undos invalidates the future.
+
+    `kind ∈ {"insert", "delete", None}`. `"insert"` and `"delete"` open a
+    coalescing run; `None` is atomic (paste, cut, auto-close, overtype,
+    pair-delete, newline insert — each its own undoable unit, never
+    coalesced with neighbours).
+
+    Call this BEFORE mutating buffer state."""
+    global _editor_undo_open, _editor_undo_last_kind
+    if kind in ("insert", "delete") \
+            and _editor_undo_open and _editor_undo_last_kind == kind:
+        # Continuing an open run — pre-edit snapshot already recorded.
+        # Any new edit still invalidates the redo future.
+        _editor_redo_stack[:] = []
+        return
+    _editor_undo_stack.append(_editor_undo_snapshot())
+    if len(_editor_undo_stack) > _EDITOR_UNDO_MAX_DEPTH:
+        _editor_undo_stack.pop(0)
+    _editor_redo_stack[:] = []
+    if kind in ("insert", "delete"):
+        _editor_undo_open      = True
+        _editor_undo_last_kind = kind
+    else:
+        _editor_undo_open      = False
+        _editor_undo_last_kind = None
+
+
+def _editor_undo():
+    """c-z. Restore the most recent pre-edit snapshot. Pushes the current
+    state onto the redo stack first so c-y can step forward again.
+    Clears `_editor_pending_closers` (offsets aren't valid against the
+    restored text) and scrolls the cursor into view."""
+    global _editor_buffer_text, _editor_buffer_cursor, _editor_buffer_anchor
+    if not _editor_undo_stack:
+        return
+    _editor_undo_close()
+    _editor_redo_stack.append(_editor_undo_snapshot())
+    text, cursor, anchor = _editor_undo_stack.pop()
+    _editor_buffer_text   = text
+    _editor_buffer_cursor = cursor
+    _editor_buffer_anchor = anchor
+    _editor_clear_pending_closers()
+    _editor_buffer_scroll_cursor_into_view()
+
+
+def _editor_redo():
+    """c-y. Symmetric to undo — pop from redo, push current to undo,
+    restore. Same post-conditions (closers cleared, cursor in view)."""
+    global _editor_buffer_text, _editor_buffer_cursor, _editor_buffer_anchor
+    if not _editor_redo_stack:
+        return
+    _editor_undo_close()
+    _editor_undo_stack.append(_editor_undo_snapshot())
+    if len(_editor_undo_stack) > _EDITOR_UNDO_MAX_DEPTH:
+        _editor_undo_stack.pop(0)
+    text, cursor, anchor = _editor_redo_stack.pop()
+    _editor_buffer_text   = text
+    _editor_buffer_cursor = cursor
+    _editor_buffer_anchor = anchor
+    _editor_clear_pending_closers()
+    _editor_buffer_scroll_cursor_into_view()
 
 
 # ---------------------------------------------------------------------------
@@ -4641,6 +4782,8 @@ def _editor_buffer_cut():
     sel = _editor_buffer_selection_range()
     if sel is not None:
         lo, hi = sel
+        # Atomic transaction — cut never coalesces with surrounding edits.
+        _editor_undo_record(None)
         _clipboard_write(_editor_buffer_text[lo:hi])
         _editor_buffer_consume_selection()
         _editor_clear_pending_closers()
@@ -4649,6 +4792,7 @@ def _editor_buffer_cut():
     text = _editor_buffer_text[lo:hi]
     if not text:
         return
+    _editor_undo_record(None)
     copied = text if text.endswith("\n") else text + "\n"
     _clipboard_write(copied)
     # Drop the line. If the line has a trailing `\n`, that's already in
@@ -4673,6 +4817,8 @@ def _editor_buffer_paste():
     cannot survive a paste."""
     if not _editor_clipboard:
         return
+    # Atomic transaction — paste is a single undoable unit.
+    _editor_undo_record(None)
     _editor_buffer_insert(_editor_clipboard)
     _editor_clear_pending_closers()
 
@@ -4685,6 +4831,7 @@ def _editor_buffer_bracketed_paste(text):
     text = _bracketed_paste_normalise(text)
     if not text:
         return
+    _editor_undo_record(None)
     _editor_buffer_insert(text)
     _editor_clear_pending_closers()
 
@@ -5599,6 +5746,7 @@ def _editor_buffer_row_click_handler(logical_line, wrap_start,
         _editor_buffer_set_cursor_from_line_col(logical_line, abs_col)
         _editor_buffer_clear_selection()
         _editor_clear_pending_closers()
+        _editor_undo_close()
         _editor_buffer_scroll_cursor_into_view()
         if _app:
             _app.invalidate()
@@ -11671,10 +11819,13 @@ def _kb_peditor_buffer_move_cursor(delta_line, delta_col=0):
 
 
 # --- Plain (unshifted) cursor moves: clear selection, then move ------
+# Every cursor-move handler also closes any open coalescing run — a
+# move forces the next insert/delete to start a fresh undo transaction.
 @kb.add("left",  filter=_in_pe_editor())
 def _kb_peditor_buffer_left(event):
     _editor_buffer_clear_selection()
     _editor_clear_pending_closers()
+    _editor_undo_close()
     _kb_peditor_buffer_move_cursor(0, -1)
     _editor_buffer_scroll_cursor_into_view()
 
@@ -11682,6 +11833,7 @@ def _kb_peditor_buffer_left(event):
 @kb.add("right", filter=_in_pe_editor())
 def _kb_peditor_buffer_right(event):
     _editor_buffer_clear_selection()
+    _editor_undo_close()
     _kb_peditor_buffer_move_cursor(0, +1)
     _editor_buffer_step_over_pending_closer()
     _editor_buffer_scroll_cursor_into_view()
@@ -11691,6 +11843,7 @@ def _kb_peditor_buffer_right(event):
 def _kb_peditor_buffer_up(event):
     _editor_buffer_clear_selection()
     _editor_clear_pending_closers()
+    _editor_undo_close()
     if not _kb_peditor_buffer_move_cursor(-1):
         _editor_focus_toggle()
     else:
@@ -11701,6 +11854,7 @@ def _kb_peditor_buffer_up(event):
 def _kb_peditor_buffer_down(event):
     _editor_buffer_clear_selection()
     _editor_clear_pending_closers()
+    _editor_undo_close()
     _kb_peditor_buffer_move_cursor(+1)
     _editor_buffer_scroll_cursor_into_view()
 
@@ -11709,6 +11863,7 @@ def _kb_peditor_buffer_down(event):
 def _kb_peditor_buffer_home(event):
     _editor_buffer_clear_selection()
     _editor_clear_pending_closers()
+    _editor_undo_close()
     line, _col = _editor_buffer_cursor_to_line_col()
     _editor_buffer_set_cursor_from_line_col(line, 0)
     _editor_buffer_scroll_cursor_into_view()
@@ -11718,6 +11873,7 @@ def _kb_peditor_buffer_home(event):
 def _kb_peditor_buffer_end(event):
     _editor_buffer_clear_selection()
     _editor_clear_pending_closers()
+    _editor_undo_close()
     line, _col = _editor_buffer_cursor_to_line_col()
     _editor_buffer_set_cursor_from_line_col(
         line, len(_editor_buffer_line_text(line)))
@@ -11728,6 +11884,7 @@ def _kb_peditor_buffer_end(event):
 def _kb_peditor_buffer_pgup(event):
     _editor_buffer_clear_selection()
     _editor_clear_pending_closers()
+    _editor_undo_close()
     line, col = _editor_buffer_cursor_to_line_col()
     step = max(1, _editor_body_h())
     target_line = max(0, line - step)
@@ -11740,6 +11897,7 @@ def _kb_peditor_buffer_pgup(event):
 def _kb_peditor_buffer_pgdn(event):
     _editor_buffer_clear_selection()
     _editor_clear_pending_closers()
+    _editor_undo_close()
     line, col = _editor_buffer_cursor_to_line_col()
     step = max(1, _editor_body_h())
     last = _editor_buffer_line_count() - 1
@@ -11761,6 +11919,7 @@ def _kb_peditor_buffer_pgdn(event):
 def _kb_peditor_buffer_s_left(event):
     _editor_buffer_begin_selection_if_needed()
     _editor_clear_pending_closers()
+    _editor_undo_close()
     _kb_peditor_buffer_move_cursor(0, -1)
     _editor_buffer_scroll_cursor_into_view()
 
@@ -11769,6 +11928,7 @@ def _kb_peditor_buffer_s_left(event):
 def _kb_peditor_buffer_s_right(event):
     _editor_buffer_begin_selection_if_needed()
     _editor_clear_pending_closers()
+    _editor_undo_close()
     _kb_peditor_buffer_move_cursor(0, +1)
     _editor_buffer_scroll_cursor_into_view()
 
@@ -11777,6 +11937,7 @@ def _kb_peditor_buffer_s_right(event):
 def _kb_peditor_buffer_s_up(event):
     _editor_buffer_begin_selection_if_needed()
     _editor_clear_pending_closers()
+    _editor_undo_close()
     _kb_peditor_buffer_move_cursor(-1)
     _editor_buffer_scroll_cursor_into_view()
 
@@ -11785,6 +11946,7 @@ def _kb_peditor_buffer_s_up(event):
 def _kb_peditor_buffer_s_down(event):
     _editor_buffer_begin_selection_if_needed()
     _editor_clear_pending_closers()
+    _editor_undo_close()
     _kb_peditor_buffer_move_cursor(+1)
     _editor_buffer_scroll_cursor_into_view()
 
@@ -11793,6 +11955,7 @@ def _kb_peditor_buffer_s_down(event):
 def _kb_peditor_buffer_s_home(event):
     _editor_buffer_begin_selection_if_needed()
     _editor_clear_pending_closers()
+    _editor_undo_close()
     line, _col = _editor_buffer_cursor_to_line_col()
     _editor_buffer_set_cursor_from_line_col(line, 0)
     _editor_buffer_scroll_cursor_into_view()
@@ -11802,6 +11965,7 @@ def _kb_peditor_buffer_s_home(event):
 def _kb_peditor_buffer_s_end(event):
     _editor_buffer_begin_selection_if_needed()
     _editor_clear_pending_closers()
+    _editor_undo_close()
     line, _col = _editor_buffer_cursor_to_line_col()
     _editor_buffer_set_cursor_from_line_col(
         line, len(_editor_buffer_line_text(line)))
@@ -11810,12 +11974,18 @@ def _kb_peditor_buffer_s_end(event):
 
 @kb.add("backspace", filter=_in_pe_editor())
 def _kb_peditor_buffer_backspace(event):
+    # `_editor_buffer_backspace_pair` records the transaction (pair vs.
+    # normal) before mutating.
     _editor_buffer_backspace_pair()
     _editor_buffer_scroll_cursor_into_view()
 
 
 @kb.add("delete", filter=_in_pe_editor())
 def _kb_peditor_buffer_delete(event):
+    # Forward-delete coalesces with neighbouring delete keystrokes; a
+    # live selection makes it an atomic selection-replace.
+    has_selection = _editor_buffer_anchor is not None
+    _editor_undo_record(None if has_selection else "delete")
     _editor_buffer_delete()
     _editor_buffer_scroll_cursor_into_view()
 
@@ -11823,6 +11993,9 @@ def _kb_peditor_buffer_delete(event):
 @kb.add("enter", filter=_in_pe_editor())
 def _kb_peditor_buffer_enter(event):
     _editor_clear_pending_closers()
+    # Newline is its own undoable unit — never coalesces with surrounding
+    # typing.
+    _editor_undo_record(None)
     _editor_buffer_insert("\n")
     _editor_buffer_scroll_cursor_into_view()
 
@@ -11850,12 +12023,16 @@ def _kb_peditor_buffer_close_brace(event):
 @kb.add("tab", filter=_in_pe_editor())
 def _kb_peditor_buffer_tab(event):
     _editor_clear_pending_closers()
+    # Focus change forces a coalescing boundary so a follow-up edit in
+    # another zone (or back in the buffer) starts a fresh undo entry.
+    _editor_undo_close()
     _profile_editor_cycle_focus(1)
 
 
 @kb.add("s-tab", filter=_in_pe_editor())
 def _kb_peditor_buffer_stab(event):
     _editor_clear_pending_closers()
+    _editor_undo_close()
     _profile_editor_cycle_focus(-1)
 
 
@@ -11885,11 +12062,29 @@ def _kb_peditor_buffer_bracketed_paste(event):
     _editor_buffer_scroll_cursor_into_view()
 
 
+@kb.add("c-z", filter=_in_pe_editor())
+def _kb_peditor_buffer_undo(event):
+    _editor_undo()
+    if _app:
+        _app.invalidate()
+
+
+@kb.add("c-y", filter=_in_pe_editor())
+def _kb_peditor_buffer_redo(event):
+    _editor_redo()
+    if _app:
+        _app.invalidate()
+
+
 @kb.add("<any>", filter=_in_pe_editor())
 def _kb_peditor_buffer_any(event):
     data = event.data or ""
     if len(data) != 1 or not data.isprintable():
         return
+    # Single printable char: part of a coalescing "insert" run; a live
+    # selection makes the type-over an atomic selection-replace.
+    has_selection = _editor_buffer_anchor is not None
+    _editor_undo_record(None if has_selection else "insert")
     _editor_buffer_insert(data)
     _editor_buffer_scroll_cursor_into_view()
 
