@@ -2,15 +2,16 @@
 --  mercenaries
 -- ============================================================
 -- @summary  Track hired citizen mercenaries (auto-label, timer, gold)
--- @alias    merc       Render the mercenary panel
+-- @alias    merc       Show the mercenary panel
 -- @alias    mercs      Alias for `merc`
--- @help     Auto-labels each hired citizen mercenary with a random
--- @help     name from a built-in list and groups it. Tracks remaining
--- @help     contract time (24 minutes per 10 silver) and total silver paid.
+-- @help     Usage:
+-- @help       merc           show the mercenary panel
+-- @help       merc autopay   toggle auto-payment (default OFF)
 -- @help
--- @help     Subcommands:
--- @help       merc           Render the framed panel
--- @help       merc autopay   Toggle auto-payment on tap (default OFF)
+-- @help     Each hired citizen mercenary is auto-labelled with a
+-- @help     random name and grouped. A contract lasts 25 minutes per
+-- @help     10 silver; near the end the mercenary taps your shoulder
+-- @help     for payment.
 -- @help
 -- @help     Status lines (▶ MERC) report hire, tap, payment,
 -- @help     renew, expiry warnings, and removal.
@@ -244,9 +245,9 @@ local function _empty_state()
     tintin_show(ses, _left("Hire one by giving 10 silver to a citizen mercenary:"))
     tintin_show(ses, _centered("give 10 silver mercenary", GOLD_FG))
     tintin_show(ses, _empty_row())
-    tintin_show(ses, _left("A mercenary fights alongside you and follows for ~24 minutes,"))
-    tintin_show(ses, _left("then asks to be paid again. This panel tracks each mercenary's"))
-    tintin_show(ses, _left("HP, time remaining and total cost."))
+    tintin_show(ses, _left("A mercenary fights alongside you. Each 10 silver buys about"))
+    tintin_show(ses, _left("25 minutes — near the end it taps your shoulder for payment."))
+    tintin_show(ses, _left("The panel tracks each mercenary's HP, time left and cost."))
     tintin_show(ses, _empty_row())
 
     -- Tip with inline highlighted command.
