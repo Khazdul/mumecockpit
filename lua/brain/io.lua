@@ -41,6 +41,32 @@ function tintin_cmd(ses, cmd)
     io.flush()
 end
 
+-- Register `cmd` against `ses` inside the {core} class atomically.
+-- Writes one relay file whose first line carries the open/cmd/close triple
+-- as three `;`-separated, individually `#<ses>`-prefixed statements. tt++
+-- runs `;`-separated statements on one input line as a unit before
+-- servicing any other session's socket input, so no foreign #class
+-- operation in another session can interleave between open and close and
+-- steal the registration. The `<cmd>` substring is byte-identical to what
+-- tintin_cmd would write, preserving delayed $var / %capture substitution
+-- in registered bodies. See ADR 0097.
+local function _tintin_class_core_cmd(ses, cmd)
+    _tintin_cmd_seq = _tintin_cmd_seq + 1
+    local path = string.format("bridge/ipc/cmd_%d.tin", _tintin_cmd_seq)
+    local f, err = io.open(path, "w")
+    if not f then
+        dbg("tintin_class_core_cmd ERROR: cannot open " .. path .. " — " .. tostring(err))
+        return
+    end
+    f:write(string.format(
+        "#%s #class {core} {open};#%s %s;#%s #class {core} {close}\n",
+        ses, ses, cmd, ses))
+    f:write(string.format("#system {rm -f %s}\n", path))
+    f:close()
+    print("tintin_read " .. path)
+    io.flush()
+end
+
 function tintin_show(ses, msg)
     print(string.format("tintin_show (%s) %s", ses, msg))
     io.flush()
@@ -58,13 +84,9 @@ end
 -- Use for: #alias, #substitute, #highlight
 -- Safe to call before a game session exists (GAME_SESSION nil = skip game session).
 function game_cmd(cmd)
-    tintin_cmd("gts", "#class {core} {open}")
-    tintin_cmd("gts", cmd)
-    tintin_cmd("gts", "#class {core} {close}")
+    _tintin_class_core_cmd("gts", cmd)
     if GAME_SESSION then
-        tintin_cmd(GAME_SESSION, "#class {core} {open}")
-        tintin_cmd(GAME_SESSION, cmd)
-        tintin_cmd(GAME_SESSION, "#class {core} {close}")
+        _tintin_class_core_cmd(GAME_SESSION, cmd)
     end
 end
 
@@ -73,9 +95,7 @@ end
 -- where MUD output arrives. Safe to call when GAME_SESSION is nil.
 function session_cmd(cmd)
     if GAME_SESSION then
-        tintin_cmd(GAME_SESSION, "#class {core} {open}")
-        tintin_cmd(GAME_SESSION, cmd)
-        tintin_cmd(GAME_SESSION, "#class {core} {close}")
+        _tintin_class_core_cmd(GAME_SESSION, cmd)
     else
         dbg("session_cmd: no session")
     end
