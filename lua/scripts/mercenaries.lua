@@ -18,9 +18,9 @@
 
 -- Self-contained script. Records are keyed by label (the stable identity);
 -- GMCP group membership is room-scoped, so ids are transient presence
--- handles. Records survive link loss and room exits — only the leaves/death
--- text triggers or the periodic expiry timer drop a merc. See docs/gmcp.md
--- (Group section) for the room-scope semantics.
+-- handles. Records survive link loss and room exits — only the leaves
+-- trigger, the mob_death event, or the periodic expiry timer drop a merc.
+-- See docs/gmcp.md (Group section) for the room-scope semantics.
 
 local PANEL_W = 67
 
@@ -293,10 +293,6 @@ local function _register_triggers()
     session_cmd("#action {^A citizen mercenary (%1) taps you on the shoulder.$} {#lua {scripts.mercenaries.on_tap(\"%1\")}}")
     session_cmd("#action {^A citizen mercenary (%1) says 'Thank you. I am at your service.'$} {#lua {scripts.mercenaries.on_renew(\"%1\")}}")
     session_cmd("#action {^A citizen mercenary (%1) leaves and goes to seek another employer.$} {#lua {scripts.mercenaries.on_leave(\"%1\")}}")
-    -- TODO: the exact MUME death line for a mercenary is not yet known.
-    -- Until provided, a dead merc is only removed by the periodic expiry
-    -- timer (~90s past contract end). Group.Remove is room-scoped presence
-    -- and never removes a record.
 end
 
 -- ── tick / reconnect ────────────────────────────────────────────────────────
@@ -443,6 +439,23 @@ events.subscribe("group_member_removed", function(id)
     rec.gmcp_id = nil
     rec.present = false
     _dbg("away label=" .. rec.label_lc)
+end)
+
+-- Catches in-room deaths: the mob name carries our label in parens, e.g.
+-- "A citizen mercenary (Cooter)". A parens-less name is an ordinary mob
+-- kill and ignored. Idempotent — if the merc had already left our room,
+-- the record is still present until something removes it. Out-of-room
+-- deaths are still caught by the periodic expiry timer.
+events.subscribe("mob_death", function(name)
+    if not name then return end
+    local token = name:match("%((.-)%)")
+    if not token then return end
+    local token_lc = token:lower()
+    local rec = mercs[token_lc]
+    if not rec then return end
+    if rec.gmcp_id then id_to_label[rec.gmcp_id] = nil end
+    mercs[token_lc] = nil
+    script_ui("MERC", rec.name .. " died.")
 end)
 
 -- ── session lifecycle ───────────────────────────────────────────────────────
