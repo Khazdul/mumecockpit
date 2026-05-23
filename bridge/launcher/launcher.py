@@ -533,7 +533,6 @@ _scripts_window      = None
 _about_window        = None
 _update_running_window = None
 _update_result_window  = None
-_exit_confirm_window   = None
 _too_small_window      = None
 _history_filter_window  = None
 _history_table_window   = None
@@ -1011,7 +1010,6 @@ def _focus_current_frame():
             "about":                      _about_window,
             "update_running":             _update_running_window,
             "update_result":              _update_result_window,
-            "exit_confirm":               _exit_confirm_window,
             "history_detail":             _history_detail_window,
             "history_rate":               _history_rate_window,
             "history_delete_confirm":     _history_delete_confirm_window,
@@ -1174,7 +1172,7 @@ def _activate_main(idx):
     elif label == "About":
         _enter_about_frame()
     elif label == "Quit":
-        _push_frame("exit_confirm")
+        _app.exit()
 
 
 def _main_clear_hover(ev):
@@ -12169,22 +12167,6 @@ def _update_result_keypress():
 
 
 # ---------------------------------------------------------------------------
-# Exit confirm
-# ---------------------------------------------------------------------------
-def _exit_confirm_text():
-    cols = _term_cols()
-    msg = "Quit? Press Y to confirm, any other key to cancel."
-    # Modal dialog: vertically centred via `_centered`; no shortcut row,
-    # so no `footer_block`. Message adopts the `C_SECTION` title colour
-    # to match the rest of the swept menu chrome.
-    return [
-        ("", "\n\n"),
-        ("", _pad_centre(msg, cols)),
-        (C_SECTION, msg),
-    ]
-
-
-# ---------------------------------------------------------------------------
 # Too-small gate
 # ---------------------------------------------------------------------------
 def _too_small_text():
@@ -12276,11 +12258,6 @@ def _kb_main_down(event):
 @kb.add(" ",     filter=_in_frame("main"))
 def _kb_main_select(event):
     _activate_main(_sel_main)
-
-
-@kb.add("escape", filter=_in_frame("main"), eager=True)
-def _kb_main_escape(event):
-    _push_frame("exit_confirm")
 
 
 # Profile frame
@@ -14084,23 +14061,6 @@ def _kb_upd_any(event):
     _update_result_keypress()
 
 
-# Exit confirm
-@kb.add("y", filter=_in_frame("exit_confirm"))
-@kb.add("Y", filter=_in_frame("exit_confirm"))
-def _kb_ec_yes(event):
-    event.app.exit()
-
-
-@kb.add("escape", filter=_in_frame("exit_confirm"), eager=True)
-def _kb_ec_escape(event):
-    _pop_frame()
-
-
-@kb.add("<any>", filter=_in_frame("exit_confirm"))
-def _kb_ec_any(event):
-    _pop_frame()
-
-
 # ---------------------------------------------------------------------------
 # Layout — frame builders
 # ---------------------------------------------------------------------------
@@ -14364,7 +14324,7 @@ def main():
     global _spotlights_empty_window
     global _scripts_window, _about_window
     global _update_running_window, _update_result_window
-    global _exit_confirm_window, _too_small_window
+    global _too_small_window
     global _history_filter_window, _history_table_window, _history_options_window
     global _history_detail_window, _history_rate_window
     global _history_delete_confirm_window
@@ -14410,7 +14370,6 @@ def main():
     _about_window,                 about_frame               = _build_simple(_about_text)
     _update_running_window,        update_running_frame      = _build_simple(_update_running_text)
     _update_result_window,         update_result_frame       = _build_simple(_update_result_text)
-    _exit_confirm_window,          exit_confirm_frame        = _build_simple(_exit_confirm_text)
     _too_small_window,             too_small_frame           = _build_simple(_too_small_text)
     (_history_filter_window, _history_table_window, _history_options_window,
      history_frame) = _build_history()
@@ -14534,7 +14493,6 @@ def main():
         "credits":                    credits_frame,
         "update_running":             update_running_frame,
         "update_result":              update_result_frame,
-        "exit_confirm":               exit_confirm_frame,
     }
 
     def _root():

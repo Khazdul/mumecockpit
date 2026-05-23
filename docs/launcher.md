@@ -42,7 +42,7 @@ The UI is a frame stack: a single `DynamicContainer` swaps between `main`,
 `options_connection_custom`, `options_coming_soon`, `scripts`, `about`,
 `history`, `history_detail`, `history_rate`, `history_delete_confirm`,
 `log_view`, `spotlights_empty`, `credits`, `update_running`,
-`update_result`, and `exit_confirm` containers, pushed and popped via
+and `update_result` containers, pushed and popped via
 `_push_frame` / `_pop_frame`. Each
 frame owns its own `KeyBindings` filter (`_in_frame(name)`) so
 navigation, scroll, and ESC behave per-frame. The popup architecture
@@ -60,7 +60,7 @@ no longer a per-pane subframe.
 | Spotlights | Cross-character reel of deaths, level-ups, pvp-kills, and achievements aggregated from every character's sealed runs. Opens `log_view` in spotlight mode; empty-state frame when nothing has been captured yet. See the [Spotlights sub-menu](#spotlights-sub-menu) section and ADR 0077. |
 | About page | Reads `bridge/launcher/about.txt`; word-wrapped, cached per resize, scrollable. Current version on the right of the title; an "Update available: vX.Y.Z" line appears in `C_ACCENT` when `version.cache` contains a newer tag |
 | Update flow | Selecting "Update" runs `bridge/release/update.sh` in a worker thread; result keyed off update.sh's exit codes (0/10/20/21/22/other → complete/no-update/aborted/failed). rc==0 re-execs `bridge/launcher/launcher.sh` to pick up the new code |
-| Quit | Confirmation prompt; ESC cancels |
+| Quit | Selecting Quit exits the launcher immediately to the shell. ESC on the main frame is a no-op (intentionally unbound). |
 | Persistence | Options saved to `bridge/runtime/startup.conf` on Back / ESC; profile selection saved immediately on Enter |
 
 ## Profile sub-menu
@@ -1860,7 +1860,7 @@ session under `_history_table_cursor` at push time.
 | `escape`       | Cancel (eager) — pop, no files touched       |
 | `<any>`        | Cancel — any other key pops the frame        |
 
-Mirrors the `exit_confirm` and `update_result` patterns.
+Mirrors the `update_result` pattern.
 
 **Confirm.** `_history_delete_confirm_yes()` calls
 `_history_delete_session(summary)` (removes `.jsonl` / `.log` /
@@ -2481,7 +2481,7 @@ All frames render through `prompt_toolkit` controls. Layout building blocks:
   `options_panes`, `options_connection`,
   `options_connection_custom`, `options_coming_soon`, `history_detail`,
   `history_rate`, `history_delete_confirm`, `update_running`,
-  `update_result`, and `exit_confirm` are wrapped in
+  and `update_result` are wrapped in
   `HSplit([window], align=VerticalAlign.CENTER)` so they stay visually
   centred at any terminal height above the minimum.
 - **Package-layout frames** — `history` and `profile` use a centred
@@ -2595,8 +2595,8 @@ for its title row, footer anchoring, and selectable-row styling —
 `main`, the full Options chain (`options`, `options_panes`,
 `options_connection`, `options_connection_custom`,
 `options_spotlights`, `options_coming_soon`), `scripts`, `about`,
-`spotlights_empty`, and the two modal dialogs (`update_result`,
-`exit_confirm`). The `profile` and `history` chains keep their
+`spotlights_empty`, and the `update_result` modal dialog. The
+`profile` and `history` chains keep their
 bespoke widget grammars; `log_view` keeps its own `C_LOG_*` palette.
 See [ADR 0085](decisions/0085-shared-menu-chrome.md).
 
@@ -2610,10 +2610,9 @@ banner is top-anchored, the menu rows and quote sit in the middle,
 and the footer is bottom-anchored via `footer_block`.
 Every other swept frame's shortcut row also sits on the final terminal
 row — the footer no longer shifts vertically when the user moves
-between sibling frames. The two modal dialogs (`exit_confirm`,
-`update_result`) deliberately opt out of footer anchoring and stay
-vertically centred; they still adopt `C_SECTION` for their title /
-message line.
+between sibling frames. The `update_result` modal dialog deliberately
+opts out of footer anchoring and stays vertically centred; it still
+adopts `C_SECTION` for its title / message line.
 
 **Button-cell grammar.** The launcher's chrome carries three distinct
 cell grammars; which one applies depends on the zone, not on the
