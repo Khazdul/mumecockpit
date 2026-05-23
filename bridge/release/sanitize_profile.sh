@@ -15,6 +15,10 @@ class_pat = re.compile(
     rb'^\s*#class\s+\{[^}]+\}\s+\{?(open|close)\}?\s*$',
     re.IGNORECASE
 )
+profile_loaded_pat = re.compile(
+    rb'^\s*#var(?:iable)?\s+\{_profile_loaded\}\s+\{[^}]*\}\s*$',
+    re.IGNORECASE
+)
 
 with open(path, 'rb') as f:
     raw = f.read()
@@ -33,6 +37,11 @@ lines = data.split(b'\n')
 
 # 3. Strip #class {…} {open|close} wrapping lines
 lines = [l for l in lines if not class_pat.match(l)]
+
+# 3b. Strip stray #var {_profile_loaded} {…} lines (infrastructure flag —
+# never belongs in a profile file; cleans files polluted by an earlier bug
+# where the flag was set inside the open profile class).
+lines = [l for l in lines if not profile_loaded_pat.match(l)]
 
 # 4. Strip leading blank lines (whitespace-only until first non-blank)
 while lines and not lines[0].strip():

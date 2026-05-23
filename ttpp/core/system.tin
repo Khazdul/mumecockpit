@@ -144,7 +144,9 @@
             _register_stored_spells_actions;
             _register_run_log_capture %0;
             #%0 #class {%0} {open};
-            #var {_profile_loaded} {1}
+            #%0 #class {core} {open};
+            #%0 #var {_profile_loaded} {1};
+            #%0 #class {core} {close}
         }
     }
 }
