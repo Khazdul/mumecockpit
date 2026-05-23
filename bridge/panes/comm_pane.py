@@ -74,17 +74,25 @@ DESTINATION_PREPOSITIONS = {
     "whispers": "to",
 }
 
-CHANNEL_LABELS = {
-    "tales":     "Na",
-    "tells":     "Te",
-    "says":      "Sa",
-    "yells":     "Ye",
-    "prayers":   "Pr",
-    "emotes":    "Em",
-    "whispers":  "Wh",
-    "questions": "Qu",
-    "songs":     "Son",
-    "socials":   "Soc",
+CHANNEL_ORDER = [
+    "tales",
+    "tells",
+    "says",
+    "yells",
+    "prayers",
+    "emotes",
+    "whispers",
+    "questions",
+    "songs",
+    "socials",
+]
+
+# Display-only overrides for channels whose header label must differ from
+# both the GMCP name and the server-provided caption. Sparse: missing key
+# falls back to caption, then to name.title(). Handlers, filter keys, and
+# comm_filters.conf all stay keyed on the GMCP channel name.
+CHANNEL_DISPLAY = {
+    "tales": "Narrates",
 }
 
 # ---------------------------------------------------------------------------
@@ -208,10 +216,6 @@ def _match_visible_prefix(text, prefix):
         pi += 1
 
     return (matched_visible, ti)
-
-
-def _channel_label(name):
-    return CHANNEL_LABELS.get(name, name[:2].capitalize())
 
 
 def _channel_verb(channel, talker):
@@ -625,6 +629,42 @@ def _restore_cursor():
 # Text functions (called each render cycle by prompt_toolkit)
 # ---------------------------------------------------------------------------
 
+def _header_layout(caps, W):
+    """Layout for the width-responsive channel-filter header.
+
+    `caps` is the list of display-name strings, one per advertised channel
+    in render order. `W` is the available column count. Returns
+    `(cells, sep)`: each cell is a truncated, space-padded label for one
+    channel; cells are intended to be joined by `sep` space(s). Total
+    visible width is `W` or less by construction — trailing channels are
+    dropped only when `W` is below one column per channel."""
+    N = len(caps)
+    if N == 0 or W <= 0:
+        return [], 0
+
+    if W - (N - 1) >= N:
+        sep, budget, visible = 1, W - (N - 1), N
+    elif W >= N:
+        sep, budget, visible = 0, W, N
+    else:
+        sep, visible = 0, W
+        budget = visible
+
+    max_cap = max(len(caps[i]) for i in range(visible))
+    target  = budget // visible
+    rem     = budget %  visible
+
+    cells = []
+    if target >= max_cap:
+        for i in range(visible):
+            cells.append(caps[i])
+    else:
+        for i in range(visible):
+            w = target + (1 if i < rem else 0)
+            cells.append(caps[i][:w].ljust(w))
+    return cells, sep
+
+
 def _header_text():
     """Fragments for the 1-row channel-filter header."""
     if not _run_active:
@@ -632,36 +672,30 @@ def _header_text():
     frags = []
     if _state is None:
         return frags
-    channels   = _state.get("channels") or []
-    advertised = {ch.get("name", "") for ch in channels}
+    channels    = _state.get("channels") or []
+    advertised  = {ch.get("name", "") for ch in channels}
+    cap_by_name = {ch.get("name", ""): ch.get("caption", "") for ch in channels}
 
-    frags.append(("", " "))  # leading inert space
+    def _display(name):
+        if name in CHANNEL_DISPLAY:
+            return CHANNEL_DISPLAY[name]
+        cap = cap_by_name.get(name, "")
+        if cap:
+            return cap
+        return name.title()
 
-    for name, label in CHANNEL_LABELS.items():
-        if name not in advertised:
-            continue
-        enabled = _filters.get(name, True)
-        style   = _channel_color(name) if enabled else C_LABEL_OFF
-
-        def _make_handler(n=name):
-            def _handler(mouse_event):
-                if mouse_event.event_type != MouseEventType.MOUSE_DOWN:
-                    return
-                if mouse_event.button == MouseButton.RIGHT:
-                    forward_solo(n)
-                else:
-                    forward_toggle(n)
-            return _handler
-
-        frags.append((style, label, _make_handler()))
-        frags.append(("", " "))  # trailing space (also acts as separator)
-
-    # Unknown channels (not in CHANNEL_LABELS): append in server order
+    known   = set(CHANNEL_ORDER)
+    ordered = [n for n in CHANNEL_ORDER if n in advertised]
     for ch in channels:
-        name = ch.get("name", "")
-        if name in CHANNEL_LABELS:
-            continue
-        label   = name[:2].capitalize()
+        n = ch.get("name", "")
+        if n and n not in known and n not in ordered:
+            ordered.append(n)
+
+    caps        = [_display(n) for n in ordered]
+    cells, sep  = _header_layout(caps, max(1, _term_cols()))
+
+    for i, cell in enumerate(cells):
+        name    = ordered[i]
         enabled = _filters.get(name, True)
         style   = _channel_color(name) if enabled else C_LABEL_OFF
 
@@ -675,8 +709,9 @@ def _header_text():
                     forward_toggle(n)
             return _handler
 
-        frags.append((style, label, _make_handler()))
-        frags.append(("", " "))
+        frags.append((style, cell, _make_handler()))
+        if sep == 1 and i < len(cells) - 1:
+            frags.append(("", " "))
 
     return frags
 
