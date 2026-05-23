@@ -10709,7 +10709,6 @@ async def _banner_tick_loop():
             if _app is None:
                 return
             if _current_frame == "main":
-                launcher_banner.advance(time.monotonic())
                 _app.invalidate()
             await asyncio.sleep(interval)
     except asyncio.CancelledError:
