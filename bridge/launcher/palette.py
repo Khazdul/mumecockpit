@@ -18,7 +18,7 @@ __all__ = [
     "C_LOG_OVERLAY_BG", "C_LOG_OVERLAY_FG", "C_LOG_OVERLAY_HINT",
     "C_LOG_SCRUBBER_FILLED", "C_LOG_SCRUBBER_EMPTY", "C_LOG_SCRUBBER_THUMB",
     "C_LOG_BUTTON_IDLE", "C_LOG_BUTTON_HOVER",
-    "C_SPOTLIGHT_BOX_BG", "C_SPOTLIGHT_FRAME",
+    "C_SPOTLIGHT_BOX_BG", "C_SPOTLIGHT_FRAME", "spotlight_frame_style",
     "C_SPOTLIGHT_TEXT_PRIMARY", "C_SPOTLIGHT_TEXT_SECONDARY",
     "_S_VALUE", "_S_LABEL", "_S_GAINED", "_S_LOSS", "_S_TP_BAR",
     "_S_TRACK", "_S_MARKER", "_S_THUMB", "_S_TOTAL", "_S_ARROW",
@@ -178,6 +178,18 @@ C_SPOTLIGHT_BOX_BG         = "bg:#00d7d7"
 C_SPOTLIGHT_FRAME          = "fg:#000000 bg:#00d7d7"
 C_SPOTLIGHT_TEXT_PRIMARY   = "fg:#000000 bg:#00d7d7"
 C_SPOTLIGHT_TEXT_SECONDARY = "fg:#606060 bg:#00d7d7"
+
+
+def spotlight_frame_style(terminal_bg):
+    """Spotlight info-box outline style. The `█▀▄▌▐` glyphs' foreground
+    is the outer edge of the box — half-block tops/bottoms and the full-
+    block corners. Painting that fg in the host terminal background blends
+    the outer edge into the surrounding canvas (the cyan fill is the
+    in-box face). `terminal_bg` is the detected `#rrggbb` or `None`; falls
+    back to `#000000` (the C_SPOTLIGHT_FRAME default) when detection is
+    unavailable. Companion to the pane_color_hex() palette helper."""
+    fg = terminal_bg or "#000000"
+    return f"fg:{fg} bg:#00d7d7"
 
 # ---------------------------------------------------------------------------
 # Per-pane background palette

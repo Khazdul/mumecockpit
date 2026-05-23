@@ -49,7 +49,7 @@ from palette import (  # noqa: E402
     C_LOG_OVERLAY_BG, C_LOG_OVERLAY_FG, C_LOG_OVERLAY_HINT,
     C_LOG_SCRUBBER_FILLED, C_LOG_SCRUBBER_EMPTY, C_LOG_SCRUBBER_THUMB,
     C_LOG_BUTTON_IDLE, C_LOG_BUTTON_HOVER,
-    C_SPOTLIGHT_BOX_BG, C_SPOTLIGHT_FRAME,
+    C_SPOTLIGHT_BOX_BG, C_SPOTLIGHT_FRAME, spotlight_frame_style,
     C_SPOTLIGHT_TEXT_PRIMARY, C_SPOTLIGHT_TEXT_SECONDARY,
     _S_GAINED, _S_LOSS, _S_LABEL, _S_VALUE, _S_TP_BAR,
     _S_TRACK, _S_MARKER, _S_THUMB, _S_TOTAL, _S_ARROW,
@@ -592,6 +592,10 @@ def _one_shot_migrations():
 # None when stdin isn't a tty or the terminal doesn't reply within the
 # bounded probe window; callers fall back to #000000.
 _terminal_bg = None
+# Pre-computed spotlight info-box outline style derived from _terminal_bg.
+# Re-set once at startup by _probe_and_persist_terminal_bg(); the spotlight
+# overlay renderer reads it on every tick.
+_spotlight_frame_style = C_SPOTLIGHT_FRAME
 
 _OSC11_REPLY_RE = re.compile(rb"rgb:([0-9a-fA-F]+)/([0-9a-fA-F]+)/([0-9a-fA-F]+)")
 
@@ -722,10 +726,12 @@ def _write_terminal_bg_to_layout_conf(bg):
 
 def _probe_and_persist_terminal_bg():
     """One-shot wrapper: detect, stash on the module-level _terminal_bg,
-    and write to layout.conf. Called once from main() before the
+    pre-compute the spotlight frame style derived from it, and write the
+    value to layout.conf. Called once from main() before the
     prompt_toolkit Application starts."""
-    global _terminal_bg
+    global _terminal_bg, _spotlight_frame_style
     _terminal_bg = _detect_terminal_bg()
+    _spotlight_frame_style = spotlight_frame_style(_terminal_bg)
     _write_terminal_bg_to_layout_conf(_terminal_bg)
 
 
@@ -11542,20 +11548,21 @@ def _log_spotlight_overlay_text():
         ("centre_secondary", countdown),
     ]
 
+    frame = _spotlight_frame_style
     frags = []
     # Top frame row: █ + ▀ × inner + █
-    frags.append((C_SPOTLIGHT_FRAME, "█" + ("▀" * inner) + "█"))
+    frags.append((frame, "█" + ("▀" * inner) + "█"))
     frags.append(("", "\n"))
     for kind, payload in interior_rows:
-        frags.append((C_SPOTLIGHT_FRAME, "▌"))
+        frags.append((frame, "▌"))
         if kind == "nav":
             frags.extend(payload)
         else:
             frags.extend(_log_spotlight_box_row(payload, kind, inner))
-        frags.append((C_SPOTLIGHT_FRAME, "▐"))
+        frags.append((frame, "▐"))
         frags.append(("", "\n"))
     # Bottom frame row: █ + ▄ × inner + █
-    frags.append((C_SPOTLIGHT_FRAME, "█" + ("▄" * inner) + "█"))
+    frags.append((frame, "█" + ("▄" * inner) + "█"))
     return frags
 
 
@@ -11668,15 +11675,16 @@ def _log_spotlight_empty_box(box_w, inner):
     before a spotlight is selectable. Paints an empty framed box so the
     Float doesn't collapse mid-frame; should never be seen by the user
     under normal flow."""
+    frame = _spotlight_frame_style
     frags = []
-    frags.append((C_SPOTLIGHT_FRAME, "█" + ("▀" * inner) + "█"))
+    frags.append((frame, "█" + ("▀" * inner) + "█"))
     frags.append(("", "\n"))
     for i in range(_SPOTLIGHT_BOX_H - 2):
-        frags.append((C_SPOTLIGHT_FRAME, "▌"))
+        frags.append((frame, "▌"))
         frags.append((C_SPOTLIGHT_BOX_BG, " " * inner))
-        frags.append((C_SPOTLIGHT_FRAME, "▐"))
+        frags.append((frame, "▐"))
         frags.append(("", "\n"))
-    frags.append((C_SPOTLIGHT_FRAME, "█" + ("▄" * inner) + "█"))
+    frags.append((frame, "█" + ("▄" * inner) + "█"))
     return frags
 
 

@@ -2097,15 +2097,23 @@ the keyboard hint on the right). The right-aligned hint is
 **Floating info box (top-right).** A 30×8 framed rectangle pinned to
 `top=2, right=2` — a 2-cell margin from both the top and right edges
 of `log_view`. The frame is the half-block outline `█▀▄▌▐` rendered in
-black on the bright cyan BG: top row `█` + `▀` × `interior_width` +
+the host terminal background colour (or `#000000` when detection
+failed) on the bright cyan BG: top row `█` + `▀` × `interior_width` +
 `█`, bottom row `█` + `▄` × `interior_width` + `█`, side columns `▌`
-(left) and `▐` (right) on each of the 6 interior rows. Interior width
-is `_SPOTLIGHT_BOX_W - 2 = 28`. Palette:
+(left) and `▐` (right) on each of the 6 interior rows. Painting the
+outer edge in the detected terminal background blends the half-blocks
+and `█` corners into the surrounding canvas — exactly as they blend
+into a black canvas today. Interior width is `_SPOTLIGHT_BOX_W - 2 =
+28`. Palette:
 
 - `C_SPOTLIGHT_BOX_BG` — bright banner-hue fill (same hue as `C_TITLE`)
   painted under every cell of the box.
-- `C_SPOTLIGHT_FRAME` — black on the BG, for the `█▀▄▌▐` outline
-  glyphs.
+- `palette.spotlight_frame_style(_terminal_bg)` — outer-edge style for
+  the `█▀▄▌▐` glyphs: `fg:<terminal_bg> bg:#00d7d7`, falling back to
+  the `C_SPOTLIGHT_FRAME` default (`fg:#000000 bg:#00d7d7`) when
+  detection failed. Pre-computed once at launcher startup and cached
+  in module-level `_spotlight_frame_style` (the renderer ticks at
+  ~30 Hz; the style string is fixed per launcher run).
 - `C_SPOTLIGHT_TEXT_PRIMARY` — near-black, on the BG. Used for the
   nav row, the character name, and the event label.
 - `C_SPOTLIGHT_TEXT_SECONDARY` — muted grey, on the BG. Lighter than
@@ -2516,7 +2524,7 @@ shared with the in-game popup. Roles:
 | `C_LOG_PLAYER_INPUT`| log_view outbound (player command) lines — muted grey with a faint light-cyan tint                  |
 | `C_LOG_OVERLAY_BG`  | log_view top header + bottom controls fill — deep-shadow variant of the spotlight box hue so chain and spotlight modes read as one theme family |
 | `C_SPOTLIGHT_BOX_BG`         | Spotlight info-box fill — bright banner hue (same as `C_TITLE`) painted under every cell of the floating overlay |
-| `C_SPOTLIGHT_FRAME`          | Spotlight info-box outline glyphs (`█▀▄▌▐`) — black on the box bg |
+| `C_SPOTLIGHT_FRAME`          | Spotlight info-box outline glyphs default — black on the box bg. Live renderer uses `spotlight_frame_style(_terminal_bg)` instead so the outer edge blends into the host terminal background; this constant is the fallback when OSC 11 detection fails |
 | `C_SPOTLIGHT_TEXT_PRIMARY`   | Spotlight info-box primary text — near-black on box bg (character name, event label) |
 | `C_SPOTLIGHT_TEXT_SECONDARY` | Spotlight info-box secondary text — muted grey on box bg (countdown), visibly subordinate |
 | `C_OK`              | Persistent "selected / active" marker (e.g. the profile-table ✓) — green, never gold. |
