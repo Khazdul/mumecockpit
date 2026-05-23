@@ -10673,17 +10673,34 @@ def _credits_row_brightness(tr: int, n: int, fb: int) -> float:
     return 1.0
 
 
-def _credits_brightness_to_hex(b: float) -> str:
-    v = max(0, min(255, int(round(b * 255))))
-    return f"#{v:02x}{v:02x}{v:02x}"
+def _credits_brightness_to_hex(b: float, base_hex: str | None = None) -> str:
+    """Interpolate per RGB channel between `base_hex` (brightness 0) and
+    white (brightness 1). When `base_hex` is None, defaults to #000000 —
+    producing the original greyscale ramp. Used both for the credits row
+    fade and (implicitly) for the empty-canvas fallback."""
+    base = base_hex or "#000000"
+    br = int(base[1:3], 16)
+    bg = int(base[3:5], 16)
+    bb = int(base[5:7], 16)
+    r  = max(0, min(255, int(round(br + (255 - br) * b))))
+    g  = max(0, min(255, int(round(bg + (255 - bg) * b))))
+    bl = max(0, min(255, int(round(bb + (255 - bb) * b))))
+    return f"#{r:02x}{g:02x}{bl:02x}"
 
 
 def _credits_text():
     """Build the credits scroll as a fragment list. One fragment per
-    terminal row: a centred credit line painted on a black background,
-    with brightness from the fade-band formula."""
+    terminal row: a centred credit line, with brightness from the fade-band
+    formula. When `_terminal_bg` is known, the ramp interpolates between
+    the host terminal background (brightness 0) and white (brightness 1),
+    and the explicit `bg:#000000` is dropped so the terminal background
+    shows through — text fades cleanly to invisible at the bands instead
+    of stranding dark grey on a tinted canvas. When `_terminal_bg` is
+    None, the original black-canvas + greyscale-ramp behaviour is preserved."""
+    bg_suffix = "" if _terminal_bg else " bg:#000000"
     if not _credits_lines or _credits_term_rows <= 0:
-        return [("bg:#000000", " " * max(1, _term_cols()))]
+        empty_style = "" if _terminal_bg else "bg:#000000"
+        return [(empty_style, " " * max(1, _term_cols()))]
     n = _credits_term_rows
     cols = max(1, _term_cols())
     fb = max(1, int(n * _CREDITS_FADE_BAND_FRAC))
@@ -10699,7 +10716,7 @@ def _credits_text():
         else:
             line = blank_row
         brightness = _credits_row_brightness(tr, n, fb)
-        style = f"fg:{_credits_brightness_to_hex(brightness)} bg:#000000"
+        style = f"fg:{_credits_brightness_to_hex(brightness, _terminal_bg)}{bg_suffix}"
         frags.append((style, line))
         if tr < n - 1:
             frags.append(("", "\n"))
@@ -10707,8 +10724,11 @@ def _credits_text():
 
 
 def _credits_hint_text():
-    """Top-right exit hint, rendered as a Float above the scroll. Dim
-    grey on the same black canvas, unaffected by the fade band."""
+    """Top-right exit hint, rendered as a Float above the scroll. Dim grey,
+    unaffected by the fade band. Drops the explicit `bg:#000000` when
+    `_terminal_bg` is known so the terminal default shows through."""
+    if _terminal_bg:
+        return [("fg:#555555", "Escape to exit")]
     return [("fg:#555555 bg:#000000", "Escape to exit")]
 
 
@@ -14338,14 +14358,16 @@ def main():
         ],
     )
 
-    # Credits frame — scrolling end-of-reel chronicle on a black canvas.
-    # Mouse is intentionally not bound (no handler on the control); only
-    # ESC exits early. The dim "Escape to exit" hint floats top-right.
+    # Credits frame — scrolling end-of-reel chronicle. Canvas matches the
+    # host terminal background when OSC 11 detection succeeded, otherwise
+    # falls back to an explicit black canvas. Mouse is intentionally not
+    # bound (no handler on the control); only ESC exits early. The dim
+    # "Escape to exit" hint floats top-right.
     _credits_window = Window(
         content=FormattedTextControl(text=_credits_text, focusable=True),
         wrap_lines=False,
         always_hide_cursor=True,
-        style="bg:#000000",
+        style="" if _terminal_bg else "bg:#000000",
     )
     credits_hint_win = Window(
         content=FormattedTextControl(text=_credits_hint_text, focusable=False),

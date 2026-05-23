@@ -2240,9 +2240,12 @@ spotlight take the same path — see the
 
 End-of-reel scrolling chronicle. Pushed automatically by
 `_log_auto_pause_at_end()` when the spotlight reel finishes
-([ADR 0080](decisions/0080-end-of-reel-credits.md)). Full-screen,
-black canvas (`bg:#000000`); narrative lines scroll bottom-to-top with
-linear fade bands at the top and bottom of the viewport.
+([ADR 0080](decisions/0080-end-of-reel-credits.md)). Full-screen
+canvas matched to the host terminal background (detected via OSC 11 at
+launcher startup — see [bridge-services.md → `terminal_bg`](bridge-services.md#layoutconf-keys)),
+with a `bg:#000000` fallback when detection fails or the terminal does
+not reply; narrative lines scroll bottom-to-top with linear fade bands
+at the top and bottom of the viewport.
 
 **Content.** Built once on frame entry by
 `bridge/launcher/credits.py`:
@@ -2275,17 +2278,22 @@ guarantees the closing line clears the top before the frame pops.
 **Fade bands.** `_CREDITS_FADE_BAND_FRAC = 0.35`. Bottom 35% of the
 viewport ramps brightness from 0 to 1 (`tr / fb`); top 35% ramps
 from 1 to 0 (`(n - 1 - tr) / fb`); middle ~30% is solid white.
-Brightness is collapsed to a hex `#vvvvvv` SGR string per row by
-`_credits_brightness_to_hex`; the same hex is reused as both fg and
-bg-companion fg in `fg:<hex> bg:#000000`. Combined with the
-1 row/sec scroll, each row spends ~35% × `term_rows` seconds in each
-band — long enough for the gradient to read as cinematic rather than
-as a sharp cutoff.
+`_credits_brightness_to_hex(b, base_hex)` interpolates per RGB channel
+between `base_hex` (b=0) and white (b=1): when `_terminal_bg` is known
+the base is the host terminal background so rows fade cleanly to
+invisible at the bands; when it is `None` the base is `#000000` and
+the original greyscale ramp applies on an explicit black canvas. The
+per-row style drops `bg:#000000` whenever `_terminal_bg` is known so
+the terminal default shows through. Combined with the 1 row/sec
+scroll, each row spends ~35% × `term_rows` seconds in each band —
+long enough for the gradient to read as cinematic rather than as a
+sharp cutoff.
 
 **`Escape to exit` hint.** Rendered as a Float above the scroll
-content, pinned at `top=1, right=2`, `fg:#555555 bg:#000000`. Not
-affected by the fade band — the float paints above the scroll text so
-a credit line in row 0 doesn't clobber it.
+content, pinned at `top=1, right=2`, `fg:#555555` (with `bg:#000000`
+appended only when `_terminal_bg` is `None`). Not affected by the
+fade band — the float paints above the scroll text so a credit line
+in row 0 doesn't clobber it.
 
 **Input.** ESC pops back to the launcher main menu (via
 `_reset_to_main()` — the previous frame stack entry is `main` because
