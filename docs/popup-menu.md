@@ -14,6 +14,10 @@ full-screen `Application`. `bridge/launcher/ingame_menu.sh` is a thin
 wrapper that `exec`s the Python entry; both the tmux root binding and
 the Lua auto-open path in `lua/brain/connection.lua` invoke the wrapper.
 
+Both `display-popup` invocations pass `-S fg=#008787` so the popup
+border paints in section cyan (matching the `C_SECTION` chrome tone)
+on the ESC-opened popup and the disconnect-auto-opened popup alike.
+
 The UI is a frame stack: a single `DynamicContainer` swaps between
 `main`, `options`, `panes`, `scripts`, `statistics`,
 `rate_session`, and `exit_confirm` containers, pushed and popped via
@@ -68,13 +72,21 @@ before the disconnect step — see "Auto-open on disconnect" below.
 
 ## Status header
 
-The status header at the top of the popup shows Profile · Mode · Link.
-Backed by `bridge/runtime/connection.state` (connection status) and
-`bridge/runtime/ping.cache` (link quality). Example:
+The status header is the topmost row of the popup — above the starfield
++ wordmark banner on `main`, below the title row on `rate_session` — and
+shows Profile · Mode · Link. Backed by `bridge/runtime/connection.state`
+(connection status) and `bridge/runtime/ping.cache` (link quality).
+Example:
 
     Profile: default  ·  MMapper  ·  Link: 38ms (stable)
 
 State is re-probed from the files on every render — never cached.
+
+The header paints in `C_HINT` (the same muted grey as the footer
+shortcut row) so it reads as chrome, not content. The link-quality
+suffix only departs from `C_HINT` when something needs attention:
+`jittery` / `spiking` render in `C_YELLOW`, and `timeout` / `dead` /
+unknown quality render in `C_ERR`.
 
 The popup invalidates itself once per second while open, so the Link readout
 (and any other on-render state like connection mode or the Statistics row's
@@ -129,9 +141,13 @@ game. Selectable menu rows render
 through `menu_chrome.menu_row`: gold `<< >>` on the cursor row, hover
 lightens the label (`C_HOVER`). The dead-grey "Save run" row reuses
 the `menu_row` "inactive" state with `inactive_style=C_HINT` and no
-row handler. Modal dialogs (`exit_confirm`, `rate_session`) keep their
-existing vertical layout — no footer anchoring — and adopt
-`C_SECTION` for the title row to match the swept menu chrome.
+row handler. The `rate_session` frame also anchors its
+`0-5 Set · ←→ Adjust · Enter Save · ESC Cancel` shortcut row via
+`menu_chrome.footer_block` — title row + status header + star row
+stay top-anchored, the shortcut row sits on the popup's last row, and
+the title adopts `C_SECTION` to match the swept menu chrome. The
+`exit_confirm` modal keeps its vertical layout — no footer anchoring —
+and adopts `C_SECTION` for the title row.
 
 **Hover-clear invariant.** Each frame with hover state attaches a
 small clear-hover handler (resets the frame's hover index on
@@ -505,14 +521,17 @@ every render from the meta sidecar:
 
 ### Rate-session frame
 
-Pushing the row presents `─── Rate the run ───` over the same
-Profile · Mode · Link status header used on the main frame, a centred
+Pushing the row presents the `─── Rate the run ───` title row
+(`title_block` with `blank_above=1`), the same Profile · Mode · Link
+status header used on the main frame directly below it, and a centred
 row of five `★` glyphs (single-space separated; gold for the first
-`_rate_session_rating` stars, grey for the rest), and the footer
-`0-5 Set · ←→ Adjust · Enter Save · ESC Cancel`. The frame follows
-the focus-on-push contract (ADR 0066): `_rate_session_window` is
-registered in `_focus_current_frame()` so per-star click handlers
-route correctly.
+`_rate_session_rating` stars, grey for the rest). The
+`0-5 Set · ←→ Adjust · Enter Save · ESC Cancel` shortcut row is
+anchored to the popup's final row via `menu_chrome.footer_block` —
+title / status / stars stay top-anchored while the shortcut row sits
+at the bottom. The frame follows the focus-on-push contract (ADR
+0066): `_rate_session_window` is registered in `_focus_current_frame()`
+so per-star click handlers route correctly.
 
 `_rate_session_rating` resets to `0` on every push of the frame —
 unrated by default — so opening the rating screen never carries over
