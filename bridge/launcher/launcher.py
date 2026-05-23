@@ -7092,14 +7092,14 @@ def _profile_delete_text():
 
 
 # ---------------------------------------------------------------------------
-# Options frame — top level (Panes / Scripts / Text layout / Connection / Back)
+# Options frame — top level (Connection / Panes / Scripts / Spotlights / Text layout / Back)
 # ---------------------------------------------------------------------------
 _OPTIONS_ROWS = [
+    ("connection",     "Connection"),
     ("panes",          "Panes"),
     ("scripts",        "Scripts"),
     ("spotlights",     "Spotlights"),
     ("text_layout",    "Text layout"),
-    ("connection",     "Connection"),
     ("back",           "Back"),
 ]
 
@@ -7624,10 +7624,10 @@ def _options_connection_custom_text():
 # the same keys and skips disabled JSONL event kinds before building the
 # reel. Missing keys default to enabled ("1").
 _SPOTLIGHT_TOGGLES = [
+    ("spotlights_show_achievements", "Achievements"),
     ("spotlights_show_deaths",       "Deaths"),
     ("spotlights_show_levelups",     "Level-ups"),
     ("spotlights_show_pvp",          "PvP kills"),
-    ("spotlights_show_achievements", "Achievements"),
 ]
 
 

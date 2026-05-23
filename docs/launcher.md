@@ -55,7 +55,7 @@ no longer a per-pane subframe.
 |---------|--------|
 | Session detect | `tmux has-session -t mume` + `list-clients` re-probed on every render → top item is "Enter MUME", "Resume MUME", or "Mirror MUME (attached elsewhere)" |
 | Profile page | Sortable table of `ttpp/profiles/*.tin` (Name + Selected columns) paired with a centred Options widget — Select, New, Edit, Rename, Delete, Export, Back. See the [Profile sub-menu](#profile-sub-menu) section below. `default` cannot be renamed or deleted. "Create blank" copies from `bridge/launcher/templates/blank_profile.tin` (single source of truth — see ADR 0042). The active profile is written to `startup.conf` and consumed by `ttpp/core/config.tin` at tt++ startup. |
-| Options page | Navigation hub: **Panes**, **Scripts**, **Spotlights**, **Text layout** (placeholder), **Connection**, blank row, **Back**. See the [Options sub-menu](#options-sub-menu) section below for each child frame. All Options changes persist to `bridge/runtime/startup.conf` on Back / ESC. |
+| Options page | Navigation hub: **Connection**, **Panes**, **Scripts**, **Spotlights**, **Text layout** (placeholder), blank row, **Back**. See the [Options sub-menu](#options-sub-menu) section below for each child frame. All Options changes persist to `bridge/runtime/startup.conf` on Back / ESC. |
 | Scripts page | Opened from Options → Scripts. Two-column `[ list \| detail ]` manager of `lua/scripts/<name>.lua`; toggles enabled state via `bridge/runtime/scripts.conf` (deferred write on Back/ESC). See [`options_scripts` frame](#options_scripts-frame) below. |
 | Spotlights | Cross-character reel of deaths, level-ups, pvp-kills, and achievements aggregated from every character's sealed runs. Opens `log_view` in spotlight mode; empty-state frame when nothing has been captured yet. See the [Spotlights sub-menu](#spotlights-sub-menu) section and ADR 0077. |
 | About page | Reads `bridge/launcher/about.txt`; word-wrapped, cached per resize, scrollable. Current version on the right of the title; an "Update available: vX.Y.Z" line appears in `C_ACCENT` when `version.cache` contains a newer tag |
@@ -1198,6 +1198,8 @@ out in ADR 0082.
 
 Navigation hub pushed by activating "Options" on the main frame. Children:
 
+- **Connection** → `options_connection` — MMapper / Direct / Custom
+  selector; Custom pushes a host/port input subframe.
 - **Panes** → `options_panes` — per-pane enable/disable + colour selection.
 - **Scripts** → `scripts` — opens the two-column Scripts manager
   documented under [`options_scripts` frame](#options_scripts-frame).
@@ -1209,8 +1211,6 @@ Navigation hub pushed by activating "Options" on the main frame. Children:
   layout/typography options. The row's inactive label paints in
   `C_HINT` (dim grey) to signal "not ready yet"; selected / hover
   states pick up the normal `<< label >>` menu-row grammar.
-- **Connection** → `options_connection` — MMapper / Direct / Custom
-  selector; Custom pushes a host/port input subframe.
 
 ESC inside `options` saves any pending edits to `bridge/runtime/startup.conf`
 and pops back to `main`.
@@ -1507,10 +1507,10 @@ the row; ESC or `Back` saves and pops back to `options`.
 
 | Row              | `startup.conf` key                | JSONL `event`  |
 |------------------|-----------------------------------|----------------|
+| `Achievements`   | `spotlights_show_achievements`    | `achievement`  |
 | `Deaths`         | `spotlights_show_deaths`          | `char_death`   |
 | `Level-ups`      | `spotlights_show_levelups`        | `level_up`     |
 | `PvP kills`      | `spotlights_show_pvp`             | `pkill`        |
-| `Achievements`   | `spotlights_show_achievements`    | `achievement`  |
 
 All four keys default to `1` (enabled) when absent — fresh installs and
 pre-feature `startup.conf` files behave as before. A value of `0`
