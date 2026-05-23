@@ -55,12 +55,17 @@ TMUX_TARGET  = "mume:cockpit.0"
 TMUX_SESSION = "mume:cockpit"
 TMUX_OPTROOT = "mume"
 
+# Banner twinkle redraw rate. The main frame's banner is animated; submenus
+# are static, so the loop skips the invalidate when `_current_frame` is not
+# "main". Mirrors launcher.py's `_banner_tick_loop` precedent.
+_BANNER_TICK_HZ = 6
+
 # ---------------------------------------------------------------------------
 # Colour palette — definitions live in bridge/launcher/palette.py so the
 # launcher rewrite can import the same constants. See docs/launcher.md.
 # ---------------------------------------------------------------------------
 from palette import *  # noqa: F401,F403
-import banner
+import launcher_banner
 
 # ---------------------------------------------------------------------------
 # Panes submenu: pane target -> (display label, conf colour key). Order
@@ -119,6 +124,7 @@ _stats_pkills_sort = ("XP", "desc")
 _stats_focused     = 0          # 0=Kills, 1=PKills, 2=Allies, 3=Achievements
 _stats_run_ended   = False
 _stats_tick_task   = None       # asyncio.Task for the 60 s refresh loop
+_banner_tick_task  = None       # asyncio.Task for the main-frame banner twinkle
 _kills_sb          = None       # Scrollbar instances, created on first push
 _pkills_sb         = None
 _allies_sb         = None
@@ -497,16 +503,16 @@ def _main_text():
 
     # Starfield + wordmark banner — the logo is the popup's signature,
     # not a section title, and does not go through `menu_chrome.title_block`.
-    # Art lives in banner.py and is shared with the launcher main page.
-    banner_pad = _pad_centre(" " * banner.BANNER_WIDTH, cols)
+    # Art lives in launcher_banner.py and is shared with the launcher main page.
+    banner_pad = _pad_centre(" " * launcher_banner.BANNER_WIDTH, cols)
     frags.append(("", "\n", clear_hover))
-    for line_frags in banner.banner_lines():
+    for line_frags in launcher_banner.banner_lines():
         frags.append(("", banner_pad, clear_hover))
         for style, text in line_frags:
             frags.append((style, text, clear_hover))
         frags.append(("", "\n", clear_hover))
     frags.append(("", "\n", clear_hover))
-    banner_rows = 1 + banner.BANNER_HEIGHT + 1
+    banner_rows = 1 + launcher_banner.BANNER_HEIGHT + 1
 
     _append_status_header(frags, cols, clear_hover=clear_hover)
     frags.append(("", "\n\n", clear_hover))
@@ -2651,6 +2657,35 @@ async def _tick(app):
         pass
 
 
+async def _banner_tick_loop():
+    """Persistent redraw loop for the main-frame starfield. Invalidates only
+    while `_current_frame == "main"` so submenus stay still; sleeps at
+    `_BANNER_TICK_HZ`. Mirrors the launcher's `_banner_tick_loop`."""
+    interval = 1.0 / _BANNER_TICK_HZ
+    try:
+        while True:
+            if _app is None:
+                return
+            if _current_frame == "main":
+                _app.invalidate()
+            await asyncio.sleep(interval)
+    except asyncio.CancelledError:
+        pass
+
+
+def _banner_start_tick_task():
+    """Kick off the banner twinkle loop. Idempotent: a second call is a
+    no-op once the task is running."""
+    global _banner_tick_task
+    if _banner_tick_task is not None:
+        return
+    try:
+        loop = asyncio.get_running_loop()
+        _banner_tick_task = loop.create_task(_banner_tick_loop())
+    except RuntimeError:
+        pass
+
+
 def main():
     global _app
 
@@ -2689,15 +2724,23 @@ def main():
     _app = app
 
     async def _run():
+        global _banner_tick_task
         tick_task = asyncio.ensure_future(_tick(app))
+        _banner_start_tick_task()
         try:
             await app.run_async()
         finally:
             tick_task.cancel()
-            try:
-                await tick_task
-            except asyncio.CancelledError:
-                pass
+            if _banner_tick_task is not None:
+                _banner_tick_task.cancel()
+            for t in (tick_task, _banner_tick_task):
+                if t is None:
+                    continue
+                try:
+                    await t
+                except asyncio.CancelledError:
+                    pass
+            _banner_tick_task = None
 
     try:
         asyncio.run(_run())

@@ -1,12 +1,6 @@
-# bridge/launcher/launcher_banner.py — dedicated launcher main-page banner.
-#
-# Static starfield + wordmark banner used ONLY by the launcher's main page.
-# The shared `banner.py` module (used by the in-game popup and rendered in
-# plain white by the tt++ welcome screen) is intentionally left alone — the
-# launcher banner is decoupled so it can evolve independently. As a
-# deliberate consequence, the MUME and COCKPIT wordmark strings below are
-# copied verbatim from `banner.py`; the wordmark is frozen art and the
-# duplication is the price of keeping the two surfaces independent.
+# bridge/launcher/launcher_banner.py — shared MUME Cockpit banner used by
+# the launcher main page (launcher.py) and the in-game popup
+# (ingame_menu.py).
 #
 # The starfield is held as data (a list of star records). `STARS` stays the
 # human-editable source of truth for positions; an internal animated layer
@@ -14,7 +8,7 @@
 # function of the monotonic clock — slow, randomized periods and phases per
 # star so the field shimmers asynchronously. Stars tucked inside a wordmark
 # stay fully static so they never compete with the logo. The module has no
-# prompt_toolkit / app dependency: it's pure data + math, and the launcher
+# prompt_toolkit / app dependency: it's pure data + math, and each caller
 # drives redraws separately.
 
 import math
@@ -32,7 +26,7 @@ from palette import (
 BANNER_WIDTH  = 45
 BANNER_HEIGHT = 11  # 5 starfield rows + 3 MUME rows + 3 COCKPIT rows
 
-# Wordmark rows — copied verbatim from banner.py (see module docstring).
+# Wordmark rows — frozen art.
 # MUME wordmark, when centred to BANNER_WIDTH, spans cols 11-32.
 _MUME_WORDS = [
     '█▄ ▄█ █   █ █▄ ▄█ █▀▀▀',
@@ -152,10 +146,10 @@ def _row_fragments(row):
 def banner_lines(now=None):
     """Return the 11 banner rows as a list of fragment lists.
 
-    Same output shape as `banner.banner_lines()`: each row is a list of
-    (style, text) 2-tuples whose visible widths sum to `BANNER_WIDTH`.
-    Callers centre the row horizontally with their existing `_pad_centre`
-    helper and attach the per-row hover / mouse handler.
+    Each row is a list of (style, text) 2-tuples whose visible widths sum
+    to `BANNER_WIDTH`. Callers centre the row horizontally with their
+    existing `_pad_centre` helper and attach the per-row hover / mouse
+    handler.
 
     `now` (monotonic seconds) drives the twinkle; defaults to
     `time.monotonic()`. Pure function of the clock — no mutable per-frame

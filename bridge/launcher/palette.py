@@ -104,7 +104,7 @@ C_PANE_OFF    = "fg:#3a3a3a"
 
 # ---------------------------------------------------------------------------
 # Banner — shared starfield + wordmark used by the launcher main page
-# (launcher.py) and the in-game popup (ingame_menu.py). See banner.py.
+# (launcher.py) and the in-game popup (ingame_menu.py). See launcher_banner.py.
 # ---------------------------------------------------------------------------
 C_BANNER_WORD        = "fg:#00d0d0"   # wordmark line 1 (MUME)
 C_BANNER_WORD_DIM    = "fg:#0a9a9c"   # wordmark line 2 (COCKPIT)
