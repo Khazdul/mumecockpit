@@ -280,3 +280,53 @@ inside the message body keep rendering through `ANSI()` unchanged.
 **Not changed:** Branch c (fallback), quoted-channel rendering, and all other
 callers are unaffected. Raw data in `state.comm.history`, `bridge/comm.state`, and
 the JSONL archive is preserved verbatim as before.
+
+---
+
+## 2026-05-23 update — Header labels go width-responsive (supersedes `CHANNEL_LABELS`)
+
+**Superseded:** Two pieces of this ADR no longer describe the shipped
+renderer. They are kept here for history; the authoritative source is
+[ADR 0098](0098-comm-header-width-responsive.md).
+
+1. The **Decision** bullet describing `CHANNEL_LABELS` as
+   *"hardcoded 2–3 char header abbreviations, replacing the dynamic
+   label-collision algorithm"*.
+2. The **Consequences** bullet listing `CHANNEL_LABELS` alongside
+   `CHANNEL_VERBS` / `CHANNEL_COLORS` as small per-channel knowledge that
+   *"must be updated if MUME adds channels"*, with a `channel[:2].capitalize()`
+   fallback label for unknown channels.
+
+**Change:** The hardcoded label values are retired. The renderer now carries:
+
+- `CHANNEL_ORDER` — a list of channel names in the same fixed order the
+  retired `CHANNEL_LABELS` dict had as keys (`tales`, `tells`, `says`,
+  `yells`, `prayers`, `emotes`, `whispers`, `questions`, `songs`,
+  `socials`). Unknown advertised channels are still appended after, in
+  `Comm.Channel.List` order.
+- `CHANNEL_DISPLAY` — a sparse override map (currently
+  `{"tales": "Narrates"}`) for the rare case where the visible label must
+  differ from both the GMCP channel name and the server-provided caption.
+
+At render time, the display name for each advertised channel resolves
+`CHANNEL_DISPLAY` → `caption` → `name.title()`, and
+`_header_layout(caps, W)` (see ADR 0098) truncates evenly to fit the
+current pane width.
+
+**Why not just amend this ADR in place:** The label scheme is a distinct
+architectural decision — fixed curated codes vs. width-responsive
+abbreviation — and the consequences and alternatives are worth recording
+as their own ADR. This update note exists so a reader landing on ADR 0013
+is pointed at the current behaviour.
+
+**Channel order is still stable.** ADR 0013's stability guarantee — that
+labels survive server-side channel reordering — carries forward unchanged.
+Only the per-channel **abbreviation length** is now width-dependent; the
+ORDER comes from `CHANNEL_ORDER` and is not driven by `Comm.Channel.List`
+ordering.
+
+**Unchanged by this update:** `CHANNEL_VERBS` and `CHANNEL_COLORS` still
+exist as small per-channel knowledge with the same fallback semantics for
+unknown channels (channel name as verb, neutral grey as colour). Self/other
+talker colour, action-channel verbatim rendering, destination fallback, and
+all other decisions in this ADR are unaffected.

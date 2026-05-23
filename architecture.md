@@ -462,7 +462,7 @@ final row; the modal `exit_confirm` / `rate_session` dialogs adopt
 - [docs/popup-menu.md](docs/popup-menu.md) — In-game ESC popup: submenus, status header, save-profile flow. Touched when changing the in-game overlay.
 - [docs/bridge-services.md](docs/bridge-services.md) — Ping monitor, version check, self-update, layout and config file formats. Touched when changing background services or persisted config.
 - [docs/release-process.md](docs/release-process.md) — Release runbook: version bump, tagging, GitHub release. Touched when changing the release process.
-- [docs/comm-pane.md](docs/comm-pane.md) — Communication pane: renderer, comm.state schema, filter persistence, scroll semantics, label-collision policy. Touched when changing the comm pane.
+- [docs/comm-pane.md](docs/comm-pane.md) — Communication pane: renderer, comm.state schema, filter persistence, scroll semantics, width-responsive header layout. Touched when changing the comm pane.
 - [docs/status-pane.md](docs/status-pane.md) — Character status pane: renderer, state-file schema, field layout, colour scheme, layout integration. Touched when changing the status pane.
 - [docs/clock.md](docs/clock.md) — Game clock: sync sources, state schema, persistence, seed handling, degradation rules. Touched when changing clock sync or consuming game time.
 - [docs/affects.md](docs/affects.md) — Affect tracker: data flow, state schemas, persistence, pattern-conversion rules, tick lifecycle. Touched when changing affect tracking or adding new affect entries.

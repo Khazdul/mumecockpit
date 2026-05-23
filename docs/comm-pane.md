@@ -4,7 +4,7 @@ The comm pane is a right-column tmux pane positioned between `status` and `ui`
 (top to bottom: status → comm → ui → dev). It displays `state.comm.history` with
 a one-row click-to-toggle channel-filter header. Touch this file when changing
 the renderer, the state-file schema, filter persistence, scroll semantics, or
-the label-collision policy.
+the width-responsive header layout.
 
 ## Architecture
 
@@ -106,8 +106,9 @@ to repopulate history and channels for cross-launch continuity.
 
 **`channels`** — derived from `state.comm.channels` (set by `Comm.Channel.List`)
 with a computed `label` field. The `label` field is kept for backward compatibility
-but is **no longer consulted by the renderer** — the pane uses `CHANNEL_LABELS`
-(hardcoded 2–3 char abbreviations) instead.
+but is **no longer consulted by the renderer** — the pane derives header text via
+the `CHANNEL_DISPLAY` → `caption` → `name.title()` chain, then truncates evenly to
+fit the current pane width (see **Header labels** below).
 
 **`history`** — full `state.comm.history`, including ANSI codes verbatim in the
 `text` field. dkjson encodes `\x1b` as ``; Python's json module decodes it
@@ -116,32 +117,75 @@ fragments.
 
 ## Header labels
 
-Labels are hardcoded 2–3 character abbreviations in `CHANNEL_LABELS` at the top
-of `bridge/panes/comm_pane.py`. Unknown channels fall back to `channel[:2].capitalize()`.
+Labels are derived per render pass and abbreviated to fit the current pane
+width. There is no curated table of short codes; only declaration order and a
+sparse display-name override map are kept at the top of
+`bridge/panes/comm_pane.py`.
 
-| Channel   | Label |
-|-----------|-------|
-| tales     | Na    |
-| tells     | Te    |
-| says      | Sa    |
-| yells     | Ye    |
-| prayers   | Pr    |
-| emotes    | Em    |
-| whispers  | Wh    |
-| questions | Qu    |
-| songs     | Son   |
-| socials   | Soc   |
+**Display-name resolution.** For each advertised channel the renderer picks the
+first non-empty value of:
 
-Header order is fixed by the `CHANNEL_LABELS` declaration order (Na Te Sa Ye Pr Em
-Wh Qu Son Soc), filtered against the channels actually advertised by the server
-(`state["channels"]`). Any channels the server advertises that are not in
-`CHANNEL_LABELS` are appended at the end in `Comm.Channel.List` order with the
-`name[:2].capitalize()` fallback label — so the header stays correct if MUME ever
-adds a new channel.
+1. `CHANNEL_DISPLAY[name]` — sparse override map, currently
+   `{"tales": "Narrates"}`. Use this only when the visible label must differ
+   from both the GMCP name and the server-provided caption.
+2. `caption` field from `state["channels"]` (e.g. `"Tells"`, `"Says"`).
+3. `name.title()` — last-resort fallback for channels with no caption.
 
-The old label-collision algorithm (first unused uppercase character of the channel
-name) is retired. The `label` field emitted by Lua into `comm.state` is preserved
-for backward compatibility but is not read by the renderer.
+The override is **display-only**: `CHANNEL_COLORS`, `CHANNEL_VERBS`, the
+filter/solo handlers, and `comm_filters.conf` all stay keyed on the GMCP
+channel name. Renaming a channel for display does not change any of its
+behaviour.
+
+**Channel order.** The fixed order comes from the `CHANNEL_ORDER` list
+(formerly the keys of the retired `CHANNEL_LABELS` dict): `tales`, `tells`,
+`says`, `yells`, `prayers`, `emotes`, `whispers`, `questions`, `songs`,
+`socials`. It is filtered against the channels actually advertised by the
+server (`state["channels"]`); any channel the server advertises that is not in
+`CHANNEL_ORDER` is appended at the end in `Comm.Channel.List` order.
+
+**Width-responsive layout (`_header_layout(caps, W)`).** Given the resolved
+display names and the available column count `W`:
+
+```
+N = len(caps)
+if W - (N - 1) >= N:        # >= 1 char per cell, with separators
+    sep, budget, visible = 1, W - (N - 1), N
+elif W >= N:                # 1 char per cell, no separators
+    sep, budget, visible = 0, W, N
+else:                       # cannot fit all channels at 1 char each
+    sep, visible = 0, W     # render first W channels, drop the rest
+    budget = visible
+
+target = budget // visible
+rem    = budget %  visible
+if target >= max(len(caps[i]) for i in range(visible)):
+    cell_w[i] = len(caps[i])              # natural, tight
+else:
+    cell_w[i] = target + (1 if i < rem else 0)
+```
+
+Each cell is `caps[i][:cell_w[i]]` left-justified and space-padded to
+`cell_w[i]`. Cells join with `sep` space(s). Total visible width is `W` or
+less by construction — the header never needs horizontal clipping.
+
+This produces five regimes as the pane narrows:
+
+| Width                | Result                                                      |
+|----------------------|-------------------------------------------------------------|
+| Plenty of room       | Full display names, single space between cells              |
+| Tighter              | Uniform prefix truncation (lengths differ by at most one)   |
+| Single-char + space  | One char per channel, single space between                  |
+| Single-char only     | One char per channel, no separators                         |
+| Below that           | Trailing channels drop off; the first `W` channels remain   |
+
+`_header_layout()` in the code is authoritative if anything above disagrees.
+
+**Accepted trade-offs.** No uniqueness logic across short prefixes — two
+channels can collide on a single starting letter at the narrowest widths (e.g.
+`S` for both `says` and `songs`). Channels dropped from the header at extreme
+narrowness reappear when the pane widens; filter and solo state are
+independent of header visibility, so a dropped channel's filter still
+suppresses its messages.
 
 ## Filter persistence
 
@@ -238,22 +282,28 @@ never clipped by list content.
 
 ### Header
 
-Format: ` Na Te Sa Ye Pr Em Wh Qu Son Soc ` (single leading inert space, label,
-space after each label). Iteration order is `CHANNEL_LABELS` declaration order,
-filtered against channels advertised in `state["channels"]`; unknown channels
-appended in server order. See **Header labels** above.
+The header reflows to the current pane width every render. Channel display
+names resolve through `CHANNEL_DISPLAY` → `caption` → `name.title()`, then
+`_header_layout(caps, W)` evens out their widths and decides the separator —
+see **Header labels** above for the full algorithm and the five resulting
+regimes (full names → uniform truncation → single-char with spaces →
+single-char no spaces → trailing-channel drop).
 
-`FormattedTextControl` with `(style, text, mouse_handler)` tuples. One fragment
-per label + one inert space fragment after each, plus a leading inert space.
-Foreground colour indicates filter state:
+`FormattedTextControl` with `(style, text, mouse_handler)` tuples. Cells start
+flush — no leading inert space. One clickable fragment per visible channel
+whose **whole padded width** is the click target (the hit area grows with the
+pane). Between cells the renderer emits one inert `(" ", "")` fragment when
+`sep == 1`; in the narrowest mode (`sep == 0`) no separator fragments are
+emitted at all. Foreground colour indicates filter state:
 
 | State    | Style                                  |
 |----------|----------------------------------------|
 | Enabled  | `CHANNEL_COLORS[name]` — channel color |
 | Disabled | `C_LABEL_OFF` — `fg:#3a3a3a` grey      |
 
-No background color. Each label fragment's mouse handler calls
-`forward_toggle(channel.name)` on `MouseEventType.MOUSE_DOWN`.
+No background color. Each cell's mouse handler calls
+`forward_toggle(channel.name)` on left `MouseEventType.MOUSE_DOWN` and
+`forward_solo(channel.name)` on right `MouseEventType.MOUSE_DOWN`.
 
 `forward_toggle(name)` flips `_filters[name]`, calls `_save_filters()`, and
 calls `_app.invalidate()`. No subprocess, no tmux, no tt++ involvement.
@@ -402,7 +452,7 @@ Clicking it (`MOUSE_DOWN`) resets offset to 0.
 When `bridge/runtime/connection.state` is absent, every text provider
 (`_header_text`, `_list_text`, `_indicator_text`) returns blank fragments and
 the overflow indicator is suppressed via the same `_run_active` flag. The
-channel filter header blanks entirely — no leading inert space, no labels.
+channel filter header blanks entirely — no cells, no separators.
 Pane structure (size, splits, tmux borders, `cp -h` header status) is unchanged.
 The flag is updated by the existing 250 ms poll loop on each tick.
 
