@@ -9,12 +9,6 @@
         #screen clear all;
         #system {tmux clear-history -t mume:cockpit.0 2>/dev/null; printf '\033[3J'};
         #showme {};
-        #showme {                     ✦ ·          ◦              };
-        #showme {      ✧     ·  ◦  ◦ ✦ ·       ·        ✧         };
-        #showme {    ◦  ·           ·     ◦ ·    ◦                };
-        #showme {         ✧ ✧   · ◦           ·            ◦      };
-        #showme {       ·     ·  ✦     ·   ·    · ·             · };
-        #showme {                                                 };
         #showme {               █▄ ▄█ █   █ █▄ ▄█ █▀▀▀            };
         #showme {               █ █ █ █   █ █ █ █ █▀▀             };
         #showme {               █   █ ▀▄▄▄▀ █   █ █▄▄▄            };
