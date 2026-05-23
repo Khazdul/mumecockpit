@@ -66,6 +66,7 @@ tracking, and UI feedback.
 │   │   ├── launcher.py       # Pre-tmux startup menu (prompt_toolkit Application)
 │   │   ├── launcher.sh       # Thin exec wrapper for launcher.py
 │   │   ├── palette.py        # Shared prompt_toolkit colour palette (launcher + popup)
+│   │   ├── banner.py         # Shared starfield + wordmark banner (launcher main page + in-game popup)
 │   │   ├── tmux_start.sh     # tmux session creation, hooks, keybinds
 │   │   ├── ingame_menu.sh    # In-game ESC popup menu
 │   │   ├── profile_io.py     # Parser / serializer for tt++ profile .tin files; backs
@@ -446,7 +447,11 @@ grammar for filled-button cells (ADR 0085). The popup's `main`,
 `options`, and `scripts` frames join `panes` as single
 `FormattedTextControl` Windows with footer anchored to the popup's
 final row; the modal `exit_confirm` / `rate_session` dialogs adopt
-`C_SECTION` for the title row to match.
+`C_SECTION` for the title row to match. The main-page logo is now
+the shared starfield + wordmark banner rendered via
+`bridge/launcher/banner.py` (one source for both prompt_toolkit
+surfaces), and the tt++ welcome screen prints the same 12-row art in
+plain white.
 
 ## See also
 
