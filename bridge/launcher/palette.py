@@ -62,14 +62,16 @@ C_BUTTON_DISABLED = "fg:#585858"              # disabled — dim grey, no bg blo
 # detail-panel frame borders. A uniform background-driven indicator that
 # replaces the older mix of bold/underline and reverse-band styles.
 #
-#   Inactive (not selected)        → C_BUTTON_INACTIVE
+#   Inactive (not selected)        → C_BUTTON_INACTIVE  (no bg fill — falls
+#                                    through to the terminal background,
+#                                    matching C_BUTTON_DISABLED)
 #   Active, owning zone unfocused  → C_BUTTON_ACTIVE_UNFOCUSED  (= C_SELECTED)
 #   Active, owning zone focused    → C_BUTTON_ACTIVE_FOCUSED    (amber bg)
 #
 # The hover state for inactive buttons reuses C_BUTTON_ACTIVE_UNFOCUSED so
 # the preview matches the unfocused-but-selected appearance — a single
 # motion of attention rather than two competing styles.
-C_BUTTON_INACTIVE         = "fg:#bcbcbc bg:#000000"
+C_BUTTON_INACTIVE         = "fg:#bcbcbc"
 C_BUTTON_ACTIVE_UNFOCUSED = "fg:#000000 bg:#bcbcbc"
 C_BUTTON_ACTIVE_FOCUSED   = "fg:#000000 bg:#ffaf00"
 
