@@ -476,23 +476,23 @@ def _append_status_header(frags, cols, clear_hover=None):
             frags.append((style, text, clear_hover))
 
     _push("", _pad_centre(plain, cols))
-    _push(C_BODY, base)
+    _push(C_HINT, base)
     if latest:
-        _push(C_BODY, "  ·  Link: ")
+        _push(C_HINT, "  ·  Link: ")
         if latest == "TIMEOUT":
             _push(C_ERR, "timeout")
         else:
-            _push(C_BODY, f"{latest}ms")
+            _push(C_HINT, f"{latest}ms")
         if quality:
             if quality in ("stable", "ok"):
-                q_style = C_BODY
+                q_style = C_HINT
             elif quality in ("jittery", "spiking"):
                 q_style = C_YELLOW
             else:
                 q_style = C_ERR
-            _push(C_BODY, " (")
+            _push(C_HINT, " (")
             _push(q_style, quality)
-            _push(C_BODY, ")")
+            _push(C_HINT, ")")
 
 
 def _main_text():
@@ -501,9 +501,17 @@ def _main_text():
     frags  = []
     clear_hover = _main_clear_hover
 
+    # Status header on the topmost row of the frame (Profile · Mode · Link),
+    # followed by a newline that terminates that row.
+    _append_status_header(frags, cols, clear_hover=clear_hover)
+    frags.append(("", "\n", clear_hover))
+    status_rows = 1
+
     # Starfield + wordmark banner — the logo is the popup's signature,
     # not a section title, and does not go through `menu_chrome.title_block`.
     # Art lives in launcher_banner.py and is shared with the launcher main page.
+    # The banner block contributes its own leading + trailing blank rows, which
+    # double as the visual separators between status / banner / menu items.
     banner_pad = _pad_centre(" " * launcher_banner.BANNER_WIDTH, cols)
     frags.append(("", "\n", clear_hover))
     for line_frags in launcher_banner.banner_lines():
@@ -514,9 +522,11 @@ def _main_text():
     frags.append(("", "\n", clear_hover))
     banner_rows = 1 + launcher_banner.BANNER_HEIGHT + 1
 
-    _append_status_header(frags, cols, clear_hover=clear_hover)
-    frags.append(("", "\n\n", clear_hover))
-    status_rows = 2
+    # Blank between the banner and the menu items — preserves the pre-move
+    # total row count above the footer (the moved status header consumed a
+    # blank that previously sat between status and menu).
+    frags.append(("", "\n", clear_hover))
+    spacer_rows = 1
 
     # Menu rows — plain `<< label >>` grammar, centred per row.
     items   = _main_items()
@@ -566,7 +576,7 @@ def _main_text():
         frags.append(("", "\n", clear_hover))
 
     footer = "↑↓ Navigate · Enter Select · ESC Dismiss"
-    content_rows = banner_rows + status_rows + len(items)
+    content_rows = status_rows + banner_rows + spacer_rows + len(items)
     frags.extend(footer_block(
         footer, cols, rows_h, content_rows, mouse_handler=clear_hover,
     ))
@@ -1269,17 +1279,22 @@ def _exit_confirm_text():
 # Rate-session frame (popup "Save run" → 0..5 star rating + save)
 # ---------------------------------------------------------------------------
 def _rate_session_text():
-    cols  = _term_cols()
-    frags = []
+    cols   = _term_cols()
+    rows_h = _term_rows()
+    frags  = []
 
-    frags.append(("", "\n\n"))
-    _append_status_header(frags, cols)
-    frags.append(("", "\n\n"))
-
+    # Title row at the top, then the Profile · Mode · Link status header
+    # below it (mirrors the main frame's chrome stack).
     title = "─── Rate the run ───"
-    frags.append(("", _pad_centre(title, cols)))
-    frags.append((C_SECTION, title))
-    frags.append(("", "\n\n"))
+    frags.extend(title_block(title, cols, blank_above=1))
+
+    _append_status_header(frags, cols)
+    frags.append(("", "\n"))
+    status_rows = 1
+
+    # Blank above the star row for breathing space.
+    frags.append(("", "\n"))
+    spacer_rows = 1
 
     # Star row: ★ ★ ★ ★ ★ (single-space separators). First `rating` stars
     # paint in gold (_S_STAR), the rest in dim grey (C_HINT). Visual width
@@ -1302,11 +1317,12 @@ def _rate_session_text():
             return _h
 
         frags.append((style, "★", _make_star_handler()))
-    frags.append(("", "\n\n"))
+    frags.append(("", "\n"))
+    star_rows = 1
 
     footer = "0-5 Set · ←→ Adjust · Enter Save · ESC Cancel"
-    frags.append(("", _pad_centre(footer, cols)))
-    frags.append((C_HINT, footer))
+    content_rows = title_block_height(1) + status_rows + spacer_rows + star_rows
+    frags.extend(footer_block(footer, cols, rows_h, content_rows))
 
     return frags
 
