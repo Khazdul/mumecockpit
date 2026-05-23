@@ -63,11 +63,9 @@ STARS = [
     (0,  8, "✧", "BRIGHT"), (0, 22, "✧", "MID"), (0, 35, "·", "DIM"), (0, 41, "·", "DIM"),
     (1,  3, "·", "DIM"), (1, 19, "·", "DIM"), (1, 27, "◦", "MID"),
     (2,  0, "◦", "DIM"), (2, 14, "·", "MID"), (2, 33, "·", "DIM"),
-    (3,  6, "·", "DIM"), (3, 17, "✧", "MID"),
+    (3, 17, "✧", "MID"),
     (4,  9, "·", "DIM"), (4, 31, "◦", "DIM"),
-    (5,  5, "·", "DIM"), (5, 28, "·", "DIM"), (5, 40, "✦", "MID"),   # MUME row 1
-    (6, 42, "·", "DIM"),                                             # MUME row 2
-    (7,  2, "◦", "DIM"), (7, 37, "·", "MID"),                        # MUME row 3
+    (5,  5, "·", "DIM"), (5, 40, "✦", "MID"),                        # MUME row 1
 ]
 
 # Twinkle: open-field stars sit at their base tier most of the cycle and
