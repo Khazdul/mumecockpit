@@ -491,6 +491,12 @@ _CREDITS_SCROLL_ROWS_PER_SEC     = 1.0
 _CREDITS_FADE_BAND_FRAC          = 0.35
 _CREDITS_TICK_HZ                 = 15
 
+# Main-page starfield twinkle — persistent redraw loop while the main
+# frame is visible. The animation itself lives in launcher_banner; this
+# tick just nudges prompt_toolkit to repaint at a steady rate.
+_banner_tick_task                = None  # asyncio.Task | None
+_BANNER_TICK_HZ                  = 12
+
 _history_columns = [
     # (key, base_label, width, align, type)
     ("Char",    "Char",     None, "left",  "text"),
@@ -10680,6 +10686,35 @@ async def _credits_tick_loop():
         pass
 
 
+def _banner_start_tick_task():
+    """Kick off the main-page banner twinkle loop. Idempotent: a second
+    call is a no-op once the task is running."""
+    global _banner_tick_task
+    if _banner_tick_task is not None:
+        return
+    if _app_loop is None:
+        return
+    _banner_tick_task = _app_loop.create_task(_banner_tick_loop())
+
+
+async def _banner_tick_loop():
+    """Persistent redraw loop for the main-page starfield. Unlike the
+    credits loop, main is the home frame and is re-entered repeatedly,
+    so this task never self-terminates — it just skips the invalidate
+    while a different frame is showing. Invalidating unconditionally at
+    _BANNER_TICK_HZ on main matches the _credits_tick_loop precedent."""
+    interval = 1.0 / _BANNER_TICK_HZ
+    try:
+        while True:
+            if _app is None:
+                return
+            if _current_frame == "main":
+                _app.invalidate()
+            await asyncio.sleep(interval)
+    except asyncio.CancelledError:
+        pass
+
+
 def _credits_check_finished() -> bool:
     """Return True (and trigger auto-exit) when the last credit line has
     scrolled clear of the top of the viewport."""
@@ -14525,6 +14560,7 @@ def main():
         global _app_loop
         _app_loop = asyncio.get_running_loop()
         _focus_current_frame()
+        _banner_start_tick_task()
         await app.run_async()
 
     try:

@@ -8,9 +8,18 @@
 # copied verbatim from `banner.py`; the wordmark is frozen art and the
 # duplication is the price of keeping the two surfaces independent.
 #
-# The starfield is held as data (a list of star records). The renderer here
-# is static, but the structure is intentionally plain and easily iterated so
-# a future animation layer can mutate each record's tier / glyph per frame.
+# The starfield is held as data (a list of star records). `STARS` stays the
+# human-editable source of truth for positions; an internal animated layer
+# is derived from it at import time. Open-field stars twinkle as a pure
+# function of the monotonic clock — slow, randomized periods and phases per
+# star so the field shimmers asynchronously. Stars tucked inside a wordmark
+# stay fully static so they never compete with the logo. The module has no
+# prompt_toolkit / app dependency: it's pure data + math, and the launcher
+# drives redraws separately.
+
+import math
+import random
+import time
 
 from palette import (
     C_BANNER_STAR_BRIGHT,
@@ -63,11 +72,54 @@ STARS = [
     (10, 36, "·", "DIM"),                                            # COCKPIT row 3
 ]
 
-_TIER_STYLE = {
-    "DIM":    C_BANNER_STAR_DIM,
-    "MID":    C_BANNER_STAR_MID,
-    "BRIGHT": C_BANNER_STAR_BRIGHT,
-}
+# Twinkle: open-field stars sit at their base tier most of the cycle and
+# briefly pulse ±1 tier when the sine wave crosses the peak threshold.
+# Slow randomized periods keep the field shimmering asynchronously.
+_TWINKLE_PERIOD_MIN = 3.0
+_TWINKLE_PERIOD_MAX = 8.0
+_TWINKLE_PEAK       = 0.82
+
+# Brightness tiers as ints — embedded stars hold their base tier, open-field
+# stars clamp into this range after applying the wave-driven offset.
+_TIER_DIM    = 0
+_TIER_MID    = 1
+_TIER_BRIGHT = 2
+
+_TIER_TO_INT = {"DIM": _TIER_DIM, "MID": _TIER_MID, "BRIGHT": _TIER_BRIGHT}
+_INT_TO_STYLE = (C_BANNER_STAR_DIM, C_BANNER_STAR_MID, C_BANNER_STAR_BRIGHT)
+
+# Only four-point-star glyphs swap, and only at the bright peak. The dot
+# glyphs (· ◦) hold their shape — only their brightness pulses.
+_SWAP_GLYPH = {"✦": "✧", "✧": "✦"}
+
+
+def _is_embedded(row, col):
+    """True if (row, col) lands inside a wordmark column span — those
+    stars stay static so they don't compete with the logo glyphs."""
+    if 5 <= row <= 7 and 11 <= col <= 32:
+        return True
+    if 8 <= row <= 10 and 3 <= col <= 41:
+        return True
+    return False
+
+
+def _build_animated_stars():
+    """Derive the animation layer from STARS. Open-field stars get a
+    random period and phase (no explicit seed — each launcher session
+    shimmers slightly differently); embedded stars get inert values."""
+    out = []
+    for row, col, glyph, tier in STARS:
+        base_tier = _TIER_TO_INT[tier]
+        if _is_embedded(row, col):
+            out.append((row, col, glyph, base_tier, True, 0.0, 0.0))
+        else:
+            period = random.uniform(_TWINKLE_PERIOD_MIN, _TWINKLE_PERIOD_MAX)
+            phase  = random.uniform(0.0, 1.0)
+            out.append((row, col, glyph, base_tier, False, period, phase))
+    return out
+
+
+_ANIMATED_STARS = _build_animated_stars()
 
 
 def _paint_word(grid, words, row0, style):
@@ -97,18 +149,41 @@ def _row_fragments(row):
     return fragments
 
 
-def banner_lines():
+def banner_lines(now=None):
     """Return the 11 banner rows as a list of fragment lists.
 
     Same output shape as `banner.banner_lines()`: each row is a list of
     (style, text) 2-tuples whose visible widths sum to `BANNER_WIDTH`.
     Callers centre the row horizontally with their existing `_pad_centre`
     helper and attach the per-row hover / mouse handler.
+
+    `now` (monotonic seconds) drives the twinkle; defaults to
+    `time.monotonic()`. Pure function of the clock — no mutable per-frame
+    state, so tests can pin a specific instant by passing `now` in.
     """
+    if now is None:
+        now = time.monotonic()
     grid = [[(" ", "") for _ in range(BANNER_WIDTH)]
             for _ in range(BANNER_HEIGHT)]
     _paint_word(grid, _MUME_WORDS,    _MUME_ROW0,    C_BANNER_WORD)
     _paint_word(grid, _COCKPIT_WORDS, _COCKPIT_ROW0, C_BANNER_WORD_DIM)
-    for row, col, glyph, tier in STARS:
-        grid[row][col] = (glyph, _TIER_STYLE[tier])
+    for row, col, glyph, base_tier, embedded, period, phase in _ANIMATED_STARS:
+        if embedded:
+            grid[row][col] = (glyph, _INT_TO_STYLE[base_tier])
+            continue
+        wave = math.sin(2.0 * math.pi * (now / period + phase))
+        if wave > _TWINKLE_PEAK:
+            offset = 1
+        elif wave < -_TWINKLE_PEAK:
+            offset = -1
+        else:
+            offset = 0
+        tier = base_tier + offset
+        if tier < 0:
+            tier = 0
+        elif tier > 2:
+            tier = 2
+        if offset > 0 and glyph in _SWAP_GLYPH:
+            glyph = _SWAP_GLYPH[glyph]
+        grid[row][col] = (glyph, _INT_TO_STYLE[tier])
     return [_row_fragments(row) for row in grid]
