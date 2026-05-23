@@ -60,23 +60,7 @@ TMUX_OPTROOT = "mume"
 # launcher rewrite can import the same constants. See docs/launcher.md.
 # ---------------------------------------------------------------------------
 from palette import *  # noqa: F401,F403
-
-# ---------------------------------------------------------------------------
-# ASCII title (mirrors menu_render.sh draw_ascii_title)
-# ---------------------------------------------------------------------------
-_MUME_LINES = [
-    '███╗   ███╗██╗   ██╗███╗   ███╗███████╗',
-    '████╗ ████║██║   ██║████╗ ████║██╔════╝',
-    '██╔████╔██║██║   ██║██╔████╔██║█████╗  ',
-    '██║╚██╔╝██║██║   ██║██║╚██╔╝██║██╔══╝  ',
-    '██║ ╚═╝ ██║╚██████╔╝██║ ╚═╝ ██║███████╗',
-    '╚═╝     ╚═╝ ╚═════╝ ╚═╝     ╚═╝╚══════╝',
-]
-_COCKPIT_LINES = [
-    '██ ███ ██ █ █ ██ █ ███',
-    '█  █ █ █  ██  ██ █  █ ',
-    '██ ███ ██ █ █ █  █  █ ',
-]
+import banner
 
 # ---------------------------------------------------------------------------
 # Panes submenu: pane target -> (display label, conf colour key). Order
@@ -511,19 +495,18 @@ def _main_text():
     frags  = []
     clear_hover = _main_clear_hover
 
-    # ASCII banner — the logo stays in C_TITLE; it is not a section title
-    # and does not go through `menu_chrome.title_block`.
+    # Starfield + wordmark banner — the logo is the popup's signature,
+    # not a section title, and does not go through `menu_chrome.title_block`.
+    # Art lives in banner.py and is shared with the launcher main page.
+    banner_pad = _pad_centre(" " * banner.BANNER_WIDTH, cols)
     frags.append(("", "\n", clear_hover))
-    for line in _MUME_LINES:
-        frags.append(("", _pad_centre(line, cols), clear_hover))
-        frags.append((C_TITLE, line, clear_hover))
-        frags.append(("", "\n", clear_hover))
-    for line in _COCKPIT_LINES:
-        frags.append(("", _pad_centre(line, cols), clear_hover))
-        frags.append((C_TITLE, line, clear_hover))
+    for line_frags in banner.banner_lines():
+        frags.append(("", banner_pad, clear_hover))
+        for style, text in line_frags:
+            frags.append((style, text, clear_hover))
         frags.append(("", "\n", clear_hover))
     frags.append(("", "\n", clear_hover))
-    banner_rows = 1 + len(_MUME_LINES) + len(_COCKPIT_LINES) + 1
+    banner_rows = 1 + banner.BANNER_HEIGHT + 1
 
     _append_status_header(frags, cols, clear_hover=clear_hover)
     frags.append(("", "\n\n", clear_hover))

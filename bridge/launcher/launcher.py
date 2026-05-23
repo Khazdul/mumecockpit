@@ -60,6 +60,7 @@ from palette import (  # noqa: E402
     C_SYN_BRACE_MATCH,
 )
 import ttpp_syntax  # noqa: E402
+import banner  # noqa: E402
 import credits  # noqa: E402
 import history_filter  # noqa: E402
 import log_player  # noqa: E402
@@ -101,23 +102,6 @@ MIN_COLS = 60
 MIN_ROWS = 18
 
 PROFILE_NAME_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9_]*$")
-
-# ---------------------------------------------------------------------------
-# ASCII title (mirrors menu_render.sh draw_ascii_title)
-# ---------------------------------------------------------------------------
-_MUME_LINES = [
-    '███╗   ███╗██╗   ██╗███╗   ███╗███████╗',
-    '████╗ ████║██║   ██║████╗ ████║██╔════╝',
-    '██╔████╔██║██║   ██║██╔████╔██║█████╗  ',
-    '██║╚██╔╝██║██║   ██║██║╚██╔╝██║██╔══╝  ',
-    '██║ ╚═╝ ██║╚██████╔╝██║ ╚═╝ ██║███████╗',
-    '╚═╝     ╚═╝ ╚═════╝ ╚═╝     ╚═╝╚══════╝',
-]
-_COCKPIT_LINES = [
-    '██ ███ ██ █ █ ██ █ ███',
-    '█  █ █ █  ██  ██ █  █ ',
-    '██ ███ ██ █ █ █  █  █ ',
-]
 
 # ---------------------------------------------------------------------------
 # Options layout
@@ -1008,19 +992,18 @@ def _main_text():
     frags = []
     clear_hover = _main_clear_hover
 
-    # ASCII banner — the logo stays in C_TITLE; it is not a section title
-    # and does not go through `menu_chrome.title_block`.
+    # Starfield + wordmark banner — the logo is the launcher's signature,
+    # not a section title, and does not go through `menu_chrome.title_block`.
+    # Art lives in banner.py and is shared with the in-game popup.
+    banner_pad = _pad_centre(" " * banner.BANNER_WIDTH, cols)
     frags.append(("", "\n", clear_hover))
-    for line in _MUME_LINES:
-        frags.append(("", _pad_centre(line, cols), clear_hover))
-        frags.append((C_TITLE, line, clear_hover))
-        frags.append(("", "\n", clear_hover))
-    for line in _COCKPIT_LINES:
-        frags.append(("", _pad_centre(line, cols), clear_hover))
-        frags.append((C_TITLE, line, clear_hover))
+    for line_frags in banner.banner_lines():
+        frags.append(("", banner_pad, clear_hover))
+        for style, text in line_frags:
+            frags.append((style, text, clear_hover))
         frags.append(("", "\n", clear_hover))
     frags.append(("", "\n", clear_hover))
-    banner_rows = 1 + len(_MUME_LINES) + len(_COCKPIT_LINES) + 1
+    banner_rows = 1 + banner.BANNER_HEIGHT + 1
 
     items = _main_items
     sel_idx = _sel_main if 0 <= _sel_main < len(items) else 0
