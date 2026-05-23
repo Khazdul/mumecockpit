@@ -223,8 +223,8 @@ rendered inside the pane content.
 
 ### Row 3 — four toggle-box cells (4-column layout)
 
-Same `_col_widths(W)` distribution and 1-char mid-spacer as the data rows. Each
-cell is laid out as `[label][space-pad]`:
+Same `_col_widths(W)` distribution and three 1-char inter-column spacers as the
+data rows. Each cell is laid out as `[label][space-pad]`:
 
 - **label**: toggle name in uppercase (`SNEAK`, `RIDE`, `CLIMB`, `SWIM`).
 - **space-pad**: `col_w - len(label)` trailing space chars (min 0), unstyled.
@@ -251,13 +251,14 @@ Plain `" " * W` — no SGR.
 `W = pane width`. Four columns sized by `_col_widths(W)`:
 
 ```python
-base  = (W - 1) // 4
-extra = (W - 1) %  4
+base  = (W - 3) // 4
+extra = (W - 3) %  4
 cols  = [base + (1 if i < extra else 0) for i in range(4)]
 ```
 
-A single-char spacer (no SGR) separates column 2 and column 3. Every row is
-exactly W visible characters; no trailing padding ever needed.
+A single-char spacer (no SGR) separates each adjacent column pair (three spacers
+total). Every row is exactly W visible characters; no trailing padding ever
+needed.
 
 | Row | Col 1 (label) | Col 2 (value)        | Col 3 (label) | Col 4 (value) |
 |-----|---------------|----------------------|---------------|---------------|

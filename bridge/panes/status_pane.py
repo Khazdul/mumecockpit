@@ -70,8 +70,8 @@ def _term_rows():
 # Data-row helpers
 # ---------------------------------------------------------------------------
 def _col_widths(W):
-    base  = (W - 1) // 4
-    extra = (W - 1) %  4
+    base  = (W - 3) // 4
+    extra = (W - 3) %  4
     return [base + (1 if i < extra else 0) for i in range(4)]
 
 
@@ -112,7 +112,7 @@ def _build_toggles_row(c, W):
         _render_toggle("CLIMB", c3, _is_on(c.get("climb"))),
         _render_toggle("SWIM",  c4, _is_on(c.get("swim"))),
     ]
-    return cells[0] + cells[1] + " " + cells[2] + cells[3]
+    return cells[0] + " " + cells[1] + " " + cells[2] + " " + cells[3]
 
 
 def _build_data_rows(c, W):
@@ -121,9 +121,11 @@ def _build_data_rows(c, W):
     def row(l1, v1, l2, v2):
         return (
             C_LABEL + _trunc_label(l1, c1) +
+            C_RESET + " " +
             C_VALUE + _trunc_value(v1, c2) +
             C_RESET + " " +
             C_LABEL + _trunc_label(l2, c3) +
+            C_RESET + " " +
             C_VALUE + _trunc_value(v2, c4) +
             C_RESET
         )
