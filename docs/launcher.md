@@ -558,7 +558,10 @@ HIGHLIGHT, SUBSTITUTE, and ALIAS sections of `ttpp_manual.txt`.
 **Sentinel-cursor state.** When the list cursor sits on the
 sentinel row the detail panel shows a centred prompt — `Press
 Enter to create a new <kind>.` (or `No <kinds> yet. Press n to add
-one.` when the active kind has zero entries).
+one.` when the active kind has zero entries). Both strings are
+word-wrapped to the detail panel's inner width (`_EDITOR_DETAIL_W
+= 35`) when they would otherwise overflow, and the wrapped block
+stays centred both horizontally and vertically in the panel.
 
 **Per-kind new-entry defaults.** Aliases, actions, and substitutes
 start blank; highlights default to `body='light yellow'`. Macros
