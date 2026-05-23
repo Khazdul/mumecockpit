@@ -338,7 +338,7 @@ Because the frame no longer runs through `_centered`, the body
 anchors to the top of the available space and the leading blank
 rows above the title are emitted explicitly in both modes — two
 in editor mode (body fills exactly so there is no slack to
-distribute), one in lite mode (matching the leading blank that
+distribute), also two in lite mode (matching the leading blank that
 vertical centering used to supply "for free"). The overhead
 constants in `_editor_body_h` count these blanks — sync them
 together. `_editor_body_h()` branches on `_editor_mode` for this
