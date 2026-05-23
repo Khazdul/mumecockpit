@@ -2237,11 +2237,11 @@ def _statistics_text():
 
     frags.append(("", "\n"))
     frags.append(("", _pad_centre(title_for_centering, cols)))
-    frags.append((C_SECTION, base_header))
+    frags.append((_S_HINT, base_header))
     if suffix:
         frags.append((_S_HINT, suffix))
     if stars:
-        frags.append((C_SECTION, rating_sep + stars))
+        frags.append((_S_HINT, rating_sep + stars))
     frags.append(("", "\n\n"))
 
     _append_allies_achievements(frags, stats, cols)

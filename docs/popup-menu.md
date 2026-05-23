@@ -318,7 +318,7 @@ on both positive progression (level-ups) and negative progression
 
 When `stats.saved` is true and `stats.rating` is non-zero, the stars
 are appended to the header as the last `·`-separated field in the
-same `C_SECTION` (dark cyan) the rest of the banner uses:
+same `_S_HINT` (muted grey) the rest of the banner uses:
 `◆ STATISTICS — <char> · Lvl N · Run <duration> · ★★★`. The stars are
 exactly `stats.rating` `★` glyphs. Unsaved runs
 and 0-rating saved runs omit the trailing ` · ` and stars entirely —
@@ -372,8 +372,9 @@ instead of `C_SECTION` (cyan) — every fragment in the row (section
 name, column headers, sort indicators) switches together.
 
 **Palette.** The Statistics frame paints the `◆ STATISTICS …` banner
-and all six section titles (KILLS, PvPs, ALLIES, ACHIEVEMENTS, XP/h,
-TP/h) in `C_SECTION` (dark cyan); the frame uses `C_HEADER` nowhere
+in `_S_HINT` (muted grey — same tone as the footer shortcut row);
+the six section titles (KILLS, PvPs, ALLIES, ACHIEVEMENTS, XP/h,
+TP/h) use `C_SECTION` (dark cyan); the frame uses `C_HEADER` nowhere
 anymore. The focused KILLS / PvPs / ALLIES / ACHIEVEMENTS title row
 paints en bloc in `C_CURSOR_CELL` (gold). Divider rules under section
 titles and

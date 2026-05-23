@@ -10221,7 +10221,7 @@ def _history_detail_text():
         title = "Session details"
         frags.append(("", "\n\n", clear))
         frags.append(("", _pad_centre(title, cols), clear))
-        frags.append((C_SECTION, title, clear))
+        frags.append((_S_HINT, title, clear))
         frags.append(("", "\n\n", clear))
         msg = "(no session selected)"
         frags.append(("", _pad_centre(msg, cols), clear))
@@ -10242,7 +10242,7 @@ def _history_detail_text():
 
     title_pad = max(0, (cols - len(title_text)) // 2)
     frags.append(("", " " * title_pad, clear))
-    frags.append((C_SECTION, title_text, clear))
+    frags.append((_S_HINT, title_text, clear))
     frags.append(("", "\n", clear))
 
     # --- Blank separator --------------------------------------------------

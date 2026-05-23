@@ -1884,9 +1884,9 @@ ACHIEVEMENTS · blank · KILLS + PvPs · blank · sparklines (XP/h +
 TP/h) · blank · XP-linjal · blank · footer.
 
 **Header.** `◆ Session details — <Char> · <Date> · <Time> ·
-<Dur.>` centred in `C_SECTION` (dark cyan — same colour the popup
-Statistics banner uses; this frame no longer paints anything in
-`C_HEADER`).
+<Dur.>` centred in `_S_HINT` (muted grey — same colour the footer
+shortcut row uses; matches the popup Statistics banner). This
+frame no longer paints anything in `C_HEADER`.
 
 **Section parity with popup Statistics.** ALLIES (`♦` in
 `_S_ALLY`), ACHIEVEMENTS (`★` in `_S_STAR`), KILLS (sortable),
