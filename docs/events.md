@@ -467,8 +467,9 @@ Emitted by one pattern in `ttpp/core/mud_events.tin`. No payload.
 |---------|-------|
 | `^You are dead! Sorry...$` | fires on player death (PvE, PvP, environment) |
 
-**Subscribers:** `lua/core/run_state.lua` — increments `state.run.deaths`; no
-fold interaction. `lua/core/run_log.lua` — writes a `char_death` row to
+**Subscribers:** `lua/core/run_state.lua` — increments `state.run.deaths` and
+announces `▶ DEATH: You died.` via `script_ui`; no fold interaction.
+`lua/core/run_log.lua` — writes a `char_death` row to
 `current.jsonl` with the character's current level (omitted if not yet known).
 
 ### `pc_death`
