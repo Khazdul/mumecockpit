@@ -21,8 +21,9 @@ SHOW_COMM="${show_comm:-0}"
 SHOW_DIVIDERS="${show_pane_dividers:-1}"
 
 LAYOUT_CONF="bridge/runtime/layout.conf"
-# detect_terminal_bg.sh may have created layout.conf with only terminal_bg=
-# already populated; seed the remaining keys without clobbering existing ones.
+# launcher.py may have created layout.conf with only terminal_bg=
+# already populated (OSC 11 probe runs there); seed the remaining keys
+# without clobbering existing ones.
 [ -f "$LAYOUT_CONF" ] || : > "$LAYOUT_CONF"
 grep -q "^ui_width="    "$LAYOUT_CONF" || echo "ui_width=33"    >> "$LAYOUT_CONF"
 grep -q "^window_cols=" "$LAYOUT_CONF" || echo "window_cols=0" >> "$LAYOUT_CONF"

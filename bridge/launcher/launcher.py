@@ -84,6 +84,7 @@ BRIDGE_DIR         = os.path.dirname(SCRIPT_DIR)
 PROJECT_DIR        = os.path.dirname(BRIDGE_DIR)
 RUNTIME_DIR        = os.path.join(BRIDGE_DIR, "runtime")
 CONF_PATH          = os.path.join(RUNTIME_DIR, "startup.conf")
+LAYOUT_CONF_PATH   = os.path.join(RUNTIME_DIR, "layout.conf")
 VERSION_CACHE_PATH = os.path.join(RUNTIME_DIR, "version.cache")
 SCRIPTS_CACHE_PATH = os.path.join(RUNTIME_DIR, "scripts.cache")
 SCRIPTS_CONF_PATH      = os.path.join(RUNTIME_DIR, "scripts.conf")
@@ -576,6 +577,156 @@ def _one_shot_migrations():
             os.rename(sessions, PROFILES_DIR)
         except OSError:
             pass
+
+
+# ---------------------------------------------------------------------------
+# Host-terminal background detection (OSC 11)
+# ---------------------------------------------------------------------------
+# Probed once at launcher startup, while the tty is still in cooked mode and
+# the launcher owns it (before prompt_toolkit's Application takes over).
+# Three consumers, all chrome that bakes in a black backdrop and reads wrong
+# on light or tinted themes:
+#   • the credits canvas + fade ramp,
+#   • the spotlight info box outline,
+#   • the tmux pane separator (apply_border_style.sh, via layout.conf).
+# None when stdin isn't a tty or the terminal doesn't reply within the
+# bounded probe window; callers fall back to #000000.
+_terminal_bg = None
+
+_OSC11_REPLY_RE = re.compile(rb"rgb:([0-9a-fA-F]+)/([0-9a-fA-F]+)/([0-9a-fA-F]+)")
+
+
+def _parse_osc11_reply(reply: bytes):
+    """Parse an OSC 11 reply `\\x1b]11;rgb:RRRR/GGGG/BBBB\\x07` (or the
+    8-bit-per-channel `rgb:RR/GG/BB` form) into `#rrggbb`. Channels may
+    be 1, 2, 3, or 4 hex digits on different terminals — normalise to
+    two digits per channel (top two)."""
+    if not reply:
+        return None
+    m = _OSC11_REPLY_RE.search(reply)
+    if not m:
+        return None
+    parts = []
+    for raw in (m.group(1), m.group(2), m.group(3)):
+        s = raw.decode("ascii")
+        if len(s) == 1:
+            s = s + s
+        parts.append(s[:2])
+    return "#" + "".join(parts).lower()
+
+
+def _detect_terminal_bg():
+    """Query the host terminal background colour via OSC 11.
+
+    Writes the query to stdin's tty, reads the reply with a bounded
+    ~0.25 s timeout via `select`, and restores the saved termios state
+    unconditionally. Returns `#rrggbb` on success, `None` when stdin
+    isn't a tty, when the terminal doesn't reply, or when any step
+    fails — failure must never wedge the tty or block startup."""
+    try:
+        import termios
+        import tty
+        import select
+    except ImportError:
+        return None
+    try:
+        fd = sys.stdin.fileno()
+    except (AttributeError, OSError, ValueError):
+        return None
+    try:
+        if not os.isatty(fd):
+            return None
+    except OSError:
+        return None
+    try:
+        old = termios.tcgetattr(fd)
+    except (termios.error, OSError):
+        return None
+    reply = b""
+    try:
+        try:
+            tty.setraw(fd)
+        except (termios.error, OSError):
+            return None
+        try:
+            os.write(fd, b"\x1b]11;?\x07")
+        except OSError:
+            return None
+        deadline = time.monotonic() + 0.25
+        while len(reply) < 64:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            try:
+                r, _, _ = select.select([fd], [], [], remaining)
+            except (OSError, ValueError):
+                break
+            if not r:
+                break
+            try:
+                chunk = os.read(fd, 64 - len(reply))
+            except OSError:
+                break
+            if not chunk:
+                break
+            reply += chunk
+            if reply.endswith(b"\x07") or reply.endswith(b"\x1b\\"):
+                break
+    finally:
+        try:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old)
+        except (termios.error, OSError):
+            pass
+    return _parse_osc11_reply(reply)
+
+
+def _write_terminal_bg_to_layout_conf(bg):
+    """Persist `terminal_bg=<hex>` into bridge/runtime/layout.conf using an
+    in-place append-or-replace pattern. Writes the key with an empty value
+    when `bg` is None so `apply_border_style.sh` reads it as "no detection"
+    and falls back to `fg=default bg=default`. The remaining layout.conf
+    keys are populated later by build_initial_layout.sh; that script only
+    seeds missing keys, so it does not clobber this write."""
+    val = bg if bg else ""
+    try:
+        os.makedirs(RUNTIME_DIR, exist_ok=True)
+    except OSError:
+        return
+    try:
+        with open(LAYOUT_CONF_PATH) as fh:
+            lines = fh.readlines()
+    except FileNotFoundError:
+        lines = []
+    except OSError:
+        return
+    new_line = f"terminal_bg={val}\n"
+    replaced = False
+    out = []
+    for line in lines:
+        if line.startswith("terminal_bg="):
+            if not replaced:
+                out.append(new_line)
+                replaced = True
+            continue
+        out.append(line)
+    if not replaced:
+        if out and not out[-1].endswith("\n"):
+            out[-1] = out[-1] + "\n"
+        out.append(new_line)
+    try:
+        with open(LAYOUT_CONF_PATH, "w") as fh:
+            fh.writelines(out)
+    except OSError:
+        pass
+
+
+def _probe_and_persist_terminal_bg():
+    """One-shot wrapper: detect, stash on the module-level _terminal_bg,
+    and write to layout.conf. Called once from main() before the
+    prompt_toolkit Application starts."""
+    global _terminal_bg
+    _terminal_bg = _detect_terminal_bg()
+    _write_terminal_bg_to_layout_conf(_terminal_bg)
 
 
 # ---------------------------------------------------------------------------
@@ -14083,6 +14234,10 @@ def main():
 
     os.chdir(PROJECT_DIR)
     _one_shot_migrations()
+    # Probe host-terminal background via OSC 11 while the tty is still in
+    # cooked mode and the launcher owns it. Must happen before prompt_toolkit
+    # takes over. Bounded ~0.25 s; never wedges startup.
+    _probe_and_persist_terminal_bg()
     _load_conf()
     try:
         run_retention.prune_expired_runs()
