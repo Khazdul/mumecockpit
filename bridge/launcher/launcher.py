@@ -60,7 +60,7 @@ from palette import (  # noqa: E402
     C_SYN_BRACE_MATCH,
 )
 import ttpp_syntax  # noqa: E402
-import banner  # noqa: E402
+import launcher_banner  # noqa: E402
 import credits  # noqa: E402
 import history_filter  # noqa: E402
 import log_player  # noqa: E402
@@ -1185,16 +1185,17 @@ def _main_text():
 
     # Starfield + wordmark banner — the logo is the launcher's signature,
     # not a section title, and does not go through `menu_chrome.title_block`.
-    # Art lives in banner.py and is shared with the in-game popup.
-    banner_pad = _pad_centre(" " * banner.BANNER_WIDTH, cols)
+    # Art lives in launcher_banner.py (decoupled from the popup's banner.py
+    # so the launcher banner can evolve independently).
+    banner_pad = _pad_centre(" " * launcher_banner.BANNER_WIDTH, cols)
     frags.append(("", "\n", clear_hover))
-    for line_frags in banner.banner_lines():
+    for line_frags in launcher_banner.banner_lines():
         frags.append(("", banner_pad, clear_hover))
         for style, text in line_frags:
             frags.append((style, text, clear_hover))
         frags.append(("", "\n", clear_hover))
     frags.append(("", "\n", clear_hover))
-    banner_rows = 1 + banner.BANNER_HEIGHT + 1
+    banner_rows = 1 + launcher_banner.BANNER_HEIGHT + 1
 
     items = _main_items
     sel_idx = _sel_main if 0 <= _sel_main < len(items) else 0
