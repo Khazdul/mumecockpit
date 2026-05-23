@@ -146,7 +146,7 @@ death time.
 | Field | Type | Notes |
 |-------|------|-------|
 | `ts` | integer | `os.time()` at fold time, not exact death time |
-| `mob_name` | string | Full mob name with article, as captured by `mob_death` |
+| `mob_name` | string | Full mob name with article, as captured by `mob_death`, with any trailing MUME label (e.g. `" (MIN)"`) stripped by `run_state` |
 | `xp_delta` | integer | XP attributed to this kill; `0` for empty-Vitals folds |
 
 For group kills (multiple mobs dying within the 500ms window), N consecutive
@@ -267,7 +267,7 @@ is no `mob_name` field — PCs are not mobs.
 |-------|------|-------|
 | `ts` | integer | `os.time()` at fold time, not exact death time |
 | `name` | string | First word of the R.I.P. name (character name, no race-suffix) |
-| `race` | string | Remainder of the R.I.P. name after the first word (e.g. `"the Orc"`); empty string `""` if only one word was captured |
+| `race` | string | Remainder of the R.I.P. name after the first word (e.g. `"the Orc"`); empty string `""` if only one word was captured. Any trailing MUME label (e.g. `" (MIN)"`) is stripped by `run_state` before the split, so it never leaks into `race` |
 | `xp_delta` | integer | XP attributed to this kill; `0` for empty-Vitals folds |
 
 For mixed folds (mob kills and PC kills within the same 500ms window), XP is

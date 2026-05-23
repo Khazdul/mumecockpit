@@ -449,9 +449,10 @@ tick.
 Emitted by `lua/core/run_state.lua`'s `_fold()` once per attributed kill,
 immediately after the `script_ui("KILL", ...)` announce. Payload:
 `{name = "<mob name>", xp = <integer>}` where `name` is the mob name as
-captured by `mob_death` (includes article, e.g. `"an elven slave"`) and `xp`
-is the even-split XP attributed to this kill (may be `0` for empty-Vitals
-folds). For group kills inside the 500ms debounce window, fires once per mob
+captured by `mob_death` (includes article, e.g. `"an elven slave"`) with any
+trailing MUME label (e.g. `" (MIN)"`) stripped by `run_state` before it
+reaches `state.run`, and `xp` is the even-split XP attributed to this kill
+(may be `0` for empty-Vitals folds). For group kills inside the 500ms debounce window, fires once per mob
 with the even-split share; the last mob receives the remainder. See ADR 0008
 for the attribution model.
 
@@ -486,19 +487,22 @@ The asterisks (`*`) are literal characters in the MUME output that delimit PC
 names; they do not appear in mob R.I.P. lines. `%1` captures only the content
 between the asterisks.
 
-**Subscribers:** `lua/core/run_state.lua` — splits the payload into
-`name` (first word) and `race` (remainder, or `""` if single word); appends
+**Subscribers:** `lua/core/run_state.lua` — strips any trailing MUME label
+(e.g. `" (MIN)"`) from the payload, then splits the remainder into
+`name` (first word) and `race` (rest, or `""` if single word); appends
 `{name, race}` to `M.pending_pkills`; calls `schedule_fold()` to debounce
-XP attribution.
+XP attribution. The strip happens before the split so the label never
+lands in `race`.
 
 ### `pkill_attributed`
 
 Emitted by `lua/core/run_state.lua`'s `_fold()` once per attributed PC kill,
 immediately after the `script_ui("PKILL", ...)` announce. Payload:
 `{name = "<pc name>", race = "<race suffix>", xp = <integer>}` where `name`
-is the first word of the R.I.P. string, `race` is the remainder (may be `""`),
-and `xp` is the even-split XP attributed to this kill (may be `0` for
-empty-Vitals folds). For mixed folds (mob kills + PC kills within the 500ms
+is the first word of the R.I.P. string (after any trailing MUME label is
+stripped by `run_state`), `race` is the remainder (may be `""`), and `xp` is
+the even-split XP attributed to this kill (may be `0` for empty-Vitals
+folds). For mixed folds (mob kills + PC kills within the 500ms
 window), XP is split evenly across all entries; the last entry processed
 receives the remainder. See `kill_attributed` for the attribution model.
 

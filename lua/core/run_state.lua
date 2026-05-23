@@ -8,6 +8,14 @@
 
 local FOLD_DELAY = 0.5  -- seconds; brief window to batch group kills
 
+-- Strip a trailing MUME label, e.g. "A pack horse (MIN)" -> "A pack horse".
+-- Real mob and PC names never contain parens, so a trailing balanced (...)
+-- group is always a label and can be removed unambiguously.
+local function strip_label(s)
+    if not s then return s end
+    return (s:gsub("%s+%b()$", ""))
+end
+
 local function fmt_xp(n)
     n = math.floor(n)
     if n < 1000 then
@@ -101,7 +109,7 @@ local function schedule_fold()
 end
 
 events.subscribe("mob_death", function(name)
-    table.insert(M.pending_kills, name)
+    table.insert(M.pending_kills, strip_label(name))
     schedule_fold()
 end)
 
@@ -110,6 +118,7 @@ events.subscribe("char_death", function()
 end)
 
 events.subscribe("pc_death", function(full)
+    full = strip_label(full)
     local name = full:match("^(%S+)")
     local race = full:match("^%S+%s+(.*)$") or ""
     table.insert(M.pending_pkills, { name = name, race = race })
