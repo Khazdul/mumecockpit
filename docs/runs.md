@@ -292,8 +292,9 @@ Schema version is unchanged at `1`; this event is additive.
 
 ### `group_changed`
 
-Written when a group member joins or leaves mid-run. Vitals fluctuations
-(`Group.Update` with hp/mana changes) do not produce rows.
+Written when the player-ally composition of the group changes mid-run.
+Vitals fluctuations (`Group.Update` with hp/mana changes) do not produce
+rows, and neither do NPC churn events (mercenary or labeled-mount add/remove).
 
 ```json
 {"event": "group_changed", "ts": 1746640500, "members": ["Irelm", "Bilbo"]}
@@ -302,14 +303,19 @@ Written when a group member joins or leaves mid-run. Vitals fluctuations
 | Field | Type | Notes |
 |-------|------|-------|
 | `ts` | integer | `os.time()` when the row is written |
-| `members` | array of strings | Full current group composition at write time, sorted by ascending member id (sequential join order); never contains `null` or missing entries |
+| `members` | array of strings | Current player-ally composition (`type == "ally"` only — NPCs excluded), sorted by ascending member id (sequential join order); never contains `null` or missing entries |
 
 Notes:
 
 - Only join (`group_member_added`) and leave (`group_member_removed`) events
   produce rows; vitals updates (`group_member_updated`) do not.
-- `members` is the full current composition after the change, not just the
-  joining or leaving member.
+- `members` lists only `type == "ally"` members. `type == "npc"` (labeled
+  mercenaries and mounts) and `type == "you"` (self) are excluded.
+- A row is written only when the ally composition differs from the last
+  one written. NPC-only churn (e.g. a mercenary or mount added/removed
+  on every room separation) emits no row.
+- `members` is the full current ally composition after the change, not just
+  the joining or leaving member.
 - The first `Group.Set` that arrives at login (before the first `Char.Vitals`
   tick) does not produce a row; the pre-baseline guard ensures `run_start`
   remains the first row in `current.jsonl`.

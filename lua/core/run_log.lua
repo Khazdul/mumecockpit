@@ -12,6 +12,7 @@ local _run_start_ts     = nil
 local _last_level       = nil
 local _archive_dir      = nil
 local _current_path     = nil
+local _last_allies_key  = ""
 
 local function _clear_state()
     _active           = false
@@ -20,6 +21,7 @@ local function _clear_state()
     _last_level       = nil
     _archive_dir      = nil
     _current_path     = nil
+    _last_allies_key  = ""
 end
 
 local function _append(row)
@@ -258,8 +260,13 @@ local function _on_group_changed()
     local members = {}
     for _, id in ipairs(ids) do
         local m = state.group.members[id]
-        if m and m.name then members[#members + 1] = m.name end
+        if m and m.type == "ally" and m.name then
+            members[#members + 1] = m.name
+        end
     end
+    local key = table.concat(members, "\0")
+    if key == _last_allies_key then return end
+    _last_allies_key = key
     _append({ event = "group_changed", ts = os.time(), members = members })
     dbg("[RUN_LOG] group_changed: " .. #members .. " members")
 end
