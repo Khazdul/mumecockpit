@@ -605,9 +605,17 @@ border around the buffer. Three regions stacked horizontally:
 2. **Text buffer** — fills the remaining width minus the
    scrollbar. Soft line wrap on; hard newlines insert real
    newlines. The line containing the cursor renders with a subtle
-   background tint (`bg:#1f1f1f` when the buffer has focus,
-   `bg:#141414` when the toggle has focus — a dimmer follow-along
-   so the user keeps context while navigating the toggle).
+   background band when the buffer has focus — derived from
+   `_terminal_bg` via `_editor_focused_line_hl_bg()`, which lifts the
+   detected host bg toward white when it is dark and toward black
+   when it is light by `_EDITOR_LINE_HL_LIFT` (0.12). On a black
+   terminal this reproduces the legacy `bg:#1f1f1f`; on tinted or
+   light themes the band tracks the canvas instead of stranding a
+   near-black stripe on top of it. When the LITE/EDITOR toggle has
+   focus the band is dropped entirely — the cursor row blends into
+   the terminal background so the toggle owns the visible focus
+   without a competing follow-along band. Detection-failed fallback:
+   focused → `bg:#1f1f1f`; unfocused → terminal default.
 3. **Scrollbar** — 1-cell column on the right edge. Visible only
    when content exceeds the viewport. Page-step click semantics
    match the rest of the editor.

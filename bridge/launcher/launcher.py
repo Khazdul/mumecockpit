@@ -726,12 +726,13 @@ def _write_terminal_bg_to_layout_conf(bg):
 
 def _probe_and_persist_terminal_bg():
     """One-shot wrapper: detect, stash on the module-level _terminal_bg,
-    pre-compute the spotlight frame style derived from it, and write the
-    value to layout.conf. Called once from main() before the
-    prompt_toolkit Application starts."""
-    global _terminal_bg, _spotlight_frame_style
+    pre-compute the spotlight frame style and editor focused current-line
+    band derived from it, and write the value to layout.conf. Called once
+    from main() before the prompt_toolkit Application starts."""
+    global _terminal_bg, _spotlight_frame_style, _EDITOR_LINE_HL_BG_FOCUSED
     _terminal_bg = _detect_terminal_bg()
     _spotlight_frame_style = spotlight_frame_style(_terminal_bg)
+    _EDITOR_LINE_HL_BG_FOCUSED = _editor_focused_line_hl_bg(_terminal_bg)
     _write_terminal_bg_to_layout_conf(_terminal_bg)
 
 
@@ -4382,10 +4383,36 @@ _EDITOR_TOGGLE_LABELS = ("LITE", "EDITOR")
 
 # Soft-wrap left padding for the line-number column ("999 " for ≤999-line
 # files; widens automatically when the file is longer). Computed at render.
-# The current-line highlight tone in editor mode — subtle dark grey that
+# The current-line highlight tone in editor mode — a subtle band that
 # tracks the cursor without competing with the amber selection band.
-_EDITOR_LINE_HL_BG       = "bg:#1f1f1f"
-_EDITOR_LINE_HL_BG_DIM   = "bg:#141414"  # buffer unfocused — visible but dimmer
+# Re-set once at startup by `_probe_and_persist_terminal_bg()` so the band
+# is derived from the host terminal background; the `#1f1f1f` default is
+# the fallback when detection failed (matches the legacy near-black tone).
+# When the buffer is unfocused (the LITE/EDITOR toggle has focus) the band
+# is dropped entirely — no `bg:` override, so the terminal default shows
+# through and the row blends into the surrounding canvas.
+_EDITOR_LINE_HL_BG_FOCUSED = "bg:#1f1f1f"
+# Fractional lift toward white (dark bg) or black (light bg) used to derive
+# the focused band from `_terminal_bg`. 0.12 reproduces the legacy
+# `#1f1f1f`-on-`#000000` tone (255 * 0.12 ≈ 31 = 0x1f), so the visual on a
+# black terminal is unchanged.
+_EDITOR_LINE_HL_LIFT = 0.12
+
+
+def _editor_focused_line_hl_bg(terminal_bg):
+    """Buffer-focused current-line band, derived from `terminal_bg`. Lifts
+    the host bg toward white when it is dark, toward black when it is
+    light, by `_EDITOR_LINE_HL_LIFT` — a small fixed offset that reads as
+    a subtle band rather than a hard stripe. Reuses `_interpolate_hex`
+    from the credits fade. Falls back to `bg:#1f1f1f` when `terminal_bg`
+    is None so the legacy near-black behaviour is preserved."""
+    if not terminal_bg:
+        return "bg:#1f1f1f"
+    r = int(terminal_bg[1:3], 16)
+    g = int(terminal_bg[3:5], 16)
+    b = int(terminal_bg[5:7], 16)
+    target = "#000000" if (r + g + b) >= 384 else "#ffffff"
+    return f"bg:{_interpolate_hex(terminal_bg, target, _EDITOR_LINE_HL_LIFT)}"
 
 
 def _editor_toggle_block(label):
@@ -6139,8 +6166,11 @@ def _editor_append_editor_body(frags, cols):
             visible_rows.append(None)
 
     buffer_focused = (not _editor_toggle_focused)
-    hl_bg          = (_EDITOR_LINE_HL_BG if buffer_focused
-                      else _EDITOR_LINE_HL_BG_DIM)
+    # Focused: subtle band derived from the host terminal bg. Unfocused
+    # (toggle has focus): no `bg:` override so the row blends into the
+    # surrounding canvas — `row_bg = ""` propagates through the per-cell
+    # style composition below without painting a band.
+    hl_bg          = _EDITOR_LINE_HL_BG_FOCUSED if buffer_focused else ""
 
     # Active selection range in absolute char offsets, or None.
     sel_lo = sel_hi = None
@@ -10685,12 +10715,24 @@ def _credits_brightness_to_hex(b: float, base_hex: str | None = None) -> str:
     producing the original greyscale ramp. Used both for the credits row
     fade and (implicitly) for the empty-canvas fallback."""
     base = base_hex or "#000000"
-    br = int(base[1:3], 16)
-    bg = int(base[3:5], 16)
-    bb = int(base[5:7], 16)
-    r  = max(0, min(255, int(round(br + (255 - br) * b))))
-    g  = max(0, min(255, int(round(bg + (255 - bg) * b))))
-    bl = max(0, min(255, int(round(bb + (255 - bb) * b))))
+    return _interpolate_hex(base, "#ffffff", b)
+
+
+def _interpolate_hex(base_hex: str, target_hex: str, t: float) -> str:
+    """Per-channel linear interpolation between two `#rrggbb` colours.
+    `t=0` returns base, `t=1` returns target; intermediate values are
+    clamped to the byte range. Foundation for `_credits_brightness_to_hex`
+    (target = white) and the editor-mode focused current-line band
+    (target = black or white depending on terminal-bg brightness)."""
+    br = int(base_hex[1:3], 16)
+    bg = int(base_hex[3:5], 16)
+    bb = int(base_hex[5:7], 16)
+    tr = int(target_hex[1:3], 16)
+    tg = int(target_hex[3:5], 16)
+    tb = int(target_hex[5:7], 16)
+    r  = max(0, min(255, int(round(br + (tr - br) * t))))
+    g  = max(0, min(255, int(round(bg + (tg - bg) * t))))
+    bl = max(0, min(255, int(round(bb + (tb - bb) * t))))
     return f"#{r:02x}{g:02x}{bl:02x}"
 
 
