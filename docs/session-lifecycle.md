@@ -246,16 +246,21 @@ Residual edge case (documented, not defended): explicit
 **Load-state guard (`_profile_loaded`).** `_save_profile` checks a
 session-scoped `_profile_loaded` flag in addition to `$_profile`
 before writing. The flag is set to `1` at the end of the SESSION
-CONNECTED load sequence (after the class is reopened) and cleared
-back to `0` in the SESSION DISCONNECTED and SESSION TIMED OUT
-handlers — after `#session {gts}` (so the SESSION DEACTIVATED
-handler that fires during the gts switch still sees the flag set
-and saves correctly) and before the `clear_game_session` Lua call.
-This prevents a failed connect — where the session deactivates
-without ever loading its class — from wiping the on-disk profile
-with an empty `#class write`. The flag also no-ops the redundant
-`_save_profile` call in the MMapper text action once a previous
-disconnect has already cleared it.
+CONNECTED load sequence, wrapped in `#%0 #class {core} {open}` /
+`#%0 #class {core} {close}` so the variable lands in the `{core}`
+class rather than the re-opened profile class — `#class
+{<profile>} {write}` therefore never serializes `_profile_loaded`
+into the on-disk profile file. Variable reads are not class-scoped,
+so `_save_profile`'s `$_profile_loaded` check is unaffected by the
+wrapping. The flag is cleared back to `0` in the SESSION
+DISCONNECTED and SESSION TIMED OUT handlers — after `#session
+{gts}` (so the SESSION DEACTIVATED handler that fires during the
+gts switch still sees the flag set and saves correctly) and before
+the `clear_game_session` Lua call. This prevents a failed connect
+— where the session deactivates without ever loading its class —
+from wiping the on-disk profile with an empty `#class write`. The
+flag also no-ops the redundant `_save_profile` call in the MMapper
+text action once a previous disconnect has already cleared it.
 
 **Single definition of the save sequence.** `_save_profile` in
 `ttpp/core/system.tin` is the only place `#class write` +
@@ -308,7 +313,7 @@ Standalone tt++ runs outside the cockpit are unaffected by the missing
 tmux session (error is suppressed).
 
 **Load sequence on SESSION CONNECTED:**
-1. `sanitize_profile.sh ttpp/profiles/%0.tin` — normalizes BOM, CRLF, class wrapping, leading blanks
+1. `sanitize_profile.sh ttpp/profiles/%0.tin` — normalizes BOM, CRLF, class wrapping, leading blanks, and strips stray `#var {_profile_loaded} {…}` lines (infrastructure flag that must not appear in a profile file)
 2. `#class {%0} {open}` — opens the session class
 3. `#read ttpp/profiles/%0.tin` — loads profile content into the open class
 4. `#class {%0} {close}` — closes the class; subsequent registrations land in no class

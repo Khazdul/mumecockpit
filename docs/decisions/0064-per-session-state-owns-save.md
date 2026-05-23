@@ -181,3 +181,38 @@ one place when it inevitably needs to change again.
 - **Independent of ADR 0058** — `mark_mume_disconnected()`
   remains the single dispatch point for popup auto-open and state
   teardown; that role is unaffected.
+
+## Update (2026-05-23)
+
+The original decision said `_profile_loaded` is set with a no-prefix
+`#var` at the end of the SESSION CONNECTED load sequence — explicitly
+*after* the final `#%0 #class {%0} {open}` step that re-opens the
+profile class for runtime capture. Because that bare `#var` ran with
+the profile class still open, the variable was created inside the
+`{<profile>}` class. `#class {<profile>} {write}` then serialized
+`_profile_loaded` into every saved profile file, violating the strict
+core / profile separation (`{core}` holds runtime-only infrastructure;
+`{<profile>}` holds user data).
+
+**Fix.** The set is now wrapped in `#%0 #class {core} {open}` /
+`#%0 #class {core} {close}` so the flag lands in `{core}` instead of
+the open profile class. Variable reads are not class-scoped, so
+`_save_profile`'s `$_profile_loaded` guard check is unaffected — the
+failed-connect protection introduced by ADR 0063 is unchanged. Keeping
+the set as the last statement of the SESSION CONNECTED branch
+preserves the "set only after the full load sequence completed" intent
+of ADR 0063 / 0064, even though position is no longer load-bearing
+once the variable is `{core}`-wrapped.
+
+`bridge/release/sanitize_profile.sh` now also strips stray
+`#var {_profile_loaded} {…}` lines (case-insensitive, any value) so
+profile files already polluted by the original bug self-heal: the
+sanitizer runs on SESSION CONNECTED before `#read`, so the stale line
+is removed before the profile class loads it and re-serializes it on
+the next save.
+
+This Update also corrects the placement detail described in
+[ADR 0063](0063-profile-loaded-save-guard.md) ("Set to 1 … after the
+final `#%0 #class {%0} {open}` step"). The set still happens at the
+end of the load sequence, but the variable now lands in `{core}`
+rather than the profile class.
