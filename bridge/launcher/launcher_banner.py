@@ -72,10 +72,13 @@ STARS = [
 
 # Twinkle: open-field stars sit at their base tier most of the cycle and
 # briefly pulse ±1 tier when the sine wave crosses the peak threshold.
-# Slow randomized periods keep the field shimmering asynchronously.
+# Slow randomized periods keep the field shimmering asynchronously. The
+# four-point stars (✦ ✧) twinkle markedly more slowly than the dots and
+# rings — same wave, same peak, just a stretched period.
 _TWINKLE_PERIOD_MIN = 12.0
 _TWINKLE_PERIOD_MAX = 32.0
 _TWINKLE_PEAK       = 0.82
+_BIG_STAR_PERIOD_FACTOR = 5
 
 # Brightness tiers as ints — embedded stars hold their base tier, open-field
 # stars clamp into this range after applying the wave-driven offset.
@@ -112,6 +115,8 @@ def _build_animated_stars():
             out.append((row, col, glyph, base_tier, True, 0.0, 0.0))
         else:
             period = random.uniform(_TWINKLE_PERIOD_MIN, _TWINKLE_PERIOD_MAX)
+            if glyph in _SWAP_GLYPH:
+                period *= _BIG_STAR_PERIOD_FACTOR
             phase  = random.uniform(0.0, 1.0)
             out.append((row, col, glyph, base_tier, False, period, phase))
     return out
