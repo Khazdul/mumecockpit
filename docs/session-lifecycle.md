@@ -415,12 +415,14 @@ Inside tt++, `main.tin` does three things to keep the game window clean:
   their own boot output). Skipped if a game session is already active.
 - Clears scrollback (tt++'s `#buffer clear`, terminal's `\e[3J`, and
   `tmux clear-history`).
-- Prints the starfield + MUME + COCKPIT banner (plain white, the same
-  12-row art the launcher and popup render via
-  `bridge/launcher/banner.py` — see
-  [docs/launcher.md → Shared banner](launcher.md#shared-banner)), a
-  welcome line, a `Press <Esc> for menu.` hint, and
-  `Connecting to MUME...`.
+- Prints the MUME + COCKPIT wordmark in plain white (no starfield, no
+  animation) via hand-rolled `#showme` lines — a deliberate static,
+  starless subset of the launcher / popup banner. The shared
+  `bridge/launcher/launcher_banner.py` is **not** used here: the
+  welcome screen is a tt++ startup surface, not a `prompt_toolkit`
+  one, and the wordmark art is frozen so a small amount of duplication
+  is the accepted cost (ADR 0100). Followed by a welcome line, a
+  `Press <Esc> for menu.` hint, and `Connecting to MUME...`.
 - Calls `connect`, which resolves to `#$_ses_cmd {$_profile} {$_host} {$_port}`
   via `config.tin` — `$_ses_cmd` is `ses` (mmapper/plain) or `ssl` (direct/TLS).
   User lands directly in the MUD.

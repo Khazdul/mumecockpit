@@ -2540,7 +2540,7 @@ shared with the in-game popup. Roles:
 | `C_SPOTLIGHT_TEXT_SECONDARY` | Spotlight info-box secondary text — muted grey on box bg (countdown), visibly subordinate |
 | `C_OK`              | Persistent "selected / active" marker (e.g. the profile-table ✓) — green, never gold. |
 | `C_CURSOR_CELL`     | Focused-cursor foreground on swatch / checkbox cells in palette zones — gold, applied to the `[ ]` glyphs only; the swatch keeps its own colour. Separate token from `C_ACCENT` so the two can diverge later. |
-| `C_BANNER_WORD`         | Main-page banner — `MUME` wordmark rows (bright teal). See `bridge/launcher/banner.py`. |
+| `C_BANNER_WORD`         | Main-page banner — `MUME` wordmark rows (bright teal). See `bridge/launcher/launcher_banner.py`. |
 | `C_BANNER_WORD_DIM`     | Main-page banner — `COCKPIT` wordmark rows (muted teal, subordinate to the MUME wordmark). |
 | `C_BANNER_STAR_DIM`     | Starfield row — distant stars (`D` cells). |
 | `C_BANNER_STAR_MID`     | Starfield row — mid stars (`M` cells). |
@@ -2604,10 +2604,10 @@ See [ADR 0085](decisions/0085-shared-menu-chrome.md).
 (darker cyan) via `title_block(..., blank_above=2)`. The main page's
 starfield + wordmark banner is the launcher's logo, not a section
 title, and does not go through `title_block`; the banner is rendered
-via `bridge/launcher/banner.py` (shared with the in-game popup — see
-the [Shared banner](#shared-banner) section below). The banner is
-top-anchored, the menu rows and quote sit in the middle, and the
-footer is bottom-anchored via `footer_block`.
+via `bridge/launcher/launcher_banner.py` (shared with the in-game
+popup — see the [Shared banner](#shared-banner) section below). The
+banner is top-anchored, the menu rows and quote sit in the middle,
+and the footer is bottom-anchored via `footer_block`.
 Every other swept frame's shortcut row also sits on the final terminal
 row — the footer no longer shifts vertically when the user moves
 between sibling frames. The two modal dialogs (`exit_confirm`,
@@ -2689,23 +2689,52 @@ single-row) glyph block below, with `Back` per-row centred beneath.
 
 ### Shared banner
 
-`bridge/launcher/banner.py` exposes the frozen starfield + wordmark
-banner used by the launcher main page and the in-game popup's `main`
-frame. The two surfaces render identical banner content — one source.
+`bridge/launcher/launcher_banner.py` exposes the animated starfield +
+wordmark banner used by the launcher main page and the in-game popup's
+`main` frame. The two surfaces render identical banner content — one
+source of truth, one render call, one twinkle layer (ADR 0100).
 
 | Constant / function | Contract |
 |---------------------|----------|
 | `BANNER_WIDTH = 45`  | Visible width in cells of every banner row. |
-| `BANNER_HEIGHT = 12` | Row count: 5 starfield rows + 1 blank row + 3 MUME wordmark rows + 3 COCKPIT wordmark rows. |
-| `banner_lines()`     | Returns the 12 rows as a list of `(style, text)` 2-tuple lists. Each row's visible widths sum to `BANNER_WIDTH`; callers centre each row with their existing `_pad_centre` helper and attach the per-row hover / mouse handler — the same call shape the launcher and popup used for the prior `_MUME_LINES` / `_COCKPIT_LINES`. |
+| `BANNER_HEIGHT = 11` | Row count: 5 starfield rows + 3 MUME wordmark rows + 3 COCKPIT wordmark rows. No blank separator row between the starfield and the wordmark — the spacing is carried by the starfield's bottom rows. |
+| `banner_lines(now=None)` | Returns the 11 rows as a list of `(style, text)` 2-tuple lists. Each row's visible widths sum to `BANNER_WIDTH`; callers centre each row with their existing `_pad_centre` helper and attach the per-row hover / mouse handler. `now` (monotonic seconds) drives the twinkle and defaults to `time.monotonic()`; the function is a pure function of the clock with no mutable per-frame state, so a test can pin a specific instant by passing `now` in. |
 
-The art is **frozen** — do not regenerate it at runtime and do not
-tweak the glyphs or colour map. Starfield cells are mapped from
-single-letter codes (`.` empty, `D` dim, `M` mid, `B` bright) to the
-`C_BANNER_STAR_*` tokens; wordmark rows centre to `BANNER_WIDTH` and
-paint in `C_BANNER_WORD` (MUME) or `C_BANNER_WORD_DIM` (COCKPIT).
-The tt++ welcome screen (`ttpp/core/welcome.tin`) shows the same art
-in plain white; see [session-lifecycle.md](session-lifecycle.md#clean-client-startup).
+**Starfield as data.** `STARS` is the editable source of truth: a list
+of `(row, col, glyph, tier)` records. `glyph ∈ {· ◦ ✦ ✧}` (dots and
+rings for the small stars, four-point stars for the bright accents);
+`tier ∈ {"DIM", "MID", "BRIGHT"}` selects one of the `C_BANNER_STAR_*`
+palette tokens. Wordmark glyphs are frozen art in `_MUME_WORDS` /
+`_COCKPIT_WORDS`, centred to `BANNER_WIDTH` and painted in
+`C_BANNER_WORD` (MUME) / `C_BANNER_WORD_DIM` (COCKPIT). An
+animation layer is derived from `STARS` at import time
+(`_build_animated_stars`), assigning each open-field star a random
+period and phase so the field shimmers asynchronously across cells.
+
+**Twinkle.** Open-field stars hold their base tier most of the cycle
+and briefly pulse ±1 tier when a slow sine wave crosses
+`_TWINKLE_PEAK = 0.82`; periods are drawn from
+`[_TWINKLE_PERIOD_MIN, _TWINKLE_PERIOD_MAX] = [12 s, 32 s]`. Four-point
+stars (`✦` / `✧`) use the same wave with a `_BIG_STAR_PERIOD_FACTOR =
+5×` stretch, so the bright accents pulse markedly slower than the dots
+and rings; at the bright peak the `✦` / `✧` glyphs swap via
+`_SWAP_GLYPH`. Stars geometrically inside a wordmark column span are
+detected by `_is_embedded` and stay fully static so they never compete
+with the logo glyphs.
+
+**Per-surface redraw.** The module has no `prompt_toolkit` /
+application dependency: each caller drives its own redraw loop and
+calls `banner_lines()` per frame. The launcher's `_banner_tick_task`
+runs at `_BANNER_TICK_HZ = 12`; the popup's runs at 6 Hz. Both loops
+invalidate their `Application` only while the main frame is showing
+(submenus are static), and both stop cleanly when the surface
+shuts down.
+
+The tt++ welcome screen (`ttpp/core/welcome.tin`) deliberately does
+**not** share this module — it prints a hardcoded, static, starless
+subset of the wordmark in plain white via `#showme` lines. See
+[session-lifecycle.md → Clean client startup](session-lifecycle.md#clean-client-startup)
+and ADR 0100.
 
 **Hover-clear invariant.** In a menu frame, every emitted fragment is
 either a selectable row (carries a MOUSE_MOVE handler that sets the

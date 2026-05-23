@@ -114,11 +114,18 @@ the rationale. The popup's `main`, `options`, and `scripts` frames are
 all single `FormattedTextControl` Windows emitting `title_block` (with
 `blank_above=1`) + body + `footer_block` in one fragment list — the
 footer is anchored to the popup's final row. The `main` frame's
-starfield + wordmark banner is shared with the launcher via
-`bridge/launcher/banner.py` (the logo, not a section title — so it
-does not go through `title_block`); see the
+animated starfield + wordmark banner is shared with the launcher via
+`bridge/launcher/launcher_banner.py` (the logo, not a section title —
+so it does not go through `title_block`); see the
 [Shared banner](launcher.md#shared-banner) section in `docs/launcher.md`
-for the call contract. Selectable menu rows render
+for the call contract and ADR 0100 for the unification rationale. The
+popup runs its own main-frame-gated `_banner_tick_task` at
+`_BANNER_TICK_HZ = 6` (alongside the existing 1 Hz `_tick` that
+refreshes the status header), so the twinkle redraws only while the
+popup is open and on `main`; submenus and the closed popup do not
+invalidate. The launcher's redraw loop runs at 12 Hz — the popup's
+slower rate is deliberate, because it runs as an overlay over a live
+game. Selectable menu rows render
 through `menu_chrome.menu_row`: gold `<< >>` on the cursor row, hover
 lightens the label (`C_HOVER`). The dead-grey "Save run" row reuses
 the `menu_row` "inactive" state with `inactive_style=C_HINT` and no
