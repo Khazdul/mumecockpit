@@ -23,7 +23,6 @@
 -- (Group section) for the room-scope semantics.
 
 local PANEL_W = 67
-local BAR_W   = 20
 
 -- Name pool — kept short to stay under the 33-char script_ui budget.
 local NAME_POOL = {
@@ -40,7 +39,6 @@ local TITLE   = "<FD4A04E>"
 local WHITE   = "<FFFFFFF>"
 local DIM     = "<F555555>"
 local GREEN   = "<F0FA838>"
-local OLIVE   = "<F8A7838>"
 local ORANGE  = "<FFF7020>"
 local RED     = "<FE02020>"
 local GOLD_FG = "<FFFEE58>"
@@ -53,7 +51,7 @@ scripts.mercenaries = M
 
 -- mercs: keyed by lower-cased name (the label — stable identity).
 -- Record: { name, label_lc, gmcp_id, present, expiry, silver_paid, state,
---          warned_5min, hp_band, mp_band }
+--          warned_5min }
 --   gmcp_id  transient; bound while the merc is in our room, nil otherwise.
 --   present  true while the merc is in our room (has a bound gmcp_id).
 --   state    "active" | "grace" (grace = pay due, 1-minute window).
@@ -96,14 +94,18 @@ local function _format_silver(silver)
     return sp
 end
 
-local function _update_vitals(rec, member)
-    rec.hp_band = member.hp_string or rec.hp_band
-    rec.mp_band = member.mp_string or rec.mp_band
-end
-
 -- ── panel rendering ─────────────────────────────────────────────────────────
--- Visual widths assume the player's terminal renders the box-drawing chars,
--- bar cells (█/░) and ⚠ as 1 cell each. Color codes are zero-width.
+-- Visual widths assume the player's terminal renders the box-drawing chars
+-- and ⚠ as 1 cell each. Color codes are zero-width.
+--
+-- Column layout (inner width = PANEL_W = 67):
+--   3 leading spaces | 15 name | 12 time | 11 status | 26 gold = 67.
+-- The time column reserves a 2-cell warn prefix in front of MM:SS so values
+-- stay column-aligned whether or not the ⚠ is shown.
+local NAME_W   = 15
+local TIME_W   = 12
+local STATUS_W = 11
+local GOLD_W   = 26
 
 local function _wrap_row(content)
     return FRAME .. "│" .. R .. content .. FRAME .. "│" .. R
@@ -131,7 +133,23 @@ local function _bottom_border()
     return FRAME .. "╰" .. string.rep("─", PANEL_W) .. "╯" .. R
 end
 
-local function _name_row(rec)
+local function _header_row()
+    local s = { "   " }   -- 3 leading
+    local cols = {
+        { "Mercenary", NAME_W },
+        { "Time left", TIME_W },
+        { "Status",    STATUS_W },
+        { "Gold paid", GOLD_W },
+    }
+    for _, c in ipairs(cols) do
+        local label, w = c[1], c[2]
+        s[#s+1] = DIM .. label .. R .. string.rep(" ", w - #label)
+    end
+    -- visual total: 3 + 15 + 12 + 11 + 26 = 67
+    return _wrap_row(table.concat(s))
+end
+
+local function _merc_row(rec)
     local remaining = rec.expiry - os.time()
     local time_str  = _format_time(remaining)
 
@@ -139,88 +157,56 @@ local function _name_row(rec)
     if rec.state == "grace" then
         warn_seg   = RED .. "⚠ " .. R              -- 2 visual cells
         time_color = RED
+    elseif remaining < 300 then
+        warn_seg   = "  "
+        time_color = ORANGE
     else
         warn_seg   = "  "
-        time_color = rec.present and WHITE or DIM
+        time_color = WHITE
     end
 
-    local name_color = rec.present and WHITE or DIM
-    local name_text  = rec.present and rec.name or (rec.name .. " (away)")
-    local gold_str   = _format_silver(rec.silver_paid)
-    local name_vlen  = #name_text    -- names are ASCII
-    local gold_vlen  = #gold_str
+    local status_text  = rec.present and "in room" or "away"
+    local status_color = rec.present and GREEN or DIM
+    local gold_str     = _format_silver(rec.silver_paid)
 
     local s = {}
-    s[#s+1] = "  "
-    s[#s+1] = name_color .. name_text .. R
-    s[#s+1] = string.rep(" ", 28 - name_vlen)
-    s[#s+1] = warn_seg
-    s[#s+1] = time_color .. "time " .. time_str .. R
-    s[#s+1] = string.rep(" ", 7)
-    s[#s+1] = GOLD_FG .. string.rep(" ", 17 - gold_vlen) .. gold_str .. R
-    s[#s+1] = " "
-    -- visual total: 2 + 28 + 2 + 10 + 7 + 17 + 1 = 67
+    s[#s+1] = "   "                                                       -- 3
+    s[#s+1] = WHITE .. rec.name .. R
+        .. string.rep(" ", NAME_W - #rec.name)                            -- 15
+    s[#s+1] = warn_seg .. time_color .. time_str .. R
+        .. string.rep(" ", TIME_W - 2 - #time_str)                        -- 12
+    s[#s+1] = status_color .. status_text .. R
+        .. string.rep(" ", STATUS_W - #status_text)                       -- 11
+    s[#s+1] = GOLD_FG .. gold_str .. R
+        .. string.rep(" ", GOLD_W - #gold_str)                            -- 26
+    -- visual total: 3 + 15 + 12 + 11 + 26 = 67
     return _wrap_row(table.concat(s))
 end
 
-local function _bars_row(label, pct, band, default_fg, present)
-    local fill
-    if pct == nil then
-        fill = 0
-    else
-        fill = math.floor(pct * BAR_W + 0.5)
-        if fill < 0      then fill = 0      end
-        if fill > BAR_W  then fill = BAR_W  end
-    end
-
-    local bar_fg
-    if not present then
-        bar_fg = DIM                              -- away: last-known, greyed
-    elseif pct == nil then
-        bar_fg = DIM
-    elseif pct <= 0.25 then
-        bar_fg = RED
-    elseif pct <= 0.45 then
-        bar_fg = ORANGE
-    else
-        bar_fg = default_fg
-    end
-
-    local bar = bar_fg .. string.rep("█", fill)
-        .. DIM .. string.rep("░", BAR_W - fill) .. R
-
-    local label_padded = label .. string.rep(" ", 7 - #label)
-    local band_str  = band or ""
-    local band_vlen = #band_str
-
-    local s = {}
-    s[#s+1] = "  "
-    s[#s+1] = label_padded
-    s[#s+1] = bar
-    s[#s+1] = "  "
-    s[#s+1] = DIM .. band_str .. R
-    s[#s+1] = string.rep(" ", 35 - band_vlen)
-    s[#s+1] = " "
-    -- visual total: 2 + 7 + 20 + 2 + 35 + 1 = 67
-    return _wrap_row(table.concat(s))
-end
-
-local function _footer_row(count)
+local function _footer_row()
     local autopay_text  = autopay and "ON" or "OFF"
     local autopay_color = autopay and GREEN or DIM
-    local count_text    = (count == 1) and "1 mercenary"
-        or (count .. " mercenaries")
 
-    local left_vlen  = #"  Autopay: " + #autopay_text
-    local right_vlen = #count_text
-    local pad_count  = PANEL_W - left_vlen - right_vlen - 2
+    local total_silver = 0
+    for _, rec in pairs(mercs) do
+        total_silver = total_silver + rec.silver_paid
+    end
+    local total_str = _format_silver(total_silver)
+
+    local left_label  = "   Autopay: "
+    local right_label = "Total spent: "
+    local trailing    = "   "
+    local left_vlen   = #left_label + #autopay_text
+    local right_vlen  = #right_label + #total_str + #trailing
+    local pad_count   = PANEL_W - left_vlen - right_vlen
 
     local s = {}
-    s[#s+1] = WHITE .. "  Autopay: " .. R
+    s[#s+1] = WHITE .. left_label .. R
     s[#s+1] = autopay_color .. autopay_text .. R
     s[#s+1] = string.rep(" ", pad_count)
-    s[#s+1] = WHITE .. count_text .. R
-    s[#s+1] = "  "
+    s[#s+1] = WHITE .. right_label .. R
+    s[#s+1] = GOLD_FG .. total_str .. R
+    s[#s+1] = trailing
     return _wrap_row(table.concat(s))
 end
 
@@ -247,7 +233,7 @@ local function _empty_state()
     tintin_show(ses, _empty_row())
     tintin_show(ses, _left("A mercenary fights alongside you. Each 10 silver buys about"))
     tintin_show(ses, _left("25 minutes — near the end it taps your shoulder for payment."))
-    tintin_show(ses, _left("The panel tracks each mercenary's HP, time left and cost."))
+    tintin_show(ses, _left("The panel tracks each mercenary's time left and cost."))
     tintin_show(ses, _empty_row())
 
     -- Tip with inline highlighted command.
@@ -278,16 +264,14 @@ local function _render_panel()
 
     tintin_show(ses, _top_border())
     tintin_show(ses, _empty_row())
+    tintin_show(ses, _header_row())
+    tintin_show(ses, _empty_row())
     for _, rec in ipairs(list) do
-        local hp_pct = state.group.pct_for("hp", nil, nil, rec.hp_band)
-        local mp_pct = state.group.pct_for("mp", nil, nil, rec.mp_band)
-        tintin_show(ses, _name_row(rec))
-        tintin_show(ses, _bars_row("HP",    hp_pct, rec.hp_band, GREEN, rec.present))
-        tintin_show(ses, _bars_row("Moves", mp_pct, rec.mp_band, OLIVE, rec.present))
-        tintin_show(ses, _empty_row())
+        tintin_show(ses, _merc_row(rec))
     end
+    tintin_show(ses, _empty_row())
     tintin_show(ses, _divider())
-    tintin_show(ses, _footer_row(#list))
+    tintin_show(ses, _footer_row())
     tintin_show(ses, _bottom_border())
 end
 
@@ -369,8 +353,6 @@ function M.on_hire()
         silver_paid = 10,
         state       = "active",
         warned_5min = false,
-        hp_band     = nil,
-        mp_band     = nil,
     }
     send("label mercenary " .. name)
     send("group " .. name)
@@ -431,8 +413,8 @@ end
 -- ── GMCP subscribers ────────────────────────────────────────────────────────
 
 -- Group.Add covers both fresh hires and mercs re-entering our room (room-scoped
--- GMCP assigns a NEW id on each arrival). Same path: bind id, mark present,
--- refresh vitals. Never creates or removes records.
+-- GMCP assigns a NEW id on each arrival). Same path: bind id, mark present.
+-- Never creates or removes records.
 events.subscribe("group_member_added", function(member)
     local mname = (member.name or ""):lower()
     if mname ~= "citizen mercenary" then return end
@@ -447,15 +429,6 @@ events.subscribe("group_member_added", function(member)
     rec.gmcp_id = member.id
     rec.present = true
     id_to_label[member.id] = label_lc
-    _update_vitals(rec, member)
-end)
-
-events.subscribe("group_member_updated", function(member)
-    local label_lc = id_to_label[member.id]
-    if not label_lc then return end
-    local rec = mercs[label_lc]
-    if not rec then return end
-    _update_vitals(rec, member)
 end)
 
 -- Group.Remove is room-scoped: it means the merc left our room, not that the
