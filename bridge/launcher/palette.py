@@ -12,6 +12,8 @@ __all__ = [
     "C_BUTTON_INACTIVE", "C_BUTTON_ACTIVE_UNFOCUSED",
     "C_BUTTON_ACTIVE_FOCUSED",
     "C_OK", "C_CURSOR_CELL", "C_PANE_OFF",
+    "C_BANNER_WORD", "C_BANNER_WORD_DIM",
+    "C_BANNER_STAR_DIM", "C_BANNER_STAR_MID", "C_BANNER_STAR_BRIGHT",
     "C_LOG_PLAYER_INPUT", "C_LOG_CURSOR",
     "C_LOG_OVERLAY_BG", "C_LOG_OVERLAY_FG", "C_LOG_OVERLAY_HINT",
     "C_LOG_SCRUBBER_FILLED", "C_LOG_SCRUBBER_EMPTY", "C_LOG_SCRUBBER_THUMB",
@@ -97,6 +99,16 @@ C_CURSOR_CELL = "bold fg:#ffaf00"
 # enabled rows' bright checkboxes and coloured swatches. One step darker
 # than C_HINT (#585858) — the gap is the whole point.
 C_PANE_OFF    = "fg:#3a3a3a"
+
+# ---------------------------------------------------------------------------
+# Banner — shared starfield + wordmark used by the launcher main page
+# (launcher.py) and the in-game popup (ingame_menu.py). See banner.py.
+# ---------------------------------------------------------------------------
+C_BANNER_WORD        = "fg:#00d0d0"   # wordmark line 1 (MUME)
+C_BANNER_WORD_DIM    = "fg:#0a9a9c"   # wordmark line 2 (COCKPIT)
+C_BANNER_STAR_DIM    = "fg:#1f595b"   # distant stars
+C_BANNER_STAR_MID    = "fg:#2f9092"   # mid stars
+C_BANNER_STAR_BRIGHT = "fg:#74e8e8"   # bright stars
 
 # ---------------------------------------------------------------------------
 # Statistics-frame palette (mockup-driven; isolated from the other frames so
