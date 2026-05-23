@@ -63,10 +63,10 @@ event flow. Same pattern as `gmcp.trace`.
 | `run_started` | (none) | `lua/brain/connection.lua` `mark_mume_connected()` — emitted after `_write_connection_state()` and login `system_ui`, before `state.run.reset()` |
 | `run_ending` | (none) | `lua/brain/connection.lua` `mark_mume_disconnected()` — emitted after `_clear_connection_state()` and logout `system_ui`, before `state.run.reset()` and `state.char.reset()` |
 | `char_reset` | (none) | `lua/core/char_state.lua` `state.char.reset()` — emitted after wiping all non-function keys |
-| `group_member_added` | member table | `lua/core/group_collector.lua` — emitted by `Group.Set` (for ids new vs old) and `Group.Add` after member inserted into `state.group.members` |
-| `group_member_updated` | member table | `lua/core/group_collector.lua` — emitted by `Group.Update` after merge (including freshness inference) |
-| `group_member_removed` | member id (integer) | `lua/core/group_collector.lua` — emitted by `Group.Set` (for ids removed) and `Group.Remove` after member deleted from `state.group.members` |
-| `group_changed` | (none) | `lua/core/group_collector.lua` — emitted after every `Group.*` handler and on `state.group.reset()` |
+| `group_member_added` | member table | `lua/core/group_collector.lua` — emitted by `Group.Set` (for ids new vs old), `Group.Add`, and `Group.Update` when an excluded NPC is promoted into `state.group.members` because the update carried a non-empty string `label` |
+| `group_member_updated` | member table | `lua/core/group_collector.lua` — emitted by `Group.Update` after an in-place merge (including freshness inference) when membership did not change, and by the `gmcp_char_vitals` subscriber when `buffer-hits` / `opponent-hits` is cross-applied onto a group member (once per affected member) |
+| `group_member_removed` | member id (integer) | `lua/core/group_collector.lua` — emitted by `Group.Set` (for ids removed), `Group.Remove`, and `Group.Update` when a labeled NPC is demoted out of `state.group.members` because the update cleared its `label` |
+| `group_changed` | (none) | `lua/core/group_collector.lua` — emitted after every `Group.*` handler, on `state.group.reset()`, and by the `gmcp_char_vitals` subscriber whenever it cross-applied at least one `*-hits` band onto a group member |
 | `mob_death` | mob name string, kind (`"living"` \| `"undead"`) | `ttpp/core/mud_events.tin` |
 | `mume_time_line` | full matched line string | `ttpp/core/clock.tin` `#action` |
 | `room_clock_line` | full matched line string | `ttpp/core/clock.tin` `#action` |
@@ -119,8 +119,12 @@ persisted data), `lua/core/buffs_state.lua` (serialize), `lua/core/comm_store.lu
 
 **`gmcp_char_vitals`** — `lua/core/run_log.lua` (write deferred run_start row on
 first tick), `lua/core/run_state.lua` (update XP/TP baseline; emit `tp_gained`
-when TP increases), `lua/core/status_state.lua` (serialize). Added to
-`events.trace_skip` to suppress log noise when tracing is on.
+when TP increases), `lua/core/status_state.lua` (serialize),
+`lua/core/group_collector.lua` (cache buffer/opponent identity strings and
+cross-apply `buffer-hits` / `opponent-hits` onto the matching group member
+as `hp_string`; emits `group_member_updated` and `group_changed` when at
+least one member was touched). Added to `events.trace_skip` to suppress log
+noise when tracing is on.
 
 **`gmcp_char_status_vars`** — `lua/core/run_log.lua` (level-up detection),
 `lua/core/status_state.lua` (serialize).
@@ -169,13 +173,17 @@ wiping all non-function keys from `state.char`. No payload. Called from
 ### `group_changed`
 
 Emitted by `lua/core/group_collector.lua` with no payload after every `Group.*` GMCP
-handler completes and at the end of `state.group.reset()`. No payload; subscribers should
-read `state.group.members` directly for the new state.
+handler completes, at the end of `state.group.reset()`, and by the
+`gmcp_char_vitals` subscriber whenever it cross-applied at least one `*-hits`
+band onto a group member (see the Char.Vitals buffer/opponent cross-apply in
+[docs/gmcp.md](gmcp.md#char)). No payload; subscribers should read
+`state.group.members` directly for the new state.
 
 **Subscribers:** `lua/core/group_state.lua` — calls `serialize()` to write
 `bridge/runtime/group.state` atomically. `lua/core/run_log.lua` — appends a
-`group_changed` row to `current.jsonl` on member-add and member-remove (not
-on vitals update).
+`group_changed` row to `current.jsonl` only on player-ally composition changes
+(via `group_member_added` / `group_member_removed`); vitals updates and
+NPC-only churn do not produce rows.
 
 ### `mob_death`
 

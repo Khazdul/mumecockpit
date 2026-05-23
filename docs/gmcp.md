@@ -103,16 +103,21 @@ bare label, the bare name, or `"<Name> (LABEL)"`.
 `lua/core/group_collector.lua` subscribes to `gmcp_char_vitals` and uses these
 fields to keep group-member HP live mid-fight: it caches the latest `buffer` /
 `opponent` identity strings, and on every `*-hits` packet resolves the cached
-identity against `state.group.members` (case-insensitive token match against
-each member's label and name, label preferred) and applies the band string as
-that member's `hp_string` via Case C of
+identity against `state.group.members` by tokenising the string (whole, plus
+the inside-parens and before-parens splits when present) and matching each
+token after lowercase + Latin-1 accent fold against each member's `label`
+(preferred) and `name`. The band string is then applied as that member's
+`hp_string` via Case C of
 [ADR 0052](decisions/0052-group-vital-pair-freshness.md) — the same string-only
 merge used by `Group.Update`. `char_state.lua` remains the single primary
 writer for `state.char.*`; this is a subscriber, not a second writer for
 `state.group.*` (which still has `group_collector.lua` as its single writer).
-The cached identity strings are cleared on `char_reset` and `run_started`.
-Only HP is cross-applied this way (there is no `buffer-mana`); mana/moves
-bars keep their last `Group.Update` value mid-fight.
+Cached identity is cleared on `char_reset` and `run_started`, and resolution
+to a member happens fresh on every `*-hits` packet because room-scoped
+membership ([ADR 0096](decisions/0096-room-scoped-group-membership.md)) means a
+cached member reference would go stale. Only HP is cross-applied this way
+(there is no `buffer-mana`); mana/moves bars keep their last `Group.Update`
+value mid-fight.
 
 Char.StatusVars fields:
 
@@ -170,8 +175,11 @@ in your room, not your entire group roster. When you or a member changes rooms,
 Group.Remove fires for the absent ids; on reunion Group.Add re-adds them with a
 **new id** — ids are presence handles reassigned on each Group.Add, not stable
 identities across room changes. For mercenaries and other labeled NPCs the
-stable identity is the `label` field; consumers that need to recognise a
-member across room changes must key on `label`, not `id`.
+stable identity is the `label` field; for player allies it is the `name`.
+Consumers that need to recognise a member across room changes must key on
+`label` or `name`, not `id`, and must not treat `Group.Remove` as a permanent
+departure — it means "not in this room." See
+[ADR 0096](decisions/0096-room-scoped-group-membership.md).
 
 Member object fields (kebab-case from server, stored snake_case in `state.group.members`):
 
@@ -208,8 +216,10 @@ promoted into `state.group.members` and a `group_member_added` event is
 emitted; if a subsequent update unlabels it (`label:0`, `null`, or `""`),
 it is demoted back into `_excluded` and `group_member_removed` fires. A
 promote/demote packet emits exactly one membership event — never
-`group_member_updated` — and `group_changed` always fires afterwards. No
-full `Group.Set` re-sync is needed.
+`group_member_updated` — and `group_changed` always fires afterwards. See
+[ADR 0095](decisions/0095-promote-demote-npcs-on-label-change.md), which
+supersedes the v1 "needs a full Group.Set re-sync" limitation noted in
+[ADR 0094](decisions/0094-labeled-npcs-in-group.md).
 
 `Group.Remove` delivers a bare JSON integer (not an object). The handler converts it via
 `tonumber(body)` before removing the entry from `state.group.members` (or, for an
