@@ -1899,9 +1899,13 @@ data-row glyph palette are identical.
 - **Data-fit KILLS/PvPs sizing.** The section renders
   `min(max(kills_count, pkills_count), max_available)` data rows;
   the Total row sits directly under the last data row instead of
-  pinning to the bottom. Sparklines, XP-linjalen, and the footer
-  rise to fill the freed space; any leftover slack lives between
-  the XP-linjal and the footer.
+  pinning to the bottom. The footer is bottom-anchored to the last
+  terminal row — all leftover slack is absorbed as blank rows
+  between the XP-linjal and the footer, matching the
+  footer-anchoring contract of the `profile` / `history` frames.
+  Sparklines and the XP-linjal stay packed directly under the
+  KILLS/PvPs section; only the post-XP-linjal gap grows with short
+  data.
 - **Total per side is hidden when that side's count is 0.** The
   opposite side's Total still renders if its count > 0; the empty
   side pads with a blank row so sparkline alignment is preserved.

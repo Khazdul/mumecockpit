@@ -9404,11 +9404,14 @@ _HD_STAT_BLOCKS          = "▁▂▃▄▅▆▇█"
 # the title row and divider only.
 _HD_ALLIES_ACH_VISIBLE      = 3
 _HD_KILLS_PVPS_MIN_VISIBLE  = 2
-# Fixed lines around the kills/pvps data rows in _history_detail_text:
-# 1 leading "\n" + 1 header row + 1 blank + 5 A/A (title+div+3) + 1 blank
+# Fixed rows around the kills/pvps data rows in _history_detail_text:
+# 1 leading blank + 1 header + 1 blank + 5 A/A (title+div+3) + 1 blank
 # + 3 KP fixed (title+div+total) + 1 blank + 7 sparklines + 1 blank
-# + 4 xp-linjal + 1 blank + 1 footer = 28.
-_HD_STATS_FIXED_LINES       = 28
+# + 3 xp-linjal + 1 blank + 1 footer = 26. The footer is bottom-pinned
+# via slack blank rows inserted between the xp-linjal and the footer
+# (see _history_detail_text); this constant is the row budget the cap
+# subtracts from _term_rows() so data_height fills the remaining space.
+_HD_STATS_FIXED_LINES       = 26
 
 
 def _hd_compute_kills_pvps_visible():
@@ -10262,6 +10265,14 @@ def _history_detail_text():
 
     _hd_append_xp_linjalen(body, stats, cols)
     body.append(("", "\n"))
+
+    # Absorb leftover terminal rows between the xp-linjal and the footer so
+    # the footer pins to the final terminal row regardless of data_height —
+    # matching the bottom-anchored footer contract of every other launcher
+    # frame.
+    slack = max(0, _term_rows() - _HD_STATS_FIXED_LINES - data_height)
+    for _ in range(slack):
+        body.append(("", "\n"))
 
     frags.extend(_hover_clear_frags(body))
 
