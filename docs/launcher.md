@@ -1883,8 +1883,10 @@ so no extra walk.
 ACHIEVEMENTS · blank · KILLS + PvPs · blank · sparklines (XP/h +
 TP/h) · blank · XP-linjal · blank · footer.
 
-**Header.** `◆ Session detail — <Char> · <Date> · <Time> ·
-<Dur.>` centred in `C_HEADER`.
+**Header.** `◆ Session details — <Char> · <Date> · <Time> ·
+<Dur.>` centred in `C_SECTION` (dark cyan — same colour the popup
+Statistics banner uses; this frame no longer paints anything in
+`C_HEADER`).
 
 **Section parity with popup Statistics.** ALLIES (`♦` in
 `_S_ALLY`), ACHIEVEMENTS (`★` in `_S_STAR`), KILLS (sortable),
@@ -1892,7 +1894,9 @@ PvPs (sortable, `⚔` in `_S_PVP`), sparklines, and XP-linjal
 mirror the popup's visual conventions. Sort defaults, focus
 cycling (Tab / Shift+Tab across the four tables,
 `_history_detail_focused: int`), per-table scrollbars, and the
-data-row glyph palette are identical.
+data-row glyph palette are identical. The focused KILLS / PvPs /
+ALLIES / ACHIEVEMENTS title row paints en bloc in `C_CURSOR_CELL`
+(gold); unfocused titles stay `C_SECTION`.
 
 **Differences from the popup.**
 

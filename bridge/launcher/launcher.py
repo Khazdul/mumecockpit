@@ -41,10 +41,10 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from palette import (  # noqa: E402
     C_TITLE, C_ACTIVE, C_ITEM, C_BODY, C_HINT, C_ACCENT,
     C_YELLOW, C_ERR, C_DANGER, C_QUOTE, C_QUOTE_ATTR, C_HOVER, C_SELECTED,
-    C_HEADER, C_SECTION, C_DIVIDER,
+    C_SECTION, C_DIVIDER,
     C_BUTTON, C_BUTTON_HOVER, C_BUTTON_DISABLED,
     C_BUTTON_INACTIVE, C_BUTTON_ACTIVE_UNFOCUSED, C_BUTTON_ACTIVE_FOCUSED,
-    C_OK,
+    C_OK, C_CURSOR_CELL,
     C_LOG_CURSOR,
     C_LOG_OVERLAY_BG, C_LOG_OVERLAY_FG, C_LOG_OVERLAY_HINT,
     C_LOG_SCRUBBER_FILLED, C_LOG_SCRUBBER_EMPTY, C_LOG_SCRUBBER_THUMB,
@@ -9760,8 +9760,8 @@ def _hd_section_title_pair(frags, left_title, right_title,
                             left_w, right_w, gap, pad,
                             left_active=False, right_active=False,
                             left_focus=None, right_focus=None):
-    l_style = C_ACTIVE if left_active  else C_SECTION
-    r_style = C_ACTIVE if right_active else C_SECTION
+    l_style = C_CURSOR_CELL if left_active  else C_SECTION
+    r_style = C_CURSOR_CELL if right_active else C_SECTION
 
     frags.append(("", pad))
     if left_focus:
@@ -9868,8 +9868,8 @@ def _hd_append_kills_pvps(frags, stats, cols, data_height):
 
     k_active = (_history_detail_focused == 0)
     p_active = (_history_detail_focused == 1)
-    k_style  = C_ACTIVE if k_active else C_SECTION
-    p_style  = C_ACTIVE if p_active else C_SECTION
+    k_style  = C_CURSOR_CELL if k_active else C_SECTION
+    p_style  = C_CURSOR_CELL if p_active else C_SECTION
 
     k_title = _hd_header_label("KILLS", sort_col_k  == "Mob",
                                 sort_dir_k,  "left", k_name_col)
@@ -10218,10 +10218,10 @@ def _history_detail_text():
     frags   = []
 
     if summary is None or stats is None:
-        title = "Session detail"
+        title = "Session details"
         frags.append(("", "\n\n", clear))
         frags.append(("", _pad_centre(title, cols), clear))
-        frags.append((C_HEADER, title, clear))
+        frags.append((C_SECTION, title, clear))
         frags.append(("", "\n\n", clear))
         msg = "(no session selected)"
         frags.append(("", _pad_centre(msg, cols), clear))
@@ -10235,14 +10235,14 @@ def _history_detail_text():
     # --- Header row -------------------------------------------------------
     date_text     = _hd_fmt_ts(summary.start_ts, "%Y-%m-%d")
     duration_text = _history_fmt_duration(summary.duration_seconds)
-    title_text    = (f"◆ Session detail  —  {summary.character}"
+    title_text    = (f"◆ Session details  —  {summary.character}"
                      f"  ·  {date_text}  ·  {duration_text}")
 
     frags.append(("", "\n", clear))
 
     title_pad = max(0, (cols - len(title_text)) // 2)
     frags.append(("", " " * title_pad, clear))
-    frags.append((C_HEADER, title_text, clear))
+    frags.append((C_SECTION, title_text, clear))
     frags.append(("", "\n", clear))
 
     # --- Blank separator --------------------------------------------------

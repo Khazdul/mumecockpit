@@ -1960,8 +1960,8 @@ def _section_title_pair(frags, left_title, right_title, left_w, right_w, gap, pa
                          left_active=False, right_active=False,
                          left_focus=None, right_focus=None):
     """Two side-by-side section titles, each with a divider rule under it."""
-    l_style = C_ACTIVE if left_active else C_SECTION
-    r_style = C_ACTIVE if right_active else C_SECTION
+    l_style = C_CURSOR_CELL if left_active else C_SECTION
+    r_style = C_CURSOR_CELL if right_active else C_SECTION
 
     frags.append(("", pad))
     if left_focus:
@@ -2010,8 +2010,8 @@ def _append_kills_pvps(frags, stats, cols, visible):
 
     k_active = (_stats_focused == 0)
     p_active = (_stats_focused == 1)
-    k_style  = C_ACTIVE if k_active else C_SECTION
-    p_style  = C_ACTIVE if p_active else C_SECTION
+    k_style  = C_CURSOR_CELL if k_active else C_SECTION
+    p_style  = C_CURSOR_CELL if p_active else C_SECTION
 
     # Merged title row: section name in the name-column slot (clickable to
     # sort by name), then N / XP/N / XP tot (or N / XP) in their data-column
@@ -2237,11 +2237,11 @@ def _statistics_text():
 
     frags.append(("", "\n"))
     frags.append(("", _pad_centre(title_for_centering, cols)))
-    frags.append((C_HEADER, base_header))
+    frags.append((C_SECTION, base_header))
     if suffix:
         frags.append((_S_HINT, suffix))
     if stars:
-        frags.append((C_HEADER, rating_sep + stars))
+        frags.append((C_SECTION, rating_sep + stars))
     frags.append(("", "\n\n"))
 
     _append_allies_achievements(frags, stats, cols)

@@ -317,9 +317,10 @@ on both positive progression (level-ups) and negative progression
 `status["level"]` from `bridge/runtime/status.state`.
 
 When `stats.saved` is true and `stats.rating` is non-zero, the stars
-are appended to the header as the last `·`-separated field in
-`C_HEADER` (gold): `◆ STATISTICS — <char> · Lvl N · Run <duration> ·
-★★★`. The stars are exactly `stats.rating` `★` glyphs. Unsaved runs
+are appended to the header as the last `·`-separated field in the
+same `C_SECTION` (dark cyan) the rest of the banner uses:
+`◆ STATISTICS — <char> · Lvl N · Run <duration> · ★★★`. The stars are
+exactly `stats.rating` `★` glyphs. Unsaved runs
 and 0-rating saved runs omit the trailing ` · ` and stars entirely —
 no `Rating:` label, no placeholder glyphs, no floating right-edge
 element. The whole header is a single left-padded centred line.
@@ -366,16 +367,16 @@ sort UI.
 **Focus.** A module-level `_stats_focused` integer (0..3) tracks which
 table receives keyboard scroll. Tab / Shift+Tab cycle. Mouse click
 anywhere in a table (title, row, scrollbar) sets focus to that table.
-The focused table's title row paints en bloc in `C_ACTIVE` (bold
-white) instead of `C_SECTION` (cyan) — every fragment in the row
-(section name, column headers, sort indicators) switches together.
+The focused table's title row paints en bloc in `C_CURSOR_CELL` (gold)
+instead of `C_SECTION` (cyan) — every fragment in the row (section
+name, column headers, sort indicators) switches together.
 
-**Palette.** The Statistics frame uses `C_HEADER` (gold) only for the
-`◆ RUN STATISTICS …` banner; all six section titles (KILLS, PvPs,
-ALLIES, ACHIEVEMENTS, XP/h, TP/h) use `C_SECTION` — an alias to the
-module-level `C_TITLE` cyan that the popup banner also uses. The
-focused KILLS / PvPs / ALLIES / ACHIEVEMENTS title row paints en bloc
-in `C_ACTIVE` (bold white). Divider rules under section titles and
+**Palette.** The Statistics frame paints the `◆ STATISTICS …` banner
+and all six section titles (KILLS, PvPs, ALLIES, ACHIEVEMENTS, XP/h,
+TP/h) in `C_SECTION` (dark cyan); the frame uses `C_HEADER` nowhere
+anymore. The focused KILLS / PvPs / ALLIES / ACHIEVEMENTS title row
+paints en bloc in `C_CURSOR_CELL` (gold). Divider rules under section
+titles and
 sparkline frame strokes (`──┬──` under XP/h / TP/h, axis `│`, bottom
 `└──`) render in `C_DIVIDER`, a muted gray aliased to `C_HINT`.
 KILLS / PvPs data rows render in `_S_LABEL` (medium gray) so the
