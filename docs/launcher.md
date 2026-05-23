@@ -1606,7 +1606,7 @@ Top-to-bottom (P4.1 layout — see ADR 0088 and its P4.1 amendment):
    - **Runs table (right).** Columns: Char · Date · Time · Dur. ·
      Expires · Rating. Click on a column header toggles sort; an
      active column shows ` ▲` / ` ▼` after its label. Default sort
-     `Char asc` with `start_ts desc` as the stable secondary key.
+     `Date ▼` (desc) with `start_ts desc` as the stable secondary key.
      The column-header row paints `C_HINT` (muted grey) at all
      times, regardless of focus — the sort-indicator glyph
      carries the active-column signal; focus is signalled by the

@@ -421,7 +421,7 @@ _about_sb            = None
 _history_filter_items    = []        # ["All", "<char>", ...] — pill labels
 _history_sessions        = []        # filtered + sorted SessionSummary list
 _history_filter          = "All"
-_history_sort            = ("Char", "asc")
+_history_sort            = ("Date", "desc")
 _history_filter_cursor   = 0         # cursor pill index
 _history_filter_offset   = 0         # leftmost visible pill index (P4.2 scroll)
 _history_table_cursor    = 0
@@ -8238,7 +8238,7 @@ def _enter_history_frame():
         chars = []
     _history_filter_items   = ["All"] + chars
     _history_filter         = "All"
-    _history_sort           = ("Char", "asc")
+    _history_sort           = ("Date", "desc")
     _history_filter_cursor  = 0
     _history_filter_offset  = 0
     _history_table_cursor   = 0
