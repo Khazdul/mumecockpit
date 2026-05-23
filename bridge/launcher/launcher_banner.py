@@ -61,22 +61,20 @@ _COCKPIT_ROW0 = 8  # COCKPIT wordmark starts at row 8
 # geometrically (see `_is_embedded`) and rendered static.
 STARS = [
     (0,  8, "✧", "BRIGHT"), (0, 22, "✧", "MID"), (0, 35, "·", "DIM"), (0, 41, "·", "DIM"),
-    (1,  3, "·", "DIM"), (1, 11, "✦", "MID"), (1, 19, "·", "DIM"), (1, 27, "◦", "MID"),
+    (1,  3, "·", "DIM"), (1, 19, "·", "DIM"), (1, 27, "◦", "MID"),
     (2,  0, "◦", "DIM"), (2, 14, "·", "MID"), (2, 33, "·", "DIM"),
-    (3,  6, "·", "DIM"), (3, 17, "✧", "MID"), (3, 29, "·", "DIM"),
+    (3,  6, "·", "DIM"), (3, 17, "✧", "MID"),
     (4,  9, "·", "DIM"), (4, 31, "◦", "DIM"),
     (5,  5, "·", "DIM"), (5, 28, "·", "DIM"), (5, 40, "✦", "MID"),   # MUME row 1
     (6, 42, "·", "DIM"),                                             # MUME row 2
     (7,  2, "◦", "DIM"), (7, 37, "·", "MID"),                        # MUME row 3
-    (8,  1, "·", "DIM"),                                             # COCKPIT row 1
-    (9, 43, "·", "DIM"),                                             # COCKPIT row 2
 ]
 
 # Twinkle: open-field stars sit at their base tier most of the cycle and
 # briefly pulse ±1 tier when the sine wave crosses the peak threshold.
 # Slow randomized periods keep the field shimmering asynchronously.
-_TWINKLE_PERIOD_MIN = 6.0
-_TWINKLE_PERIOD_MAX = 16.0
+_TWINKLE_PERIOD_MIN = 12.0
+_TWINKLE_PERIOD_MAX = 32.0
 _TWINKLE_PEAK       = 0.82
 
 # Brightness tiers as ints — embedded stars hold their base tier, open-field
