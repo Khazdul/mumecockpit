@@ -16,6 +16,13 @@
 # stay fully static so they never compete with the logo. The module has no
 # prompt_toolkit / app dependency: it's pure data + math, and the launcher
 # drives redraws separately.
+#
+# On top of the twinkling field sits an occasional shooting star falling
+# down one of the outer margins (cols 0–2 / 42–44 — both bands are
+# wordmark-free in every row, so the streak never touches a letterform).
+# Its spawn parameters are the only mutable module state: `advance(now)`
+# is the state machine, and `banner_lines(now)` derives the streak's cell
+# positions purely from those params + `now`.
 
 import math
 import random
@@ -93,6 +100,22 @@ _INT_TO_STYLE = (C_BANNER_STAR_DIM, C_BANNER_STAR_MID, C_BANNER_STAR_BRIGHT)
 # glyphs (· ◦) hold their shape — only their brightness pulses.
 _SWAP_GLYPH = {"✦": "✧", "✧": "✦"}
 
+# Shooting stars — a single streak occasionally falls down one of the outer
+# margin bands. Cadence, duration, and trail length live here. The two
+# module variables below are the only mutable animation state in the file;
+# everything else is derived from STARS at import time.
+_SHOOTING_INTERVAL_MIN = 25.0
+_SHOOTING_INTERVAL_MAX = 50.0
+_SHOOTING_DURATION     = 2.0
+_SHOOTING_TRAIL        = 2
+# Margin bands: outer 3 columns on each side. Spawn column is the band's
+# middle; drift ∈ {-1, 0, +1} keeps the streak inside the band at every row.
+_SHOOTING_LEFT_COL  = 1
+_SHOOTING_RIGHT_COL = 43
+
+_shooting_star       = None  # (t0, start_col, drift) while active, else None
+_shooting_next_spawn = None  # monotonic seconds; None until first advance()
+
 
 def _is_embedded(row, col):
     """True if (row, col) lands inside a wordmark column span — those
@@ -132,6 +155,65 @@ def _paint_word(grid, words, row0, style):
         for c, ch in enumerate(line):
             if ch != " ":
                 grid[row0 + r][pad + c] = (ch, style)
+
+
+def advance(now):
+    """Tick the shooting-star state machine. Call once per frame from the
+    launcher's tick loop (only while the main frame is visible — pausing
+    on other frames freezes the streak naturally).
+
+    Three transitions: lazy-initialise the next-spawn deadline on the
+    first call; spawn a streak when that deadline elapses; despawn after
+    `_SHOOTING_DURATION` and pick a fresh deadline."""
+    global _shooting_star, _shooting_next_spawn
+    if _shooting_next_spawn is None:
+        _shooting_next_spawn = now + random.uniform(_SHOOTING_INTERVAL_MIN,
+                                                    _SHOOTING_INTERVAL_MAX)
+        return
+    if _shooting_star is None:
+        if now >= _shooting_next_spawn:
+            start_col = random.choice((_SHOOTING_LEFT_COL, _SHOOTING_RIGHT_COL))
+            drift     = random.choice((-1, 0, 1))
+            _shooting_star = (now, start_col, drift)
+        return
+    t0, _start_col, _drift = _shooting_star
+    if now - t0 >= _SHOOTING_DURATION:
+        _shooting_star = None
+        _shooting_next_spawn = now + random.uniform(_SHOOTING_INTERVAL_MIN,
+                                                    _SHOOTING_INTERVAL_MAX)
+
+
+def _shooting_cells(now):
+    """Cells (row, col, glyph, tier_int) for the active shooting star's
+    head + trail, computed purely from spawn params + now. Empty list when
+    no star is active."""
+    if _shooting_star is None:
+        return []
+    t0, start_col, drift = _shooting_star
+    p = (now - t0) / _SHOOTING_DURATION
+    if p < 0.0:
+        p = 0.0
+    elif p > 1.0:
+        p = 1.0
+    head_row = int(round(p * (BANNER_HEIGHT - 1)))
+    if p < 0.75:
+        head_tier = _TIER_BRIGHT
+    elif p < 0.90:
+        head_tier = _TIER_MID
+    else:
+        head_tier = _TIER_DIM
+    def col_at(r):
+        return int(round(start_col + drift * (r / (BANNER_HEIGHT - 1))))
+    cells = [(head_row, col_at(head_row), "✦", head_tier)]
+    for k in range(1, _SHOOTING_TRAIL + 1):
+        r = head_row - k
+        if r < 0:
+            continue
+        tier = head_tier - k
+        if tier < _TIER_DIM:
+            tier = _TIER_DIM
+        cells.append((r, col_at(r), "·", tier))
+    return cells
 
 
 def _row_fragments(row):
@@ -189,4 +271,6 @@ def banner_lines(now=None):
         if offset > 0 and glyph in _SWAP_GLYPH:
             glyph = _SWAP_GLYPH[glyph]
         grid[row][col] = (glyph, _INT_TO_STYLE[tier])
+    for srow, scol, sglyph, stier in _shooting_cells(now):
+        grid[srow][scol] = (sglyph, _INT_TO_STYLE[stier])
     return [_row_fragments(row) for row in grid]
