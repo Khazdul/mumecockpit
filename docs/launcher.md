@@ -261,7 +261,7 @@ Defined in `palette.py`.
 
 | State                      | Token                       | Used for                                                                          |
 |----------------------------|-----------------------------|-----------------------------------------------------------------------------------|
-| Inactive (not selected)    | `C_BUTTON_INACTIVE`         | Non-active kind buttons; non-active mode button                                   |
+| Inactive (not selected)    | `C_BUTTON_INACTIVE`         | Non-active kind buttons; non-active mode button. Foreground only (no background fill) — the cell falls through to the host terminal background. |
 | Active, zone unfocused     | `C_BUTTON_ACTIVE_UNFOCUSED` | Selected kind when kind-buttons row unfocused; active mode when toggle unfocused; entry-list cursor row when list unfocused |
 | Active, zone focused       | `C_BUTTON_ACTIVE_FOCUSED`   | Selected kind when kind-buttons row focused; active mode when toggle focused; entry-list cursor row when list focused; detail-panel frame borders; cursor cell inside a focused detail zone — Style toggle, Text/BG swatch checkbox slot, Macro Key cell |
 
@@ -2105,23 +2105,25 @@ the keyboard hint on the right). The right-aligned hint is
 **Floating info box (top-right).** A 30×8 framed rectangle pinned to
 `top=2, right=2` — a 2-cell margin from both the top and right edges
 of `log_view`. The frame is the half-block outline `█▀▄▌▐` rendered in
-the host terminal background colour (or `#000000` when detection
-failed) on the bright cyan BG: top row `█` + `▀` × `interior_width` +
-`█`, bottom row `█` + `▄` × `interior_width` + `█`, side columns `▌`
-(left) and `▐` (right) on each of the 6 interior rows. Painting the
-outer edge in the detected terminal background blends the half-blocks
-and `█` corners into the surrounding canvas — exactly as they blend
-into a black canvas today. Interior width is `_SPOTLIGHT_BOX_W - 2 =
-28`. Palette:
+the effective host terminal background colour (OSC 11 detected hex,
+or `terminal_bg_fallback` from `startup.conf` when detection fails —
+default `#000000`) on the bright cyan BG: top row `█` + `▀` ×
+`interior_width` + `█`, bottom row `█` + `▄` × `interior_width` + `█`,
+side columns `▌` (left) and `▐` (right) on each of the 6 interior
+rows. Painting the outer edge in the effective terminal background
+blends the half-blocks and `█` corners into the surrounding canvas.
+Interior width is `_SPOTLIGHT_BOX_W - 2 = 28`. Palette:
 
 - `C_SPOTLIGHT_BOX_BG` — bright banner-hue fill (same hue as `C_TITLE`)
   painted under every cell of the box.
 - `palette.spotlight_frame_style(_terminal_bg)` — outer-edge style for
-  the `█▀▄▌▐` glyphs: `fg:<terminal_bg> bg:#00d7d7`, falling back to
-  the `C_SPOTLIGHT_FRAME` default (`fg:#000000 bg:#00d7d7`) when
-  detection failed. Pre-computed once at launcher startup and cached
-  in module-level `_spotlight_frame_style` (the renderer ticks at
-  ~30 Hz; the style string is fixed per launcher run).
+  the `█▀▄▌▐` glyphs: `fg:<terminal_bg> bg:#00d7d7`. `_terminal_bg` is
+  detected-or-fallback (so always a hex literal at runtime); the
+  helper still guards `None` and falls back to the
+  `C_SPOTLIGHT_FRAME` default (`fg:#000000 bg:#00d7d7`). Pre-computed
+  once at launcher startup and cached in module-level
+  `_spotlight_frame_style` (the renderer ticks at ~30 Hz; the style
+  string is fixed per launcher run).
 - `C_SPOTLIGHT_TEXT_PRIMARY` — near-black, on the BG. Used for the
   nav row, the character name, and the event label.
 - `C_SPOTLIGHT_TEXT_SECONDARY` — muted grey, on the BG. Lighter than
@@ -2257,11 +2259,12 @@ spotlight take the same path — see the
 End-of-reel scrolling chronicle. Pushed automatically by
 `_log_auto_pause_at_end()` when the spotlight reel finishes
 ([ADR 0080](decisions/0080-end-of-reel-credits.md)). Full-screen
-canvas matched to the host terminal background (detected via OSC 11 at
-launcher startup — see [bridge-services.md → `terminal_bg`](bridge-services.md#layoutconf-keys)),
-with a `bg:#000000` fallback when detection fails or the terminal does
-not reply; narrative lines scroll bottom-to-top with linear fade bands
-at the top and bottom of the viewport.
+canvas matched to the host terminal background — the launcher probes
+OSC 11 on `/dev/tty` at startup and falls back to `terminal_bg_fallback`
+from `startup.conf` (default `#000000`) when the terminal does not
+reply (see [bridge-services.md → `terminal_bg`](bridge-services.md#layoutconf-keys)).
+Narrative lines scroll bottom-to-top with linear fade bands at the top
+and bottom of the viewport.
 
 **Content.** Built once on frame entry by
 `bridge/launcher/credits.py`:
@@ -2532,7 +2535,7 @@ shared with the in-game popup. Roles:
 | `C_LOG_PLAYER_INPUT`| log_view outbound (player command) lines — muted grey with a faint light-cyan tint                  |
 | `C_LOG_OVERLAY_BG`  | log_view top header + bottom controls fill — deep-shadow variant of the spotlight box hue so chain and spotlight modes read as one theme family |
 | `C_SPOTLIGHT_BOX_BG`         | Spotlight info-box fill — bright banner hue (same as `C_TITLE`) painted under every cell of the floating overlay |
-| `C_SPOTLIGHT_FRAME`          | Spotlight info-box outline glyphs default — black on the box bg. Live renderer uses `spotlight_frame_style(_terminal_bg)` instead so the outer edge blends into the host terminal background; this constant is the fallback when OSC 11 detection fails |
+| `C_SPOTLIGHT_FRAME`          | Spotlight info-box outline glyphs default — black on the box bg. Live renderer uses `spotlight_frame_style(_terminal_bg)` instead so the outer edge blends into the effective host terminal background (detected via OSC 11, else `terminal_bg_fallback`); this constant is the guarded fallback if `_terminal_bg` is ever `None` |
 | `C_SPOTLIGHT_TEXT_PRIMARY`   | Spotlight info-box primary text — near-black on box bg (character name, event label) |
 | `C_SPOTLIGHT_TEXT_SECONDARY` | Spotlight info-box secondary text — muted grey on box bg (countdown), visibly subordinate |
 | `C_OK`              | Persistent "selected / active" marker (e.g. the profile-table ✓) — green, never gold. |
@@ -2621,7 +2624,10 @@ state:
   LITE kind-buttons. Cursor row → gold *background*
   (`selected_focused`), unfocused-selected → grey
   (`selected_unfocused`), hover previews the unfocused-selected look,
-  other rows → `inactive` near-black fill.
+  other rows → `inactive` (foreground only, no background fill — the
+  cell falls through to the host terminal background, so the row
+  reads as flat against the launcher canvas rather than a stack of
+  dark slots).
 - **Gold-foreground swatch cells** (`panes_grid_fragments`) — the
   Panes submenu's pane × colour grid. The cursor cell's `[ ]` / `[X]`
   brackets paint in `C_CURSOR_CELL` (gold *foreground*) while the

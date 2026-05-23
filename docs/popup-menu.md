@@ -152,8 +152,11 @@ or `[ ]███` — a 3-cell checkbox and a 3-cell colour swatch. Below the
 grid sit a blank row, a `[X] Display pane headers` toggle, a blank
 row, and `Back`. The frame uses `menu_chrome.title_block` /
 `footer_block` (`blank_above=1` for the popup) and the
-`menu_chrome.button_fragment` filled-button grammar for the headers
-toggle and `Back`.
+`menu_chrome.button_fragment` three-state grammar for the headers
+toggle and `Back`. The inactive state of `button_fragment` is
+foreground-only (no background fill) — at rest those two cells fall
+through to the host terminal background; only the cursor-row and
+hover states paint a fill.
 
 Per row, **0 or 1 cells are checked**: zero checked means the pane is
 off (and the row paints dim end-to-end via `C_PANE_OFF`); one checked

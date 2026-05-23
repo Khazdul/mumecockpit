@@ -106,6 +106,8 @@ tracking, and UI feedback.
 │   │   └── ui_pane.py        # UI pane — tails logs/ui.log
 │   ├── layout/               # Pane/layout state mutations
 │   │   ├── apply_layout.sh   # Re-applies saved layout after resize or pane toggle
+│   │   ├── apply_border_style.sh  # Single authority for tmux pane-border-style — paints
+│   │   │                     #   the separator row to match layout.conf:terminal_bg
 │   │   ├── on_window_resize.sh  # Fired on terminal resize — re-applies stored layout
 │   │   ├── on_pane_resize.sh    # Fired on border drag — saves new layout values
 │   │   ├── toggle_pane.sh    # Toggle ui/dev/comm/status/buffs panes and pane headers
@@ -125,7 +127,7 @@ tracking, and UI feedback.
 │   │                         #   consumed by tt++ via tintin_read action
 │   ├── runtime/              # All runtime-generated files (ADR 0047; gitignored except .gitkeep)
 │   │   ├── startup.conf      # Persisted startup-menu state
-│   │   ├── layout.conf       # Persisted layout state (keys: ui_width, window_cols, desired_<pane>)
+│   │   ├── layout.conf       # Persisted layout state (keys: ui_width, window_cols, desired_<pane>, terminal_bg)
 │   │   ├── status.state      # Character status JSON written by status_state.lua
 │   │   ├── buffs.state       # Affect grid snapshot written by buffs_state.lua
 │   │   ├── group.state       # Group member vitals JSON written by group_state.lua
