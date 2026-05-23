@@ -622,11 +622,11 @@ def _parse_osc11_reply(reply: bytes):
 def _detect_terminal_bg():
     """Query the host terminal background colour via OSC 11.
 
-    Writes the query to stdin's tty, reads the reply with a bounded
+    Writes the query to /dev/tty, reads the reply with a bounded
     ~0.25 s timeout via `select`, and restores the saved termios state
-    unconditionally. Returns `#rrggbb` on success, `None` when stdin
-    isn't a tty, when the terminal doesn't reply, or when any step
-    fails — failure must never wedge the tty or block startup."""
+    unconditionally. Returns `#rrggbb` on success, `None` when there is
+    no controlling terminal, when the terminal doesn't reply, or when
+    any step fails — failure must never wedge the tty or block startup."""
     try:
         import termios
         import tty
@@ -634,54 +634,60 @@ def _detect_terminal_bg():
     except ImportError:
         return None
     try:
-        fd = sys.stdin.fileno()
-    except (AttributeError, OSError, ValueError):
-        return None
-    try:
-        if not os.isatty(fd):
-            return None
+        fd = os.open("/dev/tty", os.O_RDWR | os.O_NOCTTY)
     except OSError:
         return None
     try:
-        old = termios.tcgetattr(fd)
-    except (termios.error, OSError):
-        return None
-    reply = b""
-    try:
         try:
-            tty.setraw(fd)
-        except (termios.error, OSError):
-            return None
-        try:
-            os.write(fd, b"\x1b]11;?\x07")
+            if not os.isatty(fd):
+                return None
         except OSError:
             return None
-        deadline = time.monotonic() + 0.25
-        while len(reply) < 64:
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                break
+        try:
+            old = termios.tcgetattr(fd)
+        except (termios.error, OSError):
+            return None
+        reply = b""
+        try:
             try:
-                r, _, _ = select.select([fd], [], [], remaining)
-            except (OSError, ValueError):
-                break
-            if not r:
-                break
+                tty.setraw(fd)
+            except (termios.error, OSError):
+                return None
             try:
-                chunk = os.read(fd, 64 - len(reply))
+                os.write(fd, b"\x1b]11;?\x07")
             except OSError:
-                break
-            if not chunk:
-                break
-            reply += chunk
-            if reply.endswith(b"\x07") or reply.endswith(b"\x1b\\"):
-                break
+                return None
+            deadline = time.monotonic() + 0.25
+            while len(reply) < 64:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                try:
+                    r, _, _ = select.select([fd], [], [], remaining)
+                except (OSError, ValueError):
+                    break
+                if not r:
+                    break
+                try:
+                    chunk = os.read(fd, 64 - len(reply))
+                except OSError:
+                    break
+                if not chunk:
+                    break
+                reply += chunk
+                if reply.endswith(b"\x07") or reply.endswith(b"\x1b\\"):
+                    break
+        finally:
+            try:
+                termios.tcsetattr(fd, termios.TCSADRAIN, old)
+            except (termios.error, OSError):
+                pass
+        return _parse_osc11_reply(reply)
     finally:
         try:
-            termios.tcsetattr(fd, termios.TCSADRAIN, old)
-        except (termios.error, OSError):
+            os.close(fd)
+        except OSError:
             pass
-    return _parse_osc11_reply(reply)
 
 
 def _write_terminal_bg_to_layout_conf(bg):
