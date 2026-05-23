@@ -328,10 +328,13 @@ The order-based class hygiene above (close before step 5, re-open at step 6) gov
 synchronous tt++ registrations and runtime-typed user input. Registrations that go through
 the Lua relay (`game_cmd()` / `session_cmd()`) execute asynchronously — after the
 synchronous handler completes, including after the class is re-opened at step 6. These
-functions explicitly wrap their command in `#class {core} {open}` / `#class {core} {close}`,
-so they land in `{core}` regardless of session class state when the relay drains. Two-class
-model: `{<profile>}` holds user data, `{core}` holds all script and infrastructure
-registrations.
+functions wrap each command in `#class {core} {open}` / `#class {core} {close}` written
+as a single `;`-separated, `#<ses>`-prefixed input line in one relay file, so the triple
+runs atomically against any `#class`-manipulating trigger in another session and the
+registration always lands in `{core}` regardless of session class state when the relay
+drains. (Earlier the triple was three separate relay files and could be interleaved by
+foreign-session triggers — see ADR 0097.) Two-class model: `{<profile>}` holds user data,
+`{core}` holds all script and infrastructure registrations.
 
 **Save sequence** (same two-step body, defined once in `_save_profile`):
 1. `#class {$_profile} {write} {ttpp/profiles/$_profile.tin}` — writes file with wrapping

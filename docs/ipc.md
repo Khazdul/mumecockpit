@@ -102,13 +102,26 @@ TT++ reads the file via `#read` and the `#ses` prefix dispatches to the target s
 Braces in the file are never passed through wildcard substitution — they survive intact.
 Unique filenames prevent race conditions when multiple calls happen in rapid succession.
 
-Each call produces exactly one `#ses cmd` file. A semicolon-chained `cmd1;cmd2` would
-only dispatch the first statement to `ses` — subsequent statements execute in the `lua`
-session context. When multiple commands must land in the same session in sequence, use
-one `tintin_cmd` call per command. Lua is single-threaded, so consecutive calls within
-a single function are guaranteed adjacent in the relay queue (FIFO). `game_cmd` and
-`session_cmd` rely on this property to bracket each registration with
-`#class {core} {open}` / `#class {core} {close}` as three separate calls.
+Each `tintin_cmd` call produces exactly one `#ses cmd` file. A semicolon-chained
+`cmd1;cmd2` written as a single `#ses cmd1;cmd2` line would NOT dispatch both
+statements to `ses` — only `cmd1` runs in `ses`; `cmd2` falls back to the `lua`
+session context. To put multiple statements in one input line and have each one
+land in `ses`, every statement must carry its own `#ses` prefix:
+`#ses cmd1;#ses cmd2`. tt++ services other sessions' socket input only between
+input lines, so all statements on a single `;`-separated line run as one atomic
+unit relative to foreign sessions.
+
+`game_cmd` and `session_cmd` rely on this single-line atomicity to bracket each
+registration with `#class {core} {open}` / `#class {core} {close}`. The earlier
+implementation issued the triple as three separate `tintin_cmd` calls and relied
+on Lua-single-threaded FIFO adjacency. That was unsound: FIFO guarantees the
+three `#read`s happen in ORDER, not that no foreign trigger runs BETWEEN them.
+tt++ tracks "last opened class" with a single global slot; a `#class`-manipulating
+trigger firing in another session between the three `#read`s could overwrite that
+slot mid-triple, and the `#action` would then register under whatever class the
+foreign trigger left open instead of `{core}` — leaking into the saved profile on
+`cp -s`. The current implementation consolidates the triple into a single input
+line in one relay file, removing the interleaving window. See ADR 0097.
 
 ```lua
 tintin_cmd("gts",  "#alias {name} {body}")  -- registers alias in gts
