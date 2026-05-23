@@ -1,6 +1,6 @@
 # 0094 — Track labeled NPCs in group membership
 
-**Status:** Accepted
+**Status:** Accepted (v1 limitation superseded by [ADR 0095](0095-promote-demote-npcs-on-label-change.md))
 **Date:** 2026-05-22
 
 ## Context

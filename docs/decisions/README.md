@@ -37,6 +37,9 @@ Active ADRs by area. Click through for context, alternatives, and consequences.
 - [ADR 0003](0003-gmcp-driven-mume-connection-state.md) — GMCP-driven MUME connection state — connection state is driven by GMCP (`Char.Name`/`Core.Goodbye`), not tt++ session events, so MMapper mode reports correctly.
 - [ADR 0008](0008-session-xp-attribution.md) — Session XP attribution across group kills — XP is accumulated continuously and folded by a 500 ms debounced timer on `mob_death`, distributing evenly across simultaneous kills.
 - [ADR 0034](0034-clock-renderer-side-countdown.md) — Clock renderer-side countdown — the input-pane clock computes remaining time from a target epoch in `status.state`; a renderer-side async tick drives 1 Hz decrements with no phase wobble.
+- [ADR 0094](0094-labeled-npcs-in-group.md) — Labelled NPCs in `state.group.members` — `type:"npc"` entries with a non-null `label` are included alongside allies; background NPCs without labels remain invisible. (v1 re-sync limitation superseded by 0095)
+- [ADR 0095](0095-promote-demote-npcs-on-label-change.md) — Promote / demote NPCs on `Group.Update` label change — excluded NPCs are held in a file-local `_excluded` table; an update that adds a non-empty label promotes (emits `group_member_added`), one that clears it demotes (emits `group_member_removed`). (supersedes the v1 limitation of 0094)
+- [ADR 0096](0096-room-scoped-group-membership.md) — GMCP group membership is room-scoped — `Group.*` reflects the player's current room, not the whole roster; ids are transient presence handles reassigned on each re-add. Consumers needing stable identity must key on `label` or `name`.
 
 ### Comm pane & archive
 
