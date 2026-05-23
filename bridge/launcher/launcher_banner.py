@@ -54,29 +54,29 @@ _COCKPIT_ROW0 = 8  # COCKPIT wordmark starts at row 8
 #   col    0–44     (BANNER_WIDTH)
 #   tier   "DIM" | "MID" | "BRIGHT"  →  C_BANNER_STAR_*
 #   glyph  · ◦ ✦ ✧
-# Stars listed inside a wordmark column span — (5,28), (6,16) in MUME and
-# (8,26), (8,32), (9,12), (10,36) in COCKPIT — are intentional "stars
-# behind the text": each position is verified to be a gap in the wordmark,
-# so the star paints into a blank cell and never overwrites a glyph cell.
+# A star listed inside a wordmark column span — currently only (5,28) in
+# the MUME band — is an intentional "star behind the text": the position
+# is verified to be a gap in the wordmark, so the star paints into a blank
+# cell and never overwrites a glyph cell. Such stars are detected
+# geometrically (see `_is_embedded`) and rendered static.
 STARS = [
     (0,  8, "✧", "BRIGHT"), (0, 22, "✧", "MID"), (0, 35, "·", "DIM"), (0, 41, "·", "DIM"),
-    (1,  3, "·", "DIM"), (1, 11, "✦", "MID"), (1, 19, "·", "DIM"), (1, 27, "◦", "MID"), (1, 38, "·", "DIM"),
-    (2,  0, "◦", "DIM"), (2, 14, "·", "MID"), (2, 24, "✧", "BRIGHT"), (2, 33, "·", "DIM"),
+    (1,  3, "·", "DIM"), (1, 11, "✦", "MID"), (1, 19, "·", "DIM"), (1, 27, "◦", "MID"),
+    (2,  0, "◦", "DIM"), (2, 14, "·", "MID"), (2, 33, "·", "DIM"),
     (3,  6, "·", "DIM"), (3, 17, "✧", "MID"), (3, 29, "·", "DIM"),
-    (4,  9, "·", "DIM"), (4, 21, "·", "MID"), (4, 31, "◦", "DIM"),
+    (4,  9, "·", "DIM"), (4, 31, "◦", "DIM"),
     (5,  5, "·", "DIM"), (5, 28, "·", "DIM"), (5, 40, "✦", "MID"),   # MUME row 1
-    (6,  8, "✧", "MID"), (6, 16, "·", "DIM"), (6, 42, "·", "DIM"),   # MUME row 2
+    (6, 42, "·", "DIM"),                                             # MUME row 2
     (7,  2, "◦", "DIM"), (7, 37, "·", "MID"),                        # MUME row 3
-    (8,  1, "·", "DIM"), (8, 26, "·", "DIM"), (8, 32, "·", "DIM"),   # COCKPIT row 1
-    (9, 12, "·", "DIM"), (9, 43, "·", "DIM"),                        # COCKPIT row 2
-    (10, 36, "·", "DIM"),                                            # COCKPIT row 3
+    (8,  1, "·", "DIM"),                                             # COCKPIT row 1
+    (9, 43, "·", "DIM"),                                             # COCKPIT row 2
 ]
 
 # Twinkle: open-field stars sit at their base tier most of the cycle and
 # briefly pulse ±1 tier when the sine wave crosses the peak threshold.
 # Slow randomized periods keep the field shimmering asynchronously.
-_TWINKLE_PERIOD_MIN = 3.0
-_TWINKLE_PERIOD_MAX = 8.0
+_TWINKLE_PERIOD_MIN = 6.0
+_TWINKLE_PERIOD_MAX = 16.0
 _TWINKLE_PEAK       = 0.82
 
 # Brightness tiers as ints — embedded stars hold their base tier, open-field
