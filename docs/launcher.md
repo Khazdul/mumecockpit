@@ -2492,7 +2492,7 @@ shared with the in-game popup. Roles:
 
 | Name           | Role                                              |
 |----------------|---------------------------------------------------|
-| `C_TITLE`      | Page banners, ASCII logo, section titles          |
+| `C_TITLE`      | Page banner row text (section titles, About header), spotlight box hue |
 | `C_ACTIVE`     | Focused/selected row, emphasis in prompts         |
 | `C_ITEM`       | Inactive selectable menu rows                     |
 | `C_HOVER`      | Mouse-hovered row (between `C_ITEM` and `C_ACTIVE`) |
@@ -2513,6 +2513,11 @@ shared with the in-game popup. Roles:
 | `C_SPOTLIGHT_TEXT_SECONDARY` | Spotlight info-box secondary text — muted grey on box bg (countdown), visibly subordinate |
 | `C_OK`              | Persistent "selected / active" marker (e.g. the profile-table ✓) — green, never gold. |
 | `C_CURSOR_CELL`     | Focused-cursor foreground on swatch / checkbox cells in palette zones — gold, applied to the `[ ]` glyphs only; the swatch keeps its own colour. Separate token from `C_ACCENT` so the two can diverge later. |
+| `C_BANNER_WORD`         | Main-page banner — `MUME` wordmark rows (bright teal). See `bridge/launcher/banner.py`. |
+| `C_BANNER_WORD_DIM`     | Main-page banner — `COCKPIT` wordmark rows (muted teal, subordinate to the MUME wordmark). |
+| `C_BANNER_STAR_DIM`     | Starfield row — distant stars (`D` cells). |
+| `C_BANNER_STAR_MID`     | Starfield row — mid stars (`M` cells). |
+| `C_BANNER_STAR_BRIGHT`  | Starfield row — bright stars (`B` cells). |
 
 The two states share the same underlying grammar, expressed by which
 attribute carries the gold:
@@ -2570,9 +2575,12 @@ See [ADR 0085](decisions/0085-shared-menu-chrome.md).
 
 **Title / footer placement.** Sub-menu titles render in `C_SECTION`
 (darker cyan) via `title_block(..., blank_above=2)`. The main page's
-ASCII banner is the launcher's logo, not a section title, and stays
-in `C_TITLE`; the banner is top-anchored, the menu rows and quote sit
-in the middle, and the footer is bottom-anchored via `footer_block`.
+starfield + wordmark banner is the launcher's logo, not a section
+title, and does not go through `title_block`; the banner is rendered
+via `bridge/launcher/banner.py` (shared with the in-game popup — see
+the [Shared banner](#shared-banner) section below). The banner is
+top-anchored, the menu rows and quote sit in the middle, and the
+footer is bottom-anchored via `footer_block`.
 Every other swept frame's shortcut row also sits on the final terminal
 row — the footer no longer shifts vertically when the user moves
 between sibling frames. The two modal dialogs (`exit_confirm`,
@@ -2648,6 +2656,26 @@ The `options_panes` frame is the one place where two centred zones
 coexist on the same page: the colour grid sits in its own centred
 block above, and the headers-toggle row sits in a (degenerate,
 single-row) glyph block below, with `Back` per-row centred beneath.
+
+### Shared banner
+
+`bridge/launcher/banner.py` exposes the frozen starfield + wordmark
+banner used by the launcher main page and the in-game popup's `main`
+frame. The two surfaces render identical banner content — one source.
+
+| Constant / function | Contract |
+|---------------------|----------|
+| `BANNER_WIDTH = 45`  | Visible width in cells of every banner row. |
+| `BANNER_HEIGHT = 12` | Row count: 5 starfield rows + 1 blank row + 3 MUME wordmark rows + 3 COCKPIT wordmark rows. |
+| `banner_lines()`     | Returns the 12 rows as a list of `(style, text)` 2-tuple lists. Each row's visible widths sum to `BANNER_WIDTH`; callers centre each row with their existing `_pad_centre` helper and attach the per-row hover / mouse handler — the same call shape the launcher and popup used for the prior `_MUME_LINES` / `_COCKPIT_LINES`. |
+
+The art is **frozen** — do not regenerate it at runtime and do not
+tweak the glyphs or colour map. Starfield cells are mapped from
+single-letter codes (`.` empty, `D` dim, `M` mid, `B` bright) to the
+`C_BANNER_STAR_*` tokens; wordmark rows centre to `BANNER_WIDTH` and
+paint in `C_BANNER_WORD` (MUME) or `C_BANNER_WORD_DIM` (COCKPIT).
+The tt++ welcome screen (`ttpp/core/welcome.tin`) shows the same art
+in plain white; see [session-lifecycle.md](session-lifecycle.md#clean-client-startup).
 
 **Hover-clear invariant.** In a menu frame, every emitted fragment is
 either a selectable row (carries a MOUSE_MOVE handler that sets the

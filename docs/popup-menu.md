@@ -113,9 +113,12 @@ contracts and [ADR 0085](decisions/0085-shared-menu-chrome.md) for
 the rationale. The popup's `main`, `options`, and `scripts` frames are
 all single `FormattedTextControl` Windows emitting `title_block` (with
 `blank_above=1`) + body + `footer_block` in one fragment list — the
-footer is anchored to the popup's final row. The `main` frame keeps
-its ASCII banner in `C_TITLE` (the logo, not a section title — so it
-does not go through `title_block`). Selectable menu rows render
+footer is anchored to the popup's final row. The `main` frame's
+starfield + wordmark banner is shared with the launcher via
+`bridge/launcher/banner.py` (the logo, not a section title — so it
+does not go through `title_block`); see the
+[Shared banner](launcher.md#shared-banner) section in `docs/launcher.md`
+for the call contract. Selectable menu rows render
 through `menu_chrome.menu_row`: gold `<< >>` on the cursor row, hover
 lightens the label (`C_HOVER`). The dead-grey "Save run" row reuses
 the `menu_row` "inactive" state with `inactive_style=C_HINT` and no
