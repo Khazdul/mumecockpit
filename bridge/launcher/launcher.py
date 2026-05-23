@@ -1940,13 +1940,13 @@ def _editor_kind_left_pad():
 def _editor_body_h():
     """Body row height — branches on `_editor_mode`.
 
-    Lite mode budget reserves rows for the leading blank, title row,
-    blank separator, and the horizontal kind-button row + its
+    Lite mode budget reserves rows for the two leading blanks, title
+    row, blank separator, and the horizontal kind-button row + its
     blank-line separator (the footer blank + hint live in the
     dedicated footer Window, with a flex_spacer absorbing the
     remaining slack between body and footer — see
-    `_build_profile_editor`). 13 rows of chrome total: 7 chrome
-    rows inside the body, 2 in the footer Window, 4 of spacer
+    `_build_profile_editor`). 13 rows of chrome total: 8 chrome
+    rows inside the body, 2 in the footer Window, 3 of spacer
     slack. The detail panel's field chain (Pattern + Commands +
     error + hint block) needs ~15 rows minimum.
 
@@ -5543,11 +5543,8 @@ def _profile_editor_text():
         + New entry                        │ <pattern>       │
         ...                                 ...
 
-    Editor mode replaces steps 2-5 with the full-height text buffer,
-    and emits two explicit leading blank rows above the title row
-    (lite mode's leading blank comes from `_centered` for free;
-    editor mode fills the terminal exactly so the blanks have to be
-    emitted).
+    Editor mode replaces steps 2-5 with the full-height text buffer.
+    Both modes emit two explicit leading blank rows above the title row.
 
     The five 13-cell kind buttons sit in a horizontal row, BG-filled,
     centred on the terminal. The colour grammar (`C_BUTTON_*`) carries
@@ -5561,18 +5558,15 @@ def _profile_editor_text():
     title  = f"─── Profile Editor: {name} ───"
 
     frags = []
-    # Both modes emit their leading blank rows explicitly: the frame uses
+    # Both modes emit two leading blank rows explicitly: the frame uses
     # `HSplit([body, flex_spacer, footer])` (no vertical centering), so
-    # the body anchors to the top of the available space. Editor mode
-    # gets two leading blanks (its body fills the terminal exactly so
-    # there is no slack); lite mode gets one (the spacer absorbs the
-    # slack between body and footer). The chrome budgets in
-    # `_editor_body_h` count these blanks — change them together.
-    if _editor_mode == "editor":
-        frags.append(("", "\n", _editor_clear_outer_hover))
-        frags.append(("", "\n", _editor_clear_outer_hover))
-    else:
-        frags.append(("", "\n", _editor_clear_outer_hover))
+    # the body anchors to the top of the available space. Editor mode's
+    # body fills the terminal exactly so there is no slack; lite mode's
+    # spacer absorbs the slack between body and footer. The chrome
+    # budgets in `_editor_body_h` count these blanks — change them
+    # together.
+    frags.append(("", "\n", _editor_clear_outer_hover))
+    frags.append(("", "\n", _editor_clear_outer_hover))
     _editor_append_title_row(frags, title, cols)
     frags.append(("", "\n", _editor_clear_outer_hover))
 
