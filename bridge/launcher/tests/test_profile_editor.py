@@ -558,6 +558,70 @@ class TestSentinelAndCreate(unittest.TestCase):
         self.assertEqual(dst.read_text(), "#alias {keep} {body}\n")
 
 
+class TestEmptyStateHintWrap(unittest.TestCase):
+    """When the active kind has zero entries (or the cursor sits on the
+    `+ New entry` sentinel), the detail panel shows a centred hint
+    wrapped to `_EDITOR_DETAIL_W` so no line spills outside the panel."""
+
+    def _empty_state_lines(self, kind):
+        prof, _src, _td = _make_profile("")
+        _reset_editor_state(prof, kind=kind)
+        # No entries → cursor is on the sentinel and entry is None.
+        self.assertIsNone(launcher._editor_current_entry())
+        rows = launcher._editor_detail_lines(None, total_lines=20)
+        return ["".join(f[1] for f in row) for row in rows]
+
+    def test_substitute_empty_hint_wraps_within_panel(self):
+        lines = self._empty_state_lines("substitute")
+        w = launcher._EDITOR_DETAIL_W
+        for line in lines:
+            self.assertEqual(len(line), w,
+                             f"row width {len(line)} != {w}: {line!r}")
+        non_blank = [ln.strip() for ln in lines if ln.strip()]
+        joined = " ".join(non_blank)
+        self.assertIn("No substitutes yet. Press n to add one.", joined)
+        self.assertGreater(len(non_blank), 1,
+                           "expected the long hint to wrap to >1 line")
+
+    def test_highlight_empty_hint_wraps_within_panel(self):
+        lines = self._empty_state_lines("highlight")
+        w = launcher._EDITOR_DETAIL_W
+        for line in lines:
+            self.assertEqual(len(line), w)
+        joined = " ".join(ln.strip() for ln in lines if ln.strip())
+        self.assertIn("No highlights yet. Press n to add one.", joined)
+
+    def test_sentinel_prompt_wraps_within_panel(self):
+        # One existing entry → sentinel sits at index 1; park cursor on it.
+        prof, _src, _td = _make_profile("#substitute {x} {y}\n")
+        _reset_editor_state(prof, kind="substitute")
+        view = launcher._profile_editor_display_view()
+        launcher._editor_list_cursor = len(view)  # sentinel row
+        self.assertIsNone(launcher._editor_current_entry())
+        rows = launcher._editor_detail_lines(None, total_lines=20)
+        lines = ["".join(f[1] for f in row) for row in rows]
+        w = launcher._EDITOR_DETAIL_W
+        for line in lines:
+            self.assertEqual(len(line), w)
+        non_blank = [ln.strip() for ln in lines if ln.strip()]
+        joined = " ".join(non_blank)
+        self.assertIn("Press Enter to create a new substitute.", joined)
+        self.assertGreater(len(non_blank), 1,
+                           "expected the sentinel prompt to wrap to >1 line")
+
+    def test_hint_block_is_vertically_centred(self):
+        # With wrapped lines L and total T, top blank rows == (T - L) // 2.
+        lines = self._empty_state_lines("substitute")
+        leading_blank = 0
+        for ln in lines:
+            if ln.strip():
+                break
+            leading_blank += 1
+        non_blank = [ln for ln in lines if ln.strip()]
+        expected_top = max(0, (20 - len(non_blank)) // 2)
+        self.assertEqual(leading_blank, expected_top)
+
+
 class TestValidation(unittest.TestCase):
     """Pattern-required error is armed once the user leaves the field
     with an empty buffer; brace warning fires live as soon as the

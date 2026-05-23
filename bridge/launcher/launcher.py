@@ -3774,10 +3774,12 @@ def _editor_detail_lines(entry, total_lines):
             msg = f"No {kind_plural} yet. Press n to add one."
         else:
             msg = f"Press Enter to create a new {_kind_sing}."
-        top_blank = max(0, total_lines // 2 - 1)
+        wrapped = _wrap_text(msg, _EDITOR_DETAIL_W) or [""]
+        top_blank = max(0, (total_lines - len(wrapped)) // 2)
         for _ in range(top_blank):
             rows.append(_editor_pad_full(C_HINT, ""))
-        rows.append(_editor_centered_row(C_HINT, msg))
+        for line in wrapped:
+            rows.append(_editor_centered_row(C_HINT, line))
         while len(rows) < total_lines:
             rows.append(_editor_pad_full(C_HINT, ""))
         return rows[:total_lines]
