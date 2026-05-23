@@ -148,6 +148,7 @@ _CONF_DEFAULTS = {
     "spotlights_show_levelups":     "1",
     "spotlights_show_pvp":          "1",
     "spotlights_show_achievements": "1",
+    "terminal_bg_fallback":         "#000000",
 }
 
 # ---------------------------------------------------------------------------
@@ -730,13 +731,38 @@ def _write_terminal_bg_to_layout_conf(bg):
         pass
 
 
+_HEX_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
+
+
 def _probe_and_persist_terminal_bg():
     """One-shot wrapper: detect, stash on the module-level _terminal_bg,
     pre-compute the spotlight frame style and editor focused current-line
     band derived from it, and write the value to layout.conf. Called once
-    from main() before the prompt_toolkit Application starts."""
+    from main() before the prompt_toolkit Application starts.
+
+    When OSC 11 detection fails (e.g. WSL2 + Alacritty, which routes
+    through ConPTY and never relays the reply), falls back to the
+    user-configurable `terminal_bg_fallback` from startup.conf — default
+    `#000000` to match the bundled Alacritty background. Detection wins
+    when it succeeds, so a user who alternates between a detecting and
+    a non-detecting terminal stays correct on both."""
     global _terminal_bg, _spotlight_frame_style, _EDITOR_LINE_HL_BG_FOCUSED
-    _terminal_bg = _detect_terminal_bg()
+    detected = _detect_terminal_bg()
+    fallback = _conf.get("terminal_bg_fallback", "#000000")
+    if not _HEX_COLOR_RE.match(fallback or ""):
+        fallback = "#000000"
+    _terminal_bg = detected or fallback
+    if detected:
+        msg = f"terminal-bg: detected {detected}\n"
+    else:
+        msg = f"terminal-bg: detection failed, using fallback {fallback}\n"
+    try:
+        log_path = os.path.join(PROJECT_DIR, "logs", "debug.log")
+        os.makedirs(os.path.dirname(log_path), exist_ok=True)
+        with open(log_path, "a") as fh:
+            fh.write(msg)
+    except OSError:
+        pass
     _spotlight_frame_style = spotlight_frame_style(_terminal_bg)
     _EDITOR_LINE_HL_BG_FOCUSED = _editor_focused_line_hl_bg(_terminal_bg)
     _write_terminal_bg_to_layout_conf(_terminal_bg)
@@ -793,6 +819,7 @@ def _save_conf():
                 "profile",
                 "spotlights_show_deaths", "spotlights_show_levelups",
                 "spotlights_show_pvp", "spotlights_show_achievements",
+                "terminal_bg_fallback",
             ):
                 fh.write(f"{key}={_conf.get(key, _CONF_DEFAULTS[key])}\n")
     except OSError:
@@ -14310,11 +14337,12 @@ def main():
 
     os.chdir(PROJECT_DIR)
     _one_shot_migrations()
+    _load_conf()
     # Probe host-terminal background via OSC 11 while the tty is still in
     # cooked mode and the launcher owns it. Must happen before prompt_toolkit
-    # takes over. Bounded ~0.25 s; never wedges startup.
+    # takes over. Bounded ~0.25 s; never wedges startup. Reads
+    # `terminal_bg_fallback` from `_conf`, so must run after `_load_conf()`.
     _probe_and_persist_terminal_bg()
-    _load_conf()
     try:
         run_retention.prune_expired_runs()
     except Exception:
