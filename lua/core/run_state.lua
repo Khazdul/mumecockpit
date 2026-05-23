@@ -115,6 +115,7 @@ end)
 
 events.subscribe("char_death", function()
     M.deaths = M.deaths + 1
+    script_ui("DEATH", "You died.")
 end)
 
 events.subscribe("pc_death", function(full)
