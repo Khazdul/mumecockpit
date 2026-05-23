@@ -123,7 +123,7 @@ tmux set-option -s escape-time 10
 
 # ESC opens the in-game popup menu from any pane.
 tmux bind-key -T root Escape display-popup -E \
-    -w 80% -h 80% -x C -y C \
+    -w 80% -h 80% -x C -y C -S fg=#008787 \
     "bash $HOME/MUME/bridge/launcher/ingame_menu.sh"
 
 # ---------------------------------------------------------------------------
