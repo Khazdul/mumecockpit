@@ -21,7 +21,10 @@ SHOW_COMM="${show_comm:-0}"
 SHOW_DIVIDERS="${show_pane_dividers:-1}"
 
 LAYOUT_CONF="bridge/runtime/layout.conf"
-[ -f "$LAYOUT_CONF" ] || printf "ui_width=33\nwindow_cols=0\n" > "$LAYOUT_CONF"
+# detect_terminal_bg.sh may have created layout.conf with only terminal_bg=
+# already populated; seed the remaining keys without clobbering existing ones.
+[ -f "$LAYOUT_CONF" ] || : > "$LAYOUT_CONF"
+grep -q "^ui_width="    "$LAYOUT_CONF" || echo "ui_width=33"    >> "$LAYOUT_CONF"
 grep -q "^window_cols=" "$LAYOUT_CONF" || echo "window_cols=0" >> "$LAYOUT_CONF"
 
 source bridge/layout/right_column_budget.sh
@@ -102,13 +105,10 @@ bash "$HOME/MUME/bridge/launcher/open_pane.sh" input --batch
 # whichever pane is topmost AFTER the resize already settled).
 if [ "$SHOW_DIVIDERS" -eq 1 ]; then
     tmux set-option -t mume pane-border-status top
-    tmux set-option -t mume pane-border-style        "fg=black bg=black"
-    tmux set-option -t mume pane-active-border-style "fg=black bg=black"
 else
     tmux set-option -t mume pane-border-status off
-    tmux set-option -t mume pane-border-style        "fg=black bg=black"
-    tmux set-option -t mume pane-active-border-style "fg=black bg=black"
 fi
+bash "$HOME/MUME/bridge/layout/apply_border_style.sh"
 
 # Phase 2 + final resize pass — pin each surviving pane to its desired
 # allocation (linearly scaled when the budget is tight; residual to the

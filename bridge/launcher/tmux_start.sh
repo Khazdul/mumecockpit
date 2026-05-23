@@ -64,10 +64,19 @@ chmod +x bridge/layout/equalize_right_column.sh
 chmod +x bridge/services/read_version.sh
 chmod +x bridge/launcher/build_initial_layout.sh
 chmod +x bridge/launcher/wait_for_layout.sh
+chmod +x bridge/layout/detect_terminal_bg.sh
+chmod +x bridge/layout/apply_border_style.sh
 
 touch logs/debug.log logs/ui.log
 > logs/debug.log
 > logs/ui.log
+
+# Probe the host terminal background via OSC 11 before tmux owns /dev/tty.
+# Result is persisted to layout.conf and consumed by apply_border_style.sh
+# so the inter-pane separator row blends into whatever theme the user runs.
+# Bounded ~0.3s read timeout — never blocks startup if the terminal does
+# not respond.
+bash bridge/layout/detect_terminal_bg.sh
 
 # ---------------------------------------------------------------------------
 # 2. Kill any old session and create a fresh one
