@@ -44,12 +44,21 @@ rm -f bridge/runtime/.user_reconnecting
 rm -f bridge/runtime/.layout_ready
 
 CONF="bridge/runtime/startup.conf"
+CONF_TEMPLATE="bridge/launcher/templates/startup.conf"
 
-# Create startup.conf with defaults if missing
+# Seed startup.conf from the shipped template on a fresh install. Single
+# source of truth for fresh-install defaults (ADR 0101); the
+# ${show_*:-N} fallback guards in build_initial_layout.sh stay as the
+# safety net for upgrades that pre-date a given key.
 if [ ! -f "$CONF" ]; then
-    printf 'connection_mode=mmapper\nshow_status=1\nshow_comm=1\nshow_ui=1\nshow_dev=0\nshow_pane_dividers=1\nprofile=default\n' > "$CONF"
+    if [ -f "$CONF_TEMPLATE" ]; then
+        cp "$CONF_TEMPLATE" "$CONF"
+    else
+        mkdir -p logs
+        echo "[tmux_start] startup.conf template missing at $CONF_TEMPLATE; falling back to in-script guards" >> logs/debug.log
+    fi
 fi
-source "$CONF"
+[ -f "$CONF" ] && source "$CONF"
 
 # ---------------------------------------------------------------------------
 # 1. Dirs, permissions, log reset
