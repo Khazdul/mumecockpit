@@ -59,3 +59,6 @@ __pycache__/
 
 lua/scripts/autostab.lua
 lua/scripts/autobow.lua
+
+# WSL clipboard helper — downloaded by bootstrap, never tracked
+bin/

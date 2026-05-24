@@ -76,7 +76,9 @@ Fully unattended beyond the initial UAC prompt:
 5. `wsl -d Ubuntu -u root -- bash -c "<bootstrap.sh contents>"` — runs
    the Linux bootstrap as root. Running as root inside WSL is fine here:
    the cockpit has no multi-user logic and no sudo paths. The OOBE
-   user-creation dialog is never triggered.
+   user-creation dialog is never triggered. The bootstrap detects WSL
+   and additionally provisions `~/MUME/bin/win32yank.exe` for the input
+   pane's fast clipboard read — see the Linux flow below.
 6. Install Alacritty (winget, MSI fallback) and write
    `%APPDATA%\alacritty\alacritty.toml`.
 7. Create a desktop shortcut that runs:
@@ -135,6 +137,17 @@ Debian/Ubuntu family — automated via `bootstrap-linux.sh`:
    bootstrap on an already-provisioned machine takes the "looks good —
    keeping it" path with no rebuild. See [ADR 0035](decisions/0035-tt-from-source.md).
 3. Clone or update the repo to `~/MUME`.
+4. **WSL only — provision `win32yank.exe`.** When `/proc/version` contains
+   `microsoft`, the bootstrap downloads the pinned `v0.1.1` release of
+   [equalsraf/win32yank](https://github.com/equalsraf/win32yank), extracts
+   it with `python3 -m zipfile`, and lands the binary at
+   `~/MUME/bin/win32yank.exe` (chmod +x). The input pane uses it as the
+   fast clipboard-read path on WSL; without it, paste falls back to
+   pyperclip (~100–300 ms cold). Skipped if the binary is already present
+   (idempotent). Download failure is non-fatal — the bootstrap still
+   succeeds and the input pane works via the fallback. Native Linux skips
+   this step entirely; no `bin/` directory is created. See
+   [docs/input-pane.md](input-pane.md) for the clipboard chain.
 
 The source-build step adds ~1–2 minutes on first install. The build deps
 (`build-essential`, `libpcre2-dev`, `libgnutls28-dev`, `zlib1g-dev`,

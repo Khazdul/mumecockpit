@@ -140,6 +140,36 @@ chmod +x "$REPO_DIR/start.sh"
 chmod +x "$REPO_DIR/bridge/launcher/launch.sh"
 
 # ---------------------------------------------------------------------------
+# Provision win32yank.exe (WSL only — fast clipboard read for the input pane)
+# ---------------------------------------------------------------------------
+
+if [ "$IS_WSL" -eq 1 ]; then
+    win32yank_bin="$REPO_DIR/bin/win32yank.exe"
+    if [ -f "$win32yank_bin" ]; then
+        echo "win32yank.exe already present at $win32yank_bin — skipping download."
+    else
+        # Pinned release; do not track "latest".
+        WIN32YANK_VERSION="v0.1.1"
+        WIN32YANK_URL="https://github.com/equalsraf/win32yank/releases/download/${WIN32YANK_VERSION}/win32yank-x64.zip"
+        echo "Provisioning win32yank.exe ${WIN32YANK_VERSION} for WSL clipboard fast path…"
+
+        win32yank_tmpdir="$(mktemp -d)"
+        if curl -fsSL "$WIN32YANK_URL" -o "$win32yank_tmpdir/win32yank.zip" \
+            && python3 -m zipfile -e "$win32yank_tmpdir/win32yank.zip" "$win32yank_tmpdir" \
+            && [ -f "$win32yank_tmpdir/win32yank.exe" ]; then
+            mkdir -p "$REPO_DIR/bin"
+            mv "$win32yank_tmpdir/win32yank.exe" "$win32yank_bin"
+            chmod +x "$win32yank_bin"
+            echo "win32yank.exe installed at $win32yank_bin."
+        else
+            echo "Warning: failed to download or extract win32yank.exe — continuing without it." >&2
+            echo "         The input pane will fall back to pyperclip for clipboard paste." >&2
+        fi
+        rm -rf "$win32yank_tmpdir"
+    fi
+fi
+
+# ---------------------------------------------------------------------------
 # Done
 # ---------------------------------------------------------------------------
 
