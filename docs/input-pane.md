@@ -32,8 +32,12 @@ of the cockpit, 1 row tall.
 - `prompt_toolkit` — install with:
   `pip install prompt_toolkit pyperclip --break-system-packages`
 - `pyperclip` — for reading the system clipboard on paste (Ctrl+V).
-  On WSL, pyperclip's first call spawns `powershell.exe Get-Clipboard`
-  (~200–500 ms); acceptable for a one-off paste action.
+  On non-WSL platforms (macOS, native Linux) this is the only read
+  path. On WSL it is the silent fallback when the win32yank fast path
+  is unavailable (see Clipboard operations).
+- `win32yank.exe` (WSL only) — fast clipboard reader at
+  `~/MUME/bin/win32yank.exe`. Provisioned by the installer, not a pip
+  dependency. When absent, Ctrl+V falls through to pyperclip silently.
 
 **Recommended terminal config:** prompt_toolkit emits a steady-cursor
 request that persists while the input pane is running and is inherited
@@ -159,9 +163,25 @@ emitting an OSC 52 escape sequence. tmux (with `set-clipboard on`, set in
 `bridge/launcher/tmux_start.sh`) forwards OSC 52 to the terminal emulator, which
 sets the system clipboard. The same path tmux's `copy-pipe` already uses.
 
-**Read path (pyperclip):** Ctrl+V reads via `pyperclip.paste()`. On WSL,
-pyperclip delegates to `powershell.exe Get-Clipboard` on first use
-(~200–500 ms one-off latency). Requires `pyperclip` to be installed:
+**Read path:** Ctrl+V resolves the clipboard via a platform-aware chain
+inside `_read_clipboard()`:
+
+1. **WSL fast path (win32yank).** When `/proc/version` contains
+   `microsoft` (detected once at module load), the pane shells out to
+   `~/MUME/bin/win32yank.exe -o --lf`. The `--lf` flag normalises
+   Windows CRLF line endings to LF before insertion. On exit-0 the
+   stdout is returned directly — paste is near-instant. The binary is
+   provisioned by the installer, not a pip dependency.
+2. **pyperclip fallback.** If the win32yank binary is missing, exits
+   non-zero, or raises, the call falls through silently to
+   `pyperclip.paste()`. No error is surfaced to the user. On WSL,
+   pyperclip delegates to `powershell.exe Get-Clipboard` on first
+   use (~200–500 ms one-off latency).
+3. **Non-WSL (macOS, native Linux).** Behaviour is unchanged —
+   `pyperclip.paste()` is called directly with no WSL probe.
+
+`pyperclip` remains a required dependency for the fallback and for
+non-WSL platforms:
 `pip install pyperclip --break-system-packages`.
 
 Ctrl+C does **not** exit the input pane. Ctrl+D is also a no-op (does

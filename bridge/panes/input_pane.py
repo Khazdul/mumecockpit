@@ -48,6 +48,18 @@ _clock_time_transition_at = None   # float (unix epoch) or None
 _clock_time_precision     = None   # "MINUTE"/"HOUR"/None
 _clock_status_mtime       = None
 
+def _is_wsl():
+    try:
+        with open("/proc/version") as fh:
+            return "microsoft" in fh.read().lower()
+    except OSError:
+        return False
+
+
+_IS_WSL = _is_wsl()
+_WIN32YANK_PATH = os.path.expanduser("~/MUME/bin/win32yank.exe")
+
+
 last_cmd = ""
 history: list = []           # sent commands, oldest -> newest
 history_index = None         # None = at pending_input; else index into history
@@ -116,6 +128,16 @@ def _copy_to_clipboard(event, text):
 
 
 def _read_clipboard():
+    if _IS_WSL:
+        try:
+            result = subprocess.run(
+                [_WIN32YANK_PATH, "-o", "--lf"],
+                capture_output=True, text=True, check=False,
+            )
+            if result.returncode == 0:
+                return result.stdout
+        except Exception:
+            pass
     try:
         import pyperclip
         return pyperclip.paste() or ""
