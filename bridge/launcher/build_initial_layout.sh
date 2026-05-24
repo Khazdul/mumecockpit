@@ -10,6 +10,7 @@ cd "$HOME/MUME"
 PANE_COUNT=$(tmux list-panes -t mume:cockpit 2>/dev/null | wc -l)
 [ "$PANE_COUNT" -gt 1 ] && exit 0
 
+source bridge/lib/conf_io.sh
 source bridge/runtime/startup.conf 2>/dev/null || true
 
 SHOW_UI="${show_ui:-1}"
@@ -50,7 +51,7 @@ else
     COLS=$(tmux display-message -p -t mume:cockpit '#{window_width}')
     ROWS=$(tmux display-message -p -t mume:cockpit '#{window_height}')
 fi
-sed -i "s/^window_cols=.*/window_cols=$COLS/" "$LAYOUT_CONF"
+sed_inplace "s/^window_cols=.*/window_cols=$COLS/" "$LAYOUT_CONF"
 
 REQUESTED=()
 [ "$SHOW_STATUS" -eq 1 ] && REQUESTED+=(status)

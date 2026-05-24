@@ -3,6 +3,8 @@ LAYOUT_CONF="$HOME/MUME/bridge/runtime/layout.conf"
 LOCK="$HOME/MUME/bridge/runtime/.layout_lock"
 SENTINEL="$HOME/MUME/bridge/runtime/.collapsed_panes"
 
+source "$HOME/MUME/bridge/lib/conf_io.sh"
+
 [ -f "$LOCK" ] && exit 0
 
 _reapply_desired_heights() {
@@ -55,7 +57,7 @@ if [ -n "$HAS_RIGHT" ] && [ "$AVAILABLE_RIGHT" -lt "$RIGHT_FLOOR" ]; then
       -F '#{pane_index} #{pane_title}' \
       | awk '$2=="input" {print $1}')
     [ -n "$INPUT_INDEX" ] && tmux resize-pane -t "mume:cockpit.$INPUT_INDEX" -y 1
-    sed -i "s/^window_cols=.*/window_cols=$COLS/" "$LAYOUT_CONF"
+    sed_inplace "s/^window_cols=.*/window_cols=$COLS/" "$LAYOUT_CONF"
     rm -f "$LOCK"
     exit 0
 elif [ -f "$SENTINEL" ]; then
@@ -112,5 +114,5 @@ INPUT_INDEX=$(tmux list-panes -t mume:cockpit \
 bash "$HOME/MUME/bridge/layout/apply_layout.sh"
 _reapply_desired_heights
 
-sed -i "s/^window_cols=.*/window_cols=$COLS/" "$LAYOUT_CONF"
+sed_inplace "s/^window_cols=.*/window_cols=$COLS/" "$LAYOUT_CONF"
 rm -f "$LOCK"

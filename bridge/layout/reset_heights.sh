@@ -7,11 +7,12 @@
 
 LAYOUT_CONF="$HOME/MUME/bridge/runtime/layout.conf"
 source "$HOME/MUME/bridge/layout/right_column_budget.sh"
+source "$HOME/MUME/bridge/lib/conf_io.sh"
 
 [ -f "$LAYOUT_CONF" ] || exit 0
 
 for p in status buffs group comm ui dev; do
-    sed -i "/^desired_${p}=/d" "$LAYOUT_CONF"
+    sed_inplace "/^desired_${p}=/d" "$LAYOUT_CONF"
     echo "desired_${p}=${DEFAULT_DESIRED[$p]}" >> "$LAYOUT_CONF"
 done
 

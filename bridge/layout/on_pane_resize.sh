@@ -2,6 +2,8 @@
 LAYOUT_CONF="$HOME/MUME/bridge/runtime/layout.conf"
 LOCK="$HOME/MUME/bridge/runtime/.layout_lock"
 
+source "$HOME/MUME/bridge/lib/conf_io.sh"
+
 [ -f "$LOCK" ] && exit 0
 
 # ── Width persistence ─────────────────────────────────────────────────────
@@ -10,7 +12,7 @@ NEW_WIDTH=$(tmux list-panes -t mume:cockpit \
   | awk '$1=="ui" || $1=="comm" || $1=="dev" || $1=="status" || $1=="buffs" {print $2; exit}')
 [ -z "$NEW_WIDTH" ] && exit 0
 
-sed -i "s/^ui_width=.*/ui_width=$NEW_WIDTH/" "$LAYOUT_CONF"
+sed_inplace "s/^ui_width=.*/ui_width=$NEW_WIDTH/" "$LAYOUT_CONF"
 
 # ── Height persistence ───────────────────────────────────────────────────
 # Snapshot each right-column pane's body height into desired_<pane>. A
@@ -24,7 +26,7 @@ while IFS= read -r line; do
     case "$pname" in
         status|buffs|group|comm|ui|dev)
             if grep -q "^desired_${pname}=" "$LAYOUT_CONF"; then
-                sed -i "s/^desired_${pname}=.*/desired_${pname}=${pheight}/" "$LAYOUT_CONF"
+                sed_inplace "s/^desired_${pname}=.*/desired_${pname}=${pheight}/" "$LAYOUT_CONF"
             else
                 echo "desired_${pname}=${pheight}" >> "$LAYOUT_CONF"
             fi

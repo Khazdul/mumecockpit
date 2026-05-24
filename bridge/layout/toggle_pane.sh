@@ -10,6 +10,8 @@ set -u
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BRIDGE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 CONF="$BRIDGE_DIR/runtime/startup.conf"
+
+source "$BRIDGE_DIR/lib/conf_io.sh"
 TARGET="${1:-}"
 PERSIST=0
 
@@ -36,7 +38,7 @@ _kill_pane() {
 _persist_key() {
     local key="$1" val="$2"
     if grep -q "^${key}=" "$CONF" 2>/dev/null; then
-        sed -i "s/^${key}=.*/${key}=${val}/" "$CONF"
+        sed_inplace "s/^${key}=.*/${key}=${val}/" "$CONF"
     else
         echo "${key}=${val}" >> "$CONF"
     fi
