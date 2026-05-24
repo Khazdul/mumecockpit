@@ -124,4 +124,8 @@ events.subscribe("gmcp_char_vitals",      function() serialize() end)
 events.subscribe("char_reset",            function() serialize() end)
 events.subscribe("clock_changed",         function() serialize() end)
 
+-- Expose so non-GMCP writers (e.g. wimpy.lua text-trigger collector) can
+-- request a re-serialise after mutating state.char.*.
+state.char.serialize = serialize
+
 dbg("[STATUS_STATE] loaded")

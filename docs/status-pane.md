@@ -37,6 +37,12 @@ on the event bus. `char_state.lua` is the primary writer for all three Char.*
 modules — `state.char.*` is fully updated before any subscriber runs. Each
 subscription calls `serialize()` and writes `bridge/runtime/status.state` atomically.
 
+`serialize()` is also exposed as `state.char.serialize` so non-GMCP writers
+can request a re-serialise after mutating `state.char.*`. `lua/core/wimpy.lua`
+uses this to refresh the WIMPY cell after the `Wimpy set to:` / `Wimpy removed.`
+text triggers (which carry no GMCP packet). Writers must mutate state first,
+then call `state.char.serialize()` so the snapshot reflects the new value.
+
 ### Disconnect clear
 
 `mark_mume_disconnected()` in `lua/brain.lua` calls `state.char.reset()` after
@@ -143,7 +149,7 @@ fields are retained in the payload for use by future rows.
 | `character`      | `Char.Name` → `state.char.name`                        |                                              |
 | `race`           | `Char.StatusVars` → `state.char.race`                  |                                              |
 | `level`          | `Char.Vitals` → `state.char.xp` → `level_progress.level_from_xp` | derived from xp via the canonical threshold table; ignores `state.char.level` because `Char.StatusVars` is not reliably emitted after a death-induced level drop in MUME |
-| `wimpy`          | `Char.Vitals` → `state.char.wimpy`                     | integer; null until first Vitals tick        |
+| `wimpy`          | `Char.Vitals` → `state.char.wimpy`; also `Wimpy set to:` / `Wimpy removed.` text triggers via `lua/core/wimpy.lua` | integer; null until first Vitals tick or wimpy text-trigger fires |
 | `xp`             | `Char.Vitals` → `state.char.xp`                        |                                              |
 | `tp`             | `Char.Vitals` → `state.char.tp`                        |                                              |
 | `xp_progress`    | computed by `level_progress.compute_xp_progress`       | `null` until xp known; derives level from xp |

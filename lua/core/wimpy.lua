@@ -10,6 +10,7 @@ events.subscribe("wimpy_changed", function(raw)
         return
     end
     state.char.wimpy = n
+    if state.char.serialize then state.char.serialize() end
 end)
 
 dbg("[WIMPY] loaded")

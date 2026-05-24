@@ -310,8 +310,13 @@ The Lua subscriber parses the string to a number and stores it in
 `state.char.wimpy` (including `0` for disabled — the future character-pane
 renderer distinguishes `0` from absent).
 
-**Subscribers:** `lua/core/wimpy.lua` — updates `state.char.wimpy`, emits
-`script_ui("WIMPY", ...)`.
+**Subscribers:** `lua/core/wimpy.lua` — updates `state.char.wimpy`, then calls
+`state.char.serialize()` (exposed by `lua/core/status_state.lua`) to refresh
+`bridge/runtime/status.state` so the WIMPY cell updates within one poll tick
+without waiting for an unrelated `Char.Vitals` event. `status_state.lua` is
+deliberately not subscribed directly: subscriber order is alphabetical load
+order, and `status_state` loads before `wimpy`, so it would otherwise serialise
+the pre-mutation value.
 
 ### `user_input`
 
