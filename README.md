@@ -6,17 +6,8 @@ at the latency floor; a Lua brain runs above it for state, timers, and
 anything that benefits from a real programming language; tmux composes
 the game pane, an input pane, and up to six side panes into one window.
 
-<!-- Screenshot goes here. Good candidates: the launcher About page,
-     the full cockpit with the status / buffs / group / comm / ui
-     panes visible, or the in-game ESC popup with the Statistics
-     frame open. -->
-
-<img width="494" height="309" alt="Screenshot 2026-05-16 020038" src="https://github.com/user-attachments/assets/7f100007-b3d9-44fc-8d7e-dfff595f7c13" />
-<img width="494" height="309" alt="Screenshot 2026-05-16 015941" src="https://github.com/user-attachments/assets/8f7496e5-8b0e-481a-92ac-aea909fc2db9" />
-<img width="494" height="309" alt="Screenshot 2026-05-16 010400" src="https://github.com/user-attachments/assets/deedfef8-f77a-45bc-96cb-d42c74488aaf" />
-<img width="494" height="309" alt="Screenshot 2026-05-16 010608" src="https://github.com/user-attachments/assets/1f5fbbe3-8bb5-441d-87d3-b3587d8f4569" />
-<img width="494" height="309" alt="Screenshot 2026-05-16 010540" src="https://github.com/user-attachments/assets/19486c51-a9d1-4acf-86b9-27286eb5a0e4" />
-
+<!-- HERO IMAGE: full cockpit, multiple right-column panes visible.
+     Add as: <p align="center"><img src="..." alt="..." width="..."></p> -->
 
 ## Install
 
@@ -59,8 +50,9 @@ Background collectors populate `state.char`, `state.comm`, `state.world`,
 - **Buffs** — colour-coded grid of active spells, buffs, debuffs,
   and stored spells. Per-character observed durations are learned
   over time; expiring entries blink.
-- **Group** — group member vitals with bar fills, threshold colours,
-  and an overflow indicator when the party doesn't fit.
+- **Group** — vitals for group members and labelled NPCs (e.g. hired
+  mercenaries) with bar fills, threshold colours, and an overflow
+  indicator when the party doesn't fit.
 - **Communication** — clickable channel filters with per-channel
   colouring; right-click solos a channel. History survives reloads
   and reconnects.
@@ -71,6 +63,8 @@ Background collectors populate `state.char`, `state.comm`, `state.world`,
 Plus a dedicated **input pane** on its own line at the bottom —
 repeat-last-on-empty-Enter, full-buffer select with one keystroke,
 no auto-clear after send, mouse-click anywhere returns focus.
+
+<!-- IMAGE: in-game Statistics frame or the log player with scrubber -->
 
 **Runs and statistics** — Every login starts a run. The cockpit
 writes a per-run JSONL event stream (`run_start`, `kill`, `pkill`,
@@ -83,6 +77,8 @@ showing the level span. A built-in **log player** replays archived
 sessions with play / pause, scrubber, click-to-jump, and a cursor
 in pause mode. Saved runs survive a 14-day retention sweep;
 everything else is pruned automatically.
+
+<!-- IMAGE: the ESC popup overlay -->
 
 **In-game ESC popup** — Press ESC anywhere in the cockpit for a
 fast overlay: Continue / Reconnect, Save run with a 0–5 star
@@ -100,16 +96,26 @@ is gone — no leftover state. Always-on GMCP collectors live in
 `lua/core/`; per-profile triggers, aliases, macros, and highlights
 live in `.tin` files under `ttpp/profiles/`.
 
+<!-- IMAGE: launcher main menu or the Panes colour grid -->
+
 **Launcher** — pre-tmux startup menu with profile picker
 (create / copy / delete), per-pane options including background
 colour, connection mode (MMapper / Direct / Custom), a History
-browser for archived sessions, and a self-update flow that tracks
-GitHub release tags.
+browser for archived sessions, a Spotlights reel that replays
+highlights — kills, deaths, level-ups, achievements — across every
+character, and a self-update flow that tracks GitHub release tags.
 
-**Profile editor** — full GUI CRUD for aliases, actions, macros,
-highlights, and substitutes from the launcher's Profile page.
-Round-trip preserves unknown tt++ commands and entry priorities
-verbatim. Raw mode for advanced editing pending.
+<!-- IMAGE: profile editor in Editor mode, syntax highlighting visible -->
+
+**Profile editor** — a two-mode editor for tt++ profiles, reached from the
+launcher's Profile page. *Lite mode* is a form-based GUI for aliases,
+actions, macros, highlights, and substitutes, with per-kind detail widgets,
+a colour-palette picker for highlights, and key-capture for macros.
+*Editor mode* is a full plain-text view of the serialised profile with
+tt++ syntax highlighting, brace auto-close and matching, undo/redo,
+word/line selection, and an in-app clipboard. Both modes edit the same
+profile; round-trip preserves unknown tt++ commands and entry priorities
+verbatim.
 
 **MMapper** integration via WSL2 mirrored networking on Windows,
 or plain `localhost` on macOS / Linux. [MMapper][mmapper] is a
