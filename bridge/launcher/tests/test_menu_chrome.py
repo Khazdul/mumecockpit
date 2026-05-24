@@ -205,17 +205,15 @@ class TestMenuRow(unittest.TestCase):
         self.assertEqual(frags[2], ("",     "   "))
 
     def test_inactive_style_override(self):
-        # inactive with explicit inactive_style (e.g. C_HINT for the
-        # Text-layout placeholder) recolours only the label.
-        frags = menu_chrome.menu_row("Text layout", "inactive",
+        # inactive with an explicit inactive_style recolours only the
+        # label; hover and selected states ignore the override.
+        frags = menu_chrome.menu_row("Placeholder", "inactive",
                                      inactive_style=C_HINT)
         self.assertEqual(frags[1][0], C_HINT)
-        # hover state ignores inactive_style.
-        frags = menu_chrome.menu_row("Text layout", "hover",
+        frags = menu_chrome.menu_row("Placeholder", "hover",
                                      inactive_style=C_HINT)
         self.assertEqual(frags[1][0], C_HOVER)
-        # selected state ignores inactive_style.
-        frags = menu_chrome.menu_row("Text layout", "selected",
+        frags = menu_chrome.menu_row("Placeholder", "selected",
                                      inactive_style=C_HINT)
         self.assertEqual(frags[1][0], C_ACTIVE)
 

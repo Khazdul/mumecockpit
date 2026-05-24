@@ -555,7 +555,6 @@ _options_window                  = None
 _options_panes_window            = None
 _options_connection_window       = None
 _options_connection_custom_window = None
-_options_coming_soon_window      = None
 _options_spotlights_window       = None
 _spotlights_empty_window         = None
 _scripts_window      = None
@@ -1032,7 +1031,6 @@ def _focus_current_frame():
             "options_panes":              _options_panes_window,
             "options_connection":         _options_connection_window,
             "options_connection_custom":  _options_connection_custom_window,
-            "options_coming_soon":        _options_coming_soon_window,
             "options_spotlights":         _options_spotlights_window,
             "spotlights_empty":           _spotlights_empty_window,
             "scripts":                    _scripts_window,
@@ -7121,14 +7119,13 @@ def _profile_delete_text():
 
 
 # ---------------------------------------------------------------------------
-# Options frame — top level (Connection / Panes / Scripts / Spotlights / Text layout / Back)
+# Options frame — top level (Connection / Panes / Scripts / Spotlights / Back)
 # ---------------------------------------------------------------------------
 _OPTIONS_ROWS = [
     ("connection",     "Connection"),
     ("panes",          "Panes"),
     ("scripts",        "Scripts"),
     ("spotlights",     "Spotlights"),
-    ("text_layout",    "Text layout"),
     ("back",           "Back"),
 ]
 
@@ -7156,8 +7153,6 @@ def _activate_option(idx):
     elif action == "spotlights":
         _sel_options_spotlights = 0
         _push_frame("options_spotlights")
-    elif action == "text_layout":
-        _push_frame("options_coming_soon")
     elif action == "connection":
         _sel_options_connection = _current_connection_index()
         _push_frame("options_connection")
@@ -7197,11 +7192,6 @@ def _options_text():
         is_hover  = (i == _hover_options)
         state     = _menu_row_state(is_active, is_hover)
 
-        # Text layout is a placeholder row — render its inactive state in
-        # dim C_HINT so it reads as "not ready yet". Selected / hover still
-        # use the normal menu-row grammar.
-        inactive_style = C_HINT if action == "text_layout" else C_ITEM
-
         def _make_handler(row=i):
             def _h(ev):
                 if ev.event_type == MouseEventType.MOUSE_MOVE:
@@ -7218,7 +7208,7 @@ def _options_text():
         frags.append(("", " " * left_pad, clear_hover))
         frags.extend(menu_row(
             label, state,
-            mouse_handler=h, inactive_style=inactive_style,
+            mouse_handler=h,
         ))
         frags.append(("", " " * right_pad, clear_hover))
         frags.append(("", "\n", clear_hover))
@@ -7776,16 +7766,6 @@ def _options_spotlights_text():
     return frags
 
 
-# ---------------------------------------------------------------------------
-# Options — "Coming soon" placeholder for Game text-layout
-# ---------------------------------------------------------------------------
-_COMING_SOON_BODY = (
-    "Text layout — coming soon. Will let you choose colour and "
-    "description profiles (PK / Minimalistic / Role-play) and configure "
-    "text substitutions. Font cannot be changed."
-)
-
-
 _SPOTLIGHTS_EMPTY_BODY = (
     "No spotlights yet. Play a session and your highlights — kills, deaths, "
     "level-ups, and achievements — will be captured here, ready to replay."
@@ -7813,26 +7793,6 @@ def _spotlights_empty_text():
             if _spotlights_empty_reason == "filtered"
             else _SPOTLIGHTS_EMPTY_BODY)
     wrapped = _wrap_text(body, body_w)
-
-    frags = []
-    frags.extend(title_block(title, cols, blank_above=2))
-    for line in wrapped:
-        frags.append(("", _pad_centre(line, cols)))
-        frags.append((C_BODY, line))
-        frags.append(("", "\n"))
-
-    content_rows = title_block_height(2) + len(wrapped)
-    frags.extend(footer_block(footer, cols, rows_h, content_rows))
-    return frags
-
-
-def _options_coming_soon_text():
-    cols   = _term_cols()
-    rows_h = _term_rows()
-    title  = "─── Text layout ───"
-    footer = "Any key to return"
-    body_w = max(20, min(72, cols - 4))
-    wrapped = _wrap_text(_COMING_SOON_BODY, body_w)
 
     frags = []
     frags.extend(title_block(title, cols, blank_above=2))
@@ -13673,17 +13633,6 @@ def _kb_optcc_any(event):
     _conn_err = ""
 
 
-# Options — Coming-soon placeholder (any key returns)
-@kb.add("escape", filter=_in_frame("options_coming_soon"), eager=True)
-def _kb_optcs_escape(event):
-    _pop_frame()
-
-
-@kb.add("<any>", filter=_in_frame("options_coming_soon"))
-def _kb_optcs_any(event):
-    _pop_frame()
-
-
 # Spotlights — empty-state placeholder (any key returns)
 @kb.add("escape", filter=_in_frame("spotlights_empty"), eager=True)
 def _kb_spemp_escape(event):
@@ -14351,7 +14300,7 @@ def main():
     global _profile_editor_keybind_window
     global _options_window, _options_panes_window
     global _options_connection_window, _options_connection_custom_window
-    global _options_coming_soon_window, _options_spotlights_window
+    global _options_spotlights_window
     global _spotlights_empty_window
     global _scripts_window, _about_window
     global _update_running_window, _update_result_window
@@ -14394,7 +14343,6 @@ def main():
     _options_panes_window,              options_panes_frame            = _build_simple(_options_panes_text)
     _options_connection_window,         options_connection_frame       = _build_simple(_options_connection_text)
     _options_connection_custom_window,  options_connection_custom_frame = _build_simple(_options_connection_custom_text)
-    _options_coming_soon_window,        options_coming_soon_frame      = _build_simple(_options_coming_soon_text)
     _options_spotlights_window,         options_spotlights_frame       = _build_simple(_options_spotlights_text)
     _spotlights_empty_window,           spotlights_empty_frame         = _build_simple(_spotlights_empty_text)
     _scripts_window,               scripts_frame             = _build_simple(_scripts_text)
@@ -14511,7 +14459,6 @@ def main():
         "options_panes":              options_panes_frame,
         "options_connection":         options_connection_frame,
         "options_connection_custom":  options_connection_custom_frame,
-        "options_coming_soon":        options_coming_soon_frame,
         "options_spotlights":         options_spotlights_frame,
         "spotlights_empty":           spotlights_empty_frame,
         "scripts":                    scripts_frame,

@@ -50,7 +50,7 @@ The UI is a frame stack: a single `DynamicContainer` swaps between `main`,
 `profile_create_copy_picker`, `profile_delete_confirm`, `profile_editor`,
 `profile_editor_macro_keybind`, `options`,
 `options_panes`, `options_connection`,
-`options_connection_custom`, `options_coming_soon`, `scripts`, `about`,
+`options_connection_custom`, `scripts`, `about`,
 `history`, `history_detail`, `history_rate`, `history_delete_confirm`,
 `log_view`, `spotlights_empty`, `credits`, `update_running`,
 and `update_result` containers, pushed and popped via
@@ -66,7 +66,7 @@ no longer a per-pane subframe.
 |---------|--------|
 | Session detect | `tmux has-session -t mume` + `list-clients` re-probed on every render → top item is "Enter MUME", "Resume MUME", or "Mirror MUME (attached elsewhere)" |
 | Profile page | Sortable table of `ttpp/profiles/*.tin` (Name + Selected columns) paired with a centred Options widget — Select, New, Edit, Rename, Delete, Export, Back. See the [Profile sub-menu](#profile-sub-menu) section below. `default` cannot be renamed or deleted. "Create blank" copies from `bridge/launcher/templates/blank_profile.tin` (single source of truth — see ADR 0042). The active profile is written to `startup.conf` and consumed by `ttpp/core/config.tin` at tt++ startup. |
-| Options page | Navigation hub: **Connection**, **Panes**, **Scripts**, **Spotlights**, **Text layout** (placeholder), blank row, **Back**. See the [Options sub-menu](#options-sub-menu) section below for each child frame. All Options changes persist to `bridge/runtime/startup.conf` on Back / ESC. |
+| Options page | Navigation hub: **Connection**, **Panes**, **Scripts**, **Spotlights**, blank row, **Back**. See the [Options sub-menu](#options-sub-menu) section below for each child frame. All Options changes persist to `bridge/runtime/startup.conf` on Back / ESC. |
 | Scripts page | Opened from Options → Scripts. Two-column `[ list \| detail ]` manager of `lua/scripts/<name>.lua`; toggles enabled state via `bridge/runtime/scripts.conf` (deferred write on Back/ESC). See [`options_scripts` frame](#options_scripts-frame) below. |
 | Spotlights | Cross-character reel of deaths, level-ups, pvp-kills, and achievements aggregated from every character's sealed runs. Opens `log_view` in spotlight mode; empty-state frame when nothing has been captured yet. See the [Spotlights sub-menu](#spotlights-sub-menu) section and ADR 0077. |
 | About page | Reads `bridge/launcher/about.txt`; word-wrapped, cached per resize, scrollable. Current version on the right of the title; an "Update available: vX.Y.Z" line appears in `C_ACCENT` when `version.cache` contains a newer tag |
@@ -1221,10 +1221,6 @@ Navigation hub pushed by activating "Options" on the main frame. Children:
   returns to `options`.
 - **Spotlights** → `options_spotlights` — per-kind toggles for the
   Spotlights reel (deaths, level-ups, PvP kills, achievements).
-- **Text layout** → `options_coming_soon` — placeholder for future
-  layout/typography options. The row's inactive label paints in
-  `C_HINT` (dim grey) to signal "not ready yet"; selected / hover
-  states pick up the normal `<< label >>` menu-row grammar.
 
 ESC inside `options` saves any pending edits to `bridge/runtime/startup.conf`
 and pops back to `main`.
@@ -1536,11 +1532,6 @@ call, and `_extract_events()` drops disabled kinds during the JSONL
 walk — before spotlight construction, rotation, and per-character
 grouping. The [`credits` frame](#credits-frame) inherits the filter
 automatically since it consumes the same reel.
-
-### `options_coming_soon` frame
-
-Single-message placeholder pushed by Text layout. Any key (or ESC)
-returns to `options`.
 
 ### Persistence asymmetry vs. the popup
 
@@ -2041,9 +2032,9 @@ spotlight mode via `_enter_log_view_spotlight(playback)`.
 ### `spotlights_empty` frame
 
 Single-message placeholder pushed when the aggregator returns an empty
-reel. Mirrors the layout of `options_coming_soon`: title `─── Spotlights
-───`, centred body text in `C_BODY`, `Any key to return` footer in
-`C_HINT`. Any key (or ESC) pops back to the launcher main menu.
+reel. Title `─── Spotlights ───`, centred body text in `C_BODY`,
+`Any key to return` footer in `C_HINT`. Any key (or ESC) pops back to
+the launcher main menu.
 
 The body has two variants, picked by `_enter_spotlights()` before the
 frame is pushed and stored on `_spotlights_empty_reason`:
@@ -2493,7 +2484,7 @@ All frames render through `prompt_toolkit` controls. Layout building blocks:
   sub-frames, `profile_delete_confirm`,
   `profile_editor_macro_keybind`, `options`,
   `options_panes`, `options_connection`,
-  `options_connection_custom`, `options_coming_soon`, `history_detail`,
+  `options_connection_custom`, `history_detail`,
   `history_rate`, `history_delete_confirm`, `update_running`,
   and `update_result` are wrapped in
   `HSplit([window], align=VerticalAlign.CENTER)` so they stay visually
@@ -2594,7 +2585,7 @@ import prompt_toolkit — the caller appends the fragments into its own
 | `title_block(title, term_cols, blank_above)` | Fragments for `blank_above` blank rows, then `title` centred in `term_cols` styled `C_SECTION`, then one trailing blank row. `title` is passed already decorated (e.g. `"─── Panes ───"`). `blank_above = 2` for the launcher, `1` for the popup. |
 | `title_block_height(blank_above)` | Returns `blank_above + 2` — the visual-row count produced by `title_block`. |
 | `footer_block(footer_text, term_cols, term_rows, content_rows)` | `content_rows` is the row count above the footer (title block + body). Emits `max(0, term_rows - content_rows - 1)` blank rows then `footer_text` centred in `term_cols` styled `C_HINT`, so the footer lands on the final terminal row. When content fills or overflows the terminal the pad clamps to zero — never negative. |
-| `menu_row(label, state, mouse_handler=None, inactive_style=C_ITEM)` | Fragment list for one `<< label >>` selectable menu row: a fixed 3-cell prefix (`<< ` or `   `) + the raw `label` + a fixed 3-cell suffix (` >>` or `   `). Row width is `len(label) + 6` and symmetric, so the arrows hug the label (`<< Enter MUME >>`, never `<< Enter MUME      >>`) and the label never shifts horizontally between states. `state ∈ {"inactive", "hover", "selected"}`: `selected` → arrows in `C_CURSOR_CELL` (gold), label in `C_ACTIVE`; `hover` → blank arrows, label in `C_HOVER`; `inactive` → blank arrows, label in `inactive_style` (default `C_ITEM`; `C_HINT` for the "Text layout" placeholder). Selection wins over hover. The caller is responsible for centring — see the Alignment convention below for the two cases. When `mouse_handler` is given, every fragment carries it as a 3-tuple. |
+| `menu_row(label, state, mouse_handler=None, inactive_style=C_ITEM)` | Fragment list for one `<< label >>` selectable menu row: a fixed 3-cell prefix (`<< ` or `   `) + the raw `label` + a fixed 3-cell suffix (` >>` or `   `). Row width is `len(label) + 6` and symmetric, so the arrows hug the label (`<< Enter MUME >>`, never `<< Enter MUME      >>`) and the label never shifts horizontally between states. `state ∈ {"inactive", "hover", "selected"}`: `selected` → arrows in `C_CURSOR_CELL` (gold), label in `C_ACTIVE`; `hover` → blank arrows, label in `C_HOVER`; `inactive` → blank arrows, label in `inactive_style` (default `C_ITEM`; callers may override to dim a row, e.g. with `C_HINT`). Selection wins over hover. The caller is responsible for centring — see the Alignment convention below for the two cases. When `mouse_handler` is given, every fragment carries it as a 3-tuple. |
 | `button_fragment(label, width, state)` | A single `(style, text)` 2-tuple. `label` is centred in `width` cells (truncated when longer). `state ∈ {"inactive", "hover", "selected_unfocused", "selected_focused", "disabled"}` maps to: `C_BUTTON_INACTIVE` / `C_BUTTON_ACTIVE_UNFOCUSED` (hover deliberately previews the unfocused-selected look) / `C_BUTTON_ACTIVE_UNFOCUSED` / `C_BUTTON_ACTIVE_FOCUSED` / `C_BUTTON_DISABLED`. Used by the Profile / History button columns and the editor's LITE kind-buttons; vertical menu lists use `menu_row` instead. |
 
 `title_block` and `footer_block` both accept an optional `mouse_handler`
@@ -2608,7 +2599,7 @@ Every frame in the launcher's startup-menu surface uses these helpers
 for its title row, footer anchoring, and selectable-row styling —
 `main`, the full Options chain (`options`, `options_panes`,
 `options_connection`, `options_connection_custom`,
-`options_spotlights`, `options_coming_soon`), `scripts`, `about`,
+`options_spotlights`), `scripts`, `about`,
 `spotlights_empty`, and the `update_result` modal dialog. The
 `profile` and `history` chains keep their
 bespoke widget grammars; `log_view` keeps its own `C_LOG_*` palette.
@@ -2658,10 +2649,7 @@ state:
   `( )` / `[X]` / `[ ]`) keep their leading glyph as part of the
   composed label; the glyph shape carries the persistent on /
   active state so colour stays reserved for the transient cursor
-  and hover. The Options frame's "Text layout" placeholder is the
-  one exception — its inactive label paints in dim `C_HINT` to
-  signal "not ready yet"; selected / hover states still pick up
-  the normal menu-row grammar.
+  and hover.
 
 **Alignment convention.** The choice is per-row, not per-frame: a
 row carrying a leading `[ ]` / `( )` glyph that must stack with its

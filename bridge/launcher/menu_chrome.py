@@ -113,9 +113,8 @@ def menu_row(label, state, mouse_handler=None, inactive_style=C_ITEM):
       - `hover`     — three-space prefix / suffix, label in `C_HOVER`
                        (text lightens — the pre-P3 hover behaviour).
       - `inactive`  — three-space prefix / suffix, label in
-                       `inactive_style` (`C_ITEM` by default; `C_HINT`
-                       for placeholder rows such as Options'
-                       "Text layout" entry).
+                       `inactive_style` (`C_ITEM` by default; callers
+                       may override to dim a row, e.g. with `C_HINT`).
 
     `label` is composed by the caller, including any `[ ]` / `( )`
     glyph. To make leading glyphs stack vertically (glyph menus), the
