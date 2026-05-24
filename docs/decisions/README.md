@@ -31,6 +31,7 @@ Active ADRs by area. Click through for context, alternatives, and consequences.
 - [ADR 0022](0022-input-pane-recall-as-selection.md) — Input pane recall as native selection — recall state is modeled as prompt_toolkit whole-buffer selection; Ctrl+C/X/V are clipboard operations.
 - [ADR 0024](0024-input-pane-always-on.md) — Input pane is always-on — the input pane is an integral, always-on component; `cp -i` and `show_input` are removed.
 - [ADR 0025](0025-page-keys-drive-tmux-copy-mode.md) — Page keys drive tmux copy-mode — Page Up/Down drive tmux copy-mode as the canonical game-pane scrollback, mirroring wheel semantics.
+- [ADR 0102](0102-wsl-clipboard-win32yank.md) — Fast WSL clipboard read via win32yank — Ctrl+V on WSL reads via a pinned win32yank binary with a pyperclip fallback; bracketed paste (Ctrl+Shift+V) remains the instant path. (refines 0022)
 
 ### GMCP & game state
 
