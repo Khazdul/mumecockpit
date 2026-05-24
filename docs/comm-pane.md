@@ -631,10 +631,13 @@ column provides.
 | In-game popup → Options           | `toggle_pane.sh comm --persist`                 |
 | Launcher Options → Comm pane      | `_save_conf` → `startup.conf show_comm`         |
 
-Persistence key: `show_comm` in `bridge/runtime/startup.conf`. Fresh-install default
-is `1` (comm pane on). Existing `startup.conf` files that lack `show_comm`
-fall through to the runtime `${show_comm:-0}` guard — existing installs see
-no change.
+Persistence key: `show_comm` in `bridge/runtime/startup.conf`. Fresh-install
+default is `1` (comm pane on), seeded by
+`bridge/launcher/templates/startup.conf` (see ADR 0101). Existing
+`startup.conf` files that lack `show_comm` fall through to the aligned
+`${show_comm:-1}` runtime guard in
+`bridge/launcher/build_initial_layout.sh`, so upgraded installs open the
+comm pane on the next cockpit start.
 
 ---
 Back to [architecture.md](../architecture.md).

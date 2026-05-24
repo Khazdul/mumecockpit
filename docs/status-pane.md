@@ -343,8 +343,11 @@ adaptive and accepts any width (ADR 0023).
 | In-game popup → Options           | `toggle_pane.sh status --persist`               |
 | Launcher Options → Character pane | `_save_conf` → `startup.conf show_status`       |
 
-Persistence key: `show_status` in `bridge/runtime/startup.conf`. Fresh-install default
-is `1` (status pane on).
+Persistence key: `show_status` in `bridge/runtime/startup.conf`. Fresh-install
+default is `1` (status pane on), seeded by
+`bridge/launcher/templates/startup.conf` (see ADR 0101). Upgraded installs
+missing the key fall through to the aligned `${show_status:-1}` runtime guard
+in `bridge/launcher/build_initial_layout.sh`.
 
 ---
 Back to [architecture.md](../architecture.md).

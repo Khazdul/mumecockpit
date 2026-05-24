@@ -228,6 +228,14 @@ contract.
 
 ## startup.conf keys (`bridge/runtime/startup.conf`, gitignored)
 
+The `Default` column below is the value shipped in
+`bridge/launcher/templates/startup.conf` — the single source of truth for
+fresh-install defaults (ADR 0101). `tmux_start.sh` copies the template on
+first run when `bridge/runtime/startup.conf` is absent;
+`bridge/launcher/launcher.py` parses the same template at import time to
+populate its in-memory defaults dict, so the launcher's Options frame and
+the cockpit boot path agree.
+
 | Key                  | Default     | Description                              |
 |----------------------|-------------|------------------------------------------|
 | `connection_mode`    | `mmapper`   | `mmapper` (localhost:4242), `direct` (mume.org:4242, TLS), or `custom` (uses `connection_host`/`connection_port`, plain telnet) |

@@ -252,9 +252,12 @@ restores the shipped default.
 | Launcher Options        | `_save_conf` → `startup.conf show_buffs`         |
 | In-game popup → Options | `toggle_pane.sh buffs --persist`                 |
 
-Persistence key: `show_buffs` in `bridge/runtime/startup.conf`. Fresh-install default
-is `0` (pane closed). Existing installs without the key fall through to the
-`${show_buffs:-0}` runtime guard — no change on upgrade.
+Persistence key: `show_buffs` in `bridge/runtime/startup.conf`. Fresh-install
+default is `1` (pane open), seeded by `bridge/launcher/templates/startup.conf`
+(see ADR 0101). Upgraded installs that pre-date the key fall through to the
+aligned `${show_buffs:-1}` runtime guard in
+`bridge/launcher/build_initial_layout.sh`, so the buffs pane will open on the
+next cockpit start.
 
 ## Pane title and border
 

@@ -26,6 +26,17 @@ No intermediate bash frame — no flash. `tmux_start.sh` also clears any stale
 sentinel at the top of each run so a crash cannot mis-route a subsequent cold
 start.
 
+**Fresh-install seeding.** `bridge/launcher/templates/startup.conf` is the
+shipped single source of truth for fresh-install defaults (ADR 0101). On the
+first run — when `bridge/runtime/startup.conf` does not yet exist —
+`tmux_start.sh` copies the template into place; both the menu path and the
+`--no-menu` / `-d` / `-u` paths funnel through that same seeding step.
+`launcher.py` parses the same template at import time to build
+`_CONF_DEFAULTS`, so the launcher's Options frame and the cockpit boot path
+read identical defaults. The `${show_*:-N}` fallback guards in
+`bridge/launcher/build_initial_layout.sh` remain only as the upgrade safety
+net for installs that pre-date a given key.
+
 ## Startup menu (`bridge/launcher/launcher.py`)
 
 A `prompt_toolkit` full-screen `Application` rendered in the terminal before

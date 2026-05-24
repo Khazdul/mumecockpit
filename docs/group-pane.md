@@ -199,11 +199,13 @@ are on (`cp -h`).
 ## Persistence key
 
 `show_group` in `bridge/runtime/startup.conf`. Fresh-install default is `1`
-(pane open). Existing installs without the key fall through to the
+(pane open), seeded by `bridge/launcher/templates/startup.conf` (see
+ADR 0101). Existing installs without the key fall through to the
 `${show_group:-1}` runtime guard, so older `startup.conf` files that pre-date
-this key will open the pane on next start. The uniformity is intentional —
-group is a baseline situational-awareness pane and the no-surprise-pane
-principle (see [comm-pane.md](comm-pane.md)) is deliberately waived here.
+this key will open the pane on the next cockpit start. This is no longer a
+per-pane exception: as of ADR 0101 every right-column pane defaults on
+except the developer pane, so the no-surprise-on-upgrade waiver is now
+applied uniformly.
 
 ---
 Back to [architecture.md](../architecture.md).
