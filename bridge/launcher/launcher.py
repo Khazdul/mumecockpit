@@ -95,6 +95,7 @@ PROFILES_DIR       = os.path.join(PROJECT_DIR, "ttpp", "profiles")
 QUOTES_PATH        = os.path.join(SCRIPT_DIR, "quotes.txt")
 ABOUT_PATH         = os.path.join(SCRIPT_DIR, "about.txt")
 TEMPLATE_BLANK     = os.path.join(SCRIPT_DIR, "templates", "blank_profile.tin")
+STARTUP_CONF_TEMPLATE = os.path.join(SCRIPT_DIR, "templates", "startup.conf")
 UPDATE_SH          = os.path.join(BRIDGE_DIR, "release", "update.sh")
 VERSION_CHECK_SH   = os.path.join(BRIDGE_DIR, "services", "version_check.sh")
 PING_MONITOR_SH    = os.path.join(BRIDGE_DIR, "services", "ping_monitor.sh")
@@ -126,7 +127,12 @@ _CONNECTION_MODES = [
     ("custom",  "Custom",  None),   # detail filled in at render time from conf
 ]
 
-_CONF_DEFAULTS = {
+# Fresh-install defaults are sourced from the shipped
+# templates/startup.conf — single source of truth for both the launcher
+# and tmux_start.sh's first-run seeding (ADR 0101). The hardcoded dict
+# below is only a defensive backstop used if the template file is
+# missing at import time, so the launcher can still start.
+_CONF_DEFAULTS_FALLBACK = {
     "connection_mode":    "mmapper",
     "connection_host":    "localhost",
     "connection_port":    "4242",
@@ -150,6 +156,29 @@ _CONF_DEFAULTS = {
     "spotlights_show_achievements": "1",
     "terminal_bg_fallback":         "#000000",
 }
+
+
+def _load_startup_conf_defaults():
+    # Parse the shipped template via the same _parse_conf used at
+    # runtime. Defined inline so the load runs at module import; the
+    # fallback dict above covers the (should-not-happen) missing-template case.
+    out = {}
+    try:
+        with open(STARTUP_CONF_TEMPLATE) as fh:
+            for line in fh:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                k, _, v = line.partition("=")
+                k = k.strip()
+                if k:
+                    out[k] = v.strip()
+    except OSError:
+        pass
+    return out or dict(_CONF_DEFAULTS_FALLBACK)
+
+
+_CONF_DEFAULTS = _load_startup_conf_defaults()
 
 # ---------------------------------------------------------------------------
 # Mutable application state
