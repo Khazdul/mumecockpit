@@ -115,12 +115,22 @@ Handler steps:
    re-arming on every landing is idempotent.
 5. **Emit `blinds_changed`**.
 
-## Failure-pattern queue cleanup
+## FIFO-pop triggers
+
+Three independent paths pop the front of the FIFO. All three are guarded
+on `#_pending_blinds > 0` — a pop on an empty FIFO is a silent no-op,
+because the trigger may belong to a different spell.
+
+### 1. Success line
+
+Pop happens inside `_blinds_on_blinded` alongside the bar insertion (see
+[Layer 1](#layer-1--landed-blindness-handler)). The popped prefix becomes
+the bar's name.
+
+### 2. Failure lines
 
 One `#action` per known cast-failure line. Each fires as a signal (no
-captures) and pops the front of the FIFO **only when the FIFO is
-non-empty** — an empty FIFO is left alone, since the failure may belong to
-a different spell.
+captures) and pops the front of the FIFO.
 
 | Pattern (anchored) | Cause |
 |---|---|
@@ -135,10 +145,27 @@ a different spell.
 | `^You are too afraid.$` | fear effect |
 | `^Your victim is already blind.$` | target already blind |
 
-Empty input also pops the queue indirectly: an empty `RECEIVED INPUT` is
-the MUME cast-abort gesture. Blinds piggybacks on the same SENT-OUTPUT
-discipline as stored-spells; if a typed cast never produces any of the
-above lines, the 10 s idle-flush `#delay` clears it.
+### 3. Empty input (cast cancel)
+
+Pressing Enter on an empty line tells MUME to abort the current cast;
+the next queued cast (if any) proceeds. The blinds module subscribes to
+the `user_input_empty` event bus topic — emitted by `brain.lua` from the
+`RECEIVED INPUT` registration in `ttpp/core/input_ipc.tin` — and pops the
+FIFO front. **The 10 s idle-flush `#delay` is not re-armed**: a cancel
+is not a cast, and re-arming would extend the flush window for the
+remaining queued attempts.
+
+Accepted narrow desync: if the player has a non-blind cast in flight
+with blinds queued behind it and then aborts, a blind prefix is popped
+instead of the in-flight cast's owner. Low-stakes — Layer 1 still draws
+the bar regardless, just possibly without (or with the wrong) numeric
+prefix.
+
+### Idle flush
+
+If a typed cast never produces any of the above signals, the 10 s
+idle-flush `#delay` clears the entire FIFO so a stuck prefix cannot
+indefinitely mis-label a later landing.
 
 ## Periodic tick
 

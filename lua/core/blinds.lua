@@ -105,6 +105,17 @@ events.subscribe("user_input", function(raw)
     dbg("[BLINDS] cast queued: " .. tostring(num))
 end)
 
+-- MUME treats Enter on an empty line as a cast-abort; pop one queued prefix
+-- so a cancelled blind cannot mis-label the next successful one. Guarded:
+-- empty FIFO is a silent no-op (same shape as the failure-line pop). Does
+-- NOT re-arm the idle flush — a cancel is not a cast.
+events.subscribe("user_input_empty", function()
+    if #_pending_blinds > 0 then
+        local popped = table.remove(_pending_blinds, 1)
+        dbg("[BLINDS] cast cancelled, popped: " .. tostring(popped))
+    end
+end)
+
 -- ---------------------------------------------------------------------------
 -- Layer 1 — landed-blindness action handler (called from tt++ #action)
 -- ---------------------------------------------------------------------------
