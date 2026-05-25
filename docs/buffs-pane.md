@@ -33,8 +33,9 @@ JSON object with two arrays:
 ```json
 {
   "affects": [
-    {"name": "armour", "type": "spell",  "expires_at": 1714001800, "expected_duration": 1800},
-    {"name": "hunger", "type": null,     "expires_at": null,       "expected_duration": null}
+    {"name": "armour",  "type": "spell",  "expires_at": 1714001800, "expected_duration": 1800, "tracked": true},
+    {"name": "hunger",  "type": null,     "expires_at": null,       "expected_duration": null, "tracked": true},
+    {"name": "bless",   "type": "spell",  "expires_at": null,       "expected_duration": null, "tracked": false}
   ],
   "stored_spells": [
     {"name": "earthquake", "expires_at": 1714005400, "expected_duration": 5400, "tracked": true},
@@ -47,6 +48,12 @@ JSON object with two arrays:
 (no `duration` field in the data table) and for untracked stored spells
 (post magic-blast). `type` mirrors the data-table value and may also be
 `null` if absent from the data table.
+
+The `tracked` field on an affect is `false` only for reconciliation-added
+timed-capable entries that have no observed init/refresh yet (see
+[`docs/affects.md`](affects.md#untracked-entries-stat--info-reconcile));
+every other entry — normal timed, indefinite, reconciled-indefinite —
+serializes `true`.
 
 **Legacy fallback:** if the loaded value is a bare JSON array (pre-migration
 state file), the renderer treats it as `{ "affects": loaded, "stored_spells": [] }`
@@ -117,6 +124,24 @@ populated cell's separator.
 ¹ See "Untracked stored cells" below.
 
 Overflow indicator style: `fg:#d4a04e italic`.
+
+### Untracked affect cells
+
+An affect entry with `tracked == false` (reconciled from `stat`/`info` but
+never seen via a real init/refresh string) renders as:
+
+- **Bar fill:** none — no filled cell at all.
+- **Name FG:** `#3a3a3a` (darker than the depleted-name grey, so it is
+  clearly distinguishable from a tracked timed affect whose bar has
+  drained).
+- **Separator:** unstyled space (same as the depleted-cell separator).
+- **Blink:** never.
+
+`expires_at` and `expected_duration` are both `null` for these entries and
+are ignored by the renderer; the `tracked` field is the sole gate. The
+cell graduates to the normal tracked rendering as soon as `affect_init` or
+`affect_refresh` fires for the same affect (handled in
+[`lua/core/affects.lua`](../lua/core/affects.lua)).
 
 ### Untracked stored cells
 

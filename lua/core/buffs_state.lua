@@ -17,6 +17,10 @@ local function serialize()
             type              = e.type or json.null,
             expires_at        = e.expires_at or json.null,
             expected_duration = e.expected_duration or json.null,
+            -- false only for reconciliation-added timed-capable entries
+            -- that have no observed init/refresh yet; every other entry
+            -- (normal timed, indefinite, reconciled-indefinite) is tracked.
+            tracked           = (e.tracked ~= false),
         }
     end
 

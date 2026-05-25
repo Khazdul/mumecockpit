@@ -58,6 +58,11 @@ C_STORED_UNTRACKED_FG    = "fg:#cccccc"
 C_CELL_FG       = "fg:#000000"
 C_INDICATOR     = "fg:#d4a04e italic"
 C_NAME_DEPLETED = "fg:#666666"
+# Untracked affect cells (reconciled from stat/info, no observed timing yet):
+# render with no bar fill and a darker grey than the depleted-name grey, so
+# they read as "present but unknown duration" without looking like the
+# untracked-stored grey bar.
+C_NAME_UNTRACKED_AFFECT = "fg:#3a3a3a"
 
 # Each palette tuple: (filled_cell_style, filled_sep_style)
 _PALETTES = {
@@ -178,6 +183,15 @@ def _untracked_cell_frags(entry, cell_w):
     return frags
 
 
+def _untracked_affect_cell_frags(entry, cell_w):
+    """No bar, darker-grey name, no blink — see C_NAME_UNTRACKED_AFFECT."""
+    name  = entry.get("name", "")
+    label = name.upper()[:cell_w - 1].ljust(cell_w - 1)
+    frags = [(C_NAME_UNTRACKED_AFFECT, ch) for ch in label]
+    frags.append(("", " "))
+    return frags
+
+
 def _build_all_rows():
     """Return every grid row as a list of fragment-lists (one per row)."""
     spells, buffs, debuffs, stored = _split_groups()
@@ -199,7 +213,11 @@ def _build_all_rows():
                 idx = row * 4 + col
                 if idx >= n:
                     break
-                row_frags.extend(_cell_frags(group[idx], widths[col], palette))
+                entry = group[idx]
+                if entry.get("tracked") is False:
+                    row_frags.extend(_untracked_affect_cell_frags(entry, widths[col]))
+                else:
+                    row_frags.extend(_cell_frags(entry, widths[col], palette))
             all_rows.append(row_frags)
 
     if stored:
