@@ -80,8 +80,10 @@ function _blinds_tick()
     local pruned = false
     for i = #t, 1, -1 do
         if t[i].expires_at and t[i].expires_at <= now then
+            local dropped = t[i].name
             table.remove(t, i)
             pruned = true
+            char_ui("blind", dropped, "down")
         end
     end
     if #t > 0 then
@@ -136,6 +138,7 @@ function _blinds_on_blinded(raw_name)
     session_cmd("#delay {blinds_tick} {#lua {_blinds_tick()}} {2}")
     dbg("[BLINDS] landed: " .. entry.name)
     events.emit("blinds_changed")
+    char_ui("blind", entry.name, "up")
 end
 
 -- ---------------------------------------------------------------------------

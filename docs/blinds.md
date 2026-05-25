@@ -202,5 +202,33 @@ group after Stored, using the standard timed-affect cell renderer
 [docs/buffs-pane.md](buffs-pane.md#per-group-palette) for the cell
 appearance and the palette entry.
 
+## UI-pane announcements
+
+Two `char_ui("blind", name, verb)` lines surface to the UI pane via the
+standard `◆`-family character-state helper (see
+[docs/ui-messaging.md](ui-messaging.md#character-events)):
+
+- **Landing** — `_blinds_on_blinded` emits `char_ui("blind", name, "up")`
+  after the entry is appended and `blinds_changed` is emitted. `name` is
+  the full entry name including any numeric prefix (e.g. `2.orc`).
+- **Tick prune at 90 s** — `_blinds_tick` emits
+  `char_ui("blind", name, "down")` for each entry removed at expiry,
+  using the entry's name (snapshotted before `table.remove`).
+
+Renders as:
+
+```
+◆ BLIND: 2.orc up.
+◆ BLIND: 2.orc down.
+```
+
+The `BLIND` tag renders in the same cyan (`#00CCCC`) as the buffs-pane
+Blinds group, so the UI-pane line and the pane bar read as one surface.
+
+No UI line is emitted on:
+- a failed cast (failure-line FIFO pop is silent);
+- an empty-input cancel (`user_input_empty` FIFO pop is silent);
+- disconnect (the state wipe via `char_reset` is silent).
+
 ---
 Back to [architecture.md](../architecture.md).

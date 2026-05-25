@@ -118,6 +118,8 @@ char_ui("store",  "fireball",    "stored")
 char_ui("store",  "fireball",    "recalled")
 char_ui("store",  "earthquake",  "decayed", "89:58 — sample recorded")
 char_ui("store",  "fireball",    "decayed", "untracked")
+char_ui("blind",  "2.orc",       "up")
+char_ui("blind",  "2.orc",       "down")
 ```
 
 Renders in the UI pane as:
@@ -130,6 +132,8 @@ Renders in the UI pane as:
 ◆ STORE: fireball recalled.
 ◆ STORE: earthquake decayed (89:58 — sample recorded).
 ◆ STORE: fireball decayed (untracked).
+◆ BLIND: 2.orc up.
+◆ BLIND: 2.orc down.
 ```
 
 ### Signature
@@ -153,6 +157,7 @@ Prose form: `◆ TAG: name verb.` or `◆ TAG: name verb (detail).` Trailing per
 | `buff`      | `BUFF`   | Soft sage green  | `#8FBC8F` |                                          |
 | `debuff`    | `DEBUFF` | Muted brick red  | `#C97070` |                                          |
 | `store`     | `STORE`  | Muted lavender   | `#B39DDB` |                                          |
+| `blind`     | `BLIND`  | Cyan             | `#00CCCC` | Matches the buffs-pane Blinds group      |
 | `herb`      | —        | TBD              | —         | Reserved; colour set when tracker lands  |
 | `charm`     | —        | TBD              | —         | Reserved; colour set when tracker lands  |
 | *(unknown)* | `AFFECT` | Teal             | `#26C6DA` | Defensive fallback                       |
@@ -161,10 +166,10 @@ Prose form: `◆ TAG: name verb.` or `◆ TAG: name verb (detail).` Trailing per
 
 | Verb        | Meaning                                  | Emitters                  |
 |-------------|------------------------------------------|---------------------------|
-| `up`        | Effect became active                     | affects (init)            |
+| `up`        | Effect became active                     | affects (init), blinds (landing) |
 | `refreshed` | Effect re-applied while already active   | affects (refresh)         |
 | `expiring`  | Effect about to drop (**reserved**)      | *(none yet)*              |
-| `down`      | Effect dropped                           | affects (drop)            |
+| `down`      | Effect dropped                           | affects (drop), blinds (tick prune at 90 s) |
 | `stored`    | Spell stored to memory                   | stored\_spells            |
 | `recalled`  | Stored spell recalled                    | stored\_spells            |
 | `decayed`   | Stored spell decayed naturally           | stored\_spells            |
@@ -287,6 +292,7 @@ are known without guessing.
 | `_C_BUFF`   | `"\027[38;2;143;188;143m"`          | Soft sage green `#8FBC8F` — `◆ BUFF` prefix |
 | `_C_DEBUFF` | `"\027[38;2;201;112;112m"`          | Muted brick red `#C97070` — `◆ DEBUFF` prefix |
 | `_C_STORE`  | `"\027[38;2;179;157;219m"`          | Muted lavender `#B39DDB` — `◆ STORE` prefix |
+| `_C_BLIND`  | `"\027[38;2;0;204;204m"`            | Cyan `#00CCCC` — `◆ BLIND` prefix (matches buffs-pane Blinds group) |
 | `_C_VAR`    | `"\027[1;38;2;255;238;88m"`         | Bold yellow `#FFEE58` — dynamic values |
 | `_C_TEXT`   | `"\027[1;97m"`                      | Bold bright white — base message text |
 | `_C_RESET`  | `"\027[0m"`                         | Reset all attributes                  |
