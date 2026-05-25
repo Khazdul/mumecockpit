@@ -241,6 +241,51 @@ Direct `cast 'X'` commands hit both paths in quick succession (SENT OUTPUT
 fires first, then the game echoes). The second write is idempotent — both
 resolve to the same full name.
 
+## Stat / info reconcile
+
+When the player types `stat` or `info`, MUME's "Affected by:" (or "You are
+subjected to the following temporary effects:") block lists stored spells
+interleaved with affects, one per line as `- stored spell <name>`.
+Duplicates appear literally — two stored earthquakes produce two
+`- stored spell earthquake` lines. Classification is by the literal
+`stored spell ` prefix, never by name: a block containing both
+`- armour` and `- stored spell armour` produces an affect entry and a
+stored-spell entry, reconciled on independent paths.
+
+[`lua/core/stat_reconcile.lua`](../lua/core/stat_reconcile.lua) splits each
+captured `- <text>` line on the prefix and emits two events at block
+terminate: `affects_observed` (for the rest) and `stored_spells_observed`
+(for prefix-matching lines, prefix stripped). Either list may be empty.
+See [docs/events.md](events.md#stored_spells_observed) for the event
+contract.
+
+The `stored_spells_observed` subscriber in `stored_spells.lua` runs a
+per-name multiset diff:
+
+- **Build `want`** — count occurrences per name in the observed payload,
+  skipping any name not in `spells_data.spells` (silent `dbg` line
+  `[STORED_SPELLS] reconcile: unknown spell <name>`).
+- **Build `have`** — count occurrences per name in `state.char.stored_spells`.
+- **For each name in the union**:
+  - `want > have` → ADD `(want - have)` untracked entries — same shape as
+    magic-blast-produced entries (`tracked = false`, no `started_at`, no
+    `expected_duration`, no `expires_at`).
+  - `have > want` → REMOVE `(have - want)` entries of that name. Removal
+    priority: untracked entries first; then tracked entries by oldest
+    `started_at` first. This preserves the running timers of tracked
+    entries that the block confirms.
+  - `want == have` → leave untouched.
+
+Removals are silent: no `char_ui` "decayed" line and no duration sample is
+recorded in `stored_spells_learned.json` (a reconcile removal is not a
+natural decay). If anything changed, `stored_spells_changed` is emitted and
+`stored_spells_active.json` is rewritten via the same `_save_active()`
+helper used by the store handlers.
+
+Tracked entries the block confirms keep their existing `expires_at`, so
+the buffs-pane countdown is uninterrupted. Newly-added entries render with
+the existing full-grey-bar untracked styling — no renderer change.
+
 ## Persistence
 
 ### Times file

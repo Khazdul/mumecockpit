@@ -344,9 +344,10 @@ end)
 -- Stat / info reconcile (driven by lua/core/stat_reconcile.lua)
 -- ---------------------------------------------------------------------------
 -- Iterates affects_data.affects (the known universe) so unknown names in the
--- observed payload — stored spells, future MUME additions — are skipped.
--- Additions and silent removals are computed against the data table, not the
--- payload.
+-- observed payload — future MUME additions — are skipped. Stored spells are
+-- already split off into the stored_spells_observed event by stat_reconcile
+-- and never reach this payload. Additions and silent removals are computed
+-- against the data table, not the payload.
 --
 -- The prune rule is uniform: any active entry absent from the observed block
 -- is dropped, INCLUDING indefinite affects (hunger, thirst, comfortable,

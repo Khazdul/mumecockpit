@@ -376,6 +376,85 @@ events.subscribe("store_decayed", function()
     events.emit("stored_spells_changed")
 end)
 
+-- ---------------------------------------------------------------------------
+-- Stat / info reconcile (driven by lua/core/stat_reconcile.lua)
+-- ---------------------------------------------------------------------------
+-- Per-name multiset diff against the observed stored-spell list. Names absent
+-- from spells_data.spells are skipped silently. Removals prefer untracked
+-- entries first, then tracked entries by oldest started_at; no char_ui line
+-- and no duration sample are recorded for reconcile removals (reconcile is
+-- not a natural decay).
+
+events.subscribe("stored_spells_observed", function(observed)
+    local want = {}
+    for _, n in ipairs(observed or {}) do
+        if spells_data.spells[n] then
+            want[n] = (want[n] or 0) + 1
+        else
+            dbg("[STORED_SPELLS] reconcile: unknown spell '" .. n .. "'")
+        end
+    end
+
+    local have = {}
+    for _, e in ipairs(state.char.stored_spells) do
+        have[e.name] = (have[e.name] or 0) + 1
+    end
+
+    local names = {}
+    for n in pairs(want) do names[n] = true end
+    for n in pairs(have) do names[n] = true end
+
+    local changed = false
+    for name in pairs(names) do
+        local w = want[name] or 0
+        local h = have[name] or 0
+        if w > h then
+            for _ = 1, w - h do
+                state.char.stored_spells[#state.char.stored_spells + 1] = {
+                    name    = name,
+                    tracked = false,
+                }
+            end
+            changed = true
+            dbg("[STORED_SPELLS] reconcile add: " .. name .. " x" .. (w - h))
+        elseif h > w then
+            local to_remove = h - w
+            local untracked_indices = {}
+            local tracked_indices   = {}
+            for i, e in ipairs(state.char.stored_spells) do
+                if e.name == name then
+                    if e.tracked == false then
+                        untracked_indices[#untracked_indices + 1] = i
+                    else
+                        tracked_indices[#tracked_indices + 1] = i
+                    end
+                end
+            end
+            table.sort(tracked_indices, function(a, b)
+                return state.char.stored_spells[a].started_at < state.char.stored_spells[b].started_at
+            end)
+            local kill = {}
+            for _, i in ipairs(untracked_indices) do
+                if #kill < to_remove then kill[#kill + 1] = i end
+            end
+            for _, i in ipairs(tracked_indices) do
+                if #kill < to_remove then kill[#kill + 1] = i end
+            end
+            table.sort(kill, function(a, b) return a > b end)
+            for _, i in ipairs(kill) do
+                table.remove(state.char.stored_spells, i)
+            end
+            changed = true
+            dbg("[STORED_SPELLS] reconcile remove: " .. name .. " x" .. to_remove)
+        end
+    end
+
+    if changed then
+        _save_active()
+        events.emit("stored_spells_changed")
+    end
+end)
+
 events.subscribe("stored_spells_untracked", function()
     if #state.char.stored_spells == 0 then return end
     local count = #state.char.stored_spells

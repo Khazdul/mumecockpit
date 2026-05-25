@@ -66,9 +66,11 @@ When the player types `stat` or `info`, MUME prints an "Affected by:" (or
 per line as `- <name>`, terminated by the first line that does not start
 with `- ` (in practice the prompt or any other received line).
 [`lua/core/stat_reconcile.lua`](../lua/core/stat_reconcile.lua) parses the
-block and emits `affects_observed` with the collected name list; the
-`affects.lua` subscriber iterates `affects_data.affects` (the known universe
-— unknown names in the payload, including stored spells, are skipped) and:
+block and emits `affects_observed` with the collected name list (stored
+spells are split off by the `stored spell ` prefix into a parallel
+`stored_spells_observed` event — see [docs/stored-spells.md](stored-spells.md#stat--info-reconcile)).
+The `affects.lua` subscriber iterates `affects_data.affects` (the known
+universe — unknown names in the payload are skipped) and:
 
 - **observed AND not currently active** → ADD an entry. Timed-capable
   (data has `duration`): `{name, type, tracked = false}` — no `started_at`,

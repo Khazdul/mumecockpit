@@ -75,7 +75,8 @@ event flow. Same pattern as `gmcp.trace`.
 | `affect_refresh` | affect name string | `ttpp/core/affects.tin` `#action` |
 | `affect_down` | affect name string | `ttpp/core/affects.tin` `#action` |
 | `affects_changed` | (none) | `lua/core/affects.lua` — emitted on every state mutation and every tick |
-| `affects_observed` | array of name strings | `lua/core/stat_reconcile.lua` — emitted after parsing the `Affected by:` / `You are subjected to the following temporary effects:` block in `stat`/`info` output |
+| `affects_observed` | array of name strings | `lua/core/stat_reconcile.lua` — emitted after parsing the `Affected by:` / `You are subjected to the following temporary effects:` block in `stat`/`info` output (stored-spell lines split off into `stored_spells_observed`) |
+| `stored_spells_observed` | array of name strings | `lua/core/stat_reconcile.lua` — emitted alongside `affects_observed` with the names of `- stored spell <name>` lines from the same block (prefix stripped, duplicates preserved) |
 | `wimpy_changed` | numeric string (`"0"`..`"N"`) | `ttpp/core/mud_events.tin` |
 | `user_input` | raw sent-line string | `lua/brain.lua` `handlers["USER_INPUT"]` |
 | `user_input_empty` | (none) | RECEIVED INPUT with empty `%0` in GAME_SESSION; `lua/brain.lua` `handlers["EMPTY_INPUT"]` |
@@ -302,7 +303,9 @@ Emitted by `lua/core/stat_reconcile.lua` after the player runs `stat` or
 `info` and MUME prints the active-affects block. Payload is an array of
 affect-name strings (raw, lowercase, exactly as MUME prints them after the
 leading `- `). The list may be empty (block contained only the header and
-terminator).
+terminator). Lines starting with the literal prefix `stored spell ` are
+split off into the parallel `stored_spells_observed` event and do not
+appear in this payload.
 
 Sources caught by the two permanent header `#action` triggers (priority 3):
 
@@ -314,16 +317,44 @@ Sources caught by the two permanent header `#action` triggers (priority 3):
 Each header trigger arms a dynamic catch-all `^%1$` inline (synchronously
 inside the outer body, see ADR 0050) which forwards every received line to
 the brain via the `STAT_LINE:<raw>` structured-event path. The handler
-collects names matching `^- (.+)$` into a buffer; on the first line that
-does not start with `- ` it emits `affects_observed`, calls
-`session_cmd("#unaction {^%1$}")`, and clears the buffer. Re-echoes of
+classifies each `^- (.+)$` capture by the `stored spell ` prefix: matching
+captures go to the stored-spell buffer (prefix stripped), the rest to the
+affect buffer. On the first line that does not start with `- ` the handler
+emits `affects_observed` followed by `stored_spells_observed`, calls
+`session_cmd("#unaction {^%1$}")`, and clears both buffers. Re-echoes of
 either header line are skipped explicitly.
 
 **Subscribers:** `lua/core/affects.lua` — reconciles `state.char.affects`
 against the observed list (iterates `affects_data.affects`, the known
-universe; unknown names — stored spells, future additions — are skipped).
-Adds untracked entries for newly-observed timed-capable affects, removes
+universe; unknown names — future MUME additions — are skipped). Adds
+untracked entries for newly-observed timed-capable affects, removes
 silently for active-but-unobserved entries, leaves everything else alone.
+
+### `stored_spells_observed`
+
+Emitted by `lua/core/stat_reconcile.lua` immediately after `affects_observed`,
+carrying the names of `- stored spell <name>` lines from the same block
+(literal `stored spell ` prefix stripped, duplicates preserved as multiple
+array entries — two stored earthquakes produce two `"earthquake"` entries).
+The list may be empty.
+
+Classification is by the prefix only, never by name: a block containing
+both `- armour` and `- stored spell armour` produces one affect entry for
+`armour` (via `affects_observed`) and one stored-spell entry for `armour`
+(via this event), reconciled independently.
+
+**Subscribers:** `lua/core/stored_spells.lua` — runs a per-name multiset
+diff against `state.char.stored_spells`. Names absent from
+`spells_data.spells` are skipped silently with a `dbg` line. For each name
+in the union of want and have: `want > have` adds `(want - have)`
+untracked entries (same shape as magic-blast-produced entries: `tracked =
+false`, no `started_at` / `expires_at`); `have > want` removes
+`(have - want)` entries, preferring untracked first and then tracked by
+oldest `started_at`. Equal counts leave entries untouched, so tracked
+timers keep running. Removals are silent — no `char_ui` line and no
+duration sample is recorded (a reconcile removal is not a natural decay).
+Emits `stored_spells_changed` and writes the active-list file only if
+something changed.
 
 ### `wimpy_changed`
 
