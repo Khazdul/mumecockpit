@@ -8,6 +8,15 @@ the game pane, an input pane, and up to six side panes into one window.
 
 <!-- HERO IMAGE: full cockpit, multiple right-column panes visible.
      Add as: <p align="center"><img src="..." alt="..." width="..."></p> -->
+<img width="3840" height="2160" alt="startup-screen" src="https://github.com/user-attachments/assets/6d7de098-c57f-49a1-ab87-42ebfe0cb625" />
+<img width="3840" height="2160" alt="play-screen" src="https://github.com/user-attachments/assets/61ee9b6b-1f5c-4092-b9d5-2e33008bf0b3" />
+<img width="3840" height="2160" alt="statistics" src="https://github.com/user-attachments/assets/c80e61e9-43d2-4f7d-94e8-104d3e8a5152" />
+<img width="3840" height="2152" alt="panes" src="https://github.com/user-attachments/assets/cda195bd-1bf9-4d3e-9ba0-6c52bf65ce68" />
+<img width="3837" height="2160" alt="history-screen" src="https://github.com/user-attachments/assets/14f022da-acfc-4a15-ba6d-cc744232ba87" />
+<img width="3840" height="2160" alt="LITE-editor" src="https://github.com/user-attachments/assets/e7bdf87d-ae88-4954-92e4-8a0a51ae732e" />
+<img width="3840" height="2160" alt="editor-screen" src="https://github.com/user-attachments/assets/605caf8a-0640-4995-9524-9afab5ada85b" />
+<img width="3840" height="2160" alt="scripts-screen" src="https://github.com/user-attachments/assets/2b4a5606-7e24-4886-8a11-1621e39fa1fb" />
+<img width="3840" height="2160" alt="log-player" src="https://github.com/user-attachments/assets/b9349f20-f085-45c9-82ed-fbf38e2dc68f" />
 
 ## Install
 
