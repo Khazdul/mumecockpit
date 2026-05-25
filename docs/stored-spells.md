@@ -49,6 +49,8 @@ User presses Enter on empty line
   ▼
 GAME_SESSION #event {RECEIVED INPUT} — fires only on actual user keystrokes
   — empty payload only: #if {"%0" == ""}
+  — registered by _register_input_ipc_actions in ttpp/core/input_ipc.tin
+    (cross-cutting input-IPC infrastructure, not owned by stored_spells)
   │
   ▼ #lua {EMPTY_INPUT}
   │
@@ -204,10 +206,12 @@ If the resolved spell is `"store"`, the tail is parsed as the target and
 
 An empty line sent to MUME (just Enter) tells MUME to abort the current
 cast-in-progress. The event `#event {RECEIVED INPUT} {#if {"%0" == ""} {#lua
-{EMPTY_INPUT}}}` is registered in GAME_SESSION by `_register_stored_spells_actions()`.
-Unlike `SENT OUTPUT`, `RECEIVED INPUT` fires only on actual user keystrokes, so
-an empty `%0` here is unambiguous. The `user_input_empty` subscriber funnels
-into `store_attempt_failed`, popping the front of `_pending_attempts`.
+{EMPTY_INPUT}}}` is registered in GAME_SESSION by
+`_register_input_ipc_actions` in `ttpp/core/input_ipc.tin` — cross-cutting
+input-IPC infrastructure, not a stored-spells concern. Unlike `SENT OUTPUT`,
+`RECEIVED INPUT` fires only on actual user keystrokes, so an empty `%0` here
+is unambiguous. The `user_input_empty` subscriber in `stored_spells.lua`
+funnels into `store_attempt_failed`, popping the front of `_pending_attempts`.
 
 ### Path 3 — MUME server echo
 
@@ -351,7 +355,6 @@ CONNECTED` in `ttpp/core/system.tin` (immediately after
 
 On each invocation the function registers via `session_cmd()`:
 
-- **`RECEIVED INPUT` event** — path 2 abort detector; empty payload only.
 - **Twelve failure-pattern `#action` triggers** (priority 3) — each emits
   `store_attempt_failed`.
 - **`store_succeeded`, `store_decayed`, `store_recalled` `#action` triggers** —
@@ -359,6 +362,11 @@ On each invocation the function registers via `session_cmd()`:
 - **`stored_spells_untracked` `#action` triggers** — two patterns (self-cast and
   third-party magic blast).
 - **Two MUME-echo `#action` triggers** — path 3; emit `user_cast`.
+
+The path 2 `RECEIVED INPUT` event is **not** registered here. It is owned
+by `_register_input_ipc_actions` in `ttpp/core/input_ipc.tin` (cross-cutting
+input-IPC infrastructure), and `stored_spells.lua` only subscribes to the
+resulting `user_input_empty` event bus topic.
 
 The `SENT OUTPUT` snooper that drives path 1 is **not** registered here.
 It lives in the canonical `#event {SENT OUTPUT}` handler owned by

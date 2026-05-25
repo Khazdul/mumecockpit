@@ -1,0 +1,26 @@
+#nop ===== INPUT IPC =====
+#nop Cross-cutting input-IPC infrastructure: dispatches structured events
+#nop derived from raw player input.
+#nop
+#nop RECEIVED INPUT — fires on actual user keystrokes only (unlike
+#nop SENT OUTPUT, which also fires on tt++ IAC/GMCP flushes). An empty
+#nop %0 means the player pressed Enter on an empty line, which MUME
+#nop interprets as a cast-abort gesture. We dispatch that as EMPTY_INPUT
+#nop on the Lua brain's structured-event channel; brain.lua bridges it
+#nop to the `user_input_empty` event bus.
+#nop
+#nop SENT OUTPUT → USER_INPUT lives in run_log.tin's
+#nop _register_run_log_capture (canonical SENT OUTPUT handler, gated
+#nop alongside the run-log file capture). This file is its inbound
+#nop sibling.
+#nop
+#nop Registration is bracketed in {core} so it does not bleed into the
+#nop profile auto-save (per ADR 0049).
+
+#alias {_register_input_ipc_actions %1} {
+    #if {"%1" != ""} {
+        #%1 #class {core} {open};
+        #%1 #event {RECEIVED INPUT} {#if {"%%0" == ""} {#lua {EMPTY_INPUT}}};
+        #%1 #class {core} {close}
+    }
+}

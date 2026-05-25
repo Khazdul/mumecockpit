@@ -488,11 +488,10 @@ end)
 
 function _register_stored_spells_actions()
 
-    -- Empty-input abort detection. RECEIVED INPUT fires only on actual
-    -- user input (unlike SENT OUTPUT, which also fires on tt++ IAC/GMCP
-    -- flushes), so an empty %0 here is unambiguously "user pressed Enter
-    -- on an empty line" — which MUME interprets as a cast abort.
-    session_cmd([[#event {RECEIVED INPUT} {#if {"%0" == ""} {#lua {EMPTY_INPUT}}}]])
+    -- Empty-input abort detection (RECEIVED INPUT → EMPTY_INPUT →
+    -- user_input_empty) is registered by _register_input_ipc_actions in
+    -- ttpp/core/input_ipc.tin — cross-cutting infrastructure, not a
+    -- stored-spells concern. This module just subscribes to the event.
 
     local failure_patterns = {
         "^Alas, not enough mana flows through you...$",

@@ -79,7 +79,7 @@ event flow. Same pattern as `gmcp.trace`.
 | `stored_spells_observed` | array of name strings | `lua/core/stat_reconcile.lua` — emitted alongside `affects_observed` with the names of `- stored spell <name>` lines from the same block (prefix stripped, duplicates preserved) |
 | `wimpy_changed` | numeric string (`"0"`..`"N"`) | `ttpp/core/mud_events.tin` |
 | `user_input` | raw sent-line string | `lua/brain.lua` `handlers["USER_INPUT"]` |
-| `user_input_empty` | (none) | RECEIVED INPUT with empty `%0` in GAME_SESSION; `lua/brain.lua` `handlers["EMPTY_INPUT"]` |
+| `user_input_empty` | (none) | RECEIVED INPUT with empty `%0` in GAME_SESSION (registered by `_register_input_ipc_actions` in `ttpp/core/input_ipc.tin`); `lua/brain.lua` `handlers["EMPTY_INPUT"]` |
 | `user_cast` | spell text as captured from bracketed echo (un-resolved) | tt++ `#action` registered by `_register_stored_spells_actions` |
 | `store_attempt_started` | spell full name string | `lua/core/stored_spells.lua` — `user_input` subscriber |
 | `store_attempt_failed` | (none) | `ttpp/core/stored_spells.tin` `#action` (via `_register_stored_spells_actions`) |
@@ -405,6 +405,12 @@ RECEIVED INPUT event with an empty `%0`. RECEIVED INPUT fires only on actual use
 keystrokes — unlike SENT OUTPUT, which also fires on tt++ IAC/GMCP flushes —
 so an empty `%0` here is unambiguously "user pressed Enter on an empty line",
 which MUME interprets as a cast abort.
+
+The `#event {RECEIVED INPUT}` handler is registered by
+`_register_input_ipc_actions` in `ttpp/core/input_ipc.tin`, invoked from
+`SESSION CONNECTED` in `ttpp/core/system.tin`. This is cross-cutting
+input-IPC infrastructure; consumer modules subscribe to the event bus topic
+rather than owning the tt++ registration.
 
 No payload.
 
