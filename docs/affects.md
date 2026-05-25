@@ -59,6 +59,43 @@ Both slots are initialised to `{}` at module load and re-initialised to `{}`
 on each `Char.Name` (login). `state.char.reset()` (called on disconnect) wipes
 them via the standard non-function-key sweep in `char_state.lua`.
 
+## Untracked entries (stat / info reconcile)
+
+When the player types `stat` or `info`, MUME prints an "Affected by:" (or
+"You are subjected to the following temporary effects:") block — one affect
+per line as `- <name>`, terminated by the first line that does not start
+with `- ` (in practice the prompt or any other received line).
+[`lua/core/stat_reconcile.lua`](../lua/core/stat_reconcile.lua) parses the
+block and emits `affects_observed` with the collected name list; the
+`affects.lua` subscriber iterates `affects_data.affects` (the known universe
+— unknown names in the payload, including stored spells, are skipped) and:
+
+- **observed AND not currently active** → ADD an entry. Timed-capable
+  (data has `duration`): `{name, type, tracked = false}` — no `started_at`,
+  no `expected_duration`, no `expires_at`; the bar does not drain because
+  we have no real timing source yet. Indefinite (no `duration`): a normal
+  indefinite entry (`expires_at = nil`, `tracked` not set).
+- **currently active AND not observed** → REMOVE the entry silently: no
+  `char_ui` "down" line and no sample push (the predicted duration we had
+  would be a lie if we recorded a sample here).
+- **currently active AND observed** → leave untouched; timed entries keep
+  their running timer, untracked entries stay untracked.
+
+`affects_changed` is emitted and the active-list file is written only if
+something changed.
+
+**Graduation.** If `affect_init` or `affect_refresh` later fires for an
+untracked entry, the refresh path clears the `tracked` field and sets
+`started_at` / `expected_duration` / `expires_at` normally — the entry
+becomes a tracked timed affect and the bar starts draining. The tick is
+armed at this transition (named delay, so re-arming is idempotent).
+
+**affect_down guard.** Untracked entries have no `started_at`, so the
+`affect_down` handler short-circuits the observed-duration math and the
+sample push when `entry.tracked == false` or `started_at` is nil. The
+`char_ui` "down" line and `affects_changed` still fire so the UI and
+renderer converge.
+
 ## Indefinite affects
 
 Entries in `affects_data.lua` without a `duration` field are indefinite. They
@@ -200,6 +237,20 @@ Examples:
 `lua/core/affects.lua`. It is called by the `_register_affect_actions` alias
 in `ttpp/core/affects.tin`, which is invoked from `SESSION CONNECTED` in
 `ttpp/core/system.tin` (immediately after `_register_clock_actions`).
+
+The stat/info block parser is wired in parallel:
+`_register_stat_reconcile_actions()` (in `lua/core/stat_reconcile.lua`) is
+invoked from the `_register_stat_reconcile_actions` alias in
+`ttpp/core/stat_reconcile.tin`, called from `SESSION CONNECTED` after
+`_register_stored_spells_actions`. It registers two header `#action`
+triggers (`^Affected by:$`, `^You are subjected to the following temporary
+effects:$`) whose tt++ body arms a dynamic catch-all `#action {^%1$}`
+inline — synchronously, inside a `#class {core} {open/close}` wrap (per
+ADRs 0049 / 0050). Each captured line is forwarded via the structured-event
+IPC path (`STAT_LINE:<raw>`), which tolerates quote and parenthesis
+characters in a way a Lua `load()` eval would not. On the first non-`- `
+line the handler calls `session_cmd("#unaction {^%1$}")` and emits
+`affects_observed` with the buffered name list.
 
 The function also calls `_install_hooks()` on its first invocation per load
 cycle, which wraps `gmcp.handlers["Char.Name"]` (to reload persisted times on

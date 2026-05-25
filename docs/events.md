@@ -75,6 +75,7 @@ event flow. Same pattern as `gmcp.trace`.
 | `affect_refresh` | affect name string | `ttpp/core/affects.tin` `#action` |
 | `affect_down` | affect name string | `ttpp/core/affects.tin` `#action` |
 | `affects_changed` | (none) | `lua/core/affects.lua` — emitted on every state mutation and every tick |
+| `affects_observed` | array of name strings | `lua/core/stat_reconcile.lua` — emitted after parsing the `Affected by:` / `You are subjected to the following temporary effects:` block in `stat`/`info` output |
 | `wimpy_changed` | numeric string (`"0"`..`"N"`) | `ttpp/core/mud_events.tin` |
 | `user_input` | raw sent-line string | `lua/brain.lua` `handlers["USER_INPUT"]` |
 | `user_input_empty` | (none) | RECEIVED INPUT with empty `%0` in GAME_SESSION; `lua/brain.lua` `handlers["EMPTY_INPUT"]` |
@@ -294,6 +295,35 @@ Subscribers should read `state.char.affects` directly for the new state.
 `bridge/runtime/status.state` and rewrite `status_height` in `bridge/runtime/layout.conf`
 when the affect count changes. `lua/core/buffs_state.lua` — calls `serialize()`
 to update `bridge/runtime/buffs.state` (affects and stored spells written together).
+
+### `affects_observed`
+
+Emitted by `lua/core/stat_reconcile.lua` after the player runs `stat` or
+`info` and MUME prints the active-affects block. Payload is an array of
+affect-name strings (raw, lowercase, exactly as MUME prints them after the
+leading `- `). The list may be empty (block contained only the header and
+terminator).
+
+Sources caught by the two permanent header `#action` triggers (priority 3):
+
+| Header pattern | Game context |
+|----------------|--------------|
+| `^Affected by:$` | `stat` output |
+| `^You are subjected to the following temporary effects:$` | `info` output |
+
+Each header trigger arms a dynamic catch-all `^%1$` inline (synchronously
+inside the outer body, see ADR 0050) which forwards every received line to
+the brain via the `STAT_LINE:<raw>` structured-event path. The handler
+collects names matching `^- (.+)$` into a buffer; on the first line that
+does not start with `- ` it emits `affects_observed`, calls
+`session_cmd("#unaction {^%1$}")`, and clears the buffer. Re-echoes of
+either header line are skipped explicitly.
+
+**Subscribers:** `lua/core/affects.lua` — reconciles `state.char.affects`
+against the observed list (iterates `affects_data.affects`, the known
+universe; unknown names — stored spells, future additions — are skipped).
+Adds untracked entries for newly-observed timed-capable affects, removes
+silently for active-but-unobserved entries, leaves everything else alone.
 
 ### `wimpy_changed`
 

@@ -26,6 +26,7 @@ tracking, and UI feedback.
 │   ├── main.tin          # tt++ entry point — auto-loads all of core/
 │   ├── core/             # System modules (.tin files), auto-loaded
 │   │                     #   affects.tin    — affect trigger registration (per session)
+│   │                     #   stat_reconcile.tin — stat/info "Affected by:" block parser
 │   │                     #   clock.tin      — 4 Hz clock ticker + game-time sync actions
 │   │                     #   config.tin     — reads startup.conf → _profile/_host/_port/_ses_cmd
 │   │                     #   gmcp.tin       — GMCP telnet negotiation and Lua dispatch

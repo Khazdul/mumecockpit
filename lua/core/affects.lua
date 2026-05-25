@@ -267,7 +267,11 @@ events.subscribe("affect_init", function(name)
     }
     local t = state.char.affects
     t[#t + 1] = rec
-    if #t == 1 then
+    -- Named delay replaces, so re-arming is idempotent. Required because the
+    -- pre-existing `#t == 1` gate can miss the first-tracked-entry transition
+    -- when stat-reconcile has already populated the list with untracked or
+    -- indefinite entries (neither runs the tick).
+    if rec.expires_at then
         session_cmd("#delay {affects_tick} {#lua {_affects_tick()}} {10}")
     end
     dbg("[AFFECTS] init: " .. name)
@@ -285,9 +289,16 @@ events.subscribe("affect_refresh", function(name)
     local data = affects_data.affects[name]
     local dur = _expected_duration(name, data or {})
     local now = os.time()
+    local was_untracked = (existing.tracked == false)
     existing.started_at        = now
     existing.expected_duration = dur
     existing.expires_at        = dur and (now + dur) or nil
+    existing.tracked           = nil
+    -- Graduate from untracked → tracked: a real refresh string lets us
+    -- start the bar draining, so arm the tick if not already running.
+    if was_untracked and existing.expires_at then
+        session_cmd("#delay {affects_tick} {#lua {_affects_tick()}} {10}")
+    end
     dbg("[AFFECTS] refresh: " .. name)
     events.emit("affects_changed")
     if data and data.duration then
@@ -302,24 +313,87 @@ events.subscribe("affect_down", function(name)
         dbg("[AFFECTS] down: no active entry for '" .. name .. "'")
         return
     end
-    local observed = os.time() - existing.started_at
     local data = affects_data.affects[name]
-    if data and data.duration then
+    -- Untracked entries (reconciled from stat/info with no observed init
+    -- string) have no started_at, so we can't compute an observed duration
+    -- and the sample would be a lie. Drop them silently from sampling but
+    -- still announce + emit so the UI and renderer converge.
+    local untracked = existing.tracked == false or not existing.started_at
+    if not untracked and data and data.duration then
+        local observed = os.time() - existing.started_at
         local times = state.char.affect_times
         if not times[name] then times[name] = {} end
         local arr = times[name]
         arr[#arr + 1] = observed
         if #arr > 3 then table.remove(arr, 1) end
         _save()
+        dbg("[AFFECTS] down: " .. name .. " observed=" .. observed)
+    else
+        dbg("[AFFECTS] down: " .. name .. " (untracked, no sample)")
     end
     table.remove(state.char.affects, idx)
     if #state.char.affects == 0 then
         session_cmd("#undelay {affects_tick}")
     end
-    dbg("[AFFECTS] down: " .. name .. " observed=" .. observed)
     events.emit("affects_changed")
     char_ui(data and data.type, name, "down")
     _save_active()
+end)
+
+-- ---------------------------------------------------------------------------
+-- Stat / info reconcile (driven by lua/core/stat_reconcile.lua)
+-- ---------------------------------------------------------------------------
+-- Iterates affects_data.affects (the known universe) so unknown names in the
+-- observed payload — stored spells, future MUME additions — are skipped.
+-- Additions and silent removals are computed against the data table, not the
+-- payload. Untracked entries (timed-capable, no observed init/refresh yet)
+-- carry tracked = false and no started_at; indefinite reconciled entries are
+-- normal indefinite entries with no tracked field. Removals are silent: no
+-- char_ui line, no sample.
+
+events.subscribe("affects_observed", function(observed)
+    local observed_set = {}
+    for _, n in ipairs(observed or {}) do
+        observed_set[n] = true
+    end
+
+    local changed = false
+    local now     = os.time()
+
+    for name, data in pairs(affects_data.affects) do
+        local existing, idx = _find(name)
+        local is_observed   = observed_set[name] == true
+
+        if is_observed and not existing then
+            if data.duration then
+                state.char.affects[#state.char.affects + 1] = {
+                    name    = name,
+                    type    = data.type,
+                    tracked = false,
+                }
+            else
+                state.char.affects[#state.char.affects + 1] = {
+                    name              = name,
+                    type              = data.type,
+                    started_at        = now,
+                    expected_duration = nil,
+                    expires_at        = nil,
+                }
+            end
+            changed = true
+            dbg("[AFFECTS] reconcile add: " .. name ..
+                (data.duration and " (untracked)" or " (indefinite)"))
+        elseif existing and not is_observed then
+            table.remove(state.char.affects, idx)
+            changed = true
+            dbg("[AFFECTS] reconcile remove: " .. name)
+        end
+    end
+
+    if changed then
+        events.emit("affects_changed")
+        _save_active()
+    end
 end)
 
 -- ---------------------------------------------------------------------------
