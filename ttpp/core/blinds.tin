@@ -1,0 +1,9 @@
+#nop ===== BLINDS =====
+#nop Trigger registration alias for the blinds tracker.
+#nop Called from SESSION CONNECTED in system.tin.
+#nop The alias delegates to Lua which registers one #action per game pattern
+#nop in the game session.
+
+#alias {_register_blinds_actions} {
+    #lua {_register_blinds_actions()}
+}

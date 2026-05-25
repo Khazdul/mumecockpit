@@ -27,6 +27,7 @@ with a scripting brain on top.
 - `docs/ui-pane.md` — UI pane: renderer, scroll, log-tail mechanics.
 - `docs/clock.md` — game clock: sync sources, state schema, degradation rules.
 - `docs/affects.md` — affect tracker: data flow, schemas, persistence, tick lifecycle.
+- `docs/blinds.md` — blinds tracker: 90s fixed timers, cast-snoop FIFO, failure-pattern cleanup.
 - `docs/scripts.md` — scripting guide for `lua/scripts/`: metadata header format, opt-in loading, scripts.cache schema.
 - `docs/launcher.md` — pre-tmux menu rendering and flow.
 - `docs/popup-menu.md` — in-game ESC popup (ingame_menu.sh).

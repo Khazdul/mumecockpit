@@ -338,7 +338,7 @@ scope.
 
 **`state.*`** — shared game and world data. Each sub-namespace has a defined owner:
 
-- `state.char` — populated by `lua/core/char_state.lua` from `Char.Name` / `StatusVars` / `Vitals`; extended by `lua/core/affects.lua` (`affects`, `affect_times`) and `lua/core/stored_spells.lua` (`stored_spells`, `stored_spell_times`); `wimpy` field set by `lua/core/wimpy.lua`. Reset function defined by `char_state.lua`.
+- `state.char` — populated by `lua/core/char_state.lua` from `Char.Name` / `StatusVars` / `Vitals`; extended by `lua/core/affects.lua` (`affects`, `affect_times`), `lua/core/stored_spells.lua` (`stored_spells`, `stored_spell_times`), and `lua/core/blinds.lua` (`blinds` — session-only); `wimpy` field set by `lua/core/wimpy.lua`. Reset function defined by `char_state.lua`.
 - `state.room` — currently unused; reserved.
 - `state.comm` — owned by `lua/core/comm_log.lua` (`history`, `channels`, `max_size`). `lua/core/comm_state.lua` adds the `serialize()` entry point.
 - `state.world` — owned by `lua/core/world_state.lua` (`sun`, `moon`, `moved`, `darkness`) and `lua/core/clock.lua` (`state.world.clock`).
@@ -477,6 +477,7 @@ lines and prints a static, starless wordmark only.
 - [docs/clock.md](docs/clock.md) — Game clock: sync sources, state schema, persistence, seed handling, degradation rules. Touched when changing clock sync or consuming game time.
 - [docs/affects.md](docs/affects.md) — Affect tracker: data flow, state schemas, persistence, pattern-conversion rules, tick lifecycle. Touched when changing affect tracking or adding new affect entries.
 - [docs/stored-spells.md](docs/stored-spells.md) — Stored spells tracker: data flow, schemas, spell-name resolver, persistence, SENT OUTPUT snooping. Touched when changing stored-spell tracking or the spells data table.
+- [docs/blinds.md](docs/blinds.md) — Blinds tracker: 90 s fixed-duration timers, two-layer (inbound landing + outgoing cast snoop FIFO), failure-pattern queue cleanup. Touched when changing blind tracking or the cast-snoop heuristics.
 - [docs/runs.md](docs/runs.md) — Run log contract: file layout, event schema (run_start/level_up/run_end), lifecycle, schema versioning. Touched when changing run-log behaviour or adding new row types.
 - [docs/buffs-pane.md](docs/buffs-pane.md) — Buffs pane: renderer, scroll, blink, layout integration. Touched when changing the buffs pane renderer or the buffs.state schema.
 - [docs/group-pane.md](docs/group-pane.md) — Group pane: renderer, state-file schema, bar fill, threshold colours, name overlay, overflow indicator. Touched when changing the group pane renderer or the group.state schema.

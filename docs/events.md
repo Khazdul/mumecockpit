@@ -88,6 +88,7 @@ event flow. Same pattern as `gmcp.trace`.
 | `store_decayed` | (none) | `ttpp/core/stored_spells.tin` `#action` |
 | `stored_spells_untracked` | (none) | `ttpp/core/stored_spells.tin` `#action` |
 | `stored_spells_changed` | (none) | `lua/core/stored_spells.lua` — emitted on every state mutation and on `_load_active()` restore |
+| `blinds_changed` | (none) | `lua/core/blinds.lua` — emitted on every state mutation (landing) and on each tick that prunes at least one expired entry |
 | `kill_attributed` | `{name = "<mob name>", xp = <integer>}` | `lua/core/run_state.lua` `_fold()` — emitted once per attributed kill after `script_ui` announce |
 | `tp_gained` | `{delta = <integer>}` | `lua/core/run_state.lua` `gmcp_char_vitals` subscriber — emitted on each positive TP increase |
 | `char_death` | (none) | `ttpp/core/mud_events.tin` — `"You are dead! Sorry..."` pattern |
@@ -391,7 +392,11 @@ feeds the IPC path; the handler in `brain.lua` bridges it to the Lua event bus.
 
 **Subscribers:** `lua/core/stored_spells.lua` — parses outgoing `cast 'store' X`
 and `cast 'spell'` commands to drive the stored-spell FIFO queue and
-`_last_cast_intent`.
+`_last_cast_intent`. `lua/core/blinds.lua` — parses outgoing
+`cast '<blindness-prefix>' [<n>.<name>]` commands; on a match pushes the
+typed numeric prefix (or `false`) onto its own FIFO so the next "seems to
+be blinded!" landing inherits the right target label. Re-arms a 10 s
+idle-flush `#delay` so an unconsumed prefix is dropped automatically.
 
 ### `user_input_empty`
 
@@ -509,6 +514,22 @@ Subscribers should read `state.char.stored_spells` directly for the new state.
 updated `stored_spells` array (alongside `affects`) to `bridge/runtime/buffs.state`
 atomically, giving the buffs-pane renderer a fresh snapshot within one poll
 tick.
+
+### `blinds_changed`
+
+Emitted by `lua/core/blinds.lua` with no payload whenever
+`state.char.blinds` is mutated — at the end of `_blinds_on_blinded` after
+appending a new entry, and at the end of `_blinds_tick` only when the
+sweep actually removed at least one expired entry (the renderer's
+bar-drain and expiring-blink are wall-clock-driven, so per-tick events
+when nothing changed would be pure noise).
+
+Subscribers should read `state.char.blinds` directly for the new state.
+
+**Subscribers:** `lua/core/buffs_state.lua` — calls `serialize()` to
+write the updated `blinds` array (alongside `affects` and `stored_spells`)
+to `bridge/runtime/buffs.state` atomically, giving the buffs-pane renderer
+a fresh snapshot within one poll tick.
 
 ### `kill_attributed`
 
