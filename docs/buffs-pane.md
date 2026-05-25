@@ -1,9 +1,10 @@
 # Buffs Pane
 
-A `prompt_toolkit` full-screen application that renders `state.char.affects`
-as a colour-coded affect grid grouped by type (spells, buffs, debuffs), with
-bar-drain animation, blink alerts for expiring affects, and row-based scroll.
-Touch this file when changing the renderer, the pane position, or the toggle
+A `prompt_toolkit` full-screen application that renders `state.char.affects`,
+`state.char.stored_spells`, and `state.char.blinds` as a colour-coded grid
+grouped by type (spells, buffs, debuffs, stored, blinds), with bar-drain
+animation, blink alerts for expiring entries, and row-based scroll. Touch
+this file when changing the renderer, the pane position, or the toggle
 wiring.
 
 ## Architecture
@@ -15,20 +16,23 @@ lua/core/affects.lua ──► state.char.affects ──────────
                                 │                                  ▼
 lua/core/stored_spells.lua ──► state.char.stored_spells    lua/core/buffs_state.lua ──► bridge/runtime/buffs.state (JSON)
                                 │                                  ▲           │
-                    stored_spells_changed event ───────────────────┘    mtime poll (100 ms)
-                                                                                │
-                                                                                ▼
-                                                                    bridge/panes/buffs_pane.py
+                    stored_spells_changed event ───────────────────┤    mtime poll (100 ms)
+                                                                   │            │
+lua/core/blinds.lua ──► state.char.blinds                          │            ▼
+                                │                                  │  bridge/panes/buffs_pane.py
+                    blinds_changed event ──────────────────────────┘
 ```
 
-`buffs_state.lua` serialises both `state.char.affects` and
-`state.char.stored_spells` to `bridge/runtime/buffs.state` on every `affects_changed`
-or `stored_spells_changed` event, on character reset (disconnect), and on
-login. `buffs_pane.py` polls that file and renders the grid.
+`buffs_state.lua` serialises `state.char.affects`,
+`state.char.stored_spells`, and `state.char.blinds` to
+`bridge/runtime/buffs.state` on every `affects_changed`,
+`stored_spells_changed`, or `blinds_changed` event, on character reset
+(disconnect), and on login. `buffs_pane.py` polls that file and renders
+the grid.
 
 ## State file schema (`bridge/runtime/buffs.state`)
 
-JSON object with two arrays:
+JSON object with three arrays:
 
 ```json
 {
@@ -40,6 +44,10 @@ JSON object with two arrays:
   "stored_spells": [
     {"name": "earthquake", "expires_at": 1714005400, "expected_duration": 5400, "tracked": true},
     {"name": "fireball",   "expires_at": null,        "expected_duration": null,  "tracked": false}
+  ],
+  "blinds": [
+    {"name": "2.orc", "expires_at": 1714000090, "expected_duration": 90},
+    {"name": "troll", "expires_at": 1714000085, "expected_duration": 90}
   ]
 }
 ```
@@ -47,7 +55,9 @@ JSON object with two arrays:
 `expires_at` and `expected_duration` are both `null` for indefinite affects
 (no `duration` field in the data table) and for untracked stored spells
 (post magic-blast). `type` mirrors the data-table value and may also be
-`null` if absent from the data table.
+`null` if absent from the data table. `blinds` entries are always timed
+(90 s fixed) and never indefinite or untracked; a missing top-level
+`blinds` key is treated as an empty array.
 
 The `tracked` field on an affect is `false` only for reconciliation-added
 timed-capable entries that have no observed init/refresh yet (see
@@ -56,8 +66,8 @@ every other entry — normal timed, indefinite, reconciled-indefinite —
 serializes `true`.
 
 **Legacy fallback:** if the loaded value is a bare JSON array (pre-migration
-state file), the renderer treats it as `{ "affects": loaded, "stored_spells": [] }`
-and shows only affects — no crash, no Stored group.
+state file), the renderer treats it as `{ "affects": loaded, "stored_spells": [], "blinds": [] }`
+and shows only affects — no crash, no Stored or Blinds group.
 
 ## Rendering
 
@@ -74,6 +84,7 @@ groups produce no rows.
 | Buffs   | `affects`       | `type` is neither `"spell"` nor `"debuff"`         |
 | Debuffs | `affects`       | `type == "debuff"`                                 |
 | Stored  | `stored_spells` | all entries (tracked and untracked)                |
+| Blinds  | `blinds`        | all entries                                        |
 
 Each group lays out 4 entries per row.
 
@@ -93,6 +104,9 @@ state (post magic-blast) and are rendered last:
 1. **Tracked** (`tracked == true`) — by `expires_at` descending (most time
    remaining first); alphabetical by name as tie-break.
 2. **Untracked** (`tracked == false`) — alphabetical by name, case-insensitive.
+
+**Blinds** are always timed (90 s) — sorted by `expires_at` descending
+(most time remaining first); alphabetical by name as tie-break.
 
 ### Grid layout
 
@@ -120,6 +134,7 @@ populated cell's separator.
 | Debuffs        | `#d90000`      | `#000000` | `#d90000`    |
 | Stored         | `#ff66ff`      | `#000000` | `#ff66ff`    |
 | Stored (untracked)¹ | `#cccccc` | `#000000` | `#cccccc`   |
+| Blinds         | `#00cccc`      | `#000000` | `#00cccc`    |
 
 ¹ See "Untracked stored cells" below.
 
@@ -294,9 +309,12 @@ maps this to the label ` Buffs ` when headers are on.
 `state.char.affects` and the supporting disk files under
 `data/characters/<character>/` continue to be maintained by
 `lua/core/affects.lua` regardless of whether the buffs pane is open. The data
-layer is independent of the visualisation layer.
+layer is independent of the visualisation layer. The same applies to
+`state.char.stored_spells` (`lua/core/stored_spells.lua`) and
+`state.char.blinds` (`lua/core/blinds.lua` — session-only, no disk).
 
-See [`docs/affects.md`](affects.md) for the full data-layer specification.
+See [`docs/affects.md`](affects.md), [`docs/stored-spells.md`](stored-spells.md),
+and [`docs/blinds.md`](blinds.md) for the full data-layer specifications.
 
 ---
 Back to [architecture.md](../architecture.md).

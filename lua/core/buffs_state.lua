@@ -1,6 +1,7 @@
--- Serialises state.char.affects and state.char.stored_spells to
--- bridge/runtime/buffs.state (JSON) whenever affects_changed, stored_spells_changed,
--- char_reset, or gmcp_char_name fires.
+-- Serialises state.char.affects, state.char.stored_spells, and
+-- state.char.blinds to bridge/runtime/buffs.state (JSON) whenever
+-- affects_changed, stored_spells_changed, blinds_changed, char_reset, or
+-- gmcp_char_name fires.
 --
 -- Atomic write: buffs.state.tmp → os.rename → buffs.state.
 
@@ -35,7 +36,21 @@ local function serialize()
         }
     end
 
-    local payload = { affects = affects_out, stored_spells = stored_out }
+    local blinds = state.char.blinds or {}
+    local blinds_out = {}
+    for _, e in ipairs(blinds) do
+        blinds_out[#blinds_out + 1] = {
+            name              = e.name,
+            expires_at        = e.expires_at or json.null,
+            expected_duration = e.expected_duration or json.null,
+        }
+    end
+
+    local payload = {
+        affects       = affects_out,
+        stored_spells = stored_out,
+        blinds        = blinds_out,
+    }
     local ok, encoded = pcall(json.encode, payload)
     if not ok then
         dbg("[BUFFS_STATE] encode failed: " .. tostring(encoded))
@@ -56,6 +71,7 @@ end
 -- so _load_active() results are in state.char.affects when our subscriber runs.
 events.subscribe("affects_changed",        serialize)
 events.subscribe("stored_spells_changed",  serialize)
+events.subscribe("blinds_changed",         serialize)
 events.subscribe("char_reset",             function() serialize() end)
 events.subscribe("gmcp_char_name",         function() serialize() end)
 

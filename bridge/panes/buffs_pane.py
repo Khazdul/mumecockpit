@@ -55,6 +55,10 @@ C_STORED_SEP_FG          = "fg:#ff66ff"
 C_STORED_UNTRACKED_BG    = "bg:#cccccc"
 C_STORED_UNTRACKED_FG    = "fg:#cccccc"
 
+# Blinds — cyan (distinct from the spell light-blue)
+C_BLIND_FILL_BG = "bg:#00cccc"
+C_BLIND_SEP_FG  = "fg:#00cccc"
+
 C_CELL_FG       = "fg:#000000"
 C_INDICATOR     = "fg:#d4a04e italic"
 C_NAME_DEPLETED = "fg:#666666"
@@ -70,10 +74,12 @@ _PALETTES = {
     "buff":   (C_CELL_FG + " " + C_BUFF_FILL_BG,   C_BUFF_SEP_FG),
     "debuff": (C_CELL_FG + " " + C_DEBUFF_FILL_BG,  C_DEBUFF_SEP_FG),
     "stored": (C_CELL_FG + " " + C_STORED_FILL_BG,  C_STORED_SEP_FG),
+    "blind":  (C_CELL_FG + " " + C_BLIND_FILL_BG,   C_BLIND_SEP_FG),
 }
 
 _affects       = []
 _stored_spells = []
+_blinds        = []
 _last_mtime    = None
 _app           = None
 _scroll_offset = 0   # 0 = top (first row at top of pane); N = N rows hidden above
@@ -123,15 +129,20 @@ def _split_groups():
         key=lambda e: e.get("name", "").lower(),
     )
     stored = tracked + untracked
-    return spells, buffs, debuffs, stored
+    blinds = sorted(
+        _blinds,
+        key=lambda e: (-(e.get("expires_at") or 0), e.get("name", "").lower()),
+    )
+    return spells, buffs, debuffs, stored, blinds
 
 
-def _total_rows(spells, buffs, debuffs, stored):
+def _total_rows(spells, buffs, debuffs, stored, blinds):
     return (
         (math.ceil(len(spells)  / 4) if spells  else 0) +
         (math.ceil(len(buffs)   / 4) if buffs   else 0) +
         (math.ceil(len(debuffs) / 4) if debuffs else 0) +
-        (math.ceil(len(stored)  / 4) if stored  else 0)
+        (math.ceil(len(stored)  / 4) if stored  else 0) +
+        (math.ceil(len(blinds)  / 4) if blinds  else 0)
     )
 
 
@@ -194,7 +205,7 @@ def _untracked_affect_cell_frags(entry, cell_w):
 
 def _build_all_rows():
     """Return every grid row as a list of fragment-lists (one per row)."""
-    spells, buffs, debuffs, stored = _split_groups()
+    spells, buffs, debuffs, stored, blinds = _split_groups()
     W      = max(4, _term_cols())
     widths = _cell_widths(W)
 
@@ -233,6 +244,17 @@ def _build_all_rows():
                     row_frags.extend(_cell_frags(entry, widths[col], _PALETTES["stored"]))
                 else:
                     row_frags.extend(_untracked_cell_frags(entry, widths[col]))
+            all_rows.append(row_frags)
+
+    if blinds:
+        n = len(blinds)
+        for row in range(math.ceil(n / 4)):
+            row_frags = []
+            for col in range(4):
+                idx = row * 4 + col
+                if idx >= n:
+                    break
+                row_frags.extend(_cell_frags(blinds[idx], widths[col], _PALETTES["blind"]))
             all_rows.append(row_frags)
 
     return all_rows
@@ -294,8 +316,7 @@ class ListControl(FormattedTextControl):
     def mouse_handler(self, mouse_event):
         global _scroll_offset
         if mouse_event.event_type == MouseEventType.SCROLL_DOWN:
-            spells, buffs, debuffs, stored = _split_groups()
-            total          = _total_rows(spells, buffs, debuffs, stored)
+            total          = _total_rows(*_split_groups())
             H              = max(1, _term_rows())
             list_height    = H - (1 if (_scroll_offset > 0 or total > H) else 0)
             max_offset     = max(0, total - list_height)
@@ -318,7 +339,7 @@ def _restore_cursor():
 
 
 async def _poll_state(app):
-    global _affects, _stored_spells, _last_mtime, _run_active
+    global _affects, _stored_spells, _blinds, _last_mtime, _run_active
 
     while True:
         try:
@@ -335,14 +356,17 @@ async def _poll_state(app):
                     if isinstance(loaded, list):
                         _affects       = loaded
                         _stored_spells = []
+                        _blinds        = []
                     else:
                         _affects       = loaded.get("affects", [])
                         _stored_spells = loaded.get("stored_spells", [])
+                        _blinds        = loaded.get("blinds", [])
                 except Exception:
                     pass
             else:
                 _affects       = []
                 _stored_spells = []
+                _blinds        = []
             app.invalidate()
 
         new_run_active = os.path.exists(CONNECTION_STATE_PATH)
