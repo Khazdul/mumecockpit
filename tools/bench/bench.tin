@@ -1,0 +1,29 @@
+#nop ===== BURST-LATENCY BENCH HARNESS =====
+#nop Standalone dev tool. NOT auto-loaded — manually #read after the
+#nop session is up. Pair with tools/bench/burst_server.py. See
+#nop tools/bench/README.md for the measurement procedure.
+#nop
+#nop Mechanism: BENCH_START / N fixture lines / BENCH_END arrive as
+#nop one TCP segment from the bench server. The first action stamps
+#nop _bench_t0 from %U (microsecond epoch), the closing action stamps
+#nop _bench_t1 and #showme's the delta. The two timestamps bracket
+#nop tt++'s per-line processing for the whole burst.
+#nop
+#nop Precision: %U is the 16-digit microsecond epoch (ttpp_manual.txt
+#nop "FORMAT"); tt++ #math is 64-bit integer, and the delta we care
+#nop about is at most a few milliseconds (~10^4 us) — orders of
+#nop magnitude below any precision boundary.
+#nop
+#nop The actions live in their own {bench} class so cleanup is one
+#nop call. bench_off lives in the same class, so calling it removes
+#nop itself too; re-#read this file to get the alias back.
+
+#class {bench} {kill}
+#class {bench} {open}
+
+#action {^BENCH_START$} {#format {_bench_t0} {%U}}
+#action {^BENCH_END$}   {#format {_bench_t1} {%U};#math {_bench_d} {$_bench_t1 - $_bench_t0};#showme {BENCH RESULT: $_bench_d us}}
+
+#alias {bench_off} {#class {bench} {kill}}
+
+#class {bench} {close}
