@@ -346,10 +346,16 @@ end)
 -- Iterates affects_data.affects (the known universe) so unknown names in the
 -- observed payload — stored spells, future MUME additions — are skipped.
 -- Additions and silent removals are computed against the data table, not the
--- payload. Untracked entries (timed-capable, no observed init/refresh yet)
--- carry tracked = false and no started_at; indefinite reconciled entries are
--- normal indefinite entries with no tracked field. Removals are silent: no
--- char_ui line, no sample.
+-- payload.
+--
+-- The prune rule is uniform: any active entry absent from the observed block
+-- is dropped, INCLUDING indefinite affects (hunger, thirst, comfortable,
+-- growth, depression). Stat/info is the canonical truth at that moment;
+-- there is no "indefinite affects are special" carve-out here.
+--
+-- Removals are silent: no char_ui "down" line, no duration sample (the
+-- sample would be a lie — game never confirmed the drop, and for indefinite
+-- affects there is no sample to record anyway).
 
 events.subscribe("affects_observed", function(observed)
     local observed_set = {}
@@ -365,6 +371,8 @@ events.subscribe("affects_observed", function(observed)
         local is_observed   = observed_set[name] == true
 
         if is_observed and not existing then
+            -- ADD: type split — timed-capable starts untracked (no-bar),
+            -- indefinite gets a normal full-bar entry.
             if data.duration then
                 state.char.affects[#state.char.affects + 1] = {
                     name    = name,
@@ -384,6 +392,7 @@ events.subscribe("affects_observed", function(observed)
             dbg("[AFFECTS] reconcile add: " .. name ..
                 (data.duration and " (untracked)" or " (indefinite)"))
         elseif existing and not is_observed then
+            -- PRUNE: unconditional — do NOT special-case indefinite here.
             table.remove(state.char.affects, idx)
             changed = true
             dbg("[AFFECTS] reconcile remove: " .. name)

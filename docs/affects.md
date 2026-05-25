@@ -76,8 +76,10 @@ block and emits `affects_observed` with the collected name list; the
   we have no real timing source yet. Indefinite (no `duration`): a normal
   indefinite entry (`expires_at = nil`, `tracked` not set).
 - **currently active AND not observed** → REMOVE the entry silently: no
-  `char_ui` "down" line and no sample push (the predicted duration we had
-  would be a lie if we recorded a sample here).
+  `char_ui` "down" line and no sample push. This rule is uniform —
+  indefinite affects (`hunger`, `thirst`, `comfortable`, `growth`,
+  `depression`) are pruned too. Stat/info is the canonical truth at that
+  moment; there is no carve-out for "duration is nil".
 - **currently active AND observed** → leave untouched; timed entries keep
   their running timer, untracked entries stay untracked.
 
