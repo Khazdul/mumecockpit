@@ -1,0 +1,58 @@
+<svg width="256" height="256" viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="bgGlow" cx="50%" cy="46%" r="72%">
+      <stop offset="0%"  stop-color="#15171c"/>
+      <stop offset="55%" stop-color="#0a0b0e"/>
+      <stop offset="100%" stop-color="#050506"/>
+    </radialGradient>
+    <linearGradient id="silverM" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"   stop-color="#EDEDED"/>
+      <stop offset="55%"  stop-color="#BEBEBE"/>
+      <stop offset="100%" stop-color="#8C8C8C"/>
+    </linearGradient>
+    <linearGradient id="goldGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"   stop-color="#F6C95A"/>
+      <stop offset="55%"  stop-color="#E0A838"/>
+      <stop offset="100%" stop-color="#C6861F"/>
+    </linearGradient>
+    <radialGradient id="starGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%"   stop-color="#FFFFFF" stop-opacity="0.55"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- tile -->
+  <rect x="0" y="0" width="256" height="256" rx="48" fill="url(#bgGlow)"/>
+
+  <!-- starfield -->
+  <g fill="#FFFFFF">
+    <circle cx="44"  cy="42"  r="9"   fill="url(#starGlow)"/>
+    <circle cx="44"  cy="42"  r="2.3" opacity="0.95"/>
+    <circle cx="58"  cy="214" r="9"   fill="url(#starGlow)"/>
+    <circle cx="58"  cy="214" r="2.3" opacity="0.9"/>
+    <circle cx="212" cy="46"  r="1.9" opacity="0.7"/>
+    <circle cx="150" cy="38"  r="1.4" opacity="0.55"/>
+    <circle cx="96"  cy="30"  r="1.2" opacity="0.45"/>
+    <circle cx="228" cy="108" r="1.3" opacity="0.5"/>
+    <circle cx="30"  cy="128" r="1.4" opacity="0.5"/>
+    <circle cx="228" cy="150" r="1.2" opacity="0.45"/>
+    <circle cx="128" cy="224" r="1.5" opacity="0.6"/>
+    <circle cx="198" cy="212" r="1.7" opacity="0.6"/>
+  </g>
+
+  <!-- gold chevrons (echo of the launcher's << >> cursor grammar) -->
+  <g fill="none" stroke="url(#goldGrad)" stroke-width="13"
+     stroke-linecap="round" stroke-linejoin="round">
+    <polyline points="66,96 46,123 66,150"/>
+    <polyline points="190,96 210,123 190,150"/>
+  </g>
+
+  <!-- the M -->
+  <polyline points="86,166 86,80 128,132 170,80 170,166"
+            fill="none" stroke="url(#silverM)" stroke-width="22"
+            stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- subtle inner border -->
+  <rect x="1" y="1" width="254" height="254" rx="47"
+        fill="none" stroke="#262626" stroke-width="2"/>
+</svg>
