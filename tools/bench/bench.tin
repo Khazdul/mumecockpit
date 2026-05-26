@@ -10,13 +10,13 @@
 #nop tt++'s per-line processing for the whole burst.
 #nop
 #nop Precision: %U is the 16-digit microsecond epoch (ttpp_manual.txt
-#nop "FORMAT"); tt++ #math is 64-bit integer, and the delta we care
+#nop "FORMAT") — tt++ #math is 64-bit integer, and the delta we care
 #nop about is at most a few milliseconds (~10^4 us) — orders of
 #nop magnitude below any precision boundary.
 #nop
 #nop The actions live in their own {bench} class so cleanup is one
 #nop call. bench_off lives in the same class, so calling it removes
-#nop itself too; re-#read this file to get the alias back.
+#nop itself too — re-#read this file to get the alias back.
 
 #class {bench} {kill}
 #class {bench} {open}

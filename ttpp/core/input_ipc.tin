@@ -6,7 +6,7 @@
 #nop SENT OUTPUT, which also fires on tt++ IAC/GMCP flushes). An empty
 #nop %0 means the player pressed Enter on an empty line, which MUME
 #nop interprets as a cast-abort gesture. We dispatch that as EMPTY_INPUT
-#nop on the Lua brain's structured-event channel; brain.lua bridges it
+#nop on the Lua brain's structured-event channel — brain.lua bridges it
 #nop to the `user_input_empty` event bus.
 #nop
 #nop SENT OUTPUT → USER_INPUT lives in run_log.tin's

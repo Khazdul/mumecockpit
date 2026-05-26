@@ -1,7 +1,7 @@
 #nop ===== STAT RECONCILE =====
 #nop Trigger registration alias for the stat/info "Affected by:" block parser.
 #nop Called from SESSION CONNECTED in system.tin.
-#nop The alias delegates to Lua which registers the two header #actions; each
+#nop The alias delegates to Lua which registers the two header #actions — each
 #nop header action then arms a dynamic catch-all #action inline (synchronously)
 #nop so the catch-all is in place before the next received line.
 
