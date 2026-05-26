@@ -8,8 +8,10 @@
 # Safe to re-run: every step checks state before acting, so a second run
 # on the same machine produces no destructive changes.
 #
-# To start over: delete the desktop shortcut, run 'wsl --unregister Ubuntu'
-# in an admin PowerShell, then double-click cockpit-installer.bat again.
+# To start over: remove the "MUME Cockpit" Start Menu entry (via Settings or
+# by deleting ~/.local/share/applications/mume-cockpit.desktop inside WSL),
+# run 'wsl --unregister Ubuntu' in an admin PowerShell, then double-click
+# cockpit-installer.bat again.
 
 Write-Host ""
 Write-Host "MUME Cockpit -- Windows Installer"
@@ -40,8 +42,8 @@ if ($build -lt 22621) {
     Write-Host ""
     Write-Host "       If you only intend to play in direct mode (no MMapper), you"
     Write-Host "       can install the cockpit manually inside WSL using"
-    Write-Host "       install/bootstrap-linux.sh -- but the desktop shortcut and"
-    Write-Host "       Alacritty config must then be set up by hand."
+    Write-Host "       install/bootstrap-linux.sh -- but the Start Menu entry and"
+    Write-Host "       foot config must then be set up by hand."
     exit 1
 }
 
@@ -169,8 +171,9 @@ Write-Host ""
 #
 # All Linux-side provisioning (tmux, Lua, TinTin++, Python, repo clone) is
 # delegated to bootstrap-linux.sh, which already exists and is tested.
-# Running as root inside WSL is intentional: the cockpit has no sudo paths
-# and the desktop shortcut makes the -u root flag visible to the user.
+# Running as root inside WSL is intentional: the cockpit has no sudo paths.
+# The .desktop entry installed inside WSL invokes /root/MUME/bridge/supervisor.sh
+# directly, so the root user is implicit (no -u root flag visible to the user).
 
 Write-Host "Running Linux bootstrap inside Ubuntu (as root)..."
 Write-Host "This installs tmux, Lua, TinTin++, and the cockpit repo."
@@ -190,16 +193,16 @@ Write-Host ""
 
 # -- Step 5b: Verify cockpit artifacts ----------------------------------------
 #
-# The shortcut depends on launch.sh and start.sh being present and executable.
-# Probe them now so a partially-failed bootstrap fails loudly here instead of
-# leaving a broken shortcut on the desktop.
+# The WSLg .desktop entry invokes bridge/supervisor.sh, which in turn calls
+# start.sh. Probe both now so a partially-failed bootstrap fails loudly here
+# instead of leaving a broken Start Menu entry.
 
 Write-Host "Verifying cockpit installation..."
-& wsl -d $distroName -u root -- test -x /root/MUME/bridge/launcher/launch.sh
+& wsl -d $distroName -u root -- test -x /root/MUME/bridge/supervisor.sh
 if ($LASTEXITCODE -ne 0) {
     Write-Host ""
     Write-Host "ERROR: Cockpit installation looks incomplete."
-    Write-Host "       /root/MUME/bridge/launcher/launch.sh is missing or not executable."
+    Write-Host "       /root/MUME/bridge/supervisor.sh is missing or not executable."
     Write-Host "       This usually means the bootstrap step did not finish cleanly."
     Write-Host "       Re-run this installer; if the problem persists, file an issue."
     exit 1
@@ -214,194 +217,15 @@ if ($LASTEXITCODE -ne 0) {
 Write-Host "Verification passed."
 Write-Host ""
 
-# -- Step 6: Install Alacritty ------------------------------------------------
+# -- Step 6: Done -------------------------------------------------------------
 #
-# Prefer winget; fall back to downloading the MSI from the latest GitHub release.
-# Skip entirely if alacritty is already on PATH.
-
-Write-Host "Checking Alacritty..."
-
-$alacrittyCmd = Get-Command alacritty -ErrorAction SilentlyContinue
-if ($alacrittyCmd) {
-    Write-Host "Alacritty is already installed at $($alacrittyCmd.Source) -- skipping."
-} else {
-    $installed = $false
-
-    if (Get-Command winget -ErrorAction SilentlyContinue) {
-        Write-Host "Installing Alacritty via winget..."
-        & winget install --id Alacritty.Alacritty --silent --accept-source-agreements --accept-package-agreements
-        if ($LASTEXITCODE -eq 0) {
-            $installed = $true
-            Write-Host "Alacritty installed via winget."
-        } else {
-            Write-Host "winget install failed (exit code $LASTEXITCODE) -- trying MSI fallback."
-        }
-    } else {
-        Write-Host "winget not found -- trying MSI fallback."
-    }
-
-    if (-not $installed) {
-        try {
-            Write-Host "Fetching latest Alacritty release info from GitHub..."
-            $release = Invoke-RestMethod -Uri "https://api.github.com/repos/alacritty/alacritty/releases/latest"
-            $msiAsset = $release.assets | Where-Object { $_.name -like "*.msi" } | Select-Object -First 1
-            if (-not $msiAsset) { throw "No .msi asset found in latest Alacritty release." }
-
-            $msiPath = Join-Path $env:TEMP $msiAsset.name
-            Write-Host "Downloading $($msiAsset.name)..."
-            Invoke-WebRequest -UseBasicParsing -Uri $msiAsset.browser_download_url -OutFile $msiPath
-            Write-Host "Running MSI installer..."
-            Start-Process msiexec -ArgumentList "/i `"$msiPath`" /qn" -Wait -NoNewWindow
-            $installed = $true
-            Write-Host "Alacritty installed via MSI."
-        } catch {
-            Write-Host ""
-            Write-Host "ERROR: Could not install Alacritty automatically: $_"
-            Write-Host "       Please install it manually from:"
-            Write-Host "       https://github.com/alacritty/alacritty/releases"
-            Write-Host "       Then re-run this installer."
-            exit 1
-        }
-    }
-
-    # Refresh PATH from the system and user environment so Get-Command picks
-    # up the newly installed alacritty.exe in the same session.
-    $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" +
-                [System.Environment]::GetEnvironmentVariable("Path", "User")
-}
-Write-Host ""
-
-# -- Step 7: Write %APPDATA%\alacritty\alacritty.toml -------------------------
-#
-# Write the canonical Windows config only if no config file exists yet.
-# The user's existing alacritty.toml is never overwritten.
-
-$alacrittyConfigDir  = Join-Path $env:APPDATA 'alacritty'
-$alacrittyConfigPath = Join-Path $alacrittyConfigDir 'alacritty.toml'
-
-if (Test-Path $alacrittyConfigPath) {
-    Write-Host "Alacritty config already exists at $alacrittyConfigPath -- not overwriting."
-} else {
-    New-Item -ItemType Directory -Path $alacrittyConfigDir -Force | Out-Null
-    $tomlLines = @(
-        '# Alacritty config - MUME Cockpit, Windows.',
-        '# Written by installer-core.ps1. Edit freely; the installer will not touch',
-        '# this file on subsequent runs.',
-        '',
-        '[colors.primary]',
-        'foreground = "#C0C0C0"',
-        'background = "#000000"',
-        '',
-        '[colors.normal]',
-        'black   = "#000000"',
-        'red     = "#800000"',
-        'green   = "#008000"',
-        'yellow  = "#808000"',
-        'blue    = "#000080"',
-        'magenta = "#800080"',
-        'cyan    = "#008080"',
-        'white   = "#C0C0C0"',
-        '',
-        '[colors.bright]',
-        'black   = "#808080"',
-        'red     = "#FF0000"',
-        'green   = "#00FF00"',
-        'yellow  = "#FFFF00"',
-        'blue    = "#0000FF"',
-        'magenta = "#FF00FF"',
-        'cyan    = "#00FFFF"',
-        'white   = "#FFFFFF"',
-        '',
-        '[cursor]',
-        'style = { shape = "Beam", blinking = "Always" }',
-        'blink_interval = 500',
-        'thickness = 0.15',
-        '',
-        '[window]',
-        'dimensions = { columns = 80, lines = 24 }',
-        'startup_mode = "Windowed"',
-        'padding = { x = 0, y = 0 }',
-        'dynamic_padding = true',
-        'decorations = "Full"',
-        'decorations_theme_variant = "Dark"',
-        '',
-        '[font]',
-        'size = 15',
-        '',
-        '[font.normal]',
-        'family = "Lucida Console"',
-        'style = "Regular"',
-        '',
-        '[font.bold]',
-        'family = "Lucida Console"',
-        'style = "Bold"',
-        '',
-        '[font.italic]',
-        'family = "Lucida Console"',
-        'style = "Italic"',
-        '',
-        '[font.bold_italic]',
-        'family = "Lucida Console"',
-        'style = "Bold Italic"',
-        '',
-        '[terminal.shell]',
-        'program = "wsl.exe"',
-        '',
-        '[scrolling]',
-        'history = 10000',
-        '',
-        '[selection]',
-        'save_to_clipboard = true'
-    )
-    $tomlLines | Set-Content -Path $alacrittyConfigPath -Encoding UTF8
-    Write-Host "Wrote $alacrittyConfigPath."
-}
-Write-Host ""
-
-# -- Step 8: Create desktop shortcut ------------------------------------------
-#
-# Overwrites any existing shortcut -- it is a regenerable artifact, not user
-# state. Resolves alacritty.exe via Get-Command so the path is correct
-# regardless of whether winget or MSI installed it.
-
-Write-Host "Creating desktop shortcut..."
-
-# Refresh PATH one more time in case Alacritty was just installed above.
-$env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" +
-            [System.Environment]::GetEnvironmentVariable("Path", "User")
-
-$alacrittyCmd = Get-Command alacritty -ErrorAction SilentlyContinue
-if ($alacrittyCmd) {
-    $alacrittyExe = $alacrittyCmd.Source
-} else {
-    # Common install locations as a fallback when PATH isn't updated yet.
-    $alacrittyExe = $null
-    foreach ($candidate in @(
-        "$env:LOCALAPPDATA\Programs\Alacritty\alacritty.exe",
-        "$env:ProgramFiles\Alacritty\alacritty.exe"
-    )) {
-        if (Test-Path $candidate) { $alacrittyExe = $candidate; break }
-    }
-    if (-not $alacrittyExe) {
-        Write-Host "WARNING: Could not locate alacritty.exe. The shortcut will use"
-        Write-Host "         'alacritty.exe' and requires it to be on PATH at launch time."
-        $alacrittyExe = "alacritty.exe"
-    }
-}
-
-$shortcutPath = Join-Path ([Environment]::GetFolderPath('Desktop')) 'MUME Cockpit.lnk'
-$wsh      = New-Object -ComObject WScript.Shell
-$shortcut = $wsh.CreateShortcut($shortcutPath)
-$shortcut.TargetPath   = $alacrittyExe
-$shortcut.Arguments    = "-e wsl -d $distroName -u root -- /root/MUME/bridge/launcher/launch.sh"
-$shortcut.IconLocation = "$alacrittyExe,0"
-$shortcut.Save()
-Write-Host "Desktop shortcut created: $shortcutPath"
-Write-Host ""
-
-# -- Step 9: Done ------------------------------------------------------------
+# Alacritty install, alacritty.toml write, and Windows desktop-shortcut
+# creation have all moved to WSL: foot is installed by bootstrap-linux.sh,
+# foot.ini is copied from install/examples/foot.ini, and the .desktop entry
+# at ~/.local/share/applications/mume-cockpit.desktop is surfaced to the
+# Windows Start Menu by WSLg automatically.
 
 Write-Host "Installation complete."
-Write-Host "A ""MUME Cockpit"" shortcut has been added to your desktop."
-Write-Host "Double-click it to launch."
+Write-Host "A ""MUME Cockpit"" entry has been added to your Windows Start Menu."
+Write-Host "Search for it from the Start Menu, or pin it to the taskbar, to launch."
 Write-Host ""

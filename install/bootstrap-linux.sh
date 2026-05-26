@@ -70,13 +70,33 @@ REPO_DIR="$TARGET_HOME/MUME"
 
 PACKAGES="tmux lua5.4 python3 python3-prompt-toolkit python3-pyperclip git"
 
-if [ "$IS_WSL" -eq 0 ]; then
+if [ "$IS_WSL" -eq 1 ]; then
+    # WSL deployment: foot under WSLg is the cockpit's managed terminal.
+    PACKAGES="$PACKAGES foot"
+else
     PACKAGES="$PACKAGES alacritty"
 fi
 
 $RUN apt-get update
 # shellcheck disable=SC2086  # word-splitting of $PACKAGES is intentional
 $RUN apt-get install -y $PACKAGES
+
+# ---------------------------------------------------------------------------
+# WSL only: install bundled monospace fonts so the Terminal Settings UI
+# (Phase 2+) has real options to choose from. DejaVu is the hard requirement
+# and near-certainly already present; the others degrade gracefully if their
+# apt package name does not resolve on the host.
+# ---------------------------------------------------------------------------
+
+if [ "$IS_WSL" -eq 1 ]; then
+    FONT_PACKAGES="fonts-dejavu fonts-cascadia-code fonts-jetbrains-mono fonts-hack"
+    for pkg in $FONT_PACKAGES; do
+        if ! $RUN apt-get install -y "$pkg" 2>/dev/null; then
+            echo "Warning: font package $pkg not available — skipping." >&2
+        fi
+    done
+    fc-cache -f >/dev/null 2>&1 || true
+fi
 
 # ---------------------------------------------------------------------------
 # Provision tt++ (probe existing binary; build from source when needed)
@@ -138,6 +158,22 @@ fi
 
 chmod +x "$REPO_DIR/start.sh"
 chmod +x "$REPO_DIR/bridge/launcher/launch.sh"
+chmod +x "$REPO_DIR/bridge/supervisor.sh"
+
+# ---------------------------------------------------------------------------
+# WSL only: install the managed foot config and the WSLg .desktop entry.
+# WSLg surfaces .desktop entries under ~/.local/share/applications/ to the
+# Windows Start Menu automatically.
+# ---------------------------------------------------------------------------
+
+if [ "$IS_WSL" -eq 1 ]; then
+    mkdir -p "$TARGET_HOME/.config/foot"
+    cp "$REPO_DIR/install/examples/foot.ini" "$TARGET_HOME/.config/foot/foot.ini"
+
+    mkdir -p "$TARGET_HOME/.local/share/applications"
+    cp "$REPO_DIR/install/mume-cockpit.desktop" \
+       "$TARGET_HOME/.local/share/applications/mume-cockpit.desktop"
+fi
 
 # ---------------------------------------------------------------------------
 # Provision win32yank.exe (WSL only — fast clipboard read for the input pane)
@@ -178,4 +214,8 @@ echo "Run the cockpit with: cd $REPO_DIR && ./start.sh"
 
 if [ "$IS_WSL" -eq 0 ] && [ ! -f "$TARGET_HOME/.config/alacritty/alacritty.toml" ]; then
     echo "An example Alacritty config is available at $REPO_DIR/install/examples/alacritty.toml if you want to try it."
+fi
+
+if [ "$IS_WSL" -eq 1 ]; then
+    echo "WSLg .desktop entry installed — look for \"MUME Cockpit\" in the Windows Start Menu."
 fi
