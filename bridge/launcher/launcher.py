@@ -8378,6 +8378,12 @@ def _options_terminal_text():
 
     body_rows = 0
     for i, (action, label) in enumerate(rows):
+        # Blank spacer before Back, matching the Panes / Scripts frames.
+        # Rendered inline rather than as a catalog entry so the row list
+        # stays navigable-only and ↑/↓ navigation is unaffected.
+        if action == "back":
+            frags.append(("", "\n", clear_hover))
+            body_rows += 1
         is_cursor = (i == cur)
         is_hover  = (i == _options_terminal_hover)
         # Apply renders as dead-grey (inactive_style=C_HINT) when there
