@@ -230,6 +230,15 @@ PYEOF
     mkdir -p "$TARGET_HOME/.config/foot"
     cp "$REPO_DIR/install/examples/foot.ini" "$TARGET_HOME/.config/foot/foot.ini"
 
+    # Seed initial-window-size-pixels from the Windows installer's resolution
+    # probe (MUME_FOOT_WINDOW_PX=WIDTHxHEIGHT). The template line is
+    # guaranteed present, so this is a clean in-place rewrite -- see ADR 0107
+    # points 3 and 4. Unset or malformed -> keep the template placeholder.
+    if [ -n "${MUME_FOOT_WINDOW_PX:-}" ] && [[ "$MUME_FOOT_WINDOW_PX" =~ ^[0-9]+x[0-9]+$ ]]; then
+        sed -i "s/^initial-window-size-pixels=.*/initial-window-size-pixels=$MUME_FOOT_WINDOW_PX/" \
+            "$TARGET_HOME/.config/foot/foot.ini"
+    fi
+
     # System icon under the hicolor theme. The .desktop entry references the
     # bare theme name `mume-cockpit`; freedesktop icon lookup resolves that to
     # these files. WSLg's icon resolver finds 48x48 and scalable; the 256x256

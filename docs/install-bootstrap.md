@@ -100,7 +100,12 @@ Fully unattended beyond the initial UAC prompt:
      - installs the `foot` terminal and a small set of monospace fonts
        (`fonts-dejavu`, `fonts-cascadia-code`, `fonts-jetbrains-mono`,
        `fonts-hack`) inside WSL; missing apt names degrade gracefully,
-     - copies `install/examples/foot.ini` to `~/.config/foot/foot.ini`,
+     - copies `install/examples/foot.ini` to `~/.config/foot/foot.ini` and
+       seeds `initial-window-size-pixels` from the primary monitor
+       resolution (~60% width × ~80% height) detected by `installer-core.ps1`
+       and passed in via `MUME_FOOT_WINDOW_PX`; if the variable is unset or
+       malformed (e.g. detection failed on the Windows side), the template
+       placeholder is kept,
      - copies `install/assets/mume-cockpit-48.png` to
        `/usr/share/icons/hicolor/48x48/apps/mume-cockpit.png` and
        `install/assets/mume-cockpit.svg` to
@@ -225,9 +230,16 @@ effect only after `wsl --shutdown`.
 ### `foot.ini` (Windows/WSL, `~/.config/foot/foot.ini`)
 
 The canonical foot config for the Windows/WSLg deployment, shipped at
-`install/examples/foot.ini` and copied verbatim by `bootstrap-linux.sh`
-into `~/.config/foot/foot.ini` when it detects WSL. Native Linux and
-macOS do not use foot — the file is unread there.
+`install/examples/foot.ini` and copied into `~/.config/foot/foot.ini`
+by `bootstrap-linux.sh` when it detects WSL. The Windows installer
+(`installer-core.ps1`) detects the primary monitor resolution and
+passes it down via `MUME_FOOT_WINDOW_PX`; the bootstrap then rewrites
+the template's `initial-window-size-pixels=` line in place to roughly
+60% width × 80% height of that monitor (floored at 800×600). Every
+other line is copied unmodified. If detection fails the installer
+omits the env var and the template placeholder is preserved — the
+install still completes. Native Linux and macOS do not use foot — the
+file is unread there.
 
 Key fields:
 
@@ -235,6 +247,11 @@ Key fields:
   on foot opening fullscreen; the cockpit assumes the tmux layout owns
   the entire terminal. There is no CLI flag for this; it must live in
   the config.
+- `initial-window-size-pixels=1280x800` — template placeholder for
+  windowed mode. Overwritten at install time on Windows with a
+  resolution-derived size as described above; the Terminal Settings
+  UI (Phase 3) lets the user tune it further. Only consulted when
+  `initial-window-mode` is `windowed`.
 - `font=DejaVu Sans Mono:size=15` — the **managed font= line**. A later
   phase (the Terminal Settings UI) rewrites this single line for font
   and size changes. Keep it on its own line, matchable with `^font=`.

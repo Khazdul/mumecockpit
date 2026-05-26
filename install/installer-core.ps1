@@ -167,6 +167,34 @@ if ($wroteWslConfig) {
 }
 Write-Host ""
 
+# -- Step 4b: Detect primary monitor resolution -------------------------------
+#
+# foot's initial-window-size-pixels (windowed mode) defaults to ~60% width
+# x ~80% height of the primary monitor. We detect on the Windows side because
+# in-WSL detection under WSLg's Wayland/RAIL has no reliable single-screen
+# query -- see ADR 0107 point 4. The bootstrap reads MUME_FOOT_WINDOW_PX and
+# seeds the placed foot.ini. Detection failure must never abort the install:
+# we simply leave the variable unset and the bootstrap keeps the template
+# placeholder. DPI scaling may yield logical rather than physical pixels;
+# that is acceptable -- this is a sensible default, not a pixel-exact value.
+
+$footWindowPx = $null
+try {
+    Add-Type -AssemblyName System.Windows.Forms
+    $bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+    if ($bounds.Width -gt 0 -and $bounds.Height -gt 0) {
+        $w = [int][Math]::Round($bounds.Width  * 0.60)
+        $h = [int][Math]::Round($bounds.Height * 0.80)
+        if ($w -lt 800) { $w = 800 }
+        if ($h -lt 600) { $h = 600 }
+        $footWindowPx = "${w}x${h}"
+        Write-Host "Primary monitor: $($bounds.Width)x$($bounds.Height) -- seeding foot window size $footWindowPx."
+    }
+} catch {
+    Write-Host "Could not detect primary monitor resolution -- foot.ini will keep its template default."
+}
+Write-Host ""
+
 # -- Step 5: Run Linux bootstrap ----------------------------------------------
 #
 # All Linux-side provisioning (tmux, Lua, TinTin++, Python, repo clone) is
@@ -179,7 +207,11 @@ Write-Host "Running Linux bootstrap inside Ubuntu (as root)..."
 Write-Host "This installs tmux, Lua, TinTin++, and the cockpit repo."
 Write-Host ""
 
-& wsl -d $distroName -u root -- bash -c "curl -fsSL https://raw.githubusercontent.com/Khazdul/mumecockpit/main/install/bootstrap-linux.sh | bash"
+$bootstrapCmd = "curl -fsSL https://raw.githubusercontent.com/Khazdul/mumecockpit/main/install/bootstrap-linux.sh | bash"
+if ($footWindowPx) {
+    $bootstrapCmd = "export MUME_FOOT_WINDOW_PX=$footWindowPx; $bootstrapCmd"
+}
+& wsl -d $distroName -u root -- bash -c $bootstrapCmd
 if ($LASTEXITCODE -ne 0) {
     Write-Host ""
     Write-Host "ERROR: Linux bootstrap failed (exit code $LASTEXITCODE)."
