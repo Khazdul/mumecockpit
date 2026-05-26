@@ -68,6 +68,8 @@ tracking, and UI feedback.
 │   │   ├── launcher.sh       # Thin exec wrapper for launcher.py
 │   │   ├── palette.py        # Shared prompt_toolkit colour palette (launcher + popup)
 │   │   ├── launcher_banner.py # Shared animated starfield + wordmark banner (launcher main page + in-game popup); ADR 0100
+│   │   ├── foot_config.py    # Pure foot.ini reader/writer + fc-list monospace
+│   │   │                     #   font enumerator; backs Options → Terminal (ADR 0104)
 │   │   ├── tmux_start.sh     # tmux session creation, hooks, keybinds
 │   │   ├── ingame_menu.sh    # In-game ESC popup menu
 │   │   ├── profile_io.py     # Parser / serializer for tt++ profile .tin files; backs
@@ -147,7 +149,10 @@ tracking, and UI feedback.
 │   │   ├── .collapsed_panes  # Narrow-terminal collapse state
 │   │   ├── .return_to_menu   # Sentinel: return to launcher after session exits
 │   │   ├── .relaunch_terminal # Sentinel: ask bridge/supervisor.sh to respawn foot
-│   │   │                     #   (WSLg deployment; writer lands in a later phase)
+│   │   │                     #   (WSLg deployment; written by Options → Terminal Apply, ADR 0104)
+│   │   ├── .launcher_resume  # One-shot resume hint consumed by the fresh launcher
+│   │   │                     #   post foot-relaunch to land back on options_terminal
+│   │   │                     #   with the cursor restored (ADR 0105)
 │   │   └── .update_preserve/ # Preserved user files during self-update
 │   ├── dev/                  # Developer fixtures (not runtime state)
 │   ├── smoke.sh              # Syntax-check runner (bash/lua/python + core file checks); run with bash bridge/smoke.sh
@@ -466,23 +471,6 @@ prompt_toolkit surfaces — the launcher main page and the in-game
 popup's `main` frame; ADR 0100). The tt++ welcome screen deliberately
 does **not** share that module: it keeps its own hardcoded `#showme`
 lines and prints a static, starless wordmark only.
-
-The Windows deployment moved off Windows-Alacritty onto **foot under
-WSLg**. Phase 1 is shipped: `bridge/supervisor.sh` owns the foot
-lifecycle, `install/mume-cockpit.desktop` is the WSLg `.desktop` entry
-WSLg surfaces to the Windows Start Menu, `install/examples/foot.ini` is
-copied verbatim to `~/.config/foot/foot.ini` by `bootstrap-linux.sh`,
-the Windows installer no longer installs Alacritty or writes a Windows
-desktop shortcut, and the supervisor exports `MUME_TERMINAL=foot-managed`
-so later phases can detect a managed terminal. The Terminal Settings UI
-(launcher submenu picking font/size, rewriting the managed `font=` line,
-then asking the supervisor to relaunch foot via the
-`bridge/runtime/.relaunch_terminal` sentinel) is the in-progress font
-work — Phase 2 in the launcher, Phase 3 in the supervisor. See
-[ADR 0103](docs/decisions/0103-windows-terminal-decision.md) for the
-flicker investigation behind the terminal switch and
-[ADR 0104](docs/decisions/0104-windows-deployment-architecture.md) for
-the deployment shape.
 
 ## See also
 

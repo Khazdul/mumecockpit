@@ -50,7 +50,8 @@ The UI is a frame stack: a single `DynamicContainer` swaps between `main`,
 `profile_create_copy_picker`, `profile_delete_confirm`, `profile_editor`,
 `profile_editor_macro_keybind`, `options`,
 `options_panes`, `options_connection`,
-`options_connection_custom`, `scripts`, `about`,
+`options_connection_custom`, `options_spotlights`,
+`options_terminal`, `terminal_font_picker`, `scripts`, `about`,
 `history`, `history_detail`, `history_rate`, `history_delete_confirm`,
 `log_view`, `spotlights_empty`, `credits`, `update_running`,
 and `update_result` containers, pushed and popped via
@@ -66,7 +67,7 @@ no longer a per-pane subframe.
 |---------|--------|
 | Session detect | `tmux has-session -t mume` + `list-clients` re-probed on every render → top item is "Enter MUME", "Resume MUME", or "Mirror MUME (attached elsewhere)" |
 | Profile page | Sortable table of `ttpp/profiles/*.tin` (Name + Selected columns) paired with a centred Options widget — Select, New, Edit, Rename, Delete, Export, Back. See the [Profile sub-menu](#profile-sub-menu) section below. `default` cannot be renamed or deleted. "Create blank" copies from `bridge/launcher/templates/blank_profile.tin` (single source of truth — see ADR 0042). The active profile is written to `startup.conf` and consumed by `ttpp/core/config.tin` at tt++ startup. |
-| Options page | Navigation hub: **Connection**, **Panes**, **Scripts**, **Spotlights**, blank row, **Back**. See the [Options sub-menu](#options-sub-menu) section below for each child frame. All Options changes persist to `bridge/runtime/startup.conf` on Back / ESC. |
+| Options page | Navigation hub: **Connection**, **Terminal** (managed-foot deployment only), **Panes**, **Scripts**, **Spotlights**, blank row, **Back**. See the [Options sub-menu](#options-sub-menu) section below for each child frame. All Options changes persist to `bridge/runtime/startup.conf` on Back / ESC; the Terminal child writes its own foot.ini and is not a `startup.conf` consumer. |
 | Scripts page | Opened from Options → Scripts. Two-column `[ list \| detail ]` manager of `lua/scripts/<name>.lua`; toggles enabled state via `bridge/runtime/scripts.conf` (deferred write on Back/ESC). See [`options_scripts` frame](#options_scripts-frame) below. |
 | Spotlights | Cross-character reel of deaths, level-ups, pvp-kills, and achievements aggregated from every character's sealed runs. Opens `log_view` in spotlight mode; empty-state frame when nothing has been captured yet. See the [Spotlights sub-menu](#spotlights-sub-menu) section and ADR 0077. |
 | About page | Reads `bridge/launcher/about.txt`; word-wrapped, cached per resize, scrollable. Current version on the right of the title; an "Update available: vX.Y.Z" line appears in `C_ACCENT` when `version.cache` contains a newer tag |
@@ -1214,6 +1215,13 @@ Navigation hub pushed by activating "Options" on the main frame. Children:
 
 - **Connection** → `options_connection` — MMapper / Direct / Custom
   selector; Custom pushes a host/port input subframe.
+- **Terminal** → `options_terminal` — foot-managed deployment only.
+  Font picker + size stepper for the launcher-owned foot.ini, with an
+  Apply action that rewrites the `font=` line and asks the supervisor
+  to relaunch foot. The row is conditionally added by
+  `_build_options_rows` when `MUME_TERMINAL=foot-managed` is set; any
+  other value (or unset) keeps it hidden — fail-closed. See
+  [ADR 0104](decisions/0104-windows-deployment-foot-wslg.md).
 - **Panes** → `options_panes` — per-pane enable/disable + colour selection.
 - **Scripts** → `scripts` — opens the two-column Scripts manager
   documented under [`options_scripts` frame](#options_scripts-frame).
@@ -1532,6 +1540,161 @@ call, and `_extract_events()` drops disabled kinds during the JSONL
 walk — before spotlight construction, rotation, and per-character
 grouping. The [`credits` frame](#credits-frame) inherits the filter
 automatically since it consumes the same reel.
+
+### `options_terminal` frame
+
+Foot-managed deployment only — the row that opens this frame is
+conditionally added by `_build_options_rows` when
+`MUME_TERMINAL=foot-managed`. Edits font and size for the
+launcher-owned foot.ini (`~/.config/foot/foot.ini` by default) without
+touching the rest of the file. Four selectable rows in a single
+centred block, left-aligned on the widest label so the inline values
+stack on one column:
+
+1. **Font** — `Font: <family>` (no delta) or `Font: <on-disk> → <pending>`
+   when the pending family differs from disk. Activating pushes
+   [`terminal_font_picker`](#terminal_font_picker-frame).
+2. **Size** — `Size: <n>` or `Size: <on-disk> → <pending>`. ← / → on
+   this row steps the pending size by 1, clamped to 6–32; Enter is
+   a no-op (the stepper is the editing affordance). When the on-disk
+   font line has no `size=` attribute, the stepper seeds from a
+   conservative default before applying the first nudge.
+3. **Apply** — active only when `(pending_family, pending_size)`
+   differs from the on-disk values; with no delta it renders in the
+   dead-grey inactive `menu_row` state (no handler, ↑/↓ keyboard
+   navigation skips it, mirroring the inactive "Save run" row in the
+   in-game popup). Activating runs the Apply flow described below.
+4. **Back** — discards pending edits and pops to `options`. ESC
+   behaves the same.
+
+Footer hint: `↑↓ Navigate · ←→ Size · Enter Select · ESC Back` with no
+delta; switches to `↑↓ Navigate · ←→ Size · Enter Select · Apply
+restarts the terminal · ESC Back` once a delta exists so the
+consequence is legible. There is no confirmation modal — the footer
+hint is the entire warning.
+
+**State model.** Pending and on-disk are tracked separately. On every
+frame entry `_enter_options_terminal_frame` re-reads the foot.ini via
+`foot_config.read_font()` (no caching at module import — the disk
+state is authoritative across the lifetime of the launcher process)
+and seeds pending = disk. Pending mutates only on Font-picker commit
+and Size-stepper nudges; Back / ESC drops it on the floor. There is
+no separate Save action — Apply *is* the write, and pending only
+materialises on disk through Apply.
+
+The row catalog (`_options_terminal_rows`) is rebuilt every render so
+new sibling rows (colours, padding, terminal background, …) drop in
+without touching the keyboard navigation or the Apply gating. The
+selectable-index list (`_options_terminal_selectable_indices`)
+filters out the dead Apply row so cursor navigation walks the live
+rows only.
+
+**foot.ini I/O.** `bridge/launcher/foot_config.py` is the single
+home for foot.ini-format knowledge — pure (no prompt_toolkit, no
+global state), and the only module that touches the file:
+
+- `read_font(path=None)` — parses the first uncommented `font=` line
+  into a `FontConfig(family, size)`; missing file, no `font=`, or
+  unparseable family returns `None` (never raises). Inline comments
+  and comma-separated alias variants are tolerated; `size=<n>` parses
+  to `int` when whole, `float` otherwise, or `None` when absent.
+- `write_font(family, size, path=None)` — surgical line edit on the
+  first uncommented `font=` line, leaving every other line untouched
+  (ADR 0104: Apply owns *only* the `font=` line). If the file has no
+  `font=` line yet, the writer inserts one in the implicit `[main]`
+  section (immediately before the first `[section]` header, or at
+  end of file). Written atomically via temp file + `os.replace`.
+- `list_monospace_fonts()` — sorted, de-duplicated list of canonical
+  family names from `fc-list :spacing=mono`; missing fc-list, a
+  non-zero exit, or empty output all return `[]` (never raises).
+
+**Apply flow** — the sequence is fixed by the supervisor handshake:
+
+1. `foot_config.write_font(pending_family, pending_size)` rewrites the
+   foot.ini `font=` line. Pure file edit; failure (permissions, disk
+   full) silently aborts the apply without exiting, so the user keeps
+   their pending values to retry.
+2. Touch the relaunch sentinel at `bridge/runtime/.relaunch_terminal`
+   — empty file, existence is the signal. The supervisor in
+   `bridge/supervisor.sh` checks for this file when foot exits and
+   removes-and-relaunches when present (ADR 0104).
+3. Write the resume-hint at `bridge/runtime/.launcher_resume` (atomic
+   temp + rename) — two key=value lines: `frame=options_terminal`
+   and `cursor=<row index>`. The hint is a separate file from the
+   sentinel on purpose: the supervisor consumes the sentinel before
+   the fresh launcher runs, so the launcher could never read it.
+   The resume-hint is written for, and consumed by, the fresh
+   launcher (ADR 0105).
+4. `app.exit()`. foot's bash command finishes, foot exits, the
+   supervisor's loop body sees the sentinel and relaunches foot with
+   the new foot.ini.
+
+**Post-relaunch restoration.** Early in `main()` — after
+`_load_conf()` and the existing one-shot migrations, before frames
+are built — the launcher calls `_consume_launcher_resume()`. The
+helper reads the file, deletes it immediately (one-shot, deleted
+before acting so a crash mid-startup cannot re-trigger), and returns
+`(frame, cursor)` or `None`. Under `_FOOT_MANAGED` and with
+`frame=options_terminal`, the launcher rebuilds the frame stack as
+`[main, options, options_terminal]` (so ESC unwinds through Options
+as if the user had walked there manually) and snaps the cursor onto
+the nearest selectable row at-or-before the saved index. The
+"at-or-before" preference handles the common post-Apply case: the
+saved cursor was on Apply (now dead-grey with no delta), so the
+cursor lands on Size rather than Back. When `_FOOT_MANAGED` is false,
+the resume-hint is ignored and discarded — native Linux, macOS, and
+manual WSL launches stay on `main`.
+
+### `terminal_font_picker` frame
+
+Pushed from the Font row of `options_terminal`. A scrollable list of
+installed monospace family names from
+`foot_config.list_monospace_fonts()`, scanned on every entry (not
+cached) so newly installed fonts surface without restarting the
+launcher. Below the list sits a blank row and a centred `<< Back >>`
+row — Back is mouse / ESC only since the keyboard cursor lives on
+the list.
+
+**Selection grammar** mirrors [`options_connection`](#options_connection-frame)
+as a radio-style selector, expressed through the three-state button
+palette rather than `(•) / ( )` glyphs so the rows read well at any
+list length:
+
+- **Pending family, cursor elsewhere** — grey-background row
+  (`C_BUTTON_ACTIVE_UNFOCUSED`). The persistent marker is visible
+  without arrow-key activity.
+- **Cursor row** — gold-background row (`C_BUTTON_ACTIVE_FOCUSED`),
+  whether or not it is the pending family. Cursor wins; the pending
+  family under the cursor renders gold.
+- **Hover** — grey-background row (`C_BUTTON_HOVER`) for non-cursor,
+  non-pending rows; clears to plain when the mouse moves off.
+- **Other rows** — plain `C_ITEM` foreground, no background fill.
+
+Long family names truncate with a trailing ellipsis inside the
+background fill so the row backgrounds stay rectangular at any
+terminal width.
+
+**Cursor.** Opens on the pending family if present in the list, else
+on row 0. ↑/↓ steps with wrap-around; PgUp/PgDn pages by the visible
+body height; the cursor is always kept inside the body window by
+`_terminal_font_picker_ensure_visible`. Mouse hover does **not** move
+the cursor (hover and cursor are independent indices) — `MOUSE_DOWN`
+commits the clicked row in one click.
+
+**Commit / cancel.** Enter, Space, or click sets the parent's pending
+family and pops back to `options_terminal`. ESC pops without
+mutating anything.
+
+**Edge cases.**
+
+- **Pending family not installed** — when the pending family (from
+  foot.ini) does not appear in the fc-list scan, the picker prepends
+  it as the first entry. This keeps it visible and re-pickable so the
+  user is never silently stranded with an uninstalled font.
+- **Empty fc-list output** — when `fc-list` is missing, fails, or
+  returns nothing, the picker shows a single `No monospace fonts
+  found` body line and the Back row. ESC / Back is the only exit;
+  no list rows are rendered.
 
 ### Persistence asymmetry vs. the popup
 
@@ -2484,7 +2647,8 @@ All frames render through `prompt_toolkit` controls. Layout building blocks:
   sub-frames, `profile_delete_confirm`,
   `profile_editor_macro_keybind`, `options`,
   `options_panes`, `options_connection`,
-  `options_connection_custom`, `history_detail`,
+  `options_connection_custom`, `options_terminal`,
+  `terminal_font_picker`, `history_detail`,
   `history_rate`, `history_delete_confirm`, `update_running`,
   and `update_result` are wrapped in
   `HSplit([window], align=VerticalAlign.CENTER)` so they stay visually
