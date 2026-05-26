@@ -232,12 +232,18 @@ PYEOF
 
     # System icon under the hicolor theme. The .desktop entry references the
     # bare theme name `mume-cockpit`; freedesktop icon lookup resolves that to
-    # this file. Refresh the icon cache when gtk-update-icon-cache is present.
-    $RUN mkdir -p /usr/share/icons/hicolor/256x256/apps
-    $RUN cp "$REPO_DIR/install/assets/mume-cockpit.png" \
-        /usr/share/icons/hicolor/256x256/apps/mume-cockpit.png
+    # these files. WSLg's icon resolver finds 48x48 and scalable; the 256x256
+    # path it does not. Mirrors how the foot package ships its (working) icon.
+    # Refresh the icon cache so the entry is in the theme before WSLg
+    # generates the Start Menu shortcut.
+    $RUN mkdir -p /usr/share/icons/hicolor/48x48/apps
+    $RUN mkdir -p /usr/share/icons/hicolor/scalable/apps
+    $RUN cp "$REPO_DIR/install/assets/mume-cockpit-48.png" \
+        /usr/share/icons/hicolor/48x48/apps/mume-cockpit.png
+    $RUN cp "$REPO_DIR/install/assets/mume-cockpit.svg" \
+        /usr/share/icons/hicolor/scalable/apps/mume-cockpit.svg
     if command -v gtk-update-icon-cache >/dev/null 2>&1; then
-        $RUN gtk-update-icon-cache -q /usr/share/icons/hicolor 2>/dev/null || true
+        $RUN gtk-update-icon-cache -f -q /usr/share/icons/hicolor 2>/dev/null || true
     fi
 
     # System-wide .desktop entry — WSLg surfaces /usr/share/applications/

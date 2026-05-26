@@ -101,9 +101,13 @@ Fully unattended beyond the initial UAC prompt:
        (`fonts-dejavu`, `fonts-cascadia-code`, `fonts-jetbrains-mono`,
        `fonts-hack`) inside WSL; missing apt names degrade gracefully,
      - copies `install/examples/foot.ini` to `~/.config/foot/foot.ini`,
-     - copies `install/assets/mume-cockpit.png` to
-       `/usr/share/icons/hicolor/256x256/apps/mume-cockpit.png` (and
-       refreshes the icon cache when `gtk-update-icon-cache` is present),
+     - copies `install/assets/mume-cockpit-48.png` to
+       `/usr/share/icons/hicolor/48x48/apps/mume-cockpit.png` and
+       `install/assets/mume-cockpit.svg` to
+       `/usr/share/icons/hicolor/scalable/apps/mume-cockpit.svg` (and
+       refreshes the icon cache when `gtk-update-icon-cache` is present).
+       Mirrors how the `foot` package ships its own (working) icon —
+       WSLg's icon resolver finds 48x48 and scalable; 256x256 it does not,
      - copies `install/mume-cockpit.desktop` to
        `/usr/share/applications/mume-cockpit.desktop` — WSLg surfaces
        `.desktop` files from `/usr/share/applications/` to the Windows
@@ -412,7 +416,8 @@ macOS/Linux bootstraps do not write or own that file.
   entry's `Icon=` and render a generic icon in the Windows Start Menu
   regardless. Cosmetic only — the launch itself works. The deployment
   ships the correct config (`Icon=mume-cockpit` themed name + PNG
-  under `/usr/share/icons/hicolor/256x256/apps/`); WSLg builds that
+  under `/usr/share/icons/hicolor/48x48/apps/` and SVG under
+  `/usr/share/icons/hicolor/scalable/apps/`); WSLg builds that
   handle icons at all will pick it up.
 - **First-run latency.** Clicking **MUME Cockpit** for the first time
   after a fresh boot spins up the Ubuntu WSL distro before the
