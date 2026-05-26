@@ -7901,13 +7901,9 @@ def _enter_options_terminal_frame(restore_cursor=None):
     global _options_terminal_disk_family, _options_terminal_disk_size
     global _options_terminal_pending_family, _options_terminal_pending_size
     global _options_terminal_cursor, _options_terminal_hover
-    cfg = foot_config.read_font()
-    if cfg is None:
-        _options_terminal_disk_family = None
-        _options_terminal_disk_size   = None
-    else:
-        _options_terminal_disk_family = cfg.family
-        _options_terminal_disk_size   = cfg.size
+    cfg = foot_config.read_settings()
+    _options_terminal_disk_family = cfg.family
+    _options_terminal_disk_size   = cfg.size
     _options_terminal_pending_family = _options_terminal_disk_family
     _options_terminal_pending_size   = _options_terminal_disk_size
     _options_terminal_hover = -1
@@ -8031,7 +8027,10 @@ def _options_terminal_apply():
         # delta, so this path is defensive only.
         return
     try:
-        foot_config.write_font(family, size)
+        cfg = foot_config.read_settings()
+        cfg.family = family
+        cfg.size   = size
+        foot_config.write_settings(cfg)
     except OSError:
         # The write failed (permissions, disk full, …). Bail out
         # without exiting — the user keeps their pending values.
