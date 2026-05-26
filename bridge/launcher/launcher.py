@@ -447,10 +447,6 @@ _TERMINAL_SIZE_MAX = 32
 _TERMINAL_PAD_MIN  = 0
 _TERMINAL_PAD_MAX  = 40
 _TERMINAL_PAD_STEP = 2
-# Transparency steps in integer tenths internally to avoid float drift;
-# 1 = `alpha=0.1`, 10 = `alpha=1.0` (opaque).
-_TERMINAL_ALPHA_MIN_TENTHS = 1
-_TERMINAL_ALPHA_MAX_TENTHS = 10
 # Window size stepper bounds (pixels) and granularity. The 800×600 floor
 # keeps the cockpit above its MIN_COLS / MIN_ROWS at common font sizes;
 # the upper bound is 8K (7680×4320) so high-DPI users can address their
@@ -7957,11 +7953,6 @@ def _options_terminal_rows():
         pend.pad_x != disk.pad_x,
     )
 
-    alpha_label = _delta(
-        "Transparency", f"{disk.alpha:.1f}", f"{pend.alpha:.1f}",
-        pend.alpha != disk.alpha,
-    )
-
     bg_entries = _background_cycle_entries(disk.background)
     bg_label_map = dict(bg_entries)
     def _bg_disp(v):
@@ -8001,7 +7992,6 @@ def _options_terminal_rows():
         rows.append(("height", height_label))
     rows.extend([
         ("padding",      padding_label),
-        ("alpha",        alpha_label),
         ("background",   background_label),
         ("cursor_style", cursor_style_label),
         ("cursor_blink", cursor_blink_label),
@@ -8123,23 +8113,6 @@ def _options_terminal_padding_step(delta):
             _app.invalidate()
 
 
-def _options_terminal_alpha_step(delta):
-    """Step pending alpha by 0.1, clamped to [0.1, 1.0]. Steps in
-    integer tenths so `0.1 + 0.1 + 0.1` lands exactly on `0.3` rather
-    than `0.30000000000000004`."""
-    global _options_terminal_pending
-    tenths = int(round(_options_terminal_pending.alpha * 10))
-    new_tenths = max(
-        _TERMINAL_ALPHA_MIN_TENTHS,
-        min(_TERMINAL_ALPHA_MAX_TENTHS, tenths + delta),
-    )
-    new = new_tenths / 10.0
-    if new != _options_terminal_pending.alpha:
-        _options_terminal_pending.alpha = new
-        if _app:
-            _app.invalidate()
-
-
 def _options_terminal_background_step(delta):
     """Cycle pending background hex through the palette (plus any
     leading off-list disk entry) by `delta`, wrapping."""
@@ -8226,7 +8199,6 @@ _OPTIONS_TERMINAL_ARROW_STEPPERS = {
     "width":        _options_terminal_width_step,
     "height":       _options_terminal_height_step,
     "padding":      _options_terminal_padding_step,
-    "alpha":        _options_terminal_alpha_step,
     "background":   _options_terminal_background_step,
     "cursor_style": _options_terminal_cursor_style_step,
     "cursor_blink": _options_terminal_cursor_blink_step,

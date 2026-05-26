@@ -40,7 +40,6 @@ _MANAGED_KEYS = [
     ("",       "pad"),
     ("",       "initial-window-mode"),
     ("",       "initial-window-size-pixels"),
-    ("colors", "alpha"),
     ("colors", "background"),
     ("cursor", "style"),
     ("cursor", "blink"),
@@ -57,7 +56,6 @@ _DEFAULTS = {
     ("",       "pad"):                        "0x0",
     ("",       "initial-window-mode"):        "windowed",
     ("",       "initial-window-size-pixels"): "1280x800",
-    ("colors", "alpha"):                      "1.0",
     ("colors", "background"):                 "242424",
     ("cursor", "style"):                      "block",
     ("cursor", "blink"):                      "no",
@@ -76,7 +74,6 @@ class TerminalConfig:
     window_mode:   str   # windowed | maximized | fullscreen
     window_width:  int
     window_height: int
-    alpha:         float
     background:    str   # hex RRGGBB, no leading '#'
     pad_x:         int
     pad_y:         int
@@ -180,13 +177,6 @@ def _parse_dim_pair(value, default_w, default_h):
     return w, h
 
 
-def _parse_float(value, default):
-    try:
-        return float(value)
-    except ValueError:
-        return default
-
-
 def _parse_yes_no(value):
     return value.strip().lower() in ("yes", "true", "on", "1")
 
@@ -216,11 +206,6 @@ def _build_config(found):
     if window_mode not in ("windowed", "maximized", "fullscreen"):
         window_mode = _DEFAULTS[("", "initial-window-mode")]
 
-    alpha = _parse_float(
-        raw(("colors", "alpha")),
-        _parse_float(_DEFAULTS[("colors", "alpha")], 1.0),
-    )
-
     background = raw(("colors", "background")).strip().lstrip("#")
 
     cursor_style = raw(("cursor", "style")).strip().lower()
@@ -235,7 +220,6 @@ def _build_config(found):
         window_mode=window_mode,
         window_width=win_w,
         window_height=win_h,
-        alpha=alpha,
         background=background,
         pad_x=pad_x,
         pad_y=pad_y,
@@ -301,15 +285,6 @@ def _format_font(family, size):
     return f"font={family}:size={size}"
 
 
-def _format_float(value):
-    """Compact float string that always carries a decimal point.
-
-    `str(1.0)` already returns `"1.0"`; the helper exists so all
-    managed-key formatting goes through one named function.
-    """
-    return str(float(value))
-
-
 def _format_line(managed_key, config):
     section, key = managed_key
     if key == "font":
@@ -321,8 +296,6 @@ def _format_line(managed_key, config):
     if key == "initial-window-size-pixels":
         return (f"initial-window-size-pixels="
                 f"{int(config.window_width)}x{int(config.window_height)}")
-    if section == "colors" and key == "alpha":
-        return f"alpha={_format_float(config.alpha)}"
     if section == "colors" and key == "background":
         return f"background={config.background}"
     if section == "cursor" and key == "style":

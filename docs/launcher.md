@@ -1217,7 +1217,7 @@ Navigation hub pushed by activating "Options" on the main frame. Children:
   selector; Custom pushes a host/port input subframe.
 - **Terminal** → `options_terminal` — foot-managed deployment only.
   Full settings page (font, size, window mode and size, padding,
-  transparency, background, cursor style/blink) for the launcher-owned
+  background, cursor style/blink) for the launcher-owned
   foot.ini, with an Apply action that rewrites the managed keys and
   asks the supervisor to relaunch foot. The row is conditionally added
   by `_build_options_rows` when `MUME_TERMINAL=foot-managed` is set;
@@ -1577,24 +1577,21 @@ values stack on one column:
    ← / → adjusts the pending padding by 2 px, clamped to `[0, 40]`.
    Asymmetric hand-edits on disk are collapsed by the next Apply
    (acceptable per ADR 0107).
-6. **Transparency** — numeric stepper over the alpha channel,
-   stepped in integer tenths to dodge float drift; clamped to
-   `[0.1, 1.0]`. Displayed as `X.Y`.
-7. **Background** — fixed-value cycle through the launcher's hex
+6. **Background** — fixed-value cycle through the launcher's hex
    palette, with any off-palette on-disk value prepended so the user
    never silently loses a custom colour. The label uses the palette
    name when available, falling back to the raw hex.
-8. **Cursor style** — fixed-value cycle through
+7. **Cursor style** — fixed-value cycle through
    `block / beam / underline` via `_cycle_pick`. ← / → wraps; Enter
    is a no-op.
-9. **Cursor blink** — fixed-value cycle through `Off / On` (foot's
+8. **Cursor blink** — fixed-value cycle through `Off / On` (foot's
    `cursor.blink=no/yes`).
-10. **Apply** — active only when `pending != disk`; with no delta it
-    renders in the dead-grey inactive `menu_row` state (no handler,
-    ↑/↓ keyboard navigation skips it, mirroring the inactive "Save
-    run" row in the in-game popup). Activating runs the Apply flow
-    described below.
-11. **Back** — discards pending edits and pops to `options`. ESC
+9. **Apply** — active only when `pending != disk`; with no delta it
+   renders in the dead-grey inactive `menu_row` state (no handler,
+   ↑/↓ keyboard navigation skips it, mirroring the inactive "Save
+   run" row in the in-game popup). Activating runs the Apply flow
+   described below.
+10. **Back** — discards pending edits and pops to `options`. ESC
     behaves the same.
 
 Every value-bearing row uses the `Label: <disk> → <pending>`
@@ -1641,7 +1638,7 @@ state), and the only module that touches the file:
 
 - `read_settings(path=None)` — parses the managed key set and returns
   a `TerminalConfig` (family, size, window_mode, window_width,
-  window_height, alpha, background, pad_x, pad_y, cursor_style,
+  window_height, background, pad_x, pad_y, cursor_style,
   cursor_blink). Missing file, missing section, or absent managed
   key all fall back to documented defaults; the function never
   raises.
