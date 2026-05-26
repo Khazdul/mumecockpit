@@ -109,6 +109,8 @@ Active ADRs by area. Click through for context, alternatives, and consequences.
 - [ADR 0020](0020-platform-support-policy.md) — Platform support policy — Linux/WSL is Tier 1; macOS is Tier 2 with portable helpers required in place of GNU-specific flags.
 - [ADR 0028](0028-windows-shortcut-delegation.md) — Windows shortcut delegates to Linux-side launcher — the desktop shortcut invokes `bridge/launcher/launch.sh` directly, eliminating shell-quoting bugs in the alacritty → wsl chain.
 - [ADR 0035](0035-tt-from-source.md) — Build tt++ from source when unsuitable — the bootstrap probes for a TLS-linked tt++ and builds from a pinned source tag when absent or unsuitable.
+- [ADR 0103](0103-windows-flicker-terminal.md) — Windows inbound-burst flicker: move the terminal off the ConPTY path — the Windows deployment runs the cockpit's terminal as a Linux GUI app under WSLg so ConPTY is no longer in the render path; no in-app flicker workaround.
+- [ADR 0104](0104-windows-deployment-foot-wslg.md) — Windows deployment: foot under WSLg, fullscreen, supervisor-owned — foot via a WSLg `.desktop` Start Menu entry, fullscreen-only, lifecycle owned by `bridge/supervisor.sh` with a `.relaunch_terminal` sentinel and `MUME_TERMINAL=foot-managed`. (builds on 0103)
 
 ## When to add an ADR
 
