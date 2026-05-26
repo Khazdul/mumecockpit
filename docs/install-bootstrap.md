@@ -18,14 +18,17 @@ full rationale and alternatives considered.
 
 **In scope**
 
-- Getting a fresh Windows machine from "nothing installed" to "double-click
-  a shortcut and the cockpit launches".
-- Installing: WSL2 + Ubuntu, Alacritty, tmux, lua5.4, python3 +
-  prompt_toolkit, git, tt++, the cockpit repo.
-- Writing the two Windows-specific config files required for MMapper mode
-  (`.wslconfig`, `alacritty.toml`).
-- A desktop shortcut / launcher that runs the cockpit.
+- Getting a fresh Windows machine from "nothing installed" to "click the
+  MUME Cockpit entry in the Start Menu and the cockpit launches".
+- Installing, on the Windows side: WSL2 + Ubuntu and `%UserProfile%\.wslconfig`.
+- Installing, inside WSL: tmux, lua5.4, python3 + prompt_toolkit, git, tt++,
+  the cockpit repo, the foot terminal, monospace fonts, `foot.ini`, and the
+  WSLg `.desktop` entry that surfaces the cockpit on the Windows Start Menu.
 - Lightweight bootstrap scripts for macOS (Homebrew) and Linux (apt).
+
+See [ADR 0104](decisions/0104-windows-deployment-architecture.md) for the
+foot/WSLg deployment shape and [ADR 0103](decisions/0103-windows-terminal-decision.md)
+for the flicker investigation that drove the move off Windows-Alacritty.
 
 **Out of scope**
 
@@ -41,9 +44,11 @@ full rationale and alternatives considered.
 On macOS and Linux the installer provisions backend dependencies only (tmux,
 lua, tt++, python3-prompt-toolkit, git) and clones the repo. It does **not**
 install or configure the terminal emulator — users run the cockpit from
-whatever terminal they already prefer. Alacritty bundling is Windows-specific,
-motivated by the lack of a sensible default WSL-aware terminal on that
-platform.
+whatever terminal they already prefer. The bundled-terminal model (foot under
+WSLg) is Windows-specific, motivated by the lack of a sensible default
+WSL-aware terminal on that platform and by the flicker behaviour of
+Windows-Alacritty driving a tmux-heavy UI — see
+[ADR 0103](decisions/0103-windows-terminal-decision.md).
 
 ## Target platforms
 
@@ -69,27 +74,48 @@ Fully unattended beyond the initial UAC prompt:
 
 1. Pre-flight: Windows build ≥ 22621, admin rights, WSL features enabled,
    internet reachable.
-2. `wsl --install -d Ubuntu --no-launch` — installs Ubuntu 24.04 silently,
-   does **not** trigger the first-run OOBE dialog.
-3. Write `%UserProfile%\.wslconfig` with `networkingMode=mirrored`.
-4. `wsl --shutdown` so the `.wslconfig` change takes effect.
-5. `wsl -d Ubuntu -u root -- bash -c "<bootstrap.sh contents>"` — runs
-   the Linux bootstrap as root. Running as root inside WSL is fine here:
-   the cockpit has no multi-user logic and no sudo paths. The OOBE
-   user-creation dialog is never triggered. The bootstrap detects WSL
-   and additionally provisions `~/MUME/bin/win32yank.exe` for the input
-   pane's fast clipboard read — see the Linux flow below.
-6. Install Alacritty (winget, MSI fallback) and write
-   `%APPDATA%\alacritty\alacritty.toml`.
-7. Create a desktop shortcut that runs:
-   `alacritty.exe -e wsl -d Ubuntu -u root -- /root/MUME/bridge/launcher/launch.sh`.
-   The launcher script handles the cd-and-exec on the Linux side; see
-   [ADR 0028](decisions/0028-windows-shortcut-delegation.md) for rationale.
-8. Verify `/root/MUME/bridge/launcher/launch.sh` and `/root/MUME/start.sh` are
-   executable. Abort with a clear error if either is missing.
+2. `wsl --install -d Ubuntu --no-launch` — installs Ubuntu silently, does
+   **not** trigger the first-run OOBE dialog. Existing `Ubuntu` or `Ubuntu*`
+   installs are detected and reused.
+3. Write `%UserProfile%\.wslconfig` with `networkingMode=mirrored`. Existing
+   `.wslconfig` files are never overwritten — the user is told to add the
+   line manually if their file lacks it.
+4. `wsl --shutdown` so the `.wslconfig` change takes effect (skipped if the
+   file was already correct).
+5. `wsl -d Ubuntu -u root -- bash -c "curl … bootstrap-linux.sh | bash"` —
+   runs the Linux bootstrap as root. Running as root inside WSL is fine
+   here: the cockpit has no multi-user logic and no sudo paths. The OOBE
+   user-creation dialog is never triggered. The bootstrap detects WSL and
+   additionally:
+     - installs the `foot` terminal and a small set of monospace fonts
+       (`fonts-dejavu`, `fonts-cascadia-code`, `fonts-jetbrains-mono`,
+       `fonts-hack`) inside WSL; missing apt names degrade gracefully,
+     - copies `install/examples/foot.ini` to `~/.config/foot/foot.ini`,
+     - copies `install/mume-cockpit.desktop` to
+       `~/.local/share/applications/mume-cockpit.desktop` — WSLg surfaces
+       any `.desktop` file under that directory to the Windows Start Menu
+       automatically, so no Windows-side shortcut work is needed,
+     - provisions `~/MUME/bin/win32yank.exe` for the input pane's fast
+       clipboard read — see the Linux flow below.
+6. Verify both `/root/MUME/bridge/supervisor.sh` and `/root/MUME/start.sh`
+   are executable. Abort with a clear error if either is missing — better
+   to fail loudly here than leave a broken Start Menu entry.
 
-No reboot. No manual first-run. The user sees UAC once, a progress
-indicator, then "done".
+The Start Menu entry's `Exec=` line points at
+`/root/MUME/bridge/supervisor.sh`. The supervisor:
+
+- exports `MUME_TERMINAL=foot-managed` (Phase 2/3 read this to detect a
+  managed terminal),
+- clears any stale `bridge/runtime/.relaunch_terminal` sentinel,
+- launches `foot -- bash /root/MUME/start.sh` and loops on the sentinel
+  so a later phase can ask for a clean foot relaunch (e.g. font change)
+  without exiting the cockpit. In Phase 1 nothing writes the sentinel, so
+  the loop body runs exactly once.
+
+No reboot. No manual first-run. No Alacritty install, no `alacritty.toml`
+written on Windows, no Windows desktop shortcut. The user sees UAC once,
+a progress indicator, then "done", and finds **MUME Cockpit** in the
+Windows Start Menu.
 
 ### Delivery form
 
@@ -170,22 +196,49 @@ listening on `localhost:4242`) to be reachable from tt++ inside WSL.
 `networkingMode=mirrored` requires **Windows 11 22H2 or newer**. Takes
 effect only after `wsl --shutdown`.
 
+### `foot.ini` (Windows/WSL, `~/.config/foot/foot.ini`)
+
+The canonical foot config for the Windows/WSLg deployment, shipped at
+`install/examples/foot.ini` and copied verbatim by `bootstrap-linux.sh`
+into `~/.config/foot/foot.ini` when it detects WSL. Native Linux and
+macOS do not use foot — the file is unread there.
+
+Key fields:
+
+- `initial-window-mode=fullscreen` — **required**. The supervisor relies
+  on foot opening fullscreen; the cockpit assumes the tmux layout owns
+  the entire terminal. There is no CLI flag for this; it must live in
+  the config.
+- `font=DejaVu Sans Mono:size=15` — the **managed font= line**. A later
+  phase (the Terminal Settings UI) rewrites this single line for font
+  and size changes. Keep it on its own line, matchable with `^font=`.
+- `pad=0x0` — no padding; the cockpit paints its own borders.
+- `selection-target=clipboard` — selecting text writes the system
+  clipboard, in line with the cockpit's Alacritty preset.
+- `[scrollback] lines=10000` — matches Alacritty's `history = 10000`.
+- `[cursor] style=beam blink=yes` — matches the Alacritty beam-blink cursor.
+- `[key-bindings] fullscreen=Control+Shift+f` — harmless escape hatch.
+  The cockpit itself never invokes this binding; it leaves the user a
+  way out of fullscreen if they ever want one.
+- `[colors-dark]` — the DOS palette, byte-for-byte mirror of
+  `install/examples/alacritty.toml`. Foot under WSLg renders the cockpit
+  with the same colours as Alacritty on macOS/Linux.
+
 ### `alacritty.toml`
 
-On macOS and Linux, `alacritty.toml` is shipped as an example file at
-`install/examples/alacritty.toml` and is **not** written by the installer.
-Users who want the cockpit's canonical look can copy it to the path below.
-Only the Windows installer writes the file directly — because there the user
-typically has no existing Alacritty config.
+`alacritty.toml` is **example-only**, shipped at
+`install/examples/alacritty.toml` for macOS and Linux users who want to run
+the cockpit under Alacritty. It is **not** written by any installer — neither
+the Windows installer (which uses foot under WSLg, see below) nor the
+macOS/Linux bootstraps. Users who want the cockpit's canonical Alacritty
+look copy it themselves to:
 
-Location:
-
-- Windows: `%APPDATA%\alacritty\alacritty.toml`
 - macOS:   `~/.config/alacritty/alacritty.toml`
 - Linux:   `~/.config/alacritty/alacritty.toml`
 
-Shared across all platforms except for two blocks: `[terminal.shell]`
-(Windows only) and `[font.*].family` (per-OS font choice, see below).
+Shared across both platforms except for `[font.*].family` (per-OS font
+choice, see the Alacritty entry in "Font selection" below). The historical
+`[terminal.shell]` block aimed at Windows is no longer needed.
 
 ```toml
 [colors.primary]
@@ -242,9 +295,6 @@ style = "Italic"
 [font.bold_italic]
 style = "Bold Italic"
 
-[terminal.shell]   # Windows only — drop on macOS/Linux
-program = "wsl.exe"
-
 [scrolling]
 history = 10000
 
@@ -254,30 +304,49 @@ save_to_clipboard = true
 
 ### Font selection
 
-Lucida Console is the canonical look — narrow, open, no ligatures,
-pre-installed on every Windows since Windows 2000. On other platforms it
-is absent, and Microsoft's licensing does not permit us to bundle or
-redistribute it. Alacritty does not support a CSS-style fallback chain
-inside a single `family` string: each weight takes one name, and if the
-family is missing the OS substitutes its default monospace, which may be
-something ugly.
+#### Windows (foot under WSLg)
 
-The installer therefore writes a platform-specific `family` line:
+The Windows installer drops a fixed `foot.ini` and provisions a small set
+of monospace fonts inside WSL so the Terminal Settings UI (Phase 2+) has
+real options to pick from. The whole story is built around one **managed
+`font=` line** in `foot.ini` — a later phase rewrites that single line in
+response to user font/size choices.
+
+- **Default family.** `DejaVu Sans Mono`. Ubuntu's default monospace,
+  present on every fresh `fonts-dejavu` install. Narrow, open, no
+  ligatures — same visual register as Lucida Console / Menlo. This is
+  the hard requirement.
+- **Provisioned alternatives.** `bootstrap-linux.sh` (WSL branch) also
+  installs `fonts-cascadia-code`, `fonts-jetbrains-mono`, and
+  `fonts-hack`. Any package name that doesn't resolve on the host
+  prints a warning and is skipped — the install does **not** fail. The
+  user gets whichever subset their Ubuntu version ships.
+- **Default size.** `15`, matching the macOS/Linux Alacritty preset.
+
+Users who want to change family or size today can edit the `font=` line
+in `~/.config/foot/foot.ini` and the change takes effect on the next
+`foot` launch. The Terminal Settings UI (Phase 2/3) wraps that edit in
+a proper picker.
+
+No font is installed on the Windows side; the entire font story lives
+inside WSL.
+
+#### macOS and Linux (Alacritty example)
+
+Lucida Console was historically the canonical look — narrow, open, no
+ligatures — but Microsoft's licensing does not permit us to bundle it,
+and Alacritty does not support a CSS-style fallback chain inside a
+single `family` string. The example `alacritty.toml` therefore uses a
+per-OS family that ships with the platform:
 
 | Platform | Family              | Rationale                                                    |
 |----------|---------------------|--------------------------------------------------------------|
-| Windows  | `Lucida Console`    | Preinstalled since Win 2000. Canonical look.                 |
 | macOS    | `Menlo`             | System default monospace. Narrow, open, similar proportions. |
 | Linux    | `DejaVu Sans Mono`  | Ubuntu/Debian default. Present on nearly all Linux desktops. |
 
-All three are narrow, non-ligature monospace fonts with similar
-proportions. Users never see a missing-font fallback; the file written at
-install time already contains the correct family for their OS. No font is
-bundled or installed by the installer.
-
-If a user doesn't like the default they can edit `alacritty.toml`
-afterwards — this is documented in the user-facing README, not owned by
-the installer.
+Both are narrow, non-ligature monospace fonts with similar proportions.
+Users who don't like the default edit `alacritty.toml` themselves — the
+macOS/Linux bootstraps do not write or own that file.
 
 ## Pitfalls
 
@@ -298,8 +367,6 @@ the installer.
   MMapper's map download or MUME routing config. The existing launcher
   already lets the user switch between MMapper and direct mode, which
   covers this cleanly.
-- **`winget` not available on policy-managed machines.** MSI fallback
-  handles this case automatically.
 - **tt++ apt version is stale and lacks TLS.** Handled: the bootstrap
   probes the installed binary for version ≥ 2.02.20 and GnuTLS linkage,
   then builds from source (tag 2.02.61) when either check fails. See
@@ -307,9 +374,23 @@ the installer.
 - **`pip install --break-system-packages`.** Required on Ubuntu 23.04+
   (PEP 668). Harmless on older releases; the flag can stay unconditional.
 - **Running as root inside WSL.** Fine for the cockpit (no sudo paths,
-  no multi-user logic) but surprising to some users. The desktop
-  shortcut makes this explicit via `-u root` so it's visible, not
-  hidden. Documented in the README.
+  no multi-user logic) but surprising to some users. The `.desktop`
+  entry installed by the bootstrap points at
+  `/root/MUME/bridge/supervisor.sh`, so the root user is implicit;
+  there is no `-u root` flag visible to the user. Documented in the
+  README.
+- **WSLg cursor-offset bug.** foot under WSLg can render the text
+  cursor a few pixels off from where the terminal thinks it is
+  (microsoft/wslg #1290, #935). Cosmetic only — input still goes to
+  the right place. There is no workaround on our side; we ship with
+  it and call it out so users do not file it as a cockpit bug.
+- **First-run latency.** Clicking **MUME Cockpit** for the first time
+  after a fresh boot spins up the Ubuntu WSL distro before the
+  supervisor can launch foot. On most machines this is a 2–5 second
+  pause with no visual feedback (no splash, no progress indicator);
+  subsequent launches are near-instant because the distro stays warm.
+  Document this in the user README so the first click does not look
+  like a hang.
 
 ### macOS
 
@@ -333,7 +414,7 @@ the installer.
 ### All platforms
 
 - **Repo path hardcoded.** `~/MUME` (or `/root/MUME` on Windows/WSL-as-root)
-  in the desktop shortcut and bootstrap script. Custom paths are a v2
+  in the WSLg `.desktop` entry and bootstrap script. Custom paths are a v2
   problem — document as a constraint.
 - **Collision with `bridge/release/update.sh`.** Self-update expects a clean
   git tree. If the installer ever gains a "repair" mode, it must not
@@ -361,10 +442,21 @@ the installer.
 
 1. **macOS + Linux bootstrap script.** Done.
 2. **Windows installer** (`.ps1` + `.bat`, Ubuntu install, `.wslconfig`,
-   Alacritty, desktop shortcut). Done. Windows 11 22H2+ only; slow path
-   is explicitly out of scope, not deferred — see
-   [ADR 0015](decisions/0015-windows-installer-scope.md).
-3. **MMapper auto-detection + default `connection_mode`.** Next polish item.
+   foot/WSLg terminal, `.desktop` Start Menu entry, `foot.ini`,
+   `bridge/supervisor.sh`). Done. Windows 11 22H2+ only; slow path is
+   explicitly out of scope, not deferred — see
+   [ADR 0015](decisions/0015-windows-installer-scope.md) for the scope
+   floor, [ADR 0103](decisions/0103-windows-terminal-decision.md) for
+   the flicker investigation that drove the move off Windows-Alacritty,
+   and [ADR 0104](decisions/0104-windows-deployment-architecture.md) for
+   the foot/WSLg deployment shape.
+3. **Terminal Settings UI** (font and size picker that rewrites the
+   managed `font=` line; `MUME_TERMINAL` detection; `.relaunch_terminal`
+   sentinel honoured by `bridge/supervisor.sh`). In progress; the
+   launcher submenu lands in Phase 2, the supervisor-driven relaunch in
+   Phase 3. Doc updates to `docs/launcher.md` are batched and land with
+   Phase 3, not now.
+4. **MMapper auto-detection + default `connection_mode`.** Next polish item.
 
 ## See also
 
@@ -375,6 +467,12 @@ the installer.
 - `docs/bridge-services.md` — `bridge/runtime/startup.conf` format,
   `update.sh` behaviour and exit codes.
 - `docs/input-pane.md` — prompt_toolkit and cursor-blink caveats
-  relevant to the Alacritty config choices above.
+  relevant to the terminal config choices above.
 - [ADR 0015](decisions/0015-windows-installer-scope.md) — scope decision
   for the Windows installer: why 22H2+, what was considered and rejected.
+- [ADR 0103](decisions/0103-windows-terminal-decision.md) — flicker
+  investigation and the decision to ship foot under WSLg instead of
+  Windows-Alacritty.
+- [ADR 0104](decisions/0104-windows-deployment-architecture.md) — the
+  foot/WSLg deployment shape: supervisor, `.desktop` entry, managed
+  `foot.ini`, `MUME_TERMINAL` env var.

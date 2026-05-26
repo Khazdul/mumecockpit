@@ -467,6 +467,23 @@ popup's `main` frame; ADR 0100). The tt++ welcome screen deliberately
 does **not** share that module: it keeps its own hardcoded `#showme`
 lines and prints a static, starless wordmark only.
 
+The Windows deployment moved off Windows-Alacritty onto **foot under
+WSLg**. Phase 1 is shipped: `bridge/supervisor.sh` owns the foot
+lifecycle, `install/mume-cockpit.desktop` is the WSLg `.desktop` entry
+WSLg surfaces to the Windows Start Menu, `install/examples/foot.ini` is
+copied verbatim to `~/.config/foot/foot.ini` by `bootstrap-linux.sh`,
+the Windows installer no longer installs Alacritty or writes a Windows
+desktop shortcut, and the supervisor exports `MUME_TERMINAL=foot-managed`
+so later phases can detect a managed terminal. The Terminal Settings UI
+(launcher submenu picking font/size, rewriting the managed `font=` line,
+then asking the supervisor to relaunch foot via the
+`bridge/runtime/.relaunch_terminal` sentinel) is the in-progress font
+work — Phase 2 in the launcher, Phase 3 in the supervisor. See
+[ADR 0103](docs/decisions/0103-windows-terminal-decision.md) for the
+flicker investigation behind the terminal switch and
+[ADR 0104](docs/decisions/0104-windows-deployment-architecture.md) for
+the deployment shape.
+
 ## See also
 
 - [docs/ui-messaging.md](docs/ui-messaging.md) — UI helpers, colour constants, and style rules. Touched when writing almost any script.

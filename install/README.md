@@ -32,17 +32,27 @@ same cockpit; only the bootstrap surface differs.
 6. Wait. The installer prints what it is doing as it goes. Total time is
    roughly 5 minutes on a fresh machine, less if WSL or Ubuntu are already
    installed.
-7. When it finishes, double-click the new "MUME Cockpit" shortcut on your
-   Desktop.
+7. When it finishes, open the Start Menu and search for **MUME Cockpit**.
+   Pin it to the taskbar if you want it one click away.
+8. The very first launch waits a few seconds while the Ubuntu WSL distro
+   spins up. Subsequent launches are near-instant.
 
 ### What got installed
 
 - Ubuntu (inside WSL2) with the cockpit dependencies
-- Alacritty terminal emulator
 - The MUME Cockpit repo at `/root/MUME` inside Ubuntu
-- A Desktop shortcut and an Alacritty config in `%APPDATA%\alacritty\`
-- A `.wslconfig` in your user profile that enables mirrored networking
-  (needed for MMapper integration)
+- The `foot` terminal and a small set of monospace fonts
+  (`fonts-dejavu`, `fonts-cascadia-code`, `fonts-jetbrains-mono`,
+  `fonts-hack`) inside WSL — any font package your Ubuntu version
+  does not ship is skipped silently
+- A managed `foot.ini` at `~/.config/foot/foot.ini` inside WSL
+- A **MUME Cockpit** Start Menu entry (surfaced from WSLg via
+  `~/.local/share/applications/mume-cockpit.desktop`) that runs
+  `bridge/supervisor.sh`
+- A `.wslconfig` in your Windows user profile that enables mirrored
+  networking (needed for MMapper integration). Only created if you
+  did not already have one — your existing `.wslconfig` is never
+  overwritten.
 
 ---
 
@@ -180,9 +190,10 @@ installer.
 Right-click `cockpit-installer.bat`, choose Properties, tick "Unblock" at
 the bottom, click OK, then try running it again.
 
-**Windows: the Desktop shortcut closes immediately**
-The cockpit failed to start. Open PowerShell and run the shortcut's Target
-plus Arguments manually to see the error. File a GitHub issue with the output.
+**Windows: the Start Menu entry opens a terminal that closes immediately**
+The cockpit failed to start inside WSL. Open a WSL shell
+(`wsl -d Ubuntu -u root`) and run `/root/MUME/bridge/supervisor.sh` by
+hand to see the error. File a GitHub issue with the output.
 
 **macOS: "brew: command not found"**
 Install Homebrew first from https://brew.sh, then re-run the curl command.
@@ -200,12 +211,12 @@ not, file a GitHub issue with the error message.
 ## Uninstall
 
 **Windows**
-- Delete the "MUME Cockpit" Desktop shortcut.
-- Delete `%APPDATA%\alacritty\` (or just the cockpit config files inside it
-  if you use Alacritty for other things).
+- Remove the "MUME Cockpit" Start Menu entry by deleting
+  `~/.local/share/applications/mume-cockpit.desktop` from inside WSL. WSLg
+  will drop the Start Menu shortcut on the next sync.
 - In an admin PowerShell, run `wsl --list` to find the Ubuntu distro name,
-  then `wsl --unregister <name>` to remove it.
-- Uninstall Alacritty via Settings -> Apps if you no longer want it.
+  then `wsl --unregister <name>` to remove it. This also wipes the cockpit
+  install, foot, and the foot config inside that distro.
 - Delete `%UserProfile%\.wslconfig` if you do not use WSL for anything else.
 
 **macOS**
