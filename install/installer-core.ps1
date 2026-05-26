@@ -191,6 +191,19 @@ Write-Host ""
 Write-Host "Linux bootstrap complete."
 Write-Host ""
 
+# -- Step 5a: Cycle WSL so /etc/wsl.conf takes effect -------------------------
+#
+# The bootstrap writes /etc/wsl.conf with [user] default=root so WSLg launches
+# the .desktop's Exec as root (the cockpit lives under /root/MUME). That
+# setting is only honoured after a full WSL shutdown. We do this unconditionally
+# here even if Step 4 already restarted WSL — a fresh distro install or a
+# pre-existing distro that just got its first /etc/wsl.conf both need it.
+
+Write-Host "Restarting WSL so /etc/wsl.conf default user takes effect..."
+& wsl --shutdown
+Write-Host "WSL restarted."
+Write-Host ""
+
 # -- Step 5b: Verify cockpit artifacts ----------------------------------------
 #
 # The WSLg .desktop entry invokes bridge/supervisor.sh, which in turn calls

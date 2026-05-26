@@ -161,6 +161,71 @@ chmod +x "$REPO_DIR/bridge/launcher/launch.sh"
 chmod +x "$REPO_DIR/bridge/supervisor.sh"
 
 # ---------------------------------------------------------------------------
+# WSL only: pin the WSL default user to root. The .desktop entry's Exec
+# points at /root/MUME/bridge/supervisor.sh and WSLg runs Exec as the WSL
+# default user — on a pre-existing Ubuntu distro that can be a normal
+# account, which cannot traverse /root/ → silent Start Menu launch failure.
+# Merge [user] default=root into /etc/wsl.conf without destroying other
+# content. The Windows installer runs `wsl --shutdown` after the bootstrap
+# so this takes effect before first launch.
+# ---------------------------------------------------------------------------
+
+if [ "$IS_WSL" -eq 1 ]; then
+    $RUN python3 - <<'PYEOF'
+import os
+import re
+
+path = "/etc/wsl.conf"
+content = open(path).read() if os.path.exists(path) else ""
+lines = content.splitlines()
+
+user_start = None
+user_end = None
+for i, line in enumerate(lines):
+    m = re.match(r'^\s*\[([^\]]+)\]\s*$', line)
+    if m:
+        if user_start is not None and user_end is None:
+            user_end = i
+        if m.group(1).strip() == "user":
+            user_start = i
+            user_end = None
+if user_start is not None and user_end is None:
+    user_end = len(lines)
+
+if user_start is None:
+    if lines and lines[-1].strip() != "":
+        lines.append("")
+    lines.append("[user]")
+    lines.append("default=root")
+else:
+    block = lines[user_start + 1 : user_end]
+    replaced = False
+    for j, ln in enumerate(block):
+        if re.match(r'^\s*default\s*=', ln):
+            block[j] = "default=root"
+            replaced = True
+            break
+    if not replaced:
+        insert_at = len(block)
+        while insert_at > 0 and block[insert_at - 1].strip() == "":
+            insert_at -= 1
+        block.insert(insert_at, "default=root")
+    lines[user_start + 1 : user_end] = block
+
+new_content = "\n".join(lines)
+if new_content and not new_content.endswith("\n"):
+    new_content += "\n"
+
+if new_content != content:
+    with open(path, "w") as f:
+        f.write(new_content)
+    print("Set /etc/wsl.conf [user] default=root.")
+else:
+    print("/etc/wsl.conf already has [user] default=root — skipping.")
+PYEOF
+fi
+
+# ---------------------------------------------------------------------------
 # WSL only: install the managed foot config and the WSLg .desktop entry.
 # WSLg surfaces .desktop entries under ~/.local/share/applications/ to the
 # Windows Start Menu automatically.
