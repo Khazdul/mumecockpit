@@ -85,7 +85,9 @@ tracking, and UI feedback.
 │   │   │                     #   adapter for log_view spotlight mode (ADR 0077)
 │   │   ├── credits.py        # End-of-reel scrolling credits content generator (ADR 0080)
 │   │   ├── run_retention.py  # 14-day retention sweep for run logs (ADR 0074)
-│   │   ├── launch.sh         # Windows shortcut target (ADR 0045)
+│   │   ├── launch.sh         # Former Alacritty desktop-shortcut target (ADR 0028);
+│   │   │                     #   obsolete after the foot/WSLg switch — kept for
+│   │   │                     #   one release of grace, removable in the next pass.
 │   │   ├── build_initial_layout.sh  # Builds pane layout on first client-attach
 │   │   ├── wait_for_layout.sh       # Blocks tt++ start until layout is ready
 │   │   ├── open_pane.sh      # Opens/manages tmux panes dynamically
@@ -144,9 +146,16 @@ tracking, and UI feedback.
 │   │   ├── .popup_open       # Sentinel: in-game popup is open
 │   │   ├── .collapsed_panes  # Narrow-terminal collapse state
 │   │   ├── .return_to_menu   # Sentinel: return to launcher after session exits
+│   │   ├── .relaunch_terminal # Sentinel: ask bridge/supervisor.sh to respawn foot
+│   │   │                     #   (WSLg deployment; writer lands in a later phase)
 │   │   └── .update_preserve/ # Preserved user files during self-update
 │   ├── dev/                  # Developer fixtures (not runtime state)
 │   ├── smoke.sh              # Syntax-check runner (bash/lua/python + core file checks); run with bash bridge/smoke.sh
+│   ├── supervisor.sh         # Windows/WSLg entry point — owns the foot terminal
+│   │                         #   lifecycle, exports MUME_TERMINAL=foot-managed,
+│   │                         #   loops on .relaunch_terminal sentinel. Invoked by
+│   │                         #   install/mume-cockpit.desktop. Native Linux/macOS
+│   │                         #   do not use it.
 │   ├── launcher.sh           # COMPAT SHIM → bridge/launcher/launcher.sh (v0.7.0, ADR 0045)
 │   └── tmux_start.sh         # COMPAT SHIM → bridge/launcher/tmux_start.sh (v0.7.0, ADR 0045)
 │
