@@ -8262,12 +8262,21 @@ def _terminal_font_picker_visible_rows():
 
 
 def _terminal_font_picker_ensure_visible():
-    """Pull the scroll so the cursor stays inside the body window."""
+    """Pull the scroll so the cursor stays inside the body window.
+
+    The Back row (cursor index `n`) sits in the reserved non-scrolling
+    row below the list — when the cursor is there, clamp scroll so the
+    tail of the font list is visible instead of running the font-range
+    scroll math on the out-of-range index.
+    """
     global _terminal_font_picker_scroll
     body = _terminal_font_picker_visible_rows()
     n = len(_terminal_font_picker_fonts)
     if n == 0:
         _terminal_font_picker_scroll = 0
+        return
+    if _terminal_font_picker_cursor >= n:
+        _terminal_font_picker_scroll = max(0, n - body)
         return
     if _terminal_font_picker_cursor < _terminal_font_picker_scroll:
         _terminal_font_picker_scroll = _terminal_font_picker_cursor
@@ -8279,27 +8288,26 @@ def _terminal_font_picker_ensure_visible():
 
 
 def _terminal_font_picker_move(delta):
-    """Step cursor by `delta` with wrap-around; reset hover so it doesn't
-    fight the keyboard."""
+    """Step cursor by `delta` over the `n + 1` position space (n font
+    rows plus the trailing Back row at index `n`), with wrap-around."""
     global _terminal_font_picker_cursor
     n = len(_terminal_font_picker_fonts)
-    if n == 0:
-        return
-    _terminal_font_picker_cursor = (_terminal_font_picker_cursor + delta) % n
+    _terminal_font_picker_cursor = (_terminal_font_picker_cursor + delta) % (n + 1)
     _terminal_font_picker_ensure_visible()
     if _app:
         _app.invalidate()
 
 
 def _terminal_font_picker_select(idx=None):
-    """Commit the row at `idx` (or the cursor row) to the parent's
-    pending family, then pop back to Terminal Settings."""
+    """Commit the row at `idx` (or the cursor row). Index `n` is the
+    Back row — selecting it pops the frame instead of committing a
+    font family."""
     global _options_terminal_pending_family
     n = len(_terminal_font_picker_fonts)
-    if n == 0:
+    row = _terminal_font_picker_cursor if idx is None else idx
+    if row == n:
         _terminal_font_picker_back()
         return
-    row = _terminal_font_picker_cursor if idx is None else idx
     if not (0 <= row < n):
         return
     _options_terminal_pending_family = _terminal_font_picker_fonts[row]
@@ -8395,13 +8403,14 @@ def _terminal_font_picker_text():
             frags.append(("", "\n", clear_hover))
             body_rows += 1
 
-    # Blank row + plain `<< Back >>` row below the list. Back is always
-    # selectable; the keyboard cursor lives on the list, so Back here
-    # is mouse / ESC only.
+    # Blank row + `<< Back >>` row below the list. Back is the final
+    # cursor index (`n`); when cursored it renders in the focused style,
+    # matching every other launcher frame's Back row.
     frags.append(("", "\n", clear_hover))
     body_rows += 1
 
     back_label = "Back"
+    back_state = "selected" if cur == len(fonts) else "inactive"
 
     def _back_handler(ev):
         if ev.event_type == MouseEventType.MOUSE_DOWN:
@@ -8411,7 +8420,7 @@ def _terminal_font_picker_text():
     row_left  = max(0, (cols - row_w) // 2)
     row_right = max(0, cols - row_left - row_w)
     frags.append(("", " " * row_left, clear_hover))
-    frags.extend(menu_row(back_label, "inactive", mouse_handler=_back_handler))
+    frags.extend(menu_row(back_label, back_state, mouse_handler=_back_handler))
     frags.append(("", " " * row_right, clear_hover))
     frags.append(("", "\n", clear_hover))
     body_rows += 1
