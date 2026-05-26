@@ -131,10 +131,13 @@ The Start Menu entry's `Exec=` line points at
   without exiting the cockpit. In Phase 1 nothing writes the sentinel, so
   the loop body runs exactly once.
 
-No reboot. No manual first-run. No Alacritty install, no `alacritty.toml`
-written on Windows, no Windows desktop shortcut. The user sees UAC once,
-a progress indicator, then "done", and finds **MUME Cockpit** in the
-Windows Start Menu.
+The install itself requires no reboot, but a Windows restart is
+**recommended before first launch** so the WSL graphics subsystem starts
+cleanly — see the Pitfalls entry on blank first launches. No manual
+first-run. No Alacritty install, no `alacritty.toml` written on Windows,
+no Windows desktop shortcut. The user sees UAC once, a progress
+indicator, then "done" with a restart recommendation, and finds
+**MUME Cockpit** in the Windows Start Menu.
 
 ### Delivery form
 
@@ -418,6 +421,14 @@ macOS/Linux bootstraps do not write or own that file.
   subsequent launches are near-instant because the distro stays warm.
   Document this in the user README so the first click does not look
   like a hang.
+- **Blank cockpit window on first launch after install.** On a freshly
+  installed machine, the first WSLg GUI launch can come up with a blank
+  window because the host-side WSLg compositor was left in an
+  inconsistent state by the installer's WSL operations. A full Windows
+  restart resolves it; `wsl --shutdown` alone is not enough because the
+  bad state lives in the Windows host, not the distro. The installer
+  recommends a restart before first launch for this reason. Surface it
+  in the user-facing README as well.
 
 ### macOS
 

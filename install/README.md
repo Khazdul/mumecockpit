@@ -32,9 +32,13 @@ same cockpit; only the bootstrap surface differs.
 6. Wait. The installer prints what it is doing as it goes. Total time is
    roughly 5 minutes on a fresh machine, less if WSL or Ubuntu are already
    installed.
-7. When it finishes, open the Start Menu and search for **MUME Cockpit**.
+7. When it finishes, the installer prints a recommendation to restart
+   Windows before launching the cockpit for the first time. The install
+   itself is done — the restart just lets the WSL graphics subsystem start
+   cleanly so the first launch is reliable.
+8. After the restart, open the Start Menu and search for **MUME Cockpit**.
    Pin it to the taskbar if you want it one click away.
-8. The very first launch waits a few seconds while the Ubuntu WSL distro
+9. The very first launch waits a few seconds while the Ubuntu WSL distro
    spins up. Subsequent launches are near-instant.
 
 ### What got installed
@@ -198,6 +202,12 @@ the bottom, click OK, then try running it again.
 The cockpit failed to start inside WSL. Open a WSL shell
 (`wsl -d Ubuntu -u root`) and run `/root/MUME/bridge/supervisor.sh` by
 hand to see the error. File a GitHub issue with the output.
+
+**Windows: the cockpit window appears blank on first launch after install**
+Restart Windows and try again. The first launch after a fresh install can
+catch the WSL graphics subsystem in an inconsistent state; a full Windows
+restart (not just `wsl --shutdown`) clears it. The installer recommends
+this restart at the end of the install for the same reason.
 
 **Windows: the Start Menu shows a generic icon instead of the cockpit one**
 Cosmetic only — a WSLg rendering limitation on some WSLg versions. The

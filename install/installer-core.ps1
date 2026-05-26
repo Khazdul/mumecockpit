@@ -242,3 +242,14 @@ Write-Host "Installation complete."
 Write-Host "A ""MUME Cockpit"" entry has been added to your Windows Start Menu."
 Write-Host "Search for it from the Start Menu, or pin it to the taskbar, to launch."
 Write-Host ""
+Write-Host "============================================================" -ForegroundColor Yellow
+Write-Host ""
+Write-Host "  RECOMMENDED: Restart Windows before launching MUME Cockpit" -ForegroundColor Yellow
+Write-Host "  for the first time. This lets the WSL graphics subsystem" -ForegroundColor Yellow
+Write-Host "  start cleanly." -ForegroundColor Yellow
+Write-Host ""
+Write-Host "  If the cockpit window appears blank on first launch," -ForegroundColor Yellow
+Write-Host "  restart Windows and try again." -ForegroundColor Yellow
+Write-Host ""
+Write-Host "============================================================" -ForegroundColor Yellow
+Write-Host ""
