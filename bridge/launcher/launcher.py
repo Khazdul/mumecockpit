@@ -62,6 +62,7 @@ from palette import (  # noqa: E402
 import ttpp_syntax  # noqa: E402
 import launcher_banner  # noqa: E402
 import credits  # noqa: E402
+import foot_config  # noqa: E402
 import history_filter  # noqa: E402
 import log_player  # noqa: E402
 import macro_keys  # noqa: E402
@@ -126,6 +127,15 @@ _CONNECTION_MODES = [
     ("direct",  "Direct",  "(mume.org:4242)"),
     ("custom",  "Custom",  None),   # detail filled in at render time from conf
 ]
+
+# MUME_TERMINAL contract (ADR 0104). The Windows foot/WSLg deployment's
+# supervisor sets `MUME_TERMINAL=foot-managed` when it launches foot so
+# downstream code can tell it owns the host terminal and the launcher
+# can safely surface foot-specific affordances (the Terminal Settings
+# submenu under Options). Fail-closed: any other value, or the
+# variable absent, means we are not running under the managed-foot
+# deployment and the submenu stays hidden.
+_FOOT_MANAGED = os.environ.get("MUME_TERMINAL") == "foot-managed"
 
 # Fresh-install defaults are sourced from the shipped
 # templates/startup.conf — single source of truth for both the launcher
@@ -556,6 +566,7 @@ _options_panes_window            = None
 _options_connection_window       = None
 _options_connection_custom_window = None
 _options_spotlights_window       = None
+_options_terminal_window         = None
 _spotlights_empty_window         = None
 _scripts_window      = None
 _about_window        = None
@@ -1032,6 +1043,7 @@ def _focus_current_frame():
             "options_connection":         _options_connection_window,
             "options_connection_custom":  _options_connection_custom_window,
             "options_spotlights":         _options_spotlights_window,
+            "options_terminal":           _options_terminal_window,
             "spotlights_empty":           _spotlights_empty_window,
             "scripts":                    _scripts_window,
             "about":                      _about_window,
@@ -7121,13 +7133,26 @@ def _profile_delete_text():
 # ---------------------------------------------------------------------------
 # Options frame — top level (Connection / Panes / Scripts / Spotlights / Back)
 # ---------------------------------------------------------------------------
-_OPTIONS_ROWS = [
-    ("connection",     "Connection"),
-    ("panes",          "Panes"),
-    ("scripts",        "Scripts"),
-    ("spotlights",     "Spotlights"),
-    ("back",           "Back"),
-]
+# The "Terminal" row appears only when the cockpit was launched under
+# the foot/WSLg managed-terminal deployment (`MUME_TERMINAL=foot-managed`).
+# Built at module import time — the env var is fixed for the launcher's
+# lifetime — so the row's presence is deterministic across frame pushes.
+def _build_options_rows():
+    rows = [
+        ("connection", "Connection"),
+    ]
+    if _FOOT_MANAGED:
+        rows.append(("terminal", "Terminal"))
+    rows.extend([
+        ("panes",      "Panes"),
+        ("scripts",    "Scripts"),
+        ("spotlights", "Spotlights"),
+        ("back",       "Back"),
+    ])
+    return rows
+
+
+_OPTIONS_ROWS = _build_options_rows()
 
 
 def _enter_options_frame():
@@ -7156,6 +7181,8 @@ def _activate_option(idx):
     elif action == "connection":
         _sel_options_connection = _current_connection_index()
         _push_frame("options_connection")
+    elif action == "terminal":
+        _enter_options_terminal_frame()
     elif action == "back":
         _save_conf()
         _pop_frame()
@@ -7758,6 +7785,87 @@ def _options_spotlights_text():
         frags.append(("", " " * row_right, clear_hover))
         frags.append(("", "\n", clear_hover))
         body_rows += 1
+
+    content_rows = title_block_height(2) + body_rows
+    frags.extend(footer_block(
+        footer, cols, rows_h, content_rows, mouse_handler=clear_hover,
+    ))
+    return frags
+
+
+# ---------------------------------------------------------------------------
+# Options — Terminal submenu (read-only foot.ini font/size display)
+# ---------------------------------------------------------------------------
+# Only reachable when the cockpit was launched by the foot/WSLg
+# managed-terminal supervisor (`MUME_TERMINAL=foot-managed`). The row
+# that opens this frame is conditionally added by `_build_options_rows`
+# and the activation router in `_activate_option`. Phase 2 is read-only:
+# the foot.ini is read on every push (not cached at import) and the
+# values are displayed as plain text — no editing, no font list, no
+# Apply. Phase 3 will turn this into an editor.
+def _enter_options_terminal_frame():
+    _push_frame("options_terminal")
+
+
+def _options_terminal_back():
+    _pop_frame()
+
+
+def _options_terminal_clear_hover(ev):
+    if ev.event_type == MouseEventType.MOUSE_MOVE:
+        _set_hover("options_terminal", -1)
+
+
+def _options_terminal_text():
+    cols   = _term_cols()
+    rows_h = _term_rows()
+    title  = "─── Terminal Settings ───"
+    footer = "↑↓ Navigate · Enter Select · ESC Back"
+    clear_hover = _options_terminal_clear_hover
+
+    frags = []
+    frags.extend(title_block(
+        title, cols, blank_above=2, mouse_handler=clear_hover,
+    ))
+
+    # Read on every push so the frame reflects the current disk state
+    # (e.g. after the user has edited foot.ini outside the launcher).
+    cfg = foot_config.read_font()
+    if cfg is None:
+        info_lines = ["Could not read foot configuration."]
+    else:
+        size_text = "default" if cfg.size is None else str(cfg.size)
+        info_lines = [f"Font: {cfg.family}", f"Size: {size_text}"]
+
+    body_rows = 0
+    for line in info_lines:
+        pad = max(0, (cols - len(line)) // 2)
+        frags.append(("", " " * pad, clear_hover))
+        frags.append((C_BODY, line, clear_hover))
+        frags.append(("", "\n", clear_hover))
+        body_rows += 1
+
+    # Blank row separating the info block from the Back row.
+    frags.append(("", "\n", clear_hover))
+    body_rows += 1
+
+    # Back is the only selectable row — always rendered in the
+    # `selected` state so the gold << >> cursor grammar is visible
+    # without arrow-key activity.
+    back_label = "Back"
+
+    def _back_handler(ev):
+        if ev.event_type == MouseEventType.MOUSE_DOWN:
+            _options_terminal_back()
+
+    row_w     = len(back_label) + 6
+    row_left  = max(0, (cols - row_w) // 2)
+    row_right = max(0, cols - row_left - row_w)
+    frags.append(("", " " * row_left, clear_hover))
+    frags.extend(menu_row(back_label, "selected", mouse_handler=_back_handler))
+    frags.append(("", " " * row_right, clear_hover))
+    frags.append(("", "\n", clear_hover))
+    body_rows += 1
 
     content_rows = title_block_height(2) + body_rows
     frags.extend(footer_block(
@@ -13554,6 +13662,19 @@ def _kb_opts_escape(event):
     _pop_frame()
 
 
+# Options — Terminal submenu (read-only foot font/size display). Only
+# Back is selectable; ESC and Enter/Space all pop to Options.
+@kb.add("enter", filter=_in_frame("options_terminal"))
+@kb.add(" ",     filter=_in_frame("options_terminal"))
+def _kb_optt_select(event):
+    _options_terminal_back()
+
+
+@kb.add("escape", filter=_in_frame("options_terminal"), eager=True)
+def _kb_optt_escape(event):
+    _options_terminal_back()
+
+
 # Options — Connection submenu
 @kb.add("up", filter=_in_frame("options_connection"))
 def _kb_optc_up(event):
@@ -14301,6 +14422,7 @@ def main():
     global _options_window, _options_panes_window
     global _options_connection_window, _options_connection_custom_window
     global _options_spotlights_window
+    global _options_terminal_window
     global _spotlights_empty_window
     global _scripts_window, _about_window
     global _update_running_window, _update_result_window
@@ -14344,6 +14466,7 @@ def main():
     _options_connection_window,         options_connection_frame       = _build_simple(_options_connection_text)
     _options_connection_custom_window,  options_connection_custom_frame = _build_simple(_options_connection_custom_text)
     _options_spotlights_window,         options_spotlights_frame       = _build_simple(_options_spotlights_text)
+    _options_terminal_window,           options_terminal_frame         = _build_simple(_options_terminal_text)
     _spotlights_empty_window,           spotlights_empty_frame         = _build_simple(_spotlights_empty_text)
     _scripts_window,               scripts_frame             = _build_simple(_scripts_text)
     _about_window,                 about_frame               = _build_simple(_about_text)
@@ -14460,6 +14583,7 @@ def main():
         "options_connection":         options_connection_frame,
         "options_connection_custom":  options_connection_custom_frame,
         "options_spotlights":         options_spotlights_frame,
+        "options_terminal":           options_terminal_frame,
         "spotlights_empty":           spotlights_empty_frame,
         "scripts":                    scripts_frame,
         "about":                      about_frame,
