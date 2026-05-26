@@ -22,8 +22,10 @@ full rationale and alternatives considered.
   MUME Cockpit entry in the Start Menu and the cockpit launches".
 - Installing, on the Windows side: WSL2 + Ubuntu and `%UserProfile%\.wslconfig`.
 - Installing, inside WSL: tmux, lua5.4, python3 + prompt_toolkit, git, tt++,
-  the cockpit repo, the foot terminal, monospace fonts, `foot.ini`, and the
-  WSLg `.desktop` entry that surfaces the cockpit on the Windows Start Menu.
+  the cockpit repo, the foot terminal, monospace fonts, `foot.ini`, an
+  `/etc/wsl.conf` that pins the default user to root, and the WSLg
+  `.desktop` entry (system-wide, with a system-theme icon) that surfaces
+  the cockpit on the Windows Start Menu.
 - Lightweight bootstrap scripts for macOS (Homebrew) and Linux (apt).
 
 See [ADR 0104](decisions/0104-windows-deployment-architecture.md) for the
@@ -87,17 +89,32 @@ Fully unattended beyond the initial UAC prompt:
    here: the cockpit has no multi-user logic and no sudo paths. The OOBE
    user-creation dialog is never triggered. The bootstrap detects WSL and
    additionally:
+     - writes `/etc/wsl.conf` with `[user] default=root`, merging into any
+       existing file. WSLg runs the `.desktop` Exec as whatever WSL
+       considers the default user — on a pre-existing Ubuntu distro that
+       can be a normal account, which cannot traverse `/root/`. Forcing
+       `default=root` is what keeps the Start Menu launch working on a
+       reused Ubuntu install,
      - installs the `foot` terminal and a small set of monospace fonts
        (`fonts-dejavu`, `fonts-cascadia-code`, `fonts-jetbrains-mono`,
        `fonts-hack`) inside WSL; missing apt names degrade gracefully,
      - copies `install/examples/foot.ini` to `~/.config/foot/foot.ini`,
+     - copies `install/assets/mume-cockpit.png` to
+       `/usr/share/icons/hicolor/256x256/apps/mume-cockpit.png` (and
+       refreshes the icon cache when `gtk-update-icon-cache` is present),
      - copies `install/mume-cockpit.desktop` to
-       `~/.local/share/applications/mume-cockpit.desktop` — WSLg surfaces
-       any `.desktop` file under that directory to the Windows Start Menu
-       automatically, so no Windows-side shortcut work is needed,
+       `/usr/share/applications/mume-cockpit.desktop` — WSLg surfaces
+       `.desktop` files from `/usr/share/applications/` to the Windows
+       Start Menu reliably (per-user `~/.local/share/applications/` is
+       not reliable across WSLg versions). The `.desktop`'s `Icon=` is
+       the bare theme name `mume-cockpit`, resolved by freedesktop icon
+       lookup against the system hicolor theme,
      - provisions `~/MUME/bin/win32yank.exe` for the input pane's fast
        clipboard read — see the Linux flow below.
-6. Verify both `/root/MUME/bridge/supervisor.sh` and `/root/MUME/start.sh`
+6. `wsl --shutdown` — required so the bootstrap's `/etc/wsl.conf` change
+   (default user → root) takes effect before the first Start Menu launch.
+   Unconditional; safe on a brand-new distro as well.
+7. Verify both `/root/MUME/bridge/supervisor.sh` and `/root/MUME/start.sh`
    are executable. Abort with a clear error if either is missing — better
    to fail loudly here than leave a broken Start Menu entry.
 
@@ -220,9 +237,11 @@ Key fields:
 - `[key-bindings] fullscreen=Control+Shift+f` — harmless escape hatch.
   The cockpit itself never invokes this binding; it leaves the user a
   way out of fullscreen if they ever want one.
-- `[colors-dark]` — the DOS palette, byte-for-byte mirror of
+- `[colors]` — the DOS palette, byte-for-byte mirror of
   `install/examples/alacritty.toml`. Foot under WSLg renders the cockpit
-  with the same colours as Alacritty on macOS/Linux.
+  with the same colours as Alacritty on macOS/Linux. (foot has no
+  light/dark colour split; the section is just `[colors]`, not
+  `[colors-dark]`.)
 
 ### `alacritty.toml`
 
@@ -384,6 +403,12 @@ macOS/Linux bootstraps do not write or own that file.
   (microsoft/wslg #1290, #935). Cosmetic only — input still goes to
   the right place. There is no workaround on our side; we ship with
   it and call it out so users do not file it as a cockpit bug.
+- **WSLg Start Menu icon.** Some WSLg versions ignore the `.desktop`
+  entry's `Icon=` and render a generic icon in the Windows Start Menu
+  regardless. Cosmetic only — the launch itself works. The deployment
+  ships the correct config (`Icon=mume-cockpit` themed name + PNG
+  under `/usr/share/icons/hicolor/256x256/apps/`); WSLg builds that
+  handle icons at all will pick it up.
 - **First-run latency.** Clicking **MUME Cockpit** for the first time
   after a fresh boot spins up the Ubuntu WSL distro before the
   supervisor can launch foot. On most machines this is a 2–5 second

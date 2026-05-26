@@ -47,8 +47,12 @@ same cockpit; only the bootstrap surface differs.
   does not ship is skipped silently
 - A managed `foot.ini` at `~/.config/foot/foot.ini` inside WSL
 - A **MUME Cockpit** Start Menu entry (surfaced from WSLg via
-  `~/.local/share/applications/mume-cockpit.desktop`) that runs
+  `/usr/share/applications/mume-cockpit.desktop`, with its icon at
+  `/usr/share/icons/hicolor/256x256/apps/mume-cockpit.png`) that runs
   `bridge/supervisor.sh`
+- `/etc/wsl.conf` inside WSL with `[user] default=root` (merged into any
+  existing file), so the Start Menu launch runs as root and can reach
+  `/root/MUME`
 - A `.wslconfig` in your Windows user profile that enables mirrored
   networking (needed for MMapper integration). Only created if you
   did not already have one — your existing `.wslconfig` is never
@@ -195,6 +199,10 @@ The cockpit failed to start inside WSL. Open a WSL shell
 (`wsl -d Ubuntu -u root`) and run `/root/MUME/bridge/supervisor.sh` by
 hand to see the error. File a GitHub issue with the output.
 
+**Windows: the Start Menu shows a generic icon instead of the cockpit one**
+Cosmetic only — a WSLg rendering limitation on some WSLg versions. The
+app launches and runs normally; nothing to do on your side.
+
 **macOS: "brew: command not found"**
 Install Homebrew first from https://brew.sh, then re-run the curl command.
 
@@ -212,8 +220,9 @@ not, file a GitHub issue with the error message.
 
 **Windows**
 - Remove the "MUME Cockpit" Start Menu entry by deleting
-  `~/.local/share/applications/mume-cockpit.desktop` from inside WSL. WSLg
-  will drop the Start Menu shortcut on the next sync.
+  `/usr/share/applications/mume-cockpit.desktop` (and optionally
+  `/usr/share/icons/hicolor/256x256/apps/mume-cockpit.png`) from inside
+  WSL. WSLg will drop the Start Menu shortcut on the next sync.
 - In an admin PowerShell, run `wsl --list` to find the Ubuntu distro name,
   then `wsl --unregister <name>` to remove it. This also wipes the cockpit
   install, foot, and the foot config inside that distro.
