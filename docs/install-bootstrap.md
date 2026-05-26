@@ -94,7 +94,9 @@ Fully unattended beyond the initial UAC prompt:
        considers the default user — on a pre-existing Ubuntu distro that
        can be a normal account, which cannot traverse `/root/`. Forcing
        `default=root` is what keeps the Start Menu launch working on a
-       reused Ubuntu install,
+       reused Ubuntu install. See
+       [ADR 0106](decisions/0106-windows-installer-hardening.md) for the
+       full rationale,
      - installs the `foot` terminal and a small set of monospace fonts
        (`fonts-dejavu`, `fonts-cascadia-code`, `fonts-jetbrains-mono`,
        `fonts-hack`) inside WSL; missing apt names degrade gracefully,
@@ -473,8 +475,11 @@ macOS/Linux bootstraps do not write or own that file.
    [ADR 0015](decisions/0015-windows-installer-scope.md) for the scope
    floor, [ADR 0103](decisions/0103-windows-terminal-decision.md) for
    the flicker investigation that drove the move off Windows-Alacritty,
-   and [ADR 0104](decisions/0104-windows-deployment-architecture.md) for
-   the foot/WSLg deployment shape.
+   [ADR 0104](decisions/0104-windows-deployment-architecture.md) for
+   the foot/WSLg deployment shape, and
+   [ADR 0106](decisions/0106-windows-installer-hardening.md) for the
+   `/etc/wsl.conf` default-user pin and system-wide `.desktop`/icon
+   placement added after end-to-end validation on Win11.
 3. **Terminal Settings UI** (font and size picker that rewrites the
    managed `font=` line; `MUME_TERMINAL` detection; `.relaunch_terminal`
    sentinel honoured by `bridge/supervisor.sh`). In progress; the
@@ -501,3 +506,6 @@ macOS/Linux bootstraps do not write or own that file.
 - [ADR 0104](decisions/0104-windows-deployment-architecture.md) — the
   foot/WSLg deployment shape: supervisor, `.desktop` entry, managed
   `foot.ini`, `MUME_TERMINAL` env var.
+- [ADR 0106](decisions/0106-windows-installer-hardening.md) — corrections
+  applied after end-to-end Win11 validation: `[user] default=root` in
+  `/etc/wsl.conf` and system-wide `.desktop`/icon placement.
