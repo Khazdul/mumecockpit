@@ -31,6 +31,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import textwrap
 import threading
 import time
@@ -100,6 +101,13 @@ STARTUP_CONF_TEMPLATE = os.path.join(SCRIPT_DIR, "templates", "startup.conf")
 UPDATE_SH          = os.path.join(BRIDGE_DIR, "release", "update.sh")
 VERSION_CHECK_SH   = os.path.join(BRIDGE_DIR, "services", "version_check.sh")
 PING_MONITOR_SH    = os.path.join(BRIDGE_DIR, "services", "ping_monitor.sh")
+# Foot/WSLg supervisor handshake. The sentinel name MUST match the
+# `SENTINEL` path in bridge/supervisor.sh — touching it asks the
+# supervisor to relaunch foot once the cockpit exits (ADR 0104). The
+# resume-hint is a separate one-shot consumed by the fresh launcher
+# post-relaunch to restore the frame stack (see _consume_launcher_resume).
+FOOT_RELAUNCH_SENTINEL = os.path.join(RUNTIME_DIR, ".relaunch_terminal")
+LAUNCHER_RESUME_PATH   = os.path.join(RUNTIME_DIR, ".launcher_resume")
 
 MIN_COLS = 60
 MIN_ROWS = 18
@@ -414,6 +422,28 @@ _conn_port_buf            = ""
 _conn_field               = 0          # 0 = host, 1 = port
 _conn_err                 = ""
 
+# Options — Terminal submenu (foot/WSLg managed only). Pending values
+# track the user's in-flight edits; on-disk values are re-read from
+# foot.ini at every frame push so they reflect external edits. Apply is
+# active iff (pending_family, pending_size) != (disk_family, disk_size).
+# All four start as None until the first frame entry seeds them.
+_options_terminal_cursor       = 0
+_options_terminal_hover        = -1
+_options_terminal_disk_family  = None
+_options_terminal_disk_size    = None
+_options_terminal_pending_family = None
+_options_terminal_pending_size   = None
+# Font picker subframe (pushed from the Font row). Scrollable list of
+# installed monospace families, scanned on entry via foot_config.
+_terminal_font_picker_cursor   = 0
+_terminal_font_picker_scroll   = 0
+_terminal_font_picker_hover    = -1
+_terminal_font_picker_fonts    = []
+# Bounds on the pending font size; foot itself accepts a broad range
+# but the launcher clamps to a sensible stepper window.
+_TERMINAL_SIZE_MIN = 6
+_TERMINAL_SIZE_MAX = 32
+
 # Scripts — live-scanned catalog of `lua/scripts/<name>.lua` with their
 # resolved enable state (from runtime/scripts.conf, falling back to the
 # template). Toggles mutate the catalog in memory; the write to
@@ -567,6 +597,7 @@ _options_connection_window       = None
 _options_connection_custom_window = None
 _options_spotlights_window       = None
 _options_terminal_window         = None
+_terminal_font_picker_window     = None
 _spotlights_empty_window         = None
 _scripts_window      = None
 _about_window        = None
@@ -1044,6 +1075,7 @@ def _focus_current_frame():
             "options_connection_custom":  _options_connection_custom_window,
             "options_spotlights":         _options_spotlights_window,
             "options_terminal":           _options_terminal_window,
+            "terminal_font_picker":       _terminal_font_picker_window,
             "spotlights_empty":           _spotlights_empty_window,
             "scripts":                    _scripts_window,
             "about":                      _about_window,
@@ -1107,6 +1139,7 @@ def _set_hover(frame, idx):
     global _hover_main, _hover_options, _hover_copy
     global _hover_options_connection
     global _hover_options_spotlights
+    global _options_terminal_hover, _terminal_font_picker_hover
     changed = False
     if frame == "main" and _hover_main != idx:
         _hover_main = idx; changed = True
@@ -1116,6 +1149,10 @@ def _set_hover(frame, idx):
         _hover_options_connection = idx; changed = True
     elif frame == "options_spotlights" and _hover_options_spotlights != idx:
         _hover_options_spotlights = idx; changed = True
+    elif frame == "options_terminal" and _options_terminal_hover != idx:
+        _options_terminal_hover = idx; changed = True
+    elif frame == "terminal_font_picker" and _terminal_font_picker_hover != idx:
+        _terminal_font_picker_hover = idx; changed = True
     elif frame == "profile_create_copy_picker" and _hover_copy != idx:
         _hover_copy = idx; changed = True
     if changed and _app:
@@ -7794,20 +7831,109 @@ def _options_spotlights_text():
 
 
 # ---------------------------------------------------------------------------
-# Options — Terminal submenu (read-only foot.ini font/size display)
+# Options — Terminal submenu (interactive foot.ini font/size editor)
 # ---------------------------------------------------------------------------
 # Only reachable when the cockpit was launched by the foot/WSLg
 # managed-terminal supervisor (`MUME_TERMINAL=foot-managed`). The row
 # that opens this frame is conditionally added by `_build_options_rows`
-# and the activation router in `_activate_option`. Phase 2 is read-only:
-# the foot.ini is read on every push (not cached at import) and the
-# values are displayed as plain text — no editing, no font list, no
-# Apply. Phase 3 will turn this into an editor.
-def _enter_options_terminal_frame():
+# and the activation router in `_activate_option`. The Font row pushes
+# the `terminal_font_picker` subframe; the Size row is a ←/→ stepper;
+# Apply rewrites the foot.ini `font=` line, writes the relaunch
+# sentinel, and exits — the supervisor then relaunches foot with the
+# new config (ADR 0104). The fresh launcher consumes
+# `.launcher_resume` to return straight here. Back / ESC discard
+# pending edits.
+_TERMINAL_DEFAULT_SIZE = 12   # used when foot.ini has no `size=` attribute
+
+
+def _terminal_size_clamp(n):
+    return max(_TERMINAL_SIZE_MIN, min(_TERMINAL_SIZE_MAX, int(n)))
+
+
+def _options_terminal_rows():
+    """Row catalog for the Terminal Settings frame.
+
+    A list of (action, label) tuples, in render order. Built per render
+    so the labels reflect the current pending vs disk delta. Apply is
+    inserted as an active row when pending differs from disk, else as
+    a dead-grey inactive row (no handler). The "current → pending"
+    notation surfaces deltas without a separate diff view.
+    """
+    disk_f   = _options_terminal_disk_family
+    disk_s   = _options_terminal_disk_size
+    pend_f   = _options_terminal_pending_family
+    pend_s   = _options_terminal_pending_size
+
+    if disk_f is None:
+        font_label = "Font: (unreadable)"
+    elif pend_f != disk_f:
+        font_label = f"Font: {disk_f} → {pend_f}"
+    else:
+        font_label = f"Font: {disk_f}"
+
+    def _size_text(s):
+        return "default" if s is None else str(s)
+
+    if pend_s != disk_s:
+        size_label = f"Size: {_size_text(disk_s)} → {_size_text(pend_s)}"
+    else:
+        size_label = f"Size: {_size_text(disk_s)}"
+
+    has_delta = (pend_f != disk_f) or (pend_s != disk_s)
+    apply_action = "apply" if has_delta else "apply_disabled"
+
+    return [
+        ("font",       font_label),
+        ("size",       size_label),
+        ("apply",      "Apply") if apply_action == "apply"
+            else ("apply_disabled", "Apply"),
+        ("back",       "Back"),
+    ]
+
+
+def _enter_options_terminal_frame(restore_cursor=None):
+    """Seed pending state from disk and push the frame.
+
+    `restore_cursor` lets the post-relaunch resume hook drop the cursor
+    on the row it was on before Apply exited the launcher; absent, the
+    cursor lands on the Font row.
+    """
+    global _options_terminal_disk_family, _options_terminal_disk_size
+    global _options_terminal_pending_family, _options_terminal_pending_size
+    global _options_terminal_cursor, _options_terminal_hover
+    cfg = foot_config.read_font()
+    if cfg is None:
+        _options_terminal_disk_family = None
+        _options_terminal_disk_size   = None
+    else:
+        _options_terminal_disk_family = cfg.family
+        _options_terminal_disk_size   = cfg.size
+    _options_terminal_pending_family = _options_terminal_disk_family
+    _options_terminal_pending_size   = _options_terminal_disk_size
+    _options_terminal_hover = -1
+    if restore_cursor is not None:
+        # Snap the saved index to the nearest selectable row. Post-Apply
+        # the cursor was likely on Apply (index 2); on the relaunch
+        # pending equals disk so Apply is dead-grey — fall back to the
+        # nearest selectable neighbour rather than stranding the cursor.
+        selectable = _options_terminal_selectable_indices()
+        target = max(0, int(restore_cursor))
+        if selectable:
+            # Pick the closest selectable index, ties prefer the
+            # preceding one (Size > Back when saved cursor was Apply).
+            _options_terminal_cursor = min(
+                selectable, key=lambda i: (abs(i - target), i > target),
+            )
+        else:
+            _options_terminal_cursor = 0
+    else:
+        _options_terminal_cursor = 0
     _push_frame("options_terminal")
 
 
 def _options_terminal_back():
+    """Discard pending edits and pop. Pending is re-seeded from disk
+    on the next entry, so an explicit reset here is redundant."""
     _pop_frame()
 
 
@@ -7816,53 +7942,477 @@ def _options_terminal_clear_hover(ev):
         _set_hover("options_terminal", -1)
 
 
+def _options_terminal_selectable_indices():
+    """Indices of keyboard-selectable rows. The dead-grey Apply row
+    (action `apply_disabled`) is skipped by ↑/↓ navigation, mirroring
+    the ingame_menu Save-run pattern."""
+    return [i for i, (action, _label) in enumerate(_options_terminal_rows())
+            if action != "apply_disabled"]
+
+
+def _options_terminal_move(delta):
+    """Step the cursor by `delta` rows over the selectable subset, with
+    wrap-around. Off-list cursors snap onto the nearest selectable row
+    before stepping (defensive — happens when the row list changes
+    under the cursor, e.g. Apply transitioning into the dead state)."""
+    global _options_terminal_cursor
+    selectable = _options_terminal_selectable_indices()
+    if not selectable:
+        return
+    if _options_terminal_cursor in selectable:
+        pos = selectable.index(_options_terminal_cursor)
+    else:
+        # Cursor sits on a row that just lost selectability — fall back
+        # to the nearest preceding selectable row, or the first one.
+        pos = 0
+        for i, idx in enumerate(selectable):
+            if idx <= _options_terminal_cursor:
+                pos = i
+            else:
+                break
+    pos = (pos + delta) % len(selectable)
+    _options_terminal_cursor = selectable[pos]
+    if _app:
+        _app.invalidate()
+
+
+def _options_terminal_size_step(delta):
+    """Adjust pending size by `delta` (clamped). Only valid on the Size
+    row — callers gate this on the current cursor row."""
+    global _options_terminal_pending_size
+    cur = _options_terminal_pending_size
+    if cur is None:
+        # No size on disk: snap to the default before applying the step
+        # so the first nudge produces a deterministic concrete value.
+        cur = _TERMINAL_DEFAULT_SIZE
+    new = _terminal_size_clamp(cur + delta)
+    if new != _options_terminal_pending_size:
+        _options_terminal_pending_size = new
+        if _app:
+            _app.invalidate()
+
+
+def _options_terminal_activate(row_idx=None):
+    """Activate the row at `row_idx` (or the cursor row if omitted)."""
+    rows = _options_terminal_rows()
+    idx = _options_terminal_cursor if row_idx is None else row_idx
+    if not (0 <= idx < len(rows)):
+        return
+    action, _label = rows[idx]
+    if action == "font":
+        _enter_terminal_font_picker_frame()
+    elif action == "size":
+        # Enter on Size is a no-op — the stepper is driven by ← / →.
+        pass
+    elif action == "apply":
+        _options_terminal_apply()
+    elif action == "apply_disabled":
+        # Dead row; nothing to do (keyboard nav still steps onto it so
+        # the user can see it).
+        pass
+    elif action == "back":
+        _options_terminal_back()
+
+
+def _options_terminal_apply():
+    """Write foot.ini, drop the relaunch sentinel + resume hint, exit.
+
+    Order matters: write the foot.ini first so a crash before the
+    sentinel still produces a useful config on the next manual launch;
+    write the sentinel before the resume hint so a crash between them
+    falls back to "relaunch but start on main menu" (the resume hint
+    is a one-shot consumed by the fresh launcher); call `app.exit()`
+    last so the supervisor's loop sees both files when foot returns.
+    """
+    family = _options_terminal_pending_family
+    size   = _options_terminal_pending_size
+    if family is None or size is None:
+        # Nothing meaningful to write — the Apply row is gated on a
+        # delta, so this path is defensive only.
+        return
+    try:
+        foot_config.write_font(family, size)
+    except OSError:
+        # The write failed (permissions, disk full, …). Bail out
+        # without exiting — the user keeps their pending values.
+        return
+    _write_relaunch_sentinel()
+    _write_launcher_resume(
+        frame="options_terminal", cursor=_options_terminal_cursor,
+    )
+    if _app:
+        _app.exit()
+
+
+def _write_relaunch_sentinel():
+    """Touch the foot relaunch sentinel. The supervisor checks for this
+    file when foot exits — when present, it removes it and relaunches
+    foot. Empty file is fine; existence is the signal."""
+    try:
+        os.makedirs(RUNTIME_DIR, exist_ok=True)
+        with open(FOOT_RELAUNCH_SENTINEL, "w", encoding="utf-8") as fh:
+            fh.write("")
+    except OSError:
+        pass
+
+
+def _write_launcher_resume(frame, cursor):
+    """Write `bridge/runtime/.launcher_resume` (atomic temp + rename).
+
+    Consumed once by the fresh launcher in `_consume_launcher_resume`
+    to restore the frame stack post-relaunch. Format is a plain
+    key=value file; unknown frame names are ignored on read."""
+    try:
+        os.makedirs(RUNTIME_DIR, exist_ok=True)
+        fd, tmp_path = tempfile.mkstemp(
+            prefix=".launcher_resume.", suffix=".tmp", dir=RUNTIME_DIR,
+        )
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                fh.write(f"frame={frame}\n")
+                fh.write(f"cursor={int(cursor)}\n")
+            os.replace(tmp_path, LAUNCHER_RESUME_PATH)
+        except Exception:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            raise
+    except OSError:
+        pass
+
+
+def _consume_launcher_resume():
+    """Read and delete `.launcher_resume`; return a `(frame, cursor)`
+    tuple or `None`. One-shot semantics: the delete happens before the
+    caller acts on the value so a crash mid-restoration cannot
+    re-trigger the same restore on the next start. Returns `None` when
+    the file is absent or unparseable."""
+    try:
+        with open(LAUNCHER_RESUME_PATH, "r", encoding="utf-8") as fh:
+            text = fh.read()
+    except FileNotFoundError:
+        return None
+    except OSError:
+        return None
+    try:
+        os.unlink(LAUNCHER_RESUME_PATH)
+    except OSError:
+        pass
+    frame = None
+    cursor = 0
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        value = value.strip()
+        if key == "frame":
+            frame = value
+        elif key == "cursor":
+            try:
+                cursor = int(value)
+            except ValueError:
+                cursor = 0
+    if frame is None:
+        return None
+    return (frame, cursor)
+
+
 def _options_terminal_text():
     cols   = _term_cols()
     rows_h = _term_rows()
     title  = "─── Terminal Settings ───"
-    footer = "↑↓ Navigate · Enter Select · ESC Back"
+    has_delta = (_options_terminal_pending_family != _options_terminal_disk_family
+                 or _options_terminal_pending_size != _options_terminal_disk_size)
+    if has_delta:
+        footer = "↑↓ Navigate · ←→ Size · Enter Select · Apply restarts the terminal · ESC Back"
+    else:
+        footer = "↑↓ Navigate · ←→ Size · Enter Select · ESC Back"
     clear_hover = _options_terminal_clear_hover
+
+    rows = _options_terminal_rows()
+    cur  = _options_terminal_cursor
+    if not (0 <= cur < len(rows)):
+        cur = 0
+
+    # Glyph-menu block grammar: the Font / Size rows carry their values
+    # inline so the row labels vary in width. The block left-margin is
+    # computed from the widest row so the labels stack on the same
+    # column; the chunkier "Apply restarts the terminal" hint lives in
+    # the footer, not in a row.
+    label_widths = [len(label) for _action, label in rows]
+    block_w  = max(label_widths) + 6
+    left_pad = max(0, (cols - block_w) // 2)
 
     frags = []
     frags.extend(title_block(
         title, cols, blank_above=2, mouse_handler=clear_hover,
     ))
 
-    # Read on every push so the frame reflects the current disk state
-    # (e.g. after the user has edited foot.ini outside the launcher).
-    cfg = foot_config.read_font()
-    if cfg is None:
-        info_lines = ["Could not read foot configuration."]
-    else:
-        size_text = "default" if cfg.size is None else str(cfg.size)
-        info_lines = [f"Font: {cfg.family}", f"Size: {size_text}"]
-
     body_rows = 0
-    for line in info_lines:
-        pad = max(0, (cols - len(line)) // 2)
-        frags.append(("", " " * pad, clear_hover))
-        frags.append((C_BODY, line, clear_hover))
+    for i, (action, label) in enumerate(rows):
+        is_cursor = (i == cur)
+        is_hover  = (i == _options_terminal_hover)
+        # Apply renders as dead-grey (inactive_style=C_HINT) when there
+        # is no delta to write; cursor and hover land on it but do not
+        # change its colour — that's the "inactive" state from the
+        # ingame_menu Save-run row pattern.
+        if action == "apply_disabled":
+            row_left  = left_pad
+            row_right = max(0, cols - left_pad - len(label) - 6)
+            frags.append(("", " " * row_left, clear_hover))
+            # Pass the menu_row's hover slot for the cursor too: the
+            # row is non-actionable, so we suppress the gold << >>
+            # arrows even when the cursor sits on it.
+            frags.extend(menu_row(
+                label, "inactive",
+                mouse_handler=clear_hover, inactive_style=C_HINT,
+            ))
+            frags.append(("", " " * row_right, clear_hover))
+            frags.append(("", "\n", clear_hover))
+            body_rows += 1
+            continue
+
+        state = _menu_row_state(is_cursor, is_hover)
+
+        def _make_handler(row=i, act=action):
+            def _h(ev):
+                global _options_terminal_cursor
+                if ev.event_type == MouseEventType.MOUSE_MOVE:
+                    _set_hover("options_terminal", row)
+                    return
+                if ev.event_type == MouseEventType.MOUSE_DOWN:
+                    _options_terminal_cursor = row
+                    _options_terminal_activate(row)
+            return _h
+
+        h = _make_handler()
+        row_left  = left_pad
+        row_right = max(0, cols - left_pad - len(label) - 6)
+        frags.append(("", " " * row_left, clear_hover))
+        frags.extend(menu_row(label, state, mouse_handler=h))
+        frags.append(("", " " * row_right, clear_hover))
         frags.append(("", "\n", clear_hover))
         body_rows += 1
 
-    # Blank row separating the info block from the Back row.
+    content_rows = title_block_height(2) + body_rows
+    frags.extend(footer_block(
+        footer, cols, rows_h, content_rows, mouse_handler=clear_hover,
+    ))
+    return frags
+
+
+# ---------------------------------------------------------------------------
+# Terminal — font picker subframe (pushed from Options → Terminal → Font)
+# ---------------------------------------------------------------------------
+# Scrollable list of installed monospace families, scanned on entry via
+# `foot_config.list_monospace_fonts`. Selection grammar parallels
+# options_connection's radio rows: the pending family carries a
+# persistent grey-background marker even when the cursor is elsewhere,
+# the cursor row paints with the gold-background focus style, and the
+# pending row under the cursor renders gold (the cursor wins). Enter /
+# click sets the pending font on the parent frame and pops back;
+# ESC pops without changing the pending family.
+_NO_MONO_FONTS_MESSAGE = "No monospace fonts found"
+
+
+def _enter_terminal_font_picker_frame():
+    """Scan the installed monospace fonts and push the picker frame.
+
+    If the current pending family is not among the scan results (e.g.
+    foot.ini names an uninstalled family), we still surface it as the
+    first entry so it's visible and re-pickable — the spec calls this
+    out explicitly so the user is not silently stranded.
+    """
+    global _terminal_font_picker_fonts
+    global _terminal_font_picker_cursor, _terminal_font_picker_scroll
+    global _terminal_font_picker_hover
+    fonts = foot_config.list_monospace_fonts()
+    pending = _options_terminal_pending_family
+    if pending and pending not in fonts:
+        fonts = [pending] + fonts
+    _terminal_font_picker_fonts  = fonts
+    _terminal_font_picker_hover  = -1
+    _terminal_font_picker_scroll = 0
+    if fonts:
+        try:
+            _terminal_font_picker_cursor = fonts.index(pending) if pending else 0
+        except ValueError:
+            _terminal_font_picker_cursor = 0
+        _terminal_font_picker_ensure_visible()
+    else:
+        _terminal_font_picker_cursor = 0
+    _push_frame("terminal_font_picker")
+
+
+def _terminal_font_picker_back():
+    _pop_frame()
+
+
+def _terminal_font_picker_clear_hover(ev):
+    if ev.event_type == MouseEventType.MOUSE_MOVE:
+        _set_hover("terminal_font_picker", -1)
+
+
+def _terminal_font_picker_visible_rows():
+    """List body = terminal rows minus title block, footer, and the
+    trailing Back row + its spacer."""
+    return max(1, _term_rows() - title_block_height(2) - 1 - 2)
+
+
+def _terminal_font_picker_ensure_visible():
+    """Pull the scroll so the cursor stays inside the body window."""
+    global _terminal_font_picker_scroll
+    body = _terminal_font_picker_visible_rows()
+    n = len(_terminal_font_picker_fonts)
+    if n == 0:
+        _terminal_font_picker_scroll = 0
+        return
+    if _terminal_font_picker_cursor < _terminal_font_picker_scroll:
+        _terminal_font_picker_scroll = _terminal_font_picker_cursor
+    elif _terminal_font_picker_cursor >= _terminal_font_picker_scroll + body:
+        _terminal_font_picker_scroll = _terminal_font_picker_cursor - body + 1
+    _terminal_font_picker_scroll = max(
+        0, min(_terminal_font_picker_scroll, max(0, n - body)),
+    )
+
+
+def _terminal_font_picker_move(delta):
+    """Step cursor by `delta` with wrap-around; reset hover so it doesn't
+    fight the keyboard."""
+    global _terminal_font_picker_cursor
+    n = len(_terminal_font_picker_fonts)
+    if n == 0:
+        return
+    _terminal_font_picker_cursor = (_terminal_font_picker_cursor + delta) % n
+    _terminal_font_picker_ensure_visible()
+    if _app:
+        _app.invalidate()
+
+
+def _terminal_font_picker_select(idx=None):
+    """Commit the row at `idx` (or the cursor row) to the parent's
+    pending family, then pop back to Terminal Settings."""
+    global _options_terminal_pending_family
+    n = len(_terminal_font_picker_fonts)
+    if n == 0:
+        _terminal_font_picker_back()
+        return
+    row = _terminal_font_picker_cursor if idx is None else idx
+    if not (0 <= row < n):
+        return
+    _options_terminal_pending_family = _terminal_font_picker_fonts[row]
+    _terminal_font_picker_back()
+
+
+def _terminal_font_picker_text():
+    cols   = _term_cols()
+    rows_h = _term_rows()
+    title  = "─── Choose Font ───"
+    footer = "↑↓ Navigate · Enter Select · ESC Back"
+    clear_hover = _terminal_font_picker_clear_hover
+
+    frags = []
+    frags.extend(title_block(
+        title, cols, blank_above=2, mouse_handler=clear_hover,
+    ))
+
+    fonts   = _terminal_font_picker_fonts
+    cur     = _terminal_font_picker_cursor
+    pending = _options_terminal_pending_family
+    body_rows = 0
+
+    if not fonts:
+        # Empty-state pane: a single explanatory line, then Back. The
+        # picker is still escapable, so the user is never trapped.
+        msg = _NO_MONO_FONTS_MESSAGE
+        pad = max(0, (cols - len(msg)) // 2)
+        frags.append(("", " " * pad, clear_hover))
+        frags.append((C_BODY, msg, clear_hover))
+        frags.append(("", "\n", clear_hover))
+        body_rows += 1
+    else:
+        scroll = _terminal_font_picker_scroll
+        visible = _terminal_font_picker_visible_rows()
+        # Widest visible name drives a centred block so the rows align
+        # on the same column even when names vary in length. Long
+        # names truncate at the right edge with an ellipsis to keep the
+        # background fill rectangular.
+        end     = min(len(fonts), scroll + visible)
+        widest  = max((len(f) for f in fonts[scroll:end]), default=0)
+        # Background fill width — clamped to leave 4 cells of side
+        # margin so the row backgrounds don't touch the terminal edges.
+        bg_w    = max(8, min(cols - 4, widest + 4))
+        left_pad = max(0, (cols - bg_w) // 2)
+
+        for visible_idx in range(scroll, end):
+            family    = fonts[visible_idx]
+            is_cursor  = (visible_idx == cur)
+            is_pending = (family == pending)
+            is_hover   = (visible_idx == _terminal_font_picker_hover)
+            # Style mapping mirrors the palette's three-state button
+            # grammar: cursor (focused) → gold bg; pending (selected
+            # but unfocused) → grey bg; hover → grey bg; otherwise the
+            # plain item colour. Cursor wins over pending — the
+            # pending family under the cursor renders gold.
+            if is_cursor:
+                style = C_BUTTON_ACTIVE_FOCUSED
+            elif is_pending:
+                style = C_BUTTON_ACTIVE_UNFOCUSED
+            elif is_hover:
+                style = C_BUTTON_HOVER
+            else:
+                style = C_ITEM
+            # Centre the family inside the background fill, truncate
+            # with an ellipsis when the name overflows bg_w-2.
+            text_w = bg_w - 2
+            if len(family) > text_w:
+                shown = family[: max(0, text_w - 1)] + "…"
+            else:
+                shown = family
+            inner_pad = text_w - len(shown)
+            inner_l = inner_pad // 2
+            inner_r = inner_pad - inner_l
+            cell = " " + " " * inner_l + shown + " " * inner_r + " "
+
+            def _make_handler(row=visible_idx):
+                def _h(ev):
+                    global _terminal_font_picker_cursor
+                    if ev.event_type == MouseEventType.MOUSE_MOVE:
+                        _set_hover("terminal_font_picker", row)
+                        return
+                    if ev.event_type == MouseEventType.MOUSE_DOWN:
+                        _terminal_font_picker_cursor = row
+                        _terminal_font_picker_select(row)
+                return _h
+
+            h = _make_handler()
+            right_pad = max(0, cols - left_pad - len(cell))
+            frags.append(("", " " * left_pad, clear_hover))
+            frags.append((style, cell, h))
+            frags.append(("", " " * right_pad, clear_hover))
+            frags.append(("", "\n", clear_hover))
+            body_rows += 1
+
+    # Blank row + plain `<< Back >>` row below the list. Back is always
+    # selectable; the keyboard cursor lives on the list, so Back here
+    # is mouse / ESC only.
     frags.append(("", "\n", clear_hover))
     body_rows += 1
 
-    # Back is the only selectable row — always rendered in the
-    # `selected` state so the gold << >> cursor grammar is visible
-    # without arrow-key activity.
     back_label = "Back"
 
     def _back_handler(ev):
         if ev.event_type == MouseEventType.MOUSE_DOWN:
-            _options_terminal_back()
+            _terminal_font_picker_back()
 
     row_w     = len(back_label) + 6
     row_left  = max(0, (cols - row_w) // 2)
     row_right = max(0, cols - row_left - row_w)
     frags.append(("", " " * row_left, clear_hover))
-    frags.extend(menu_row(back_label, "selected", mouse_handler=_back_handler))
+    frags.extend(menu_row(back_label, "inactive", mouse_handler=_back_handler))
     frags.append(("", " " * row_right, clear_hover))
     frags.append(("", "\n", clear_hover))
     body_rows += 1
@@ -13662,17 +14212,77 @@ def _kb_opts_escape(event):
     _pop_frame()
 
 
-# Options — Terminal submenu (read-only foot font/size display). Only
-# Back is selectable; ESC and Enter/Space all pop to Options.
+# Options — Terminal submenu. ↑↓ navigate the row catalog (Font / Size
+# / Apply / Back); ←→ on the Size row drives the stepper; Enter / Space
+# activates the cursor row; ESC discards pending edits and pops.
+@kb.add("up", filter=_in_frame("options_terminal"))
+def _kb_optt_up(event):
+    _options_terminal_move(-1)
+
+
+@kb.add("down", filter=_in_frame("options_terminal"))
+def _kb_optt_down(event):
+    _options_terminal_move(1)
+
+
+@kb.add("left", filter=_in_frame("options_terminal"))
+def _kb_optt_left(event):
+    rows = _options_terminal_rows()
+    if (0 <= _options_terminal_cursor < len(rows)
+            and rows[_options_terminal_cursor][0] == "size"):
+        _options_terminal_size_step(-1)
+
+
+@kb.add("right", filter=_in_frame("options_terminal"))
+def _kb_optt_right(event):
+    rows = _options_terminal_rows()
+    if (0 <= _options_terminal_cursor < len(rows)
+            and rows[_options_terminal_cursor][0] == "size"):
+        _options_terminal_size_step(1)
+
+
 @kb.add("enter", filter=_in_frame("options_terminal"))
 @kb.add(" ",     filter=_in_frame("options_terminal"))
 def _kb_optt_select(event):
-    _options_terminal_back()
+    _options_terminal_activate()
 
 
 @kb.add("escape", filter=_in_frame("options_terminal"), eager=True)
 def _kb_optt_escape(event):
     _options_terminal_back()
+
+
+# Terminal — font picker. ↑↓ moves with wrap-around; Enter / Space
+# commits; ESC pops without committing.
+@kb.add("up", filter=_in_frame("terminal_font_picker"))
+def _kb_tfp_up(event):
+    _terminal_font_picker_move(-1)
+
+
+@kb.add("down", filter=_in_frame("terminal_font_picker"))
+def _kb_tfp_down(event):
+    _terminal_font_picker_move(1)
+
+
+@kb.add("pageup", filter=_in_frame("terminal_font_picker"))
+def _kb_tfp_pgup(event):
+    _terminal_font_picker_move(-_terminal_font_picker_visible_rows())
+
+
+@kb.add("pagedown", filter=_in_frame("terminal_font_picker"))
+def _kb_tfp_pgdn(event):
+    _terminal_font_picker_move(_terminal_font_picker_visible_rows())
+
+
+@kb.add("enter", filter=_in_frame("terminal_font_picker"))
+@kb.add(" ",     filter=_in_frame("terminal_font_picker"))
+def _kb_tfp_select(event):
+    _terminal_font_picker_select()
+
+
+@kb.add("escape", filter=_in_frame("terminal_font_picker"), eager=True)
+def _kb_tfp_escape(event):
+    _terminal_font_picker_back()
 
 
 # Options — Connection submenu
@@ -14423,6 +15033,7 @@ def main():
     global _options_connection_window, _options_connection_custom_window
     global _options_spotlights_window
     global _options_terminal_window
+    global _terminal_font_picker_window
     global _spotlights_empty_window
     global _scripts_window, _about_window
     global _update_running_window, _update_result_window
@@ -14451,6 +15062,23 @@ def main():
     _cache_mtime = _cache_mtime_now()
     _rebuild_main_items(preserve_label=False)
 
+    # Post-relaunch resume: when the foot supervisor relaunches us after
+    # the user hit Apply, the previous launcher dropped
+    # `.launcher_resume` so this fresh launcher can land back on the
+    # frame it left from. One-shot (consume deletes the file) and only
+    # honoured under the managed-foot deployment; everything else
+    # starts on main.
+    if _FOOT_MANAGED:
+        _resume = _consume_launcher_resume()
+        if _resume is not None:
+            _resume_frame, _resume_cursor = _resume
+            if _resume_frame == "options_terminal":
+                # Build the natural [main, options, options_terminal]
+                # stack so ESC unwinds back through Options as if the
+                # user had walked there manually.
+                _enter_options_frame()
+                _enter_options_terminal_frame(restore_cursor=_resume_cursor)
+
     _main_window,                  main_frame                = _build_simple(_main_text)
     (_profile_table_window, _profile_options_window,
      profile_frame)                                          = _build_profile()
@@ -14467,6 +15095,7 @@ def main():
     _options_connection_custom_window,  options_connection_custom_frame = _build_simple(_options_connection_custom_text)
     _options_spotlights_window,         options_spotlights_frame       = _build_simple(_options_spotlights_text)
     _options_terminal_window,           options_terminal_frame         = _build_simple(_options_terminal_text)
+    _terminal_font_picker_window,       terminal_font_picker_frame     = _build_simple(_terminal_font_picker_text)
     _spotlights_empty_window,           spotlights_empty_frame         = _build_simple(_spotlights_empty_text)
     _scripts_window,               scripts_frame             = _build_simple(_scripts_text)
     _about_window,                 about_frame               = _build_simple(_about_text)
@@ -14584,6 +15213,7 @@ def main():
         "options_connection_custom":  options_connection_custom_frame,
         "options_spotlights":         options_spotlights_frame,
         "options_terminal":           options_terminal_frame,
+        "terminal_font_picker":       terminal_font_picker_frame,
         "spotlights_empty":           spotlights_empty_frame,
         "scripts":                    scripts_frame,
         "about":                      about_frame,
