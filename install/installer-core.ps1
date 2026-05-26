@@ -9,7 +9,7 @@
 # on the same machine produces no destructive changes.
 #
 # To start over: remove the "MUME Cockpit" Start Menu entry (via Settings or
-# by deleting ~/.local/share/applications/mume-cockpit.desktop inside WSL),
+# by deleting /usr/share/applications/mume-cockpit.desktop inside WSL),
 # run 'wsl --unregister Ubuntu' in an admin PowerShell, then double-click
 # cockpit-installer.bat again.
 
@@ -235,7 +235,7 @@ Write-Host ""
 # Alacritty install, alacritty.toml write, and Windows desktop-shortcut
 # creation have all moved to WSL: foot is installed by bootstrap-linux.sh,
 # foot.ini is copied from install/examples/foot.ini, and the .desktop entry
-# at ~/.local/share/applications/mume-cockpit.desktop is surfaced to the
+# at /usr/share/applications/mume-cockpit.desktop is surfaced to the
 # Windows Start Menu by WSLg automatically.
 
 Write-Host "Installation complete."

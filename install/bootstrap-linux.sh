@@ -161,16 +161,19 @@ chmod +x "$REPO_DIR/bridge/launcher/launch.sh"
 chmod +x "$REPO_DIR/bridge/supervisor.sh"
 
 # ---------------------------------------------------------------------------
-# WSL only: pin the WSL default user to root. The .desktop entry's Exec
-# points at /root/MUME/bridge/supervisor.sh and WSLg runs Exec as the WSL
-# default user — on a pre-existing Ubuntu distro that can be a normal
-# account, which cannot traverse /root/ → silent Start Menu launch failure.
-# Merge [user] default=root into /etc/wsl.conf without destroying other
-# content. The Windows installer runs `wsl --shutdown` after the bootstrap
-# so this takes effect before first launch.
+# WSL only: enforce default=root, install the managed foot config, and the
+# system-wide WSLg .desktop entry and icon. WSLg surfaces .desktop entries
+# from /usr/share/applications/ to the Windows Start Menu reliably;
+# ~/.local/share/applications/ is not reliable across WSLg versions.
 # ---------------------------------------------------------------------------
 
 if [ "$IS_WSL" -eq 1 ]; then
+    # The .desktop's Exec points at /root/MUME/bridge/supervisor.sh; WSLg runs
+    # that Exec as the WSL default user. On a pre-existing Ubuntu distro the
+    # default user can be a normal account, which cannot traverse /root/ →
+    # silent launch failure. Force default=root in /etc/wsl.conf, merging
+    # into any existing file. The Windows installer runs `wsl --shutdown`
+    # after the bootstrap so this takes effect before first launch.
     $RUN python3 - <<'PYEOF'
 import os
 import re
@@ -223,21 +226,27 @@ if new_content != content:
 else:
     print("/etc/wsl.conf already has [user] default=root — skipping.")
 PYEOF
-fi
 
-# ---------------------------------------------------------------------------
-# WSL only: install the managed foot config and the WSLg .desktop entry.
-# WSLg surfaces .desktop entries under ~/.local/share/applications/ to the
-# Windows Start Menu automatically.
-# ---------------------------------------------------------------------------
-
-if [ "$IS_WSL" -eq 1 ]; then
     mkdir -p "$TARGET_HOME/.config/foot"
     cp "$REPO_DIR/install/examples/foot.ini" "$TARGET_HOME/.config/foot/foot.ini"
 
-    mkdir -p "$TARGET_HOME/.local/share/applications"
-    cp "$REPO_DIR/install/mume-cockpit.desktop" \
-       "$TARGET_HOME/.local/share/applications/mume-cockpit.desktop"
+    # System icon under the hicolor theme. The .desktop entry references the
+    # bare theme name `mume-cockpit`; freedesktop icon lookup resolves that to
+    # this file. Refresh the icon cache when gtk-update-icon-cache is present.
+    $RUN mkdir -p /usr/share/icons/hicolor/256x256/apps
+    $RUN cp "$REPO_DIR/install/assets/mume-cockpit.png" \
+        /usr/share/icons/hicolor/256x256/apps/mume-cockpit.png
+    if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+        $RUN gtk-update-icon-cache -q /usr/share/icons/hicolor 2>/dev/null || true
+    fi
+
+    # System-wide .desktop entry — WSLg surfaces /usr/share/applications/
+    # reliably; per-user ~/.local/share/applications/ does not.
+    $RUN install -m 0644 "$REPO_DIR/install/mume-cockpit.desktop" \
+        /usr/share/applications/mume-cockpit.desktop
+    if command -v update-desktop-database >/dev/null 2>&1; then
+        $RUN update-desktop-database -q /usr/share/applications 2>/dev/null || true
+    fi
 fi
 
 # ---------------------------------------------------------------------------
