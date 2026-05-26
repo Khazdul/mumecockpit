@@ -243,18 +243,23 @@ file is unread there.
 
 Key fields:
 
-- `initial-window-mode=fullscreen` — **required**. The supervisor relies
-  on foot opening fullscreen; the cockpit assumes the tmux layout owns
-  the entire terminal. There is no CLI flag for this; it must live in
-  the config.
+- `initial-window-mode=fullscreen` — shipped default. The cockpit's
+  tmux layout fills the foot window in any mode, so no mode is
+  mandatory; the user can pick `windowed`, `maximized`, or
+  `fullscreen` from Terminal Settings and the supervisor relaunches
+  foot honouring the choice (ADR 0107). `fullscreen` stays the
+  out-of-box default for the chromeless first-run experience.
 - `initial-window-size-pixels=1280x800` — template placeholder for
   windowed mode. Overwritten at install time on Windows with a
   resolution-derived size as described above; the Terminal Settings
-  UI (Phase 3) lets the user tune it further. Only consulted when
-  `initial-window-mode` is `windowed`.
-- `font=DejaVu Sans Mono:size=15` — the **managed font= line**. A later
-  phase (the Terminal Settings UI) rewrites this single line for font
-  and size changes. Keep it on its own line, matchable with `^font=`.
+  UI also lets the user tune Width and Height further. Only consulted
+  when `initial-window-mode` is `windowed`.
+- `font=DejaVu Sans Mono:size=15` — the shipped default font line.
+  The Terminal Settings UI rewrites this through the managed-keys
+  writer in `bridge/launcher/foot_config.py` (ADR 0107) along with
+  the other managed keys (`pad`, `initial-window-mode`,
+  `initial-window-size-pixels`, `[colors] alpha`, `[colors] background`,
+  `[cursor] style`, `[cursor] blink`).
 - `pad=0x0` — no padding; the cockpit paints its own borders.
 - `selection-target=clipboard` — selecting text writes the system
   clipboard, in line with the cockpit's Alacritty preset.
@@ -513,12 +518,15 @@ macOS/Linux bootstraps do not write or own that file.
    [ADR 0106](decisions/0106-windows-installer-hardening.md) for the
    `/etc/wsl.conf` default-user pin and system-wide `.desktop`/icon
    placement added after end-to-end validation on Win11.
-3. **Terminal Settings UI** (font and size picker that rewrites the
-   managed `font=` line; `MUME_TERMINAL` detection; `.relaunch_terminal`
-   sentinel honoured by `bridge/supervisor.sh`). In progress; the
-   launcher submenu lands in Phase 2, the supervisor-driven relaunch in
-   Phase 3. Doc updates to `docs/launcher.md` are batched and land with
-   Phase 3, not now.
+3. **Terminal Settings UI** (full settings page — font, size, window
+   mode and size, padding, transparency, background, cursor style and
+   blink — backed by the managed-keys `foot.ini` writer in
+   `bridge/launcher/foot_config.py`; `MUME_TERMINAL` detection;
+   `.relaunch_terminal` sentinel honoured by `bridge/supervisor.sh`;
+   one-shot `.launcher_resume` hint that lands the post-relaunch
+   cursor back on the page). Done. See
+   [ADR 0107](decisions/0107-terminal-settings-managed-keys.md) for
+   the managed-keys contract and the user-selectable window mode.
 4. **MMapper auto-detection + default `connection_mode`.** Next polish item.
 
 ## See also

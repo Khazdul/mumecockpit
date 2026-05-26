@@ -472,6 +472,29 @@ popup's `main` frame; ADR 0100). The tt++ welcome screen deliberately
 does **not** share that module: it keeps its own hardcoded `#showme`
 lines and prints a static, starless wordmark only.
 
+The Windows deployment runs on **foot under WSLg** and is fully
+shipped. `bridge/supervisor.sh` owns the foot lifecycle and loops on
+the `bridge/runtime/.relaunch_terminal` sentinel; `install/mume-cockpit.desktop`
+is the WSLg `.desktop` entry the Windows Start Menu surfaces; the
+Windows installer drops `install/examples/foot.ini` into WSL and
+provisions a small set of monospace fonts; the supervisor exports
+`MUME_TERMINAL=foot-managed` so the launcher can gate the Terminal
+Settings entry. Options → Terminal is a complete settings page (font,
+size, window mode and size, padding, transparency, background, cursor
+style and blink) backed by `bridge/launcher/foot_config.py`, a
+managed-keys read/modify/write over `~/.config/foot/foot.ini` that
+preserves every unmanaged line verbatim. Apply writes the file, drops
+the relaunch sentinel and a one-shot `bridge/runtime/.launcher_resume`
+hint, then exits so the supervisor relaunches foot with the new
+config and the fresh launcher restores the user's cursor. See
+[ADR 0103](docs/decisions/0103-windows-flicker-terminal.md) for the
+flicker investigation that drove the move off Windows-Alacritty,
+[ADR 0104](docs/decisions/0104-windows-deployment-foot-wslg.md) for
+the deployment shape, and
+[ADR 0107](docs/decisions/0107-terminal-settings-managed-keys.md) for
+the managed-keys foot.ini contract and the user-selectable window
+mode.
+
 ## See also
 
 - [docs/ui-messaging.md](docs/ui-messaging.md) — UI helpers, colour constants, and style rules. Touched when writing almost any script.

@@ -451,6 +451,15 @@ _TERMINAL_PAD_STEP = 2
 # 1 = `alpha=0.1`, 10 = `alpha=1.0` (opaque).
 _TERMINAL_ALPHA_MIN_TENTHS = 1
 _TERMINAL_ALPHA_MAX_TENTHS = 10
+# Window size stepper bounds (pixels) and granularity. The 800×600 floor
+# keeps the cockpit above its MIN_COLS / MIN_ROWS at common font sizes;
+# the upper bound is 8K (7680×4320) so high-DPI users can address their
+# full panel through the stepper without scrolling forever.
+_TERMINAL_WIN_W_MIN  = 800
+_TERMINAL_WIN_W_MAX  = 7680
+_TERMINAL_WIN_H_MIN  = 600
+_TERMINAL_WIN_H_MAX  = 4320
+_TERMINAL_WIN_STEP   = 100
 
 # Scripts — live-scanned catalog of `lua/scripts/<name>.lua` with their
 # resolved enable state (from runtime/scripts.conf, falling back to the
@@ -7929,6 +7938,20 @@ def _options_terminal_rows():
         pend.size != disk.size,
     )
 
+    window_mode_label = _delta(
+        "Window mode", disk.window_mode, pend.window_mode,
+        pend.window_mode != disk.window_mode,
+    )
+
+    width_label = _delta(
+        "Width", str(disk.window_width), str(pend.window_width),
+        pend.window_width != disk.window_width,
+    )
+    height_label = _delta(
+        "Height", str(disk.window_height), str(pend.window_height),
+        pend.window_height != disk.window_height,
+    )
+
     padding_label = _delta(
         "Padding", str(disk.pad_x), str(pend.pad_x),
         pend.pad_x != disk.pad_x,
@@ -7964,9 +7987,19 @@ def _options_terminal_rows():
     has_delta = (pend != disk)
     apply_row = ("apply", "Apply") if has_delta else ("apply_disabled", "Apply")
 
-    return [
+    rows = [
         ("font",         font_label),
         ("size",         size_label),
+        ("window_mode",  window_mode_label),
+    ]
+    # Width / Height only make sense for the windowed mode; maximized
+    # and fullscreen ignore them entirely. The pending config keeps
+    # carrying the values, so a round-trip back to "windowed" restores
+    # the user's last edits without resetting them.
+    if pend.window_mode == "windowed":
+        rows.append(("width",  width_label))
+        rows.append(("height", height_label))
+    rows.extend([
         ("padding",      padding_label),
         ("alpha",        alpha_label),
         ("background",   background_label),
@@ -7974,7 +8007,8 @@ def _options_terminal_rows():
         ("cursor_blink", cursor_blink_label),
         apply_row,
         ("back",         "Back"),
-    ]
+    ])
+    return rows
 
 
 def _enter_options_terminal_frame(restore_cursor=None):
@@ -8130,6 +8164,49 @@ def _options_terminal_cursor_style_step(delta):
             _app.invalidate()
 
 
+def _options_terminal_window_mode_step(delta):
+    """Cycle pending window mode through windowed / maximized / fullscreen.
+
+    The pending config always carries `window_width` / `window_height`;
+    cycling away from "windowed" only hides the conditional Width / Height
+    rows, so a round-trip back to "windowed" finds the user's last edits
+    intact.
+    """
+    global _options_terminal_pending
+    values = ["windowed", "maximized", "fullscreen"]
+    new = _cycle_pick(values, _options_terminal_pending.window_mode, delta)
+    if new != _options_terminal_pending.window_mode:
+        _options_terminal_pending.window_mode = new
+        if _app:
+            _app.invalidate()
+
+
+def _options_terminal_width_step(delta):
+    """Step pending window width by `delta * _TERMINAL_WIN_STEP`, clamped
+    to `[_TERMINAL_WIN_W_MIN, _TERMINAL_WIN_W_MAX]`."""
+    global _options_terminal_pending
+    cur = _options_terminal_pending.window_width
+    new = max(_TERMINAL_WIN_W_MIN,
+              min(_TERMINAL_WIN_W_MAX, cur + delta * _TERMINAL_WIN_STEP))
+    if new != _options_terminal_pending.window_width:
+        _options_terminal_pending.window_width = new
+        if _app:
+            _app.invalidate()
+
+
+def _options_terminal_height_step(delta):
+    """Step pending window height by `delta * _TERMINAL_WIN_STEP`, clamped
+    to `[_TERMINAL_WIN_H_MIN, _TERMINAL_WIN_H_MAX]`."""
+    global _options_terminal_pending
+    cur = _options_terminal_pending.window_height
+    new = max(_TERMINAL_WIN_H_MIN,
+              min(_TERMINAL_WIN_H_MAX, cur + delta * _TERMINAL_WIN_STEP))
+    if new != _options_terminal_pending.window_height:
+        _options_terminal_pending.window_height = new
+        if _app:
+            _app.invalidate()
+
+
 def _options_terminal_cursor_blink_step(delta):
     """Toggle pending cursor blink (Off ↔ On). `delta` direction is
     irrelevant for a two-value cycle but kept for symmetry with the
@@ -8145,6 +8222,9 @@ def _options_terminal_cursor_blink_step(delta):
 
 _OPTIONS_TERMINAL_ARROW_STEPPERS = {
     "size":         _options_terminal_size_step,
+    "window_mode":  _options_terminal_window_mode_step,
+    "width":        _options_terminal_width_step,
+    "height":       _options_terminal_height_step,
     "padding":      _options_terminal_padding_step,
     "alpha":        _options_terminal_alpha_step,
     "background":   _options_terminal_background_step,

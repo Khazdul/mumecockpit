@@ -1216,12 +1216,14 @@ Navigation hub pushed by activating "Options" on the main frame. Children:
 - **Connection** → `options_connection` — MMapper / Direct / Custom
   selector; Custom pushes a host/port input subframe.
 - **Terminal** → `options_terminal` — foot-managed deployment only.
-  Font picker + size stepper for the launcher-owned foot.ini, with an
-  Apply action that rewrites the `font=` line and asks the supervisor
-  to relaunch foot. The row is conditionally added by
-  `_build_options_rows` when `MUME_TERMINAL=foot-managed` is set; any
-  other value (or unset) keeps it hidden — fail-closed. See
-  [ADR 0104](decisions/0104-windows-deployment-foot-wslg.md).
+  Full settings page (font, size, window mode and size, padding,
+  transparency, background, cursor style/blink) for the launcher-owned
+  foot.ini, with an Apply action that rewrites the managed keys and
+  asks the supervisor to relaunch foot. The row is conditionally added
+  by `_build_options_rows` when `MUME_TERMINAL=foot-managed` is set;
+  any other value (or unset) keeps it hidden — fail-closed. See
+  [ADR 0104](decisions/0104-windows-deployment-foot-wslg.md) and
+  [ADR 0107](decisions/0107-terminal-settings-managed-keys.md).
 - **Panes** → `options_panes` — per-pane enable/disable + colour selection.
 - **Scripts** → `scripts` — opens the two-column Scripts manager
   documented under [`options_scripts` frame](#options_scripts-frame).
@@ -1545,74 +1547,120 @@ automatically since it consumes the same reel.
 
 Foot-managed deployment only — the row that opens this frame is
 conditionally added by `_build_options_rows` when
-`MUME_TERMINAL=foot-managed`. Edits font and size for the
-launcher-owned foot.ini (`~/.config/foot/foot.ini` by default) without
-touching the rest of the file. Four selectable rows in a single
-centred block, left-aligned on the widest label so the inline values
-stack on one column:
+`MUME_TERMINAL=foot-managed` (`_FOOT_MANAGED`). Edits the managed
+subset of the launcher-owned foot.ini (`~/.config/foot/foot.ini` by
+default) without touching unmanaged lines. Selectable rows in a
+single centred block, left-aligned on the widest label so the inline
+values stack on one column:
 
-1. **Font** — `Font: <family>` (no delta) or `Font: <on-disk> → <pending>`
-   when the pending family differs from disk. Activating pushes
-   [`terminal_font_picker`](#terminal_font_picker-frame).
-2. **Size** — `Size: <n>` or `Size: <on-disk> → <pending>`. ← / → on
-   this row steps the pending size by 1, clamped to 6–32; Enter is
-   a no-op (the stepper is the editing affordance). When the on-disk
-   font line has no `size=` attribute, the stepper seeds from a
-   conservative default before applying the first nudge.
-3. **Apply** — active only when `(pending_family, pending_size)`
-   differs from the on-disk values; with no delta it renders in the
-   dead-grey inactive `menu_row` state (no handler, ↑/↓ keyboard
-   navigation skips it, mirroring the inactive "Save run" row in the
-   in-game popup). Activating runs the Apply flow described below.
-4. **Back** — discards pending edits and pops to `options`. ESC
-   behaves the same.
+1. **Font** — `Font: <family>` (no delta) or `Font: <on-disk> →
+   <pending>` when the pending family differs from disk. Activating
+   pushes [`terminal_font_picker`](#terminal_font_picker-frame); Enter
+   is the only commit affordance on this row (← / → is a no-op).
+2. **Size** — numeric stepper. ← / → adjusts pending size by 1,
+   clamped to 6–32. When the on-disk font line has no `size=`
+   attribute, the stepper seeds from a conservative default before
+   applying the first nudge.
+3. **Window mode** — fixed-value cycle through
+   `windowed / maximized / fullscreen` via `_cycle_pick`. ← / → wraps
+   at both ends; Enter is a no-op. Selecting `windowed` reveals the
+   conditional Width / Height rows directly below this row; cycling
+   to `maximized` or `fullscreen` hides them. The pending config keeps
+   carrying `window_width` / `window_height` either way, so a round
+   trip back to `windowed` finds the user's last edits intact.
+4. **Width** / **Height** — numeric stepper rows shown only when
+   `pending.window_mode == "windowed"`. ← / → adjusts the pending
+   pixel value by 100; Width is clamped to `[800, 7680]` and Height
+   to `[600, 4320]`. The 800×600 floor keeps the cockpit above its
+   `MIN_COLS` / `MIN_ROWS` at common font sizes.
+5. **Padding** — numeric stepper (symmetric `pad_x` / `pad_y`).
+   ← / → adjusts the pending padding by 2 px, clamped to `[0, 40]`.
+   Asymmetric hand-edits on disk are collapsed by the next Apply
+   (acceptable per ADR 0107).
+6. **Transparency** — numeric stepper over the alpha channel,
+   stepped in integer tenths to dodge float drift; clamped to
+   `[0.1, 1.0]`. Displayed as `X.Y`.
+7. **Background** — fixed-value cycle through the launcher's hex
+   palette, with any off-palette on-disk value prepended so the user
+   never silently loses a custom colour. The label uses the palette
+   name when available, falling back to the raw hex.
+8. **Cursor style** — fixed-value cycle through
+   `block / beam / underline` via `_cycle_pick`. ← / → wraps; Enter
+   is a no-op.
+9. **Cursor blink** — fixed-value cycle through `Off / On` (foot's
+   `cursor.blink=no/yes`).
+10. **Apply** — active only when `pending != disk`; with no delta it
+    renders in the dead-grey inactive `menu_row` state (no handler,
+    ↑/↓ keyboard navigation skips it, mirroring the inactive "Save
+    run" row in the in-game popup). Activating runs the Apply flow
+    described below.
+11. **Back** — discards pending edits and pops to `options`. ESC
+    behaves the same.
 
-Footer hint: `↑↓ Navigate · ←→ Size · Enter Select · ESC Back` with no
-delta; switches to `↑↓ Navigate · ←→ Size · Enter Select · Apply
-restarts the terminal · ESC Back` once a delta exists so the
+Every value-bearing row uses the `Label: <disk> → <pending>`
+delta notation when the pending value differs from disk, else plain
+`Label: <value>`. The delta is rebuilt per render from
+`_options_terminal_disk` and `_options_terminal_pending`.
+
+Footer hint: `↑↓ Navigate · ←→ Adjust · Enter Select · ESC Back`
+with no delta; switches to `↑↓ Navigate · ←→ Adjust · Enter Select ·
+Apply restarts the terminal · ESC Back` once a delta exists so the
 consequence is legible. There is no confirmation modal — the footer
 hint is the entire warning.
 
 **State model.** Pending and on-disk are tracked separately. On every
 frame entry `_enter_options_terminal_frame` re-reads the foot.ini via
-`foot_config.read_font()` (no caching at module import — the disk
+`foot_config.read_settings()` (no caching at module import — the disk
 state is authoritative across the lifetime of the launcher process)
-and seeds pending = disk. Pending mutates only on Font-picker commit
-and Size-stepper nudges; Back / ESC drops it on the floor. There is
-no separate Save action — Apply *is* the write, and pending only
-materialises on disk through Apply.
+and seeds `pending = dataclasses.replace(disk)`. Pending mutates on
+Font-picker commit and on stepper / cycle nudges; Back / ESC drops it
+on the floor. There is no separate Save action — Apply *is* the
+write, and pending only materialises on disk through Apply.
 
 The row catalog (`_options_terminal_rows`) is rebuilt every render so
-new sibling rows (colours, padding, terminal background, …) drop in
-without touching the keyboard navigation or the Apply gating. The
-selectable-index list (`_options_terminal_selectable_indices`)
-filters out the dead Apply row so cursor navigation walks the live
-rows only.
+the conditional Width / Height rows appear and disappear with the
+pending `window_mode` without touching the keyboard navigation or
+the Apply gating. The selectable-index list
+(`_options_terminal_selectable_indices`) filters out the dead Apply
+row so cursor navigation walks the live rows only.
+`_options_terminal_move` snaps a stale cursor onto the nearest
+preceding selectable row before stepping, which is enough to handle
+any row appearing or disappearing under the cursor — no per-row
+clamping is needed. In practice, the Window mode row sits *above*
+Width / Height, so cycling away from `windowed` only hides rows
+strictly below the cursor's position and the cursor stays put.
 
-**foot.ini I/O.** `bridge/launcher/foot_config.py` is the single
-home for foot.ini-format knowledge — pure (no prompt_toolkit, no
-global state), and the only module that touches the file:
+Arrow-key dispatch goes through `_OPTIONS_TERMINAL_ARROW_STEPPERS`,
+a dict mapping each value-bearing row action to its `delta`-taking
+stepper. Adding a new row is a two-place change: add an entry to the
+dict and a row to `_options_terminal_rows`.
 
-- `read_font(path=None)` — parses the first uncommented `font=` line
-  into a `FontConfig(family, size)`; missing file, no `font=`, or
-  unparseable family returns `None` (never raises). Inline comments
-  and comma-separated alias variants are tolerated; `size=<n>` parses
-  to `int` when whole, `float` otherwise, or `None` when absent.
-- `write_font(family, size, path=None)` — surgical line edit on the
-  first uncommented `font=` line, leaving every other line untouched
-  (ADR 0104: Apply owns *only* the `font=` line). If the file has no
-  `font=` line yet, the writer inserts one in the implicit `[main]`
-  section (immediately before the first `[section]` header, or at
-  end of file). Written atomically via temp file + `os.replace`.
+**foot.ini I/O.** `bridge/launcher/foot_config.py` is the single home
+for foot.ini-format knowledge — pure (no prompt_toolkit, no global
+state), and the only module that touches the file:
+
+- `read_settings(path=None)` — parses the managed key set and returns
+  a `TerminalConfig` (family, size, window_mode, window_width,
+  window_height, alpha, background, pad_x, pad_y, cursor_style,
+  cursor_blink). Missing file, missing section, or absent managed
+  key all fall back to documented defaults; the function never
+  raises.
+- `write_settings(config, path=None)` — managed-keys read/modify/
+  write: for each managed `(section, key)` pair, rewrite the line in
+  place when present; otherwise append it at the end of the section,
+  creating the section header at EOF if the section is absent. Every
+  non-managed line is preserved verbatim. Atomic temp + rename.
+  See [ADR 0107](decisions/0107-terminal-settings-managed-keys.md)
+  for the rationale.
 - `list_monospace_fonts()` — sorted, de-duplicated list of canonical
   family names from `fc-list :spacing=mono`; missing fc-list, a
   non-zero exit, or empty output all return `[]` (never raises).
 
 **Apply flow** — the sequence is fixed by the supervisor handshake:
 
-1. `foot_config.write_font(pending_family, pending_size)` rewrites the
-   foot.ini `font=` line. Pure file edit; failure (permissions, disk
-   full) silently aborts the apply without exiting, so the user keeps
+1. `foot_config.write_settings(pending)` rewrites the managed keys
+   in `foot.ini`. Pure file edit; failure (permissions, disk full)
+   silently aborts the apply without exiting, so the user keeps
    their pending values to retry.
 2. Touch the relaunch sentinel at `bridge/runtime/.relaunch_terminal`
    — empty file, existence is the signal. The supervisor in
@@ -1652,8 +1700,10 @@ installed monospace family names from
 `foot_config.list_monospace_fonts()`, scanned on every entry (not
 cached) so newly installed fonts surface without restarting the
 launcher. Below the list sits a blank row and a centred `<< Back >>`
-row — Back is mouse / ESC only since the keyboard cursor lives on
-the list.
+row that is part of the keyboard cursor space — it sits at index `n`
+in an `n + 1` position space (the `n` font rows plus the trailing
+Back row), so ↑ / ↓ steps through it just like any other row and it
+renders in the focused `menu_row` style when the cursor is on it.
 
 **Selection grammar** mirrors [`options_connection`](#options_connection-frame)
 as a radio-style selector, expressed through the three-state button
@@ -1675,15 +1725,19 @@ background fill so the row backgrounds stay rectangular at any
 terminal width.
 
 **Cursor.** Opens on the pending family if present in the list, else
-on row 0. ↑/↓ steps with wrap-around; PgUp/PgDn pages by the visible
-body height; the cursor is always kept inside the body window by
-`_terminal_font_picker_ensure_visible`. Mouse hover does **not** move
-the cursor (hover and cursor are independent indices) — `MOUSE_DOWN`
-commits the clicked row in one click.
+on row 0. ↑/↓ steps with wrap-around over the `n + 1` row space
+(font rows plus Back); PgUp/PgDn pages by the visible body height.
+The cursor is always kept inside the body window by
+`_terminal_font_picker_ensure_visible`, which clamps the scroll to
+the tail of the list when the cursor sits on the Back row (index
+`n`) so the bottom of the list stays visible. Mouse hover does
+**not** move the cursor (hover and cursor are independent indices)
+— `MOUSE_DOWN` commits the clicked row in one click.
 
-**Commit / cancel.** Enter, Space, or click sets the parent's pending
-family and pops back to `options_terminal`. ESC pops without
-mutating anything.
+**Commit / cancel.** Enter, Space, or click on a font row sets the
+parent's pending family and pops back to `options_terminal`; the
+same keys on the Back row (index `n`) pop without mutating anything.
+ESC also pops without mutating.
 
 **Edge cases.**
 
@@ -1693,8 +1747,9 @@ mutating anything.
   user is never silently stranded with an uninstalled font.
 - **Empty fc-list output** — when `fc-list` is missing, fails, or
   returns nothing, the picker shows a single `No monospace fonts
-  found` body line and the Back row. ESC / Back is the only exit;
-  no list rows are rendered.
+  found` body line and the Back row. The Back row remains
+  keyboard-reachable (it is the only selectable index in this state);
+  ESC also exits.
 
 ### Persistence asymmetry vs. the popup
 
