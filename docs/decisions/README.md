@@ -111,6 +111,7 @@ Active ADRs by area. Click through for context, alternatives, and consequences.
 - [ADR 0035](0035-tt-from-source.md) — Build tt++ from source when unsuitable — the bootstrap probes for a TLS-linked tt++ and builds from a pinned source tag when absent or unsuitable.
 - [ADR 0103](0103-windows-flicker-terminal.md) — Windows inbound-burst flicker: move the terminal off the ConPTY path — the Windows deployment runs the cockpit's terminal as a Linux GUI app under WSLg so ConPTY is no longer in the render path; no in-app flicker workaround.
 - [ADR 0104](0104-windows-deployment-foot-wslg.md) — Windows deployment: foot under WSLg, fullscreen, supervisor-owned — foot via a WSLg `.desktop` Start Menu entry, fullscreen-only, lifecycle owned by `bridge/supervisor.sh` with a `.relaunch_terminal` sentinel and `MUME_TERMINAL=foot-managed`. (builds on 0103)
+- [ADR 0105](0105-launcher-resume-hint.md) — Cross-relaunch frame restoration via a resume-hint file — `bridge/runtime/.launcher_resume` carries `frame` + `cursor` across the foot relaunch so Apply lands back on Terminal Settings instead of the main menu. (builds on 0104)
 
 ## When to add an ADR
 
