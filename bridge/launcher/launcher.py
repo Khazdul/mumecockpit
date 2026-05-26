@@ -24,6 +24,7 @@ import asyncio
 import atexit
 import base64
 import bisect
+import dataclasses
 import glob
 import os
 import random
@@ -55,7 +56,7 @@ from palette import (  # noqa: E402
     _S_GAINED, _S_LOSS, _S_LABEL, _S_VALUE, _S_TP_BAR,
     _S_TRACK, _S_MARKER, _S_THUMB, _S_TOTAL, _S_ARROW,
     _S_HINT, _S_PVP, _S_ALLY, _S_STAR,
-    PANE_COLOR_ORDER,
+    PANE_COLOR_ORDER, pane_color_hex,
     TTPP_COLOR_STYLES, TTPP_COLOR_NAMES,
     C_SYN_COMMAND, C_SYN_BRACE, C_SYN_DELIM, C_SYN_VAR, C_SYN_CODE,
     C_SYN_BRACE_MATCH,
@@ -422,17 +423,15 @@ _conn_port_buf            = ""
 _conn_field               = 0          # 0 = host, 1 = port
 _conn_err                 = ""
 
-# Options — Terminal submenu (foot/WSLg managed only). Pending values
-# track the user's in-flight edits; on-disk values are re-read from
-# foot.ini at every frame push so they reflect external edits. Apply is
-# active iff (pending_family, pending_size) != (disk_family, disk_size).
-# All four start as None until the first frame entry seeds them.
+# Options — Terminal submenu (foot/WSLg managed only). Pending tracks
+# the user's in-flight edits; disk is re-read from foot.ini at every
+# frame push so it reflects external edits. Both are `TerminalConfig`
+# dataclass instances (or None before first entry); Apply is active iff
+# `pending != disk` (dataclass equality across every managed field).
 _options_terminal_cursor       = 0
 _options_terminal_hover        = -1
-_options_terminal_disk_family  = None
-_options_terminal_disk_size    = None
-_options_terminal_pending_family = None
-_options_terminal_pending_size   = None
+_options_terminal_disk          = None   # type: TerminalConfig | None
+_options_terminal_pending       = None   # type: TerminalConfig | None
 # Font picker subframe (pushed from the Font row). Scrollable list of
 # installed monospace families, scanned on entry via foot_config.
 _terminal_font_picker_cursor   = 0
@@ -443,6 +442,15 @@ _terminal_font_picker_fonts    = []
 # but the launcher clamps to a sensible stepper window.
 _TERMINAL_SIZE_MIN = 6
 _TERMINAL_SIZE_MAX = 32
+# Padding stepper bounds (in pixels) and step granularity. The pad is
+# always written symmetrically — `pad_y` mirrors `pad_x` on Apply.
+_TERMINAL_PAD_MIN  = 0
+_TERMINAL_PAD_MAX  = 40
+_TERMINAL_PAD_STEP = 2
+# Transparency steps in integer tenths internally to avoid float drift;
+# 1 = `alpha=0.1`, 10 = `alpha=1.0` (opaque).
+_TERMINAL_ALPHA_MIN_TENTHS = 1
+_TERMINAL_ALPHA_MAX_TENTHS = 10
 
 # Scripts — live-scanned catalog of `lua/scripts/<name>.lua` with their
 # resolved enable state (from runtime/scripts.conf, falling back to the
@@ -7831,16 +7839,17 @@ def _options_spotlights_text():
 
 
 # ---------------------------------------------------------------------------
-# Options — Terminal submenu (interactive foot.ini font/size editor)
+# Options — Terminal submenu (interactive foot.ini appearance editor)
 # ---------------------------------------------------------------------------
 # Only reachable when the cockpit was launched by the foot/WSLg
 # managed-terminal supervisor (`MUME_TERMINAL=foot-managed`). The row
 # that opens this frame is conditionally added by `_build_options_rows`
 # and the activation router in `_activate_option`. The Font row pushes
-# the `terminal_font_picker` subframe; the Size row is a ←/→ stepper;
-# Apply rewrites the foot.ini `font=` line, writes the relaunch
-# sentinel, and exits — the supervisor then relaunches foot with the
-# new config (ADR 0104). The fresh launcher consumes
+# the `terminal_font_picker` subframe; every other row is an inline ←/→
+# control (numeric stepper or fixed-value cycle). Apply writes the
+# pending TerminalConfig through `foot_config.write_settings`, writes
+# the relaunch sentinel, and exits — the supervisor then relaunches
+# foot with the new config (ADR 0104). The fresh launcher consumes
 # `.launcher_resume` to return straight here. Back / ESC discard
 # pending edits.
 _TERMINAL_DEFAULT_SIZE = 12   # used when foot.ini has no `size=` attribute
@@ -7850,44 +7859,121 @@ def _terminal_size_clamp(n):
     return max(_TERMINAL_SIZE_MIN, min(_TERMINAL_SIZE_MAX, int(n)))
 
 
+def _normalise_hex(value):
+    """Strip the leading `#` and uppercase a hex colour string. An empty
+    or missing value becomes `""` — the caller decides what to do."""
+    return (value or "").strip().lstrip("#").upper()
+
+
+def _background_cycle_entries(disk_hex):
+    """Return the ordered `[(hex, label), …]` cycle for Background.
+
+    The seven palette entries (PANE_COLOR_ORDER), plus a leading entry
+    for the on-disk hex when it falls outside the palette — mirroring
+    the font picker's off-list-family handling so a hand-rolled
+    background survives a no-op Apply. The off-list entry is labelled
+    by its hex.
+    """
+    palette = []
+    for name in PANE_COLOR_ORDER:
+        hex_str = pane_color_hex(name)
+        hex_norm = _normalise_hex(hex_str) if hex_str else "000000"
+        palette.append((hex_norm, name))
+    palette_values = {v for v, _ in palette}
+    disk_norm = _normalise_hex(disk_hex)
+    if disk_norm and disk_norm not in palette_values:
+        return [(disk_norm, disk_norm)] + palette
+    return palette
+
+
+def _cycle_pick(values, current, delta):
+    """Step through `values` from `current` by `delta`, wrapping at both
+    ends. Falls back to `values[0]` when `current` is not in `values`."""
+    if not values:
+        return current
+    try:
+        idx = values.index(current)
+    except ValueError:
+        idx = 0
+    return values[(idx + delta) % len(values)]
+
+
 def _options_terminal_rows():
     """Row catalog for the Terminal Settings frame.
 
-    A list of (action, label) tuples, in render order. Built per render
-    so the labels reflect the current pending vs disk delta. Apply is
-    inserted as an active row when pending differs from disk, else as
-    a dead-grey inactive row (no handler). The "current → pending"
-    notation surfaces deltas without a separate diff view.
+    `(action, label)` tuples in render order, rebuilt per render so the
+    labels reflect the current pending-vs-disk delta. Each row's label
+    uses the `Label: <disk> → <pending>` notation when the field
+    differs from disk, else `Label: <value>`. Apply is the active row
+    when `pending != disk`, else the dead-grey `apply_disabled` row.
     """
-    disk_f   = _options_terminal_disk_family
-    disk_s   = _options_terminal_disk_size
-    pend_f   = _options_terminal_pending_family
-    pend_s   = _options_terminal_pending_size
+    disk = _options_terminal_disk
+    pend = _options_terminal_pending
 
-    if disk_f is None:
+    def _delta(label, disk_text, pend_text, differs):
+        if differs:
+            return f"{label}: {disk_text} → {pend_text}"
+        return f"{label}: {disk_text}"
+
+    if disk is None or disk.family is None:
         font_label = "Font: (unreadable)"
-    elif pend_f != disk_f:
-        font_label = f"Font: {disk_f} → {pend_f}"
     else:
-        font_label = f"Font: {disk_f}"
+        font_label = _delta(
+            "Font", disk.family, pend.family, pend.family != disk.family,
+        )
 
     def _size_text(s):
         return "default" if s is None else str(s)
+    size_label = _delta(
+        "Size", _size_text(disk.size), _size_text(pend.size),
+        pend.size != disk.size,
+    )
 
-    if pend_s != disk_s:
-        size_label = f"Size: {_size_text(disk_s)} → {_size_text(pend_s)}"
-    else:
-        size_label = f"Size: {_size_text(disk_s)}"
+    padding_label = _delta(
+        "Padding", str(disk.pad_x), str(pend.pad_x),
+        pend.pad_x != disk.pad_x,
+    )
 
-    has_delta = (pend_f != disk_f) or (pend_s != disk_s)
-    apply_action = "apply" if has_delta else "apply_disabled"
+    alpha_label = _delta(
+        "Transparency", f"{disk.alpha:.1f}", f"{pend.alpha:.1f}",
+        pend.alpha != disk.alpha,
+    )
+
+    bg_entries = _background_cycle_entries(disk.background)
+    bg_label_map = dict(bg_entries)
+    def _bg_disp(v):
+        return bg_label_map.get(v, v or "—")
+    background_label = _delta(
+        "Background", _bg_disp(disk.background), _bg_disp(pend.background),
+        pend.background != disk.background,
+    )
+
+    cursor_style_label = _delta(
+        "Cursor style", disk.cursor_style, pend.cursor_style,
+        pend.cursor_style != disk.cursor_style,
+    )
+
+    def _blink_text(b):
+        return "On" if b else "Off"
+    cursor_blink_label = _delta(
+        "Cursor blink", _blink_text(disk.cursor_blink),
+        _blink_text(pend.cursor_blink),
+        pend.cursor_blink != disk.cursor_blink,
+    )
+
+    has_delta = (pend != disk)
+    apply_row = ("apply", "Apply") if has_delta else ("apply_disabled", "Apply")
 
     return [
-        ("font",       font_label),
-        ("size",       size_label),
-        ("apply",      "Apply") if apply_action == "apply"
-            else ("apply_disabled", "Apply"),
-        ("back",       "Back"),
+        ("font",         font_label),
+        ("size",         size_label),
+        ("padding",      padding_label),
+        ("alpha",        alpha_label),
+        ("background",   background_label),
+        ("cursor_style", cursor_style_label),
+        ("cursor_blink", cursor_blink_label),
+        apply_row,
+        ("back",         "Back"),
     ]
 
 
@@ -7898,25 +7984,24 @@ def _enter_options_terminal_frame(restore_cursor=None):
     on the row it was on before Apply exited the launcher; absent, the
     cursor lands on the Font row.
     """
-    global _options_terminal_disk_family, _options_terminal_disk_size
-    global _options_terminal_pending_family, _options_terminal_pending_size
+    global _options_terminal_disk, _options_terminal_pending
     global _options_terminal_cursor, _options_terminal_hover
-    cfg = foot_config.read_settings()
-    _options_terminal_disk_family = cfg.family
-    _options_terminal_disk_size   = cfg.size
-    _options_terminal_pending_family = _options_terminal_disk_family
-    _options_terminal_pending_size   = _options_terminal_disk_size
-    _options_terminal_hover = -1
+    disk = foot_config.read_settings()
+    # Normalise the background hex so equality compares case-insensitively
+    # and the cycle lookup hits the palette entries even when foot.ini
+    # uses lowercase.
+    disk.background = _normalise_hex(disk.background) or "000000"
+    _options_terminal_disk    = disk
+    _options_terminal_pending = dataclasses.replace(disk)
+    _options_terminal_hover   = -1
     if restore_cursor is not None:
         # Snap the saved index to the nearest selectable row. Post-Apply
-        # the cursor was likely on Apply (index 2); on the relaunch
         # pending equals disk so Apply is dead-grey — fall back to the
         # nearest selectable neighbour rather than stranding the cursor.
         selectable = _options_terminal_selectable_indices()
         target = max(0, int(restore_cursor))
         if selectable:
-            # Pick the closest selectable index, ties prefer the
-            # preceding one (Size > Back when saved cursor was Apply).
+            # Closest selectable index, ties prefer the preceding one.
             _options_terminal_cursor = min(
                 selectable, key=lambda i: (abs(i - target), i > target),
             )
@@ -7975,17 +8060,109 @@ def _options_terminal_move(delta):
 def _options_terminal_size_step(delta):
     """Adjust pending size by `delta` (clamped). Only valid on the Size
     row — callers gate this on the current cursor row."""
-    global _options_terminal_pending_size
-    cur = _options_terminal_pending_size
+    global _options_terminal_pending
+    cur = _options_terminal_pending.size
     if cur is None:
         # No size on disk: snap to the default before applying the step
         # so the first nudge produces a deterministic concrete value.
         cur = _TERMINAL_DEFAULT_SIZE
     new = _terminal_size_clamp(cur + delta)
-    if new != _options_terminal_pending_size:
-        _options_terminal_pending_size = new
+    if new != _options_terminal_pending.size:
+        _options_terminal_pending.size = new
         if _app:
             _app.invalidate()
+
+
+def _options_terminal_padding_step(delta):
+    """Step pending padding by `delta * _TERMINAL_PAD_STEP`, clamped to
+    `[_TERMINAL_PAD_MIN, _TERMINAL_PAD_MAX]`. Writes symmetrically:
+    `pad_x` and `pad_y` are kept equal, so an asymmetric hand-edit on
+    disk is collapsed by the next Apply (acceptable per the spec)."""
+    global _options_terminal_pending
+    cur = _options_terminal_pending.pad_x
+    new = max(_TERMINAL_PAD_MIN,
+              min(_TERMINAL_PAD_MAX, cur + delta * _TERMINAL_PAD_STEP))
+    if new != _options_terminal_pending.pad_x or new != _options_terminal_pending.pad_y:
+        _options_terminal_pending.pad_x = new
+        _options_terminal_pending.pad_y = new
+        if _app:
+            _app.invalidate()
+
+
+def _options_terminal_alpha_step(delta):
+    """Step pending alpha by 0.1, clamped to [0.1, 1.0]. Steps in
+    integer tenths so `0.1 + 0.1 + 0.1` lands exactly on `0.3` rather
+    than `0.30000000000000004`."""
+    global _options_terminal_pending
+    tenths = int(round(_options_terminal_pending.alpha * 10))
+    new_tenths = max(
+        _TERMINAL_ALPHA_MIN_TENTHS,
+        min(_TERMINAL_ALPHA_MAX_TENTHS, tenths + delta),
+    )
+    new = new_tenths / 10.0
+    if new != _options_terminal_pending.alpha:
+        _options_terminal_pending.alpha = new
+        if _app:
+            _app.invalidate()
+
+
+def _options_terminal_background_step(delta):
+    """Cycle pending background hex through the palette (plus any
+    leading off-list disk entry) by `delta`, wrapping."""
+    global _options_terminal_pending
+    entries = _background_cycle_entries(_options_terminal_disk.background)
+    values = [v for v, _ in entries]
+    new = _cycle_pick(values, _options_terminal_pending.background, delta)
+    if new != _options_terminal_pending.background:
+        _options_terminal_pending.background = new
+        if _app:
+            _app.invalidate()
+
+
+def _options_terminal_cursor_style_step(delta):
+    """Cycle pending cursor style through block / beam / underline."""
+    global _options_terminal_pending
+    values = ["block", "beam", "underline"]
+    new = _cycle_pick(values, _options_terminal_pending.cursor_style, delta)
+    if new != _options_terminal_pending.cursor_style:
+        _options_terminal_pending.cursor_style = new
+        if _app:
+            _app.invalidate()
+
+
+def _options_terminal_cursor_blink_step(delta):
+    """Toggle pending cursor blink (Off ↔ On). `delta` direction is
+    irrelevant for a two-value cycle but kept for symmetry with the
+    other steppers."""
+    global _options_terminal_pending
+    values = [False, True]
+    new = _cycle_pick(values, _options_terminal_pending.cursor_blink, delta)
+    if new != _options_terminal_pending.cursor_blink:
+        _options_terminal_pending.cursor_blink = new
+        if _app:
+            _app.invalidate()
+
+
+_OPTIONS_TERMINAL_ARROW_STEPPERS = {
+    "size":         _options_terminal_size_step,
+    "padding":      _options_terminal_padding_step,
+    "alpha":        _options_terminal_alpha_step,
+    "background":   _options_terminal_background_step,
+    "cursor_style": _options_terminal_cursor_style_step,
+    "cursor_blink": _options_terminal_cursor_blink_step,
+}
+
+
+def _options_terminal_arrow_step(delta):
+    """Dispatch a ←/→ on the current cursor row to the right field's
+    stepper. No-op on non-stepper rows (Font / Apply / Back)."""
+    rows = _options_terminal_rows()
+    if not (0 <= _options_terminal_cursor < len(rows)):
+        return
+    action = rows[_options_terminal_cursor][0]
+    stepper = _OPTIONS_TERMINAL_ARROW_STEPPERS.get(action)
+    if stepper is not None:
+        stepper(delta)
 
 
 def _options_terminal_activate(row_idx=None):
@@ -7997,8 +8174,8 @@ def _options_terminal_activate(row_idx=None):
     action, _label = rows[idx]
     if action == "font":
         _enter_terminal_font_picker_frame()
-    elif action == "size":
-        # Enter on Size is a no-op — the stepper is driven by ← / →.
+    elif action in _OPTIONS_TERMINAL_ARROW_STEPPERS:
+        # Stepper / cycle rows are driven by ← / → — Enter is a no-op.
         pass
     elif action == "apply":
         _options_terminal_apply()
@@ -8011,7 +8188,8 @@ def _options_terminal_activate(row_idx=None):
 
 
 def _options_terminal_apply():
-    """Write foot.ini, drop the relaunch sentinel + resume hint, exit.
+    """Write the pending foot.ini, drop the relaunch sentinel + resume
+    hint, exit.
 
     Order matters: write the foot.ini first so a crash before the
     sentinel still produces a useful config on the next manual launch;
@@ -8020,17 +8198,11 @@ def _options_terminal_apply():
     is a one-shot consumed by the fresh launcher); call `app.exit()`
     last so the supervisor's loop sees both files when foot returns.
     """
-    family = _options_terminal_pending_family
-    size   = _options_terminal_pending_size
-    if family is None or size is None:
-        # Nothing meaningful to write — the Apply row is gated on a
-        # delta, so this path is defensive only.
+    if _options_terminal_pending is None:
+        # Defensive — Apply is gated on a pending != disk delta.
         return
     try:
-        cfg = foot_config.read_settings()
-        cfg.family = family
-        cfg.size   = size
-        foot_config.write_settings(cfg)
+        foot_config.write_settings(_options_terminal_pending)
     except OSError:
         # The write failed (permissions, disk full, …). Bail out
         # without exiting — the user keeps their pending values.
@@ -8123,12 +8295,14 @@ def _options_terminal_text():
     cols   = _term_cols()
     rows_h = _term_rows()
     title  = "─── Terminal Settings ───"
-    has_delta = (_options_terminal_pending_family != _options_terminal_disk_family
-                 or _options_terminal_pending_size != _options_terminal_disk_size)
+    has_delta = (
+        _options_terminal_pending is not None
+        and _options_terminal_pending != _options_terminal_disk
+    )
     if has_delta:
-        footer = "↑↓ Navigate · ←→ Size · Enter Select · Apply restarts the terminal · ESC Back"
+        footer = "↑↓ Navigate · ←→ Adjust · Enter Select · Apply restarts the terminal · ESC Back"
     else:
-        footer = "↑↓ Navigate · ←→ Size · Enter Select · ESC Back"
+        footer = "↑↓ Navigate · ←→ Adjust · Enter Select · ESC Back"
     clear_hover = _options_terminal_clear_hover
 
     rows = _options_terminal_rows()
@@ -8136,8 +8310,8 @@ def _options_terminal_text():
     if not (0 <= cur < len(rows)):
         cur = 0
 
-    # Glyph-menu block grammar: the Font / Size rows carry their values
-    # inline so the row labels vary in width. The block left-margin is
+    # Glyph-menu block grammar: every stepper row carries its value
+    # inline so row labels vary in width. The block left-margin is
     # computed from the widest row so the labels stack on the same
     # column; the chunkier "Apply restarts the terminal" hint lives in
     # the footer, not in a row.
@@ -8229,7 +8403,8 @@ def _enter_terminal_font_picker_frame():
     global _terminal_font_picker_cursor, _terminal_font_picker_scroll
     global _terminal_font_picker_hover
     fonts = foot_config.list_monospace_fonts()
-    pending = _options_terminal_pending_family
+    pending = (_options_terminal_pending.family
+               if _options_terminal_pending is not None else None)
     if pending and pending not in fonts:
         fonts = [pending] + fonts
     _terminal_font_picker_fonts  = fonts
@@ -8302,7 +8477,6 @@ def _terminal_font_picker_select(idx=None):
     """Commit the row at `idx` (or the cursor row). Index `n` is the
     Back row — selecting it pops the frame instead of committing a
     font family."""
-    global _options_terminal_pending_family
     n = len(_terminal_font_picker_fonts)
     row = _terminal_font_picker_cursor if idx is None else idx
     if row == n:
@@ -8310,7 +8484,8 @@ def _terminal_font_picker_select(idx=None):
         return
     if not (0 <= row < n):
         return
-    _options_terminal_pending_family = _terminal_font_picker_fonts[row]
+    if _options_terminal_pending is not None:
+        _options_terminal_pending.family = _terminal_font_picker_fonts[row]
     _terminal_font_picker_back()
 
 
@@ -8328,7 +8503,8 @@ def _terminal_font_picker_text():
 
     fonts   = _terminal_font_picker_fonts
     cur     = _terminal_font_picker_cursor
-    pending = _options_terminal_pending_family
+    pending = (_options_terminal_pending.family
+               if _options_terminal_pending is not None else None)
     body_rows = 0
 
     if not fonts:
@@ -14235,18 +14411,12 @@ def _kb_optt_down(event):
 
 @kb.add("left", filter=_in_frame("options_terminal"))
 def _kb_optt_left(event):
-    rows = _options_terminal_rows()
-    if (0 <= _options_terminal_cursor < len(rows)
-            and rows[_options_terminal_cursor][0] == "size"):
-        _options_terminal_size_step(-1)
+    _options_terminal_arrow_step(-1)
 
 
 @kb.add("right", filter=_in_frame("options_terminal"))
 def _kb_optt_right(event):
-    rows = _options_terminal_rows()
-    if (0 <= _options_terminal_cursor < len(rows)
-            and rows[_options_terminal_cursor][0] == "size"):
-        _options_terminal_size_step(1)
+    _options_terminal_arrow_step(1)
 
 
 @kb.add("enter", filter=_in_frame("options_terminal"))
