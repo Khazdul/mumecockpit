@@ -41,8 +41,8 @@ with a scripting brain on top.
 ## Rules of thumb
 
 - **tt++ for reflexes, Lua for cognition.** Latency-critical paths stay in tt++.
-- **Two-tier Lua loading.** Always-on GMCP collectors (no alias, no
-  metadata header) go in `lua/core/*.lua`. Opt-in automation modules
+- **Two-tier Lua loading.** Always-on infrastructure (no alias, no
+  metadata header) goes in `lua/core/*.lua`. Opt-in automation modules
   go in `lua/scripts/*.lua` with an `@`-tagged metadata header at the
   top of the file (`@summary`, `@alias`, `@help`); enable state lives
   in `bridge/runtime/scripts.conf` (shadows

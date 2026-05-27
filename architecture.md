@@ -53,10 +53,11 @@ tracking, and UI feedback.
 │   │                     #                    (parses @-tagged headers, resolves scripts.conf)
 │   ├── lib/              # Bundled Lua libraries (on package.path)
 │   │                     #   dkjson.lua  — pure-Lua JSON parser (MIT, David Kolf)
-│   ├── core/             # Always-on GMCP collectors and serializers — no alias,
-│   │                     # no @-header. Examples:
+│   ├── core/             # Always-on infrastructure — GMCP collectors, serializers,
+│   │                     # and loaders. No alias, no @-header. Examples:
 │   │                     #   char_state.lua    — Char.* → state.char.*
 │   │                     #   comm_log.lua      — Comm.Channel.* → state.comm.*
+│   │                     #   readability.lua   — readability module loader (startup.conf → session_cmd)
 │   │                     #   status_state.lua  — state.char → bridge/runtime/status.state (runtime)
 │   │                     # See CLAUDE.md and per-area docs/*.md for the full list.
 │   └── scripts/          # Opt-in automation modules — see docs/scripts.md. Each
@@ -239,9 +240,9 @@ registration in `main.tin` is needed when adding a new module.
 `brain.lua` performs a two-tier load at startup via `io.popen("ls ...")` +
 `dofile()`, in alphabetical order within each tier:
 
-1. **`lua/core/`** — always-on GMCP collectors. These have no alias and no
-   metadata header. They populate `state.*` fields that other code may read
-   at load time. Every file is loaded unconditionally.
+1. **`lua/core/`** — always-on infrastructure: GMCP collectors, serializers,
+   and loaders. No alias, no metadata header. Every file is loaded
+   unconditionally.
 2. **`lua/scripts/`** — opt-in automation modules. Each file carries an
    `@`-tagged metadata header (`@summary`, `@alias`, `@help`) parsed
    statically by the loader; only files enabled via `scripts.conf` are
@@ -251,9 +252,10 @@ registration in `main.tin` is needed when adding a new module.
    for the header format, conf-file resolution, and ADR 0093 for the
    rationale.
 
-Rule for new files: if a file has no alias and only listens to GMCP to write
-`state.*`, it belongs in `lua/core/`. If it provides a player-facing feature,
-add the metadata header and drop it in `lua/scripts/`.
+Rule for new files: if a file is always-on infrastructure with no alias and
+no opt-in toggle, it belongs in `lua/core/`. If it provides a player-facing
+feature the user might want to toggle, add the metadata header and drop it
+in `lua/scripts/`.
 
 Each script runs in the global environment and has access to all infrastructure
 functions from `brain.lua`:
@@ -392,8 +394,8 @@ game_cmd('#alias {...} {#lua {scripts.myscript.start(...)}}')
 5. **Single source of truth** — Lua owns all game state.
 6. **Self-contained Lua modules** — every file in `lua/core/` and
    `lua/scripts/` is a single `.lua` file with no paired `.tin` file.
-   `lua/core/` files are always-on collectors: no alias, no metadata
-   header, only GMCP handlers that write `state.*`.
+   `lua/core/` files are always-on infrastructure: no alias, no metadata
+   header.
    `lua/scripts/` files are opt-in automation: they declare themselves
    via an `@`-tagged metadata header (parsed without execution by the
    loader) and register their own aliases via `game_cmd()`, triggers

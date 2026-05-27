@@ -1,7 +1,7 @@
--- ============================================================
---  readability
--- ============================================================
--- @summary  Drop-in .tin readability modules, toggled via startup.conf
+-- Readability module loader.
+-- Reads startup.conf for enabled modules, loads them into the
+-- {readability} tt++ class via session_cmd. Hot-reloadable via
+-- scripts.readability.reload().
 
 local M = {}
 scripts.readability = M

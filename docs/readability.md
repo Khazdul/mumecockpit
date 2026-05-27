@@ -63,7 +63,7 @@ aliases.
 
 ### Cold load (session start)
 
-`lua/scripts/readability.lua` subscribes to the `run_started` event.
+`lua/core/readability.lua` subscribes to the `run_started` event.
 When the player logs in (`Char.Name` GMCP fires):
 
 1. Read `bridge/runtime/startup.conf` for the `readability_enabled` key.

@@ -10,11 +10,11 @@ contract, the header format, the loader, or the `scripts.cache` format.
 
 The Lua brain loads modules in two tiers at startup ([ADR 0002](decisions/0002-lua-core-vs-scripts-split.md)):
 
-- **`lua/core/*.lua`** — always-on infrastructure. GMCP collectors and
-  state serializers. No alias, no header, no opt-in machinery. Every
-  file is `dofile()`'d at brain startup, alphabetical order. A file
-  belongs here if and only if it has no alias and only listens to
-  GMCP to write `state.*`.
+- **`lua/core/*.lua`** — always-on infrastructure. GMCP collectors,
+  state serializers, and loaders. No alias, no header, no opt-in
+  machinery. Every file is `dofile()`'d at brain startup, alphabetical
+  order. A file belongs here if it is always-on infrastructure with
+  no alias and no opt-in toggle.
 - **`lua/scripts/*.lua`** — opt-in automation modules. Each file
   carries a metadata header (see below) and is loaded only when
   enabled in `scripts.conf`. A file belongs here if it provides a
