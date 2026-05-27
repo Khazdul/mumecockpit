@@ -135,11 +135,13 @@
         #if {"$_profile_load_canary" == "ok"} {
             #unvar {_profile_load_canary};
             _save_profile;
+            #class {$_profile} {open};
             #system {echo ok > bridge/runtime/.profile_apply_result}
         } {
             #class {$_profile} {kill};
             #class {$_profile} {read} {bridge/runtime/profile_snapshot.tin};
             #unvar {_profile_load_canary};
+            #class {$_profile} {open};
             #system {echo fail > bridge/runtime/.profile_apply_result}
         }
     } {

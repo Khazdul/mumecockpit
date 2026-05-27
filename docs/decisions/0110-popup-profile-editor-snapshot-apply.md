@@ -40,6 +40,14 @@ success, absent means mid-file abort → rollback to snapshot.
 class and re-reads `profile_snapshot.tin`. The snapshot is always a
 known-good file written by `#class write` moments earlier.
 
+**Class reopen.** After the `#class read` (success or rollback),
+`cp -profile-apply` reopens the profile class with
+`#class {$_profile} {open}`, mirroring the final-open step in the
+`SESSION CONNECTED` load sequence. Without this, `#class read`'s
+implicit close leaves no class open, and subsequent player-typed
+`#alias` / `#action` commands land in the default class — invisible
+to the next snapshot.
+
 **Worker thread polling.** Both the snapshot and apply polls run in
 daemon threads to avoid blocking the prompt_toolkit event loop.
 `loop.call_soon_threadsafe` delivers results to the main thread.
