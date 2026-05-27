@@ -1418,13 +1418,14 @@ def _enter_profile_editor_connected():
 
     _send_to_game("cp -profile-snapshot")
 
+    loop = asyncio.get_running_loop()
+
     def _finish_snapshot():
         global _profile_editor_instance, _profile_editor_original_text
         global _profile_editor_disk_path, _profile_editor_name
         result = _poll_file(PROFILE_SNAP_RESULT)
         if result != "ok":
             reason = "no active profile" if result == "fail" else "timeout"
-            loop = asyncio.get_event_loop()
             loop.call_soon_threadsafe(
                 _flash_main, f"Could not open profile: {reason}.", C_HINT)
             if _app:
@@ -1434,7 +1435,6 @@ def _enter_profile_editor_connected():
         try:
             prof = profile_io.load_profile(PROFILE_SNAPSHOT_PATH)
         except (OSError, Exception) as exc:
-            loop = asyncio.get_event_loop()
             loop.call_soon_threadsafe(
                 _flash_main, f"Could not open profile: {exc}.", C_HINT)
             if _app:
@@ -1455,7 +1455,6 @@ def _enter_profile_editor_connected():
             host=_popup_editor_host,
         )
 
-        loop = asyncio.get_event_loop()
         loop.call_soon_threadsafe(_push_frame, "profile_editor")
 
     threading.Thread(target=_finish_snapshot, daemon=True).start()
@@ -1559,9 +1558,10 @@ def _apply_profile_connected():
     _remove_sentinel(PROFILE_APPLY_RESULT)
     _send_to_game("cp -profile-apply")
 
+    loop = asyncio.get_running_loop()
+
     def _finish_apply():
         result = _poll_file(PROFILE_APPLY_RESULT)
-        loop = asyncio.get_event_loop()
         if result == "ok":
             loop.call_soon_threadsafe(
                 _flash_main, "Profile updated.", C_ACCENT)
