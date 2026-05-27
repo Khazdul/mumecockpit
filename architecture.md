@@ -68,6 +68,9 @@ tracking, and UI feedback.
 │   │   ├── launcher.sh       # Thin exec wrapper for launcher.py
 │   │   ├── palette.py        # Shared prompt_toolkit colour palette (launcher + popup)
 │   │   ├── launcher_banner.py # Shared animated starfield + wordmark banner (launcher main page + in-game popup); ADR 0100
+│   │   ├── profile_editor.py # Self-contained ProfileEditor class (extracted from
+│   │   │                     #   launcher.py); host access via EditorHost protocol
+│   │   │                     #   so the same editor can run inside the popup (ADR 0109)
 │   │   ├── foot_config.py    # Pure foot.ini reader/writer + fc-list monospace
 │   │   │                     #   font enumerator; backs Options → Terminal (ADR 0104)
 │   │   ├── tmux_start.sh     # tmux session creation, hooks, keybinds

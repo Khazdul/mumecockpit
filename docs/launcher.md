@@ -224,6 +224,13 @@ on validation failure, footer `Enter Confirm · ESC Cancel`.
 
 ### `profile_editor` frame
 
+> **Implementation note (ADR 0109):** the editor logic lives in
+> `bridge/launcher/profile_editor.py` as the self-contained `ProfileEditor`
+> class. `launcher.py` owns the frame stack and application; `ProfileEditor`
+> reaches back through the `EditorHost` protocol (`host.app`,
+> `host.push_overlay_frame()`, etc.). `_profile_action_edit()` creates a
+> fresh `ProfileEditor` instance and pushes the `profile_editor` frame.
+
 Pushed by the Edit Options-button on `profile`. The editor has two
 mutually exclusive views over the same in-memory `Profile`, flipped
 via a LITE/EDITOR toggle on the title row:
@@ -239,7 +246,7 @@ Both modes live-bind to the same `Profile`: lite→editor serialises
 the items into the buffer; editor→lite parses the buffer back. ESC
 in either mode parses if needed, then `save_profile`s and pops to
 the `profile` frame. Mode is **not** remembered across pushes —
-every `_enter_profile_editor` lands on lite mode.
+every new `ProfileEditor` construction lands on lite mode.
 
 The flow took five earlier phases to reach this point: phase 1
 shipped the shell + round-trip parser; phase 2 made the Aliases tab
@@ -335,8 +342,8 @@ buffer + 1 blank + footer hint` (6 chrome rows around a buffer
 sized to `term_rows - 6`), so there are no dead rows at the
 bottom.
 
-The frame itself is `HSplit([body, flex_spacer, footer])` (built by
-`_build_profile_editor`, not `_build_simple`): the body emits
+The frame itself is `HSplit([body, flex_spacer, footer])` (constructed by
+`ProfileEditor.__init__` via `DynamicContainer`, not `_build_simple`): the body emits
 chrome + body region, the footer Window emits the blank + hint
 row, and the flex_spacer absorbs leftover terminal rows so the
 footer hint sits on the final terminal row in both modes — the
@@ -801,7 +808,7 @@ clicked position and stopped" rather than running forever — the
 self-terminating target is the load-bearing invariant. Auto-scroll
 moves only the viewport offset, never the cursor, consistent with
 the wheel/scrollbar cursor decoupling, and is disarmed on
-`_enter_profile_editor`, `_profile_editor_save_and_close`, and
+`ProfileEditor.__init__`, `_save_and_close`, and
 every `_editor_flip_mode` so it never outlives the editor frame.
 See
 [ADR 0092](decisions/0092-profile-editor-scrollbar-autoscroll.md)
@@ -905,10 +912,11 @@ fields are not affected.
 - A snapshot is the whole buffer state: `(text, cursor, anchor)`.
   Strings are immutable, so snapshots store references — full-buffer
   history of a few-KB profile is cheap. Two module-level stacks
-  (`_editor_undo_stack`, `_editor_redo_stack`) hold the snapshots;
+  (`_editor_undo_stack`, `_editor_redo_stack`) hold the snapshots
+  (now instance attributes on `ProfileEditor`);
   the undo stack is capped at `_EDITOR_UNDO_MAX_DEPTH` (200) with
   the oldest entry dropped on overflow.
-- Both stacks reset on `_enter_profile_editor` and on every
+- Both stacks reset on `ProfileEditor.__init__` and on every
   lite ↔ editor flip — undo history never survives leaving the
   editor or a mode change.
 - **Coalescing** keeps a word's worth of typing under a single c-z.
@@ -1141,8 +1149,8 @@ indicator return on the next render after the timer fires. A
 `c-c` / `c-x` in a no-op context (kind buttons, list, palette zone,
 macro Key cell) does not flash — the lite-mode dispatcher returns
 before the flash call runs. The flash is also cleared on
-`_enter_profile_editor`, on the lite ↔ editor flip, and on
-`_profile_editor_save_and_close`, so it never outlives the frame.
+`ProfileEditor.__init__`, on the lite ↔ editor flip, and on
+`_save_and_close`, so it never outlives the frame.
 
 #### Delete: no confirmation
 
@@ -2710,7 +2718,7 @@ All frames render through `prompt_toolkit` controls. Layout building blocks:
   with a feedback row and footer below; a flex spacer absorbs leftover
   rows so the package, feedback row, and footer hug together at the top
   of the frame. `profile_editor` uses the same body + flex_spacer +
-  footer-Window contract (see `_build_profile_editor`) to anchor its
+  footer-Window contract (via `ProfileEditor.container()`) to anchor its
   footer hint to the final terminal row in both lite and editor mode.
 - **Scrolling frames** — `about` is a single-window frame that
   renders `title_block` (4 rows), a viewport-sized body (always emits

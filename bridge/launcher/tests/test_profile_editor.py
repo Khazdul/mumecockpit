@@ -21,7 +21,61 @@ from pathlib import Path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import launcher        # noqa: E402
+import profile_editor  # noqa: E402
 import profile_io      # noqa: E402
+
+
+class _TestHost:
+    """Minimal EditorHost for unit tests (no running Application).
+
+    Tracks overlay state so tests can assert push_overlay_frame was called.
+    """
+
+    def __init__(self):
+        self._overlay_active = False
+
+    @property
+    def app(self):
+        return None
+
+    @property
+    def app_loop(self):
+        return None
+
+    @property
+    def terminal_bg(self):
+        return "#000000"
+
+    def term_cols(self):
+        return launcher.shutil.get_terminal_size().columns
+
+    def term_rows(self):
+        return launcher.shutil.get_terminal_size().lines
+
+    def push_overlay_frame(self):
+        self._overlay_active = True
+
+    def pop_overlay_frame(self):
+        self._overlay_active = False
+
+    def focus_current_frame(self):
+        pass
+
+    def is_active(self):
+        return True
+
+    def is_overlay_active(self):
+        return self._overlay_active
+
+
+_test_host = _TestHost()
+
+# Module-level editor instance — set by _reset_editor_state.
+_ed = None
+
+# Module-level clock override — when non-None, _reset_editor_state applies it
+# to the new editor's _editor_click_now so tests with fake clocks work.
+_test_click_clock = None
 
 
 def _make_profile(source):
@@ -40,44 +94,37 @@ def _tab_index(kind):
     """Resolve a kind string to its tab index in the current
     `_PROFILE_EDITOR_TABS`. Decouples tests from tab order — Phase 6.3
     re-sorted the buttons alphabetically."""
-    for i, (_label, k) in enumerate(launcher._PROFILE_EDITOR_TABS):
+    for i, (_label, k) in enumerate(profile_editor._PROFILE_EDITOR_TABS):
         if k == kind:
             return i
     raise KeyError(kind)
 
 
 def _reset_editor_state(profile, *, focus=1, active_tab=None, kind="alias"):
-    """Place `profile` into the editor's module-level state, fresh defaults.
+    """Create a fresh ProfileEditor for `profile` and store it in `_ed`.
 
     `focus` defaults to 1 (list); pass `focus=2` to drive the detail-
     panel editing paths. `kind` (default "alias") selects which tab is
     active and is resolved to the current tab index. `active_tab` (an
     integer) overrides `kind` when provided — kept for the few tests
     that need to walk every tab by index."""
+    global _ed
     if active_tab is None:
         active_tab = _tab_index(kind)
-    launcher._editor_profile_path = profile.path
-    launcher._editor_data         = profile
-    launcher._editor_active_tab   = active_tab
-    launcher._editor_hover_tab    = None
-    launcher._editor_focus        = focus
-    launcher._editor_list_cursor  = 0
-    launcher._editor_list_scroll  = 0
-    launcher._editor_hover_row    = None
-    launcher._editor_detail_field    = 0
-    launcher._editor_pattern_cursor  = 0
-    launcher._editor_body_line       = 0
-    launcher._editor_body_col        = 0
-    launcher._editor_pattern_touched = False
-    launcher._editor_hl_style_cursor = 0
-    launcher._editor_hl_text_row     = 0
-    launcher._editor_hl_text_col     = 0
-    launcher._editor_hl_text_sel     = None
-    launcher._editor_hl_bg_row       = 0
-    launcher._editor_hl_bg_col       = 0
-    launcher._editor_hl_bg_sel       = None
-    launcher._editor_hl_hover        = None
-    launcher._editor_refresh_buffers()
+    _test_host._overlay_active = False  # reset overlay state for each editor
+    _ed = profile_editor.ProfileEditor(
+        path=profile.path,
+        profile=profile,
+        on_exit=lambda p: None,
+        host=_test_host,
+    )
+    # Override the defaults set by __init__ to match the test's request.
+    _ed._editor_active_tab = active_tab
+    _ed._editor_focus      = focus
+    # Apply fake clock if one is active (tests using _reset_click_state).
+    if _test_click_clock is not None:
+        _ed._editor_click_now = _test_click_clock
+    _ed._editor_refresh_buffers()
 
 
 class TestDisplayViewSort(unittest.TestCase):
@@ -93,7 +140,7 @@ class TestDisplayViewSort(unittest.TestCase):
         )
         prof, _src, _td = _make_profile(source)
         _reset_editor_state(prof)
-        view = launcher._profile_editor_display_view()
+        view = _ed._profile_editor_display_view()
         patterns = [e.pattern for e in view]
         self.assertEqual(patterns, ["ab", "nw", "ws"])
 
@@ -111,7 +158,7 @@ class TestDisplayViewSort(unittest.TestCase):
         items_patterns = [it.pattern for it in prof.items
                           if isinstance(it, profile_io.Entry)]
         self.assertEqual(items_patterns, ["ab", "nw", "ws"])
-        view = launcher._profile_editor_display_view()
+        view = _ed._profile_editor_display_view()
         self.assertEqual([e.pattern for e in view], ["ab", "nw", "ws"])
 
     def test_save_emits_sorted_grouped_output(self):
@@ -148,11 +195,11 @@ class TestDelete(unittest.TestCase):
         prof, _src, _td = _make_profile(source)
         _reset_editor_state(prof)
         # Cursor on first display row → "ab" (ascending sort).
-        view = launcher._profile_editor_display_view()
+        view = _ed._profile_editor_display_view()
         target = view[0]
         self.assertEqual(target.pattern, "ab")
-        launcher._editor_list_cursor = 0
-        launcher._profile_editor_request_delete()
+        _ed._editor_list_cursor = 0
+        _ed._profile_editor_request_delete()
         remaining = [e.pattern for it in prof.items
                      if isinstance(it, profile_io.Entry)
                      for e in [it]]
@@ -168,8 +215,8 @@ class TestDelete(unittest.TestCase):
         prof, _src, td = _make_profile(source)
         _reset_editor_state(prof)
         # Cursor on "ab" (display row 0 in asc).
-        launcher._editor_list_cursor = 0
-        launcher._profile_editor_request_delete()
+        _ed._editor_list_cursor = 0
+        _ed._profile_editor_request_delete()
         dst = Path(td) / "out.tin"
         prof.path = dst
         profile_io.save_profile(prof)
@@ -190,9 +237,9 @@ class TestDelete(unittest.TestCase):
         prof, _src, _td = _make_profile(source)
         _reset_editor_state(prof)
         # Position cursor on the sentinel (index == len(view)).
-        launcher._editor_list_cursor = len(launcher._profile_editor_display_view())
-        launcher._profile_editor_request_delete()
-        self.assertEqual(launcher._profile_editor_active_count(), 1)
+        _ed._editor_list_cursor = len(_ed._profile_editor_display_view())
+        _ed._profile_editor_request_delete()
+        self.assertEqual(_ed._profile_editor_active_count(), 1)
 
     def test_passthrough_lines_survive_delete_in_canonical_order(self):
         # Classifiable Passthrough lines (#var, #event) survive a delete
@@ -208,8 +255,8 @@ class TestDelete(unittest.TestCase):
         prof, _src, td = _make_profile(source)
         _reset_editor_state(prof)
         # Cursor on "ab" — display sort is asc → row 0.
-        launcher._editor_list_cursor = 0
-        launcher._profile_editor_request_delete()
+        _ed._editor_list_cursor = 0
+        _ed._profile_editor_request_delete()
         dst = Path(td) / "out.tin"
         prof.path = dst
         profile_io.save_profile(prof)
@@ -237,20 +284,20 @@ class TestCursorClamp(unittest.TestCase):
         prof, _src, _td = _make_profile(source)
         _reset_editor_state(prof)
         # Display sort is asc → indices map to [ab, nw, ws]. Cursor on ws.
-        launcher._editor_list_cursor = 2
-        launcher._profile_editor_request_delete()
+        _ed._editor_list_cursor = 2
+        _ed._profile_editor_request_delete()
         # Two entries remain; cursor should clamp to 1 (the new last).
-        self.assertEqual(launcher._profile_editor_active_count(), 2)
-        self.assertEqual(launcher._editor_list_cursor, 1)
+        self.assertEqual(_ed._profile_editor_active_count(), 2)
+        self.assertEqual(_ed._editor_list_cursor, 1)
 
     def test_cursor_resets_to_zero_when_list_empties(self):
         source = "#alias {only} {body}\n"
         prof, _src, _td = _make_profile(source)
         _reset_editor_state(prof)
-        launcher._editor_list_cursor = 0
-        launcher._profile_editor_request_delete()
-        self.assertEqual(launcher._profile_editor_active_count(), 0)
-        self.assertEqual(launcher._editor_list_cursor, 0)
+        _ed._editor_list_cursor = 0
+        _ed._profile_editor_request_delete()
+        self.assertEqual(_ed._profile_editor_active_count(), 0)
+        self.assertEqual(_ed._editor_list_cursor, 0)
 
     def test_cursor_stays_on_first_when_first_row_deleted(self):
         # Cursor at row 0 deletes "ab"; cursor stays at 0 (now pointing
@@ -262,11 +309,11 @@ class TestCursorClamp(unittest.TestCase):
         )
         prof, _src, _td = _make_profile(source)
         _reset_editor_state(prof)
-        launcher._editor_list_cursor = 0
-        launcher._profile_editor_request_delete()
-        self.assertEqual(launcher._profile_editor_active_count(), 2)
-        self.assertEqual(launcher._editor_list_cursor, 0)
-        new_view = launcher._profile_editor_display_view()
+        _ed._editor_list_cursor = 0
+        _ed._profile_editor_request_delete()
+        self.assertEqual(_ed._profile_editor_active_count(), 2)
+        self.assertEqual(_ed._editor_list_cursor, 0)
+        new_view = _ed._profile_editor_display_view()
         self.assertEqual(new_view[0].pattern, "nw")
 
 
@@ -284,7 +331,7 @@ class TestDetailPanelLayout(unittest.TestCase):
         prof, _src, _td = _make_profile("")
         prof.items.append(entry)
         _reset_editor_state(prof)
-        rows = launcher._editor_detail_lines(entry, total_lines=20)
+        rows = _ed._editor_detail_lines(entry, total_lines=20)
         return ["".join(f[1] for f in row).rstrip() for row in rows]
 
     def test_priority_label_absent_from_panel(self):
@@ -307,11 +354,11 @@ class TestDetailPanelLayout(unittest.TestCase):
 
     def test_detail_labels_map_matches_kinds(self):
         # Phase 4 / 5 plug the rest in; the data lives in this map.
-        self.assertEqual(launcher.DETAIL_LABELS["alias"],
+        self.assertEqual(profile_editor.DETAIL_LABELS["alias"],
                          ("Pattern", "Commands"))
-        self.assertEqual(launcher.DETAIL_LABELS["macro"][0],   "Key")
-        self.assertEqual(launcher.DETAIL_LABELS["highlight"][1], "Color")
-        self.assertEqual(launcher.DETAIL_LABELS["substitute"],
+        self.assertEqual(profile_editor.DETAIL_LABELS["macro"][0],   "Key")
+        self.assertEqual(profile_editor.DETAIL_LABELS["highlight"][1], "Color")
+        self.assertEqual(profile_editor.DETAIL_LABELS["substitute"],
                          ("Text", "New text"))
 
 
@@ -496,24 +543,24 @@ class TestEditPatternResorts(unittest.TestCase):
         prof, _src, _td = _make_profile(source)
         _reset_editor_state(prof, focus=2)
         # Display order asc: ab, nw, ws. Position cursor on ab.
-        launcher._editor_list_cursor = 0
-        launcher._editor_refresh_buffers()
-        self.assertEqual(launcher._editor_current_entry().pattern, "ab")
+        _ed._editor_list_cursor = 0
+        _ed._editor_refresh_buffers()
+        self.assertEqual(_ed._editor_current_entry().pattern, "ab")
         # Rename ab → zz (last in asc order).
-        launcher._editor_set_pattern("zz")
+        _ed._editor_set_pattern("zz")
         # The cursor follows the entry: it should now point to zz at the
         # end of the asc-sorted view.
-        view = launcher._profile_editor_display_view()
+        view = _ed._profile_editor_display_view()
         self.assertEqual([e.pattern for e in view], ["nw", "ws", "zz"])
-        self.assertEqual(view[launcher._editor_list_cursor].pattern, "zz")
+        self.assertEqual(view[_ed._editor_list_cursor].pattern, "zz")
 
     def test_pattern_mutation_clears_raw_via_setattr(self):
         source = "#alias {ab} {body}\n"
         prof, _src, _td = _make_profile(source)
         _reset_editor_state(prof, focus=2)
-        entry = launcher._editor_current_entry()
+        entry = _ed._editor_current_entry()
         self.assertIsNotNone(entry._raw)
-        launcher._editor_set_pattern("abc")
+        _ed._editor_set_pattern("abc")
         self.assertIsNone(entry._raw)
 
 
@@ -527,13 +574,13 @@ class TestSentinelAndCreate(unittest.TestCase):
         source = "#alias {a} {x}\n#alias {b} {y}\n"
         prof, _src, _td = _make_profile(source)
         _reset_editor_state(prof)
-        self.assertEqual(launcher._profile_editor_active_count(), 2)
-        self.assertEqual(launcher._profile_editor_display_total(), 3)
+        self.assertEqual(_ed._profile_editor_active_count(), 2)
+        self.assertEqual(_ed._profile_editor_display_total(), 3)
 
     def test_create_appends_blank_entry_and_focuses_pattern(self):
         prof, _src, _td = _make_profile("#alias {keep} {body}\n")
         _reset_editor_state(prof)
-        launcher._editor_create_new_entry()
+        _ed._editor_create_new_entry()
         # Items grew by one — a blank Entry of the active kind.
         aliases = prof.entries_of("alias")
         self.assertEqual(len(aliases), 2)
@@ -542,15 +589,15 @@ class TestSentinelAndCreate(unittest.TestCase):
         self.assertEqual(new_entry.body, "")
         self.assertIsNone(new_entry.priority)
         # Cursor parked on the new entry and detail.Pattern focused.
-        view = launcher._profile_editor_display_view()
-        self.assertEqual(view[launcher._editor_list_cursor], new_entry)
-        self.assertEqual(launcher._editor_focus, 2)
-        self.assertEqual(launcher._editor_detail_field, 0)
+        view = _ed._profile_editor_display_view()
+        self.assertEqual(view[_ed._editor_list_cursor], new_entry)
+        self.assertEqual(_ed._editor_focus, 2)
+        self.assertEqual(_ed._editor_detail_field, 0)
 
     def test_abandoned_create_is_dropped_on_save(self):
         prof, _src, td = _make_profile("#alias {keep} {body}\n")
         _reset_editor_state(prof)
-        launcher._editor_create_new_entry()
+        _ed._editor_create_new_entry()
         # User pressed ESC without typing — the new entry stays blank.
         dst = Path(td) / "out.tin"
         prof.path = dst
@@ -567,13 +614,13 @@ class TestEmptyStateHintWrap(unittest.TestCase):
         prof, _src, _td = _make_profile("")
         _reset_editor_state(prof, kind=kind)
         # No entries → cursor is on the sentinel and entry is None.
-        self.assertIsNone(launcher._editor_current_entry())
-        rows = launcher._editor_detail_lines(None, total_lines=20)
+        self.assertIsNone(_ed._editor_current_entry())
+        rows = _ed._editor_detail_lines(None, total_lines=20)
         return ["".join(f[1] for f in row) for row in rows]
 
     def test_substitute_empty_hint_wraps_within_panel(self):
         lines = self._empty_state_lines("substitute")
-        w = launcher._EDITOR_DETAIL_W
+        w = profile_editor._EDITOR_DETAIL_W
         for line in lines:
             self.assertEqual(len(line), w,
                              f"row width {len(line)} != {w}: {line!r}")
@@ -585,7 +632,7 @@ class TestEmptyStateHintWrap(unittest.TestCase):
 
     def test_highlight_empty_hint_wraps_within_panel(self):
         lines = self._empty_state_lines("highlight")
-        w = launcher._EDITOR_DETAIL_W
+        w = profile_editor._EDITOR_DETAIL_W
         for line in lines:
             self.assertEqual(len(line), w)
         joined = " ".join(ln.strip() for ln in lines if ln.strip())
@@ -595,12 +642,12 @@ class TestEmptyStateHintWrap(unittest.TestCase):
         # One existing entry → sentinel sits at index 1; park cursor on it.
         prof, _src, _td = _make_profile("#substitute {x} {y}\n")
         _reset_editor_state(prof, kind="substitute")
-        view = launcher._profile_editor_display_view()
-        launcher._editor_list_cursor = len(view)  # sentinel row
-        self.assertIsNone(launcher._editor_current_entry())
-        rows = launcher._editor_detail_lines(None, total_lines=20)
+        view = _ed._profile_editor_display_view()
+        _ed._editor_list_cursor = len(view)  # sentinel row
+        self.assertIsNone(_ed._editor_current_entry())
+        rows = _ed._editor_detail_lines(None, total_lines=20)
         lines = ["".join(f[1] for f in row) for row in rows]
-        w = launcher._EDITOR_DETAIL_W
+        w = profile_editor._EDITOR_DETAIL_W
         for line in lines:
             self.assertEqual(len(line), w)
         non_blank = [ln.strip() for ln in lines if ln.strip()]
@@ -630,59 +677,59 @@ class TestValidation(unittest.TestCase):
     def test_pattern_required_not_armed_on_first_focus(self):
         prof, _src, _td = _make_profile("")
         _reset_editor_state(prof)
-        launcher._editor_create_new_entry()
+        _ed._editor_create_new_entry()
         # Fresh blank entry — no error yet because the user hasn't left
         # the Pattern field.
-        self.assertIsNone(launcher._editor_validation_error())
+        self.assertIsNone(_ed._editor_validation_error())
 
     def test_pattern_required_appears_after_leaving_field(self):
         prof, _src, _td = _make_profile("")
         _reset_editor_state(prof)
-        launcher._editor_create_new_entry()
+        _ed._editor_create_new_entry()
         # Tab away to Body — the touched flag arms.
-        launcher._profile_editor_set_focus(2, field=1)
-        self.assertEqual(launcher._editor_validation_error(),
+        _ed._profile_editor_set_focus(2, field=1)
+        self.assertEqual(_ed._editor_validation_error(),
                          "Pattern is required.")
 
     def test_pattern_required_clears_when_pattern_nonempty(self):
         prof, _src, _td = _make_profile("")
         _reset_editor_state(prof)
-        launcher._editor_create_new_entry()
-        launcher._profile_editor_set_focus(2, field=1)
-        self.assertIsNotNone(launcher._editor_validation_error())
+        _ed._editor_create_new_entry()
+        _ed._profile_editor_set_focus(2, field=1)
+        self.assertIsNotNone(_ed._editor_validation_error())
         # Type a character into Pattern.
-        launcher._profile_editor_set_focus(2, field=0)
-        launcher._editor_set_pattern("k")
-        self.assertIsNone(launcher._editor_validation_error())
+        _ed._profile_editor_set_focus(2, field=0)
+        _ed._editor_set_pattern("k")
+        self.assertIsNone(_ed._editor_validation_error())
 
     def test_brace_unbalanced_pattern_fires_as_error(self):
         prof, _src, _td = _make_profile("#alias {k} {kill}\n")
         _reset_editor_state(prof, focus=2)
-        launcher._editor_set_pattern("orc {x")
+        _ed._editor_set_pattern("orc {x")
         self.assertEqual(
-            launcher._editor_validation_error(),
+            _ed._editor_validation_error(),
             "Unbalanced braces in Pattern.")
 
     def test_brace_balanced_pattern_no_error(self):
         prof, _src, _td = _make_profile("#alias {k} {kill}\n")
         _reset_editor_state(prof, focus=2)
-        launcher._editor_set_pattern("orc {x}")
-        self.assertIsNone(launcher._editor_validation_error())
+        _ed._editor_set_pattern("orc {x}")
+        self.assertIsNone(_ed._editor_validation_error())
 
     def test_brace_escaped_pattern_no_error(self):
         # `\{` and `\}` are literal braces in tt++ — they don't count.
         prof, _src, _td = _make_profile("#alias {k} {kill}\n")
         _reset_editor_state(prof, focus=2)
-        launcher._editor_set_pattern(r"k\{x")
-        self.assertIsNone(launcher._editor_validation_error())
+        _ed._editor_set_pattern(r"k\{x")
+        self.assertIsNone(_ed._editor_validation_error())
 
     def test_brace_unbalanced_body_fires_as_error(self):
         prof, _src, _td = _make_profile("#alias {k} {kill}\n")
         _reset_editor_state(prof, focus=2)
-        entry = launcher._editor_current_entry()
+        entry = _ed._editor_current_entry()
         entry.body = "kill orc {"
         self.assertEqual(
-            launcher._editor_validation_error(),
+            _ed._editor_validation_error(),
             "Unbalanced braces in Commands.")
 
     def test_required_takes_precedence_over_brace(self):
@@ -690,11 +737,11 @@ class TestValidation(unittest.TestCase):
         # because empty-pattern is the harder block.
         prof, _src, _td = _make_profile("")
         _reset_editor_state(prof)
-        launcher._editor_create_new_entry()
-        launcher._profile_editor_set_focus(2, field=1)
-        entry = launcher._editor_current_entry()
+        _ed._editor_create_new_entry()
+        _ed._profile_editor_set_focus(2, field=1)
+        entry = _ed._editor_current_entry()
         entry.body = "kill {"
-        self.assertEqual(launcher._editor_validation_error(),
+        self.assertEqual(_ed._editor_validation_error(),
                          "Pattern is required.")
 
 
@@ -704,32 +751,32 @@ class TestBraceBalancedHelper(unittest.TestCase):
     and `\\}` do not count toward the depth."""
 
     def test_empty_string_is_balanced(self):
-        self.assertTrue(launcher._braces_balanced(""))
+        self.assertTrue(profile_editor._braces_balanced(""))
 
     def test_simple_pair(self):
-        self.assertTrue(launcher._braces_balanced("{x}"))
+        self.assertTrue(profile_editor._braces_balanced("{x}"))
 
     def test_nested_pairs(self):
-        self.assertTrue(launcher._braces_balanced("{a{b}c}"))
+        self.assertTrue(profile_editor._braces_balanced("{a{b}c}"))
 
     def test_open_only(self):
-        self.assertFalse(launcher._braces_balanced("{abc"))
+        self.assertFalse(profile_editor._braces_balanced("{abc"))
 
     def test_close_only(self):
-        self.assertFalse(launcher._braces_balanced("abc}"))
+        self.assertFalse(profile_editor._braces_balanced("abc}"))
 
     def test_close_before_open(self):
-        self.assertFalse(launcher._braces_balanced("}abc{"))
+        self.assertFalse(profile_editor._braces_balanced("}abc{"))
 
     def test_escaped_open_does_not_count(self):
-        self.assertTrue(launcher._braces_balanced(r"\{x"))
+        self.assertTrue(profile_editor._braces_balanced(r"\{x"))
 
     def test_escaped_close_does_not_count(self):
-        self.assertTrue(launcher._braces_balanced(r"x\}"))
+        self.assertTrue(profile_editor._braces_balanced(r"x\}"))
 
     def test_double_escape_then_brace_counts(self):
         # `\\` is `\` literal; the following `{` is unescaped.
-        self.assertFalse(launcher._braces_balanced(r"\\{"))
+        self.assertFalse(profile_editor._braces_balanced(r"\\{"))
 
 
 class TestPriorityPreservedThroughEditor(unittest.TestCase):
@@ -797,35 +844,35 @@ class TestPatternCursorMovement(unittest.TestCase):
         prof, _src, _td = _make_profile("#alias {kill} {body}\n")
         _reset_editor_state(prof, focus=2)
         # _editor_refresh_buffers lands the cursor at end-of-buffer.
-        self.assertEqual(launcher._editor_pattern_cursor, 4)
-        launcher._editor_pattern_move_left()
-        self.assertEqual(launcher._editor_pattern_cursor, 3)
-        launcher._editor_pattern_move_left()
-        launcher._editor_pattern_move_left()
-        launcher._editor_pattern_move_left()
-        self.assertEqual(launcher._editor_pattern_cursor, 0)
+        self.assertEqual(_ed._editor_pattern_cursor, 4)
+        _ed._editor_pattern_move_left()
+        self.assertEqual(_ed._editor_pattern_cursor, 3)
+        _ed._editor_pattern_move_left()
+        _ed._editor_pattern_move_left()
+        _ed._editor_pattern_move_left()
+        self.assertEqual(_ed._editor_pattern_cursor, 0)
         # No fall-through past start of buffer.
-        launcher._editor_pattern_move_left()
-        self.assertEqual(launcher._editor_pattern_cursor, 0)
+        _ed._editor_pattern_move_left()
+        self.assertEqual(_ed._editor_pattern_cursor, 0)
         # Right walks back across the buffer.
-        launcher._editor_pattern_move_right()
-        self.assertEqual(launcher._editor_pattern_cursor, 1)
+        _ed._editor_pattern_move_right()
+        self.assertEqual(_ed._editor_pattern_cursor, 1)
 
     def test_insert_at_cursor_in_middle(self):
         prof, _src, _td = _make_profile("#alias {kill} {body}\n")
         _reset_editor_state(prof, focus=2)
-        launcher._editor_pattern_cursor = 2   # between 'i' and 'l'
-        launcher._editor_pattern_insert_char("X")
-        self.assertEqual(launcher._editor_current_entry().pattern, "kiXll")
-        self.assertEqual(launcher._editor_pattern_cursor, 3)
+        _ed._editor_pattern_cursor = 2   # between 'i' and 'l'
+        _ed._editor_pattern_insert_char("X")
+        self.assertEqual(_ed._editor_current_entry().pattern, "kiXll")
+        self.assertEqual(_ed._editor_pattern_cursor, 3)
 
     def test_backspace_at_cursor_in_middle(self):
         prof, _src, _td = _make_profile("#alias {kill} {body}\n")
         _reset_editor_state(prof, focus=2)
-        launcher._editor_pattern_cursor = 3   # between 'l' and 'l'
-        launcher._editor_pattern_backspace()
-        self.assertEqual(launcher._editor_current_entry().pattern, "kil")
-        self.assertEqual(launcher._editor_pattern_cursor, 2)
+        _ed._editor_pattern_cursor = 3   # between 'l' and 'l'
+        _ed._editor_pattern_backspace()
+        self.assertEqual(_ed._editor_current_entry().pattern, "kil")
+        self.assertEqual(_ed._editor_pattern_cursor, 2)
 
 
 class TestBodyCursorMovement(unittest.TestCase):
@@ -835,72 +882,72 @@ class TestBodyCursorMovement(unittest.TestCase):
     def test_left_at_start_of_line_wraps_to_prev_line_end(self):
         prof, _src, _td = _make_profile("#alias {k} {abc\ndef}\n")
         _reset_editor_state(prof, focus=2)
-        launcher._editor_detail_field = 1
-        launcher._editor_body_line = 1
-        launcher._editor_body_col  = 0
-        launcher._editor_body_move_left()
-        self.assertEqual(launcher._editor_body_line, 0)
-        self.assertEqual(launcher._editor_body_col,  3)
+        _ed._editor_detail_field = 1
+        _ed._editor_body_line = 1
+        _ed._editor_body_col  = 0
+        _ed._editor_body_move_left()
+        self.assertEqual(_ed._editor_body_line, 0)
+        self.assertEqual(_ed._editor_body_col,  3)
 
     def test_right_at_end_of_line_wraps_to_next_line_start(self):
         prof, _src, _td = _make_profile("#alias {k} {abc\ndef}\n")
         _reset_editor_state(prof, focus=2)
-        launcher._editor_detail_field = 1
-        launcher._editor_body_line = 0
-        launcher._editor_body_col  = 3
-        launcher._editor_body_move_right()
-        self.assertEqual(launcher._editor_body_line, 1)
-        self.assertEqual(launcher._editor_body_col,  0)
+        _ed._editor_detail_field = 1
+        _ed._editor_body_line = 0
+        _ed._editor_body_col  = 3
+        _ed._editor_body_move_right()
+        self.assertEqual(_ed._editor_body_line, 1)
+        self.assertEqual(_ed._editor_body_col,  0)
 
     def test_up_returns_false_at_top_edge(self):
         # `_editor_body_move_line` returns False at the buffer edge so
         # the keybind can fall through to focus the Pattern field.
         prof, _src, _td = _make_profile("#alias {k} {only line}\n")
         _reset_editor_state(prof, focus=2)
-        launcher._editor_detail_field = 1
-        launcher._editor_body_line = 0
-        self.assertFalse(launcher._editor_body_move_line(-1))
+        _ed._editor_detail_field = 1
+        _ed._editor_body_line = 0
+        self.assertFalse(_ed._editor_body_move_line(-1))
 
     def test_up_in_multi_line_preserves_column(self):
         prof, _src, _td = _make_profile("#alias {k} {abcdef\nghi}\n")
         _reset_editor_state(prof, focus=2)
-        launcher._editor_detail_field = 1
-        launcher._editor_body_line = 1
-        launcher._editor_body_col  = 3   # end of "ghi"
-        self.assertTrue(launcher._editor_body_move_line(-1))
-        self.assertEqual(launcher._editor_body_line, 0)
-        self.assertEqual(launcher._editor_body_col,  3)   # preserved
+        _ed._editor_detail_field = 1
+        _ed._editor_body_line = 1
+        _ed._editor_body_col  = 3   # end of "ghi"
+        self.assertTrue(_ed._editor_body_move_line(-1))
+        self.assertEqual(_ed._editor_body_line, 0)
+        self.assertEqual(_ed._editor_body_col,  3)   # preserved
 
     def test_up_clamps_column_to_shorter_line(self):
         prof, _src, _td = _make_profile("#alias {k} {ab\nabcdef}\n")
         _reset_editor_state(prof, focus=2)
-        launcher._editor_detail_field = 1
-        launcher._editor_body_line = 1
-        launcher._editor_body_col  = 5
-        self.assertTrue(launcher._editor_body_move_line(-1))
-        self.assertEqual(launcher._editor_body_line, 0)
-        self.assertEqual(launcher._editor_body_col,  2)   # clamped to len(ab)
+        _ed._editor_detail_field = 1
+        _ed._editor_body_line = 1
+        _ed._editor_body_col  = 5
+        self.assertTrue(_ed._editor_body_move_line(-1))
+        self.assertEqual(_ed._editor_body_line, 0)
+        self.assertEqual(_ed._editor_body_col,  2)   # clamped to len(ab)
 
     def test_body_insert_at_cursor_splits_line(self):
         prof, _src, _td = _make_profile("#alias {k} {abc}\n")
         _reset_editor_state(prof, focus=2)
-        launcher._editor_detail_field = 1
-        launcher._editor_body_line = 0
-        launcher._editor_body_col  = 2   # between 'b' and 'c'
-        launcher._editor_body_insert_char("X")
-        self.assertEqual(launcher._editor_current_entry().body, "abXc")
-        self.assertEqual(launcher._editor_body_col, 3)
+        _ed._editor_detail_field = 1
+        _ed._editor_body_line = 0
+        _ed._editor_body_col  = 2   # between 'b' and 'c'
+        _ed._editor_body_insert_char("X")
+        self.assertEqual(_ed._editor_current_entry().body, "abXc")
+        self.assertEqual(_ed._editor_body_col, 3)
 
     def test_body_backspace_at_start_of_line_joins(self):
         prof, _src, _td = _make_profile("#alias {k} {abc\ndef}\n")
         _reset_editor_state(prof, focus=2)
-        launcher._editor_detail_field = 1
-        launcher._editor_body_line = 1
-        launcher._editor_body_col  = 0
-        launcher._editor_body_backspace()
-        self.assertEqual(launcher._editor_current_entry().body, "abcdef")
-        self.assertEqual(launcher._editor_body_line, 0)
-        self.assertEqual(launcher._editor_body_col,  3)
+        _ed._editor_detail_field = 1
+        _ed._editor_body_line = 1
+        _ed._editor_body_col  = 0
+        _ed._editor_body_backspace()
+        self.assertEqual(_ed._editor_current_entry().body, "abcdef")
+        self.assertEqual(_ed._editor_body_line, 0)
+        self.assertEqual(_ed._editor_body_col,  3)
 
 
 class TestPhase4MultiKind(unittest.TestCase):
@@ -939,8 +986,8 @@ class TestPhase4MultiKind(unittest.TestCase):
             src.write_text(self.MIXED_PROFILE)
             prof = profile_io.load_profile(src)
             _reset_editor_state(prof)
-            for tab in range(len(launcher._PROFILE_EDITOR_TABS)):
-                launcher._profile_editor_set_tab(tab)
+            for tab in range(len(profile_editor._PROFILE_EDITOR_TABS)):
+                _ed._profile_editor_set_tab(tab)
             prof.path = dst
             profile_io.save_profile(prof)
             self.assertEqual(dst.read_text(), expected)
@@ -958,22 +1005,22 @@ class TestPhase4MultiKind(unittest.TestCase):
             ("Substitutes", "substitute"),
         ]
         for i, (label, kind) in enumerate(expected_kinds):
-            launcher._profile_editor_set_tab(i)
-            self.assertEqual(launcher._profile_editor_active_kind(), kind,
+            _ed._profile_editor_set_tab(i)
+            self.assertEqual(_ed._profile_editor_active_kind(), kind,
                              f"tab {label}")
 
     def test_list_header_labels_follow_active_kind(self):
         prof, _src, _td = _make_profile(self.MIXED_PROFILE)
         _reset_editor_state(prof)
         # Substitutes header reads "Text" + "New text".
-        launcher._profile_editor_set_tab(_tab_index("substitute"))
-        frags = launcher._editor_list_header_frag(visible_rows=5)
+        _ed._profile_editor_set_tab(_tab_index("substitute"))
+        frags = _ed._editor_list_header_frag(visible_rows=5)
         joined = "".join(f[1] for f in frags)
         self.assertIn("Text",      joined)
         self.assertIn("New text",  joined)
         # Highlights header reads "Pattern" + "Color".
-        launcher._profile_editor_set_tab(_tab_index("highlight"))
-        frags = launcher._editor_list_header_frag(visible_rows=5)
+        _ed._profile_editor_set_tab(_tab_index("highlight"))
+        frags = _ed._editor_list_header_frag(visible_rows=5)
         joined = "".join(f[1] for f in frags)
         self.assertIn("Color",     joined)
 
@@ -985,8 +1032,8 @@ class TestPhase5MacrosTab(unittest.TestCase):
     def test_detail_panel_shows_key_cell(self):
         prof, _src, _td = _make_profile("#macro {\\eOp} {flee}\n")
         _reset_editor_state(prof, kind="macro")
-        entry = launcher._editor_current_entry()
-        rows = launcher._editor_detail_lines(entry, total_lines=18)
+        entry = _ed._editor_current_entry()
+        rows = _ed._editor_detail_lines(entry, total_lines=18)
         joined = " ".join("".join(f[1] for f in row).strip() for row in rows)
         # No more "phase 5" placeholder.
         self.assertNotIn("phase 5", joined.lower())
@@ -1000,7 +1047,7 @@ class TestPhase5MacrosTab(unittest.TestCase):
         prof, _src, _td = _make_profile("#macro {\\eOp} {flee}\n")
         _reset_editor_state(prof, kind="macro")
         entry = prof.entries_of("macro")[0]
-        frags = launcher._editor_list_row_text(
+        frags = _ed._editor_list_row_text(
             entry, is_cursor=False, is_hover=False)
         joined = "".join(f[1] for f in frags)
         self.assertIn("Numpad 0", joined)
@@ -1010,7 +1057,7 @@ class TestPhase5MacrosTab(unittest.TestCase):
         prof, _src, _td = _make_profile("#macro {abc} {flee}\n")
         _reset_editor_state(prof, kind="macro")
         entry = prof.entries_of("macro")[0]
-        frags = launcher._editor_list_row_text(
+        frags = _ed._editor_list_row_text(
             entry, is_cursor=False, is_hover=False)
         joined = "".join(f[1] for f in frags)
         # The 8-char Pattern column truncates "Custom: abc" but the
@@ -1026,23 +1073,24 @@ class TestPhase5MacroCreate(unittest.TestCase):
         prof, _src, _td = _make_profile("")
         _reset_editor_state(prof, kind="macro")
         before = len(prof.entries_of("macro"))
-        launcher._editor_create_new_entry()
+        _ed._editor_create_new_entry()
         self.assertEqual(len(prof.entries_of("macro")), before + 1)
         entry = prof.entries_of("macro")[-1]
         self.assertEqual(entry.pattern, "")
-        self.assertEqual(launcher._current_frame, "profile_editor_macro_keybind")
-        self.assertTrue(launcher._editor_keybind_just_created)
+        self.assertTrue(_test_host._overlay_active,
+                        "push_overlay_frame() should have been called")
+        self.assertTrue(_ed._editor_keybind_just_created)
         # Clean up to avoid leaking the pushed frame state into other tests.
-        launcher._editor_keybind_cancel()
+        _ed._editor_keybind_cancel()
 
     def test_cancel_after_create_drops_entry(self):
         prof, _src, _td = _make_profile("")
         _reset_editor_state(prof, kind="macro")
-        launcher._editor_create_new_entry()
+        _ed._editor_create_new_entry()
         self.assertEqual(len(prof.entries_of("macro")), 1)
-        launcher._editor_keybind_cancel()
+        _ed._editor_keybind_cancel()
         self.assertEqual(len(prof.entries_of("macro")), 0)
-        self.assertFalse(launcher._editor_keybind_just_created)
+        self.assertFalse(_ed._editor_keybind_just_created)
 
 
 class TestPhase5MacroSaveDropsEmpty(unittest.TestCase):
@@ -1071,32 +1119,32 @@ class TestPhase4PerKindDefaults(unittest.TestCase):
     def test_new_alias_has_empty_body(self):
         prof, _src, _td = _make_profile("")
         _reset_editor_state(prof, kind="alias")
-        launcher._editor_create_new_entry()
-        e = launcher._editor_current_entry()
+        _ed._editor_create_new_entry()
+        e = _ed._editor_current_entry()
         self.assertEqual(e.pattern, "")
         self.assertEqual(e.body,    "")
 
     def test_new_highlight_defaults_to_light_yellow(self):
         prof, _src, _td = _make_profile("")
         _reset_editor_state(prof, kind="highlight")
-        launcher._editor_create_new_entry()
-        e = launcher._editor_current_entry()
+        _ed._editor_create_new_entry()
+        e = _ed._editor_current_entry()
         self.assertEqual(e.kind, "highlight")
         # New entries default to "light yellow" (per DETAIL_NEW_DEFAULTS).
         self.assertEqual(e.body, "light yellow")
         # Text palette cursor parks on Yellow (row 2, col 1) AND that
         # swatch is the active selection.
-        self.assertEqual(launcher._editor_hl_text_row, 2)
-        self.assertEqual(launcher._editor_hl_text_col, 1)
-        self.assertEqual(launcher._editor_hl_text_sel, (2, 1))
+        self.assertEqual(_ed._editor_hl_text_row, 2)
+        self.assertEqual(_ed._editor_hl_text_col, 1)
+        self.assertEqual(_ed._editor_hl_text_sel, (2, 1))
         # No background selection.
-        self.assertIsNone(launcher._editor_hl_bg_sel)
+        self.assertIsNone(_ed._editor_hl_bg_sel)
 
     def test_new_substitute_has_empty_body(self):
         prof, _src, _td = _make_profile("")
         _reset_editor_state(prof, kind="substitute")
-        launcher._editor_create_new_entry()
-        e = launcher._editor_current_entry()
+        _ed._editor_create_new_entry()
+        e = _ed._editor_current_entry()
         self.assertEqual(e.kind, "substitute")
         self.assertEqual(e.body, "")
 
@@ -1112,30 +1160,30 @@ class TestHighlightPaletteRedesign(unittest.TestCase):
     def _setup_highlight(self, source):
         prof, _src, _td = _make_profile(source)
         _reset_editor_state(prof, focus=2, kind="highlight")
-        launcher._editor_detail_field = 2   # Text grid
+        _ed._editor_detail_field = 2   # Text grid
         return prof
 
     # --- parsing & serialising ------------------------------------
     def test_parse_simple_color(self):
-        styles, tc, bg = launcher._hl_parse_body("red")
+        styles, tc, bg = profile_editor._hl_parse_body("red")
         self.assertEqual(styles, set())
         self.assertEqual(tc, "red")
         self.assertIsNone(bg)
 
     def test_parse_light_form_normalised(self):
-        styles, tc, bg = launcher._hl_parse_body("light yellow")
+        styles, tc, bg = profile_editor._hl_parse_body("light yellow")
         self.assertEqual(tc, "Yellow")
         self.assertIsNone(bg)
 
     def test_parse_styles_text_and_bg(self):
-        styles, tc, bg = launcher._hl_parse_body(
+        styles, tc, bg = profile_editor._hl_parse_body(
             "underscore Red b green")
         self.assertEqual(styles, {"underscore"})
         self.assertEqual(tc, "Red")
         self.assertEqual(bg, "green")
 
     def test_parse_multiple_styles(self):
-        styles, tc, bg = launcher._hl_parse_body(
+        styles, tc, bg = profile_editor._hl_parse_body(
             "reverse blink Yellow")
         self.assertEqual(styles, {"reverse", "blink"})
         self.assertEqual(tc, "Yellow")
@@ -1144,32 +1192,32 @@ class TestHighlightPaletteRedesign(unittest.TestCase):
     def test_parse_rejects_unknown_token(self):
         # `<faa>` is a custom VT100 form — parser punts (no Custom slot
         # in Phase 6.2; the original body simply persists).
-        self.assertIsNone(launcher._hl_parse_body("<faa>"))
+        self.assertIsNone(profile_editor._hl_parse_body("<faa>"))
 
     def test_parse_rejects_bold_token(self):
         # Phase 6.3: `bold` was dropped from the supported style set —
         # tt++ doesn't list it as a `#highlight` modifier. A persisted
         # body containing `bold` falls through as unrecognised so the
         # original `_raw` survives on save rather than dropping data.
-        self.assertIsNone(launcher._hl_parse_body("bold red"))
+        self.assertIsNone(profile_editor._hl_parse_body("bold red"))
 
     def test_serialize_round_trip(self):
         body = "underscore Red b green"
-        styles, tc, bg = launcher._hl_parse_body(body)
+        styles, tc, bg = profile_editor._hl_parse_body(body)
         self.assertEqual(
-            launcher._hl_serialize(styles, tc, bg),
+            profile_editor._hl_serialize(styles, tc, bg),
             body,
         )
 
     def test_serialize_omits_b_when_no_bg(self):
         self.assertEqual(
-            launcher._hl_serialize({"reverse"}, "Yellow", None),
+            profile_editor._hl_serialize({"reverse"}, "Yellow", None),
             "reverse Yellow",
         )
 
     def test_serialize_only_color(self):
         self.assertEqual(
-            launcher._hl_serialize(set(), "red", None),
+            profile_editor._hl_serialize(set(), "red", None),
             "red",
         )
 
@@ -1178,7 +1226,7 @@ class TestHighlightPaletteRedesign(unittest.TestCase):
         # serializer ignores it even if it sneaks into the styles set.
         # The remaining stable order is underscore < blink < reverse.
         self.assertEqual(
-            launcher._hl_serialize({"bold", "blink"}, "red", None),
+            profile_editor._hl_serialize({"bold", "blink"}, "red", None),
             "blink red",
         )
 
@@ -1186,45 +1234,45 @@ class TestHighlightPaletteRedesign(unittest.TestCase):
     def test_cursor_and_selection_land_on_text_swatch(self):
         self._setup_highlight("#highlight {Orc} {red}\n")
         # red is text row 0 col 0; selection mirrors cursor.
-        self.assertEqual(launcher._editor_hl_text_row, 0)
-        self.assertEqual(launcher._editor_hl_text_col, 0)
-        self.assertEqual(launcher._editor_hl_text_sel, (0, 0))
+        self.assertEqual(_ed._editor_hl_text_row, 0)
+        self.assertEqual(_ed._editor_hl_text_col, 0)
+        self.assertEqual(_ed._editor_hl_text_sel, (0, 0))
         # No BG selection — cursor parks at (0, 0).
-        self.assertIsNone(launcher._editor_hl_bg_sel)
-        self.assertEqual(launcher._editor_hl_bg_row, 0)
+        self.assertIsNone(_ed._editor_hl_bg_sel)
+        self.assertEqual(_ed._editor_hl_bg_row, 0)
 
     def test_cursor_lands_on_light_variant(self):
         self._setup_highlight("#highlight {Orc} {Yellow}\n")
         self.assertEqual(
-            (launcher._editor_hl_text_row, launcher._editor_hl_text_col),
+            (_ed._editor_hl_text_row, _ed._editor_hl_text_col),
             (2, 1),
         )
-        self.assertEqual(launcher._editor_hl_text_sel, (2, 1))
+        self.assertEqual(_ed._editor_hl_text_sel, (2, 1))
 
     def test_cursor_for_styles_text_bg(self):
         self._setup_highlight(
             "#highlight {Orc} {underscore Red b green}\n")
         self.assertEqual(
-            (launcher._editor_hl_text_row, launcher._editor_hl_text_col),
+            (_ed._editor_hl_text_row, _ed._editor_hl_text_col),
             (0, 1),
         )
-        self.assertEqual(launcher._editor_hl_text_sel, (0, 1))
+        self.assertEqual(_ed._editor_hl_text_sel, (0, 1))
         self.assertEqual(
-            (launcher._editor_hl_bg_row, launcher._editor_hl_bg_col),
+            (_ed._editor_hl_bg_row, _ed._editor_hl_bg_col),
             (1, 0),
         )
-        self.assertEqual(launcher._editor_hl_bg_sel, (1, 0))
+        self.assertEqual(_ed._editor_hl_bg_sel, (1, 0))
 
     def test_unparseable_body_leaves_body_untouched(self):
         # No more Custom slot — the body persists verbatim, cursor parks
         # at (0,0) with no swatch selected on either dimension.
         self._setup_highlight("#highlight {Snowy} {<faa>}\n")
-        entry = launcher._editor_current_entry()
+        entry = _ed._editor_current_entry()
         self.assertEqual(entry.body, "<faa>")
-        self.assertIsNone(launcher._editor_hl_text_sel)
-        self.assertIsNone(launcher._editor_hl_bg_sel)
+        self.assertIsNone(_ed._editor_hl_text_sel)
+        self.assertIsNone(_ed._editor_hl_bg_sel)
         self.assertEqual(
-            (launcher._editor_hl_text_row, launcher._editor_hl_text_col),
+            (_ed._editor_hl_text_row, _ed._editor_hl_text_col),
             (0, 0))
 
     # --- selection toggling drives the body -----------------------
@@ -1232,67 +1280,67 @@ class TestHighlightPaletteRedesign(unittest.TestCase):
         # Phase 6.2: cursor is decoupled from selection — moving the
         # cursor must not rewrite entry.body.
         self._setup_highlight("#highlight {Orc} {red}\n")
-        entry = launcher._editor_current_entry()
-        launcher._editor_hl_set_text_cursor(2, 0)   # yellow under cursor
+        entry = _ed._editor_current_entry()
+        _ed._editor_hl_set_text_cursor(2, 0)   # yellow under cursor
         self.assertEqual(entry.body, "red")        # but body unchanged
         # The selection is still red.
-        self.assertEqual(launcher._editor_hl_text_sel, (0, 0))
+        self.assertEqual(_ed._editor_hl_text_sel, (0, 0))
 
     def test_toggle_text_selection_at_cursor_updates_body(self):
         self._setup_highlight("#highlight {Orc} {red}\n")
-        entry = launcher._editor_current_entry()
-        launcher._editor_hl_set_text_cursor(2, 1)        # Yellow
-        launcher._editor_hl_toggle_text_selection_at_cursor()
+        entry = _ed._editor_current_entry()
+        _ed._editor_hl_set_text_cursor(2, 1)        # Yellow
+        _ed._editor_hl_toggle_text_selection_at_cursor()
         self.assertEqual(entry.body, "Yellow")
-        self.assertEqual(launcher._editor_hl_text_sel, (2, 1))
+        self.assertEqual(_ed._editor_hl_text_sel, (2, 1))
 
     def test_toggle_text_selection_off_clears_color(self):
         # When cursor sits on the currently-selected swatch, toggling
         # deselects (no text colour in the body).
         self._setup_highlight("#highlight {Orc} {red}\n")
-        entry = launcher._editor_current_entry()
+        entry = _ed._editor_current_entry()
         # Cursor parks on the selected swatch on load.
-        launcher._editor_hl_toggle_text_selection_at_cursor()
-        self.assertIsNone(launcher._editor_hl_text_sel)
+        _ed._editor_hl_toggle_text_selection_at_cursor()
+        self.assertIsNone(_ed._editor_hl_text_sel)
         self.assertEqual(entry.body, "")  # no color, no styles
 
     def test_toggle_bg_selection_adds_b_clause(self):
         self._setup_highlight("#highlight {Orc} {red}\n")
-        entry = launcher._editor_current_entry()
-        launcher._editor_detail_field = 3
-        launcher._editor_hl_set_bg_cursor(1, 0)        # green
-        launcher._editor_hl_toggle_bg_selection_at_cursor()
+        entry = _ed._editor_current_entry()
+        _ed._editor_detail_field = 3
+        _ed._editor_hl_set_bg_cursor(1, 0)        # green
+        _ed._editor_hl_toggle_bg_selection_at_cursor()
         self.assertEqual(entry.body, "red b green")
         # Toggling the same swatch off drops the b-clause.
-        launcher._editor_hl_toggle_bg_selection_at_cursor()
+        _ed._editor_hl_toggle_bg_selection_at_cursor()
         self.assertEqual(entry.body, "red")
 
     def test_style_toggle_adds_modifier(self):
         self._setup_highlight("#highlight {Orc} {red}\n")
-        entry = launcher._editor_current_entry()
-        launcher._editor_hl_toggle_style("underscore")
+        entry = _ed._editor_current_entry()
+        _ed._editor_hl_toggle_style("underscore")
         self.assertEqual(entry.body, "underscore red")
-        launcher._editor_hl_toggle_style("blink")
+        _ed._editor_hl_toggle_style("blink")
         self.assertEqual(entry.body, "underscore blink red")
-        launcher._editor_hl_toggle_style("underscore")
+        _ed._editor_hl_toggle_style("underscore")
         self.assertEqual(entry.body, "blink red")
 
     def test_editing_text_preserves_styles_and_bg(self):
         self._setup_highlight(
             "#highlight {Orc} {underscore Red b green}\n")
-        entry = launcher._editor_current_entry()
+        entry = _ed._editor_current_entry()
         # Move cursor to blue (row 3 col 0) and toggle selection there.
-        launcher._editor_hl_set_text_cursor(3, 0)
-        launcher._editor_hl_toggle_text_selection_at_cursor()
+        _ed._editor_hl_set_text_cursor(3, 0)
+        _ed._editor_hl_toggle_text_selection_at_cursor()
         self.assertEqual(entry.body, "underscore blue b green")
 
     def test_editing_bg_preserves_text_and_styles(self):
         self._setup_highlight(
             "#highlight {Orc} {underscore Red b green}\n")
-        entry = launcher._editor_current_entry()
-        launcher._editor_detail_field = 3
-        launcher._editor_hl_set_bg_cursor(4, 1)        # Magenta
-        launcher._editor_hl_toggle_bg_selection_at_cursor()
+        entry = _ed._editor_current_entry()
+        _ed._editor_detail_field = 3
+        _ed._editor_hl_set_bg_cursor(4, 1)        # Magenta
+        _ed._editor_hl_toggle_bg_selection_at_cursor()
         self.assertEqual(entry.body, "underscore Red b Magenta")
 
 
@@ -1305,8 +1353,8 @@ class TestPhase4HighlightListColorColumn(unittest.TestCase):
         prof, _src, _td = _make_profile(
             "#highlight {Orc} {light yellow}\n")
         _reset_editor_state(prof, kind="highlight")
-        entry = launcher._editor_current_entry()
-        frags = launcher._editor_list_row_text(entry, False, False)
+        entry = _ed._editor_current_entry()
+        frags = _ed._editor_list_row_text(entry, False, False)
         # Two-fragment form: [(C_ITEM, pat+gap), (color_style, body)].
         self.assertEqual(len(frags), 2)
         body_style, body_text = frags[1]
@@ -1319,8 +1367,8 @@ class TestPhase4HighlightListColorColumn(unittest.TestCase):
         prof, _src, _td = _make_profile(
             "#highlight {Snowy} {<faa>}\n")
         _reset_editor_state(prof, kind="highlight")
-        entry = launcher._editor_current_entry()
-        frags = launcher._editor_list_row_text(entry, False, False)
+        entry = _ed._editor_current_entry()
+        frags = _ed._editor_list_row_text(entry, False, False)
         self.assertEqual(len(frags), 1)
         style, _text = frags[0]
         self.assertEqual(style, launcher.C_ITEM)
@@ -1333,21 +1381,21 @@ class TestListBodyPreview(unittest.TestCase):
 
     def test_single_line_fits_no_ellipsis(self):
         self.assertEqual(
-            launcher._list_body_preview("kill orc", 20),
+            profile_editor._list_body_preview("kill orc", 20),
             "kill orc",
         )
 
     def test_truncated_line_gets_ellipsis(self):
         # 25 chars, column 10 → 9 chars + `…`.
         body = "abcdefghijklmnopqrstuvwxy"
-        out = launcher._list_body_preview(body, 10)
+        out = profile_editor._list_body_preview(body, 10)
         self.assertEqual(out, "abcdefghi…")
         self.assertEqual(len(out), 10)
 
     def test_multiline_first_fits_gets_ellipsis(self):
         # Spec example: `testcommand1;\ntestcommand2` previews as
         # `testcommand1;…` because more non-blank content follows.
-        out = launcher._list_body_preview(
+        out = profile_editor._list_body_preview(
             "testcommand1;\ntestcommand2", 28)
         self.assertEqual(out, "testcommand1;…")
 
@@ -1355,27 +1403,27 @@ class TestListBodyPreview(unittest.TestCase):
         # First line is exactly column-wide; trailing `…` must replace
         # the last char so the cell stays within the column.
         body = "x" * 10 + "\nmore"
-        out = launcher._list_body_preview(body, 10)
+        out = profile_editor._list_body_preview(body, 10)
         self.assertEqual(out, "x" * 9 + "…")
         self.assertEqual(len(out), 10)
 
     def test_blank_only_extras_no_ellipsis(self):
         # Trailing blank/whitespace-only lines do not count as "more".
         self.assertEqual(
-            launcher._list_body_preview("hello\n   \n\n", 20),
+            profile_editor._list_body_preview("hello\n   \n\n", 20),
             "hello",
         )
 
     def test_leading_blanks_skipped(self):
         # Phase 6.2 behaviour: leading blank lines are skipped.
         self.assertEqual(
-            launcher._list_body_preview("\n\nhello", 20),
+            profile_editor._list_body_preview("\n\nhello", 20),
             "hello",
         )
 
     def test_empty_body(self):
-        self.assertEqual(launcher._list_body_preview("", 20), "")
-        self.assertEqual(launcher._list_body_preview(None, 20), "")
+        self.assertEqual(profile_editor._list_body_preview("", 20), "")
+        self.assertEqual(profile_editor._list_body_preview(None, 20), "")
 
 
 class TestPhase4CrossKindEditing(unittest.TestCase):
@@ -1431,21 +1479,21 @@ class TestEditorModeFlip(unittest.TestCase):
     def _setup_in_lite_mode(self, source=""):
         prof, _src, _td = _make_profile(source)
         _reset_editor_state(prof)
-        launcher._editor_mode           = "lite"
-        launcher._editor_toggle_focused = False
-        launcher._editor_toggle_hover   = None
-        launcher._editor_buffer_text    = ""
-        launcher._editor_buffer_cursor  = 0
-        launcher._editor_buffer_scroll  = 0
+        _ed._editor_mode           = "lite"
+        _ed._editor_toggle_focused = False
+        _ed._editor_toggle_hover   = None
+        _ed._editor_buffer_text    = ""
+        _ed._editor_buffer_cursor  = 0
+        _ed._editor_buffer_scroll  = 0
         return prof
 
     def test_default_mode_is_lite_on_open(self):
         # No call to _enter_profile_editor here — the test harness sets
         # lite mode directly, mirroring the editor-state reset.
         prof = self._setup_in_lite_mode("#alias {k} {kill}\n")
-        self.assertEqual(launcher._editor_mode, "lite")
+        self.assertEqual(_ed._editor_mode, "lite")
         # Buffer text is empty until the first flip.
-        self.assertEqual(launcher._editor_buffer_text, "")
+        self.assertEqual(_ed._editor_buffer_text, "")
 
     def test_flip_to_editor_serialises_profile(self):
         source = "#alias {k} {kill %1}\n#var {x} {y}\n"
@@ -1453,24 +1501,24 @@ class TestEditorModeFlip(unittest.TestCase):
         # grouped form, not the source verbatim.
         expected_buffer = "#alias {k} {kill %1}\n\n#var {x} {y}\n"
         prof = self._setup_in_lite_mode(source)
-        launcher._editor_flip_mode()
-        self.assertEqual(launcher._editor_mode, "editor")
-        self.assertEqual(launcher._editor_buffer_text, expected_buffer)
+        _ed._editor_flip_mode()
+        self.assertEqual(_ed._editor_mode, "editor")
+        self.assertEqual(_ed._editor_buffer_text, expected_buffer)
         # Cursor lands at offset 0 on flip.
-        self.assertEqual(launcher._editor_buffer_cursor, 0)
-        self.assertEqual(launcher._editor_buffer_scroll, 0)
+        self.assertEqual(_ed._editor_buffer_cursor, 0)
+        self.assertEqual(_ed._editor_buffer_scroll, 0)
 
     def test_flip_back_to_lite_parses_buffer(self):
         # User edits the buffer in editor mode; flipping back into lite
         # rebuilds the Profile from the buffer text.
         prof = self._setup_in_lite_mode("#alias {k} {kill}\n")
-        launcher._editor_flip_mode()  # → editor
+        _ed._editor_flip_mode()  # → editor
         # Append a fresh entry through the buffer-mutation primitives.
-        launcher._editor_buffer_cursor = len(launcher._editor_buffer_text)
+        _ed._editor_buffer_cursor = len(_ed._editor_buffer_text)
         for ch in "#alias {ws} {wake;stand}\n":
-            launcher._editor_buffer_insert(ch)
-        launcher._editor_flip_mode()  # → lite
-        self.assertEqual(launcher._editor_mode, "lite")
+            _ed._editor_buffer_insert(ch)
+        _ed._editor_flip_mode()  # → lite
+        self.assertEqual(_ed._editor_mode, "lite")
         aliases = prof.entries_of("alias")
         self.assertEqual([(e.pattern, e.body) for e in aliases],
                          [("k", "kill"), ("ws", "wake;stand")])
@@ -1508,15 +1556,15 @@ class TestEditorModeFlip(unittest.TestCase):
             src.write_text(source)
             prof = profile_io.load_profile(src)
             _reset_editor_state(prof)
-            launcher._editor_mode = "lite"
-            launcher._editor_buffer_text = ""
-            launcher._editor_buffer_cursor = 0
-            launcher._editor_buffer_scroll = 0
-            launcher._editor_toggle_focused = False
-            launcher._editor_toggle_hover = None
-            launcher._editor_flip_mode()
-            self.assertEqual(launcher._editor_buffer_text, expected)
-            launcher._editor_flip_mode()
+            _ed._editor_mode = "lite"
+            _ed._editor_buffer_text = ""
+            _ed._editor_buffer_cursor = 0
+            _ed._editor_buffer_scroll = 0
+            _ed._editor_toggle_focused = False
+            _ed._editor_toggle_hover = None
+            _ed._editor_flip_mode()
+            self.assertEqual(_ed._editor_buffer_text, expected)
+            _ed._editor_flip_mode()
             prof.path = dst
             profile_io.save_profile(prof)
             self.assertEqual(dst.read_text(), expected)
@@ -1530,9 +1578,9 @@ class TestEditorModeFlip(unittest.TestCase):
         alias_k = prof.entries_of("alias")[0]
         alias_k.body = "kill orc"
         # Flip to editor and back.
-        launcher._editor_flip_mode()
-        self.assertIn("kill orc", launcher._editor_buffer_text)
-        launcher._editor_flip_mode()
+        _ed._editor_flip_mode()
+        self.assertIn("kill orc", _ed._editor_buffer_text)
+        _ed._editor_flip_mode()
         self.assertEqual(prof.entries_of("alias")[0].body, "kill orc")
 
 
@@ -1545,74 +1593,74 @@ class TestEditorModeBufferCursor(unittest.TestCase):
         # Drop into editor mode with `text` as the buffer content.
         prof, _src, _td = _make_profile("")
         _reset_editor_state(prof)
-        launcher._editor_mode           = "editor"
-        launcher._editor_toggle_focused = False
-        launcher._editor_buffer_text    = text
-        launcher._editor_buffer_cursor  = 0
-        launcher._editor_buffer_scroll  = 0
+        _ed._editor_mode           = "editor"
+        _ed._editor_toggle_focused = False
+        _ed._editor_buffer_text    = text
+        _ed._editor_buffer_cursor  = 0
+        _ed._editor_buffer_scroll  = 0
 
     def test_cursor_to_line_col_first_line(self):
         self._setup_buffer("hello\nworld\n")
-        launcher._editor_buffer_cursor = 3
-        self.assertEqual(launcher._editor_buffer_cursor_to_line_col(),
+        _ed._editor_buffer_cursor = 3
+        self.assertEqual(_ed._editor_buffer_cursor_to_line_col(),
                          (0, 3))
 
     def test_cursor_to_line_col_second_line(self):
         self._setup_buffer("hello\nworld\n")
-        launcher._editor_buffer_cursor = 8   # 6 (start of "world") + 2
-        self.assertEqual(launcher._editor_buffer_cursor_to_line_col(),
+        _ed._editor_buffer_cursor = 8   # 6 (start of "world") + 2
+        self.assertEqual(_ed._editor_buffer_cursor_to_line_col(),
                          (1, 2))
 
     def test_insert_at_cursor_advances_offset(self):
         self._setup_buffer("ab")
-        launcher._editor_buffer_cursor = 1
-        launcher._editor_buffer_insert("X")
-        self.assertEqual(launcher._editor_buffer_text, "aXb")
-        self.assertEqual(launcher._editor_buffer_cursor, 2)
+        _ed._editor_buffer_cursor = 1
+        _ed._editor_buffer_insert("X")
+        self.assertEqual(_ed._editor_buffer_text, "aXb")
+        self.assertEqual(_ed._editor_buffer_cursor, 2)
 
     def test_backspace_at_offset(self):
         self._setup_buffer("abc")
-        launcher._editor_buffer_cursor = 2
-        launcher._editor_buffer_backspace()
-        self.assertEqual(launcher._editor_buffer_text, "ac")
-        self.assertEqual(launcher._editor_buffer_cursor, 1)
+        _ed._editor_buffer_cursor = 2
+        _ed._editor_buffer_backspace()
+        self.assertEqual(_ed._editor_buffer_text, "ac")
+        self.assertEqual(_ed._editor_buffer_cursor, 1)
 
     def test_backspace_at_start_is_noop(self):
         self._setup_buffer("abc")
-        launcher._editor_buffer_cursor = 0
-        launcher._editor_buffer_backspace()
-        self.assertEqual(launcher._editor_buffer_text, "abc")
+        _ed._editor_buffer_cursor = 0
+        _ed._editor_buffer_backspace()
+        self.assertEqual(_ed._editor_buffer_text, "abc")
 
     def test_delete_at_offset(self):
         self._setup_buffer("abc")
-        launcher._editor_buffer_cursor = 1
-        launcher._editor_buffer_delete()
-        self.assertEqual(launcher._editor_buffer_text, "ac")
+        _ed._editor_buffer_cursor = 1
+        _ed._editor_buffer_delete()
+        self.assertEqual(_ed._editor_buffer_text, "ac")
         # Cursor stays put — delete consumes the character to the right.
-        self.assertEqual(launcher._editor_buffer_cursor, 1)
+        self.assertEqual(_ed._editor_buffer_cursor, 1)
 
     def test_delete_at_end_is_noop(self):
         self._setup_buffer("abc")
-        launcher._editor_buffer_cursor = 3
-        launcher._editor_buffer_delete()
-        self.assertEqual(launcher._editor_buffer_text, "abc")
+        _ed._editor_buffer_cursor = 3
+        _ed._editor_buffer_delete()
+        self.assertEqual(_ed._editor_buffer_text, "abc")
 
     def test_set_cursor_from_line_col_clamps_to_line_length(self):
         self._setup_buffer("ab\nlonger line\n")
-        launcher._editor_buffer_set_cursor_from_line_col(0, 99)
+        _ed._editor_buffer_set_cursor_from_line_col(0, 99)
         # Line 0 is "ab" (length 2) — col clamps to 2.
-        self.assertEqual(launcher._editor_buffer_cursor, 2)
+        self.assertEqual(_ed._editor_buffer_cursor, 2)
 
     def test_line_count_handles_trailing_newline(self):
         # Vim-style line count: a trailing \n creates an empty phantom
         # line so the cursor at end-of-buffer has a real (line, col)
         # mapping.
         self._setup_buffer("a\nb\n")
-        self.assertEqual(launcher._editor_buffer_line_count(), 3)
+        self.assertEqual(_ed._editor_buffer_line_count(), 3)
 
     def test_line_count_no_trailing_newline(self):
         self._setup_buffer("a\nb")
-        self.assertEqual(launcher._editor_buffer_line_count(), 2)
+        self.assertEqual(_ed._editor_buffer_line_count(), 2)
 
 
 class TestEditorModeToggle(unittest.TestCase):
@@ -1623,46 +1671,46 @@ class TestEditorModeToggle(unittest.TestCase):
     def _setup(self):
         prof, _src, _td = _make_profile("#alias {k} {kill}\n")
         _reset_editor_state(prof)
-        launcher._editor_mode           = "lite"
-        launcher._editor_toggle_focused = False
-        launcher._editor_toggle_hover   = None
-        launcher._editor_buffer_text    = ""
-        launcher._editor_buffer_cursor  = 0
-        launcher._editor_buffer_scroll  = 0
+        _ed._editor_mode           = "lite"
+        _ed._editor_toggle_focused = False
+        _ed._editor_toggle_hover   = None
+        _ed._editor_buffer_text    = ""
+        _ed._editor_buffer_cursor  = 0
+        _ed._editor_buffer_scroll  = 0
         return prof
 
     def test_focus_toggle_sets_flag(self):
         self._setup()
-        launcher._editor_focus_toggle()
-        self.assertTrue(launcher._editor_toggle_focused)
+        _ed._editor_focus_toggle()
+        self.assertTrue(_ed._editor_toggle_focused)
 
     def test_setting_lite_focus_clears_toggle_focus(self):
         self._setup()
-        launcher._editor_focus_toggle()
-        launcher._profile_editor_set_focus(1)
-        self.assertFalse(launcher._editor_toggle_focused)
+        _ed._editor_focus_toggle()
+        _ed._profile_editor_set_focus(1)
+        self.assertFalse(_ed._editor_toggle_focused)
 
     def test_flip_mode_lite_to_editor_serialises(self):
         prof = self._setup()
-        launcher._editor_flip_mode()
-        self.assertEqual(launcher._editor_mode, "editor")
-        self.assertEqual(launcher._editor_buffer_text,
+        _ed._editor_flip_mode()
+        self.assertEqual(_ed._editor_mode, "editor")
+        self.assertEqual(_ed._editor_buffer_text,
                          "#alias {k} {kill}\n")
 
     def test_button_style_inactive_when_other_mode(self):
         self._setup()
         # mode = lite — the EDITOR button is inactive.
         self.assertEqual(
-            launcher._editor_toggle_button_style("editor"),
+            _ed._editor_toggle_button_style("editor"),
             launcher.C_BUTTON_INACTIVE,
         )
 
     def test_button_style_active_focused_amber(self):
         self._setup()
-        launcher._editor_focus_toggle()
+        _ed._editor_focus_toggle()
         # mode = lite, toggle focused → LITE is active-focused.
         self.assertEqual(
-            launcher._editor_toggle_button_style("lite"),
+            _ed._editor_toggle_button_style("lite"),
             launcher.C_BUTTON_ACTIVE_FOCUSED,
         )
 
@@ -1670,16 +1718,16 @@ class TestEditorModeToggle(unittest.TestCase):
         self._setup()
         # mode = lite, toggle NOT focused → LITE is active-unfocused.
         self.assertEqual(
-            launcher._editor_toggle_button_style("lite"),
+            _ed._editor_toggle_button_style("lite"),
             launcher.C_BUTTON_ACTIVE_UNFOCUSED,
         )
 
     def test_button_hover_on_inactive_previews_unfocused(self):
         self._setup()
         # mode = lite — hover on EDITOR previews active-unfocused.
-        launcher._editor_toggle_hover = "editor"
+        _ed._editor_toggle_hover = "editor"
         self.assertEqual(
-            launcher._editor_toggle_button_style("editor"),
+            _ed._editor_toggle_button_style("editor"),
             launcher.C_BUTTON_ACTIVE_UNFOCUSED,
         )
 
@@ -1695,35 +1743,35 @@ class TestEditorModeBraceAssistance(unittest.TestCase):
     def _setup_buffer(self, text, cursor=0):
         prof, _src, _td = _make_profile("")
         _reset_editor_state(prof)
-        launcher._editor_mode             = "editor"
-        launcher._editor_toggle_focused   = False
-        launcher._editor_buffer_text      = text
-        launcher._editor_buffer_cursor    = cursor
-        launcher._editor_buffer_scroll    = 0
-        launcher._editor_buffer_anchor    = None
-        launcher._editor_pending_closers  = []
+        _ed._editor_mode             = "editor"
+        _ed._editor_toggle_focused   = False
+        _ed._editor_buffer_text      = text
+        _ed._editor_buffer_cursor    = cursor
+        _ed._editor_buffer_scroll    = 0
+        _ed._editor_buffer_anchor    = None
+        _ed._editor_pending_closers  = []
 
     # --- auto-close + guard ----------------------------------------
     def test_open_brace_at_end_auto_closes(self):
         self._setup_buffer("abc", cursor=3)
-        launcher._editor_buffer_open_brace()
-        self.assertEqual(launcher._editor_buffer_text, "abc{}")
+        _ed._editor_buffer_open_brace()
+        self.assertEqual(_ed._editor_buffer_text, "abc{}")
         # Cursor lands between the two braces.
-        self.assertEqual(launcher._editor_buffer_cursor, 4)
-        self.assertEqual(launcher._editor_pending_closers, [4])
+        self.assertEqual(_ed._editor_buffer_cursor, 4)
+        self.assertEqual(_ed._editor_pending_closers, [4])
 
     def test_open_brace_before_whitespace_auto_closes(self):
         self._setup_buffer("ab cd", cursor=2)
-        launcher._editor_buffer_open_brace()
-        self.assertEqual(launcher._editor_buffer_text, "ab{} cd")
-        self.assertEqual(launcher._editor_buffer_cursor, 3)
-        self.assertEqual(launcher._editor_pending_closers, [3])
+        _ed._editor_buffer_open_brace()
+        self.assertEqual(_ed._editor_buffer_text, "ab{} cd")
+        self.assertEqual(_ed._editor_buffer_cursor, 3)
+        self.assertEqual(_ed._editor_pending_closers, [3])
 
     def test_open_brace_before_newline_auto_closes(self):
         self._setup_buffer("ab\ncd", cursor=2)
-        launcher._editor_buffer_open_brace()
-        self.assertEqual(launcher._editor_buffer_text, "ab{}\ncd")
-        self.assertEqual(launcher._editor_buffer_cursor, 3)
+        _ed._editor_buffer_open_brace()
+        self.assertEqual(_ed._editor_buffer_text, "ab{}\ncd")
+        self.assertEqual(_ed._editor_buffer_cursor, 3)
 
     def test_open_brace_before_close_brace_auto_closes(self):
         # Guard explicitly allows `}` as the next char — nested braces
@@ -1731,77 +1779,77 @@ class TestEditorModeBraceAssistance(unittest.TestCase):
         # closer is tracked; the pre-existing `}` was not created by
         # auto-close so it never enters the list.
         self._setup_buffer("{}", cursor=1)
-        launcher._editor_buffer_open_brace()
-        self.assertEqual(launcher._editor_buffer_text, "{{}}")
-        self.assertEqual(launcher._editor_buffer_cursor, 2)
-        self.assertEqual(launcher._editor_pending_closers, [2])
+        _ed._editor_buffer_open_brace()
+        self.assertEqual(_ed._editor_buffer_text, "{{}}")
+        self.assertEqual(_ed._editor_buffer_cursor, 2)
+        self.assertEqual(_ed._editor_pending_closers, [2])
 
     def test_open_brace_before_non_whitespace_inserts_literal(self):
         # Guard rejects: next char is a regular letter, so no auto-close.
         self._setup_buffer("abc", cursor=1)
-        launcher._editor_buffer_open_brace()
-        self.assertEqual(launcher._editor_buffer_text, "a{bc")
-        self.assertEqual(launcher._editor_buffer_cursor, 2)
-        self.assertEqual(launcher._editor_pending_closers, [])
+        _ed._editor_buffer_open_brace()
+        self.assertEqual(_ed._editor_buffer_text, "a{bc")
+        self.assertEqual(_ed._editor_buffer_cursor, 2)
+        self.assertEqual(_ed._editor_pending_closers, [])
 
     # --- `}` overtype ----------------------------------------------
     def test_close_brace_overtypes_pending_closer(self):
         self._setup_buffer("abc", cursor=3)
-        launcher._editor_buffer_open_brace()       # → "abc{}", cur=4
-        launcher._editor_buffer_close_brace()      # should overtype
-        self.assertEqual(launcher._editor_buffer_text, "abc{}")
-        self.assertEqual(launcher._editor_buffer_cursor, 5)
-        self.assertEqual(launcher._editor_pending_closers, [])
+        _ed._editor_buffer_open_brace()       # → "abc{}", cur=4
+        _ed._editor_buffer_close_brace()      # should overtype
+        self.assertEqual(_ed._editor_buffer_text, "abc{}")
+        self.assertEqual(_ed._editor_buffer_cursor, 5)
+        self.assertEqual(_ed._editor_pending_closers, [])
 
     def test_close_brace_without_pending_inserts_literal(self):
         # No tentative `}` tracked → typing `}` is a plain insert.
         self._setup_buffer("abc", cursor=3)
-        launcher._editor_buffer_close_brace()
-        self.assertEqual(launcher._editor_buffer_text, "abc}")
-        self.assertEqual(launcher._editor_buffer_cursor, 4)
+        _ed._editor_buffer_close_brace()
+        self.assertEqual(_ed._editor_buffer_text, "abc}")
+        self.assertEqual(_ed._editor_buffer_cursor, 4)
 
     def test_close_brace_at_non_pending_close_inserts_literal(self):
         # A `}` is at cursor, but its offset is NOT in the pending
         # list — treat as a regular insert.
         self._setup_buffer("ab}c", cursor=2)
-        launcher._editor_buffer_close_brace()
-        self.assertEqual(launcher._editor_buffer_text, "ab}}c")
-        self.assertEqual(launcher._editor_buffer_cursor, 3)
+        _ed._editor_buffer_close_brace()
+        self.assertEqual(_ed._editor_buffer_text, "ab}}c")
+        self.assertEqual(_ed._editor_buffer_cursor, 3)
 
     # --- `→` step-over ---------------------------------------------
     def test_right_arrow_steps_over_pending_closer(self):
         self._setup_buffer("abc", cursor=3)
-        launcher._editor_buffer_open_brace()       # → "abc{}", cur=4, pend=[4]
+        _ed._editor_buffer_open_brace()       # → "abc{}", cur=4, pend=[4]
         # Simulate `→`: advance cursor, drop pending entries behind it.
-        launcher._editor_buffer_cursor = 5
-        launcher._editor_buffer_step_over_pending_closer()
-        self.assertEqual(launcher._editor_pending_closers, [])
+        _ed._editor_buffer_cursor = 5
+        _ed._editor_buffer_step_over_pending_closer()
+        self.assertEqual(_ed._editor_pending_closers, [])
 
     def test_step_over_preserves_offsets_ahead_of_cursor(self):
         # Two nested auto-closes; stepping over the inner closer must
         # leave the outer one tracked.
         self._setup_buffer("", cursor=0)
-        launcher._editor_pending_closers = [3, 5]   # outer, inner sentinels
-        launcher._editor_buffer_cursor = 4
-        launcher._editor_buffer_step_over_pending_closer()
-        self.assertEqual(launcher._editor_pending_closers, [5])
+        _ed._editor_pending_closers = [3, 5]   # outer, inner sentinels
+        _ed._editor_buffer_cursor = 4
+        _ed._editor_buffer_step_over_pending_closer()
+        self.assertEqual(_ed._editor_pending_closers, [5])
 
     # --- Backspace pair-delete -------------------------------------
     def test_backspace_after_auto_close_removes_both(self):
         self._setup_buffer("abc", cursor=3)
-        launcher._editor_buffer_open_brace()       # → "abc{}", cur=4
-        launcher._editor_buffer_backspace_pair()
-        self.assertEqual(launcher._editor_buffer_text, "abc")
-        self.assertEqual(launcher._editor_buffer_cursor, 3)
-        self.assertEqual(launcher._editor_pending_closers, [])
+        _ed._editor_buffer_open_brace()       # → "abc{}", cur=4
+        _ed._editor_buffer_backspace_pair()
+        self.assertEqual(_ed._editor_buffer_text, "abc")
+        self.assertEqual(_ed._editor_buffer_cursor, 3)
+        self.assertEqual(_ed._editor_pending_closers, [])
 
     def test_backspace_without_pending_does_normal_delete(self):
         # `{}` exists in the buffer but the closer offset is NOT in the
         # pending list — backspace must NOT pair-delete the `}`.
         self._setup_buffer("a{}b", cursor=2)
-        launcher._editor_buffer_backspace_pair()
-        self.assertEqual(launcher._editor_buffer_text, "a}b")
-        self.assertEqual(launcher._editor_buffer_cursor, 1)
+        _ed._editor_buffer_backspace_pair()
+        self.assertEqual(_ed._editor_buffer_text, "a}b")
+        self.assertEqual(_ed._editor_buffer_cursor, 1)
 
     # --- Offset bookkeeping ----------------------------------------
     def test_insert_shifts_pending_offsets_right(self):
@@ -1809,56 +1857,56 @@ class TestEditorModeBraceAssistance(unittest.TestCase):
         # closer: the closer's tracked offset shifts by the insert
         # length.
         self._setup_buffer("abc", cursor=3)
-        launcher._editor_buffer_open_brace()       # → "abc{}", cur=4, pend=[4]
-        launcher._editor_buffer_insert("X")        # → "abc{X}", cur=5
-        self.assertEqual(launcher._editor_buffer_text, "abc{X}")
-        self.assertEqual(launcher._editor_pending_closers, [5])
+        _ed._editor_buffer_open_brace()       # → "abc{}", cur=4, pend=[4]
+        _ed._editor_buffer_insert("X")        # → "abc{X}", cur=5
+        self.assertEqual(_ed._editor_buffer_text, "abc{X}")
+        self.assertEqual(_ed._editor_pending_closers, [5])
         # Subsequent overtype still steps over the (now shifted) closer.
-        launcher._editor_buffer_close_brace()
-        self.assertEqual(launcher._editor_buffer_text, "abc{X}")
-        self.assertEqual(launcher._editor_buffer_cursor, 6)
+        _ed._editor_buffer_close_brace()
+        self.assertEqual(_ed._editor_buffer_text, "abc{X}")
+        self.assertEqual(_ed._editor_buffer_cursor, 6)
 
     def test_delete_drops_pending_offset_pointing_into_range(self):
         # A forward-delete that consumes the tentative `}` must drop
         # its offset from the pending list, not silently keep a stale
         # entry pointing at the next character.
         self._setup_buffer("", cursor=0)
-        launcher._editor_buffer_open_brace()       # → "{}", cur=1, pend=[1]
-        launcher._editor_buffer_delete()           # remove the `}`
-        self.assertEqual(launcher._editor_buffer_text, "{")
-        self.assertEqual(launcher._editor_pending_closers, [])
+        _ed._editor_buffer_open_brace()       # → "{}", cur=1, pend=[1]
+        _ed._editor_buffer_delete()           # remove the `}`
+        self.assertEqual(_ed._editor_buffer_text, "{")
+        self.assertEqual(_ed._editor_pending_closers, [])
 
     def test_delete_before_pending_shifts_offset_left(self):
         # Delete a character that sits BEFORE the tentative closer
         # shifts the closer's tracked offset left by one.
         self._setup_buffer("abc", cursor=3)
-        launcher._editor_buffer_open_brace()       # → "abc{}", cur=4, pend=[4]
-        launcher._editor_buffer_cursor = 0
-        launcher._editor_buffer_delete()           # drops "a", text="bc{}"
-        self.assertEqual(launcher._editor_buffer_text, "bc{}")
-        self.assertEqual(launcher._editor_pending_closers, [3])
+        _ed._editor_buffer_open_brace()       # → "abc{}", cur=4, pend=[4]
+        _ed._editor_buffer_cursor = 0
+        _ed._editor_buffer_delete()           # drops "a", text="bc{}"
+        self.assertEqual(_ed._editor_buffer_text, "bc{}")
+        self.assertEqual(_ed._editor_pending_closers, [3])
 
     # --- Balance count ---------------------------------------------
     def test_balance_balanced_returns_zero(self):
         self._setup_buffer("{a{b}c}")
-        self.assertEqual(launcher._editor_buffer_brace_balance(), (0, 0))
-        self.assertEqual(launcher._editor_brace_balance_text(), "")
+        self.assertEqual(_ed._editor_buffer_brace_balance(), (0, 0))
+        self.assertEqual(_ed._editor_brace_balance_text(), "")
 
     def test_balance_unclosed(self):
         self._setup_buffer("{a{b}")
-        self.assertEqual(launcher._editor_buffer_brace_balance(), (1, 0))
-        self.assertIn("unclosed", launcher._editor_brace_balance_text())
+        self.assertEqual(_ed._editor_buffer_brace_balance(), (1, 0))
+        self.assertIn("unclosed", _ed._editor_brace_balance_text())
 
     def test_balance_stray_close(self):
         # Depth goes negative on the first `}`, so it's a stray.
         self._setup_buffer("a}b")
-        self.assertEqual(launcher._editor_buffer_brace_balance(), (0, 1))
-        self.assertIn("stray", launcher._editor_brace_balance_text())
+        self.assertEqual(_ed._editor_buffer_brace_balance(), (0, 1))
+        self.assertIn("stray", _ed._editor_brace_balance_text())
 
     def test_balance_both_unclosed_and_stray(self):
         self._setup_buffer("} {")
-        self.assertEqual(launcher._editor_buffer_brace_balance(), (1, 1))
-        text = launcher._editor_brace_balance_text()
+        self.assertEqual(_ed._editor_buffer_brace_balance(), (1, 1))
+        text = _ed._editor_brace_balance_text()
         self.assertIn("unclosed", text)
         self.assertIn("stray", text)
 
@@ -1866,13 +1914,13 @@ class TestEditorModeBraceAssistance(unittest.TestCase):
         # `\{` is a `code` span, not a `brace` span — it must not
         # contribute to the balance.
         self._setup_buffer(r"\{abc")
-        self.assertEqual(launcher._editor_buffer_brace_balance(), (0, 0))
+        self.assertEqual(_ed._editor_buffer_brace_balance(), (0, 0))
 
     def test_balance_var_expansion_brace_does_not_count(self):
         # The braces inside `${...}` are part of the `var` span and
         # never reported as structural.
         self._setup_buffer("${foo}")
-        self.assertEqual(launcher._editor_buffer_brace_balance(), (0, 0))
+        self.assertEqual(_ed._editor_buffer_brace_balance(), (0, 0))
 
 
 class TestEditorModeBraceMatch(unittest.TestCase):
@@ -1883,41 +1931,41 @@ class TestEditorModeBraceMatch(unittest.TestCase):
     def _setup_buffer(self, text, cursor=0):
         prof, _src, _td = _make_profile("")
         _reset_editor_state(prof)
-        launcher._editor_mode             = "editor"
-        launcher._editor_toggle_focused   = False
-        launcher._editor_buffer_text      = text
-        launcher._editor_buffer_cursor    = cursor
-        launcher._editor_buffer_scroll    = 0
-        launcher._editor_buffer_anchor    = None
-        launcher._editor_pending_closers  = []
+        _ed._editor_mode             = "editor"
+        _ed._editor_toggle_focused   = False
+        _ed._editor_buffer_text      = text
+        _ed._editor_buffer_cursor    = cursor
+        _ed._editor_buffer_scroll    = 0
+        _ed._editor_buffer_anchor    = None
+        _ed._editor_pending_closers  = []
 
     def test_cursor_at_open_brace_finds_partner(self):
         self._setup_buffer("{a{b}c}", cursor=0)
-        self.assertEqual(launcher._editor_brace_match_positions(), (0, 6))
+        self.assertEqual(_ed._editor_brace_match_positions(), (0, 6))
 
     def test_cursor_after_close_brace_finds_partner(self):
         self._setup_buffer("{a}", cursor=3)
-        self.assertEqual(launcher._editor_brace_match_positions(), (0, 2))
+        self.assertEqual(_ed._editor_brace_match_positions(), (0, 2))
 
     def test_cursor_between_paired_braces_matches_open(self):
         # cursor=1: text[0]='{', text[1]='}'. Spec: prefer cursor-1
         # candidate first → match the `{` and find `}` as partner.
         self._setup_buffer("{}", cursor=1)
-        self.assertEqual(launcher._editor_brace_match_positions(), (0, 1))
+        self.assertEqual(_ed._editor_brace_match_positions(), (0, 1))
 
     def test_no_match_when_cursor_not_adjacent_to_brace(self):
         self._setup_buffer("{abc}", cursor=2)   # between 'a' and 'b'
-        self.assertIsNone(launcher._editor_brace_match_positions())
+        self.assertIsNone(_ed._editor_brace_match_positions())
 
     def test_unbalanced_returns_none(self):
         self._setup_buffer("{ab", cursor=0)
-        self.assertIsNone(launcher._editor_brace_match_positions())
+        self.assertIsNone(_ed._editor_brace_match_positions())
 
     def test_escaped_brace_is_not_structural(self):
         # `\{` is part of a `code` span, not `brace` — the cursor
         # adjacent to it has nothing to match.
         self._setup_buffer(r"\{abc", cursor=2)
-        self.assertIsNone(launcher._editor_brace_match_positions())
+        self.assertIsNone(_ed._editor_brace_match_positions())
 
 
 class TestEditorModePendingClearedOnNonEditingActions(unittest.TestCase):
@@ -1928,31 +1976,37 @@ class TestEditorModePendingClearedOnNonEditingActions(unittest.TestCase):
     def _setup_with_pending(self):
         prof, _src, _td = _make_profile("")
         _reset_editor_state(prof)
-        launcher._editor_mode             = "editor"
-        launcher._editor_toggle_focused   = False
-        launcher._editor_buffer_text      = "abc{}"
-        launcher._editor_buffer_cursor    = 4
-        launcher._editor_buffer_scroll    = 0
-        launcher._editor_buffer_anchor    = None
-        launcher._editor_pending_closers  = [4]
+        _ed._editor_mode             = "editor"
+        _ed._editor_toggle_focused   = False
+        _ed._editor_buffer_text      = "abc{}"
+        _ed._editor_buffer_cursor    = 4
+        _ed._editor_buffer_scroll    = 0
+        _ed._editor_buffer_anchor    = None
+        _ed._editor_pending_closers  = [4]
 
     def test_enter_profile_editor_resets_pending(self):
+        # Creating a new ProfileEditor always starts with empty pending closers,
+        # regardless of what the previous editor state held.
         prof, _src, _td = _make_profile("")
-        launcher._editor_pending_closers = [1, 2, 3]
-        launcher._enter_profile_editor(prof.path)
-        self.assertEqual(launcher._editor_pending_closers, [])
+        ed = profile_editor.ProfileEditor(
+            path=prof.path,
+            profile=profile_io.load_profile(prof.path),
+            on_exit=lambda p: None,
+            host=_test_host,
+        )
+        self.assertEqual(ed._editor_pending_closers, [])
 
     def test_flip_mode_clears_pending(self):
         self._setup_with_pending()
-        launcher._editor_flip_mode()        # editor → lite
-        self.assertEqual(launcher._editor_pending_closers, [])
+        _ed._editor_flip_mode()        # editor → lite
+        self.assertEqual(_ed._editor_pending_closers, [])
 
     def test_helper_clear_pending_is_idempotent(self):
         self._setup_with_pending()
-        launcher._editor_clear_pending_closers()
-        self.assertEqual(launcher._editor_pending_closers, [])
-        launcher._editor_clear_pending_closers()
-        self.assertEqual(launcher._editor_pending_closers, [])
+        _ed._editor_clear_pending_closers()
+        self.assertEqual(_ed._editor_pending_closers, [])
+        _ed._editor_clear_pending_closers()
+        self.assertEqual(_ed._editor_pending_closers, [])
 
 
 class TestProfileEditorClipboardEditorMode(unittest.TestCase):
@@ -1963,116 +2017,116 @@ class TestProfileEditorClipboardEditorMode(unittest.TestCase):
     def _setup_buffer(self, text, cursor=0):
         prof, _src, _td = _make_profile("")
         _reset_editor_state(prof)
-        launcher._editor_mode             = "editor"
-        launcher._editor_toggle_focused   = False
-        launcher._editor_buffer_text      = text
-        launcher._editor_buffer_cursor    = cursor
-        launcher._editor_buffer_scroll    = 0
-        launcher._editor_buffer_anchor    = None
-        launcher._editor_pending_closers  = []
-        launcher._editor_clipboard        = ""
+        _ed._editor_mode             = "editor"
+        _ed._editor_toggle_focused   = False
+        _ed._editor_buffer_text      = text
+        _ed._editor_buffer_cursor    = cursor
+        _ed._editor_buffer_scroll    = 0
+        _ed._editor_buffer_anchor    = None
+        _ed._editor_pending_closers  = []
+        _ed._editor_clipboard        = ""
 
     def test_copy_selection_writes_register(self):
         self._setup_buffer("abcdef", cursor=4)
-        launcher._editor_buffer_anchor = 1   # selection "bcd"
-        launcher._editor_buffer_copy()
-        self.assertEqual(launcher._editor_clipboard, "bcd")
+        _ed._editor_buffer_anchor = 1   # selection "bcd"
+        _ed._editor_buffer_copy()
+        self.assertEqual(_ed._editor_clipboard, "bcd")
         # Cursor and buffer unchanged.
-        self.assertEqual(launcher._editor_buffer_text, "abcdef")
-        self.assertEqual(launcher._editor_buffer_cursor, 4)
+        self.assertEqual(_ed._editor_buffer_text, "abcdef")
+        self.assertEqual(_ed._editor_buffer_cursor, 4)
 
     def test_copy_without_selection_copies_line_with_newline(self):
         self._setup_buffer("aa\nbb\ncc\n", cursor=4)   # mid line 1 ("bb")
-        launcher._editor_buffer_copy()
-        self.assertEqual(launcher._editor_clipboard, "bb\n")
+        _ed._editor_buffer_copy()
+        self.assertEqual(_ed._editor_clipboard, "bb\n")
 
     def test_copy_last_line_without_trailing_newline_adds_one(self):
         # Line-copy semantics include a trailing newline even when the
         # last line is unterminated.
         self._setup_buffer("xx\nyy", cursor=4)
-        launcher._editor_buffer_copy()
-        self.assertEqual(launcher._editor_clipboard, "yy\n")
+        _ed._editor_buffer_copy()
+        self.assertEqual(_ed._editor_clipboard, "yy\n")
 
     def test_cut_selection_deletes_and_copies(self):
         self._setup_buffer("abcdef", cursor=4)
-        launcher._editor_buffer_anchor = 1
-        launcher._editor_buffer_cut()
-        self.assertEqual(launcher._editor_clipboard, "bcd")
-        self.assertEqual(launcher._editor_buffer_text, "aef")
-        self.assertEqual(launcher._editor_buffer_cursor, 1)
-        self.assertIsNone(launcher._editor_buffer_anchor)
+        _ed._editor_buffer_anchor = 1
+        _ed._editor_buffer_cut()
+        self.assertEqual(_ed._editor_clipboard, "bcd")
+        self.assertEqual(_ed._editor_buffer_text, "aef")
+        self.assertEqual(_ed._editor_buffer_cursor, 1)
+        self.assertIsNone(_ed._editor_buffer_anchor)
 
     def test_cut_without_selection_drops_line_with_trailing_newline(self):
         # The cursor's line is `bb\n`; both go.
         self._setup_buffer("aa\nbb\ncc\n", cursor=4)
-        launcher._editor_buffer_cut()
-        self.assertEqual(launcher._editor_clipboard, "bb\n")
-        self.assertEqual(launcher._editor_buffer_text, "aa\ncc\n")
+        _ed._editor_buffer_cut()
+        self.assertEqual(_ed._editor_clipboard, "bb\n")
+        self.assertEqual(_ed._editor_buffer_text, "aa\ncc\n")
 
     def test_cut_last_line_eats_preceding_newline(self):
         # Last line has no trailing `\n` — to avoid leaving a blank
         # line, the cut consumes the preceding `\n` instead.
         self._setup_buffer("aa\nyy", cursor=4)
-        launcher._editor_buffer_cut()
-        self.assertEqual(launcher._editor_clipboard, "yy\n")
-        self.assertEqual(launcher._editor_buffer_text, "aa")
+        _ed._editor_buffer_cut()
+        self.assertEqual(_ed._editor_clipboard, "yy\n")
+        self.assertEqual(_ed._editor_buffer_text, "aa")
 
     def test_paste_inserts_register_at_cursor(self):
         self._setup_buffer("ace", cursor=1)
-        launcher._editor_clipboard = "bd"
-        launcher._editor_buffer_paste()
-        self.assertEqual(launcher._editor_buffer_text, "abdce")
-        self.assertEqual(launcher._editor_buffer_cursor, 3)
+        _ed._editor_clipboard = "bd"
+        _ed._editor_buffer_paste()
+        self.assertEqual(_ed._editor_buffer_text, "abdce")
+        self.assertEqual(_ed._editor_buffer_cursor, 3)
 
     def test_paste_over_selection_replaces_it(self):
         self._setup_buffer("abcdef", cursor=4)
-        launcher._editor_buffer_anchor = 1   # selection "bcd"
-        launcher._editor_clipboard = "XYZ"
-        launcher._editor_buffer_paste()
-        self.assertEqual(launcher._editor_buffer_text, "aXYZef")
-        self.assertEqual(launcher._editor_buffer_cursor, 4)
-        self.assertIsNone(launcher._editor_buffer_anchor)
+        _ed._editor_buffer_anchor = 1   # selection "bcd"
+        _ed._editor_clipboard = "XYZ"
+        _ed._editor_buffer_paste()
+        self.assertEqual(_ed._editor_buffer_text, "aXYZef")
+        self.assertEqual(_ed._editor_buffer_cursor, 4)
+        self.assertIsNone(_ed._editor_buffer_anchor)
 
     def test_bracketed_paste_normalises_crlf(self):
         self._setup_buffer("", cursor=0)
-        launcher._editor_buffer_bracketed_paste("one\r\ntwo\rthree")
-        self.assertEqual(launcher._editor_buffer_text, "one\ntwo\nthree")
+        _ed._editor_buffer_bracketed_paste("one\r\ntwo\rthree")
+        self.assertEqual(_ed._editor_buffer_text, "one\ntwo\nthree")
 
     def test_bracketed_paste_multi_line_inserts_inline(self):
         self._setup_buffer("ab", cursor=2)
-        launcher._editor_buffer_bracketed_paste("XX\nYY")
-        self.assertEqual(launcher._editor_buffer_text, "abXX\nYY")
+        _ed._editor_buffer_bracketed_paste("XX\nYY")
+        self.assertEqual(_ed._editor_buffer_text, "abXX\nYY")
         # Cursor lands after the last inserted character.
-        self.assertEqual(launcher._editor_buffer_cursor,
+        self.assertEqual(_ed._editor_buffer_cursor,
                          len("abXX\nYY"))
 
     def test_cut_clears_pending_closers(self):
         self._setup_buffer("ab{}", cursor=3)
-        launcher._editor_pending_closers = [3]
-        launcher._editor_buffer_anchor = 2   # selection "{"
-        launcher._editor_buffer_cut()
-        self.assertEqual(launcher._editor_pending_closers, [])
+        _ed._editor_pending_closers = [3]
+        _ed._editor_buffer_anchor = 2   # selection "{"
+        _ed._editor_buffer_cut()
+        self.assertEqual(_ed._editor_pending_closers, [])
 
     def test_paste_clears_pending_closers(self):
         self._setup_buffer("ab{}", cursor=3)
-        launcher._editor_pending_closers = [3]
-        launcher._editor_clipboard = "Z"
-        launcher._editor_buffer_paste()
-        self.assertEqual(launcher._editor_pending_closers, [])
+        _ed._editor_pending_closers = [3]
+        _ed._editor_clipboard = "Z"
+        _ed._editor_buffer_paste()
+        self.assertEqual(_ed._editor_pending_closers, [])
 
     def test_bracketed_paste_clears_pending_closers(self):
         self._setup_buffer("ab{}", cursor=3)
-        launcher._editor_pending_closers = [3]
-        launcher._editor_buffer_bracketed_paste("Z")
-        self.assertEqual(launcher._editor_pending_closers, [])
+        _ed._editor_pending_closers = [3]
+        _ed._editor_buffer_bracketed_paste("Z")
+        self.assertEqual(_ed._editor_pending_closers, [])
 
     def test_copy_leaves_pending_closers_intact(self):
         self._setup_buffer("ab{}", cursor=3)
-        launcher._editor_pending_closers = [3]
-        launcher._editor_buffer_anchor = 2
-        launcher._editor_buffer_copy()
+        _ed._editor_pending_closers = [3]
+        _ed._editor_buffer_anchor = 2
+        _ed._editor_buffer_copy()
         # Copy is non-mutating — pending closers untouched.
-        self.assertEqual(launcher._editor_pending_closers, [3])
+        self.assertEqual(_ed._editor_pending_closers, [3])
 
 
 class TestProfileEditorClipboardLitePattern(unittest.TestCase):
@@ -2082,73 +2136,73 @@ class TestProfileEditorClipboardLitePattern(unittest.TestCase):
     def _setup(self, pattern, cursor=0):
         prof, _src, _td = _make_profile(f"#alias {{{pattern}}} {{body}}\n")
         _reset_editor_state(prof, focus=2)
-        launcher._editor_detail_field    = 0
-        launcher._editor_pattern_cursor  = cursor
-        launcher._editor_pattern_anchor  = None
-        launcher._editor_clipboard       = ""
+        _ed._editor_detail_field    = 0
+        _ed._editor_pattern_cursor  = cursor
+        _ed._editor_pattern_anchor  = None
+        _ed._editor_clipboard       = ""
 
     def test_copy_selection_writes_register(self):
         self._setup("abcdef", cursor=5)
-        launcher._editor_pattern_anchor = 2   # selection "cde"
-        launcher._editor_pattern_copy()
-        self.assertEqual(launcher._editor_clipboard, "cde")
+        _ed._editor_pattern_anchor = 2   # selection "cde"
+        _ed._editor_pattern_copy()
+        self.assertEqual(_ed._editor_clipboard, "cde")
 
     def test_copy_without_selection_copies_whole_pattern_with_newline(self):
         self._setup("abcdef", cursor=3)
-        launcher._editor_pattern_copy()
-        self.assertEqual(launcher._editor_clipboard, "abcdef\n")
+        _ed._editor_pattern_copy()
+        self.assertEqual(_ed._editor_clipboard, "abcdef\n")
 
     def test_copy_empty_pattern_is_noop(self):
         self._setup("ab", cursor=2)
-        launcher._editor_set_pattern("")     # blank Pattern
-        launcher._editor_pattern_cursor = 0
-        launcher._editor_pattern_copy()
-        self.assertEqual(launcher._editor_clipboard, "")
+        _ed._editor_set_pattern("")     # blank Pattern
+        _ed._editor_pattern_cursor = 0
+        _ed._editor_pattern_copy()
+        self.assertEqual(_ed._editor_clipboard, "")
 
     def test_cut_selection_deletes_and_copies(self):
         self._setup("abcdef", cursor=5)
-        launcher._editor_pattern_anchor = 2
-        launcher._editor_pattern_cut()
-        self.assertEqual(launcher._editor_clipboard, "cde")
-        self.assertEqual(launcher._editor_current_entry().pattern, "abf")
-        self.assertEqual(launcher._editor_pattern_cursor, 2)
+        _ed._editor_pattern_anchor = 2
+        _ed._editor_pattern_cut()
+        self.assertEqual(_ed._editor_clipboard, "cde")
+        self.assertEqual(_ed._editor_current_entry().pattern, "abf")
+        self.assertEqual(_ed._editor_pattern_cursor, 2)
 
     def test_cut_without_selection_clears_pattern(self):
         self._setup("abcdef", cursor=3)
-        launcher._editor_pattern_cut()
-        self.assertEqual(launcher._editor_clipboard, "abcdef\n")
-        self.assertEqual(launcher._editor_current_entry().pattern, "")
-        self.assertEqual(launcher._editor_pattern_cursor, 0)
+        _ed._editor_pattern_cut()
+        self.assertEqual(_ed._editor_clipboard, "abcdef\n")
+        self.assertEqual(_ed._editor_current_entry().pattern, "")
+        self.assertEqual(_ed._editor_pattern_cursor, 0)
 
     def test_paste_inserts_register_at_cursor(self):
         self._setup("abc", cursor=2)
-        launcher._editor_clipboard = "XY"
-        launcher._editor_pattern_paste()
-        self.assertEqual(launcher._editor_current_entry().pattern, "abXYc")
-        self.assertEqual(launcher._editor_pattern_cursor, 4)
+        _ed._editor_clipboard = "XY"
+        _ed._editor_pattern_paste()
+        self.assertEqual(_ed._editor_current_entry().pattern, "abXYc")
+        self.assertEqual(_ed._editor_pattern_cursor, 4)
 
     def test_paste_over_selection_replaces_it(self):
         self._setup("abcdef", cursor=5)
-        launcher._editor_pattern_anchor = 2   # selection "cde"
-        launcher._editor_clipboard = "XYZ"
-        launcher._editor_pattern_paste()
-        self.assertEqual(launcher._editor_current_entry().pattern, "abXYZf")
-        self.assertEqual(launcher._editor_pattern_cursor, 5)
+        _ed._editor_pattern_anchor = 2   # selection "cde"
+        _ed._editor_clipboard = "XYZ"
+        _ed._editor_pattern_paste()
+        self.assertEqual(_ed._editor_current_entry().pattern, "abXYZf")
+        self.assertEqual(_ed._editor_pattern_cursor, 5)
 
     def test_paste_flattens_register_newlines_to_spaces(self):
         # Register populated from a multi-line source — Pattern is
         # single-line, so newlines flatten.
         self._setup("ab", cursor=2)
-        launcher._editor_clipboard = "X\nY\nZ"
-        launcher._editor_pattern_paste()
-        self.assertEqual(launcher._editor_current_entry().pattern,
+        _ed._editor_clipboard = "X\nY\nZ"
+        _ed._editor_pattern_paste()
+        self.assertEqual(_ed._editor_current_entry().pattern,
                          "abX Y Z")
 
     def test_bracketed_paste_flattens_newlines(self):
         self._setup("ab", cursor=2)
-        launcher._editor_pattern_bracketed_paste("one\r\ntwo\rthree")
+        _ed._editor_pattern_bracketed_paste("one\r\ntwo\rthree")
         # \r\n and \r normalised to \n, then flattened to spaces.
-        self.assertEqual(launcher._editor_current_entry().pattern,
+        self.assertEqual(_ed._editor_current_entry().pattern,
                          "abone two three")
 
 
@@ -2159,96 +2213,96 @@ class TestProfileEditorClipboardLiteBody(unittest.TestCase):
     def _setup(self, body, line=0, col=0):
         prof, _src, _td = _make_profile(f"#alias {{k}} {{{body}}}\n")
         _reset_editor_state(prof, focus=2)
-        launcher._editor_detail_field        = 1
-        launcher._editor_body_line           = line
-        launcher._editor_body_col            = col
-        launcher._editor_body_anchor_line    = None
-        launcher._editor_body_anchor_col     = None
-        launcher._editor_clipboard           = ""
+        _ed._editor_detail_field        = 1
+        _ed._editor_body_line           = line
+        _ed._editor_body_col            = col
+        _ed._editor_body_anchor_line    = None
+        _ed._editor_body_anchor_col     = None
+        _ed._editor_clipboard           = ""
 
     def test_copy_single_line_selection(self):
         self._setup("abcdef", line=0, col=5)
-        launcher._editor_body_anchor_line = 0
-        launcher._editor_body_anchor_col  = 2   # selection "cde"
-        launcher._editor_body_copy()
-        self.assertEqual(launcher._editor_clipboard, "cde")
+        _ed._editor_body_anchor_line = 0
+        _ed._editor_body_anchor_col  = 2   # selection "cde"
+        _ed._editor_body_copy()
+        self.assertEqual(_ed._editor_clipboard, "cde")
 
     def test_copy_multi_line_selection(self):
         # Body splits on `\n`, so seed with explicit newlines.
         prof, _src, _td = _make_profile("#alias {k} {a}\n")
         _reset_editor_state(prof, focus=2)
-        launcher._editor_detail_field        = 1
-        launcher._editor_current_entry().body = "one\ntwo\nthree"
-        launcher._editor_body_line       = 2
-        launcher._editor_body_col        = 2     # middle of "three"
-        launcher._editor_body_anchor_line = 0
-        launcher._editor_body_anchor_col  = 1    # middle of "one"
-        launcher._editor_clipboard       = ""
-        launcher._editor_body_copy()
-        self.assertEqual(launcher._editor_clipboard, "ne\ntwo\nth")
+        _ed._editor_detail_field        = 1
+        _ed._editor_current_entry().body = "one\ntwo\nthree"
+        _ed._editor_body_line       = 2
+        _ed._editor_body_col        = 2     # middle of "three"
+        _ed._editor_body_anchor_line = 0
+        _ed._editor_body_anchor_col  = 1    # middle of "one"
+        _ed._editor_clipboard       = ""
+        _ed._editor_body_copy()
+        self.assertEqual(_ed._editor_clipboard, "ne\ntwo\nth")
 
     def test_copy_without_selection_copies_current_line_with_newline(self):
         prof, _src, _td = _make_profile("#alias {k} {a}\n")
         _reset_editor_state(prof, focus=2)
-        launcher._editor_detail_field = 1
-        launcher._editor_current_entry().body = "one\ntwo\nthree"
-        launcher._editor_body_line    = 1   # "two"
-        launcher._editor_body_col     = 0
-        launcher._editor_clipboard    = ""
-        launcher._editor_body_copy()
-        self.assertEqual(launcher._editor_clipboard, "two\n")
+        _ed._editor_detail_field = 1
+        _ed._editor_current_entry().body = "one\ntwo\nthree"
+        _ed._editor_body_line    = 1   # "two"
+        _ed._editor_body_col     = 0
+        _ed._editor_clipboard    = ""
+        _ed._editor_body_copy()
+        self.assertEqual(_ed._editor_clipboard, "two\n")
 
     def test_cut_selection_deletes_and_copies(self):
         self._setup("abcdef", line=0, col=5)
-        launcher._editor_body_anchor_line = 0
-        launcher._editor_body_anchor_col  = 2
-        launcher._editor_body_cut()
-        self.assertEqual(launcher._editor_clipboard, "cde")
-        self.assertEqual(launcher._editor_current_entry().body, "abf")
+        _ed._editor_body_anchor_line = 0
+        _ed._editor_body_anchor_col  = 2
+        _ed._editor_body_cut()
+        self.assertEqual(_ed._editor_clipboard, "cde")
+        self.assertEqual(_ed._editor_current_entry().body, "abf")
 
     def test_cut_without_selection_drops_line(self):
         prof, _src, _td = _make_profile("#alias {k} {a}\n")
         _reset_editor_state(prof, focus=2)
-        launcher._editor_detail_field = 1
-        launcher._editor_current_entry().body = "one\ntwo\nthree"
-        launcher._editor_body_line    = 1   # "two"
-        launcher._editor_body_col     = 0
-        launcher._editor_clipboard    = ""
-        launcher._editor_body_cut()
-        self.assertEqual(launcher._editor_clipboard, "two\n")
+        _ed._editor_detail_field = 1
+        _ed._editor_current_entry().body = "one\ntwo\nthree"
+        _ed._editor_body_line    = 1   # "two"
+        _ed._editor_body_col     = 0
+        _ed._editor_clipboard    = ""
+        _ed._editor_body_cut()
+        self.assertEqual(_ed._editor_clipboard, "two\n")
         # Body re-joined with the surviving lines.
-        self.assertEqual(launcher._editor_current_entry().body, "one\nthree")
+        self.assertEqual(_ed._editor_current_entry().body, "one\nthree")
 
     def test_paste_inserts_at_cursor(self):
         self._setup("abc", line=0, col=2)
-        launcher._editor_clipboard = "XY"
-        launcher._editor_body_paste()
-        self.assertEqual(launcher._editor_current_entry().body, "abXYc")
-        self.assertEqual(launcher._editor_body_col, 4)
+        _ed._editor_clipboard = "XY"
+        _ed._editor_body_paste()
+        self.assertEqual(_ed._editor_current_entry().body, "abXYc")
+        self.assertEqual(_ed._editor_body_col, 4)
 
     def test_paste_preserves_embedded_newlines(self):
         self._setup("abc", line=0, col=2)
-        launcher._editor_clipboard = "X\nY"
-        launcher._editor_body_paste()
+        _ed._editor_clipboard = "X\nY"
+        _ed._editor_body_paste()
         # Body is multi-line — paste splits the line at the cursor.
         # Stored body joins lines with `\n`.
-        self.assertEqual(launcher._editor_current_entry().body, "abX\nYc")
-        self.assertEqual(launcher._editor_body_line, 1)
-        self.assertEqual(launcher._editor_body_col,  1)
+        self.assertEqual(_ed._editor_current_entry().body, "abX\nYc")
+        self.assertEqual(_ed._editor_body_line, 1)
+        self.assertEqual(_ed._editor_body_col,  1)
 
     def test_paste_over_selection_replaces_it(self):
         self._setup("abcdef", line=0, col=5)
-        launcher._editor_body_anchor_line = 0
-        launcher._editor_body_anchor_col  = 2
-        launcher._editor_clipboard = "Z"
-        launcher._editor_body_paste()
-        self.assertEqual(launcher._editor_current_entry().body, "abZf")
+        _ed._editor_body_anchor_line = 0
+        _ed._editor_body_anchor_col  = 2
+        _ed._editor_clipboard = "Z"
+        _ed._editor_body_paste()
+        self.assertEqual(_ed._editor_current_entry().body, "abZf")
 
     def test_bracketed_paste_keeps_newlines(self):
         self._setup("ab", line=0, col=2)
-        launcher._editor_body_bracketed_paste("one\r\ntwo")
+        _ed._editor_body_bracketed_paste("one\r\ntwo")
         # \r\n normalised to \n; preserved in Body as a `\n` separator.
-        self.assertEqual(launcher._editor_current_entry().body, "abone\ntwo")
+        self.assertEqual(_ed._editor_current_entry().body, "abone\ntwo")
 
 
 class TestProfileEditorCopyCutFlash(unittest.TestCase):
@@ -2261,156 +2315,156 @@ class TestProfileEditorCopyCutFlash(unittest.TestCase):
     def setUp(self):
         # `_app_loop is None` in tests: the setter writes the text and
         # style but skips scheduling — exactly what we want here.
-        launcher._editor_clear_flash()
+        _ed._editor_clear_flash()
 
     def tearDown(self):
-        launcher._editor_clear_flash()
+        _ed._editor_clear_flash()
 
     # --- Editor-mode buffer ------------------------------------------
     def test_editor_buffer_copy_sets_flash_copied(self):
         prof, _src, _td = _make_profile("")
         _reset_editor_state(prof)
-        launcher._editor_mode             = "editor"
-        launcher._editor_toggle_focused   = False
-        launcher._editor_buffer_text      = "abc"
-        launcher._editor_buffer_cursor    = 1
-        launcher._editor_buffer_anchor    = None
-        launcher._editor_clipboard        = ""
-        launcher._kb_peditor_buffer_copy(None)
-        self.assertEqual(launcher._editor_flash_text, "Copied")
+        _ed._editor_mode             = "editor"
+        _ed._editor_toggle_focused   = False
+        _ed._editor_buffer_text      = "abc"
+        _ed._editor_buffer_cursor    = 1
+        _ed._editor_buffer_anchor    = None
+        _ed._editor_clipboard        = ""
+        _ed._kb_peditor_buffer_copy(None)
+        self.assertEqual(_ed._editor_flash_text, "Copied")
 
     def test_editor_buffer_cut_sets_flash_cut(self):
         prof, _src, _td = _make_profile("")
         _reset_editor_state(prof)
-        launcher._editor_mode             = "editor"
-        launcher._editor_toggle_focused   = False
-        launcher._editor_buffer_text      = "abc"
-        launcher._editor_buffer_cursor    = 1
-        launcher._editor_buffer_anchor    = None
-        launcher._editor_clipboard        = ""
-        launcher._kb_peditor_buffer_cut(None)
-        self.assertEqual(launcher._editor_flash_text, "Cut")
+        _ed._editor_mode             = "editor"
+        _ed._editor_toggle_focused   = False
+        _ed._editor_buffer_text      = "abc"
+        _ed._editor_buffer_cursor    = 1
+        _ed._editor_buffer_anchor    = None
+        _ed._editor_clipboard        = ""
+        _ed._kb_peditor_buffer_cut(None)
+        self.assertEqual(_ed._editor_flash_text, "Cut")
 
     def test_editor_buffer_paste_does_not_flash(self):
         prof, _src, _td = _make_profile("")
         _reset_editor_state(prof)
-        launcher._editor_mode             = "editor"
-        launcher._editor_toggle_focused   = False
-        launcher._editor_buffer_text      = "abc"
-        launcher._editor_buffer_cursor    = 1
-        launcher._editor_buffer_anchor    = None
-        launcher._editor_clipboard        = "X"
-        launcher._kb_peditor_buffer_paste(None)
-        self.assertIsNone(launcher._editor_flash_text)
+        _ed._editor_mode             = "editor"
+        _ed._editor_toggle_focused   = False
+        _ed._editor_buffer_text      = "abc"
+        _ed._editor_buffer_cursor    = 1
+        _ed._editor_buffer_anchor    = None
+        _ed._editor_clipboard        = "X"
+        _ed._kb_peditor_buffer_paste(None)
+        self.assertIsNone(_ed._editor_flash_text)
 
     def test_editor_bracketed_paste_does_not_flash(self):
         prof, _src, _td = _make_profile("")
         _reset_editor_state(prof)
-        launcher._editor_mode             = "editor"
-        launcher._editor_toggle_focused   = False
-        launcher._editor_buffer_text      = ""
-        launcher._editor_buffer_cursor    = 0
-        launcher._editor_buffer_anchor    = None
+        _ed._editor_mode             = "editor"
+        _ed._editor_toggle_focused   = False
+        _ed._editor_buffer_text      = ""
+        _ed._editor_buffer_cursor    = 0
+        _ed._editor_buffer_anchor    = None
         # Synthesise a minimal bracketed-paste event stub.
         class _Ev:
             data = "hello"
-        launcher._kb_peditor_buffer_bracketed_paste(_Ev())
-        self.assertIsNone(launcher._editor_flash_text)
+        _ed._kb_peditor_buffer_bracketed_paste(_Ev())
+        self.assertIsNone(_ed._editor_flash_text)
 
     # --- Lite Pattern -----------------------------------------------
     def test_lite_pattern_copy_sets_flash_copied(self):
         prof, _src, _td = _make_profile("#alias {abc} {body}\n")
         _reset_editor_state(prof, focus=2)
-        launcher._editor_detail_field    = 0
-        launcher._editor_pattern_cursor  = 0
-        launcher._editor_pattern_anchor  = None
-        launcher._editor_clipboard       = ""
-        launcher._kb_peditor_lite_copy(None)
-        self.assertEqual(launcher._editor_flash_text, "Copied")
+        _ed._editor_detail_field    = 0
+        _ed._editor_pattern_cursor  = 0
+        _ed._editor_pattern_anchor  = None
+        _ed._editor_clipboard       = ""
+        _ed._kb_peditor_lite_copy(None)
+        self.assertEqual(_ed._editor_flash_text, "Copied")
 
     def test_lite_pattern_cut_sets_flash_cut(self):
         prof, _src, _td = _make_profile("#alias {abc} {body}\n")
         _reset_editor_state(prof, focus=2)
-        launcher._editor_detail_field    = 0
-        launcher._editor_pattern_cursor  = 0
-        launcher._editor_pattern_anchor  = None
-        launcher._editor_clipboard       = ""
-        launcher._kb_peditor_lite_cut(None)
-        self.assertEqual(launcher._editor_flash_text, "Cut")
+        _ed._editor_detail_field    = 0
+        _ed._editor_pattern_cursor  = 0
+        _ed._editor_pattern_anchor  = None
+        _ed._editor_clipboard       = ""
+        _ed._kb_peditor_lite_cut(None)
+        self.assertEqual(_ed._editor_flash_text, "Cut")
 
     # --- Lite Body --------------------------------------------------
     def test_lite_body_copy_sets_flash_copied(self):
         prof, _src, _td = _make_profile("#alias {k} {body}\n")
         _reset_editor_state(prof, focus=2)
-        launcher._editor_detail_field    = 1
-        launcher._editor_body_line       = 0
-        launcher._editor_body_col        = 0
-        launcher._editor_body_anchor_line = None
-        launcher._editor_body_anchor_col  = None
-        launcher._editor_clipboard       = ""
-        launcher._kb_peditor_lite_copy(None)
-        self.assertEqual(launcher._editor_flash_text, "Copied")
+        _ed._editor_detail_field    = 1
+        _ed._editor_body_line       = 0
+        _ed._editor_body_col        = 0
+        _ed._editor_body_anchor_line = None
+        _ed._editor_body_anchor_col  = None
+        _ed._editor_clipboard       = ""
+        _ed._kb_peditor_lite_copy(None)
+        self.assertEqual(_ed._editor_flash_text, "Copied")
 
     def test_lite_body_cut_sets_flash_cut(self):
         prof, _src, _td = _make_profile("#alias {k} {body}\n")
         _reset_editor_state(prof, focus=2)
-        launcher._editor_detail_field    = 1
-        launcher._editor_body_line       = 0
-        launcher._editor_body_col        = 0
-        launcher._editor_body_anchor_line = None
-        launcher._editor_body_anchor_col  = None
-        launcher._editor_clipboard       = ""
-        launcher._kb_peditor_lite_cut(None)
-        self.assertEqual(launcher._editor_flash_text, "Cut")
+        _ed._editor_detail_field    = 1
+        _ed._editor_body_line       = 0
+        _ed._editor_body_col        = 0
+        _ed._editor_body_anchor_line = None
+        _ed._editor_body_anchor_col  = None
+        _ed._editor_clipboard       = ""
+        _ed._kb_peditor_lite_cut(None)
+        self.assertEqual(_ed._editor_flash_text, "Cut")
 
     def test_lite_paste_does_not_flash(self):
         prof, _src, _td = _make_profile("#alias {abc} {body}\n")
         _reset_editor_state(prof, focus=2)
-        launcher._editor_detail_field    = 0
-        launcher._editor_pattern_cursor  = 0
-        launcher._editor_pattern_anchor  = None
-        launcher._editor_clipboard       = "X"
-        launcher._kb_peditor_lite_paste(None)
-        self.assertIsNone(launcher._editor_flash_text)
+        _ed._editor_detail_field    = 0
+        _ed._editor_pattern_cursor  = 0
+        _ed._editor_pattern_anchor  = None
+        _ed._editor_clipboard       = "X"
+        _ed._kb_peditor_lite_paste(None)
+        self.assertIsNone(_ed._editor_flash_text)
 
     # --- No-op contexts (lite mode) ---------------------------------
     def test_lite_copy_in_list_focus_does_not_flash(self):
         # `_editor_focus = 1` → list. Dispatcher returns False, no flash.
         prof, _src, _td = _make_profile("#alias {abc} {body}\n")
         _reset_editor_state(prof, focus=1)
-        launcher._kb_peditor_lite_copy(None)
-        self.assertIsNone(launcher._editor_flash_text)
+        _ed._kb_peditor_lite_copy(None)
+        self.assertIsNone(_ed._editor_flash_text)
 
     def test_lite_copy_in_kind_focus_does_not_flash(self):
         prof, _src, _td = _make_profile("#alias {abc} {body}\n")
         _reset_editor_state(prof, focus=0)
-        launcher._kb_peditor_lite_copy(None)
-        self.assertIsNone(launcher._editor_flash_text)
+        _ed._kb_peditor_lite_copy(None)
+        self.assertIsNone(_ed._editor_flash_text)
 
     def test_lite_copy_in_palette_focus_does_not_flash(self):
         # Highlights tab, detail_field = 2 (Text palette) — palette focus.
         prof, _src, _td = _make_profile("#highlight {abc} {white}\n")
         _reset_editor_state(prof, focus=2, kind="highlight")
-        launcher._editor_detail_field = 2
-        launcher._kb_peditor_lite_copy(None)
-        self.assertIsNone(launcher._editor_flash_text)
+        _ed._editor_detail_field = 2
+        _ed._kb_peditor_lite_copy(None)
+        self.assertIsNone(_ed._editor_flash_text)
 
     def test_lite_copy_in_macro_key_focus_does_not_flash(self):
         # Macros tab, detail_field = 0 → macro Key cell.
         prof, _src, _td = _make_profile("#macro {\\eOP} {body}\n")
         _reset_editor_state(prof, focus=2, kind="macro")
-        launcher._editor_detail_field = 0
-        launcher._kb_peditor_lite_copy(None)
-        self.assertIsNone(launcher._editor_flash_text)
+        _ed._editor_detail_field = 0
+        _ed._kb_peditor_lite_copy(None)
+        self.assertIsNone(_ed._editor_flash_text)
 
     # --- Clearing ---------------------------------------------------
     def test_clear_flash_resets_text_and_style(self):
-        launcher._editor_flash("Copied")
-        self.assertEqual(launcher._editor_flash_text, "Copied")
-        launcher._editor_clear_flash()
-        self.assertIsNone(launcher._editor_flash_text)
-        self.assertEqual(launcher._editor_flash_style, "")
-        self.assertIsNone(launcher._editor_flash_handle)
+        _ed._editor_flash("Copied")
+        self.assertEqual(_ed._editor_flash_text, "Copied")
+        _ed._editor_clear_flash()
+        self.assertIsNone(_ed._editor_flash_text)
+        self.assertEqual(_ed._editor_flash_style, "")
+        self.assertIsNone(_ed._editor_flash_handle)
 
 
 class TestClipboardCtrlCFilter(unittest.TestCase):
@@ -2444,166 +2498,166 @@ class TestEditorModeUndoRedo(unittest.TestCase):
     def _setup(self, text="", cursor=0):
         prof, _src, _td = _make_profile("")
         _reset_editor_state(prof)
-        launcher._editor_mode             = "editor"
-        launcher._editor_toggle_focused   = False
-        launcher._editor_buffer_text      = text
-        launcher._editor_buffer_cursor    = cursor
-        launcher._editor_buffer_scroll    = 0
-        launcher._editor_buffer_anchor    = None
-        launcher._editor_pending_closers  = []
-        launcher._editor_clipboard        = ""
-        launcher._editor_undo_reset()
+        _ed._editor_mode             = "editor"
+        _ed._editor_toggle_focused   = False
+        _ed._editor_buffer_text      = text
+        _ed._editor_buffer_cursor    = cursor
+        _ed._editor_buffer_scroll    = 0
+        _ed._editor_buffer_anchor    = None
+        _ed._editor_pending_closers  = []
+        _ed._editor_clipboard        = ""
+        _ed._editor_undo_reset()
 
     # Helpers that mirror the relevant key-handler flow without
     # invoking prompt_toolkit's key parser. Each pairs the kind label
     # the live handler passes with the matching buffer mutator.
     def _type(self, s):
         for ch in s:
-            kind = None if launcher._editor_buffer_anchor is not None else "insert"
-            launcher._editor_undo_record(kind)
-            launcher._editor_buffer_insert(ch)
+            kind = None if _ed._editor_buffer_anchor is not None else "insert"
+            _ed._editor_undo_record(kind)
+            _ed._editor_buffer_insert(ch)
 
     def _backspace(self):
         # Mimics the `backspace` key handler, which delegates to
         # `_editor_buffer_backspace_pair` (records the transaction
         # internally — pair-delete is atomic, plain backspace coalesces).
-        launcher._editor_buffer_backspace_pair()
+        _ed._editor_buffer_backspace_pair()
 
     def _delete(self):
-        kind = None if launcher._editor_buffer_anchor is not None else "delete"
-        launcher._editor_undo_record(kind)
-        launcher._editor_buffer_delete()
+        kind = None if _ed._editor_buffer_anchor is not None else "delete"
+        _ed._editor_undo_record(kind)
+        _ed._editor_buffer_delete()
 
     def _move_cursor(self, new_pos):
         # Cursor moves close any open coalescing run. We bypass the
         # line/col helpers and write the offset directly for terseness.
-        launcher._editor_undo_close()
-        launcher._editor_buffer_cursor = new_pos
-        launcher._editor_buffer_clear_selection()
+        _ed._editor_undo_close()
+        _ed._editor_buffer_cursor = new_pos
+        _ed._editor_buffer_clear_selection()
 
     def _enter(self):
-        launcher._editor_undo_record(None)
-        launcher._editor_buffer_insert("\n")
+        _ed._editor_undo_record(None)
+        _ed._editor_buffer_insert("\n")
 
     # --- Coalesced typing -------------------------------------------
     def test_typing_a_word_undoes_in_one_step(self):
         self._setup()
         self._type("hello")
-        self.assertEqual(launcher._editor_buffer_text, "hello")
-        self.assertEqual(launcher._editor_buffer_cursor, 5)
-        launcher._editor_undo()
-        self.assertEqual(launcher._editor_buffer_text, "")
-        self.assertEqual(launcher._editor_buffer_cursor, 0)
+        self.assertEqual(_ed._editor_buffer_text, "hello")
+        self.assertEqual(_ed._editor_buffer_cursor, 5)
+        _ed._editor_undo()
+        self.assertEqual(_ed._editor_buffer_text, "")
+        self.assertEqual(_ed._editor_buffer_cursor, 0)
 
     def test_redo_restores_typed_word(self):
         self._setup()
         self._type("hello")
-        launcher._editor_undo()
-        launcher._editor_redo()
-        self.assertEqual(launcher._editor_buffer_text, "hello")
-        self.assertEqual(launcher._editor_buffer_cursor, 5)
+        _ed._editor_undo()
+        _ed._editor_redo()
+        self.assertEqual(_ed._editor_buffer_text, "hello")
+        self.assertEqual(_ed._editor_buffer_cursor, 5)
 
     # --- Cursor-move boundary ---------------------------------------
     def test_cursor_move_splits_typing_run(self):
         self._setup(text="abc", cursor=3)
         self._type("XY")            # run 1
-        self.assertEqual(launcher._editor_buffer_text, "abcXY")
+        self.assertEqual(_ed._editor_buffer_text, "abcXY")
         self._move_cursor(0)
         self._type("Z")             # run 2 — fresh transaction
-        self.assertEqual(launcher._editor_buffer_text, "ZabcXY")
-        launcher._editor_undo()     # undo only the "Z" run
-        self.assertEqual(launcher._editor_buffer_text, "abcXY")
-        launcher._editor_undo()     # undo the "XY" run
-        self.assertEqual(launcher._editor_buffer_text, "abc")
+        self.assertEqual(_ed._editor_buffer_text, "ZabcXY")
+        _ed._editor_undo()     # undo only the "Z" run
+        self.assertEqual(_ed._editor_buffer_text, "abcXY")
+        _ed._editor_undo()     # undo the "XY" run
+        self.assertEqual(_ed._editor_buffer_text, "abc")
 
     # --- Insert ↔ delete boundary -----------------------------------
     def test_insert_then_delete_each_own_transaction(self):
         self._setup()
         self._type("ab")
         self._backspace()           # type-switch forces a boundary
-        self.assertEqual(launcher._editor_buffer_text, "a")
-        launcher._editor_undo()     # undo the delete
-        self.assertEqual(launcher._editor_buffer_text, "ab")
-        launcher._editor_undo()     # undo the typing run
-        self.assertEqual(launcher._editor_buffer_text, "")
+        self.assertEqual(_ed._editor_buffer_text, "a")
+        _ed._editor_undo()     # undo the delete
+        self.assertEqual(_ed._editor_buffer_text, "ab")
+        _ed._editor_undo()     # undo the typing run
+        self.assertEqual(_ed._editor_buffer_text, "")
 
     def test_backspace_then_insert_each_own_transaction(self):
         self._setup(text="abc", cursor=3)
         self._backspace()
         self._backspace()           # coalesces with the previous backspace
-        self.assertEqual(launcher._editor_buffer_text, "a")
+        self.assertEqual(_ed._editor_buffer_text, "a")
         self._type("Z")
-        self.assertEqual(launcher._editor_buffer_text, "aZ")
-        launcher._editor_undo()     # undo the insert
-        self.assertEqual(launcher._editor_buffer_text, "a")
-        launcher._editor_undo()     # undo the coalesced delete run
-        self.assertEqual(launcher._editor_buffer_text, "abc")
+        self.assertEqual(_ed._editor_buffer_text, "aZ")
+        _ed._editor_undo()     # undo the insert
+        self.assertEqual(_ed._editor_buffer_text, "a")
+        _ed._editor_undo()     # undo the coalesced delete run
+        self.assertEqual(_ed._editor_buffer_text, "abc")
 
     # --- Paste / cut / bracketed paste are atomic units -------------
     def test_paste_is_atomic(self):
         self._setup(text="ab", cursor=2)
-        launcher._editor_clipboard = "XYZ"
-        launcher._editor_buffer_paste()
-        self.assertEqual(launcher._editor_buffer_text, "abXYZ")
-        launcher._editor_undo()
-        self.assertEqual(launcher._editor_buffer_text, "ab")
-        self.assertEqual(launcher._editor_buffer_cursor, 2)
+        _ed._editor_clipboard = "XYZ"
+        _ed._editor_buffer_paste()
+        self.assertEqual(_ed._editor_buffer_text, "abXYZ")
+        _ed._editor_undo()
+        self.assertEqual(_ed._editor_buffer_text, "ab")
+        self.assertEqual(_ed._editor_buffer_cursor, 2)
 
     def test_cut_selection_is_atomic(self):
         self._setup(text="abcdef", cursor=4)
-        launcher._editor_buffer_anchor = 1   # selection "bcd"
-        launcher._editor_buffer_cut()
-        self.assertEqual(launcher._editor_buffer_text, "aef")
-        launcher._editor_undo()
-        self.assertEqual(launcher._editor_buffer_text, "abcdef")
+        _ed._editor_buffer_anchor = 1   # selection "bcd"
+        _ed._editor_buffer_cut()
+        self.assertEqual(_ed._editor_buffer_text, "aef")
+        _ed._editor_undo()
+        self.assertEqual(_ed._editor_buffer_text, "abcdef")
 
     def test_cut_line_is_atomic(self):
         self._setup(text="aa\nbb\ncc\n", cursor=4)   # mid "bb"
-        launcher._editor_buffer_cut()
-        self.assertEqual(launcher._editor_buffer_text, "aa\ncc\n")
-        launcher._editor_undo()
-        self.assertEqual(launcher._editor_buffer_text, "aa\nbb\ncc\n")
+        _ed._editor_buffer_cut()
+        self.assertEqual(_ed._editor_buffer_text, "aa\ncc\n")
+        _ed._editor_undo()
+        self.assertEqual(_ed._editor_buffer_text, "aa\nbb\ncc\n")
 
     def test_bracketed_paste_is_atomic(self):
         self._setup(text="ab", cursor=2)
-        launcher._editor_buffer_bracketed_paste("XX\nYY")
-        self.assertEqual(launcher._editor_buffer_text, "abXX\nYY")
-        launcher._editor_undo()
-        self.assertEqual(launcher._editor_buffer_text, "ab")
+        _ed._editor_buffer_bracketed_paste("XX\nYY")
+        self.assertEqual(_ed._editor_buffer_text, "abXX\nYY")
+        _ed._editor_undo()
+        self.assertEqual(_ed._editor_buffer_text, "ab")
 
     # --- Auto-close `{}` as a single unit ---------------------------
     def test_autoclose_brace_is_atomic(self):
         self._setup(text="abc", cursor=3)
-        launcher._editor_buffer_open_brace()
-        self.assertEqual(launcher._editor_buffer_text, "abc{}")
-        self.assertEqual(launcher._editor_buffer_cursor, 4)
-        launcher._editor_undo()
-        self.assertEqual(launcher._editor_buffer_text, "abc")
-        self.assertEqual(launcher._editor_buffer_cursor, 3)
+        _ed._editor_buffer_open_brace()
+        self.assertEqual(_ed._editor_buffer_text, "abc{}")
+        self.assertEqual(_ed._editor_buffer_cursor, 4)
+        _ed._editor_undo()
+        self.assertEqual(_ed._editor_buffer_text, "abc")
+        self.assertEqual(_ed._editor_buffer_cursor, 3)
 
     def test_autoclose_then_typed_word_two_undos(self):
         # Typing inside the auto-closed pair is a separate insert run;
         # two undos peel back: first the typed word, then the `{}`.
         self._setup(text="abc", cursor=3)
-        launcher._editor_buffer_open_brace()    # → "abc{}", cur=4
+        _ed._editor_buffer_open_brace()    # → "abc{}", cur=4
         self._type("Xy")                         # → "abc{Xy}"
-        self.assertEqual(launcher._editor_buffer_text, "abc{Xy}")
-        launcher._editor_undo()                  # undo typing
-        self.assertEqual(launcher._editor_buffer_text, "abc{}")
-        launcher._editor_undo()                  # undo auto-close
-        self.assertEqual(launcher._editor_buffer_text, "abc")
+        self.assertEqual(_ed._editor_buffer_text, "abc{Xy}")
+        _ed._editor_undo()                  # undo typing
+        self.assertEqual(_ed._editor_buffer_text, "abc{}")
+        _ed._editor_undo()                  # undo auto-close
+        self.assertEqual(_ed._editor_buffer_text, "abc")
 
     # --- Pair-delete and overtype are atomic ------------------------
     def test_pair_delete_is_atomic(self):
         self._setup(text="abc", cursor=3)
-        launcher._editor_buffer_open_brace()    # → "abc{}", pending=[4]
-        launcher._editor_buffer_backspace_pair()
-        self.assertEqual(launcher._editor_buffer_text, "abc")
+        _ed._editor_buffer_open_brace()    # → "abc{}", pending=[4]
+        _ed._editor_buffer_backspace_pair()
+        self.assertEqual(_ed._editor_buffer_text, "abc")
         # Two atomic transactions → two undos.
-        launcher._editor_undo()
-        self.assertEqual(launcher._editor_buffer_text, "abc{}")
-        launcher._editor_undo()
-        self.assertEqual(launcher._editor_buffer_text, "abc")
+        _ed._editor_undo()
+        self.assertEqual(_ed._editor_buffer_text, "abc{}")
+        _ed._editor_undo()
+        self.assertEqual(_ed._editor_buffer_text, "abc")
 
     # --- Newline forces a boundary ----------------------------------
     def test_newline_forces_boundary(self):
@@ -2611,123 +2665,123 @@ class TestEditorModeUndoRedo(unittest.TestCase):
         self._type("ab")
         self._enter()
         self._type("cd")
-        self.assertEqual(launcher._editor_buffer_text, "ab\ncd")
-        launcher._editor_undo()
-        self.assertEqual(launcher._editor_buffer_text, "ab\n")
-        launcher._editor_undo()
-        self.assertEqual(launcher._editor_buffer_text, "ab")
-        launcher._editor_undo()
-        self.assertEqual(launcher._editor_buffer_text, "")
+        self.assertEqual(_ed._editor_buffer_text, "ab\ncd")
+        _ed._editor_undo()
+        self.assertEqual(_ed._editor_buffer_text, "ab\n")
+        _ed._editor_undo()
+        self.assertEqual(_ed._editor_buffer_text, "ab")
+        _ed._editor_undo()
+        self.assertEqual(_ed._editor_buffer_text, "")
 
     # --- Empty-stack no-op ------------------------------------------
     def test_undo_on_empty_stack_is_noop(self):
         self._setup(text="abc", cursor=1)
         # Stack is empty after _setup → _editor_undo_reset.
-        self.assertEqual(launcher._editor_undo_stack, [])
-        launcher._editor_undo()
-        self.assertEqual(launcher._editor_buffer_text, "abc")
-        self.assertEqual(launcher._editor_buffer_cursor, 1)
+        self.assertEqual(_ed._editor_undo_stack, [])
+        _ed._editor_undo()
+        self.assertEqual(_ed._editor_buffer_text, "abc")
+        self.assertEqual(_ed._editor_buffer_cursor, 1)
 
     def test_redo_on_empty_stack_is_noop(self):
         self._setup(text="abc", cursor=1)
-        launcher._editor_redo()
-        self.assertEqual(launcher._editor_buffer_text, "abc")
-        self.assertEqual(launcher._editor_buffer_cursor, 1)
+        _ed._editor_redo()
+        self.assertEqual(_ed._editor_buffer_text, "abc")
+        self.assertEqual(_ed._editor_buffer_cursor, 1)
 
     def test_undo_past_history_eventually_noop(self):
         # Type one transaction, undo it, undo again — second undo is
         # a no-op (stack already drained).
         self._setup()
         self._type("hi")
-        launcher._editor_undo()
-        self.assertEqual(launcher._editor_buffer_text, "")
-        self.assertEqual(launcher._editor_undo_stack, [])
-        launcher._editor_undo()      # no-op
-        self.assertEqual(launcher._editor_buffer_text, "")
+        _ed._editor_undo()
+        self.assertEqual(_ed._editor_buffer_text, "")
+        self.assertEqual(_ed._editor_undo_stack, [])
+        _ed._editor_undo()      # no-op
+        self.assertEqual(_ed._editor_buffer_text, "")
 
     # --- Redo cleared by a new edit ---------------------------------
     def test_new_edit_clears_redo_stack(self):
         self._setup()
         self._type("ab")
-        launcher._editor_undo()
-        self.assertEqual(launcher._editor_buffer_text, "")
+        _ed._editor_undo()
+        self.assertEqual(_ed._editor_buffer_text, "")
         # Redo stack has the just-undone transaction.
-        self.assertEqual(len(launcher._editor_redo_stack), 1)
+        self.assertEqual(len(_ed._editor_redo_stack), 1)
         # A fresh edit invalidates the redo future.
         self._type("XY")
-        self.assertEqual(launcher._editor_redo_stack, [])
+        self.assertEqual(_ed._editor_redo_stack, [])
         # A subsequent redo is now a no-op.
-        before = launcher._editor_buffer_text
-        launcher._editor_redo()
-        self.assertEqual(launcher._editor_buffer_text, before)
+        before = _ed._editor_buffer_text
+        _ed._editor_redo()
+        self.assertEqual(_ed._editor_buffer_text, before)
 
     # --- Stack reset on mode flip -----------------------------------
     def test_undo_state_resets_on_mode_flip(self):
         # Round-trip through a real flip from lite → editor → lite.
         prof, _src, _td = _make_profile("#alias {k} {kill}\n")
         _reset_editor_state(prof)
-        launcher._editor_mode             = "lite"
-        launcher._editor_toggle_focused   = False
-        launcher._editor_buffer_text      = ""
-        launcher._editor_buffer_cursor    = 0
-        launcher._editor_buffer_anchor    = None
-        launcher._editor_pending_closers  = []
-        launcher._editor_undo_reset()
-        launcher._editor_flip_mode()   # lite → editor
-        self.assertEqual(launcher._editor_undo_stack, [])
-        self.assertEqual(launcher._editor_redo_stack, [])
+        _ed._editor_mode             = "lite"
+        _ed._editor_toggle_focused   = False
+        _ed._editor_buffer_text      = ""
+        _ed._editor_buffer_cursor    = 0
+        _ed._editor_buffer_anchor    = None
+        _ed._editor_pending_closers  = []
+        _ed._editor_undo_reset()
+        _ed._editor_flip_mode()   # lite → editor
+        self.assertEqual(_ed._editor_undo_stack, [])
+        self.assertEqual(_ed._editor_redo_stack, [])
         # Build a transaction and an entry on the redo stack.
         self._type("X")
-        self.assertGreater(len(launcher._editor_undo_stack), 0)
-        launcher._editor_undo()
-        self.assertGreater(len(launcher._editor_redo_stack), 0)
+        self.assertGreater(len(_ed._editor_undo_stack), 0)
+        _ed._editor_undo()
+        self.assertGreater(len(_ed._editor_redo_stack), 0)
         # Flipping back to lite wipes both stacks.
-        launcher._editor_flip_mode()   # editor → lite
-        self.assertEqual(launcher._editor_undo_stack, [])
-        self.assertEqual(launcher._editor_redo_stack, [])
+        _ed._editor_flip_mode()   # editor → lite
+        self.assertEqual(_ed._editor_undo_stack, [])
+        self.assertEqual(_ed._editor_redo_stack, [])
 
     def test_undo_state_resets_on_enter_profile_editor(self):
         # Seed stacks with some entries, then re-enter the editor —
         # state must be wiped so undo can't reach the previous frame.
         self._setup()
         self._type("abc")
-        self.assertGreater(len(launcher._editor_undo_stack), 0)
+        self.assertGreater(len(_ed._editor_undo_stack), 0)
         # `_enter_profile_editor` calls `_editor_undo_reset` after
         # clearing the buffer; we exercise the reset directly here
         # because the full enter-path needs a valid file on disk.
-        launcher._editor_undo_reset()
-        self.assertEqual(launcher._editor_undo_stack, [])
-        self.assertEqual(launcher._editor_redo_stack, [])
+        _ed._editor_undo_reset()
+        self.assertEqual(_ed._editor_undo_stack, [])
+        self.assertEqual(_ed._editor_redo_stack, [])
 
     # --- Post-undo invariants ---------------------------------------
     def test_undo_clears_pending_closers(self):
         self._setup(text="abc", cursor=3)
-        launcher._editor_buffer_open_brace()
-        self.assertEqual(launcher._editor_pending_closers, [4])
-        launcher._editor_undo()
-        self.assertEqual(launcher._editor_pending_closers, [])
+        _ed._editor_buffer_open_brace()
+        self.assertEqual(_ed._editor_pending_closers, [4])
+        _ed._editor_undo()
+        self.assertEqual(_ed._editor_pending_closers, [])
 
     def test_undo_restores_anchor(self):
         # Selection-replace through a type captures the anchor in the
         # snapshot; undo brings the selection back.
         self._setup(text="abcdef", cursor=4)
-        launcher._editor_buffer_anchor = 1   # selection "bcd"
+        _ed._editor_buffer_anchor = 1   # selection "bcd"
         self._type("X")
-        self.assertEqual(launcher._editor_buffer_text, "aXef")
-        self.assertIsNone(launcher._editor_buffer_anchor)
-        launcher._editor_undo()
-        self.assertEqual(launcher._editor_buffer_text, "abcdef")
-        self.assertEqual(launcher._editor_buffer_cursor, 4)
-        self.assertEqual(launcher._editor_buffer_anchor, 1)
+        self.assertEqual(_ed._editor_buffer_text, "aXef")
+        self.assertIsNone(_ed._editor_buffer_anchor)
+        _ed._editor_undo()
+        self.assertEqual(_ed._editor_buffer_text, "abcdef")
+        self.assertEqual(_ed._editor_buffer_cursor, 4)
+        self.assertEqual(_ed._editor_buffer_anchor, 1)
 
     # --- Stack-depth cap --------------------------------------------
     def test_undo_stack_respects_max_depth(self):
         self._setup()
-        cap = launcher._EDITOR_UNDO_MAX_DEPTH
+        cap = profile_editor._EDITOR_UNDO_MAX_DEPTH
         # Each `_enter` is an atomic transaction → one stack entry per call.
         for _ in range(cap + 25):
             self._enter()
-        self.assertLessEqual(len(launcher._editor_undo_stack), cap)
+        self.assertLessEqual(len(_ed._editor_undo_stack), cap)
 
 
 class TestEditorModeMoveLine(unittest.TestCase):
@@ -2742,61 +2796,61 @@ class TestEditorModeMoveLine(unittest.TestCase):
     def _setup(self, text="", cursor=0):
         prof, _src, _td = _make_profile("")
         _reset_editor_state(prof)
-        launcher._editor_mode             = "editor"
-        launcher._editor_toggle_focused   = False
-        launcher._editor_buffer_text      = text
-        launcher._editor_buffer_cursor    = cursor
-        launcher._editor_buffer_scroll    = 0
-        launcher._editor_buffer_anchor    = None
-        launcher._editor_pending_closers  = []
-        launcher._editor_clipboard        = ""
-        launcher._editor_undo_reset()
+        _ed._editor_mode             = "editor"
+        _ed._editor_toggle_focused   = False
+        _ed._editor_buffer_text      = text
+        _ed._editor_buffer_cursor    = cursor
+        _ed._editor_buffer_scroll    = 0
+        _ed._editor_buffer_anchor    = None
+        _ed._editor_pending_closers  = []
+        _ed._editor_clipboard        = ""
+        _ed._editor_undo_reset()
 
     # --- Basic swap behaviour --------------------------------------
     def test_move_up_swaps_lines(self):
         self._setup(text="aaa\nbbb\nccc\n", cursor=4)   # start of line 1
-        self.assertTrue(launcher._editor_buffer_move_line(-1))
-        self.assertEqual(launcher._editor_buffer_text, "bbb\naaa\nccc\n")
+        self.assertTrue(_ed._editor_buffer_move_line(-1))
+        self.assertEqual(_ed._editor_buffer_text, "bbb\naaa\nccc\n")
 
     def test_move_down_swaps_lines(self):
         self._setup(text="aaa\nbbb\nccc\n", cursor=0)   # start of line 0
-        self.assertTrue(launcher._editor_buffer_move_line(+1))
-        self.assertEqual(launcher._editor_buffer_text, "bbb\naaa\nccc\n")
+        self.assertTrue(_ed._editor_buffer_move_line(+1))
+        self.assertEqual(_ed._editor_buffer_text, "bbb\naaa\nccc\n")
 
     # --- No-op at the buffer ends ----------------------------------
     def test_move_up_at_top_is_noop(self):
         self._setup(text="aaa\nbbb\n", cursor=1)        # line 0
-        self.assertFalse(launcher._editor_buffer_move_line(-1))
-        self.assertEqual(launcher._editor_buffer_text, "aaa\nbbb\n")
-        self.assertEqual(launcher._editor_buffer_cursor, 1)
+        self.assertFalse(_ed._editor_buffer_move_line(-1))
+        self.assertEqual(_ed._editor_buffer_text, "aaa\nbbb\n")
+        self.assertEqual(_ed._editor_buffer_cursor, 1)
         # No undo entry on a no-op move.
-        self.assertEqual(launcher._editor_undo_stack, [])
+        self.assertEqual(_ed._editor_undo_stack, [])
 
     def test_move_down_at_bottom_is_noop(self):
         self._setup(text="aaa\nbbb", cursor=5)          # mid line 1 (last)
-        self.assertFalse(launcher._editor_buffer_move_line(+1))
-        self.assertEqual(launcher._editor_buffer_text, "aaa\nbbb")
-        self.assertEqual(launcher._editor_buffer_cursor, 5)
-        self.assertEqual(launcher._editor_undo_stack, [])
+        self.assertFalse(_ed._editor_buffer_move_line(+1))
+        self.assertEqual(_ed._editor_buffer_text, "aaa\nbbb")
+        self.assertEqual(_ed._editor_buffer_cursor, 5)
+        self.assertEqual(_ed._editor_undo_stack, [])
 
     def test_single_line_buffer_both_directions_are_noop(self):
         self._setup(text="solo", cursor=2)
-        self.assertFalse(launcher._editor_buffer_move_line(-1))
-        self.assertFalse(launcher._editor_buffer_move_line(+1))
-        self.assertEqual(launcher._editor_buffer_text, "solo")
+        self.assertFalse(_ed._editor_buffer_move_line(-1))
+        self.assertFalse(_ed._editor_buffer_move_line(+1))
+        self.assertEqual(_ed._editor_buffer_text, "solo")
 
     # --- Cursor + column follow the moved line ---------------------
     def test_cursor_follows_moved_line_up(self):
         # Column 2 on line 1; after move-up, cursor on line 0, col 2.
         self._setup(text="aaaa\nbbbb\ncccc\n", cursor=7)    # line 1, col 2
-        self.assertTrue(launcher._editor_buffer_move_line(-1))
-        line, col = launcher._editor_buffer_cursor_to_line_col()
+        self.assertTrue(_ed._editor_buffer_move_line(-1))
+        line, col = _ed._editor_buffer_cursor_to_line_col()
         self.assertEqual((line, col), (0, 2))
 
     def test_cursor_follows_moved_line_down(self):
         self._setup(text="aaaa\nbbbb\ncccc\n", cursor=2)    # line 0, col 2
-        self.assertTrue(launcher._editor_buffer_move_line(+1))
-        line, col = launcher._editor_buffer_cursor_to_line_col()
+        self.assertTrue(_ed._editor_buffer_move_line(+1))
+        line, col = _ed._editor_buffer_cursor_to_line_col()
         self.assertEqual((line, col), (1, 2))
 
     def test_column_preserved_when_destination_line_is_shorter(self):
@@ -2804,10 +2858,10 @@ class TestEditorModeMoveLine(unittest.TestCase):
         # line's text travels with it, the cursor stays at the same
         # column without truncation — the move never widens the gap.
         self._setup(text="a\nbbbb\ncc\n", cursor=6)         # line 1, col 4
-        self.assertTrue(launcher._editor_buffer_move_line(-1))
+        self.assertTrue(_ed._editor_buffer_move_line(-1))
         # Line 1 ("bbbb") is now at position 0; cursor still at col 4.
-        self.assertEqual(launcher._editor_buffer_text, "bbbb\na\ncc\n")
-        line, col = launcher._editor_buffer_cursor_to_line_col()
+        self.assertEqual(_ed._editor_buffer_text, "bbbb\na\ncc\n")
+        line, col = _ed._editor_buffer_cursor_to_line_col()
         self.assertEqual((line, col), (0, 4))
 
     # --- Trailing-newline edge -------------------------------------
@@ -2815,57 +2869,57 @@ class TestEditorModeMoveLine(unittest.TestCase):
         # The last line has no trailing `\n`. Move-up must preserve
         # the trailing-no-newline shape (still 2 lines, last has no nl).
         self._setup(text="aaa\nbbb", cursor=4)              # line 1, col 0
-        self.assertTrue(launcher._editor_buffer_move_line(-1))
-        self.assertEqual(launcher._editor_buffer_text, "bbb\naaa")
-        self.assertEqual(launcher._editor_buffer_line_count(), 2)
-        self.assertFalse(launcher._editor_buffer_text.endswith("\n"))
-        line, col = launcher._editor_buffer_cursor_to_line_col()
+        self.assertTrue(_ed._editor_buffer_move_line(-1))
+        self.assertEqual(_ed._editor_buffer_text, "bbb\naaa")
+        self.assertEqual(_ed._editor_buffer_line_count(), 2)
+        self.assertFalse(_ed._editor_buffer_text.endswith("\n"))
+        line, col = _ed._editor_buffer_cursor_to_line_col()
         self.assertEqual((line, col), (0, 0))
 
     def test_move_down_into_last_line_position_preserves_shape(self):
         # Moving line 0 down so it becomes the (newline-less) last line.
         self._setup(text="aaa\nbbb", cursor=0)
-        self.assertTrue(launcher._editor_buffer_move_line(+1))
-        self.assertEqual(launcher._editor_buffer_text, "bbb\naaa")
-        self.assertFalse(launcher._editor_buffer_text.endswith("\n"))
-        line, col = launcher._editor_buffer_cursor_to_line_col()
+        self.assertTrue(_ed._editor_buffer_move_line(+1))
+        self.assertEqual(_ed._editor_buffer_text, "bbb\naaa")
+        self.assertFalse(_ed._editor_buffer_text.endswith("\n"))
+        line, col = _ed._editor_buffer_cursor_to_line_col()
         self.assertEqual((line, col), (1, 0))
 
     def test_move_last_line_up_then_down_round_trips(self):
         self._setup(text="aaa\nbbb", cursor=4)
-        self.assertTrue(launcher._editor_buffer_move_line(-1))
-        self.assertEqual(launcher._editor_buffer_text, "bbb\naaa")
-        self.assertTrue(launcher._editor_buffer_move_line(+1))
-        self.assertEqual(launcher._editor_buffer_text, "aaa\nbbb")
+        self.assertTrue(_ed._editor_buffer_move_line(-1))
+        self.assertEqual(_ed._editor_buffer_text, "bbb\naaa")
+        self.assertTrue(_ed._editor_buffer_move_line(+1))
+        self.assertEqual(_ed._editor_buffer_text, "aaa\nbbb")
 
     # --- Undo: a move is one transaction ---------------------------
     def test_move_is_one_undo_transaction(self):
         self._setup(text="aaa\nbbb\nccc\n", cursor=4)
-        self.assertTrue(launcher._editor_buffer_move_line(-1))
-        self.assertEqual(launcher._editor_buffer_text, "bbb\naaa\nccc\n")
-        launcher._editor_undo()
-        self.assertEqual(launcher._editor_buffer_text, "aaa\nbbb\nccc\n")
-        self.assertEqual(launcher._editor_buffer_cursor, 4)
+        self.assertTrue(_ed._editor_buffer_move_line(-1))
+        self.assertEqual(_ed._editor_buffer_text, "bbb\naaa\nccc\n")
+        _ed._editor_undo()
+        self.assertEqual(_ed._editor_buffer_text, "aaa\nbbb\nccc\n")
+        self.assertEqual(_ed._editor_buffer_cursor, 4)
 
     def test_move_round_trip_with_redo(self):
         self._setup(text="aaa\nbbb\nccc\n", cursor=4)
-        launcher._editor_buffer_move_line(-1)
-        launcher._editor_undo()
-        launcher._editor_redo()
-        self.assertEqual(launcher._editor_buffer_text, "bbb\naaa\nccc\n")
+        _ed._editor_buffer_move_line(-1)
+        _ed._editor_undo()
+        _ed._editor_redo()
+        self.assertEqual(_ed._editor_buffer_text, "bbb\naaa\nccc\n")
 
     def test_move_clears_pending_closers(self):
         self._setup(text="aaa\nbbb\nccc\n", cursor=4)
-        launcher._editor_pending_closers = [10]
-        self.assertTrue(launcher._editor_buffer_move_line(-1))
-        self.assertEqual(launcher._editor_pending_closers, [])
+        _ed._editor_pending_closers = [10]
+        self.assertTrue(_ed._editor_buffer_move_line(-1))
+        self.assertEqual(_ed._editor_pending_closers, [])
 
     def test_move_clears_active_selection(self):
         # Selection is dropped: multi-line block move is out of scope.
         self._setup(text="aaa\nbbb\nccc\n", cursor=4)
-        launcher._editor_buffer_anchor = 6              # selection within line 1
-        self.assertTrue(launcher._editor_buffer_move_line(-1))
-        self.assertIsNone(launcher._editor_buffer_anchor)
+        _ed._editor_buffer_anchor = 6              # selection within line 1
+        self.assertTrue(_ed._editor_buffer_move_line(-1))
+        self.assertIsNone(_ed._editor_buffer_anchor)
 
 
 class TestEditorModeLineColIndicator(unittest.TestCase):
@@ -2874,41 +2928,41 @@ class TestEditorModeLineColIndicator(unittest.TestCase):
     def _setup(self, text="", cursor=0):
         prof, _src, _td = _make_profile("")
         _reset_editor_state(prof)
-        launcher._editor_mode             = "editor"
-        launcher._editor_toggle_focused   = False
-        launcher._editor_buffer_text      = text
-        launcher._editor_buffer_cursor    = cursor
-        launcher._editor_buffer_anchor    = None
+        _ed._editor_mode             = "editor"
+        _ed._editor_toggle_focused   = False
+        _ed._editor_buffer_text      = text
+        _ed._editor_buffer_cursor    = cursor
+        _ed._editor_buffer_anchor    = None
 
     def test_empty_buffer_reports_ln1_col1(self):
         self._setup()
-        self.assertEqual(launcher._editor_line_col_text(),
+        self.assertEqual(_ed._editor_line_col_text(),
                          "Ln 1, Col 1")
 
     def test_first_line_offset_reports_ln1_col_n_plus_1(self):
         # Cursor in the middle of the first line — col is 1-indexed.
         self._setup(text="abcdef", cursor=3)
-        self.assertEqual(launcher._editor_line_col_text(),
+        self.assertEqual(_ed._editor_line_col_text(),
                          "Ln 1, Col 4")
 
     def test_second_line_reports_ln2(self):
         self._setup(text="aaa\nbbb", cursor=5)            # line 1, col 1
-        self.assertEqual(launcher._editor_line_col_text(),
+        self.assertEqual(_ed._editor_line_col_text(),
                          "Ln 2, Col 2")
 
     def test_end_of_buffer_with_trailing_newline_reports_phantom_line(self):
         # Trailing `\n` creates a phantom empty line; cursor at end
         # lands on its start → 1-indexed Ln 3, Col 1.
         self._setup(text="aa\nbb\n", cursor=6)
-        self.assertEqual(launcher._editor_line_col_text(),
+        self.assertEqual(_ed._editor_line_col_text(),
                          "Ln 3, Col 1")
 
     def test_tracks_cursor_after_move(self):
         self._setup(text="aaa\nbbb\nccc\n", cursor=0)
-        self.assertEqual(launcher._editor_line_col_text(),
+        self.assertEqual(_ed._editor_line_col_text(),
                          "Ln 1, Col 1")
-        launcher._editor_buffer_cursor = 4               # start of line 1
-        self.assertEqual(launcher._editor_line_col_text(),
+        _ed._editor_buffer_cursor = 4               # start of line 1
+        self.assertEqual(_ed._editor_line_col_text(),
                          "Ln 2, Col 1")
 
 
@@ -2950,11 +3004,17 @@ class _FakeClock:
 
 
 def _reset_click_state(clock=None):
-    launcher._editor_click_count   = 0
-    launcher._editor_click_last_t  = 0.0
-    launcher._editor_click_last_xy = (-1, -1)
+    global _ed, _test_click_clock
+    _test_click_clock = clock  # persist so _reset_editor_state can apply it
+    if _ed is None:
+        # Create a minimal editor instance so click state can be set.
+        prof, _src, _td = _make_profile("")
+        _reset_editor_state(prof)
+    _ed._editor_click_count   = 0
+    _ed._editor_click_last_t  = 0.0
+    _ed._editor_click_last_xy = (-1, -1)
     if clock is not None:
-        launcher._editor_click_now = clock
+        _ed._editor_click_now = clock
 
 
 class TestEditorClickCount(unittest.TestCase):
@@ -2970,35 +3030,35 @@ class TestEditorClickCount(unittest.TestCase):
 
     def test_first_click_is_one(self):
         self.assertEqual(
-            launcher._editor_click_tick(_MouseEv(10, 5)), 1)
+            _ed._editor_click_tick(_MouseEv(10, 5)), 1)
 
     def test_rapid_repeat_at_same_xy_increments(self):
         ev = _MouseEv(10, 5)
-        self.assertEqual(launcher._editor_click_tick(ev), 1)
+        self.assertEqual(_ed._editor_click_tick(ev), 1)
         self.clock.advance(0.1)
-        self.assertEqual(launcher._editor_click_tick(ev), 2)
+        self.assertEqual(_ed._editor_click_tick(ev), 2)
         self.clock.advance(0.1)
-        self.assertEqual(launcher._editor_click_tick(ev), 3)
+        self.assertEqual(_ed._editor_click_tick(ev), 3)
 
     def test_fourth_rapid_click_cycles_to_one(self):
         ev = _MouseEv(10, 5)
         for expected in (1, 2, 3, 1):
-            self.assertEqual(launcher._editor_click_tick(ev), expected)
+            self.assertEqual(_ed._editor_click_tick(ev), expected)
             self.clock.advance(0.1)
 
     def test_slow_second_click_resets_to_one(self):
         # A click outside the window resets the count even at the same xy.
         ev = _MouseEv(10, 5)
-        self.assertEqual(launcher._editor_click_tick(ev), 1)
+        self.assertEqual(_ed._editor_click_tick(ev), 1)
         self.clock.advance(0.5)                                  # > 0.4 s
-        self.assertEqual(launcher._editor_click_tick(ev), 1)
+        self.assertEqual(_ed._editor_click_tick(ev), 1)
 
     def test_different_xy_resets_to_one(self):
-        self.assertEqual(launcher._editor_click_tick(_MouseEv(10, 5)), 1)
+        self.assertEqual(_ed._editor_click_tick(_MouseEv(10, 5)), 1)
         self.clock.advance(0.1)
-        self.assertEqual(launcher._editor_click_tick(_MouseEv(11, 5)), 1)
+        self.assertEqual(_ed._editor_click_tick(_MouseEv(11, 5)), 1)
         self.clock.advance(0.1)
-        self.assertEqual(launcher._editor_click_tick(_MouseEv(11, 6)), 1)
+        self.assertEqual(_ed._editor_click_tick(_MouseEv(11, 6)), 1)
 
 
 class TestEditorWordBounds(unittest.TestCase):
@@ -3007,67 +3067,67 @@ class TestEditorWordBounds(unittest.TestCase):
     run in both directions over the same class."""
 
     def test_word_char_run(self):
-        self.assertEqual(launcher._editor_word_bounds("foo bar", 1),
+        self.assertEqual(_ed._editor_word_bounds("foo bar", 1),
                          (0, 3))
 
     def test_word_includes_underscore_and_digits(self):
         # "ab_42c" is one same-class run; whitespace at col 6 is the boundary.
-        self.assertEqual(launcher._editor_word_bounds("ab_42c x", 3),
+        self.assertEqual(_ed._editor_word_bounds("ab_42c x", 3),
                          (0, 6))
 
     def test_whitespace_run(self):
         # Three spaces in a row → ws class.
-        self.assertEqual(launcher._editor_word_bounds("a   b", 2),
+        self.assertEqual(_ed._editor_word_bounds("a   b", 2),
                          (1, 4))
 
     def test_punctuation_run(self):
         # `!!!` is an "other" run that the boundary walk groups together.
-        self.assertEqual(launcher._editor_word_bounds("hi!!!there", 3),
+        self.assertEqual(_ed._editor_word_bounds("hi!!!there", 3),
                          (2, 5))
 
     def test_punctuation_does_not_merge_with_word(self):
         # `,` is `other`; `word` is the surrounding letters. Class change
         # stops the walk.
-        self.assertEqual(launcher._editor_word_bounds("hi,bye", 0),
+        self.assertEqual(_ed._editor_word_bounds("hi,bye", 0),
                          (0, 2))
-        self.assertEqual(launcher._editor_word_bounds("hi,bye", 2),
+        self.assertEqual(_ed._editor_word_bounds("hi,bye", 2),
                          (2, 3))
-        self.assertEqual(launcher._editor_word_bounds("hi,bye", 3),
+        self.assertEqual(_ed._editor_word_bounds("hi,bye", 3),
                          (3, 6))
 
     def test_past_end_of_line_returns_none(self):
-        self.assertIsNone(launcher._editor_word_bounds("hi", 2))
-        self.assertIsNone(launcher._editor_word_bounds("", 0))
+        self.assertIsNone(_ed._editor_word_bounds("hi", 2))
+        self.assertIsNone(_ed._editor_word_bounds("", 0))
 
     # --- Regression: run boundary must be end-exclusive on the right ---
     # Earlier the visual highlight bled one cell past the run because the
     # cursor cell at `e` was painted alongside `[s, e)`. The bounds
     # contract is unchanged — `text[s:e]` is exactly the run.
     def test_word_run_inside_braces(self):
-        self.assertEqual(launcher._editor_word_bounds("{word}", 1),
+        self.assertEqual(_ed._editor_word_bounds("{word}", 1),
                          (1, 5))
-        self.assertEqual(launcher._editor_word_bounds("{word}", 4),
+        self.assertEqual(_ed._editor_word_bounds("{word}", 4),
                          (1, 5))
 
     def test_word_run_inside_quoted_dollar(self):
         # `"` and `$` are `other`; the word run is just `abody`.
-        self.assertEqual(launcher._editor_word_bounds('"$abody"', 2),
+        self.assertEqual(_ed._editor_word_bounds('"$abody"', 2),
                          (2, 7))
-        self.assertEqual(launcher._editor_word_bounds('"$abody"', 6),
+        self.assertEqual(_ed._editor_word_bounds('"$abody"', 6),
                          (2, 7))
 
     def test_word_run_before_trailing_space(self):
         # `{#if {` — clicking `if` stops at the space; the run is just
         # `if`, not `if ` (whitespace is a different class).
-        self.assertEqual(launcher._editor_word_bounds("{#if {", 2),
+        self.assertEqual(_ed._editor_word_bounds("{#if {", 2),
                          (2, 4))
-        self.assertEqual(launcher._editor_word_bounds("{#if {", 3),
+        self.assertEqual(_ed._editor_word_bounds("{#if {", 3),
                          (2, 4))
 
     def test_left_edge_stops_at_class_change(self):
         # `{` is `other`; the `word` run starts at the `w` — left walk
         # must not pull `{` into the run.
-        self.assertEqual(launcher._editor_word_bounds("{word}", 1),
+        self.assertEqual(_ed._editor_word_bounds("{word}", 1),
                          (1, 5))
 
 
@@ -3087,20 +3147,20 @@ class TestEditorBufferDoubleTripleClick(unittest.TestCase):
     def _setup_buffer(self, text):
         prof, _src, _td = _make_profile("")
         _reset_editor_state(prof)
-        launcher._editor_mode             = "editor"
-        launcher._editor_toggle_focused   = False
-        launcher._editor_buffer_text      = text
-        launcher._editor_buffer_cursor    = 0
-        launcher._editor_buffer_scroll    = 0
-        launcher._editor_buffer_anchor    = None
-        launcher._editor_pending_closers  = []
-        launcher._editor_clipboard        = ""
+        _ed._editor_mode             = "editor"
+        _ed._editor_toggle_focused   = False
+        _ed._editor_buffer_text      = text
+        _ed._editor_buffer_cursor    = 0
+        _ed._editor_buffer_scroll    = 0
+        _ed._editor_buffer_anchor    = None
+        _ed._editor_pending_closers  = []
+        _ed._editor_clipboard        = ""
 
     def _row_handler(self, logical_line, line_len):
         # content_x_offset=0 and wrap_start=0 — ev.position.x is then the
         # absolute column directly. line_len = len(line_text) for the
         # clicked logical line.
-        return launcher._editor_buffer_row_click_handler(
+        return _ed._editor_buffer_row_click_handler(
             logical_line, wrap_start=0, content_x_offset=0,
             line_len=line_len)
 
@@ -3108,8 +3168,8 @@ class TestEditorBufferDoubleTripleClick(unittest.TestCase):
         self._setup_buffer("hello world")
         h = self._row_handler(0, len("hello world"))
         h(_MouseEv(2, 0))
-        self.assertEqual(launcher._editor_buffer_cursor, 2)
-        self.assertIsNone(launcher._editor_buffer_anchor)
+        self.assertEqual(_ed._editor_buffer_cursor, 2)
+        self.assertIsNone(_ed._editor_buffer_anchor)
 
     def test_double_click_selects_word(self):
         self._setup_buffer("hello world")
@@ -3117,11 +3177,11 @@ class TestEditorBufferDoubleTripleClick(unittest.TestCase):
         h(_MouseEv(2, 0))                      # count 1 at col 2
         self.clock.advance(0.1)
         h(_MouseEv(2, 0))                      # count 2 at col 2
-        self.assertEqual(launcher._editor_buffer_anchor, 0)
-        self.assertEqual(launcher._editor_buffer_cursor, 5)
+        self.assertEqual(_ed._editor_buffer_anchor, 0)
+        self.assertEqual(_ed._editor_buffer_cursor, 5)
         # Clipboard copy reads the selected word.
-        launcher._editor_buffer_copy()
-        self.assertEqual(launcher._editor_clipboard, "hello")
+        _ed._editor_buffer_copy()
+        self.assertEqual(_ed._editor_clipboard, "hello")
 
     def test_double_click_whitespace_selects_run(self):
         self._setup_buffer("a    b")
@@ -3129,10 +3189,10 @@ class TestEditorBufferDoubleTripleClick(unittest.TestCase):
         h(_MouseEv(3, 0))
         self.clock.advance(0.1)
         h(_MouseEv(3, 0))
-        self.assertEqual(launcher._editor_buffer_anchor, 1)
-        self.assertEqual(launcher._editor_buffer_cursor, 5)
-        launcher._editor_buffer_copy()
-        self.assertEqual(launcher._editor_clipboard, "    ")
+        self.assertEqual(_ed._editor_buffer_anchor, 1)
+        self.assertEqual(_ed._editor_buffer_cursor, 5)
+        _ed._editor_buffer_copy()
+        self.assertEqual(_ed._editor_clipboard, "    ")
 
     def test_double_click_punctuation_selects_run(self):
         self._setup_buffer("hi!!!there")
@@ -3140,10 +3200,10 @@ class TestEditorBufferDoubleTripleClick(unittest.TestCase):
         h(_MouseEv(3, 0))
         self.clock.advance(0.1)
         h(_MouseEv(3, 0))
-        self.assertEqual(launcher._editor_buffer_anchor, 2)
-        self.assertEqual(launcher._editor_buffer_cursor, 5)
-        launcher._editor_buffer_copy()
-        self.assertEqual(launcher._editor_clipboard, "!!!")
+        self.assertEqual(_ed._editor_buffer_anchor, 2)
+        self.assertEqual(_ed._editor_buffer_cursor, 5)
+        _ed._editor_buffer_copy()
+        self.assertEqual(_ed._editor_clipboard, "!!!")
 
     # Regression: the run's right edge must not absorb the first
     # out-of-class character. Earlier the cursor cell at `e` was painted
@@ -3154,10 +3214,10 @@ class TestEditorBufferDoubleTripleClick(unittest.TestCase):
         h(_MouseEv(2, 0))                      # over `o` in `word`
         self.clock.advance(0.1)
         h(_MouseEv(2, 0))
-        self.assertEqual(launcher._editor_buffer_anchor, 1)
-        self.assertEqual(launcher._editor_buffer_cursor, 5)
-        launcher._editor_buffer_copy()
-        self.assertEqual(launcher._editor_clipboard, "word")
+        self.assertEqual(_ed._editor_buffer_anchor, 1)
+        self.assertEqual(_ed._editor_buffer_cursor, 5)
+        _ed._editor_buffer_copy()
+        self.assertEqual(_ed._editor_clipboard, "word")
 
     def test_double_click_word_after_dollar_quoted(self):
         self._setup_buffer('"$abody"')
@@ -3165,10 +3225,10 @@ class TestEditorBufferDoubleTripleClick(unittest.TestCase):
         h(_MouseEv(3, 0))                      # over `b` in `abody`
         self.clock.advance(0.1)
         h(_MouseEv(3, 0))
-        self.assertEqual(launcher._editor_buffer_anchor, 2)
-        self.assertEqual(launcher._editor_buffer_cursor, 7)
-        launcher._editor_buffer_copy()
-        self.assertEqual(launcher._editor_clipboard, "abody")
+        self.assertEqual(_ed._editor_buffer_anchor, 2)
+        self.assertEqual(_ed._editor_buffer_cursor, 7)
+        _ed._editor_buffer_copy()
+        self.assertEqual(_ed._editor_clipboard, "abody")
 
     def test_double_click_if_before_trailing_space(self):
         self._setup_buffer("{#if {")
@@ -3176,10 +3236,10 @@ class TestEditorBufferDoubleTripleClick(unittest.TestCase):
         h(_MouseEv(2, 0))                      # over `i` in `if`
         self.clock.advance(0.1)
         h(_MouseEv(2, 0))
-        self.assertEqual(launcher._editor_buffer_anchor, 2)
-        self.assertEqual(launcher._editor_buffer_cursor, 4)
-        launcher._editor_buffer_copy()
-        self.assertEqual(launcher._editor_clipboard, "if")
+        self.assertEqual(_ed._editor_buffer_anchor, 2)
+        self.assertEqual(_ed._editor_buffer_cursor, 4)
+        _ed._editor_buffer_copy()
+        self.assertEqual(_ed._editor_clipboard, "if")
 
     def test_double_click_does_not_cross_line_boundary(self):
         self._setup_buffer("foo\nbar")
@@ -3192,8 +3252,8 @@ class TestEditorBufferDoubleTripleClick(unittest.TestCase):
         h(_MouseEv(1, 0))
         # Line 1 starts at offset 4 (after "foo\n"); word "bar" occupies
         # offsets 4..7.
-        self.assertEqual(launcher._editor_buffer_anchor, 4)
-        self.assertEqual(launcher._editor_buffer_cursor, 7)
+        self.assertEqual(_ed._editor_buffer_anchor, 4)
+        self.assertEqual(_ed._editor_buffer_cursor, 7)
 
     def test_double_click_past_eol_selects_nothing(self):
         self._setup_buffer("hi")
@@ -3201,8 +3261,8 @@ class TestEditorBufferDoubleTripleClick(unittest.TestCase):
         h(_MouseEv(10, 0))                     # well past EOL → clamps to 2
         self.clock.advance(0.1)
         h(_MouseEv(10, 0))
-        self.assertIsNone(launcher._editor_buffer_anchor)
-        self.assertEqual(launcher._editor_buffer_cursor, 2)
+        self.assertIsNone(_ed._editor_buffer_anchor)
+        self.assertEqual(_ed._editor_buffer_cursor, 2)
 
     def test_triple_click_selects_line_text_only(self):
         self._setup_buffer("foo\nbar\nbaz\n")
@@ -3214,10 +3274,10 @@ class TestEditorBufferDoubleTripleClick(unittest.TestCase):
         h(_MouseEv(1, 0))                      # count 3
         # Line 1 spans offsets 4..7 ("bar"); the `\n` at 7 is excluded
         # so the highlight stops at end-of-line.
-        self.assertEqual(launcher._editor_buffer_anchor, 4)
-        self.assertEqual(launcher._editor_buffer_cursor, 7)
-        launcher._editor_buffer_copy()
-        self.assertEqual(launcher._editor_clipboard, "bar")
+        self.assertEqual(_ed._editor_buffer_anchor, 4)
+        self.assertEqual(_ed._editor_buffer_cursor, 7)
+        _ed._editor_buffer_copy()
+        self.assertEqual(_ed._editor_clipboard, "bar")
 
     def test_triple_click_last_line_without_trailing_newline(self):
         self._setup_buffer("foo\nbar")
@@ -3228,8 +3288,8 @@ class TestEditorBufferDoubleTripleClick(unittest.TestCase):
         self.clock.advance(0.1)
         h(_MouseEv(1, 0))
         # Last line — selection is just the line text, no \n.
-        self.assertEqual(launcher._editor_buffer_anchor, 4)
-        self.assertEqual(launcher._editor_buffer_cursor, 7)
+        self.assertEqual(_ed._editor_buffer_anchor, 4)
+        self.assertEqual(_ed._editor_buffer_cursor, 7)
 
     def test_fourth_rapid_click_cycles_to_single_click(self):
         self._setup_buffer("hello world")
@@ -3239,8 +3299,8 @@ class TestEditorBufferDoubleTripleClick(unittest.TestCase):
             self.clock.advance(0.1)
         # After the 4th rapid click we're back to count 1 — cursor lands,
         # selection cleared.
-        self.assertIsNone(launcher._editor_buffer_anchor)
-        self.assertEqual(launcher._editor_buffer_cursor, 2)
+        self.assertIsNone(_ed._editor_buffer_anchor)
+        self.assertEqual(_ed._editor_buffer_cursor, 2)
 
     def test_slow_second_click_does_not_upgrade_to_double(self):
         self._setup_buffer("hello world")
@@ -3248,7 +3308,7 @@ class TestEditorBufferDoubleTripleClick(unittest.TestCase):
         h(_MouseEv(2, 0))
         self.clock.advance(0.5)                # > 0.4 s window
         h(_MouseEv(2, 0))
-        self.assertIsNone(launcher._editor_buffer_anchor)
+        self.assertIsNone(_ed._editor_buffer_anchor)
 
 
 class TestEditorLitePatternDoubleTripleClick(unittest.TestCase):
@@ -3266,20 +3326,20 @@ class TestEditorLitePatternDoubleTripleClick(unittest.TestCase):
         prof, _src, _td = _make_profile(
             f"#alias {{{pattern}}} {{body}}\n")
         _reset_editor_state(prof, focus=2)
-        launcher._editor_detail_field    = 0
-        launcher._editor_pattern_cursor  = 0
-        launcher._editor_pattern_anchor  = None
-        launcher._editor_clipboard       = ""
+        _ed._editor_detail_field    = 0
+        _ed._editor_pattern_cursor  = 0
+        _ed._editor_pattern_anchor  = None
+        _ed._editor_clipboard       = ""
 
     def _handler(self, visible_col):
-        return launcher._editor_make_field_click_handler(
+        return _ed._editor_make_field_click_handler(
             "pattern", visible_col=visible_col, line_idx=None, start=0)
 
     def test_single_click_positions_cursor_and_clears_selection(self):
         self._setup("hello world")
         self._handler(2)(_MouseEv(2, 0))
-        self.assertEqual(launcher._editor_pattern_cursor, 2)
-        self.assertIsNone(launcher._editor_pattern_anchor)
+        self.assertEqual(_ed._editor_pattern_cursor, 2)
+        self.assertIsNone(_ed._editor_pattern_anchor)
 
     def test_double_click_selects_word(self):
         self._setup("hello world")
@@ -3287,10 +3347,10 @@ class TestEditorLitePatternDoubleTripleClick(unittest.TestCase):
         h(_MouseEv(7, 0))                       # count 1
         self.clock.advance(0.1)
         h(_MouseEv(7, 0))                       # count 2
-        self.assertEqual(launcher._editor_pattern_anchor, 6)
-        self.assertEqual(launcher._editor_pattern_cursor, 11)
-        launcher._editor_pattern_copy()
-        self.assertEqual(launcher._editor_clipboard, "world")
+        self.assertEqual(_ed._editor_pattern_anchor, 6)
+        self.assertEqual(_ed._editor_pattern_cursor, 11)
+        _ed._editor_pattern_copy()
+        self.assertEqual(_ed._editor_clipboard, "world")
 
     def test_double_click_punctuation_run(self):
         self._setup("ab!!cd")
@@ -3298,8 +3358,8 @@ class TestEditorLitePatternDoubleTripleClick(unittest.TestCase):
         h(_MouseEv(3, 0))
         self.clock.advance(0.1)
         h(_MouseEv(3, 0))
-        self.assertEqual(launcher._editor_pattern_anchor, 2)
-        self.assertEqual(launcher._editor_pattern_cursor, 4)
+        self.assertEqual(_ed._editor_pattern_anchor, 2)
+        self.assertEqual(_ed._editor_pattern_cursor, 4)
 
     # Regression: same-class run stops at the first out-of-class char on
     # the right — `word}` / `abody"` / `if ` were over-selecting. The
@@ -3307,27 +3367,27 @@ class TestEditorLitePatternDoubleTripleClick(unittest.TestCase):
     # set them directly on the entry after a benign setup.
     def test_double_click_word_inside_braces(self):
         self._setup("placeholder")
-        launcher._editor_current_entry().pattern = "{word}"
+        _ed._editor_current_entry().pattern = "{word}"
         h = self._handler(2)
         h(_MouseEv(2, 0))
         self.clock.advance(0.1)
         h(_MouseEv(2, 0))
-        self.assertEqual(launcher._editor_pattern_anchor, 1)
-        self.assertEqual(launcher._editor_pattern_cursor, 5)
-        launcher._editor_pattern_copy()
-        self.assertEqual(launcher._editor_clipboard, "word")
+        self.assertEqual(_ed._editor_pattern_anchor, 1)
+        self.assertEqual(_ed._editor_pattern_cursor, 5)
+        _ed._editor_pattern_copy()
+        self.assertEqual(_ed._editor_clipboard, "word")
 
     def test_double_click_if_before_trailing_space(self):
         self._setup("placeholder")
-        launcher._editor_current_entry().pattern = "{#if {"
+        _ed._editor_current_entry().pattern = "{#if {"
         h = self._handler(2)
         h(_MouseEv(2, 0))
         self.clock.advance(0.1)
         h(_MouseEv(2, 0))
-        self.assertEqual(launcher._editor_pattern_anchor, 2)
-        self.assertEqual(launcher._editor_pattern_cursor, 4)
-        launcher._editor_pattern_copy()
-        self.assertEqual(launcher._editor_clipboard, "if")
+        self.assertEqual(_ed._editor_pattern_anchor, 2)
+        self.assertEqual(_ed._editor_pattern_cursor, 4)
+        _ed._editor_pattern_copy()
+        self.assertEqual(_ed._editor_clipboard, "if")
 
     def test_double_click_past_end_selects_nothing(self):
         self._setup("hi")
@@ -3335,8 +3395,8 @@ class TestEditorLitePatternDoubleTripleClick(unittest.TestCase):
         h(_MouseEv(5, 0))
         self.clock.advance(0.1)
         h(_MouseEv(5, 0))
-        self.assertIsNone(launcher._editor_pattern_anchor)
-        self.assertEqual(launcher._editor_pattern_cursor, 2)
+        self.assertIsNone(_ed._editor_pattern_anchor)
+        self.assertEqual(_ed._editor_pattern_cursor, 2)
 
     def test_triple_click_selects_whole_field(self):
         self._setup("hello world")
@@ -3346,11 +3406,11 @@ class TestEditorLitePatternDoubleTripleClick(unittest.TestCase):
         h(_MouseEv(7, 0))
         self.clock.advance(0.1)
         h(_MouseEv(7, 0))
-        self.assertEqual(launcher._editor_pattern_anchor, 0)
-        self.assertEqual(launcher._editor_pattern_cursor,
+        self.assertEqual(_ed._editor_pattern_anchor, 0)
+        self.assertEqual(_ed._editor_pattern_cursor,
                          len("hello world"))
-        launcher._editor_pattern_copy()
-        self.assertEqual(launcher._editor_clipboard, "hello world")
+        _ed._editor_pattern_copy()
+        self.assertEqual(_ed._editor_clipboard, "hello world")
 
     def test_click_count_resets_outside_window(self):
         self._setup("hello world")
@@ -3359,7 +3419,7 @@ class TestEditorLitePatternDoubleTripleClick(unittest.TestCase):
         self.clock.advance(0.5)                 # outside window
         h(_MouseEv(7, 0))
         # No upgrade — still single click, no selection.
-        self.assertIsNone(launcher._editor_pattern_anchor)
+        self.assertIsNone(_ed._editor_pattern_anchor)
 
 
 class TestEditorLiteBodyDoubleTripleClick(unittest.TestCase):
@@ -3384,25 +3444,25 @@ class TestEditorLiteBodyDoubleTripleClick(unittest.TestCase):
         # Backfill the body — `\\n` in the source survives parsing as a
         # literal `\n` pair; replace with actual newlines so the Body
         # selection paths see a multi-line body.
-        entry = launcher._editor_current_entry()
+        entry = _ed._editor_current_entry()
         entry.body = body
-        launcher._editor_detail_field    = 1
-        launcher._editor_body_line       = 0
-        launcher._editor_body_col        = 0
-        launcher._editor_body_anchor_line = None
-        launcher._editor_body_anchor_col  = None
-        launcher._editor_clipboard       = ""
+        _ed._editor_detail_field    = 1
+        _ed._editor_body_line       = 0
+        _ed._editor_body_col        = 0
+        _ed._editor_body_anchor_line = None
+        _ed._editor_body_anchor_col  = None
+        _ed._editor_clipboard       = ""
 
     def _handler(self, visible_col, line_idx):
-        return launcher._editor_make_field_click_handler(
+        return _ed._editor_make_field_click_handler(
             "body", visible_col=visible_col, line_idx=line_idx, start=0)
 
     def test_single_click_positions_cursor_and_clears_selection(self):
         self._setup("hello world")
         self._handler(2, 0)(_MouseEv(2, 0))
-        self.assertEqual(launcher._editor_body_line, 0)
-        self.assertEqual(launcher._editor_body_col, 2)
-        self.assertIsNone(launcher._editor_body_anchor_line)
+        self.assertEqual(_ed._editor_body_line, 0)
+        self.assertEqual(_ed._editor_body_col, 2)
+        self.assertIsNone(_ed._editor_body_anchor_line)
 
     def test_double_click_selects_word(self):
         self._setup("alpha bravo charlie")
@@ -3410,12 +3470,12 @@ class TestEditorLiteBodyDoubleTripleClick(unittest.TestCase):
         h(_MouseEv(8, 0))
         self.clock.advance(0.1)
         h(_MouseEv(8, 0))
-        self.assertEqual(launcher._editor_body_anchor_line, 0)
-        self.assertEqual(launcher._editor_body_anchor_col, 6)
-        self.assertEqual(launcher._editor_body_line, 0)
-        self.assertEqual(launcher._editor_body_col, 11)
-        launcher._editor_body_copy()
-        self.assertEqual(launcher._editor_clipboard, "bravo")
+        self.assertEqual(_ed._editor_body_anchor_line, 0)
+        self.assertEqual(_ed._editor_body_anchor_col, 6)
+        self.assertEqual(_ed._editor_body_line, 0)
+        self.assertEqual(_ed._editor_body_col, 11)
+        _ed._editor_body_copy()
+        self.assertEqual(_ed._editor_clipboard, "bravo")
 
     def test_double_click_does_not_cross_line_boundary(self):
         self._setup("foo bar\nbaz qux")
@@ -3424,10 +3484,10 @@ class TestEditorLiteBodyDoubleTripleClick(unittest.TestCase):
         self.clock.advance(0.1)
         h(_MouseEv(0, 1))
         self.assertEqual(
-            (launcher._editor_body_anchor_line,
-             launcher._editor_body_anchor_col), (1, 0))
+            (_ed._editor_body_anchor_line,
+             _ed._editor_body_anchor_col), (1, 0))
         self.assertEqual(
-            (launcher._editor_body_line, launcher._editor_body_col),
+            (_ed._editor_body_line, _ed._editor_body_col),
             (1, 3))
 
     def test_double_click_whitespace_run(self):
@@ -3436,8 +3496,8 @@ class TestEditorLiteBodyDoubleTripleClick(unittest.TestCase):
         h(_MouseEv(2, 0))
         self.clock.advance(0.1)
         h(_MouseEv(2, 0))
-        self.assertEqual(launcher._editor_body_anchor_col, 1)
-        self.assertEqual(launcher._editor_body_col, 4)
+        self.assertEqual(_ed._editor_body_anchor_col, 1)
+        self.assertEqual(_ed._editor_body_col, 4)
 
     # Regression: run's right edge is end-exclusive — the cell at `e` is
     # NOT part of the selection, even when the cursor lands there. The
@@ -3445,27 +3505,27 @@ class TestEditorLiteBodyDoubleTripleClick(unittest.TestCase):
     # set them directly on the entry after a benign setup.
     def test_double_click_word_inside_braces(self):
         self._setup("placeholder")
-        launcher._editor_current_entry().body = "{word}"
+        _ed._editor_current_entry().body = "{word}"
         h = self._handler(2, 0)
         h(_MouseEv(2, 0))
         self.clock.advance(0.1)
         h(_MouseEv(2, 0))
-        self.assertEqual(launcher._editor_body_anchor_col, 1)
-        self.assertEqual(launcher._editor_body_col, 5)
-        launcher._editor_body_copy()
-        self.assertEqual(launcher._editor_clipboard, "word")
+        self.assertEqual(_ed._editor_body_anchor_col, 1)
+        self.assertEqual(_ed._editor_body_col, 5)
+        _ed._editor_body_copy()
+        self.assertEqual(_ed._editor_clipboard, "word")
 
     def test_double_click_if_before_trailing_space(self):
         self._setup("placeholder")
-        launcher._editor_current_entry().body = "{#if {"
+        _ed._editor_current_entry().body = "{#if {"
         h = self._handler(2, 0)
         h(_MouseEv(2, 0))
         self.clock.advance(0.1)
         h(_MouseEv(2, 0))
-        self.assertEqual(launcher._editor_body_anchor_col, 2)
-        self.assertEqual(launcher._editor_body_col, 4)
-        launcher._editor_body_copy()
-        self.assertEqual(launcher._editor_clipboard, "if")
+        self.assertEqual(_ed._editor_body_anchor_col, 2)
+        self.assertEqual(_ed._editor_body_col, 4)
+        _ed._editor_body_copy()
+        self.assertEqual(_ed._editor_clipboard, "if")
 
     def test_double_click_past_eol_selects_nothing(self):
         self._setup("hi\nyo")
@@ -3473,9 +3533,9 @@ class TestEditorLiteBodyDoubleTripleClick(unittest.TestCase):
         h(_MouseEv(10, 0))
         self.clock.advance(0.1)
         h(_MouseEv(10, 0))
-        self.assertIsNone(launcher._editor_body_anchor_line)
-        self.assertEqual(launcher._editor_body_line, 0)
-        self.assertEqual(launcher._editor_body_col, 2)
+        self.assertIsNone(_ed._editor_body_anchor_line)
+        self.assertEqual(_ed._editor_body_line, 0)
+        self.assertEqual(_ed._editor_body_col, 2)
 
     def test_triple_click_selects_line_text_only(self):
         self._setup("foo\nbar\nbaz")
@@ -3488,13 +3548,13 @@ class TestEditorLiteBodyDoubleTripleClick(unittest.TestCase):
         # Anchor at (1, 0), cursor at (1, 3) — selection stops at the
         # last text char so the highlight doesn't bleed into line 2.
         self.assertEqual(
-            (launcher._editor_body_anchor_line,
-             launcher._editor_body_anchor_col), (1, 0))
+            (_ed._editor_body_anchor_line,
+             _ed._editor_body_anchor_col), (1, 0))
         self.assertEqual(
-            (launcher._editor_body_line, launcher._editor_body_col),
+            (_ed._editor_body_line, _ed._editor_body_col),
             (1, 3))
-        launcher._editor_body_copy()
-        self.assertEqual(launcher._editor_clipboard, "bar")
+        _ed._editor_body_copy()
+        self.assertEqual(_ed._editor_clipboard, "bar")
 
     def test_triple_click_last_line_without_newline(self):
         self._setup("foo\nbar")
@@ -3506,10 +3566,10 @@ class TestEditorLiteBodyDoubleTripleClick(unittest.TestCase):
         h(_MouseEv(1, 1))
         # Selection ends at line-end, no phantom newline crossed.
         self.assertEqual(
-            (launcher._editor_body_anchor_line,
-             launcher._editor_body_anchor_col), (1, 0))
+            (_ed._editor_body_anchor_line,
+             _ed._editor_body_anchor_col), (1, 0))
         self.assertEqual(
-            (launcher._editor_body_line, launcher._editor_body_col),
+            (_ed._editor_body_line, _ed._editor_body_col),
             (1, len("bar")))
 
     def test_fourth_rapid_click_cycles_to_single(self):
@@ -3518,8 +3578,8 @@ class TestEditorLiteBodyDoubleTripleClick(unittest.TestCase):
         for _ in range(4):
             h(_MouseEv(2, 0))
             self.clock.advance(0.1)
-        self.assertIsNone(launcher._editor_body_anchor_line)
-        self.assertEqual(launcher._editor_body_col, 2)
+        self.assertIsNone(_ed._editor_body_anchor_line)
+        self.assertEqual(_ed._editor_body_col, 2)
 
 
 class TestEditorWheelScroll(unittest.TestCase):
@@ -3546,64 +3606,64 @@ class TestEditorWheelScroll(unittest.TestCase):
     def _setup_buffer(self, line_count):
         prof, _src, _td = _make_profile("")
         _reset_editor_state(prof)
-        launcher._editor_mode            = "editor"
-        launcher._editor_toggle_focused  = False
-        launcher._editor_buffer_text     = "\n".join(
+        _ed._editor_mode            = "editor"
+        _ed._editor_toggle_focused  = False
+        _ed._editor_buffer_text     = "\n".join(
             f"line{i}" for i in range(line_count))
-        launcher._editor_buffer_cursor   = 0
-        launcher._editor_buffer_scroll   = 0
-        launcher._editor_buffer_anchor   = None
+        _ed._editor_buffer_cursor   = 0
+        _ed._editor_buffer_scroll   = 0
+        _ed._editor_buffer_anchor   = None
 
     def _row_handler(self):
         # Per-row click handler used by editor-mode buffer rows. Args mirror
         # the live render call site; for wheel events only the event_type
         # branch is exercised.
-        return launcher._editor_buffer_row_click_handler(
+        return _ed._editor_buffer_row_click_handler(
             logical_line=0, wrap_start=0, content_x_offset=0, line_len=5)
 
     def test_buffer_wheel_down_scrolls_by_three(self):
         self._setup_buffer(50)
         h = self._row_handler()
         h(_MouseEv(0, 0, MouseEventType.SCROLL_DOWN))
-        self.assertEqual(launcher._editor_buffer_scroll, 3)
+        self.assertEqual(_ed._editor_buffer_scroll, 3)
 
     def test_buffer_wheel_up_scrolls_by_three(self):
         self._setup_buffer(50)
-        launcher._editor_buffer_scroll = 10
+        _ed._editor_buffer_scroll = 10
         h = self._row_handler()
         h(_MouseEv(0, 0, MouseEventType.SCROLL_UP))
-        self.assertEqual(launcher._editor_buffer_scroll, 7)
+        self.assertEqual(_ed._editor_buffer_scroll, 7)
 
     def test_buffer_wheel_clamps_at_top(self):
         self._setup_buffer(50)
-        launcher._editor_buffer_scroll = 2
+        _ed._editor_buffer_scroll = 2
         h = self._row_handler()
         h(_MouseEv(0, 0, MouseEventType.SCROLL_UP))
-        self.assertEqual(launcher._editor_buffer_scroll, 0)
+        self.assertEqual(_ed._editor_buffer_scroll, 0)
         h(_MouseEv(0, 0, MouseEventType.SCROLL_UP))
-        self.assertEqual(launcher._editor_buffer_scroll, 0)
+        self.assertEqual(_ed._editor_buffer_scroll, 0)
 
     def test_buffer_wheel_clamps_at_bottom(self):
         self._setup_buffer(50)
         cols = launcher._term_cols()
-        _wrap_w, total, _l2v = launcher._editor_buffer_visual_layout(cols)
-        viewport_h = launcher._editor_body_h()
+        _wrap_w, total, _l2v = _ed._editor_buffer_visual_layout(cols)
+        viewport_h = _ed._editor_body_h()
         mx = max(0, total - viewport_h)
-        launcher._editor_buffer_scroll = mx - 1
+        _ed._editor_buffer_scroll = mx - 1
         h = self._row_handler()
         h(_MouseEv(0, 0, MouseEventType.SCROLL_DOWN))
-        self.assertEqual(launcher._editor_buffer_scroll, mx)
+        self.assertEqual(_ed._editor_buffer_scroll, mx)
         h(_MouseEv(0, 0, MouseEventType.SCROLL_DOWN))
-        self.assertEqual(launcher._editor_buffer_scroll, mx)
+        self.assertEqual(_ed._editor_buffer_scroll, mx)
 
     def test_buffer_wheel_does_not_move_cursor(self):
         self._setup_buffer(50)
-        launcher._editor_buffer_cursor = 7
+        _ed._editor_buffer_cursor = 7
         h = self._row_handler()
         h(_MouseEv(0, 0, MouseEventType.SCROLL_DOWN))
         h(_MouseEv(0, 0, MouseEventType.SCROLL_DOWN))
-        self.assertEqual(launcher._editor_buffer_scroll, 6)
-        self.assertEqual(launcher._editor_buffer_cursor, 7)
+        self.assertEqual(_ed._editor_buffer_scroll, 6)
+        self.assertEqual(_ed._editor_buffer_cursor, 7)
 
     def test_buffer_wheel_noop_when_no_overflow(self):
         # 3 short lines and a viewport ≥ 15 rows → nothing to scroll.
@@ -3611,24 +3671,24 @@ class TestEditorWheelScroll(unittest.TestCase):
         h = self._row_handler()
         h(_MouseEv(0, 0, MouseEventType.SCROLL_DOWN))
         h(_MouseEv(0, 0, MouseEventType.SCROLL_DOWN))
-        self.assertEqual(launcher._editor_buffer_scroll, 0)
+        self.assertEqual(_ed._editor_buffer_scroll, 0)
 
     def test_buffer_scrollbar_handler_also_scrolls(self):
         # The scrollbar cell handler must accept SCROLL events too — wheel
         # on the bar should behave the same as wheel on the content area.
         self._setup_buffer(50)
-        h = launcher._editor_buffer_scrollbar_click_handler(
+        h = _ed._editor_buffer_scrollbar_click_handler(
             vrow=0, sb_top=0, sb_thumb_h=2, total=50, viewport_h=15)
         h(_MouseEv(0, 0, MouseEventType.SCROLL_DOWN))
-        self.assertEqual(launcher._editor_buffer_scroll, 3)
+        self.assertEqual(_ed._editor_buffer_scroll, 3)
 
     def test_buffer_chrome_wheel_handler_scrolls(self):
         # The line-number cells route wheel events through the dedicated
         # chrome handler.
         self._setup_buffer(50)
-        launcher._editor_buffer_chrome_wheel_handler(
+        _ed._editor_buffer_chrome_wheel_handler(
             _MouseEv(0, 0, MouseEventType.SCROLL_DOWN))
-        self.assertEqual(launcher._editor_buffer_scroll, 3)
+        self.assertEqual(_ed._editor_buffer_scroll, 3)
 
     # ------------------------------------------------------------------
     # Lite-mode entry list
@@ -3638,53 +3698,53 @@ class TestEditorWheelScroll(unittest.TestCase):
             f"#alias {{a{i:02d}}} {{cmd{i}}}" for i in range(n_entries))
         prof, _src, _td = _make_profile(body)
         _reset_editor_state(prof, focus=1)
-        launcher._editor_list_sb = launcher.Scrollbar(
-            launcher._profile_editor_display_total(),
-            launcher._editor_list_visible(),
-            launcher._editor_list_visible(),
+        _ed._editor_list_sb = launcher.Scrollbar(
+            _ed._profile_editor_display_total(),
+            _ed._editor_list_visible(),
+            _ed._editor_list_visible(),
         )
-        launcher._editor_list_scroll = 0
-        launcher._editor_list_cursor = 0
+        _ed._editor_list_scroll = 0
+        _ed._editor_list_cursor = 0
         return prof
 
     def test_list_wheel_down_scrolls_by_three(self):
         self._setup_list(60)
-        launcher._editor_list_wheel(3)
-        self.assertEqual(launcher._editor_list_scroll, 3)
-        self.assertEqual(launcher._editor_list_sb.scroll_offset, 3)
+        _ed._editor_list_wheel(3)
+        self.assertEqual(_ed._editor_list_scroll, 3)
+        self.assertEqual(_ed._editor_list_sb.scroll_offset, 3)
 
     def test_list_wheel_up_clamps_at_zero(self):
         self._setup_list(60)
-        launcher._editor_list_scroll = 2
-        launcher._editor_list_sb.scroll_to(2)
-        launcher._editor_list_wheel(-3)
-        self.assertEqual(launcher._editor_list_scroll, 0)
+        _ed._editor_list_scroll = 2
+        _ed._editor_list_sb.scroll_to(2)
+        _ed._editor_list_wheel(-3)
+        self.assertEqual(_ed._editor_list_scroll, 0)
 
     def test_list_wheel_clamps_at_bottom(self):
         self._setup_list(60)
-        total = launcher._profile_editor_display_total()
-        visible = launcher._editor_list_visible()
+        total = _ed._profile_editor_display_total()
+        visible = _ed._editor_list_visible()
         mx = max(0, total - visible)
-        launcher._editor_list_scroll = mx - 1
-        launcher._editor_list_sb.scroll_to(mx - 1)
-        launcher._editor_list_wheel(3)
-        self.assertEqual(launcher._editor_list_scroll, mx)
-        launcher._editor_list_wheel(3)
-        self.assertEqual(launcher._editor_list_scroll, mx)
+        _ed._editor_list_scroll = mx - 1
+        _ed._editor_list_sb.scroll_to(mx - 1)
+        _ed._editor_list_wheel(3)
+        self.assertEqual(_ed._editor_list_scroll, mx)
+        _ed._editor_list_wheel(3)
+        self.assertEqual(_ed._editor_list_scroll, mx)
 
     def test_list_wheel_does_not_move_cursor(self):
         self._setup_list(60)
-        launcher._editor_list_cursor = 4
-        launcher._editor_list_wheel(3)
-        launcher._editor_list_wheel(3)
-        self.assertEqual(launcher._editor_list_scroll, 6)
-        self.assertEqual(launcher._editor_list_cursor, 4)
+        _ed._editor_list_cursor = 4
+        _ed._editor_list_wheel(3)
+        _ed._editor_list_wheel(3)
+        self.assertEqual(_ed._editor_list_scroll, 6)
+        self.assertEqual(_ed._editor_list_cursor, 4)
 
     def test_list_wheel_noop_when_no_overflow(self):
         # Two entries + sentinel → 3 rows, list_visible is ~28. No scroll.
         self._setup_list(2)
-        launcher._editor_list_wheel(3)
-        self.assertEqual(launcher._editor_list_scroll, 0)
+        _ed._editor_list_wheel(3)
+        self.assertEqual(_ed._editor_list_scroll, 0)
 
     # ------------------------------------------------------------------
     # Lite-mode Body field
@@ -3698,76 +3758,76 @@ class TestEditorWheelScroll(unittest.TestCase):
         entry = prof.entries_of("alias")[0]
         entry.body = "\n".join(f"line{i}" for i in range(body_line_count))
         _reset_editor_state(prof, focus=2)
-        launcher._editor_detail_field = 1     # body field
-        launcher._editor_body_scroll  = 0
-        launcher._editor_body_line    = 0
-        launcher._editor_body_col     = 0
+        _ed._editor_detail_field = 1     # body field
+        _ed._editor_body_scroll  = 0
+        _ed._editor_body_line    = 0
+        _ed._editor_body_col     = 0
         return prof
 
     def test_body_wheel_down_scrolls_by_three(self):
         self._setup_body(20)
-        launcher._editor_body_wheel(3)
-        self.assertEqual(launcher._editor_body_scroll, 3)
+        _ed._editor_body_wheel(3)
+        self.assertEqual(_ed._editor_body_scroll, 3)
 
     def test_body_wheel_up_clamps_at_zero(self):
         self._setup_body(20)
-        launcher._editor_body_scroll = 2
-        launcher._editor_body_wheel(-3)
-        self.assertEqual(launcher._editor_body_scroll, 0)
+        _ed._editor_body_scroll = 2
+        _ed._editor_body_wheel(-3)
+        self.assertEqual(_ed._editor_body_scroll, 0)
 
     def test_body_wheel_clamps_at_bottom(self):
         self._setup_body(20)
-        mx = 20 - launcher._EDITOR_BODY_CAP_ROWS    # 10
-        launcher._editor_body_scroll = mx - 1
-        launcher._editor_body_wheel(3)
-        self.assertEqual(launcher._editor_body_scroll, mx)
-        launcher._editor_body_wheel(3)
-        self.assertEqual(launcher._editor_body_scroll, mx)
+        mx = 20 - profile_editor._EDITOR_BODY_CAP_ROWS    # 10
+        _ed._editor_body_scroll = mx - 1
+        _ed._editor_body_wheel(3)
+        self.assertEqual(_ed._editor_body_scroll, mx)
+        _ed._editor_body_wheel(3)
+        self.assertEqual(_ed._editor_body_scroll, mx)
 
     def test_body_wheel_noop_when_no_overflow(self):
         self._setup_body(5)
-        launcher._editor_body_wheel(3)
-        self.assertEqual(launcher._editor_body_scroll, 0)
+        _ed._editor_body_wheel(3)
+        self.assertEqual(_ed._editor_body_scroll, 0)
 
     def test_body_wheel_does_not_move_body_cursor(self):
         self._setup_body(20)
-        launcher._editor_body_line = 4
-        launcher._editor_body_col  = 2
-        launcher._editor_body_wheel(3)
-        launcher._editor_body_wheel(3)
-        self.assertEqual(launcher._editor_body_scroll, 6)
-        self.assertEqual(launcher._editor_body_line, 4)
-        self.assertEqual(launcher._editor_body_col, 2)
+        _ed._editor_body_line = 4
+        _ed._editor_body_col  = 2
+        _ed._editor_body_wheel(3)
+        _ed._editor_body_wheel(3)
+        self.assertEqual(_ed._editor_body_scroll, 6)
+        self.assertEqual(_ed._editor_body_line, 4)
+        self.assertEqual(_ed._editor_body_col, 2)
 
     def test_body_field_click_handler_routes_wheel(self):
         # Per-cell body handler must forward SCROLL_UP / SCROLL_DOWN to
         # the body wheel helper.
         self._setup_body(20)
-        h = launcher._editor_make_field_click_handler(
+        h = _ed._editor_make_field_click_handler(
             "body", visible_col=0, line_idx=0, start=0)
         h(_MouseEv(0, 0, MouseEventType.SCROLL_DOWN))
-        self.assertEqual(launcher._editor_body_scroll, 3)
-        self.assertEqual(launcher._editor_body_line, 0)
-        self.assertEqual(launcher._editor_body_col, 0)
+        self.assertEqual(_ed._editor_body_scroll, 3)
+        self.assertEqual(_ed._editor_body_line, 0)
+        self.assertEqual(_ed._editor_body_col, 0)
 
     def test_body_focus_handler_routes_wheel(self):
         # Wheel landing on the body's chrome (label, top/bottom border, or
         # the vertical `│` bars) routes through the focus handler.
         self._setup_body(20)
-        h = launcher._editor_make_field_focus_handler("body")
+        h = _ed._editor_make_field_focus_handler("body")
         h(_MouseEv(0, 0, MouseEventType.SCROLL_DOWN))
-        self.assertEqual(launcher._editor_body_scroll, 3)
+        self.assertEqual(_ed._editor_body_scroll, 3)
 
     def test_pattern_field_click_handler_ignores_wheel(self):
         # Pattern is single-line: wheel must NOT scroll the body.
         self._setup_body(20)
-        h = launcher._editor_make_field_click_handler(
+        h = _ed._editor_make_field_click_handler(
             "pattern", visible_col=0, line_idx=None, start=0)
         result = h(_MouseEv(0, 0, MouseEventType.SCROLL_DOWN))
         # Handler returns NotImplemented for unhandled events so the parent
         # control falls through; body scroll must not have moved.
         self.assertIs(result, NotImplemented)
-        self.assertEqual(launcher._editor_body_scroll, 0)
+        self.assertEqual(_ed._editor_body_scroll, 0)
 
 
 class TestEditorScrollbarAutoScroll(unittest.TestCase):
@@ -3783,11 +3843,11 @@ class TestEditorScrollbarAutoScroll(unittest.TestCase):
     def setUp(self):
         self._real_get_terminal_size = launcher.shutil.get_terminal_size
         launcher.shutil.get_terminal_size = lambda: os.terminal_size((80, 30))
-        launcher._autoscroll_disarm()
+        _ed._autoscroll_disarm()
 
     def tearDown(self):
         launcher.shutil.get_terminal_size = self._real_get_terminal_size
-        launcher._autoscroll_disarm()
+        _ed._autoscroll_disarm()
 
     # The arm path schedules a real asyncio timer when `_app_loop` is
     # live; in unit tests it is None, so `_autoscroll_handle` stays None
@@ -3799,104 +3859,104 @@ class TestEditorScrollbarAutoScroll(unittest.TestCase):
     def _setup_buffer(self, line_count):
         prof, _src, _td = _make_profile("")
         _reset_editor_state(prof)
-        launcher._editor_mode             = "editor"
-        launcher._editor_toggle_focused   = False
-        launcher._editor_buffer_text      = "\n".join(
+        _ed._editor_mode             = "editor"
+        _ed._editor_toggle_focused   = False
+        _ed._editor_buffer_text      = "\n".join(
             f"line{i}" for i in range(line_count))
-        launcher._editor_buffer_cursor    = 0
-        launcher._editor_buffer_scroll    = 0
-        launcher._editor_buffer_anchor    = None
+        _ed._editor_buffer_cursor    = 0
+        _ed._editor_buffer_scroll    = 0
+        _ed._editor_buffer_anchor    = None
 
     def test_buffer_arm_performs_immediate_step(self):
         # MOUSE_DOWN below the thumb pages by one viewport AND arms.
         self._setup_buffer(100)
-        h = launcher._editor_buffer_scrollbar_click_handler(
+        h = _ed._editor_buffer_scrollbar_click_handler(
             vrow=23, sb_top=0, sb_thumb_h=5, total=100, viewport_h=24)
         h(_MouseEv(0, 0, MouseEventType.MOUSE_DOWN))
-        self.assertEqual(launcher._editor_buffer_scroll, 24)
-        self.assertTrue(launcher._autoscroll_armed())
+        self.assertEqual(_ed._editor_buffer_scroll, 24)
+        self.assertTrue(_ed._autoscroll_armed())
 
     def test_buffer_tick_pages_toward_target(self):
         # Each tick pages one viewport toward the held row.
         self._setup_buffer(200)
-        h = launcher._editor_buffer_scrollbar_click_handler(
+        h = _ed._editor_buffer_scrollbar_click_handler(
             vrow=23, sb_top=0, sb_thumb_h=3, total=200, viewport_h=24)
         h(_MouseEv(0, 0, MouseEventType.MOUSE_DOWN))
-        self.assertEqual(launcher._editor_buffer_scroll, 24)
-        launcher._autoscroll_tick()
-        self.assertEqual(launcher._editor_buffer_scroll, 48)
-        launcher._autoscroll_tick()
-        self.assertEqual(launcher._editor_buffer_scroll, 72)
+        self.assertEqual(_ed._editor_buffer_scroll, 24)
+        _ed._autoscroll_tick()
+        self.assertEqual(_ed._editor_buffer_scroll, 48)
+        _ed._autoscroll_tick()
+        self.assertEqual(_ed._editor_buffer_scroll, 72)
 
     def test_buffer_tick_self_terminates_at_target_without_mouseup(self):
         # Holding the bottom row pages until the thumb covers it, then
         # the step_fn returns False and disarms — MOUSE_UP not needed.
         self._setup_buffer(100)
-        h = launcher._editor_buffer_scrollbar_click_handler(
+        h = _ed._editor_buffer_scrollbar_click_handler(
             vrow=23, sb_top=0, sb_thumb_h=6, total=100, viewport_h=24)
         h(_MouseEv(0, 0, MouseEventType.MOUSE_DOWN))
         for _ in range(20):
-            if not launcher._autoscroll_armed():
+            if not _ed._autoscroll_armed():
                 break
-            launcher._autoscroll_tick()
-        self.assertFalse(launcher._autoscroll_armed())
+            _ed._autoscroll_tick()
+        self.assertFalse(_ed._autoscroll_armed())
         # body_h=24, total_visual=100 → max_scroll=76.
-        self.assertEqual(launcher._editor_buffer_scroll, 76)
+        self.assertEqual(_ed._editor_buffer_scroll, 76)
 
     def test_buffer_tick_clamps_at_bottom_then_disarms(self):
         # Small buffer: one immediate step reaches max_scroll; the next
         # tick sees no further movement possible and disarms.
         self._setup_buffer(30)
-        h = launcher._editor_buffer_scrollbar_click_handler(
+        h = _ed._editor_buffer_scrollbar_click_handler(
             vrow=23, sb_top=0, sb_thumb_h=18, total=30, viewport_h=24)
         h(_MouseEv(0, 0, MouseEventType.MOUSE_DOWN))
         # max_scroll = 30 - 24 = 6.
-        self.assertEqual(launcher._editor_buffer_scroll, 6)
-        launcher._autoscroll_tick()
-        self.assertFalse(launcher._autoscroll_armed())
-        self.assertEqual(launcher._editor_buffer_scroll, 6)
+        self.assertEqual(_ed._editor_buffer_scroll, 6)
+        _ed._autoscroll_tick()
+        self.assertFalse(_ed._autoscroll_armed())
+        self.assertEqual(_ed._editor_buffer_scroll, 6)
 
     def test_buffer_mouseup_disarms_early(self):
         self._setup_buffer(100)
-        h = launcher._editor_buffer_scrollbar_click_handler(
+        h = _ed._editor_buffer_scrollbar_click_handler(
             vrow=23, sb_top=0, sb_thumb_h=5, total=100, viewport_h=24)
         h(_MouseEv(0, 0, MouseEventType.MOUSE_DOWN))
-        self.assertTrue(launcher._autoscroll_armed())
+        self.assertTrue(_ed._autoscroll_armed())
         h(_MouseEv(0, 0, MouseEventType.MOUSE_UP))
-        self.assertFalse(launcher._autoscroll_armed())
+        self.assertFalse(_ed._autoscroll_armed())
 
     def test_buffer_disarm_explicit_cancels_further_ticks(self):
         # _autoscroll_disarm() prevents subsequent ticks from running.
         self._setup_buffer(100)
-        h = launcher._editor_buffer_scrollbar_click_handler(
+        h = _ed._editor_buffer_scrollbar_click_handler(
             vrow=23, sb_top=0, sb_thumb_h=5, total=100, viewport_h=24)
         h(_MouseEv(0, 0, MouseEventType.MOUSE_DOWN))
-        launcher._autoscroll_disarm()
-        before = launcher._editor_buffer_scroll
-        launcher._autoscroll_tick()
-        self.assertEqual(launcher._editor_buffer_scroll, before)
+        _ed._autoscroll_disarm()
+        before = _ed._editor_buffer_scroll
+        _ed._autoscroll_tick()
+        self.assertEqual(_ed._editor_buffer_scroll, before)
 
     def test_buffer_thumb_click_does_not_arm(self):
         # Click on the thumb is a no-op and must not arm auto-scroll.
         self._setup_buffer(100)
-        h = launcher._editor_buffer_scrollbar_click_handler(
+        h = _ed._editor_buffer_scrollbar_click_handler(
             vrow=2, sb_top=0, sb_thumb_h=5, total=100, viewport_h=24)
         h(_MouseEv(0, 0, MouseEventType.MOUSE_DOWN))
-        self.assertEqual(launcher._editor_buffer_scroll, 0)
-        self.assertFalse(launcher._autoscroll_armed())
+        self.assertEqual(_ed._editor_buffer_scroll, 0)
+        self.assertFalse(_ed._autoscroll_armed())
 
     def test_buffer_autoscroll_tick_does_not_move_cursor(self):
         # Phase G decoupling: scrollbar moves only the viewport, not the
         # cursor. Auto-scroll ticks inherit that — `_editor_buffer_cursor`
         # is untouched even after several ticks pull the viewport away.
         self._setup_buffer(100)
-        launcher._editor_buffer_cursor = 7
-        h = launcher._editor_buffer_scrollbar_click_handler(
+        _ed._editor_buffer_cursor = 7
+        h = _ed._editor_buffer_scrollbar_click_handler(
             vrow=23, sb_top=0, sb_thumb_h=5, total=100, viewport_h=24)
         h(_MouseEv(0, 0, MouseEventType.MOUSE_DOWN))
-        launcher._autoscroll_tick()
-        launcher._autoscroll_tick()
-        self.assertEqual(launcher._editor_buffer_cursor, 7)
+        _ed._autoscroll_tick()
+        _ed._autoscroll_tick()
+        self.assertEqual(_ed._editor_buffer_cursor, 7)
 
     # ------------------------------------------------------------------
     # Lite-mode entry-list scrollbar
@@ -3906,43 +3966,43 @@ class TestEditorScrollbarAutoScroll(unittest.TestCase):
             f"#alias {{a{i:02d}}} {{cmd{i}}}" for i in range(n_entries))
         prof, _src, _td = _make_profile(body)
         _reset_editor_state(prof, focus=1)
-        launcher._editor_list_sb = launcher.Scrollbar(
-            launcher._profile_editor_display_total(),
-            launcher._editor_list_visible(),
-            launcher._editor_list_visible(),
+        _ed._editor_list_sb = launcher.Scrollbar(
+            _ed._profile_editor_display_total(),
+            _ed._editor_list_visible(),
+            _ed._editor_list_visible(),
         )
-        launcher._editor_list_scroll = 0
-        launcher._editor_list_cursor = 0
+        _ed._editor_list_scroll = 0
+        _ed._editor_list_cursor = 0
 
     def test_list_step_pages_toward_target_and_self_terminates(self):
         # Drive the list step_fn directly: arm with the bottom row of the
         # bar as the held target. Each tick pages by `_editor_list_visible`
         # toward it; the loop stops once the thumb covers the target row.
         self._setup_list(100)
-        visible = launcher._editor_list_visible()
-        total = launcher._profile_editor_display_total()
+        visible = _ed._editor_list_visible()
+        total = _ed._profile_editor_display_total()
         max_scroll = max(0, total - visible)
         target = visible - 1   # bottom track row
-        launcher._autoscroll_arm(
-            launcher._editor_list_autoscroll_step, target)
-        launcher._autoscroll_tick()
-        self.assertEqual(launcher._editor_list_scroll, visible)
+        _ed._autoscroll_arm(
+            _ed._editor_list_autoscroll_step, target)
+        _ed._autoscroll_tick()
+        self.assertEqual(_ed._editor_list_scroll, visible)
         for _ in range(20):
-            if not launcher._autoscroll_armed():
+            if not _ed._autoscroll_armed():
                 break
-            launcher._autoscroll_tick()
-        self.assertFalse(launcher._autoscroll_armed())
-        self.assertEqual(launcher._editor_list_scroll, max_scroll)
+            _ed._autoscroll_tick()
+        self.assertFalse(_ed._autoscroll_armed())
+        self.assertEqual(_ed._editor_list_scroll, max_scroll)
 
     def test_list_autoscroll_tick_does_not_move_cursor(self):
         self._setup_list(100)
-        launcher._editor_list_cursor = 3
-        visible = launcher._editor_list_visible()
-        launcher._autoscroll_arm(
-            launcher._editor_list_autoscroll_step, visible - 1)
-        launcher._autoscroll_tick()
-        launcher._autoscroll_tick()
-        self.assertEqual(launcher._editor_list_cursor, 3)
+        _ed._editor_list_cursor = 3
+        visible = _ed._editor_list_visible()
+        _ed._autoscroll_arm(
+            _ed._editor_list_autoscroll_step, visible - 1)
+        _ed._autoscroll_tick()
+        _ed._autoscroll_tick()
+        self.assertEqual(_ed._editor_list_cursor, 3)
 
     # ------------------------------------------------------------------
     # Lite-mode Body-field scrollbar
@@ -3952,48 +4012,48 @@ class TestEditorScrollbarAutoScroll(unittest.TestCase):
         entry = prof.entries_of("alias")[0]
         entry.body = "\n".join(f"line{i}" for i in range(body_line_count))
         _reset_editor_state(prof, focus=2)
-        launcher._editor_detail_field = 1
-        launcher._editor_body_scroll  = 0
-        launcher._editor_body_line    = 0
-        launcher._editor_body_col     = 0
+        _ed._editor_detail_field = 1
+        _ed._editor_body_scroll  = 0
+        _ed._editor_body_line    = 0
+        _ed._editor_body_col     = 0
 
     def test_body_step_pages_toward_target_and_self_terminates(self):
         # cap=10 → page-step is 10 lines. Hold the bottom track row;
         # each tick pages by cap until the thumb covers it.
         self._setup_body(50)
-        cap = launcher._EDITOR_BODY_CAP_ROWS
-        launcher._autoscroll_arm(
-            launcher._editor_body_autoscroll_step, cap - 1)
-        launcher._autoscroll_tick()
-        self.assertEqual(launcher._editor_body_scroll, cap)
+        cap = profile_editor._EDITOR_BODY_CAP_ROWS
+        _ed._autoscroll_arm(
+            _ed._editor_body_autoscroll_step, cap - 1)
+        _ed._autoscroll_tick()
+        self.assertEqual(_ed._editor_body_scroll, cap)
         for _ in range(20):
-            if not launcher._autoscroll_armed():
+            if not _ed._autoscroll_armed():
                 break
-            launcher._autoscroll_tick()
-        self.assertFalse(launcher._autoscroll_armed())
-        self.assertEqual(launcher._editor_body_scroll, 50 - cap)
+            _ed._autoscroll_tick()
+        self.assertFalse(_ed._autoscroll_armed())
+        self.assertEqual(_ed._editor_body_scroll, 50 - cap)
 
     def test_body_step_noop_when_no_overflow(self):
         # 5 lines fits inside the cap → step_fn returns False on first tick.
         self._setup_body(5)
-        launcher._autoscroll_arm(
-            launcher._editor_body_autoscroll_step,
-            launcher._EDITOR_BODY_CAP_ROWS - 1)
-        launcher._autoscroll_tick()
-        self.assertEqual(launcher._editor_body_scroll, 0)
-        self.assertFalse(launcher._autoscroll_armed())
+        _ed._autoscroll_arm(
+            _ed._editor_body_autoscroll_step,
+            profile_editor._EDITOR_BODY_CAP_ROWS - 1)
+        _ed._autoscroll_tick()
+        self.assertEqual(_ed._editor_body_scroll, 0)
+        self.assertFalse(_ed._autoscroll_armed())
 
     def test_body_autoscroll_tick_does_not_move_cursor(self):
         self._setup_body(50)
-        launcher._editor_body_line = 4
-        launcher._editor_body_col  = 2
-        launcher._autoscroll_arm(
-            launcher._editor_body_autoscroll_step,
-            launcher._EDITOR_BODY_CAP_ROWS - 1)
-        launcher._autoscroll_tick()
-        launcher._autoscroll_tick()
-        self.assertEqual(launcher._editor_body_line, 4)
-        self.assertEqual(launcher._editor_body_col, 2)
+        _ed._editor_body_line = 4
+        _ed._editor_body_col  = 2
+        _ed._autoscroll_arm(
+            _ed._editor_body_autoscroll_step,
+            profile_editor._EDITOR_BODY_CAP_ROWS - 1)
+        _ed._autoscroll_tick()
+        _ed._autoscroll_tick()
+        self.assertEqual(_ed._editor_body_line, 4)
+        self.assertEqual(_ed._editor_body_col, 2)
 
 
 if __name__ == "__main__":
