@@ -112,6 +112,34 @@ starts with all readability modules off.
 5. Reload: either restart the session, or fire
    `#lua {scripts.readability.reload()}` for a hot reload.
 
+## Popup UI
+
+ESC → Options → Readability opens the same two-column `[ list | detail ]`
+view as the launcher, backed by the shared `bridge/launcher/readability_view.py`
+module. Layout, navigation, and key bindings are identical to the launcher
+view — same widths, colours, and behaviour.
+
+### Key difference: hot reload on save
+
+When the user toggles modules and exits (ESC or Back), the popup writes
+the updated `readability_enabled` key to `startup.conf` **and** fires
+`#lua {scripts.readability.reload()}` via `tmux send-keys`. Changes
+apply immediately — no restart required. A brief "Readability updated."
+flash in `C_ACCENT` confirms the dispatch on the popup's main frame.
+
+This contrasts with the launcher path, which writes `startup.conf` only
+and defers the effect to the next cockpit start (cold load).
+
+Exiting without changes pops silently to main — no conf write, no
+reload, no flash.
+
+### Scope note
+
+The snapshot/canary/result-poll machinery from ADR 0110 (profile editor)
+is deliberately not used here. Readability `.tin` files are static
+developer-authored content; there is no user-edit corruption mode to
+guard against. Toggles are non-destructive and reversible.
+
 ## Launcher UI
 
 Options → Readability opens a two-column `[ list | detail ]` view

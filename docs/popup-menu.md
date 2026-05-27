@@ -19,7 +19,7 @@ border paints in section cyan (matching the `C_SECTION` chrome tone)
 on the ESC-opened popup and the disconnect-auto-opened popup alike.
 
 The UI is a frame stack: a single `DynamicContainer` swaps between
-`main`, `options`, `panes`, `scripts`, `statistics`,
+`main`, `options`, `panes`, `readability`, `scripts`, `statistics`,
 `rate_session`, `exit_confirm`, `profile_editor`,
 `profile_editor_macro_keybind`, and `profile_apply_confirm` containers,
 pushed and popped via `_push_frame` / `_pop_frame`. Each frame owns its
@@ -49,9 +49,11 @@ before the disconnect step — see "Auto-open on disconnect" below.
 ## Input
 
 - **ESC** — on the main frame, dismisses the popup. On any submenu
-  (`options`, `panes`, `scripts`, `statistics`, `rate_session`,
-  `exit_confirm`), pops one frame back toward `main`. The frame stack
-  is honoured: ESC inside `panes` or `scripts` returns to `options`,
+  (`options`, `panes`, `readability`, `scripts`, `statistics`,
+  `rate_session`, `exit_confirm`), pops one frame back toward `main`.
+  The frame stack is honoured: ESC inside `panes` or `scripts` returns
+  to `options`; ESC inside `readability` routes through save-and-pop
+  (writes conf + fires reload if dirty, then pops two frames to main);
   ESC inside `options` returns to `main`. ESC bindings use `eager=True`
   to bypass
   prompt_toolkit's key-disambiguation timeout; `app.ttimeoutlen` /
@@ -227,16 +229,20 @@ Options pushes a thin index frame whose sole purpose is to group
 --- Options ---
                    (blank row)
 Panes
+Readability
 Scripts
                    (blank row)
 Back
 ```
 
 `Options → Panes` reaches the Panes submenu described below; `Options
-→ Scripts` reaches the Scripts frame (unchanged from previous
-versions). ESC inside `options` pops back to `main`; ESC inside
-`panes` or `scripts` pops back to `options`. Source of truth is
-`_OPTIONS_ROWS` in `ingame_menu.py`.
+→ Readability` reaches the interactive Readability frame (see
+[Readability submenu](#readability-submenu) below); `Options → Scripts`
+reaches the Scripts frame (unchanged from previous versions). ESC
+inside `options` pops back to `main`; ESC inside `panes` or `scripts`
+pops back to `options`; ESC inside `readability` routes through
+save-and-pop (see below). Source of truth is `_OPTIONS_ROWS` in
+`ingame_menu.py`.
 
 Frame titles in `options` and `panes` emit a blank row between the
 centred title and the first content row, matching the launcher's
@@ -363,6 +369,75 @@ popup, launcher Options, and `cp -X` aliases — are equivalent and write to
 `startup.conf`. Colour selections do **not** have `cp -X` equivalents
 today — they are reachable from the launcher Options page and the
 popup's Panes submenu only.
+
+## Readability submenu
+
+Two-column `[ list | detail ]` interactive browser of readability modules.
+Frame name: `readability`. Frame stack path: `main` → `options` →
+`readability`. Layout is rendered through the shared
+`bridge/launcher/readability_view.py` module (the same module used by the
+launcher's Readability page), so the popup and launcher paint pixel-for-pixel
+the same body region — only the title-block chrome differs (`blank_above=1`
+in the popup, `blank_above=2` in the launcher).
+
+**Source — live filesystem scan.** On every push of the frame the popup
+scans `ttpp/readability/modules/*.tin`, reads the `readability_enabled`
+key from `bridge/runtime/startup.conf`, and builds the catalog. Each
+module row shows `[X]` (enabled) or `[ ]` (disabled) with its name. The
+detail panel shows description + before/after preview (with ANSI colour
+rendering) when a `.meta` companion file exists; otherwise just the
+module name and status.
+
+**Interactive toggling.** Unlike the read-only Scripts submenu, the
+Readability view is fully interactive: Space/Enter on a module row
+toggles its enabled state in place (updating the `[X]` / `[ ]` glyph),
+and clicking a row jumps the cursor and toggles in one motion. Toggling
+alone updates the UI without touching tt++ — changes are batched.
+
+**Save-and-pop semantics.** Both ESC and Back-row activation route
+through `_readability_save_and_pop()`:
+
+- **If dirty** (at least one toggle was made):
+  1. `readability_view.write_enabled(STARTUP_CONF_PATH, enabled_set)` —
+     atomic write of the `readability_enabled` key; all other keys are
+     preserved byte-identical.
+  2. `_send_to_game("#lua {scripts.readability.reload()}")` — fires the
+     existing hot-reload path via `tmux send-keys`, so changes apply
+     immediately without a restart.
+  3. `_flash_main("Readability updated.", C_ACCENT)` — schedules a brief
+     flash on the main frame using the existing profile-apply success
+     flash helper.
+  4. Pops two frames (readability → options → main), so the flash lands
+     on the main frame the user will see.
+
+- **If clean** (no toggles):
+  1. Pops two frames silently — no conf write, no reload dispatch, no
+     flash. Symmetric exit behaviour.
+
+**No apply-confirm modal.** The snapshot/canary/result-poll/worker-thread
+machinery from ADR 0110 is deliberately not mirrored. Readability module
+`.tin` files are static developer-authored content, not user-edited text —
+there is no "user corrupts the class with a parse error" failure mode to
+guard against. Toggles are non-destructive and reversible.
+
+**Keyboard.**
+
+| Key | Action |
+|-----|--------|
+| ↑/↓ | Move cursor (skips spacer to Back) |
+| Space/Enter | Toggle module or activate Back (save-and-pop) |
+| PgUp/PgDn | Scroll detail panel |
+| ESC | Save-and-pop (write + reload if dirty, then pop to main) |
+
+**Mouse.** Hover lights the row under the pointer (`C_HOVER` on module
+rows; light `<< Back >>` on Back). Click on a module row jumps the
+cursor and toggles in one motion. Click on the list or detail scrollbar
+gutter page-steps in the click direction. Mouse wheel is not wired
+(tmux `display-popup` limitation). The hover-clear invariant applies.
+
+**Empty state.** When no `.tin` files exist the detail area shows the
+shared "No readability modules found" message; the cursor lands on Back
+(the only navigable row). Footer collapses to `ESC Back`.
 
 ## Scripts submenu
 
@@ -763,8 +838,9 @@ one contract for mouse routing to work:
 
 1. **Each frame builder constructs at least one focusable `Window` and
    stores it at module level.** Today: `_main_window`, `_options_window`,
-   `_panes_window`, `_scripts_window`, `_profile_apply_confirm_window`,
-   `_statistics_window`, `_exit_confirm_window`, `_rate_session_window`.
+   `_panes_window`, `_scripts_window`, `_readability_window`,
+   `_profile_apply_confirm_window`, `_statistics_window`,
+   `_exit_confirm_window`, `_rate_session_window`.
    The
    "primary" window of a frame is the one that receives keyboard focus
    while that frame is on top of the stack — usually the window whose
