@@ -20,11 +20,16 @@ on the ESC-opened popup and the disconnect-auto-opened popup alike.
 
 The UI is a frame stack: a single `DynamicContainer` swaps between
 `main`, `options`, `panes`, `scripts`, `statistics`,
-`rate_session`, and `exit_confirm` containers, pushed and popped via
-`_push_frame` / `_pop_frame`. Each frame owns its own `KeyBindings`
-filter so navigation, scroll, and ESC behave per-frame. The Panes
-submenu is a single `panes` frame backed by the shared `panes_grid`
-module (ADR 0086); there is no per-pane subframe.
+`rate_session`, `exit_confirm`, `profile_editor`,
+`profile_editor_macro_keybind`, and `profile_apply_confirm` containers,
+pushed and popped via `_push_frame` / `_pop_frame`. Each frame owns its
+own `KeyBindings` filter so navigation, scroll, and ESC behave
+per-frame. The Panes submenu is a single `panes` frame backed by the
+shared `panes_grid` module (ADR 0086); there is no per-pane subframe.
+The profile editor frames use `DynamicContainer` lambdas keyed off the
+live `_profile_editor_instance`, and the editor's own key bindings are
+merged via `DynamicKeyBindings` — matching the launcher's wiring
+pattern (ADR 0109).
 
 The top menu items are context-aware, rebuilt from `bridge/runtime/connection.state`
 on every render:
@@ -92,12 +97,124 @@ The popup invalidates itself once per second while open, so the Link readout
 (and any other on-render state like connection mode or the Statistics row's
 visibility) tracks the underlying files without requiring a keypress.
 
+## Profile frame
+
+The **Profile** row on the main frame opens the shared `ProfileEditor`
+(ADR 0109) inside the popup. The row is always present — connected and
+disconnected — and its behaviour branches on connection state.
+
+### Connected path (snapshot / apply handshake)
+
+1. Clean up stale runtime files (`profile_snapshot.tin`,
+   `profile_edit.tin`, `.profile_snapshot_result`,
+   `.profile_apply_result`).
+2. `_send_to_game("cp -profile-snapshot")` — the tt++ alias writes the
+   live profile class to `bridge/runtime/profile_snapshot.tin` and echoes
+   `ok` into `.profile_snapshot_result`.
+3. Poll for `.profile_snapshot_result` with a 2 s timeout (50 ms tick),
+   running in a worker thread so the prompt_toolkit event loop stays
+   responsive.
+4. On `ok`: parse `profile_snapshot.tin` via `profile_io.load_profile`.
+   Stash `_profile_editor_original_text = profile_io.serialize_profile(profile)`
+   for dirty detection. Construct `ProfileEditor` with the popup's
+   `_PopupEditorHost`. Push `profile_editor` frame.
+5. On `fail` / timeout / parse error: flash the reason in `C_HINT` on
+   main for ~3 s. Do not push.
+
+### Disconnected path (disk-only, launcher-style)
+
+Read profile name from `bridge/runtime/startup.conf` (`profile=` line).
+Resolve `ttpp/profiles/<name>.tin`. Parse via `profile_io.load_profile`.
+Stash original text the same way. Construct `ProfileEditor`. Push
+`profile_editor` frame.
+
+The `on_exit` callback for this path saves directly to the `.tin` via
+`profile_io.save_profile` and runs `sanitize_profile.sh` — matching
+launcher behaviour exactly.
+
+### on_exit — dirty detection
+
+```python
+final_text = profile_io.serialize_profile(profile)
+dirty = (final_text != _profile_editor_original_text)
+```
+
+- **Clean** (no edits): pop silently back to main, clean up instance.
+- **Dirty + disconnected**: save to disk, flash confirmation, pop.
+- **Dirty + connected**: stash pending profile, push
+  `profile_apply_confirm` frame.
+
+### profile_apply_confirm frame
+
+Modal three-action confirmation:
+
+```
+   Apply changes to your profile?
+
+   Y to apply · N to discard · ESC to keep editing
+```
+
+- **Y** — serialize the pending profile to `bridge/runtime/profile_edit.tin`
+  via `profile_io.save_profile`, append the canary line
+  `#var {_profile_load_canary} {ok}`, send `cp -profile-apply` to the game,
+  poll `.profile_apply_result` (2 s timeout, 50 ms tick, worker thread).
+  On `ok`: flash "Profile updated." in `C_ACCENT` on main.
+  On `fail` / timeout: flash rollback message in `C_HINT`.
+  Either way: clean up instance, pop confirm + editor → main.
+- **N** — discard pending profile, clean up, pop back to main.
+- **ESC** — pop one frame, back into the editor with edits intact.
+
+While polling, the frame shows "Applying…" in place of the prompt; a
+single re-render is enough. The `<any>` binding is a no-op so
+extraneous keys during the poll are swallowed.
+
+### tt++ aliases — cp -profile-snapshot / cp -profile-apply
+
+Both live in `ttpp/core/system.tin` and follow the `_save_profile`
+discipline (must run in the session that owns the profile class):
+
+- `cp -profile-snapshot` — writes the live class to
+  `bridge/runtime/profile_snapshot.tin` via `#class write`, echoes
+  `ok` / `fail` into `.profile_snapshot_result`.
+- `cp -profile-apply` — kills the class, reads
+  `bridge/runtime/profile_edit.tin` via `#class read`, checks the canary
+  variable `_profile_load_canary`. On success: unsets the canary, runs
+  `_save_profile` (persists to disk + sanitize), echoes `ok`. On failure:
+  kills the broken class, reads back the snapshot, echoes `fail`.
+
+Both aliases are routed through the player's input pane via
+`tmux send-keys` — the same path the popup already uses for reconnect.
+
+**Canary rationale.** The popup appends `#var {_profile_load_canary} {ok}`
+as the last line of `profile_edit.tin`. If `#class read` reaches the end
+of the file the canary is set globally (variables are not class-scoped
+per ADR 0064), so `#class write` on the next `_save_profile` does not
+emit it. If the read aborts mid-file the canary is never set and the
+alias rolls back to the snapshot.
+
+### EditorHost implementation
+
+`_PopupEditorHost` in `ingame_menu.py` mirrors the launcher's
+`_LauncherEditorHost`. `terminal_bg` is read from
+`bridge/runtime/layout.conf` (persisted by the launcher's background-
+detect probe). `push_overlay_frame()` pushes
+`profile_editor_macro_keybind`. The two new frames use `DynamicContainer`
+lambdas keyed off `_profile_editor_instance`.
+
+### Runtime tempfile hygiene
+
+The popup's `atexit` cleanup (alongside `.popup_open` sentinel removal)
+removes `profile_snapshot.tin`, `profile_edit.tin`,
+`.profile_snapshot_result`, and `.profile_apply_result`. These are
+runtime-only — no value across popup sessions.
+
 ## Options grouping
 
-The main-menu entry between **Save run** (when present) and
-**Exit session** is **Options**. It pushes a thin index frame whose
-sole purpose is to group **Panes** and **Scripts** under one slot, so
-the main menu stays short.
+Between **Save run** (when present) and **Exit session** sit
+**Profile** and **Options**. Profile opens the shared `ProfileEditor`
+(ADR 0109) — see the [Profile frame](#profile-frame) section below.
+Options pushes a thin index frame whose sole purpose is to group
+**Panes** and **Scripts** under one slot, so the main menu stays short.
 
 ```
 --- Options ---
@@ -621,7 +738,7 @@ cockpit session leaving the sentinel behind.
 
 Deliberately NOT in the popup:
 - **About** — not enough value to justify the code.
-- **Profile switch / connection mode** — launcher-only; requires restart.
+- **Profile switch / connection mode / profile creation** — launcher-only; requires restart.
 - **Layout mockup** — saves vertical space in the popup.
 - **Mouse wheel scroll in the popup** — tmux `display-popup` does not
   forward wheel events to the popup application (only click events).
@@ -639,7 +756,7 @@ one contract for mouse routing to work:
 
 1. **Each frame builder constructs at least one focusable `Window` and
    stores it at module level.** Today: `_main_window`, `_options_window`,
-   `_panes_window`, `_scripts_window`,
+   `_panes_window`, `_scripts_window`, `_profile_apply_confirm_window`,
    `_statistics_window`, `_exit_confirm_window`, `_rate_session_window`.
    The
    "primary" window of a frame is the one that receives keyboard focus

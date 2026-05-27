@@ -113,6 +113,40 @@
     #zap
 }
 
+#nop cp -profile-snapshot — write the live profile class to a runtime tempfile.
+#nop Used by the in-game popup before opening the profile editor.
+#alias {cp -profile-snapshot} {
+    #if {"$_profile" != "" && $_profile_loaded} {
+        #class {$_profile} {write} {bridge/runtime/profile_snapshot.tin};
+        #system {echo ok > bridge/runtime/.profile_snapshot_result}
+    } {
+        #system {echo fail > bridge/runtime/.profile_snapshot_result}
+    }
+}
+
+#nop cp -profile-apply — kill + read the edited profile, with canary detection
+#nop and snapshot rollback on failure. The popup writes profile_edit.tin via
+#nop profile_io.save_profile and appends a canary line before invoking this.
+#alias {cp -profile-apply} {
+    #if {"$_profile" != "" && $_profile_loaded} {
+        #var {_profile_load_canary} {};
+        #class {$_profile} {kill};
+        #class {$_profile} {read} {bridge/runtime/profile_edit.tin};
+        #if {"$_profile_load_canary" == "ok"} {
+            #unvar {_profile_load_canary};
+            _save_profile;
+            #system {echo ok > bridge/runtime/.profile_apply_result}
+        } {
+            #class {$_profile} {kill};
+            #class {$_profile} {read} {bridge/runtime/profile_snapshot.tin};
+            #unvar {_profile_load_canary};
+            #system {echo fail > bridge/runtime/.profile_apply_result}
+        }
+    } {
+        #system {echo fail > bridge/runtime/.profile_apply_result}
+    }
+}
+
 #nop Priority 6 — fires only when no specific {cp -X} alias (priority 5) matches
 #alias {cp} {_cockpit_help} {6}
 

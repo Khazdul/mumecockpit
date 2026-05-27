@@ -452,9 +452,9 @@ arrow selection + clipboard with OSC 52 system-clipboard write
 (ADR 0091), Alt+↑/↓ line move, an always-on `Ln/Col` footer
 indicator, double/triple-click word and line selection,
 mouse-wheel scrolling on all three scrollables, and click-and-hold
-auto-scroll on the three editor scrollbars (ADR 0092). In-game
-popup access to the editor is not yet wired — that lands in a
-follow-up phase. See
+auto-scroll on the three editor scrollbars (ADR 0092). The in-game popup's Profile row opens the same editor over the live
+tt++ profile class via a snapshot/apply handshake (ADR 0110); the
+disconnected path reads/writes disk directly (launcher-style). See
 [ADR 0082](docs/decisions/0082-macro-keys-duplicates-input-pane.md)
 for the deferred unification of `bridge/launcher/macro_keys.py` and
 `bridge/panes/input_pane.py`.

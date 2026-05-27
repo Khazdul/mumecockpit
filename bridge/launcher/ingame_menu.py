@@ -6,7 +6,7 @@
 try:
     from prompt_toolkit import Application
     from prompt_toolkit.filters import Condition
-    from prompt_toolkit.key_binding import KeyBindings
+    from prompt_toolkit.key_binding import DynamicKeyBindings, KeyBindings, merge_key_bindings
     from prompt_toolkit.layout import DynamicContainer, Layout
     from prompt_toolkit.layout.containers import Window
     from prompt_toolkit.layout.controls import FormattedTextControl
@@ -25,6 +25,10 @@ import shutil
 import signal
 import subprocess
 import sys
+import time
+
+from pathlib import Path
+import threading
 
 import run_meta
 import run_stats
@@ -32,6 +36,8 @@ from menu_chrome import (
     button_fragment, footer_block, menu_row, title_block, title_block_height,
 )
 from panes_grid import apply_cell_toggle, panes_grid_fragments
+import profile_editor
+import profile_io
 import scripts_view
 from widgets.scrollbar import Scrollbar
 
@@ -50,6 +56,14 @@ STARTUP_CONF_PATH     = os.path.join(RUNTIME_DIR, "startup.conf")
 STATUS_STATE_PATH     = os.path.join(RUNTIME_DIR, "status.state")
 SCRIPTS_CACHE_PATH    = os.path.join(RUNTIME_DIR, "scripts.cache")
 TOGGLE_PANE_SCRIPT    = os.path.join(BRIDGE_DIR, "layout", "toggle_pane.sh")
+
+PROFILES_DIR           = os.path.join(PROJECT_DIR, "ttpp", "profiles")
+SANITIZE_SCRIPT        = os.path.join(BRIDGE_DIR, "release", "sanitize_profile.sh")
+LAYOUT_CONF_PATH       = os.path.join(RUNTIME_DIR, "layout.conf")
+PROFILE_SNAPSHOT_PATH  = os.path.join(RUNTIME_DIR, "profile_snapshot.tin")
+PROFILE_EDIT_PATH      = os.path.join(RUNTIME_DIR, "profile_edit.tin")
+PROFILE_SNAP_RESULT    = os.path.join(RUNTIME_DIR, ".profile_snapshot_result")
+PROFILE_APPLY_RESULT   = os.path.join(RUNTIME_DIR, ".profile_apply_result")
 
 TMUX_TARGET  = "mume:cockpit.0"
 TMUX_SESSION = "mume:cockpit"
@@ -125,6 +139,13 @@ _stats_focused     = 0          # 0=Kills, 1=PKills, 2=Allies, 3=Achievements
 _stats_run_ended   = False
 _stats_tick_task   = None       # asyncio.Task for the 60 s refresh loop
 _banner_tick_task  = None       # asyncio.Task for the main-frame banner twinkle
+_profile_editor_instance       = None
+_profile_editor_original_text  = None
+_profile_editor_pending_profile = None
+_profile_editor_disk_path      = None
+_profile_editor_name           = None
+_profile_apply_confirm_window  = None
+_profile_apply_status          = None   # None | "applying" | "ok" | "fail:<msg>"
 _kills_sb          = None       # Scrollbar instances, created on first push
 _pkills_sb         = None
 _allies_sb         = None
@@ -278,15 +299,21 @@ def _toggle_pane(target):
 def _focus_current_frame():
     if not _app:
         return
-    win = {
-        "main":         _main_window,
-        "options":      _options_window,
-        "panes":        _panes_window,
-        "scripts":      _scripts_window,
-        "statistics":   _statistics_window,
-        "exit_confirm": _exit_confirm_window,
-        "rate_session": _rate_session_window,
-    }.get(_current_frame)
+    if _current_frame == "profile_editor" and _profile_editor_instance:
+        win = _profile_editor_instance.main_window()
+    elif _current_frame == "profile_editor_macro_keybind" and _profile_editor_instance:
+        win = _profile_editor_instance.overlay_window()
+    else:
+        win = {
+            "main":                  _main_window,
+            "options":               _options_window,
+            "panes":                 _panes_window,
+            "scripts":               _scripts_window,
+            "statistics":            _statistics_window,
+            "exit_confirm":          _exit_confirm_window,
+            "rate_session":          _rate_session_window,
+            "profile_apply_confirm": _profile_apply_confirm_window,
+        }.get(_current_frame)
     if win is None:
         return
     try:
@@ -406,6 +433,7 @@ def _main_items():
             items.append(("Save run", "save_session_dead", "saved", None))
         items.append(("Statistics", "statistics", "normal", None))
 
+    items.append(("Profile",      "profile",  "normal", None))
     items.append(("Options",      "options",  "normal", None))
     items.append(("Exit session", "exit",     "normal", None))
     return items
@@ -427,6 +455,8 @@ def _activate_main_item(action):
         _push_frame("rate_session")
     elif action == "save_session_dead":
         pass  # dead row; defensive no-op (keyboard nav already skips it)
+    elif action == "profile":
+        _enter_profile_editor()
     elif action == "options":
         _sel_options = 0
         _push_frame("options")
@@ -575,8 +605,16 @@ def _main_text():
         frags.append(("", " " * right_pad, clear_hover))
         frags.append(("", "\n", clear_hover))
 
+    flash_row = 0
+    if (_profile_flash_text
+            and time.monotonic() < _profile_flash_until):
+        frags.append(("", "\n", clear_hover))
+        frags.append(("", _pad_centre(_profile_flash_text, cols), clear_hover))
+        frags.append((_profile_flash_style, _profile_flash_text, clear_hover))
+        flash_row = 1
+
     footer = "↑↓ Navigate · Enter Select · ESC Dismiss"
-    content_rows = status_rows + banner_rows + spacer_rows + len(items)
+    content_rows = status_rows + banner_rows + spacer_rows + len(items) + flash_row
     frags.extend(footer_block(
         footer, cols, rows_h, content_rows, mouse_handler=clear_hover,
     ))
@@ -1249,6 +1287,317 @@ def _scripts_text():
         footer, cols, rows_h, content_rows, mouse_handler=clear,
     ))
     return frags
+
+
+# ---------------------------------------------------------------------------
+# Profile editor — EditorHost, entry flow, on_exit, apply-confirm
+# ---------------------------------------------------------------------------
+def _read_terminal_bg():
+    """Read terminal_bg from bridge/runtime/layout.conf (persisted by
+    the launcher's background-detect probe). Returns hex string or None."""
+    try:
+        with open(LAYOUT_CONF_PATH) as fh:
+            for line in fh:
+                if line.startswith("terminal_bg="):
+                    val = line.split("=", 1)[1].strip()
+                    if val:
+                        return val
+    except OSError:
+        pass
+    return None
+
+
+class _PopupEditorHost:
+    """Bridges ProfileEditor back to ingame_menu globals."""
+
+    @property
+    def app(self):
+        return _app
+
+    @property
+    def app_loop(self):
+        try:
+            return asyncio.get_running_loop()
+        except RuntimeError:
+            return None
+
+    @property
+    def terminal_bg(self):
+        return _read_terminal_bg()
+
+    def term_cols(self):
+        return _term_cols()
+
+    def term_rows(self):
+        return _term_rows()
+
+    def push_overlay_frame(self):
+        _push_frame("profile_editor_macro_keybind")
+
+    def pop_overlay_frame(self):
+        _pop_frame()
+
+    def focus_current_frame(self):
+        _focus_current_frame()
+
+    def is_active(self):
+        return _current_frame == "profile_editor"
+
+    def is_overlay_active(self):
+        return _current_frame == "profile_editor_macro_keybind"
+
+
+_popup_editor_host = _PopupEditorHost()
+
+
+def _profile_editor_cleanup():
+    """Clear the editor instance and remove runtime tempfiles."""
+    global _profile_editor_instance, _profile_editor_original_text
+    global _profile_editor_pending_profile, _profile_editor_disk_path
+    global _profile_editor_name, _profile_apply_status
+    _profile_editor_instance = None
+    _profile_editor_original_text = None
+    _profile_editor_pending_profile = None
+    _profile_editor_disk_path = None
+    _profile_editor_name = None
+    _profile_apply_status = None
+    for p in (PROFILE_SNAPSHOT_PATH, PROFILE_EDIT_PATH,
+              PROFILE_SNAP_RESULT, PROFILE_APPLY_RESULT):
+        _remove_sentinel(p)
+
+
+def _flash_main(msg, style, duration=3.0):
+    """Show a temporary message on the main frame. The popup's 1 Hz tick
+    invalidates often enough for the message to disappear after `duration`."""
+    global _profile_flash_text, _profile_flash_style, _profile_flash_until
+    _profile_flash_text  = msg
+    _profile_flash_style = style
+    _profile_flash_until = time.monotonic() + duration
+    if _app:
+        _app.invalidate()
+
+
+_profile_flash_text  = None
+_profile_flash_style = ""
+_profile_flash_until = 0.0
+
+
+def _poll_file(path, timeout=2.0, tick=0.05):
+    """Block until `path` exists and is non-empty, or timeout. Returns
+    content string or None. Runs in a worker thread — never on the
+    event loop."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            with open(path) as fh:
+                content = fh.read().strip()
+            if content:
+                return content
+        except OSError:
+            pass
+        time.sleep(tick)
+    return None
+
+
+def _enter_profile_editor():
+    """Entry point from the main frame's Profile row."""
+    if _is_connected():
+        _enter_profile_editor_connected()
+    else:
+        _enter_profile_editor_disconnected()
+
+
+def _enter_profile_editor_connected():
+    """Connected path: snapshot the live class, parse it, open the editor."""
+    global _profile_editor_instance, _profile_editor_original_text
+    global _profile_editor_disk_path, _profile_editor_name
+
+    for p in (PROFILE_SNAPSHOT_PATH, PROFILE_EDIT_PATH,
+              PROFILE_SNAP_RESULT, PROFILE_APPLY_RESULT):
+        _remove_sentinel(p)
+
+    _send_to_game("cp -profile-snapshot")
+
+    def _finish_snapshot():
+        global _profile_editor_instance, _profile_editor_original_text
+        global _profile_editor_disk_path, _profile_editor_name
+        result = _poll_file(PROFILE_SNAP_RESULT)
+        if result != "ok":
+            reason = "no active profile" if result == "fail" else "timeout"
+            loop = asyncio.get_event_loop()
+            loop.call_soon_threadsafe(
+                _flash_main, f"Could not open profile: {reason}.", C_HINT)
+            if _app:
+                loop.call_soon_threadsafe(_app.invalidate)
+            return
+
+        try:
+            prof = profile_io.load_profile(PROFILE_SNAPSHOT_PATH)
+        except (OSError, Exception) as exc:
+            loop = asyncio.get_event_loop()
+            loop.call_soon_threadsafe(
+                _flash_main, f"Could not open profile: {exc}.", C_HINT)
+            if _app:
+                loop.call_soon_threadsafe(_app.invalidate)
+            return
+
+        conf = _parse_keyval(STARTUP_CONF_PATH)
+        _profile_editor_name = conf.get("profile", "default")
+        _profile_editor_disk_path = Path(
+            os.path.join(PROFILES_DIR, f"{_profile_editor_name}.tin"))
+        prof.path = _profile_editor_disk_path
+        _profile_editor_original_text = profile_io.serialize_profile(prof)
+
+        _profile_editor_instance = profile_editor.ProfileEditor(
+            path=_profile_editor_disk_path,
+            profile=prof,
+            on_exit=_on_profile_editor_exit,
+            host=_popup_editor_host,
+        )
+
+        loop = asyncio.get_event_loop()
+        loop.call_soon_threadsafe(_push_frame, "profile_editor")
+
+    threading.Thread(target=_finish_snapshot, daemon=True).start()
+
+
+def _enter_profile_editor_disconnected():
+    """Disconnected path: read the profile .tin from disk directly."""
+    global _profile_editor_instance, _profile_editor_original_text
+    global _profile_editor_disk_path, _profile_editor_name
+
+    conf = _parse_keyval(STARTUP_CONF_PATH)
+    name = conf.get("profile", "default")
+    path = Path(os.path.join(PROFILES_DIR, f"{name}.tin"))
+    if not path.exists():
+        _flash_main(f"Profile not found: {path.name}.", C_HINT)
+        return
+
+    try:
+        prof = profile_io.load_profile(path)
+    except (OSError, Exception) as exc:
+        _flash_main(f"Could not open profile: {exc}.", C_HINT)
+        return
+
+    _profile_editor_name = name
+    _profile_editor_disk_path = path
+    _profile_editor_original_text = profile_io.serialize_profile(prof)
+
+    _profile_editor_instance = profile_editor.ProfileEditor(
+        path=path,
+        profile=prof,
+        on_exit=_on_profile_editor_exit,
+        host=_popup_editor_host,
+    )
+    _push_frame("profile_editor")
+
+
+def _on_profile_editor_exit(profile):
+    """Called by the editor's ESC binding. Dirty-check and branch."""
+    global _profile_editor_pending_profile
+    final_text = profile_io.serialize_profile(profile)
+    dirty = (final_text != _profile_editor_original_text)
+
+    if not dirty:
+        _profile_editor_cleanup()
+        _pop_frame()
+        return
+
+    if _is_connected():
+        _profile_editor_pending_profile = profile
+        _push_frame("profile_apply_confirm")
+    else:
+        try:
+            profile.path = _profile_editor_disk_path
+            profile_io.save_profile(profile)
+            subprocess.run(
+                ["bash", str(SANITIZE_SCRIPT), str(_profile_editor_disk_path)],
+                check=False, timeout=5.0,
+            )
+            _flash_main(f"Saved {_profile_editor_name}.tin.", C_ACCENT)
+        except OSError as exc:
+            _flash_main(f"Save failed: {exc}.", C_HINT)
+        _profile_editor_cleanup()
+        _pop_frame()
+
+
+def _apply_profile_connected():
+    """Y on the apply-confirm modal: serialize, append canary, send alias,
+    poll for result. Runs the poll in a worker thread."""
+    global _profile_apply_status
+    prof = _profile_editor_pending_profile
+    if prof is None:
+        _profile_editor_cleanup()
+        _pop_frame()
+        _pop_frame()
+        return
+
+    saved_path = prof.path
+    try:
+        prof.path = Path(PROFILE_EDIT_PATH)
+        profile_io.save_profile(prof)
+    except OSError as exc:
+        prof.path = saved_path
+        _flash_main(f"Save failed: {exc}.", C_HINT)
+        _profile_editor_cleanup()
+        _pop_frame()
+        _pop_frame()
+        return
+    finally:
+        prof.path = saved_path
+
+    try:
+        with open(PROFILE_EDIT_PATH, "a") as fh:
+            fh.write("\n#var {_profile_load_canary} {ok}\n")
+    except OSError:
+        pass
+
+    _profile_apply_status = "applying"
+    if _app:
+        _app.invalidate()
+
+    _remove_sentinel(PROFILE_APPLY_RESULT)
+    _send_to_game("cp -profile-apply")
+
+    def _finish_apply():
+        result = _poll_file(PROFILE_APPLY_RESULT)
+        loop = asyncio.get_event_loop()
+        if result == "ok":
+            loop.call_soon_threadsafe(
+                _flash_main, "Profile updated.", C_ACCENT)
+        else:
+            msg = "Apply failed — rolled back." if result == "fail" else \
+                  "Apply timed out — rolled back."
+            loop.call_soon_threadsafe(_flash_main, msg, C_HINT)
+
+        def _finish_on_main():
+            _profile_editor_cleanup()
+            _pop_frame()
+            _pop_frame()
+        loop.call_soon_threadsafe(_finish_on_main)
+
+    threading.Thread(target=_finish_apply, daemon=True).start()
+
+
+def _profile_apply_confirm_text():
+    cols = _term_cols()
+    if _profile_apply_status == "applying":
+        msg = "Applying…"
+        return [
+            ("", "\n\n"),
+            ("", _pad_centre(msg, cols)),
+            (C_HINT, msg),
+        ]
+    msg  = "Apply changes to your profile?"
+    hint = "Y to apply · N to discard · ESC to keep editing"
+    return [
+        ("", "\n\n"),
+        ("", _pad_centre(msg, cols)),
+        (C_SECTION, msg),
+        ("", "\n\n"),
+        ("", _pad_centre(hint, cols)),
+        (C_HINT, hint),
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -2559,6 +2908,37 @@ def _ec_cancel(event):
     _pop_frame()
 
 
+# Profile apply-confirm frame (Y / N / ESC)
+@kb.add("y", filter=_in_frame("profile_apply_confirm"))
+@kb.add("Y", filter=_in_frame("profile_apply_confirm"))
+def _pac_confirm(event):
+    if _profile_apply_status == "applying":
+        return
+    _apply_profile_connected()
+
+
+@kb.add("n", filter=_in_frame("profile_apply_confirm"))
+@kb.add("N", filter=_in_frame("profile_apply_confirm"))
+def _pac_discard(event):
+    if _profile_apply_status == "applying":
+        return
+    _profile_editor_cleanup()
+    _pop_frame()
+    _pop_frame()
+
+
+@kb.add("escape", filter=_in_frame("profile_apply_confirm"), eager=True)
+def _pac_escape(event):
+    if _profile_apply_status == "applying":
+        return
+    _pop_frame()
+
+
+@kb.add("<any>", filter=_in_frame("profile_apply_confirm"))
+def _pac_any(event):
+    pass
+
+
 # Global Ctrl+C: prompt_toolkit's raw mode swallows SIGINT, so the
 # signal handler never fires from the keyboard. Bind c-c explicitly.
 @kb.add("c-c")
@@ -2571,6 +2951,9 @@ def _global_ctrl_c(event):
 # ---------------------------------------------------------------------------
 def _cleanup():
     _remove_sentinel(POPUP_SENTINEL)
+    for p in (PROFILE_SNAPSHOT_PATH, PROFILE_EDIT_PATH,
+              PROFILE_SNAP_RESULT, PROFILE_APPLY_RESULT):
+        _remove_sentinel(p)
 
 
 def _signal_exit(signum, frame):
@@ -2664,6 +3047,17 @@ def _build_rate_session_container():
     return _rate_session_window
 
 
+def _build_profile_apply_confirm_container():
+    global _profile_apply_confirm_window
+    _profile_apply_confirm_window = Window(
+        content=FormattedTextControl(
+            text=_profile_apply_confirm_text, focusable=True),
+        wrap_lines=False,
+        always_hide_cursor=True,
+    )
+    return _profile_apply_confirm_window
+
+
 async def _tick(app):
     try:
         while True:
@@ -2711,22 +3105,41 @@ def main():
     signal.signal(signal.SIGHUP,  _signal_exit)
     signal.signal(signal.SIGINT,  _signal_exit)
 
+    profile_editor_frame = DynamicContainer(
+        lambda: _profile_editor_instance.container()
+        if _profile_editor_instance is not None else Window())
+    peditor_keybind_frame = DynamicContainer(
+        lambda: _profile_editor_instance.overlay_container()
+        if _profile_editor_instance is not None else Window())
+
     frames = {
-        "main":         _build_main_container(),
-        "options":      _build_options_container(),
-        "panes":        _build_panes_container(),
-        "scripts":      _build_scripts_container(),
-        "statistics":   _build_statistics_container(),
-        "exit_confirm": _build_exit_confirm_container(),
-        "rate_session": _build_rate_session_container(),
+        "main":                          _build_main_container(),
+        "options":                       _build_options_container(),
+        "panes":                         _build_panes_container(),
+        "scripts":                       _build_scripts_container(),
+        "statistics":                    _build_statistics_container(),
+        "exit_confirm":                  _build_exit_confirm_container(),
+        "rate_session":                  _build_rate_session_container(),
+        "profile_editor":                profile_editor_frame,
+        "profile_editor_macro_keybind":  peditor_keybind_frame,
+        "profile_apply_confirm":         _build_profile_apply_confirm_container(),
     }
 
-    root   = DynamicContainer(lambda: frames[_current_frame])
+    root   = DynamicContainer(lambda: frames.get(_current_frame, frames["main"]))
     layout = Layout(root)
+
+    merged_kb = merge_key_bindings([
+        kb,
+        DynamicKeyBindings(
+            lambda: (_profile_editor_instance.key_bindings()
+                     if _profile_editor_instance is not None
+                     else KeyBindings()),
+        ),
+    ])
 
     app = Application(
         layout=layout,
-        key_bindings=kb,
+        key_bindings=merged_kb,
         full_screen=True,
         mouse_support=True,
         color_depth=ColorDepth.DEPTH_24_BIT,
