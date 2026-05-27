@@ -8,3 +8,5 @@
 #alias {readability_clear} {#class {readability} {kill}}
 
 #alias {readability_reload %0} {readability_clear;readability_load %0}
+
+#alias {cp -readability-apply} {#lua {scripts.readability.reload()}}

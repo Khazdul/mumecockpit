@@ -49,6 +49,7 @@ Three tt++ aliases manage the `{readability}` class. Defined in
 | `readability_load <list>` | Open `{readability}`, `#foreach` + `#read` each module, close the class. `<list>` is semicolon-separated module names. |
 | `readability_clear` | `#class {readability} {kill}` — destroy the class and all its members. |
 | `readability_reload <list>` | `readability_clear` then `readability_load` — atomic refresh. |
+| `cp -readability-apply` | Popup-facing entry point. Wraps `#lua {scripts.readability.reload()}` so the input echo in the game pane stays terse. |
 
 Each alias body is a single tt++ statement (semicolon-separated commands
 on one line). The class open/read/close sequence lives entirely within the
@@ -80,15 +81,18 @@ When the player logs in (`Char.Name` GMCP fires):
 ### Hot reload (manual / popup-triggered)
 
 Call `scripts.readability.reload()` from tt++ via
-`#lua {scripts.readability.reload()}`. This:
+`#lua {scripts.readability.reload()}`, or use the `cp -readability-apply`
+alias (which wraps the same call). This:
 
 1. Re-reads `startup.conf` for `readability_enabled`.
 2. Validates the module list.
 3. Issues `session_cmd("readability_reload {a;b;c}")` (or
    `readability_clear` if the list is now empty).
 
-Slice 2's popup will fire this automatically after the user toggles
-modules. In slice 1, trigger it manually for verification.
+The popup fires `cp -readability-apply` automatically after the user
+toggles modules and exits. The alias keeps the input echo terse;
+`#lua {scripts.readability.reload()}` continues to work when typed
+manually.
 
 ## startup.conf integration
 
@@ -123,9 +127,18 @@ view — same widths, colours, and behaviour.
 
 When the user toggles modules and exits (ESC or Back), the popup writes
 the updated `readability_enabled` key to `startup.conf` **and** fires
-`#lua {scripts.readability.reload()}` via `tmux send-keys`. Changes
-apply immediately — no restart required. A brief "Readability updated."
-flash in `C_ACCENT` confirms the dispatch on the popup's main frame.
+`cp -readability-apply` via `tmux send-keys`. The alias is a thin
+wrapper (in `ttpp/core/readability.tin`) around
+`#lua {scripts.readability.reload()}`; using it keeps the input echo in
+the game pane terse — the player sees `cp -readability-apply` instead of
+raw `#lua {…}` syntax, matching the `cp -profile-apply` pattern from the
+profile-editor flow. Changes apply immediately — no restart required. A
+brief "Readability updated." flash in `C_ACCENT` confirms the dispatch
+on the popup's main frame.
+
+The Lua-side `scripts.readability.reload()` remains the authoritative
+entry point for any programmatic reload; the alias exists for the
+popup's input-echo UX.
 
 This contrasts with the launcher path, which writes `startup.conf` only
 and defers the effect to the next cockpit start (cold load).

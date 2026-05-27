@@ -1353,7 +1353,7 @@ def _readability_save_and_pop():
     if _readability_dirty and _readability_catalog:
         enabled = {m.name for m in _readability_catalog if m.enabled}
         readability_view.write_enabled(STARTUP_CONF_PATH, enabled)
-        _send_to_game("#lua {scripts.readability.reload()}")
+        _send_to_game("cp -readability-apply")
         _flash_main("Readability updated.", C_ACCENT)
         _readability_dirty = False
     _pop_frame()

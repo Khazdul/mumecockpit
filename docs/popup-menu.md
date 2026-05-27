@@ -401,9 +401,13 @@ through `_readability_save_and_pop()`:
   1. `readability_view.write_enabled(STARTUP_CONF_PATH, enabled_set)` —
      atomic write of the `readability_enabled` key; all other keys are
      preserved byte-identical.
-  2. `_send_to_game("#lua {scripts.readability.reload()}")` — fires the
-     existing hot-reload path via `tmux send-keys`, so changes apply
-     immediately without a restart.
+  2. `_send_to_game("cp -readability-apply")` — fires the hot-reload
+     path via `tmux send-keys`. `cp -readability-apply` is a thin
+     tt++ alias (in `ttpp/core/readability.tin`) wrapping
+     `#lua {scripts.readability.reload()}`; using the alias keeps the
+     input echo in the game pane terse — the player sees
+     `cp -readability-apply` instead of raw `#lua {…}` syntax,
+     matching the `cp -profile-apply` pattern.
   3. `_flash_main("Readability updated.", C_ACCENT)` — schedules a brief
      flash on the main frame using the existing profile-apply success
      flash helper.
