@@ -24,8 +24,11 @@ Two new tt++ aliases in `ttpp/core/system.tin`:
   `bridge/runtime/profile_snapshot.tin`, echoes `ok` / `fail` into
   `.profile_snapshot_result`.
 - `cp -profile-apply` — kills the live class, reads
-  `bridge/runtime/profile_edit.tin`, checks a canary variable, and on
-  failure rolls back to the snapshot.
+  `bridge/runtime/profile_edit.tin` using the explicit
+  `#class open` + `#read` + `#class close` pattern (mirroring
+  SESSION CONNECTED, because `#class read`'s shorthand does not
+  class-tag `#highlight` and `#macro` entries), checks a canary
+  variable, and on failure rolls back to the snapshot.
 
 The popup orchestrates: snapshot → parse → editor → dirty-check →
 serialize to `profile_edit.tin` with canary → apply → poll result.

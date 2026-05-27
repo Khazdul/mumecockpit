@@ -177,14 +177,17 @@ discipline (must run in the session that owns the profile class):
   `bridge/runtime/profile_snapshot.tin` via `#class write`, echoes
   `ok` / `fail` into `.profile_snapshot_result`.
 - `cp -profile-apply` — kills the class, reads
-  `bridge/runtime/profile_edit.tin` via `#class read`, checks the canary
+  `bridge/runtime/profile_edit.tin` using the explicit
+  `#class open` + `#read` + `#class close` pattern (mirroring
+  SESSION CONNECTED, because `#class read`'s shorthand does not
+  class-tag `#highlight` and `#macro` entries), checks the canary
   variable `_profile_load_canary`. On success: unsets the canary, runs
   `_save_profile` (persists to disk + sanitize), reopens the profile
   class, echoes `ok`. On failure: kills the broken class, reads back
-  the snapshot, reopens the profile class, echoes `fail`. The reopen
-  mirrors the `SESSION CONNECTED` final-open step — without it,
-  `#class read`'s implicit close leaves subsequent `#alias` / `#action`
-  commands in the default class.
+  the snapshot via the same explicit pattern, reopens the profile class,
+  echoes `fail`. The reopen mirrors the `SESSION CONNECTED` final-open
+  step — without it, the explicit `#class close` leaves subsequent
+  `#alias` / `#action` commands in the default class.
 
 Both aliases are routed through the player's input pane via
 `tmux send-keys` — the same path the popup already uses for reconnect.
