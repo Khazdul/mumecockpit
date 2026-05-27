@@ -12,6 +12,7 @@
 # Used by the launcher's profile editor frame; see docs/launcher.md.
 
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Optional, Union
@@ -40,6 +41,11 @@ _KIND_ARITY = {
 }
 
 _NOP = "#nop"
+
+_CLASS_OPEN_CLOSE = re.compile(
+    r'^\s*#class\s+\{[^}]+\}\s+\{?(open|close)\}?\s*$',
+    re.IGNORECASE,
+)
 
 
 def resolve_kind(token):
@@ -432,6 +438,12 @@ def parse_profile(src, path):
             # are not consumed wholesale; their brace lines become
             # Passthrough, which the sort pass drops anyway.
             nl = src.find("\n", i)
+            i = n if nl == -1 else nl + 1
+            continue
+        # Drop #class {…} {open|close} — mirrors sanitize_profile.sh.
+        nl = src.find("\n", i)
+        phys_end = n if nl == -1 else nl
+        if _CLASS_OPEN_CLOSE.match(src[i:phys_end]):
             i = n if nl == -1 else nl + 1
             continue
         if cmd is not None and resolve_kind(cmd[1:]) is not None:

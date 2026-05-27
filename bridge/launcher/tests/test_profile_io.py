@@ -1014,5 +1014,59 @@ class TestBodyNormalisation(unittest.TestCase):
         self.assertIsNotNone(sub._raw)
 
 
+class TestClassOpenCloseDrop(unittest.TestCase):
+    """#class {…} {open|close} lines are dropped on parse, mirroring
+    sanitize_profile.sh. Other #class forms pass through."""
+
+    PATH = Path("/dev/null/profile.tin")
+
+    def _round_trip_str(self, source):
+        prof = parse_profile(source, self.PATH)
+        return prof, serialize_profile(prof)
+
+    def test_class_open_close_dropped_on_parse(self):
+        source = (
+            "#class {default} {open}\n"
+            "#alias {a} {b}\n"
+            "#class {default} {close}\n"
+        )
+        prof = parse_profile(source, self.PATH)
+        entries = prof.entries_of("alias")
+        self.assertEqual(len(entries), 1)
+        passthroughs = [it for it in prof.items
+                        if isinstance(it, Passthrough)]
+        self.assertEqual(len(passthroughs), 0)
+
+    def test_class_open_close_dropped_on_serialize(self):
+        source = (
+            "#class {default} {open}\n"
+            "#alias {a} {b}\n"
+            "#class {default} {close}\n"
+        )
+        _prof, out = self._round_trip_str(source)
+        self.assertEqual(out, "#alias {a} {b}\n")
+
+    def test_class_kill_passes_through(self):
+        source = "#class {x} {kill}\n"
+        prof = parse_profile(source, self.PATH)
+        passthroughs = [it for it in prof.items
+                        if isinstance(it, Passthrough)]
+        self.assertEqual(len(passthroughs), 1)
+        self.assertEqual(passthroughs[0].raw, "#class {x} {kill}")
+
+    def test_class_drop_case_insensitive(self):
+        source = (
+            "#CLASS {Foo} {OPEN}\n"
+            "#alias {a} {b}\n"
+            "#Class {Foo} {Close}\n"
+        )
+        prof, out = self._round_trip_str(source)
+        self.assertEqual(len(prof.entries_of("alias")), 1)
+        passthroughs = [it for it in prof.items
+                        if isinstance(it, Passthrough)]
+        self.assertEqual(len(passthroughs), 0)
+        self.assertEqual(out, "#alias {a} {b}\n")
+
+
 if __name__ == "__main__":
     unittest.main()

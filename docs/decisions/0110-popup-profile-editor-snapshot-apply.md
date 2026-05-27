@@ -90,4 +90,8 @@ wiring.
   mechanism restores the snapshot.
 - Runtime tempfiles (`profile_snapshot.tin`, `profile_edit.tin`, and
   both result sentinels) are cleaned up on popup exit.
-- No changes to `profile_editor.py`, `profile_io.py`, or the launcher.
+- No changes to `profile_editor.py` or the launcher.
+- `profile_io` drops `#class {…} {open|close}` lines at parse time
+  (matching `sanitize_profile.sh`). Without this, the alphabetical
+  group sort would interleave `#class close` mid-file and orphan every
+  kind sorting after `c` when `cp -profile-apply` reads the result.

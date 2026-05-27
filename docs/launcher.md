@@ -1067,7 +1067,8 @@ re-expands a saved flat body to its multi-line form on the next
 `#write`; the editor re-normalises on the next load.
 
 The *order* also changes from source order to canonical order on
-parse. `#nop` lines are dropped (ADR 0042). Blank lines, free
+parse. `#nop` lines are dropped (ADR 0042). `#class {…} {open|close}`
+lines are dropped (matching `sanitize_profile.sh`). Blank lines, free
 text, and malformed Passthrough lines are dropped during the sort
 pass. Multi-line Passthrough forms (a `#class {x} { ... \n ... }`
 block split across physical lines) lose their continuation lines
