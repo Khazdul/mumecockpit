@@ -51,7 +51,7 @@ The UI is a frame stack: a single `DynamicContainer` swaps between `main`,
 `profile_editor_macro_keybind`, `options`,
 `options_panes`, `options_connection`,
 `options_connection_custom`, `options_spotlights`,
-`options_terminal`, `terminal_font_picker`, `scripts`, `about`,
+`options_terminal`, `terminal_font_picker`, `scripts`, `readability`, `about`,
 `history`, `history_detail`, `history_rate`, `history_delete_confirm`,
 `log_view`, `spotlights_empty`, `credits`, `update_running`,
 and `update_result` containers, pushed and popped via
@@ -67,7 +67,7 @@ no longer a per-pane subframe.
 |---------|--------|
 | Session detect | `tmux has-session -t mume` + `list-clients` re-probed on every render → top item is "Enter MUME", "Resume MUME", or "Mirror MUME (attached elsewhere)" |
 | Profile page | Sortable table of `ttpp/profiles/*.tin` (Name + Selected columns) paired with a centred Options widget — Select, New, Edit, Rename, Delete, Export, Back. See the [Profile sub-menu](#profile-sub-menu) section below. `default` cannot be renamed or deleted. "Create blank" copies from `bridge/launcher/templates/blank_profile.tin` (single source of truth — see ADR 0042). The active profile is written to `startup.conf` and consumed by `ttpp/core/config.tin` at tt++ startup. |
-| Options page | Navigation hub: **Connection**, **Terminal** (managed-foot deployment only), **Panes**, **Scripts**, **Spotlights**, blank row, **Back**. See the [Options sub-menu](#options-sub-menu) section below for each child frame. All Options changes persist to `bridge/runtime/startup.conf` on Back / ESC; the Terminal child writes its own foot.ini and is not a `startup.conf` consumer. |
+| Options page | Navigation hub: **Connection**, **Terminal** (managed-foot deployment only), **Panes**, **Readability**, **Scripts**, **Spotlights**, blank row, **Back**. See the [Options sub-menu](#options-sub-menu) section below for each child frame. All Options changes persist to `bridge/runtime/startup.conf` on Back / ESC; the Terminal child writes its own foot.ini and is not a `startup.conf` consumer. |
 | Scripts page | Opened from Options → Scripts. Two-column `[ list \| detail ]` manager of `lua/scripts/<name>.lua`; toggles enabled state via `bridge/runtime/scripts.conf` (deferred write on Back/ESC). See [`options_scripts` frame](#options_scripts-frame) below. |
 | Spotlights | Cross-character reel of deaths, level-ups, pvp-kills, and achievements aggregated from every character's sealed runs. Opens `log_view` in spotlight mode; empty-state frame when nothing has been captured yet. See the [Spotlights sub-menu](#spotlights-sub-menu) section and ADR 0077. |
 | About page | Reads `bridge/launcher/about.txt`; word-wrapped, cached per resize, scrollable. Current version on the right of the title; an "Update available: vX.Y.Z" line appears in `C_ACCENT` when `version.cache` contains a newer tag |
@@ -1234,6 +1234,10 @@ Navigation hub pushed by activating "Options" on the main frame. Children:
   [ADR 0104](decisions/0104-windows-deployment-foot-wslg.md) and
   [ADR 0107](decisions/0107-terminal-settings-managed-keys.md).
 - **Panes** → `options_panes` — per-pane enable/disable + colour selection.
+- **Readability** → `readability` — opens the two-column Readability
+  module manager documented under [`readability` frame](#readability-frame).
+  ESC saves any pending toggles to `readability_enabled` in
+  `bridge/runtime/startup.conf` and returns to `options`.
 - **Scripts** → `scripts` — opens the two-column Scripts manager
   documented under [`options_scripts` frame](#options_scripts-frame).
   ESC saves any pending toggles to `bridge/runtime/scripts.conf` and
@@ -1494,6 +1498,52 @@ automatically (it's the only navigable row), so `Enter` / `Space` /
 Back` with at least one script in the catalog; `↑↓ Move · PgUp/PgDn
 Scroll · ESC Back` on the empty state (Toggle key omitted, since
 there's nothing to toggle).
+
+### `readability` frame
+
+Single frame for the Readability submenu, pushed from Options →
+Readability. Two-column `[ list (+scrollbar) | detail ]` layout backed
+by the `readability_view` module — mirrors `scripts_view` (same layout
+constants, same renderer contract, same scrollbar mechanics).
+
+**Data source — live scan.** On every push, the launcher walks
+`ttpp/readability/modules/*.tin` and parses each file's sibling `.meta`
+(TOML) via `readability_view.parse_meta`. Enabled state comes from
+the `readability_enabled` key in `bridge/runtime/startup.conf`
+(comma-separated module names). There is no cache file — both the
+launcher and the in-game popup scan the filesystem directly.
+
+**Centred package.** Identical layout to the `options_scripts` frame:
+`[ list | sb | gap | detail ]` centred as one unit. Same constants
+(`MIN_LIST_W`, `MAX_DETAIL_W`, `SB_W`, `GAP`, `OUTER_MARGIN`).
+
+**Left column.** Module rows (`[X]`/`[ ]` + name), blank spacer, Back
+row. Same colour grammar as the Scripts frame.
+
+**Detail panel.** Sections, top to bottom (omitted when absent):
+
+1. Module name in `C_SECTION`.
+2. Status line — `● Enabled` (`C_OK`) or `○ Disabled` (`C_PANE_OFF`).
+3. Description from `.meta`, word-wrapped in `C_BODY`.
+4. `Before` header (`C_HINT`) + `example_before` lines in `C_ITEM`.
+5. `After` header (`C_HINT`) + `example_after` lines with ANSI SGR
+   escapes rendered as inline colour.
+
+A module without a `.meta` sidecar shows only the name + status.
+
+**Navigation.** Single-column, no focus zones — same model as Scripts.
+Up/Down moves cursor; PgUp/PgDn scrolls detail; Space/Enter toggles or
+pops on Back; ESC saves and pops. Same mouse handlers (click toggles,
+wheel scrolls, hover highlights).
+
+**Persistence.** Toggles mutate the in-memory catalog; the deferred
+write on Back/ESC updates `readability_enabled` in
+`bridge/runtime/startup.conf` via `readability_view.write_enabled`
+(atomic temp+rename). Changes take effect at the next cockpit start.
+
+**Footer hint.** `↑↓ Move · Space Toggle · PgUp/PgDn Scroll · ESC
+Back` with modules present; `↑↓ Move · PgUp/PgDn Scroll · ESC Back`
+on the empty state.
 
 ### `options_connection` frame
 

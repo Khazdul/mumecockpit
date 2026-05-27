@@ -79,6 +79,7 @@ from menu_chrome import (  # noqa: E402
     button_fragment, footer_block, menu_row, title_block, title_block_height,
 )
 from panes_grid import apply_cell_toggle, panes_grid_fragments  # noqa: E402
+import readability_view  # noqa: E402
 import scripts_view  # noqa: E402
 from widgets.scrollbar import Scrollbar  # noqa: E402
 
@@ -96,6 +97,7 @@ SCRIPTS_CACHE_PATH = os.path.join(RUNTIME_DIR, "scripts.cache")
 SCRIPTS_CONF_PATH      = os.path.join(RUNTIME_DIR, "scripts.conf")
 SCRIPTS_CONF_TEMPLATE  = os.path.join(SCRIPT_DIR, "templates", "scripts.conf")
 LUA_SCRIPTS_DIR        = os.path.join(PROJECT_DIR, "lua", "scripts")
+READABILITY_MODULES_DIR = os.path.join(PROJECT_DIR, "ttpp", "readability", "modules")
 VERSION_FILE       = os.path.join(PROJECT_DIR, "VERSION")
 PROFILES_DIR       = os.path.join(PROJECT_DIR, "ttpp", "profiles")
 QUOTES_PATH        = os.path.join(SCRIPT_DIR, "quotes.txt")
@@ -338,6 +340,18 @@ _scripts_detail_scroll = 0         # first visible detail row
 _scripts_hover         = None      # list row under the mouse, or None
 _scripts_hover_back    = False     # True when the mouse is over the Back row
 
+# Readability — mirrors Scripts. Single-column navigation, same
+# deferred-persistence contract. Reads/writes readability_enabled
+# in startup.conf (not a separate conf file).
+_readability_catalog       = []
+_readability_dirty         = False
+_readability_cursor        = 0
+_readability_on_back       = False
+_readability_list_scroll   = 0
+_readability_detail_scroll = 0
+_readability_hover         = None
+_readability_hover_back    = False
+
 # About
 _about_lines         = []
 _about_scroll        = 0
@@ -470,6 +484,7 @@ _options_terminal_window         = None
 _terminal_font_picker_window     = None
 _spotlights_empty_window         = None
 _scripts_window      = None
+_readability_window  = None
 _about_window        = None
 _update_running_window = None
 _update_result_window  = None
@@ -948,6 +963,7 @@ def _focus_current_frame():
             "terminal_font_picker":       _terminal_font_picker_window,
             "spotlights_empty":           _spotlights_empty_window,
             "scripts":                    _scripts_window,
+            "readability":                _readability_window,
             "about":                      _about_window,
             "update_running":             _update_running_window,
             "update_result":              _update_result_window,
@@ -2224,10 +2240,11 @@ def _build_options_rows():
     if _FOOT_MANAGED:
         rows.append(("terminal", "Terminal"))
     rows.extend([
-        ("panes",      "Panes"),
-        ("scripts",    "Scripts"),
-        ("spotlights", "Spotlights"),
-        ("back",       "Back"),
+        ("panes",       "Panes"),
+        ("readability", "Readability"),
+        ("scripts",     "Scripts"),
+        ("spotlights",  "Spotlights"),
+        ("back",        "Back"),
     ])
     return rows
 
@@ -2253,6 +2270,8 @@ def _activate_option(idx):
         _options_panes_row = 0
         _options_panes_col = 0
         _push_frame("options_panes")
+    elif action == "readability":
+        _enter_readability_frame()
     elif action == "scripts":
         _enter_scripts_frame()
     elif action == "spotlights":
@@ -3732,6 +3751,338 @@ def _spotlights_empty_text():
         frags.append(("", "\n"))
 
     content_rows = title_block_height(2) + len(wrapped)
+    frags.extend(footer_block(footer, cols, rows_h, content_rows))
+    return frags
+
+
+# ---------------------------------------------------------------------------
+# Readability frame — centred two-column [ list | detail ] manager.
+#
+# Mirrors the Scripts frame: live-scan of ttpp/readability/modules/*.tin
+# on every frame entry, resolve enable state from readability_enabled in
+# startup.conf. Toggles mutate the catalog in memory; the deferred write
+# on Back/ESC updates startup.conf. Changes take effect at the next
+# cockpit start.
+# ---------------------------------------------------------------------------
+def _enter_readability_frame():
+    global _readability_catalog, _readability_dirty
+    global _readability_cursor, _readability_on_back
+    global _readability_list_scroll, _readability_detail_scroll
+    global _readability_hover, _readability_hover_back
+    enabled = readability_view.read_enabled(CONF_PATH)
+    _readability_catalog       = readability_view.scan_modules_dir(
+        READABILITY_MODULES_DIR, enabled,
+    )
+    _readability_dirty         = False
+    _readability_cursor        = 0
+    _readability_on_back       = (len(_readability_catalog) == 0)
+    _readability_list_scroll   = 0
+    _readability_detail_scroll = 0
+    _readability_hover         = None
+    _readability_hover_back    = False
+    _push_frame("readability")
+
+
+def _readability_visible_rows():
+    return max(1, _term_rows() - title_block_height(2) - 1)
+
+
+def _readability_list_rows():
+    return max(1, _readability_visible_rows() - 2)
+
+
+def _readability_save_and_pop():
+    global _readability_dirty
+    if _readability_dirty and _readability_catalog:
+        enabled = {m.name for m in _readability_catalog if m.enabled}
+        readability_view.write_enabled(CONF_PATH, enabled)
+        _conf["readability_enabled"] = ",".join(sorted(enabled))
+    _readability_dirty = False
+    _pop_frame()
+
+
+def _readability_detail_total():
+    if not _readability_catalog:
+        return _readability_visible_rows()
+    cur = _readability_catalog[max(0, min(_readability_cursor,
+                                          len(_readability_catalog) - 1))]
+    list_w = readability_view.list_panel_width(_readability_catalog)
+    detail_w = readability_view.detail_panel_width(_term_cols(), list_w)
+    return len(readability_view.render_detail_lines(cur, detail_w))
+
+
+def _readability_move_up():
+    global _readability_cursor, _readability_on_back
+    global _readability_detail_scroll, _readability_list_scroll
+    n = len(_readability_catalog)
+    if _readability_on_back:
+        if n == 0:
+            return
+        _readability_on_back = False
+        _readability_cursor  = n - 1
+        _readability_detail_scroll = 0
+    elif _readability_cursor > 0:
+        _readability_cursor -= 1
+        _readability_detail_scroll = 0
+    else:
+        return
+    _readability_ensure_cursor_visible()
+    if _app:
+        _app.invalidate()
+
+
+def _readability_move_down():
+    global _readability_cursor, _readability_on_back
+    global _readability_detail_scroll, _readability_list_scroll
+    n = len(_readability_catalog)
+    if _readability_on_back or n == 0:
+        return
+    if _readability_cursor < n - 1:
+        _readability_cursor += 1
+        _readability_detail_scroll = 0
+    else:
+        _readability_on_back = True
+    _readability_ensure_cursor_visible()
+    if _app:
+        _app.invalidate()
+
+
+def _readability_ensure_cursor_visible():
+    global _readability_list_scroll
+    if _readability_on_back:
+        return
+    body = _readability_list_rows()
+    if _readability_cursor < _readability_list_scroll:
+        _readability_list_scroll = _readability_cursor
+    elif _readability_cursor >= _readability_list_scroll + body:
+        _readability_list_scroll = _readability_cursor - body + 1
+
+
+def _readability_scroll_detail(delta):
+    global _readability_detail_scroll
+    total = _readability_detail_total()
+    body  = _readability_visible_rows()
+    mx    = max(0, total - body)
+    new   = max(0, min(mx, _readability_detail_scroll + delta))
+    if new != _readability_detail_scroll:
+        _readability_detail_scroll = new
+        if _app:
+            _app.invalidate()
+
+
+def _readability_toggle_cursor():
+    global _readability_dirty
+    n = len(_readability_catalog)
+    if n == 0 or _readability_on_back:
+        return
+    idx = max(0, min(n - 1, _readability_cursor))
+    _readability_catalog[idx].enabled = not _readability_catalog[idx].enabled
+    _readability_dirty = True
+    if _app:
+        _app.invalidate()
+
+
+def _readability_activate_cursor():
+    if _readability_on_back:
+        _readability_save_and_pop()
+    else:
+        _readability_toggle_cursor()
+
+
+def _readability_set_hover(row):
+    global _readability_hover, _readability_hover_back
+    changed = False
+    if _readability_hover != row:
+        _readability_hover = row
+        changed = True
+    if _readability_hover_back:
+        _readability_hover_back = False
+        changed = True
+    if changed and _app:
+        _app.invalidate()
+
+
+def _readability_set_hover_back(on):
+    global _readability_hover, _readability_hover_back
+    changed = False
+    if _readability_hover_back != on:
+        _readability_hover_back = on
+        changed = True
+    if _readability_hover is not None:
+        _readability_hover = None
+        changed = True
+    if changed and _app:
+        _app.invalidate()
+
+
+def _readability_row_handler(row_idx):
+    def _h(ev):
+        global _readability_cursor, _readability_on_back, _readability_detail_scroll
+        if ev.event_type == MouseEventType.MOUSE_MOVE:
+            _readability_set_hover(row_idx)
+            return None
+        if ev.event_type == MouseEventType.MOUSE_DOWN:
+            if row_idx != _readability_cursor or _readability_on_back:
+                _readability_cursor = row_idx
+                _readability_on_back = False
+                _readability_detail_scroll = 0
+                _readability_ensure_cursor_visible()
+            _readability_toggle_cursor()
+            return None
+        if ev.event_type == MouseEventType.SCROLL_UP:
+            _readability_move_up()
+            return None
+        if ev.event_type == MouseEventType.SCROLL_DOWN:
+            _readability_move_down()
+            return None
+        return NotImplemented
+    return _h
+
+
+def _readability_list_sb_handler(local_row):
+    def _h(ev):
+        if ev.event_type == MouseEventType.SCROLL_UP:
+            _readability_move_up()
+            return None
+        if ev.event_type == MouseEventType.SCROLL_DOWN:
+            _readability_move_down()
+            return None
+        if ev.event_type != MouseEventType.MOUSE_DOWN:
+            return NotImplemented
+        body = _readability_list_rows()
+        if local_row < body // 2:
+            for _ in range(body):
+                _readability_move_up()
+        else:
+            for _ in range(body):
+                _readability_move_down()
+        return None
+    return _h
+
+
+def _readability_back_handler():
+    def _h(ev):
+        if ev.event_type == MouseEventType.MOUSE_MOVE:
+            _readability_set_hover_back(True)
+            return None
+        if ev.event_type == MouseEventType.MOUSE_DOWN:
+            _readability_save_and_pop()
+            return None
+        return NotImplemented
+    return _h
+
+
+def _readability_detail_handler(body_row):
+    def _h(ev):
+        if ev.event_type == MouseEventType.MOUSE_MOVE:
+            _readability_set_hover(None)
+            return None
+        if ev.event_type == MouseEventType.SCROLL_UP:
+            _readability_scroll_detail(-3)
+            return None
+        if ev.event_type == MouseEventType.SCROLL_DOWN:
+            _readability_scroll_detail(3)
+            return None
+        return NotImplemented
+    return _h
+
+
+def _readability_detail_sb_handler(local_row):
+    def _h(ev):
+        if ev.event_type == MouseEventType.SCROLL_UP:
+            _readability_scroll_detail(-3)
+            return None
+        if ev.event_type == MouseEventType.SCROLL_DOWN:
+            _readability_scroll_detail(3)
+            return None
+        if ev.event_type != MouseEventType.MOUSE_DOWN:
+            return NotImplemented
+        body = _readability_visible_rows()
+        if local_row < body // 2:
+            _readability_scroll_detail(-body)
+        else:
+            _readability_scroll_detail(body)
+        return None
+    return _h
+
+
+def _readability_back_row_frags(list_w):
+    label = "Back"
+    row_w = len(label) + 6
+    pad   = max(0, list_w - row_w)
+    left  = pad // 2
+    right = pad - left
+
+    if _readability_on_back:
+        state = "selected"
+    elif _readability_hover_back:
+        state = "hover"
+    else:
+        state = "inactive"
+    h = _readability_back_handler()
+    return [
+        ("", " " * left,  h),
+        *menu_row(label, state, mouse_handler=h),
+        ("", " " * right, h),
+    ]
+
+
+def _readability_blank_row_frags(list_w):
+    return [("", " " * list_w)]
+
+
+def _readability_text():
+    cols   = _term_cols()
+    rows_h = _term_rows()
+    body_h = _readability_visible_rows()
+
+    frags = []
+    frags.extend(title_block("─── Readability ───", cols, blank_above=2))
+
+    list_w = (readability_view.list_panel_width(_readability_catalog)
+              if _readability_catalog else readability_view.MIN_LIST_W)
+    extra_left = [
+        _readability_blank_row_frags(list_w),
+        _readability_back_row_frags(list_w),
+    ]
+
+    if _readability_catalog:
+        row_h  = _readability_row_handler
+        sb_h   = _readability_list_sb_handler
+        det_h  = _readability_detail_handler
+        det_sb = _readability_detail_sb_handler
+        hover  = _readability_hover
+    else:
+        row_h = sb_h = None
+        det_h  = _readability_detail_handler
+        det_sb = _readability_detail_sb_handler
+        hover  = None
+
+    cursor_idx = -1 if _readability_on_back else _readability_cursor
+
+    frags.extend(readability_view.render_body(
+        _readability_catalog,
+        cursor_idx=cursor_idx,
+        list_scroll=_readability_list_scroll,
+        detail_scroll=_readability_detail_scroll,
+        term_cols=cols,
+        body_h=body_h,
+        focus="list",
+        mode="interactive",
+        row_handler=row_h,
+        sb_handler=sb_h,
+        detail_handler=det_h,
+        detail_sb_handler=det_sb,
+        hover_row=hover,
+        detail_idx=_readability_cursor,
+        extra_left_rows=extra_left,
+    ))
+
+    if _readability_catalog:
+        footer = "↑↓ Move · Space Toggle · PgUp/PgDn Scroll · ESC Back"
+    else:
+        footer = "↑↓ Move · PgUp/PgDn Scroll · ESC Back"
+    content_rows = title_block_height(2) + body_h
     frags.extend(footer_block(footer, cols, rows_h, content_rows))
     return frags
 
@@ -8690,6 +9041,38 @@ def _kb_scr_escape(event):
     _scripts_save_and_pop()
 
 
+# Readability — single-column navigation, mirrors Scripts.
+@kb.add("up", filter=_in_frame("readability"))
+def _kb_rdbl_up(event):
+    _readability_move_up()
+
+
+@kb.add("down", filter=_in_frame("readability"))
+def _kb_rdbl_down(event):
+    _readability_move_down()
+
+
+@kb.add("pageup", filter=_in_frame("readability"))
+def _kb_rdbl_pgup(event):
+    _readability_scroll_detail(-_readability_visible_rows())
+
+
+@kb.add("pagedown", filter=_in_frame("readability"))
+def _kb_rdbl_pgdn(event):
+    _readability_scroll_detail(_readability_visible_rows())
+
+
+@kb.add(" ", filter=_in_frame("readability"))
+@kb.add("enter", filter=_in_frame("readability"))
+def _kb_rdbl_activate(event):
+    _readability_activate_cursor()
+
+
+@kb.add("escape", filter=_in_frame("readability"), eager=True)
+def _kb_rdbl_escape(event):
+    _readability_save_and_pop()
+
+
 # About
 @kb.add("up", filter=_in_frame("about"))
 def _kb_abt_up(event):
@@ -9290,7 +9673,7 @@ def main():
     global _options_terminal_window
     global _terminal_font_picker_window
     global _spotlights_empty_window
-    global _scripts_window, _about_window
+    global _scripts_window, _readability_window, _about_window
     global _update_running_window, _update_result_window
     global _too_small_window
     global _history_filter_window, _history_table_window, _history_options_window
@@ -9358,6 +9741,7 @@ def main():
     _terminal_font_picker_window,       terminal_font_picker_frame     = _build_simple(_terminal_font_picker_text)
     _spotlights_empty_window,           spotlights_empty_frame         = _build_simple(_spotlights_empty_text)
     _scripts_window,               scripts_frame             = _build_simple(_scripts_text)
+    _readability_window,           readability_frame         = _build_simple(_readability_text)
     _about_window,                 about_frame               = _build_simple(_about_text)
     _update_running_window,        update_running_frame      = _build_simple(_update_running_text)
     _update_result_window,         update_result_frame       = _build_simple(_update_result_text)
@@ -9476,6 +9860,7 @@ def main():
         "terminal_font_picker":       terminal_font_picker_frame,
         "spotlights_empty":           spotlights_empty_frame,
         "scripts":                    scripts_frame,
+        "readability":                readability_frame,
         "about":                      about_frame,
         "history":                    history_frame,
         "history_detail":             history_detail_frame,

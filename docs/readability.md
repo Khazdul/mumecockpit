@@ -112,5 +112,42 @@ starts with all readability modules off.
 5. Reload: either restart the session, or fire
    `#lua {scripts.readability.reload()}` for a hot reload.
 
+## Launcher UI
+
+Options → Readability opens a two-column `[ list | detail ]` view
+backed by `bridge/launcher/readability_view.py`. The module mirrors
+`scripts_view.py` (same layout constants, same renderer contract).
+
+### Flow
+
+1. Entering the frame scans `ttpp/readability/modules/*.tin` and reads
+   `readability_enabled` from `bridge/runtime/startup.conf`.
+2. Each `.tin` file appears as a row; enabled modules show `[X]`.
+3. Selecting a row shows its `.meta` preview in the detail panel
+   (description + before/after examples with ANSI colour).
+4. Space/Enter toggles enabled state; ESC saves and returns to Options.
+
+### Key bindings
+
+| Key | Action |
+|-----|--------|
+| ↑/↓ | Move cursor (skips spacer to Back) |
+| Space/Enter | Toggle module or activate Back |
+| PgUp/PgDn | Scroll detail panel |
+| ESC | Save pending toggles, return to Options |
+
+### Persistence
+
+Toggles are deferred — the `readability_enabled` key in
+`startup.conf` is written on Back/ESC only. Changes take effect at
+the next cockpit start (same contract as Scripts / Panes). There is
+no cache file; both surfaces scan the filesystem directly.
+
+### Alphabetical placement
+
+The "Readability" entry sits between "Panes" and "Scripts" in the
+Options menu, following the alphabetical sort convention used by all
+Options children.
+
 ---
 Back to [architecture.md](../architecture.md).
