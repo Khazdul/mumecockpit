@@ -1,0 +1,10 @@
+#nop ===== READABILITY MODULE LOADER =====
+#nop Three aliases to manage the {readability} class.
+#nop Called from Lua via session_cmd — class open/read/close is atomic
+#nop within each alias body (ADR 0097).
+
+#alias {readability_load} {#class {readability} {open};#foreach {%0} {_rd_mod} {#read ttpp/readability/modules/$_rd_mod.tin};#class {readability} {close}}
+
+#alias {readability_clear} {#class {readability} {kill}}
+
+#alias {readability_reload} {readability_clear;readability_load {%0}}

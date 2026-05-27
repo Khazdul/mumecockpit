@@ -1,0 +1,9 @@
+description = "Highlights the literal word 'example' for readability testing."
+
+example_before = [
+    "this is an example sentence.",
+]
+
+example_after = [
+    "this is an \u001B[1;92mexample\u001B[0m sentence.",
+]

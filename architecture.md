@@ -33,6 +33,8 @@ tracking, and UI feedback.
 │   │                     #   mud_events.tin — core MUD triggers → Lua event bus (priority 3)
 │   │                     #   system.tin     — connection aliases, cp commands, session events
 │   │                     #   welcome.tin    — clean boot banner + auto-connect
+│   ├── readability/      # Drop-in readability modules — see docs/readability.md
+│   │   └── modules/      #   <name>.tin loaded into {readability} class on session start
 │   └── profiles/         # Per-profile personal settings (.tin files)
 │                         #   default.tin is runtime-seeded from
 │                         #   bridge/launcher/templates/blank_profile.tin (ADR 0042)
@@ -518,6 +520,7 @@ mode.
 - [docs/affects.md](docs/affects.md) — Affect tracker: data flow, state schemas, persistence, pattern-conversion rules, tick lifecycle. Touched when changing affect tracking or adding new affect entries.
 - [docs/stored-spells.md](docs/stored-spells.md) — Stored spells tracker: data flow, schemas, spell-name resolver, persistence, SENT OUTPUT snooping. Touched when changing stored-spell tracking or the spells data table.
 - [docs/blinds.md](docs/blinds.md) — Blinds tracker: 90 s fixed-duration timers, two-layer (inbound landing + outgoing cast snoop FIFO), failure-pattern queue cleanup. Touched when changing blind tracking or the cast-snoop heuristics.
+- [docs/readability.md](docs/readability.md) — Readability modules: drop-in `.tin` loader, `.meta` format spec, startup.conf toggle, cold/hot reload lifecycle. Touched when adding a module, changing the loader contract, or modifying the `.meta` format.
 - [docs/runs.md](docs/runs.md) — Run log contract: file layout, event schema (run_start/level_up/run_end), lifecycle, schema versioning. Touched when changing run-log behaviour or adding new row types.
 - [docs/buffs-pane.md](docs/buffs-pane.md) — Buffs pane: renderer, scroll, blink, layout integration. Touched when changing the buffs pane renderer or the buffs.state schema.
 - [docs/group-pane.md](docs/group-pane.md) — Group pane: renderer, state-file schema, bar fill, threshold colours, name overlay, overflow indicator. Touched when changing the group pane renderer or the group.state schema.

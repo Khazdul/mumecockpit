@@ -177,6 +177,7 @@ _CONF_DEFAULTS_FALLBACK = {
     "spotlights_show_pvp":          "1",
     "spotlights_show_achievements": "1",
     "terminal_bg_fallback":         "#000000",
+    "readability_enabled":          "",
 }
 
 
@@ -763,6 +764,7 @@ def _save_conf():
                 "spotlights_show_deaths", "spotlights_show_levelups",
                 "spotlights_show_pvp", "spotlights_show_achievements",
                 "terminal_bg_fallback",
+                "readability_enabled",
             ):
                 fh.write(f"{key}={_conf.get(key, _CONF_DEFAULTS[key])}\n")
     except OSError:
