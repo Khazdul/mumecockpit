@@ -75,7 +75,16 @@ before the disconnect step — see "Auto-open on disconnect" below.
   The Panes submenu's grid does not use a separate hover style —
   hovering a cell moves the cursor to that cell instead, so the gold
   cursor highlight is the only visible response.
-- **Mouse wheel** — not used inside the popup. See Scope trims.
+- **Mouse wheel** — wired on the scrolling frames (Scripts,
+  Readability, Statistics) per the launcher's wheel model. Wheel
+  over a list row (or its scrollbar / spacer / Back row) moves the
+  cursor by 1 row per notch; wheel over a detail panel (or its
+  scrollbar / the title or footer chrome) scrolls the detail by
+  3 rows per notch; wheel over a Statistics table scrolls that
+  table by 1 row and focuses it. Other frames (main, options,
+  panes, rate_session, exit_confirm, profile editor frames) have
+  no wheel binding because there's nothing to scroll. See
+  [ADR 0114](decisions/0114-popup-display-popup-forwards-wheel.md).
 
 ## Status header
 
@@ -438,8 +447,13 @@ guard against. Toggles are non-destructive and reversible.
 **Mouse.** Hover lights the row under the pointer (`C_HOVER` on module
 rows; light `<< Back >>` on Back). Click on a module row jumps the
 cursor and toggles in one motion. Click on the list or detail scrollbar
-gutter page-steps in the click direction. Mouse wheel is not wired
-(tmux `display-popup` limitation). The hover-clear invariant applies.
+gutter page-steps in the click direction. Mouse wheel over a module
+row, the list scrollbar, the in-column blank spacer, or the Back row
+moves the cursor by 1 row per notch (mirroring the keyboard step);
+wheel over a detail-panel cell, the detail scrollbar, or the title /
+footer chrome scrolls the detail panel by 3 rows per notch. The
+hover-clear invariant applies. See
+[ADR 0114](decisions/0114-popup-display-popup-forwards-wheel.md).
 
 **Empty state.** When no `.tin` files exist the detail area shows the
 shared "No readability modules found" message; the cursor lands on Back
@@ -492,20 +506,23 @@ and Back, skipping the blank spacer (mirrors the launcher).
 `Home` / `End` jumps to the first / last script. `Enter` on Back
 pops the frame; `Enter` on a script row is a no-op (the popup is
 read-only). `PgUp` / `PgDn` scrolls the detail panel by one body's
-worth of rows (clamped to the detail content total). Mouse wheel is
-intentionally not wired here — tmux `display-popup` only forwards
-click events, so keyboard is the documented scroll path. ESC pops
-back to `options`.
+worth of rows (clamped to the detail content total). ESC pops back
+to `options`.
 
 **Mouse.** Hover lights the row under the pointer (`C_HOVER` on
 script rows; light `<< Back >>` on Back). A click on a script row
 moves the browse cursor to that row and resets the detail scroll —
 read-only, no toggle. A click on the list or detail scrollbar gutter
-page-steps in the click direction (no wheel branch — the popup is
-wheel-free). The hover-clear invariant applies: title / footer
-chrome, blank spacer, and per-row padding around `<< Back >>` carry
-a clear-hover handler so the highlight does not stick when the
-pointer moves off a selectable row.
+page-steps in the click direction. Wheel over a script row, the
+list scrollbar, the blank spacer, or the Back row moves the browse
+cursor by 1 row per notch (the read-only cursor step — no toggle);
+wheel over a detail-panel cell, the detail scrollbar, or the title /
+footer chrome scrolls the detail panel by 3 rows per notch. The
+hover-clear invariant applies: title / footer chrome, blank spacer,
+and per-row padding around `<< Back >>` carry a clear-hover handler
+so the highlight does not stick when the pointer moves off a
+selectable row. See
+[ADR 0114](decisions/0114-popup-display-popup-forwards-wheel.md).
 
 **Empty state.** When the cache is missing or empty (e.g. before the
 first brain startup of a fresh install) the body region shows the
@@ -601,6 +618,10 @@ sort UI.
 **Focus.** A module-level `_stats_focused` integer (0..3) tracks which
 table receives keyboard scroll. Tab / Shift+Tab cycle. Mouse click
 anywhere in a table (title, row, scrollbar) sets focus to that table.
+Mouse wheel over any cell of a table (title, data row, or scrollbar
+gutter) scrolls that table by 1 row per notch via `_stats_wheel_scroll`
+and sets focus to it — wheel scrolling always tracks the table the
+user is interacting with, mirroring the click-sets-focus behaviour.
 The focused table's title row paints en bloc in `C_CURSOR_CELL` (gold)
 instead of `C_SECTION` (cyan) — every fragment in the row (section
 name, column headers, sort indicators) switches together.
@@ -828,13 +849,6 @@ Deliberately NOT in the popup:
 - **About** — not enough value to justify the code.
 - **Profile switch / connection mode / profile creation** — launcher-only; requires restart.
 - **Layout mockup** — saves vertical space in the popup.
-- **Mouse wheel scroll in the popup** — tmux `display-popup` does not
-  forward wheel events to the popup application (only click events).
-  A global rebind of `WheelUpPane`/`WheelDownPane` to `send-keys -M`
-  would forward them, but breaks wheel scrollback in the game pane and
-  other non-mouse-mode panes. The tradeoff is unacceptable; keyboard
-  navigation (UP/DOWN, PageUp/PageDown) is the documented path. See
-  [ADR 0062](decisions/0062-popup-menu-prompt-toolkit.md).
 
 ## Adding a new frame
 

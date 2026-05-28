@@ -60,6 +60,9 @@ its own `KeyBindings` filter.
 - **Limitation.** Mouse wheel does not scroll within the popup.
   Cause and rejected workarounds are documented in
   `docs/popup-menu.md` Scope trims and below.
+  *Superseded in part by [ADR 0114](0114-popup-display-popup-forwards-wheel.md)
+  — the wheel limitation no longer holds under the shipped foot/WSLg
+  setup; wheel is wired on Scripts, Readability, and Statistics.*
 
 ## Alternatives considered
 
