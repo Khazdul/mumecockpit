@@ -32,12 +32,12 @@
 #nop when Lua starts and immediately emits output during script load.
 #nop tintin(ses, cmd)  — relay for simple brace-free commands (MUD sends, etc.)
 
-#action {tintin (%1) %2}      {#%1 %2}
+#action {tintin (%1) %2}      {#%1 %2} {3}
 #nop tintin_cmd — file-based relay for commands with braces (actions, delays, etc.)
 #nop brain.lua writes the command to a unique file then signals via tintin_read.
 #nop #read executes file content directly — braces are preserved, no session required.
-#action {tintin_read %1}      {#read %1}
-#action {tintin_show (%1) %2} {#%1 #showme %2}
+#action {tintin_read %1}      {#read %1} {3}
+#action {tintin_show (%1) %2} {#%1 #showme %2} {3}
 
 #nop Start Lua as a sub-session — quiet to suppress "#TRYING TO LAUNCH" notice
 #line quiet {#run {lua} {lua lua/brain.lua}}

@@ -12,7 +12,7 @@
 #alias {_send %0} {
     #if {$_echo_sends == 1} {#showme {%0}};
     %0
-}
+} {3}
 
 #nop ===== CONNECTION ALIASES =====
 
@@ -20,11 +20,11 @@
 #nop resolved from bridge/runtime/startup.conf by config.tin at startup.
 #alias {connect} {
     #$_ses_cmd {$_profile} {$_host} {$_port}
-}
+} {3}
 
 #nop Legacy aliases — same as connect, kept for muscle memory.
-#alias {default} {connect}
-#alias {mume}    {connect}
+#alias {default} {connect} {3}
+#alias {mume}    {connect} {3}
 
 #nop `reconnect` — mode-aware reconnect - routes on $_ses_cmd and &game_session.
 #nop MMapper mode bounces _disconnect → _connect (raw _connect on a live link
@@ -63,20 +63,21 @@
             #lua {ui_err("reconnect: unknown connection mode.")}
         }
     }
-}
+} {3}
 
 #nop ===== COCKPIT SYSTEM =====
-#nop Direct cp aliases. {cp} has priority 6 so specific {cp -X} aliases (priority 5) win.
+#nop Direct cp aliases. Specific {cp -X} aliases sit at priority 3 (core band)
+#nop and bare {cp} at priority 4 so it loses to any matching {cp -X}. See ADR 0115.
 #nop Script aliases like {cp -autostab} are registered by Lua at startup.
 
-#alias {cp -u} {#system {bash $HOME/MUME/bridge/layout/toggle_pane.sh ui --persist}}
-#alias {cp -m} {#system {bash $HOME/MUME/bridge/layout/toggle_pane.sh comm --persist}}
-#alias {cp -b} {#system {bash $HOME/MUME/bridge/layout/toggle_pane.sh buffs --persist}}
-#alias {cp -g} {#system {bash $HOME/MUME/bridge/layout/toggle_pane.sh group --persist}}
-#alias {cp -d} {#system {bash $HOME/MUME/bridge/layout/toggle_pane.sh dev --persist}}
-#alias {cp -c} {#system {bash $HOME/MUME/bridge/layout/toggle_pane.sh status --persist}}
-#alias {cp -h} {#system {bash $HOME/MUME/bridge/layout/toggle_pane.sh headers --persist}}
-#alias {cp -reset-heights} {#system {bash $HOME/MUME/bridge/layout/reset_heights.sh}}
+#alias {cp -u} {#system {bash $HOME/MUME/bridge/layout/toggle_pane.sh ui --persist}} {3}
+#alias {cp -m} {#system {bash $HOME/MUME/bridge/layout/toggle_pane.sh comm --persist}} {3}
+#alias {cp -b} {#system {bash $HOME/MUME/bridge/layout/toggle_pane.sh buffs --persist}} {3}
+#alias {cp -g} {#system {bash $HOME/MUME/bridge/layout/toggle_pane.sh group --persist}} {3}
+#alias {cp -d} {#system {bash $HOME/MUME/bridge/layout/toggle_pane.sh dev --persist}} {3}
+#alias {cp -c} {#system {bash $HOME/MUME/bridge/layout/toggle_pane.sh status --persist}} {3}
+#alias {cp -h} {#system {bash $HOME/MUME/bridge/layout/toggle_pane.sh headers --persist}} {3}
+#alias {cp -reset-heights} {#system {bash $HOME/MUME/bridge/layout/reset_heights.sh}} {3}
 
 #nop _save_profile — single definition of the profile save sequence
 #nop (#class write + sanitize). Session-context-only by design: must be
@@ -90,7 +91,7 @@
         #class {$_profile} {write} {ttpp/profiles/$_profile.tin};
         #system {bash $HOME/MUME/bridge/release/sanitize_profile.sh ttpp/profiles/$_profile.tin}
     }
-}
+} {3}
 
 #alias {cp -s}
 {
@@ -103,7 +104,7 @@
     {
         #lua {ui_err("cp -s: no profile loaded.")}
     }
-}
+} {3}
 
 #alias {cp -e} {
     _save_profile;
@@ -111,7 +112,7 @@
     #showme {[COCKPIT] Goodbye. Shutting down client...};
     #if {&game_session} {#$game_session #zap};
     #zap
-}
+} {3}
 
 #nop cp -profile-snapshot — write the live profile class to a runtime tempfile.
 #nop Used by the in-game popup before opening the profile editor.
@@ -122,7 +123,7 @@
     } {
         #system {echo fail > bridge/runtime/.profile_snapshot_result}
     }
-}
+} {3}
 
 #nop cp -profile-apply — kill + read the edited profile, with canary detection
 #nop and snapshot rollback on failure. The popup writes profile_edit.tin via
@@ -151,10 +152,10 @@
     } {
         #system {echo fail > bridge/runtime/.profile_apply_result}
     }
-}
+} {3}
 
-#nop Priority 6 — fires only when no specific {cp -X} alias (priority 5) matches
-#alias {cp} {_cockpit_help} {6}
+#nop Priority 4 — fires only when no specific {cp -X} alias (priority 3) matches
+#alias {cp} {_cockpit_help} {4}
 
 #nop variables.tin — placeholder
 
@@ -176,8 +177,8 @@
             #%0 #class {%0} {open};
             #%0 #read ttpp/profiles/%0.tin;
             #%0 #class {%0} {close};
-            #%0 #alias {reconnect} {#gts reconnect};
-            #%0 #action {^Status: MUME closed the connection.$} {_save_profile;#lua {mark_mume_disconnected()}};
+            #%0 #alias {reconnect} {#gts reconnect} {3};
+            #%0 #action {^Status: MUME closed the connection.$} {_save_profile;#lua {mark_mume_disconnected()}} {3};
             _register_mud_events %0;
             _register_clock_actions %0;
             _register_affect_actions;

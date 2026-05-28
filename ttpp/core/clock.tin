@@ -17,4 +17,4 @@
         #%1 #action {^The current time is %%1.$} {#lua {events.emit("room_clock_line", "%%0")}} {3};
         #%1 #ticker {clock} {#lua {state.world.clock.tick()}} {0.25}
     }
-}
+} {3}

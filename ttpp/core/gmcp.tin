@@ -30,6 +30,6 @@
         #%0 #alias {gmcp_enable_channel}
         {
             #send {$IAC$SB${GMCP}Comm.Channel.Enable "%%1"$IAC$SE\}
-        }
+        } {3}
     }
 }

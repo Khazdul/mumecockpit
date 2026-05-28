@@ -22,4 +22,4 @@
         #nop {Escape 3/3/4 in alias body: 3 pct inner pattern, 3 pct emit-arg, 4 pct unaction-pattern (must match stored inner pattern verbatim).};
         #%1 #action {^You achieved something new!$} {#class {core} {open};#action {^%%%1$} {#lua {events.emit("achievement", "%%%1")};#unaction {^%%%%1$}} {3};#class {core} {close}} {3}
     }
-}
+} {3}

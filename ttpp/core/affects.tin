@@ -6,4 +6,4 @@
 
 #alias {_register_affect_actions} {
     #lua {_affects_register_triggers()}
-}
+} {3}

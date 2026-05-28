@@ -6,4 +6,4 @@
 
 #alias {_register_blinds_actions} {
     #lua {_register_blinds_actions()}
-}
+} {3}

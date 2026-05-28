@@ -7,4 +7,4 @@
 
 #alias {_register_stat_reconcile_actions} {
     #lua {_register_stat_reconcile_actions()}
-}
+} {3}

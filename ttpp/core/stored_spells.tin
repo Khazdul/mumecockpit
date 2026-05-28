@@ -6,4 +6,4 @@
 
 #alias {_register_stored_spells_actions} {
     #lua {_register_stored_spells_actions()}
-}
+} {3}

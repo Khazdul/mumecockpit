@@ -23,4 +23,4 @@
         #%1 #event {RECEIVED INPUT} {#if {"%%0" == ""} {#lua {EMPTY_INPUT}}};
         #%1 #class {core} {close}
     }
-}
+} {3}

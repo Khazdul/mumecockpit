@@ -3,10 +3,10 @@
 #nop Called from Lua via session_cmd — class open/read/close is atomic
 #nop within each alias body (ADR 0097).
 
-#alias {readability_load %0} {#class {readability} {open};#foreach %0 {_rd_mod} {#read ttpp/readability/modules/$_rd_mod.tin};#class {readability} {close}}
+#alias {readability_load %0} {#class {readability} {open};#foreach %0 {_rd_mod} {#read ttpp/readability/modules/$_rd_mod.tin};#class {readability} {close}} {3}
 
-#alias {readability_clear} {#class {readability} {kill}}
+#alias {readability_clear} {#class {readability} {kill}} {3}
 
-#alias {readability_reload %0} {readability_clear;readability_load %0}
+#alias {readability_reload %0} {readability_clear;readability_load %0} {3}
 
-#alias {cp -readability-apply} {#lua {scripts.readability.reload()}}
+#alias {cp -readability-apply} {#lua {scripts.readability.reload()}} {3}

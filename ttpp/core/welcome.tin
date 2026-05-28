@@ -23,10 +23,10 @@
         #showme {};
         connect
     }
-}
+} {3}
 
 #nop _startup schedules the 0.5s delay so tt++ and Lua finish their boot
 #nop output before we wipe. Called explicitly from main.tin.
 #alias {_startup} {
     #delay {0.5} {_do_startup}
-}
+} {3}
