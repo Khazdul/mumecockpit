@@ -161,11 +161,22 @@ right-click `installer-core.ps1`, Properties, Unblock, then run via
 ## macOS flow
 
 Run `install/bootstrap-macos.sh` for the automated path. The script
-installs backend dependencies (bash, tmux, lua, tintin, git, python3) via
+installs backend dependencies (bash, tmux, lua@5.4, tintin, git, python3) via
 Homebrew and prompt_toolkit via pip, then clones the repo to `~/MUME`.
 **Homebrew must already be installed** — if it isn't, the script exits
 with instructions pointing to https://brew.sh. No terminal emulator is
 installed; run the cockpit from whichever terminal you already use.
+
+macOS bootstrap installs `lua@5.4` (not the rolling `lua` formula).
+The cockpit's Lua scripts target Lua 5.4 semantics (notably the
+`<const>` attribute on locals); pinning here matches what the Linux
+apt path already does via the `lua5.4` package. `lua@5.4` is keg-only
+on Homebrew, so the binary does not land on PATH automatically —
+`start.sh` prepends the keg's `bin/` to PATH on macOS, then runs a
+pre-flight version check that aborts startup with a clear error if
+`lua -v` does not report `5.4.x`. The check is platform-agnostic and
+also covers the Linux path against future drift. See
+[ADR 0116](decisions/0116-pin-lua-runtime-to-5.4.md).
 
 **The cockpit requires bash 4+.** macOS ships `/bin/bash` 3.2 (Apple
 avoids the GPLv3-licensed bash 4+). The bootstrap installs Homebrew bash 5
@@ -468,6 +479,15 @@ macOS/Linux bootstraps do not write or own that file.
   without `--break-system-packages`; the bootstrap script tries the
   clean install first and falls back automatically if pip refuses with
   the externally-managed-environment error.
+- **`lua@5.4` could be removed from brew.** Known fragility, mirroring
+  how `lua@5.1` was removed in the past. If it ever happens, the
+  bootstrap's `brew install` step fails loudly and `start.sh`'s
+  pre-flight version check refuses to launch the cockpit with a clear
+  actionable error — instead of the silent
+  `#ERROR: UNKNOWN TINTIN COMMAND 'lua'` spam we saw when the rolling
+  `lua` formula went to 5.5. The follow-up at that point is the
+  source-build path described in [ADR 0116](decisions/0116-pin-lua-runtime-to-5.4.md)
+  (deferred — not warranted while `lua@5.4` is supported).
 
 ### Linux
 
@@ -494,14 +514,18 @@ macOS/Linux bootstraps do not write or own that file.
 2. **Retire `misc/`.** This doc absorbs `misc/WSL and Terminal
    settings`. Once the installer ships, delete the `misc/` directory
    to remove duplication.
-3. **macOS probe-port.** Apply the same TLS-probe-then-source-build
-   pattern to `bootstrap-macos.sh`. `brew`'s `tintin` formula is
-   generally current, but TLS support is not guaranteed across upgrades.
-   Approach mirrors the Linux fix: detect existing `tt++`, check for
-   gnutls/openssl linkage via `otool -L "$(command -v tt++)"`, skip if
-   present; otherwise build from source via brew's build-from-tap or a
-   manual clone. Lower priority since macOS is Tier 2 — see
-   [ADR 0020](decisions/0020-platform-support-policy.md).
+3. **macOS probe-port for tt++ TLS.** Apply the same
+   TLS-probe-then-source-build pattern to `bootstrap-macos.sh` for
+   `tt++` specifically. `brew`'s `tintin` formula is generally current,
+   but TLS support is not guaranteed across upgrades. Approach mirrors
+   the Linux fix: detect existing `tt++`, check for gnutls/openssl
+   linkage via `otool -L "$(command -v tt++)"`, skip if present;
+   otherwise build from source via brew's build-from-tap or a manual
+   clone. Lower priority since macOS is Tier 2 — see
+   [ADR 0020](decisions/0020-platform-support-policy.md). The Lua
+   portion of this open question is **resolved** — `lua@5.4` is now
+   pinned on macOS and a pre-flight version check guards both platforms.
+   See [ADR 0116](decisions/0116-pin-lua-runtime-to-5.4.md).
 
 ## Rollout phases
 

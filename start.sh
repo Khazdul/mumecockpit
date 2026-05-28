@@ -23,6 +23,36 @@ if ! command -v lua >/dev/null 2>&1; then
     sudo apt update && sudo apt install -y lua5.4
 fi
 
+# --- Lua runtime resolution (macOS) -----------------------------------
+# Prepend brew's lua@5.4 keg to PATH so `lua` resolves to 5.4, not
+# whatever brew's rolling `lua` formula currently ships.
+# Linux is unaffected: apt package `lua5.4` already pins by name.
+if [[ "$OSTYPE" == darwin* ]]; then
+    if lua_prefix=$(brew --prefix lua@5.4 2>/dev/null); then
+        export PATH="$lua_prefix/bin:$PATH"
+    fi
+fi
+
+# --- Lua version pre-flight check -------------------------------------
+# Fail fast with a clear error if `lua` is not 5.4.x. Catches future
+# upstream changes (lua@5.4 removed from brew, apt switching to 5.5,
+# user's PATH overriding ours) before the cockpit silently misbehaves.
+if ! command -v lua >/dev/null 2>&1; then
+    echo "Error: lua not found on PATH." >&2
+    echo "macOS: brew install lua@5.4" >&2
+    echo "Linux: apt-get install lua5.4" >&2
+    exit 1
+fi
+lua_version=$(lua -v 2>&1 | awk '{print $2}')
+lua_major=${lua_version%.*}
+if [ "$lua_major" != "5.4" ]; then
+    echo "Error: cockpit requires Lua 5.4.x, found Lua $lua_version" >&2
+    echo "  which lua: $(command -v lua)" >&2
+    echo "macOS: brew install lua@5.4 (and re-run start.sh; PATH will pick it up)" >&2
+    echo "Linux: apt-get install lua5.4" >&2
+    exit 1
+fi
+
 mkdir -p bridge/runtime logs
 
 # Seed default.tin from the blank-profile template on fresh installs.
