@@ -67,8 +67,6 @@ _SB_TRACK_STYLE = "fg:#585858"
 _SB_THUMB_GLYPH = "█"
 _SB_TRACK_GLYPH = "░"
 
-_MAX_EXAMPLE_LINES = 6
-
 _ANSI_SGR_RE = re.compile(r"\x1b\[([0-9;]*)m")
 
 
@@ -102,13 +100,13 @@ def parse_meta(path):
 
     before = data.get("example_before")
     if isinstance(before, list):
-        before = [str(x) for x in before[:_MAX_EXAMPLE_LINES]]
+        before = [str(x) for x in before]
     else:
         before = None
 
     after = data.get("example_after")
     if isinstance(after, list):
-        after = [str(x) for x in after[:_MAX_EXAMPLE_LINES]]
+        after = [str(x) for x in after]
     else:
         after = None
 

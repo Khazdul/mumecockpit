@@ -73,8 +73,9 @@ loader's parser and add complexity for a UI-only concern.
 - The launcher's `readability_view.py` parses `.meta` via `tomllib`.
   Parse errors produce `(None, None, None)` — the module renders
   without preview sections rather than breaking.
-- `example_before` and `example_after` are capped at 6 entries each
-  to keep the preview compact.
+- `example_before` and `example_after` were originally capped at 6
+  entries each; the cap was removed once the detail panel gained
+  overflow scrolling, leaving line count to the author.
 - ANSI SGR escapes in `example_after` are converted to
   prompt_toolkit style tuples for rendering.
 

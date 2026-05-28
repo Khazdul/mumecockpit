@@ -34,11 +34,12 @@ Fields:
 | Field | Type | Description |
 |-------|------|-------------|
 | `description` | string | One-sentence summary of what the module does. |
-| `example_before` | array of strings | Up to 6 lines showing MUD output *without* the module. Plain text. |
-| `example_after` | array of strings | Up to 6 lines showing MUD output *with* the module. May contain raw ANSI escape sequences (`[...m`) for FG/BG colour and styling. |
+| `example_before` | array of strings | Lines showing MUD output *without* the module. Plain text. |
+| `example_after` | array of strings | Lines showing MUD output *with* the module. May contain raw ANSI escape sequences (`[...m`) for FG/BG colour and styling. |
 
-The 6-line soft cap keeps the preview compact in the UI. ANSI sequences
-in `example_after` are rendered literally by the terminal — the popup
+The author chooses how many example lines to include; the detail panel
+scrolls on overflow, so no hard cap is enforced. ANSI sequences in
+`example_after` are rendered literally by the terminal — the popup
 preview writes them directly.
 
 ## Loader contract
