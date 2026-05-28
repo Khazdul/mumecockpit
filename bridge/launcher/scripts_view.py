@@ -297,7 +297,10 @@ def package_width(term_cols, list_w):
 # ---------------------------------------------------------------------------
 def render_detail_lines(script, detail_w):
     """Return a list of fragment lists (one per visual row) describing
-    `script`'s detail panel, word-wrapped to `detail_w` cells.
+    `script`'s detail panel. All wrapped content is sized to
+    `detail_w - SB_W` so it never overlaps the detail scrollbar column
+    (reserved unconditionally — the unused cell is harmless when the
+    panel doesn't overflow).
 
     Sections (top to bottom): name · status · summary · aliases · help.
     Empty sections are skipped. Caller slices into the visible viewport.
@@ -305,6 +308,7 @@ def render_detail_lines(script, detail_w):
     Each row is a list of `(style, text)` 2-tuples; the renderer
     promotes them to 3-tuples and pads to `detail_w` at draw time."""
     rows = []
+    content_w = max(1, detail_w - SB_W)
 
     # Title.
     rows.append([(C_SECTION, script.name)])
@@ -318,7 +322,7 @@ def render_detail_lines(script, detail_w):
     # Summary.
     if script.summary:
         rows.append([])
-        for line in (textwrap.wrap(script.summary, detail_w) or [""]):
+        for line in (textwrap.wrap(script.summary, content_w) or [""]):
             rows.append([(C_BODY, line)])
 
     # Aliases. Names render in `C_ACTIVE` (bright white) — gold is
@@ -330,7 +334,7 @@ def render_detail_lines(script, detail_w):
             label = f"  {name}"
             sep   = "  "
             indent = " " * (len(label) + len(sep))
-            avail  = max(1, detail_w - len(indent))
+            avail  = max(1, content_w - len(indent))
             wrapped = textwrap.wrap(desc, avail) if desc else []
             if wrapped:
                 rows.append([
@@ -353,7 +357,7 @@ def render_detail_lines(script, detail_w):
             if not line.strip():
                 rows.append([])
                 continue
-            for w in (textwrap.wrap(line, detail_w) or [""]):
+            for w in (textwrap.wrap(line, content_w) or [""]):
                 rows.append([(C_ITEM, w)])
 
     return rows

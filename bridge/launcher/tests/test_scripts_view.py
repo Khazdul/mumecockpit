@@ -288,7 +288,9 @@ class TestDetailLines(unittest.TestCase):
                 return
         self.fail("alias row missing")
 
-    def test_help_wraps_to_detail_w(self):
+    def test_help_wraps_to_detail_content_w(self):
+        # Content wraps to detail_w - SB_W so wrapped rows can't overlap
+        # the reserved scrollbar column.
         s = scripts_view.Script(
             name="x", enabled=True,
             help=["a b c d e f g h i j k l m n o p q r s t"],
