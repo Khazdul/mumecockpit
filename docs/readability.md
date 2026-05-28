@@ -23,9 +23,11 @@ module name. A module named `foo` lives at `ttpp/readability/modules/foo.tin`.
 
 ## `.meta` format
 
-Optional companion file for each module. Format: TOML. Used by the
-launcher and in-game popup to describe the module to the user. Slice 1
-does not parse `.meta` — the file exists as a format reference.
+Optional companion file for each module. Format: TOML. Parsed by both
+the launcher and the in-game popup to show a description and
+before/after preview for each module. See
+[ADR 0111](decisions/0111-readability-sidecar-meta.md) for the sidecar
+rationale.
 
 Fields:
 
@@ -49,7 +51,7 @@ Three tt++ aliases manage the `{readability}` class. Defined in
 | `readability_load <list>` | Open `{readability}`, `#foreach` + `#read` each module, close the class. `<list>` is semicolon-separated module names. |
 | `readability_clear` | `#class {readability} {kill}` — destroy the class and all its members. |
 | `readability_reload <list>` | `readability_clear` then `readability_load` — atomic refresh. |
-| `cp -readability-apply` | Popup-facing entry point. Wraps `#lua {scripts.readability.reload()}` so the input echo in the game pane stays terse. |
+| `cp -readability-apply` | Dispatch entry point for hot reload. Wraps `scripts.readability.reload()` so the input echo in the game pane stays terse. Used by the popup; also works when typed manually. |
 
 Each alias body is a single tt++ statement (semicolon-separated commands
 on one line). The class open/read/close sequence lives entirely within the
@@ -80,9 +82,9 @@ When the player logs in (`Char.Name` GMCP fires):
 
 ### Hot reload (manual / popup-triggered)
 
-Call `scripts.readability.reload()` from tt++ via
-`#lua {scripts.readability.reload()}`, or use the `cp -readability-apply`
-alias (which wraps the same call). This:
+Fire `cp -readability-apply` (the standard dispatch surface), or call
+the underlying Lua entry point directly via
+`#lua {scripts.readability.reload()}`. Either way, the reload:
 
 1. Re-reads `startup.conf` for `readability_enabled`.
 2. Validates the module list.
@@ -90,9 +92,8 @@ alias (which wraps the same call). This:
    `readability_clear` if the list is now empty).
 
 The popup fires `cp -readability-apply` automatically after the user
-toggles modules and exits. The alias keeps the input echo terse;
-`#lua {scripts.readability.reload()}` continues to work when typed
-manually.
+toggles modules and exits. `#lua {scripts.readability.reload()}` also
+works when typed manually.
 
 ## startup.conf integration
 
@@ -114,7 +115,7 @@ starts with all readability modules off.
 4. Enable the module by adding its name to `readability_enabled` in
    `bridge/runtime/startup.conf` (comma-separated if multiple).
 5. Reload: either restart the session, or fire
-   `#lua {scripts.readability.reload()}` for a hot reload.
+   `cp -readability-apply` for a hot reload.
 
 ## Popup UI
 
@@ -127,18 +128,13 @@ view — same widths, colours, and behaviour.
 
 When the user toggles modules and exits (ESC or Back), the popup writes
 the updated `readability_enabled` key to `startup.conf` **and** fires
-`cp -readability-apply` via `tmux send-keys`. The alias is a thin
-wrapper (in `ttpp/core/readability.tin`) around
-`#lua {scripts.readability.reload()}`; using it keeps the input echo in
-the game pane terse — the player sees `cp -readability-apply` instead of
-raw `#lua {…}` syntax, matching the `cp -profile-apply` pattern from the
-profile-editor flow. Changes apply immediately — no restart required. A
-brief "Readability updated." flash in `C_ACCENT` confirms the dispatch
-on the popup's main frame.
-
-The Lua-side `scripts.readability.reload()` remains the authoritative
-entry point for any programmatic reload; the alias exists for the
-popup's input-echo UX.
+`cp -readability-apply` via `tmux send-keys`. The alias wraps
+`scripts.readability.reload()` (in `ttpp/core/readability.tin`), keeping
+the input echo terse — the player sees `cp -readability-apply` instead
+of raw `#lua {…}` syntax, matching the `cp -profile-apply` pattern from
+the profile-editor flow. Changes apply immediately — no restart
+required. A brief "Readability updated." flash in `C_ACCENT` confirms
+the dispatch on the popup's main frame.
 
 This contrasts with the launcher path, which writes `startup.conf` only
 and defers the effect to the next cockpit start (cold load).

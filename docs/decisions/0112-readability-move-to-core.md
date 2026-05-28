@@ -36,3 +36,7 @@ surface for tt++ `#lua` dispatch; it is orthogonal to file location.
 
 The short-lived placement of readability in `lua/scripts/` from the initial
 slice-1 readability implementation.
+
+## See also
+
+- [ADR 0111](0111-readability-sidecar-meta.md) — sidecar `.meta` format for module metadata.

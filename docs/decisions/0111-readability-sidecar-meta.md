@@ -77,3 +77,7 @@ loader's parser and add complexity for a UI-only concern.
   to keep the preview compact.
 - ANSI SGR escapes in `example_after` are converted to
   prompt_toolkit style tuples for rendering.
+
+## See also
+
+- [ADR 0112](0112-readability-move-to-core.md) — readability loader moved from `lua/scripts/` to `lua/core/`.
