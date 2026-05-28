@@ -15,8 +15,9 @@ multiple scripts need to react to. The API (`events.subscribe`,
 `events.emit`, `events.unsubscribe`) is defined in `lua/brain.lua`
 alongside `gmcp.dispatch`, ensuring it is available before any core or
 script module loads. High-priority core triggers in
-`ttpp/core/mud_events.tin` (priority 3) capture MUD output and call
-`events.emit(name, ...)`. Scripts subscribe at start time and unsubscribe
+`ttpp/core/mud_events.tin` (priority 3 per
+[ADR 0115](decisions/0115-core-priority-band.md)'s core band) capture
+MUD output and call `events.emit(name, ...)`. Scripts subscribe at start time and unsubscribe
 on abort — no changes to core files are needed when adding a new subscriber.
 
 The bus is the canonical solution to the trigger-ownership problem: two
@@ -646,11 +647,24 @@ mitigation in this iteration.
 
 Events can come from three sources:
 
-- **tt++ action** — add a `#action` line (at priority 3) inside a
+- **tt++ action** — add a `#action` line inside a
   `_register_<module>_actions` alias in the relevant `ttpp/core/<module>.tin`,
   and call that alias from `SESSION CONNECTED` in `ttpp/core/system.tin`.
   For project-wide events that have no owning module, use
   `ttpp/core/mud_events.tin` and the existing `_register_mud_events` alias.
+  Two flavours of the alias exist, and they get their priority differently
+  ([ADR 0115](decisions/0115-core-priority-band.md) defines the 1–4 core
+  band; `3` is the default):
+  - **Direct** — the alias body contains tt++ `#action` lines literally.
+    Each `#action` must carry `{3}` as the third brace-arg explicitly
+    (e.g. `mud_events.tin`, `clock.tin`).
+  - **Lua-delegating** — the alias body calls
+    `#lua {_register_<module>_triggers()}` and the actual `#action`
+    registrations happen on the Lua side via `session_cmd`. The helper
+    auto-injects `{3}` per the [docs/ipc.md](ipc.md) injection
+    contract, so the call site
+    must not (and should not) add `{3}` explicitly. Examples:
+    `affects.tin`, `stat_reconcile.tin`, `stored_spells.tin`.
 - **GMCP dispatch** — `gmcp.dispatch` automatically emits `gmcp_<module_snake>`
   after every packet. Subscribing to the event is sufficient; no changes to
   `gmcp.dispatch` or the primary handler are needed.
