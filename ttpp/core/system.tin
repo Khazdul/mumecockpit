@@ -92,7 +92,7 @@
 #nop core-registered name (live-typed shadowing aliases that #class write
 #nop would otherwise persist). Fire-and-forget #system call: when the
 #nop script strips anything it appends a timestamped line to
-#nop logs/debug.log naming what was stripped; no UI surface, because the
+#nop logs/debug.log naming what was stripped — no UI surface, because the
 #nop only path producing a shadowing alias is direct prompt typing
 #nop (#alias {cp} {...}) and that action is intentional. See ADR 0115.
 #alias {_save_profile} {
