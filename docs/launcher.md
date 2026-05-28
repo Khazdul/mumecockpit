@@ -1532,9 +1532,24 @@ row. Same colour grammar as the Scripts frame.
 A module without a `.meta` sidecar shows only the name + status.
 
 **Navigation.** Single-column, no focus zones — same model as Scripts.
-Up/Down moves cursor; PgUp/PgDn scrolls detail; Space/Enter toggles or
-pops on Back; ESC saves and pops. Same mouse handlers (click toggles,
-wheel scrolls, hover highlights).
+
+Keyboard: `↑` / `↓` moves the cursor through module rows and Back,
+skipping the blank spacer; `PgUp` / `PgDn` scrolls the detail panel;
+`Enter` / `Space` toggles the module under the cursor or pops on Back;
+`ESC` saves any pending toggles and pops.
+
+Mouse:
+
+- Click on a module row jumps the cursor and toggles in one motion.
+- Click on Back pops the frame (saving pending toggles).
+- Wheel over a module row / list scrollbar moves the cursor one row
+  per notch — mirrors `↑` / `↓`.
+- Wheel over the detail panel / detail scrollbar scrolls the detail
+  by 3 rows per notch.
+- Click on the list / detail scrollbar page-steps in the click
+  direction.
+- Hover lights the row under the pointer (`C_HOVER` on module rows,
+  light `<< Back >>` on Back).
 
 **Persistence.** Toggles mutate the in-memory catalog; the deferred
 write on Back/ESC updates `readability_enabled` in
