@@ -527,9 +527,100 @@ def load_profile(path):
 
 def save_profile(profile):
     """Serialise `profile` and write it to `profile.path` via a
-    temp-file + rename. Thin wrapper around `serialize_profile`."""
+    temp-file + rename.
+
+    Before serialising, strips any `#alias` Entry whose pattern matches a
+    name in `bridge/runtime/core_aliases.list` (ADR 0115 follow-up). The
+    removed names are written to `profile.dropped_collisions` (always a
+    fresh list, even when empty) so the caller can surface a message.
+    See `_filter_core_collisions` for details."""
+    _filter_core_collisions(profile)
     p = Path(profile.path)
     tmp = p.with_name(p.name + ".tmp")
     with open(tmp, "w") as fh:
         fh.write(serialize_profile(profile))
     os.replace(tmp, p)
+
+
+# ---------------------------------------------------------------------------
+# Core-alias collision filter (ADR 0115 follow-up)
+# ---------------------------------------------------------------------------
+# The runtime list is generated at launcher startup by
+# bridge/launcher/core_aliases.py. We read it lazily on first save and
+# cache the resulting set for the process lifetime — both the launcher
+# and the in-game popup are short-lived enough that re-reading per call
+# would only add I/O without changing behaviour.
+
+_CORE_ALIASES_LIST_PATH = (
+    Path(__file__).resolve().parents[2] / "bridge" / "runtime" / "core_aliases.list"
+)
+_CORE_ALIASES_CACHE = None  # set[str] once loaded; None = not yet loaded.
+
+
+def _load_core_aliases():
+    """Read the runtime list, caching for the process. Missing or empty
+    file → empty set, which disables filtering (fail open)."""
+    global _CORE_ALIASES_CACHE
+    if _CORE_ALIASES_CACHE is not None:
+        return _CORE_ALIASES_CACHE
+    names = set()
+    try:
+        with open(_CORE_ALIASES_LIST_PATH, "r") as fh:
+            for line in fh:
+                line = line.rstrip("\n").rstrip("\r")
+                if line:
+                    names.add(line)
+    except OSError:
+        pass
+    _CORE_ALIASES_CACHE = names
+    return names
+
+
+def _reset_core_aliases_cache():
+    """Test-only: clear the process-level cache so the next
+    `_load_core_aliases` call re-reads the file. Tests that monkey-patch
+    `_CORE_ALIASES_LIST_PATH` must call this to take effect."""
+    global _CORE_ALIASES_CACHE
+    _CORE_ALIASES_CACHE = None
+
+
+def _filter_core_collisions(profile):
+    """Strip `#alias` entries whose pattern matches a core-registered
+    alias from `profile.items`, in place. Always resets
+    `profile.dropped_collisions` to a fresh list (empty if no filter ran
+    or no entries matched).
+
+    Only `kind == "alias"` is filtered — actions, highlights, etc. are
+    untouched. Non-Entry items (Passthroughs) pass through unchanged."""
+    profile.dropped_collisions = []
+    names = _load_core_aliases()
+    if not names:
+        return
+    kept = []
+    for item in profile.items:
+        if (isinstance(item, Entry)
+                and item.kind == "alias"
+                and item.pattern in names):
+            profile.dropped_collisions.append(item.pattern)
+        else:
+            kept.append(item)
+    profile.items[:] = kept
+
+
+def profile_has_core_collisions(profile):
+    """Return True iff `profile.items` contains any `#alias` Entry that
+    would be removed by `_filter_core_collisions`. Read-only — does not
+    mutate the profile or its `dropped_collisions` attribute.
+
+    Hosts that skip `save_profile` on a non-dirty profile use this to
+    detect a pre-existing hand-edit collision and force a save anyway,
+    so the file is cleaned and the user is notified."""
+    names = _load_core_aliases()
+    if not names:
+        return False
+    for item in profile.items:
+        if (isinstance(item, Entry)
+                and item.kind == "alias"
+                and item.pattern in names):
+            return True
+    return False

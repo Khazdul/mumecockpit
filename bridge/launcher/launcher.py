@@ -70,6 +70,7 @@ import foot_config  # noqa: E402
 import history_filter  # noqa: E402
 import log_player  # noqa: E402
 import macro_keys  # noqa: E402
+import core_aliases  # noqa: E402
 import profile_io  # noqa: E402
 import profile_editor  # noqa: E402
 import run_retention  # noqa: E402
@@ -1604,8 +1605,12 @@ def _profile_action_edit():
             err_msg = f"Save failed: {exc.strerror or exc}"
         _pop_frame()
         _profile_editor_instance = None
+        dropped = getattr(p, "dropped_collisions", []) if err_msg is None else []
         if err_msg:
             _profile_set_feedback(err_msg, C_HINT)
+        elif dropped:
+            _profile_set_feedback(
+                core_aliases.format_dropped_message(dropped), C_YELLOW)
         elif saved_name:
             _profile_set_feedback(f"Saved {saved_name}.", C_ACCENT)
 
@@ -9760,6 +9765,13 @@ def main():
 
     os.chdir(PROJECT_DIR)
     _one_shot_migrations()
+    # Regenerate bridge/runtime/core_aliases.list so profile_io.save_profile
+    # can strip aliases that would shadow core (ADR 0115 follow-up). Best-effort:
+    # any failure falls open and writes an empty list inside the helper.
+    try:
+        core_aliases.write_core_aliases_list(PROJECT_DIR)
+    except Exception:
+        pass
     _load_conf()
     # Probe host-terminal background via OSC 11 while the tty is still in
     # cooked mode and the launcher owns it. Must happen before prompt_toolkit

@@ -1068,5 +1068,154 @@ class TestClassOpenCloseDrop(unittest.TestCase):
         self.assertEqual(out, "#alias {a} {b}\n")
 
 
+# ---------------------------------------------------------------------------
+# Core-alias collision filter (ADR 0115 follow-up). See
+# bridge/launcher/core_aliases.py for the runtime list generator.
+# ---------------------------------------------------------------------------
+class _CoreAliasListPatch:
+    """Context manager that points profile_io's list path at a temp file
+    and resets the process cache so a fresh read happens. Restores the
+    original path + cache on exit."""
+
+    def __init__(self, contents):
+        self.contents = contents
+        self._orig_path = None
+
+    def __enter__(self):
+        self._tmpdir = tempfile.mkdtemp()
+        self._list_path = Path(self._tmpdir) / "core_aliases.list"
+        if self.contents is not None:
+            self._list_path.write_text(self.contents)
+        self._orig_path = profile_io._CORE_ALIASES_LIST_PATH
+        profile_io._CORE_ALIASES_LIST_PATH = self._list_path
+        profile_io._reset_core_aliases_cache()
+        return self._list_path
+
+    def __exit__(self, *exc):
+        profile_io._CORE_ALIASES_LIST_PATH = self._orig_path
+        profile_io._reset_core_aliases_cache()
+
+
+class TestCoreCollisionFilter(unittest.TestCase):
+    def _save_and_read(self, profile):
+        """Run save_profile and read back the result. profile.path must be
+        writable."""
+        save_profile(profile)
+        return Path(profile.path).read_text()
+
+    def test_alias_pattern_in_list_is_dropped(self):
+        with _CoreAliasListPatch("cp\nreconnect\n"):
+            tmpdir = tempfile.mkdtemp()
+            path = Path(tmpdir) / "p.tin"
+            source = (
+                "#alias {cp} {bad override} {3}\n"
+                "#alias {keep} {body} {3}\n"
+            )
+            path.write_text(source)
+            prof = load_profile(path)
+            out = self._save_and_read(prof)
+            self.assertNotIn("{cp}", out)
+            self.assertIn("{keep}", out)
+            self.assertEqual(prof.dropped_collisions, ["cp"])
+
+    def test_no_collisions_yields_empty_dropped_list(self):
+        with _CoreAliasListPatch("cp\nreconnect\n"):
+            tmpdir = tempfile.mkdtemp()
+            path = Path(tmpdir) / "p.tin"
+            path.write_text("#alias {fine} {body} {3}\n")
+            prof = load_profile(path)
+            out = self._save_and_read(prof)
+            self.assertIn("{fine}", out)
+            self.assertEqual(prof.dropped_collisions, [])
+
+    def test_missing_list_file_disables_filter(self):
+        with _CoreAliasListPatch(None) as list_path:
+            self.assertFalse(list_path.exists())
+            tmpdir = tempfile.mkdtemp()
+            path = Path(tmpdir) / "p.tin"
+            path.write_text("#alias {cp} {would shadow} {3}\n")
+            prof = load_profile(path)
+            out = self._save_and_read(prof)
+            self.assertIn("{cp}", out)
+            self.assertEqual(prof.dropped_collisions, [])
+
+    def test_empty_list_file_disables_filter(self):
+        with _CoreAliasListPatch(""):
+            tmpdir = tempfile.mkdtemp()
+            path = Path(tmpdir) / "p.tin"
+            path.write_text("#alias {cp} {would shadow} {3}\n")
+            prof = load_profile(path)
+            out = self._save_and_read(prof)
+            self.assertIn("{cp}", out)
+            self.assertEqual(prof.dropped_collisions, [])
+
+    def test_only_alias_kind_is_filtered(self):
+        # Listing "cp" must not affect a like-named action / highlight /
+        # substitute. Each registration kind is its own keyspace in tt++.
+        with _CoreAliasListPatch("cp\n"):
+            tmpdir = tempfile.mkdtemp()
+            path = Path(tmpdir) / "p.tin"
+            path.write_text(
+                "#alias {cp} {dropped} {3}\n"
+                "#action {cp} {kept} {3}\n"
+                "#highlight {cp} {red}\n"
+                "#substitute {cp} {CP}\n"
+            )
+            prof = load_profile(path)
+            out = self._save_and_read(prof)
+            self.assertNotIn("#alias {cp}", out)
+            self.assertIn("#action {cp}", out)
+            self.assertIn("#highlight {cp}", out)
+            self.assertIn("#substitute {cp}", out)
+            self.assertEqual(prof.dropped_collisions, ["cp"])
+
+    def test_multiword_name_matches_verbatim(self):
+        with _CoreAliasListPatch("cp -s\n"):
+            tmpdir = tempfile.mkdtemp()
+            path = Path(tmpdir) / "p.tin"
+            path.write_text(
+                "#alias {cp -s} {dropped} {3}\n"
+                "#alias {cp -other} {kept} {3}\n"
+            )
+            prof = load_profile(path)
+            out = self._save_and_read(prof)
+            self.assertNotIn("{cp -s}", out)
+            self.assertIn("{cp -other}", out)
+            self.assertEqual(prof.dropped_collisions, ["cp -s"])
+
+    def test_dropped_collisions_resets_on_each_save(self):
+        # First save filters and reports; second save (after clean load)
+        # must yield an empty list, not a stale one.
+        with _CoreAliasListPatch("cp\n"):
+            tmpdir = tempfile.mkdtemp()
+            path = Path(tmpdir) / "p.tin"
+            path.write_text("#alias {cp} {x} {3}\n")
+            prof = load_profile(path)
+            save_profile(prof)
+            self.assertEqual(prof.dropped_collisions, ["cp"])
+            save_profile(prof)
+            self.assertEqual(prof.dropped_collisions, [])
+
+    def test_profile_has_core_collisions_detects_without_mutating(self):
+        with _CoreAliasListPatch("cp\n"):
+            tmpdir = tempfile.mkdtemp()
+            path = Path(tmpdir) / "p.tin"
+            path.write_text("#alias {cp} {x} {3}\n")
+            prof = load_profile(path)
+            self.assertTrue(profile_io.profile_has_core_collisions(prof))
+            # Items unchanged after the read-only check.
+            self.assertEqual(len(prof.items), 1)
+            self.assertFalse(hasattr(prof, "dropped_collisions")
+                             and prof.dropped_collisions)
+
+    def test_profile_has_core_collisions_false_when_no_match(self):
+        with _CoreAliasListPatch("cp\n"):
+            tmpdir = tempfile.mkdtemp()
+            path = Path(tmpdir) / "p.tin"
+            path.write_text("#alias {other} {x} {3}\n")
+            prof = load_profile(path)
+            self.assertFalse(profile_io.profile_has_core_collisions(prof))
+
+
 if __name__ == "__main__":
     unittest.main()

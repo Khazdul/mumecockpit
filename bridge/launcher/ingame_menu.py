@@ -36,6 +36,7 @@ from menu_chrome import (
     button_fragment, footer_block, menu_row, title_block, title_block_height,
 )
 from panes_grid import apply_cell_toggle, panes_grid_fragments
+import core_aliases
 import profile_editor
 import profile_io
 import readability_view
@@ -1971,6 +1972,12 @@ def _on_profile_editor_exit(profile):
     final_text = profile_io.serialize_profile(profile)
     dirty = (final_text != _profile_editor_original_text)
 
+    # Even when the user made no edits, a pre-existing hand-edit may have
+    # left a core-shadowing #alias in the file. save_profile() strips it;
+    # force a save so the file is cleaned and the user sees the message.
+    if not dirty and profile_io.profile_has_core_collisions(profile):
+        dirty = True
+
     if not dirty:
         _profile_editor_cleanup()
         _pop_frame()
@@ -1987,7 +1994,12 @@ def _on_profile_editor_exit(profile):
                 ["bash", str(SANITIZE_SCRIPT), str(_profile_editor_disk_path)],
                 check=False, timeout=5.0,
             )
-            _flash_main(f"Saved {_profile_editor_name}.tin.", C_ACCENT)
+            dropped = getattr(profile, "dropped_collisions", [])
+            if dropped:
+                _flash_main(
+                    core_aliases.format_dropped_message(dropped), C_YELLOW)
+            else:
+                _flash_main(f"Saved {_profile_editor_name}.tin.", C_ACCENT)
         except OSError as exc:
             _flash_main(f"Save failed: {exc}.", C_HINT)
         _profile_editor_cleanup()
@@ -2037,8 +2049,15 @@ def _apply_profile_connected():
     def _finish_apply():
         result = _poll_file(PROFILE_APPLY_RESULT)
         if result == "ok":
-            loop.call_soon_threadsafe(
-                _flash_main, "Profile updated.", C_ACCENT)
+            dropped = getattr(prof, "dropped_collisions", [])
+            if dropped:
+                loop.call_soon_threadsafe(
+                    _flash_main,
+                    core_aliases.format_dropped_message(dropped),
+                    C_YELLOW)
+            else:
+                loop.call_soon_threadsafe(
+                    _flash_main, "Profile updated.", C_ACCENT)
         else:
             msg = "Apply failed — rolled back." if result == "fail" else \
                   "Apply timed out — rolled back."

@@ -43,6 +43,12 @@ rm -f bridge/runtime/.popup_open
 rm -f bridge/runtime/.user_reconnecting
 rm -f bridge/runtime/.layout_ready
 
+# Regenerate bridge/runtime/core_aliases.list — the runtime snapshot of
+# names registered by ttpp/main.tin + ttpp/core/*.tin that the profile
+# editor's save path uses to strip shadowing aliases (ADR 0115 follow-up).
+# Fail open: errors print to stderr but don't abort the cockpit start.
+python3 bridge/launcher/core_aliases.py 2>&1 || true
+
 CONF="bridge/runtime/startup.conf"
 CONF_TEMPLATE="bridge/launcher/templates/startup.conf"
 

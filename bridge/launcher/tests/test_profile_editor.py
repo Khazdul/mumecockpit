@@ -4056,5 +4056,73 @@ class TestEditorScrollbarAutoScroll(unittest.TestCase):
         self.assertEqual(_ed._editor_body_col, 2)
 
 
+# ---------------------------------------------------------------------------
+# Save-time shadowing filter (ADR 0115 follow-up). The editor itself does
+# not save — the host (launcher / popup) calls profile_io.save_profile in
+# its on_exit callback. These tests verify the integration: open a profile
+# that contains a core-shadowing alias, run the host's save call, and
+# check that the file is clean and profile.dropped_collisions is populated
+# so the host can surface the message.
+# ---------------------------------------------------------------------------
+class TestSaveTimeCollisionFilter(unittest.TestCase):
+    def setUp(self):
+        self._tmpdir = tempfile.mkdtemp()
+        self._list_path = Path(self._tmpdir) / "core_aliases.list"
+        self._list_path.write_text("cp\nreconnect\n")
+        self._orig_path = profile_io._CORE_ALIASES_LIST_PATH
+        profile_io._CORE_ALIASES_LIST_PATH = self._list_path
+        profile_io._reset_core_aliases_cache()
+
+    def tearDown(self):
+        profile_io._CORE_ALIASES_LIST_PATH = self._orig_path
+        profile_io._reset_core_aliases_cache()
+
+    def test_save_through_editor_strips_shadowing_alias(self):
+        # An untouched profile that already contains a colliding alias —
+        # closing the editor and saving should drop the entry from disk.
+        source = (
+            "#alias {cp} {bad shadow} {3}\n"
+            "#alias {keep} {body} {3}\n"
+        )
+        prof, _src, _td = _make_profile(source)
+        _reset_editor_state(prof)
+        _ed._save_and_close()
+        profile_io.save_profile(prof)
+        written = prof.path.read_text()
+        self.assertNotIn("{cp}", written)
+        self.assertIn("{keep}", written)
+        self.assertEqual(prof.dropped_collisions, ["cp"])
+
+    def test_create_via_lite_then_save_never_persists_collision(self):
+        # Empty profile + the user creates `#alias {cp}` via lite-mode CRUD;
+        # save must drop it (entry never lands on disk).
+        prof, _src, _td = _make_profile("")
+        _reset_editor_state(prof)
+        prof.items.append(profile_io.Entry(
+            kind="alias", pattern="cp", body="user shadow", priority=None,
+        ))
+        _ed._save_and_close()
+        profile_io.save_profile(prof)
+        self.assertEqual(prof.path.read_text(), "")
+        self.assertEqual(prof.dropped_collisions, ["cp"])
+
+    def test_no_collision_save_emits_no_message_marker(self):
+        # Profile without collisions: dropped_collisions is an empty list.
+        source = "#alias {fine} {body} {3}\n"
+        prof, _src, _td = _make_profile(source)
+        _reset_editor_state(prof)
+        _ed._save_and_close()
+        profile_io.save_profile(prof)
+        self.assertIn("{fine}", prof.path.read_text())
+        self.assertEqual(prof.dropped_collisions, [])
+
+    def test_format_dropped_message_round_trip(self):
+        # Sanity-check that the host's user-facing string matches the
+        # contract documented in bridge/launcher/core_aliases.py.
+        import core_aliases
+        msg = core_aliases.format_dropped_message(["cp"])
+        self.assertEqual(msg, "Skipped 1 entry that shadow core: cp.")
+
+
 if __name__ == "__main__":
     unittest.main()
