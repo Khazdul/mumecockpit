@@ -419,6 +419,7 @@ Keyboard within the kind-buttons row:
   and `→` on `SUBSTITUTES` are no-ops.
 - `↑` falls through to the LITE/EDITOR toggle.
 - `↓` falls through to the entry list.
+- `Enter` / `Space` drops into the entry list (cursor on row 0).
 
 The row sits between the toggle and the body in the new physical
 stacking, so the up-arrow fall-through from the entry list top row

@@ -1025,6 +1025,54 @@ class TestPhase4MultiKind(unittest.TestCase):
         self.assertIn("Color",     joined)
 
 
+class TestKindRowEnterSpaceActivates(unittest.TestCase):
+    """The kind-buttons row (focus 0) accepts Enter / Space as
+    activators. Both drop focus into the entry list with the cursor
+    on row 0 — same outcome as ↓, so the row stops feeling dead."""
+
+    class _FakeEvent:
+        data = " "
+
+    @staticmethod
+    def _lite_handler(key):
+        """Return the registered single-key handler whose lite-mode
+        filter is currently active. `enter` resolves to Keys.ControlM
+        and `space` to a literal ' ' in prompt_toolkit."""
+        from prompt_toolkit.keys import Keys
+        target = {"enter": Keys.ControlM, "space": " "}[key]
+        kb = _ed.key_bindings()
+        for b in kb.bindings:
+            if b.keys == (target,) and b.filter():
+                return b.handler
+        raise KeyError(f"no lite-mode handler for {key!r}")
+
+    def _drops_into_list(self, key, source, preset_cursor):
+        prof, _src, _td = _make_profile(source)
+        _reset_editor_state(prof, focus=0)
+        _ed._editor_list_cursor = preset_cursor
+        self._lite_handler(key)(self._FakeEvent())
+        self.assertEqual(_ed._editor_focus, 1)
+        self.assertEqual(_ed._editor_list_cursor, 0)
+
+    def test_enter_drops_into_populated_list(self):
+        # Two aliases → display_total = 3 (entries + sentinel). Start the
+        # cursor mid-list so the jump-to-0 is observable.
+        self._drops_into_list(
+            "enter", "#alias {a} {x}\n#alias {b} {y}\n", preset_cursor=1)
+
+    def test_space_drops_into_populated_list(self):
+        self._drops_into_list(
+            "space", "#alias {a} {x}\n#alias {b} {y}\n", preset_cursor=1)
+
+    def test_enter_drops_into_empty_list_sentinel(self):
+        # Empty kind → display_total = 1 (sentinel only). Cursor row 0
+        # IS the `+ New entry` sentinel; focus still moves to the list.
+        self._drops_into_list("enter", "", preset_cursor=0)
+
+    def test_space_drops_into_empty_list_sentinel(self):
+        self._drops_into_list("space", "", preset_cursor=0)
+
+
 class TestPhase5MacrosTab(unittest.TestCase):
     """Phase 5 — the Macros tab renders the Key (press-to-bind) cell
     + Commands editor and shows readable key names in the list."""

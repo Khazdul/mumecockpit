@@ -5554,6 +5554,13 @@ class ProfileEditor:
         
         @kb.add("enter", filter=_in_pe_lite())
         def _kb_peditor_enter(event):
+            if self._editor_focus == 0:
+                # Kind buttons row: Enter activates the focused button by
+                # dropping into the entry list, cursor on row 0. Mirrors
+                # ↓ so the row stops feeling dead.
+                self._profile_editor_set_focus(1)
+                self._profile_editor_jump_cursor(0)
+                return
             if self._editor_focus == 1:
                 if self._editor_cursor_on_sentinel():
                     self._editor_create_new_entry()
@@ -5584,8 +5591,26 @@ class ProfileEditor:
                 if self._editor_detail_field == 1:
                     self._editor_body_insert_newline()
                 # Pattern: Enter is a no-op (use Tab / ↓ to advance).
-        
-        
+
+
+        @kb.add("space", filter=_in_pe_lite())
+        def _kb_peditor_space(event):
+            if self._editor_focus == 0:
+                # Kind buttons row: Space mirrors Enter — drop into the
+                # entry list, cursor on row 0.
+                self._profile_editor_set_focus(1)
+                self._profile_editor_jump_cursor(0)
+                return
+            if self._editor_focus == 2:
+                # Detail panel: route to the printable-char handler so
+                # Pattern and Body keep inserting a literal space. The
+                # palette zones and the macro Key cell are no-ops there
+                # already (the <any> handler swallows them).
+                _kb_peditor_any(event)
+            # focus 1 (entry list): Space is a no-op — Enter still owns
+            # list activation.
+
+
         @kb.add("backspace", filter=_in_pe_lite())
         def _kb_peditor_backspace(event):
             if self._editor_focus != 2:
