@@ -82,7 +82,7 @@ curl -fsSL https://raw.githubusercontent.com/Khazdul/mumecockpit/main/install/bo
 
 ### What got installed
 
-- Homebrew formulae: tmux, lua, tintin, git, python3
+- Homebrew formulae: bash, tmux, lua@5.4, tintin, git, python3
 - prompt_toolkit, pyperclip via pip
 - The MUME Cockpit repo at `~/MUME`
 - An optional Alacritty config example at `~/MUME/install/examples/alacritty.toml`

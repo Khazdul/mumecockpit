@@ -13,14 +13,15 @@ cd "$(dirname "$0")"
 # ---------------------------------------------------------------------------
 # 1. Install dependencies
 # ---------------------------------------------------------------------------
-if ! command -v tmux >/dev/null 2>&1; then
-    echo "📦 Installing tmux..."
-    sudo apt update && sudo apt install -y tmux
-fi
-
-if ! command -v lua >/dev/null 2>&1; then
-    echo "📦 Installing lua..."
-    sudo apt update && sudo apt install -y lua5.4
+if [[ "$OSTYPE" == linux* ]]; then
+    if ! command -v tmux >/dev/null 2>&1; then
+        echo "📦 Installing tmux..."
+        sudo apt update && sudo apt install -y tmux
+    fi
+    if ! command -v lua >/dev/null 2>&1; then
+        echo "📦 Installing lua..."
+        sudo apt update && sudo apt install -y lua5.4
+    fi
 fi
 
 # --- Lua runtime resolution (macOS) -----------------------------------
@@ -28,7 +29,8 @@ fi
 # whatever brew's rolling `lua` formula currently ships.
 # Linux is unaffected: apt package `lua5.4` already pins by name.
 if [[ "$OSTYPE" == darwin* ]]; then
-    if lua_prefix=$(brew --prefix lua@5.4 2>/dev/null); then
+    lua_prefix=$(brew --prefix lua@5.4 2>/dev/null)
+    if [ -n "$lua_prefix" ] && [ -x "$lua_prefix/bin/lua" ]; then
         export PATH="$lua_prefix/bin:$PATH"
     fi
 fi
