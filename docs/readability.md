@@ -118,6 +118,23 @@ starts with all readability modules off.
 5. Reload: either restart the session, or fire
    `cp -readability-apply` for a hot reload.
 
+### Authoring notes
+
+Hard-won from the first real module — keep these in mind:
+
+- **Tint flags (e.g. `(glowing)`, `(hidden)`) with `#substitute` + an
+  explicit reset, not `#highlight`.** tt++'s highlight auto-restore
+  mangles a truecolor foreground (it emits e.g. `\e[0;8421504m`).
+  `#substitute` lets you control the trailing reset yourself.
+- **A `%1` whole-line capture keeps only the text, not embedded colour
+  codes** — so a generic catch-all sub can't separately tint a flag
+  inside the captured line; the whole line takes one colour. If you
+  need a flag tinted distinctly, match it in its own pattern.
+- **Author `example_after` by capturing the live tt++ render, not by
+  hand.** tt++ collapses redundant SGR codes, so hand-written ANSI
+  may not byte-match what the module actually emits — and the preview
+  is only useful when it shows what players will actually see.
+
 ## Popup UI
 
 ESC → Options → Readability opens the same two-column `[ list | detail ]`
