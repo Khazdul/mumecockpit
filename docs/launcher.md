@@ -2784,15 +2784,16 @@ All frames render through `prompt_toolkit` controls. Layout building blocks:
   frame. A `<any>`-filter binding swallows key input while the gate is
   on; Ctrl-C / Ctrl-Q still exit. Resizing past the threshold restores
   the normal UI transparently because the gate is checked on every
-  render. Under `MUME_TERMINAL=foot-managed` the gate adds a second
-  centred hint line and binds R / Shift+R to a self-healing reset that
-  rewrites foot.ini to `initial-window-mode=fullscreen` + font `size=15`
-  (family, colours, cursor, and pad preserved) and relaunches foot via
-  the same sentinel + resume tail the Options → Terminal Apply uses —
-  the escape hatch for users who lock themselves out by picking
-  `windowed` with a large font. The explicit R binding beats the
-  `<any>` swallow only when the foot-managed filter matches; on any
-  other terminal R is swallowed as before.
+  render. Under `MUME_TERMINAL=foot-managed` the gate appends a
+  "Press R to reset terminal settings to defaults" hint and binds
+  R / Shift+R to a reset that rewrites foot.ini's
+  `initial-window-mode=fullscreen` and font `size=15` (family,
+  colours, cursor, and pad preserved), drops the relaunch sentinel +
+  resume hint, and exits so the supervisor relaunches foot at safe
+  defaults. R is foot-managed-only: the explicit binding beats the
+  `<any>` swallow only when the filter matches; on any other terminal
+  R is swallowed. Rationale and rejected alternatives in
+  [ADR 0113](decisions/0113-too-small-gate-reset-hatch.md).
 - **Mouse hover / click** — every selectable row carries a per-fragment
   `mouse_handler`. `MOUSE_DOWN` selects-and-activates in a single click.
   `MOUSE_MOVE` updates a hover index that paints the row in `C_HOVER`
