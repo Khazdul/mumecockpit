@@ -1,5 +1,6 @@
 #nop { =================================================================== };
 #nop {  Mume readability module - Mobs (room contents) };
+#nop {  Credits: Lamia (original mob list). };
 #nop {  446 named subs + 5 generic fallbacks + 2 flag subs };
 #nop {  };
 #nop {  No prefix: each line is NAME (tier colour) + BODY ('is here' };
