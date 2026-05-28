@@ -90,20 +90,16 @@
 #nop
 #nop strip_core_collisions.sh drops any #alias whose pattern matches a
 #nop core-registered name (live-typed shadowing aliases that #class write
-#nop would otherwise persist). When it strips anything its stdout carries
-#nop two lines — count and comma-joined names — captured via #script and
-#nop surfaced through system_ui. Silent no-op when nothing was stripped.
-#nop See ADR 0115.
+#nop would otherwise persist). Fire-and-forget #system call: when the
+#nop script strips anything it appends a timestamped line to
+#nop logs/debug.log naming what was stripped; no UI surface, because the
+#nop only path producing a shadowing alias is direct prompt typing
+#nop (#alias {cp} {...}) and that action is intentional. See ADR 0115.
 #alias {_save_profile} {
     #if {"$_profile" != "" && $_profile_loaded} {
         #class {$_profile} {write} {ttpp/profiles/$_profile.tin};
         #system {bash $HOME/MUME/bridge/release/sanitize_profile.sh ttpp/profiles/$_profile.tin};
-        #unvar {_strip_out};
-        #script {_strip_out} {bash $HOME/MUME/bridge/release/strip_core_collisions.sh ttpp/profiles/$_profile.tin};
-        #if {&_strip_out[]} {
-            #lua {system_ui("Profile save: stripped " .. ui_var("$_strip_out[1]") .. " shadowing aliases (" .. ui_var("$_strip_out[2]") .. ").")}
-        };
-        #unvar {_strip_out}
+        #system {bash $HOME/MUME/bridge/release/strip_core_collisions.sh ttpp/profiles/$_profile.tin}
     }
 } {3}
 

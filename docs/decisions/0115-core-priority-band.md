@@ -137,15 +137,31 @@ keyed off a launcher-generated allowlist:
   filter to the on-disk file. Closes the live-typed-prompt vector by
   dropping any shadowing alias that `#class write` would otherwise
   persist; the override survives only within the current session.
-  Surfaces a `system_ui` line — `Profile save: stripped N shadowing
-  aliases (a, b, c).` — when anything is removed. Closes the
-  `cp -s` / `cp -e` / SESSION DEACTIVATED save paths (PR 2).
+  When anything is stripped, the script appends a single timestamped
+  line to `logs/debug.log` identifying the stripped names; no
+  user-facing UI message is emitted, because the only path that
+  produces a shadowing alias is direct prompt typing (`#alias {cp}
+  {...}` at the tt++ prompt) and that action is intentional. Closes
+  the `cp -s` / `cp -e` / SESSION DEACTIVATED save paths (PR 2).
 
 Both filters fail open: an empty or missing
 `bridge/runtime/core_aliases.list` skips filtering rather than
 blocking the save. The ADR 0115 escape hatch is preserved — a power
 user can still type `#alias {cp} {...}` at the prompt and have it
 fire within the live session — only persistence is denied.
+
+The third bullet above supersedes an earlier `system_ui` formulation:
+the original `_save_profile` body captured the script's stdout via
+`#script` and surfaced a `Profile save: stripped N shadowing aliases
+(a, b, c).` line. The `#script` capture is asynchronous — by the
+time the immediately following `#if {&_strip_out[]}` ran, the bash
+process had not yet written into the variable, so the UI line never
+fired (same async timing class as
+[ADR 0050](0050-synchronous-nested-actions-with-class-discipline.md)).
+Moving the channel to debug.log let `_save_profile` invoke the script
+as a fire-and-forget `#system` call and removed the async coupling
+entirely. Choosing debug-log over fixing the synchronisation was the
+better fit for the event itself, per the reasoning above.
 
 **Remaining gap.** Lua-registered script aliases (`cp -autostab`,
 `cp -autobow`, etc.) are not in `bridge/runtime/core_aliases.list`
