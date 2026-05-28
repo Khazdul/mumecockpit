@@ -1,0 +1,27 @@
+description = "Mume readability - room-contents mobs. Each verbose mob line becomes a short, colour-coded \"!  <name> is here\": grey = trivial, red = named/dangerous, gold = roots, white = special; (glowing) tinted white, (hidden) slate-grey. 446 named mobs + generic fallbacks for unlisted mobs. Exact Mudlet truecolor palette. Examples below are a representative selection, live tt++ render."
+
+example_before = [
+    "A squirrel scampers around here, looking for nuts from the trees.",
+    "A grey wolf is here, snarling aggressively.",
+    "Bill Ferny is watching you with suspicious eyes.",
+    "A huge, black bear is here, proud heir to the great and ancient mountain bears.",
+    "Some roots lie here waiting to ensnare weary travellers.",
+    "An old man, swathed in a great light-coloured cloak, is standing here.",
+    "A red-eyed shaman of the Morgundul tribe is here, chanting in evil tongues. (glowing)",
+    "An orc-guard is on patrol here. (hidden)",
+    "A wandering nameless pilgrim is standing here.",
+    "An old, wise tree with penetrating green eyes stands here.",
+]
+
+example_after = [
+    "\u001B[38;2;255;255;255m!  \u001B[38;2;128;128;128mA squirrel is here\u001B[0m.",
+    "\u001B[38;2;255;255;255m!  \u001B[38;2;128;128;128mA grey wolf is here\u001B[0m.",
+    "\u001B[38;2;255;255;255m!  \u001B[38;2;178;34;34mBill Ferny is here\u001B[0m.",
+    "\u001B[38;2;255;255;255m!  \u001B[38;2;178;34;34mThe huge, black bear\u001B[0m is here.",
+    "\u001B[38;2;255;255;255m!  \u001B[38;2;218;165;32mA clump of roots is here\u001B[0m.",
+    "\u001B[38;2;255;255;255m!  An old man is here\u001B[0m.",
+    "\u001B[38;2;255;255;255m!  \u001B[38;2;178;34;34mLuxzúm the Morgundul Shaman is here\u001B[0m. \u001B[38;2;255;255;255m(glowing)\u001B[0m",
+    "\u001B[38;2;255;255;255m!  \u001B[38;2;128;128;128mAn orc-guard is here\u001B[0m. \u001B[38;2;112;128;144m(hidden)\u001B[0m",
+    "\u001B[38;2;255;255;255m!  \u001B[38;2;128;128;128mA wandering nameless pilgrim is standing here.\u001B[0m",
+    "\u001B[38;2;255;255;255m!  \u001B[38;2;178;34;34mTreebeard the Ent is here\u001B[0m.",
+]

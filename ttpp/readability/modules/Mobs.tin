@@ -1,0 +1,488 @@
+#nop { =================================================================== };
+#nop {  Mume readability module - Mobs (room contents) };
+#nop {  446 named subs + 5 generic fallbacks + 2 flag subs };
+#nop {  };
+#nop {  Colour legend (tt++ codes, see #help colors): };
+#nop {    <FFFFFFF>  white   '!  ' marker };
+#nop {    <F808080>  grey    trivial / background mob };
+#nop {             = Mudlet ansiLightBlack (Qt DarkGray, #808080). };
+#nop {    <FB22222> red     named / dangerous (firebrick #B22222) };
+#nop {    <FDAA520> gold    roots / snare    (goldenrod #DAA520) };
+#nop {    <F708090> slate   (hidden) flag (#708090) };
+#nop {    <088>  reset to default colour };
+#nop {  };
+#nop {  24-bit truecolor = exact Mudlet palette. Renders in tt++ and };
+#nop {  the in-game popup; the launcher preview needs the };
+#nop {  readability_view.py truecolor SGR fix to show it correctly. };
+#nop {  };
+#nop {  Specials: the name carries the colour; ' is here' returns to };
+#nop {  the default colour ONLY for the 5 mobs that had an embedded };
+#nop {  <reset> in the source (bear, guardian, Brolg, sage, Throkrath). };
+#nop {  Every other firebrick/goldenrod mob stays fully coloured, as };
+#nop {  Mudlet renders it. };
+#nop {  };
+#nop {  Named subs are read before the generics, so a known mob always };
+#nop {  wins; the generics only catch mobs not in the list. };
+#nop {  };
+#nop {  Install:  #read mume_readability_mobs.tin };
+#nop {  Remove:   #killall substitute };
+#nop { =================================================================== };
+
+#nop {{ ---- named mobs ---- }};
+#substitute {^A disgusting forest troll is searching for fresh meat here} {<FFFFFFF>!  <F808080>An ugly forest troll is here<088>}
+#substitute {^A brutish forest troll is hunting here, looking for some tasty flesh} {<FFFFFFF>!  <F808080>A brutish forest troll is here<088>}
+#substitute {^A large mother hawk is here looking for prey to feed her young} {<FFFFFFF>!  <F808080>A large hawk is here<088>}
+#substitute {^A squirrel scampers around here, looking for nuts from the trees} {<FFFFFFF>!  <F808080>A squirrel is here<088>}
+#substitute {^A slender orc scans the area, his bow ready for a sudden strike} {<FFFFFFF>!  <F808080>A slender orkish archer is here<088>}
+#substitute {^An uruk of the Morgundul tribe is here commanding his soldiers} {<FFFFFFF>!  <F808080>A Morgundul uruk is here<088>}
+#substitute {^An orc-guard of the Morgundul is on patrol here} {<FFFFFFF>!  <F808080>A Morgundul orc guard is here<088>}
+#substitute {^A hungry warg stands here, sniffing around for flesh} {<FFFFFFF>!  <F808080>A hungry warg is here<088>}
+#substitute {^A tall Uruk paces about, issuing commands to his troops} {<FFFFFFF>!  <F808080>A battle-hardened orc is here<088>}
+#substitute {^A Morgundul orc snarls about here, looking for a fight} {<FFFFFFF>!  <F808080>A robust orc is here<088>}
+#substitute {^A red-eyed shaman of the Morgundul tribe is here, chanting in evil tongues} {<FFFFFFF>!  <FB22222>Luxzúm the Morgundul Shaman is here<088>}
+#substitute {^A relentless uruk of the Morgundul tribe is leading his soldiers here} {<FFFFFFF>!  <F808080>An orkish expedition leader is here<088>}
+#substitute {^A huge stone giant is here, glaring at you} {<FFFFFFF>!  <F808080>A huge stone giant is here<088>}
+#substitute {^A tall and strong hunter is standing here} {<FFFFFFF>!  <F808080>A hunter is here<088>}
+#substitute {^A stone troll is standing here, scowling about} {<FFFFFFF>!  <F808080>A stone troll is here<088>}
+#substitute {^A powerful young troll stares at you} {<FFFFFFF>!  <F808080>A young troll is here<088>}
+#substitute {^A large elk is standing here, chewing grass and leaves} {<FFFFFFF>!  <F808080>A large elk is here<088>}
+#substitute {^A growling, huge ice-demon lunges about in search of victims} {<FFFFFFF>!  <F808080>The ice-demon is here<088>}
+#substitute {^The enchanting will-of-the-wisp beckons you with a blurred light} {<FFFFFFF>!  <F808080>A will-of-the-wisp is here<088>}
+#substitute {^A slobbering giant greedily lumbers towards you} {<FFFFFFF>!  <F808080>A hill giant is here<088>}
+#substitute {^A very strong orkish leader is here on patrol} {<FFFFFFF>!  <F808080>An orkish patrol-leader is here<088>}
+#substitute {^An orc soldier is standing here} {<FFFFFFF>!  <F808080>An orc-soldier is here<088>}
+#substitute {^A burly giant is here, covered with thick fur and snow} {<FFFFFFF>!  <F808080>A burly snow giant is here<088>}
+#substitute {^A big, nasty vulture is sitting here, protecting its nest} {<FFFFFFF>!  <F808080>A vulture is here<088>}
+#substitute {^A barefoot goblin pads silently over the stone} {<FFFFFFF>!  <F808080>A goblin scout is here<088>}
+#substitute {^A mountain goat is here, jumping from cliff to cliff} {<FFFFFFF>!  <F808080>A mountain goat is here<088>}
+#substitute {^A Zaugurz orc scout is standing here} {<FFFFFFF>!  <F808080>A Zaugurz orc scout is here<088>}
+#substitute {^A huge, black bear is here, proud heir to the great and ancient mountain bears} {<FFFFFFF>!  <FB22222>The huge, black bear<088> is here<088>}
+#substitute {^A grey wolf is here, salivating profusely} {<FFFFFFF>!  <F808080>A rabid, grey wolf is here<088>}
+#substitute {^An experienced orkish scout is looking for tracks on the ground} {<FFFFFFF>!  <F808080>An orkish scout is here<088>}
+#substitute {^An orc-guard is on patrol here} {<FFFFFFF>!  <F808080>An orc-guard is here<088>}
+#substitute {^A grey-skinned mountain troll stands here} {<FFFFFFF>!  <F808080>A mountain troll is here<088>}
+#substitute {^A large mean-looking troll is here} {<FFFFFFF>!  <F808080>A large troll is here<088>}
+#substitute {^An orkish chieftain is here, controlling his guards} {<FFFFFFF>!  <F808080>The orkish chieftain is here<088>}
+#substitute {^An elite orc-guard is on sentry here} {<FFFFFFF>!  <F808080>An elite orc-guard is here<088>}
+#substitute {^An orc sentry is here on patrol} {<FFFFFFF>!  <F808080>An orc sentry is here<088>}
+#substitute {^A warrior of Goblin Gate stands menacingly before you} {<FFFFFFF>!  <F808080>An orkish warrior is here<088>}
+#substitute {^An orc assassin is hiding here, waiting for a victim to stab} {<FFFFFFF>!  <F808080>An orc assassin is here<088>}
+#substitute {^A cockroach is scuttling across the floor carrying some debris} {<FFFFFFF>!  <F808080>A cockroach is here<088>}
+#substitute {^A giant slug is here, oozing around} {<FFFFFFF>!  <F808080>A giant slug is here<088>}
+#substitute {^A water moccasin slithers out of sight just below the surface of the water} {<FFFFFFF>!  <F808080>A water moccasin is here<088>}
+#substitute {^An albino fish is swimming here, looking for some food} {<FFFFFFF>!  <F808080>An albino fish is here<088>}
+#substitute {^A wet, gilled reptile-like creature lurks in the water here} {<FFFFFFF>!  <F808080>A scaly reptile is here<088>}
+#substitute {^A small, mean earth troll is standing here, thinking of something hideous} {<FFFFFFF>!  <F808080>An earth troll is here<088>}
+#substitute {^An orc is hobbling around on rudimentary crutches} {<FFFFFFF>!  <F808080>A crippled orc is here<088>}
+#substitute {^An orc is slinking around trying to look inconspicuous} {<FFFFFFF>!  <F808080>A snaga orc is here<088>}
+#substitute {^A limping orc shuffles around here. He looks miserable} {<FFFFFFF>!  <F808080>A crippled orc is here<088>}
+#substitute {^An albino salamander is here, perched on some rocks} {<FFFFFFF>!  <F808080>An albino salamander is here<088>}
+#substitute {^A demon wolf lurks here, its dark form twisting and hiding its shape} {<FFFFFFF>!  <F808080>A demon wolf is here<088>}
+#substitute {^A shadowy and lithe orc stands here, half-hidden in the darkness} {<FFFFFFF>!  <F808080>A lithe orc is here<088>}
+#substitute {^The Great Goblin is here, looking at you in disapproval} {<FFFFFFF>!  <F808080>The Great Goblin is here<088>}
+#substitute {^A huge orc bodyguard looks at you suspiciously} {<FFFFFFF>!  <F808080>The orkish bodyguard is here<088>}
+#substitute {^A heavily scarred orc is standing here} {<FFFFFFF>!  <F808080>The orkish kennel master is here<088>}
+#substitute {^A huge and awesome dealer in black leather is here} {<FFFFFFF>!  <F808080>A dealer is here<088>}
+#substitute {^A snaga is here, trying to sharpen a set of blood-encrusted needles} {<FFFFFFF>!  <F808080>A snaga orc is here<088>}
+#substitute {^The dark presence of the Monitor stands at the stone door} {<FFFFFFF>!  <F808080>Zathdug the Monitor is here<088>}
+#substitute {^The orkish loremaster is standing here, looking for his audience} {<FFFFFFF>!  <F808080>The orkish loremaster is here<088>}
+#substitute {^Guthblug the Foreman is here, scowling at you furiously} {<FFFFFFF>!  <F808080>Guthblug the Foreman is here<088>}
+#substitute {^A large bat is here, hanging in the darkness} {<FFFFFFF>!  <F808080>A large bat is here<088>}
+#substitute {^An orc slavemaster is here, looking for someone to abuse} {<FFFFFFF>!  <F808080>An orc slavemaster is here<088>}
+#substitute {^An elven slave is standing here} {<FFFFFFF>!  <F808080>An elven slave is here<088>}
+#substitute {^The Guardian is standing here, watching the treasures} {<FFFFFFF>!  <FB22222>The guardian<088> is here<088>}
+#substitute {^An officer of the Uruk-tarkhnarb stands before you} {<FFFFFFF>!  <F808080>An orkish officer is here<088>}
+#substitute {^A dark-skinned orkish veteran guard is on sentry here} {<FFFFFFF>!  <F808080>An orkish veteran guard is here<088>}
+#substitute {^An orkish warg-rider is here, riding a hungry warg} {<FFFFFFF>!  <F808080>An orkish warg-rider, riding a hungry warg, is here<088>}
+#substitute {^A very strong orkish patrol-leader is looking for enemies here} {<FFFFFFF>!  <F808080>An orkish patrol-leader is here<088>}
+#substitute {^A strong, tall orc-guard is looking for enemies here} {<FFFFFFF>!  <F808080>An orc-guard is here<088>}
+#substitute {^Brolg, shaman of the Ohurk-uai, is here, chanting some evil incantations} {<FFFFFFF>!  <FB22222>Brolg the orkish shaman<088> is here<088>}
+#substitute {^An orkish soldier is here, patrolling the area} {<FFFFFFF>!  <F808080>An orkish soldier is here<088>}
+#substitute {^A burly orc-guard is here, sniffing at the air} {<FFFFFFF>!  <F808080>A burly orc is here<088>}
+#substitute {^An orc of the Ohurk-uai stands here, cursing and grumbling} {<FFFFFFF>!  <F808080>An Ohurk-uai soldier is here<088>}
+#substitute {^A mountain ibex is jumping from rock to rock} {<FFFFFFF>!  <F808080>A mountain ibex is here<088>}
+#substitute {^A large marmot is here, scurrying in between the rocks} {<FFFFFFF>!  <F808080>A marmot is here<088>}
+#substitute {^The Black Númenórean sage is standing here} {<FFFFFFF>!  <FB22222>The sage<088> is here<088>}
+#substitute {^A hardened orkish bodyguard is here, watching the entrance} {<FFFFFFF>!  <F808080>A hardened orkish bodyguard is here<088>}
+#substitute {^A snake slithers towards you} {<FFFFFFF>!  <F808080>A slithering snake is here<088>}
+#substitute {^A ferocious warg is here, snarling angrily} {<FFFFFFF>!  <F808080>A ferocious warg is here<088>}
+#substitute {^A tall brown-skinned orc, with wide arms, examines you harshly} {<FFFFFFF>!  <F808080>A brown-skinned orc is here<088>}
+#substitute {^The ugly troll mother is roaming the cave, taking care of her loved ones} {<FFFFFFF>!  <F808080>A troll mother is here<088>}
+#substitute {^A young cave troll is here, staying close to his mother} {<FFFFFFF>!  <F808080>A young cave troll is here<088>}
+#substitute {^A fierce bat is here, lusting for your blood} {<FFFFFFF>!  <F808080>A bloodthirsty bat is here<088>}
+#substitute {^An orkish warrior of the Tarkhnarb tribe stands guard here} {<FFFFFFF>!  <F808080>An orkish warrior is here<088>}
+#substitute {^A rock lizard is here, motionless as it observes you} {<FFFFFFF>!  <F808080>A rock lizard is here<088>}
+#substitute {^A Durbûk-hai warrior is here, ill-equipped but ready to fight for his tribe} {<FFFFFFF>!  <F808080>A crudely armed Durbûk-hai warrior is here<088>}
+#substitute {^An elite Durbûk-hai guard is standing here, armed with spear and shield} {<FFFFFFF>!  <F808080>An agile Durbûk-hai spear-guard is here<088>}
+#substitute {^A shimmering glow is here, emitting pale, green, light} {<FFFFFFF>!  <F808080>A shimmering glow is here<088>}
+#substitute {^A black moth flutters around} {<FFFFFFF>!  <F808080>A black moth is here<088>}
+#substitute {^A brawny wisent is slowly striding through the vegetation} {<FFFFFFF>!  <F808080>A powerful wisent is here<088>}
+#substitute {^A young wisent is here, staying close to rest of the herd} {<FFFFFFF>!  <F808080>A youthful wisent is here<088>}
+#substitute {^A huge black fungus is here, exuding a foul stench} {<FFFFFFF>!  <F808080>A black fungus is here<088>}
+#substitute {^A mass of wriggling vines drops on you from the trees} {<FFFFFFF>!  <F808080>A mass of vines is here<088>}
+#substitute {^A huge warg is here, moving in for the kill} {<FFFFFFF>!  <F808080>A huge warg is here<088>}
+#substitute {^A young mountain lion is sizing up his next meal from the nearby cover} {<FFFFFFF>!  <F808080>A young mountain lion is here<088>}
+#substitute {^A small, helpless eaglet screams for more food} {<FFFFFFF>!  <F808080>An eaglet is here<088>}
+#substitute {^A mother eagle flies high above, looking for prey} {<FFFFFFF>!  <F808080>A mother eagle is here<088>}
+#substitute {^A rooting heap of stems is here, smothering the smaller plants} {<FFFFFFF>!  <F808080>A heap of rooting stems is here<088>}
+#substitute {^A spiky broomrape plant pokes its blooms out of the soil} {<FFFFFFF>!  <F808080>A broomrape plant is here<088>}
+#substitute {^An ancient oak is here towering above you} {<FFFFFFF>!  <F808080>An ancient oak is here<088>}
+#substitute {^An imposing beech tree sways gently in the wind} {<FFFFFFF>!  <F808080>An imposing beech tree is here<088>}
+#substitute {^A tall birch is here, watching over the landscape} {<FFFFFFF>!  <F808080>A birch tree is here<088>}
+#substitute {^A brown striated fungus hangs here, clinging to a tree trunk} {<FFFFFFF>!  <F808080>A brown fungus is here<088>}
+#substitute {^A huge millipede is writhing around here} {<FFFFFFF>!  <F808080>A huge millipede is here<088>}
+#substitute {^Some thick writhing vines whip all around you} {<FFFFFFF>!  <F808080>A thick tangle of vines is here<088>}
+#substitute {^A black alder looms threateningly over its surroundings} {<FFFFFFF>!  <F808080>A black alder is here<088>}
+#substitute {^The embodied shape of a linden tree stands shiftlessly here} {<FFFFFFF>!  <F808080>A mature linden tree is here<088>}
+#substitute {^A mass of low-spreading shrub quivers on the ground} {<FFFFFFF>!  <F808080>A mass of buckthorn is here<088>}
+#substitute {^A majestic scots pine grows tall and straight here} {<FFFFFFF>!  <F808080>A tall scots pine is here<088>}
+#substitute {^A tall, slender hornbeam Ent walks around here, keeping watch over his trees} {<FFFFFFF>!  <F808080>A slender hornbeam is here<088>}
+#substitute {^A small termite is running around making strange sounds} {<FFFFFFF>!  <F808080>A small termite is here<088>}
+#substitute {^A colony of red ants is here. The ants seem to ignore you} {<FFFFFFF>!  <F808080>A red ant colony is here<088>}
+#substitute {^A tangly shrub seems to rustle as if alert to its surroundings} {<FFFFFFF>!  <F808080>A tangly shrub is here<088>}
+#substitute {^A warrior of the Urughásh is here, guarding the gates} {<FFFFFFF>!  <F808080>An orkish gate-guard is here<088>}
+#substitute {^A short Urughásh is here, watching the area} {<FFFFFFF>!  <F808080>An Urughásh warden is here<088>}
+#substitute {^A tall, dirty Urughásh commands your attention} {<FFFFFFF>!  <FB22222>Throkrath the Foreman<088> is here<088>}
+#substitute {^An orkish soldier of the Urughásh is here} {<FFFFFFF>!  <F808080>An Urughásh soldier is here<088>}
+#substitute {^A soot-covered Urughásh is here, mining away at the rock} {<FFFFFFF>!  <F808080>A soot-covered orc is here<088>}
+#substitute {^A malicious Urughásh is here, keeping the miners in line} {<FFFFFFF>!  <F808080>An Urughash overseer is here<088>}
+#substitute {^A fierce boar is here, making grunting noises} {<FFFFFFF>!  <F808080>A boar is here<088>}
+#substitute {^A tall troll, its skin crawling with lice and ticks, is roaming around in here} {<FFFFFFF>!  <FB22222>A smelly troll is here<088>}
+#substitute {^The small fierce-looking bat is hanging from the ceiling, obviously sleeping} {<FFFFFFF>!  <F808080>A small bat is here<088>}
+#substitute {^An old, strong cave troll is standing here} {<FFFFFFF>!  <F808080>A cave troll is here<088>}
+#substitute {^A large earth troll is digging here, looking for some tasty morsels} {<FFFFFFF>!  <F808080>A large earth troll is here<088>}
+#substitute {^Some ugly blow-flies are buzzing around here} {<FFFFFFF>!  <F808080>A swarm of blow-flies is here<088>}
+#substitute {^A brown fox is here, looking for some rabbits to chew up} {<FFFFFFF>!  <F808080>A brown fox is here<088>}
+#substitute {^The troll cook is here, ready to put anything into her large cauldron} {<FFFFFFF>!  <F808080>Edda the cook is here<088>}
+#substitute {^A young and vicious olog-hai eagerly awaits intruders} {<FFFFFFF>!  <F808080>A vicious olog-hai is here<088>}
+#substitute {^A huge olog-hai troll is here staring blankly at you} {<FFFFFFF>!  <F808080>An olog-hai troll is here<088>}
+#substitute {^Crusher, a huge cave-troll and expert in combat, is here wielding a great club} {<FFFFFFF>!  <FB22222>Crusher the huge troll is here<088>}
+#substitute {^An infant troll, baring its teeth, snarls here} {<FFFFFFF>!  <F808080>A troll infant is here<088>}
+#substitute {^A nasty troll female crouches here, with a feral look in her eyes} {<FFFFFFF>!  <F808080>A troll bitch is here<088>}
+#substitute {^A loyal clan troll of the Grinder stands here faithfully} {<FFFFFFF>!  <F808080>A grey troll is here<088>}
+#substitute {^Grinder, the expert on all things dark is standing here} {<FFFFFFF>!  <FB22222>Grinder is here<088>}
+#substitute {^A forest spider is here crawling around} {<FFFFFFF>!  <F808080>A forest spider is here<088>}
+#substitute {^A huge, poisonous spider is here} {<FFFFFFF>!  <F808080>A huge, poisonous spider is here<088>}
+#substitute {^An ancient fungus smothers the boulders} {<FFFFFFF>!  <F808080>An ancient fungus is here<088>}
+#substitute {^Clunker, a big oafish son of a cave-troll is shambling about in here} {<FFFFFFF>!  <FB22222>Clunker the clumsy troll is here<088>}
+#substitute {^A small vicious black rat squeaks at you for disturbing it} {<FFFFFFF>!  <F808080>A vicious rat is here<088>}
+#substitute {^A tiny spider is here, eating a tiny bug} {<FFFFFFF>!  <F808080>A tiny spider is here<088>}
+#substitute {^A fallow deer is grazing peacefully here} {<FFFFFFF>!  <F808080>A fallow deer is here<088>}
+#substitute {^A wolf spider is here, among the trees} {<FFFFFFF>!  <F808080>A wolf spider is here<088>}
+#substitute {^The chief of smugglers is here, planning his next move} {<FFFFFFF>!  <F808080>A chief of smugglers is here<088>}
+#substitute {^An experienced husky smuggler is here, conspiring with his cohorts} {<FFFFFFF>!  <F808080>A husky smuggler is here<088>}
+#substitute {^A boar cub is playing here, and exploring the wide world} {<FFFFFFF>!  <F808080>A boar cub is here<088>}
+#substitute {^A malicious thug is here, threatening you} {<FFFFFFF>!  <F808080>A thug is here<088>}
+#substitute {^A sturdy bandit bodyguard stands here, eager to hack you to pieces} {<FFFFFFF>!  <F808080>A bandit bodyguard is here<088>}
+#substitute {^A robin is here, carrying small pieces of wood to its nest} {<FFFFFFF>!  <F808080>A robin is here<088>}
+#substitute {^A large eagle soars above you} {<FFFFFFF>!  <F808080>An eagle is here<088>}
+#substitute {^A sturdy trained horse is standing here} {<FFFFFFF>!  <F808080>A trained horse is here<088>}
+#substitute {^A sturdy pack horse is standing here} {<FFFFFFF>!  <F808080>A pack horse is here<088>}
+#substitute {^A stocky mountain mule is here, waiting to serve} {<FFFFFFF>!  <F808080>A mountain mule is here<088>}
+#substitute {^A domesticated pony, beast of burden to many, stands here} {<FFFFFFF>!  <F808080>A pony is here<088>}
+#substitute {^A hairy black spider wraps up a silken package with her hind legs} {<FFFFFFF>!  <F808080>A water spider is here<088>}
+#substitute {^A huge, poisonous tarantula extends her legs to you} {<FFFFFFF>!  <F808080>A huge tarantula is here<088>}
+#substitute {^A colourful butterfly is fluttering around here} {<FFFFFFF>!  <F808080>A butterfly is here<088>}
+#substitute {^A black wolf pads restlessly, looking for its next prey} {<FFFFFFF>!  <F808080>A black wolf is here<088>}
+#substitute {^A wolf cub happily plays here} {<FFFFFFF>!  <F808080>A wolf cub is here<088>}
+#substitute {^An elk cow gazes coldly at you, chewing on a small branch} {<FFFFFFF>!  <F808080>An elk cow is here<088>}
+#substitute {^A tall stag is here, grazing peacefully} {<FFFFFFF>!  <F808080>A tall stag is here<088>}
+#substitute {^An old, wise tree with penetrating green eyes stands here} {<FFFFFFF>!  <FB22222>Treebeard the Ent is here<088>}
+#substitute {^A ruffian is sneaking around here, looking for some mischief to do} {<FFFFFFF>!  <F808080>A ruffian is here<088>}
+#substitute {^Bill Ferny is watching you with suspicious eyes} {<FFFFFFF>!  <FB22222>Bill Ferny is here<088>}
+#substitute {^The mean bandit leader Barbaras grins at you and draws his sword} {<FFFFFFF>!  <FB22222>Barbaras is here<088>}
+#substitute {^Bathmhûrz the ancient troll lunges at you with iron-nails} {<FFFFFFF>!  <FB22222>Bathmhûrz the Ancient is here<088>}
+#substitute {^An untrustworthy man is here, eyeing your equipment} {<FFFFFFF>!  <FB22222>Gahruuk the half-orc is here<088>}
+#substitute {^A huge, black wolf is here, ready to devour} {<FFFFFFF>!  <F808080>A huge, black wolf is here<088>}
+#substitute {^A great black and silver wolf is standing here, at the head of the pack} {<FFFFFFF>!  <F808080>A pack leader is here<088>}
+#substitute {^The shadowy wight of a bodyguard stands here} {<FFFFFFF>!  <F808080>A wight bodyguard is here<088>}
+#substitute {^The shadowy wight of a once noble captain is standing here} {<FFFFFFF>!  <F808080>The wight captain is here<088>}
+#substitute {^A huge, horrific spider is prowling here} {<FFFFFFF>!  <F808080>A huge, hideous spider is here<088>}
+#substitute {^A newborn spider is here} {<FFFFFFF>!  <F808080>A newborn spider is here<088>}
+#substitute {^A brown, long-legged spider swiftly charges at you} {<FFFFFFF>!  <F808080>A brown, long-legged spider is here<088>}
+#substitute {^A great brood mother hovers defiantly over her precious offspring} {<FFFFFFF>!  <FB22222>A great brood mother is here<088>}
+#substitute {^A roe deer is standing here, watching the terrain while chewing the vegetation} {<FFFFFFF>!  <F808080>A roe deer is here<088>}
+#substitute {^A dark-haired warrior is here, trying to fulfil his murky tasks} {<FFFFFFF>!  <F808080>A dark-haired warrior is here<088>}
+#substitute {^A dark-haired warrior is standing here, eyeing the river} {<FFFFFFF>!  <F808080>A dark-haired warrior is here<088>}
+#substitute {^A grouchy uruk is here, lashing his whip} {<FFFFFFF>!  <F808080>An orkish slavemaster is here<088>}
+#substitute {^A bald orc is standing here, silent and focused} {<FFFFFFF>!  <F808080>A bald orc is here<088>}
+#substitute {^A muscular Morgundul outpost commander stands here} {<FFFFFFF>!  <FB22222>Throulhuk the Orkish commander is here<088>}
+#substitute {^An easterling veteran dressed in light garments stands sentinel here} {<FFFFFFF>!  <F808080>An easterling sentinel is here<088>}
+#substitute {^A beautiful and docile horse is standing here} {<FFFFFFF>!  <F808080>A horse is here<088>}
+#substitute {^A jet-black raven caws from its perch with inquisitive eyes} {<FFFFFFF>!  <F808080>A jet-black raven is here<088>}
+#substitute {^A man clad in red robes mutters in a foreign tongue} {<FFFFFFF>!  <FB22222>Rostam the Easterling is here<088>}
+#substitute {^A hideous, feathered beast shrieks as it attacks with frightening speed} {<FFFFFFF>!  <F808080>A hideous, feathered beast is here<088>}
+#substitute {^A small boar with big yellow tusks looks eager to fight} {<FFFFFFF>!  <F808080>A tusky boar is here<088>}
+#substitute {^A great, wild boar with large tusks is here, ready to charge} {<FFFFFFF>!  <F808080>A great, wild boar is here<088>}
+#substitute {^A small grasshopper clings to a blade of grass, ready to spring} {<FFFFFFF>!  <F808080>A grasshopper is here<088>}
+#substitute {^A small, red-spotted spider lurks here} {<FFFFFFF>!  <F808080>A red-spotted spider is here<088>}
+#substitute {^A black spider crawls here, a shiny red spot visible on its belly} {<FFFFFFF>!  <F808080>A black widow is here<088>}
+#substitute {^A grey spider is stalking here, preparing to drain you of life} {<FFFFFFF>!  <FB22222>A grey spider is here<088>}
+#substitute {^A dark-green spider is here, poison dripping from its fangs} {<FFFFFFF>!  <F808080>A horrible, dark-green spider is here<088>}
+#substitute {^A giant, strange looking green fungus is here, ready to devour you in seconds} {<FFFFFFF>!  <F808080>A green fungus is here<088>}
+#substitute {^A young orc grips his weapon impatiently, eager to prove himself} {<FFFFFFF>!  <F808080>A young, eager Durbûk-hai warrior is here<088>}
+#substitute {^A squat, grizzled orc cracks his whip with trained precision} {<FFFFFFF>!  <F808080>A grizzled Durbûk-scarazot is here<088>}
+#substitute {^A gaunt, vicious-looking warg pads towards you, jaws slavering hungrily} {<FFFFFFF>!  <F808080>A gaunt, vicious warg is here<088>}
+#substitute {^A scrawny Durbûk-hai orc digs away at a mound of rubble} {<FFFFFFF>!  <F808080>A scrawny Durbûk-hai orc is here<088>}
+#substitute {^A Durbûk-hai warrior stands here with a frenzied gleam in his eyes} {<FFFFFFF>!  <F808080>A reckless Durbûk-hai warrior is here<088>}
+#substitute {^A very large, hairy man is standing here, examining you carefully} {<FFFFFFF>!  <F808080>A very large man is here<088>}
+#substitute {^A very muscular orc with a cruel and dominant gaze in her cold eyes is here} {<FFFFFFF>!  <FB22222>Lazrria the Orkish Commander is here<088>}
+#substitute {^A dark-skinned man is here, watching everything suspiciously} {<FFFFFFF>!  <FB22222>Offa the scout is here<088>}
+#substitute {^An orkish wolf-rider is here, riding a brown wolf} {<FFFFFFF>!  <F808080>An orkish wolf rider is here<088>}
+#substitute {^A grey wolf is here, snarling aggressively} {<FFFFFFF>!  <F808080>A grey wolf is here<088>}
+#substitute {^A grey bird with a bright orange-red belly sits here, singing a melodic tune} {<FFFFFFF>!  <F808080>A red-bellied thrush is here<088>}
+#substitute {^A moderately-sized copperhead snake is here} {<FFFFFFF>!  <F808080>A copperhead snake is here<088>}
+#substitute {^A sleuthing orc is tracking here, sniffing along the ground} {<FFFFFFF>!  <F808080>A sleuthing orc is here<088>}
+#substitute {^A subterranean lizard is here trying to blend with the surroundings} {<FFFFFFF>!  <F808080>A subterranean lizard is here<088>}
+#substitute {^Some roots lie here waiting to ensnare weary travellers} {<FFFFFFF>!  <FDAA520>A clump of roots is here<088>}
+#substitute {^Massive roots shift uneasily all around you} {<FFFFFFF>!  <FDAA520>A massive tangle of roots is here<088>}
+#substitute {^A tawny-coated bear is snuffling about} {<FFFFFFF>!  <F808080>A tawny-coated bear is here<088>}
+#substitute {^A giant form rustles among the trees} {<FFFFFFF>!  <F808080>A forest giant is here<088>}
+#substitute {^A porcupine is waddling around here, its tail full of sharp quills} {<FFFFFFF>!  <F808080>A porcupine is here<088>}
+#substitute {^A giant termite is here, crushing skulls and bones} {<FFFFFFF>!  <F808080>A giant termite is here<088>}
+#substitute {^A large, loyal falcon is circling above} {<FFFFFFF>!  <F808080>A falcon is here<088>}
+#substitute {^A large rabbit looks peacefully at you, ready to dart away} {<FFFFFFF>!  <F808080>A large rabbit is here<088>}
+#substitute {^A long-tailed bird watches you from the vegetation} {<FFFFFFF>!  <F808080>A wood partridge is here<088>}
+#substitute {^A partridge attempts to hide in the undergrowth} {<FFFFFFF>!  <F808080>A partridge is here<088>}
+#substitute {^A woodpecker is here, tapping on a tree} {<FFFFFFF>!  <F808080>A woodpecker is here<088>}
+#substitute {^A bass swims here} {<FFFFFFF>!  <F808080>A bass is here<088>}
+#substitute {^A salmon swims here} {<FFFFFFF>!  <F808080>A salmon is here<088>}
+#substitute {^A brook trout is here, swimming in the current} {<FFFFFFF>!  <F808080>A brook trout is here<088>}
+#substitute {^A trout swims here} {<FFFFFFF>!  <F808080>A trout is here<088>}
+#substitute {^A sparrow is flapping around on the ground} {<FFFFFFF>!  <F808080>A sparrow is here<088>}
+#substitute {^A great horned owl looks cautiously around it} {<FFFFFFF>!  <F808080>A great, horned owl is here<088>}
+#substitute {^A swift and agile forest cat moves silently through the vegetation} {<FFFFFFF>!  <F808080>A forest cat is here<088>}
+#substitute {^A fat rabbit is here, chewing on some grass} {<FFFFFFF>!  <F808080>A fat rabbit is here<088>}
+#substitute {^A rabbit is here eyeing your presence warily} {<FFFFFFF>!  <F808080>A cute, bouncing rabbit is here<088>}
+#substitute {^A huge bat is here, emitting piercing squeaks} {<FFFFFFF>!  <F808080>A huge bat is here<088>}
+#substitute {^A large black bat flitters near you} {<FFFFFFF>!  <F808080>A black-furred bat is here<088>}
+#substitute {^A black crow flies low to the ground here, looking for carrion to eat} {<FFFFFFF>!  <F808080>A black crow is here<088>}
+#substitute {^A nightingale is here, chirping a sweet melody} {<FFFFFFF>!  <F808080>A nightingale is here<088>}
+#substitute {^A furry, striped raccoon is here, nosing around for some berries or roots} {<FFFFFFF>!  <F808080>A raccoon is here<088>}
+#substitute {^A buck runs swiftly from place to place, looking about warily as it grazes} {<FFFFFFF>!  <F808080>A swift buck is here<088>}
+#substitute {^A small animal, all covered in spines, snuffles amongst the undergrowth} {<FFFFFFF>!  <F808080>A small fat hedgehog is here<088>}
+#substitute {^A rabid rabbit is here, frothing at the mouth} {<FFFFFFF>!  <F808080>A rabid rabbit is here<088>}
+#substitute {^A small rabbit glares angrily at you} {<FFFFFFF>!  <F808080>A small rabbit is here<088>}
+#substitute {^A badger is here, exploring for food} {<FFFFFFF>!  <F808080>A badger is here<088>}
+#substitute {^The mother wolf stands here, protecting her young cubs} {<FFFFFFF>!  <F808080>A mother wolf is here<088>}
+#substitute {^A dove rests near one of the flowers} {<FFFFFFF>!  <F808080>A dove is here<088>}
+#substitute {^A magpie is flying around looking for some food} {<FFFFFFF>!  <F808080>A male magpie is here<088>}
+#substitute {^A coloured game bird is visible in the vegetation, watching you warily} {<FFFFFFF>!  <F808080>A pheasant is here<088>}
+#substitute {^The elongated shape of a stoat can be seen darting across the terrain} {<FFFFFFF>!  <F808080>A stoat is here<088>}
+#substitute {^A small black bird with red markings on its beak is here} {<FFFFFFF>!  <F808080>A moorhen is here<088>}
+#substitute {^A brown furry gopher is here, ready to dive back underground} {<FFFFFFF>!  <F808080>A gopher is here<088>}
+#substitute {^A brown toad is here, hunting flies} {<FFFFFFF>!  <F808080>A toad is here<088>}
+#substitute {^A large beaver is here, gnawing on a piece of wood} {<FFFFFFF>!  <F808080>A beaver is here<088>}
+#substitute {^A crayfish is here, snapping its claws at you} {<FFFFFFF>!  <F808080>A crayfish is here<088>}
+#substitute {^A green frog is here, hopping around} {<FFFFFFF>!  <F808080>A frog is here<088>}
+#substitute {^A bee flies around here, collecting nectar from the flowers} {<FFFFFFF>!  <F808080>A bee is here<088>}
+#substitute {^A brown snake watches you} {<FFFFFFF>!  <F808080>A brown snake is here<088>}
+#substitute {^A wild bull seems ready to charge you} {<FFFFFFF>!  <F808080>A wild bull is here<088>}
+#substitute {^A small brown snake is slithering around here} {<FFFFFFF>!  <F808080>A brown snake is here<088>}
+#substitute {^A fat carp swims here} {<FFFFFFF>!  <F808080>A carp is here<088>}
+#substitute {^A dun-coloured grouse is sitting still in the heather} {<FFFFFFF>!  <F808080>A red grouse is here<088>}
+#substitute {^A harsh orkish veteran is here, heavily scarred but ready to fight} {<FFFFFFF>!  <F808080>A harsh orkish veteran is here<088>}
+#substitute {^An orkish captain is here, gleefully whipping his troops into obedience} {<FFFFFFF>!  <F808080>A cruel orkish captain is here<088>}
+#substitute {^A large brown bull stands here, hitched to an iron-bound wagon} {<FFFFFFF>!  <F808080>A bull is here<088>}
+#substitute {^A dread guardsman of Dol Guldur is here, riding a trained horse} {<FFFFFFF>!  <F808080>A dread guardsman of Dol Guldur is here<088>}
+#substitute {^An easterling veteran stands here, guarding the wagon} {<FFFFFFF>!  <F808080>An easterling sentinel is here<088>}
+#substitute {^An Uruk-rogtar of the Morgundul is on patrol here} {<FFFFFFF>!  <F808080>A Morgundul Uruk-rogtar is here<088>}
+#substitute {^Adrâgor the Númenórean, commander of the camp, is standing here} {<FFFFFFF>!  <FB22222>Adrâgor the commander is here<088>}
+#substitute {^A Morgundul orc guard is here, relaxing off-duty} {<FFFFFFF>!  <F808080>A Morgundul orc guard is here<088>}
+#substitute {^A dreadful warg, covered in matted fur, sniffs the ground for prey} {<FFFFFFF>!  <F808080>A dreadful warg is here<088>}
+#substitute {^A warg whelp is here trying to look dangerous} {<FFFFFFF>!  <F808080>A warg whelp is here<088>}
+#substitute {^A female orc stands glaring at you} {<FFFFFFF>!  <F808080>A female orc is here<088>}
+#substitute {^A dark-skinned orc is dancing around the fire} {<FFFFFFF>!  <F808080>A dark-skinned orc is here<088>}
+#substitute {^A mottled snake is sneaking here, ready to sink its fangs into flesh} {<FFFFFFF>!  <F808080>A mottled snake is here<088>}
+#substitute {^A black snake, with red markings, is lying here} {<FFFFFFF>!  <F808080>A black snake is here<088>}
+#substitute {^An orkish wolf-rider is here, warily looking at his surroundings} {<FFFFFFF>!  <F808080>An orkish wolf-rider is here<088>}
+#substitute {^A large brown wolf stands here, its teeth partly bared} {<FFFFFFF>!  <F808080>A brown wolf is here<088>}
+#substitute {^A diamond-back rattlesnake is coiled here, ready to strike} {<FFFFFFF>!  <F808080>A rattlesnake is here<088>}
+#substitute {^A pair of tiny eyes gleam at you from the shadows} {<FFFFFFF>!  <FDAA520>A packrat is here<088>}
+#substitute {^A young ill-tempered stone giant is here, muttering incoherently} {<FFFFFFF>!  <F808080>A young ill-tempered stone giant is here<088>}
+#substitute {^An orc apprentice is here, going about his duties} {<FFFFFFF>!  <F808080>An orc apprentice is here<088>}
+#substitute {^Thrakghash of the Mordor Flame waits here, ready to teach his malevolent magic} {<FFFFFFF>!  <FB22222>Thrakghash of the Mordor Flame is here<088>}
+#substitute {^A pitiful man, unwashed and dressed in rags, toils endlessly} {<FFFFFFF>!  <F808080>A pitiful slave is here<088>}
+#substitute {^A highwayman is here, grinning evilly at you} {<FFFFFFF>!  <F808080>A highwayman is here<088>}
+#substitute {^A female robber glares challengingly at you} {<FFFFFFF>!  <FB22222>Thena Shadowstalker is here<088>}
+#substitute {^A tall blackclad man pierces you with eyes cold as steel} {<FFFFFFF>!  <FB22222>Morthan Blacksoul is here<088>}
+#substitute {^A slim young woman glares at you suspiciously} {<FFFFFFF>!  <F808080>A diminutive rogue is here<088>}
+#substitute {^A sturdy guardsman is here, his weapon at the ready} {<FFFFFFF>!  <F808080>Malardil's guardsman is here<088>}
+#substitute {^A simple servant goes quietly about her duties} {<FFFFFFF>!  <F808080>A servant is here<088>}
+#substitute {^A cook is standing here, busy with her pots and pans} {<FFFFFFF>!  <F808080>A woman cook is here<088>}
+#substitute {^A scrawny, yet muscular man skulks around} {<FFFFFFF>!  <F808080>A rogue is here<088>}
+#substitute {^An old, yet beautiful woman looks piercingly at you} {<FFFFFFF>!  <F808080>A gypsy woman is here<088>}
+#substitute {^A tall, lean man follows your every move with his eyes} {<FFFFFFF>!  <FB22222>Malardil is here<088>}
+#substitute {^A slender but well-muscled man seems to melt into the shadows} {<FFFFFFF>!  <F808080>An experienced assassin is here<088>}
+#substitute {^A wiry smuggler is here, attempting to avoid being seen} {<FFFFFFF>!  <F808080>A wiry smuggler is here<088>}
+#substitute {^A brown-skinned man is standing here} {<FFFFFFF>!  <F808080>A brown-skinned man is here<088>}
+#substitute {^An assassin is here looking for fresh blood and shining coins} {<FFFFFFF>!  <F808080>An assassin is here<088>}
+#substitute {^The Ohurk-uai orc chief is here, leading his tribe} {<FFFFFFF>!  <FB22222>The Ohurk-uai chief is here<088>}
+#substitute {^A mean looking robber is here, demanding money from you} {<FFFFFFF>!  <F808080>A robber is here<088>}
+#substitute {^A brown donkey watches the surroundings, perhaps looking for a chance to graze} {<FFFFFFF>!  <F808080>A brown donkey is here<088>}
+#substitute {^A restless rabbit bounces around} {<FFFFFFF>!  <F808080>A bouncing rabbit is here<088>}
+#substitute {^A soft-skinned female deer wanders peacefully among the grass} {<FFFFFFF>!  <F808080>A female deer is here<088>}
+#substitute {^A tree-snake lies wrapped around one of the tree branches} {<FFFFFFF>!  <F808080>A tree-snake is here<088>}
+#substitute {^A reddish fawn romps harmlessly among the tender grass shoots} {<FFFFFFF>!  <F808080>A red-coated fawn is here<088>}
+#substitute {^A great male deer with reddish hair and twisted antlers stands here proudly} {<FFFFFFF>!  <F808080>A large red deer is here<088>}
+#substitute {^A bear is here, covered with coarse black fur} {<FFFFFFF>!  <F808080>A black bear is here<088>}
+#substitute {^The garden snake slithers harmlessly here} {<FFFFFFF>!  <F808080>A garden snake is here<088>}
+#substitute {^A strange bat-like creature is flitting around} {<FFFFFFF>!  <F808080>A cavern-wing is here<088>}
+#substitute {^A brigand, looking at your nice purse, is sneaking here} {<FFFFFFF>!  <F808080>A mean brigand is here<088>}
+#substitute {^A thief is here looking for some stranger to rob} {<FFFFFFF>!  <F808080>A thief is here<088>}
+#substitute {^A huge, old and hoary willow tree looms above you} {<FFFFFFF>!  <FB22222>Old Man Willow is here<088>}
+#substitute {^A female Ohurk-uai cook is here, planning to prepare the next meal} {<FFFFFFF>!  <F808080>An Ohurk-uai cook is here<088>}
+#substitute {^The spirit of a mighty warrior greets you with an evil laughter} {<FFFFFFF>!  <F808080>An undead chieftain is here<088>}
+#substitute {^A powerful, squat orc captain eyes you with contempt and scorn} {<FFFFFFF>!  <FB22222>Vurgl the Orkish captain is here<088>}
+#substitute {^A hateful wraith glares at you and groans in torment} {<FFFFFFF>!  <F808080>A trapped wraith is here<088>}
+#substitute {^A moaning ghost advances towards you, shimmering with a pale light} {<FFFFFFF>!  <F808080>A ghost is here<088>}
+#substitute {^A deft, young orc monitors the area, ready to attack any enemy} {<FFFFFFF>!  <F808080>A green-cloaked Durbûk-hai archer is here<088>}
+#substitute {^A dreadful hill troll with a skin full of warts is standing here} {<FFFFFFF>!  <F808080>A warty troll is here<088>}
+#substitute {^A black raven flies in the sky searching for flesh to prey upon} {<FFFFFFF>!  <F808080>A black raven is here<088>}
+#substitute {^A brown cow is here, contemplating a higher reality whilst chewing slowly} {<FFFFFFF>!  <F808080>A brown cow is here<088>}
+#substitute {^A barn-owl is here, looking for easy prey} {<FFFFFFF>!  <F808080>A barn-owl is here<088>}
+#substitute {^A duck is here, quacking happily} {<FFFFFFF>!  <F808080>A duck is here<088>}
+#substitute {^A shadowy haunt floats here, oblivious to your presence} {<FFFFFFF>!  <F808080>A haunt is here<088>}
+#substitute {^A wicked black witch glares at you with mad eyes} {<FFFFFFF>!  <FB22222>The witch is here<088>}
+#substitute {^A swarthy, little bandit advances forward} {<FFFFFFF>!  <F808080>A swarthy bandit is here<088>}
+#substitute {^A worm is here slithering around} {<FFFFFFF>!  <F808080>A worm is here<088>}
+#substitute {^A large, dangerous-looking green snake is coiled up here} {<FFFFFFF>!  <F808080>A green snake is here<088>}
+#substitute {^Big John is swiftly moving around, hiding in the shadows} {<FFFFFFF>!  <FB22222>Big John, the chief brigand is here<088>}
+#substitute {^A grey wolf is here, thin from starvation} {<FFFFFFF>!  <F808080>A starved grey wolf is here<088>}
+#substitute {^A wild sheep with a short, greyish coat grazes here} {<FFFFFFF>!  <F808080>A sheep is here<088>}
+#substitute {^A powerful ram stands here, poised and alert} {<FFFFFFF>!  <F808080>A ram is here<088>}
+#substitute {^A guard is here looking for someone to abuse} {<FFFFFFF>!  <F808080>A guard is here<088>}
+#substitute {^A guard is here looking suspiciously at everyone passing} {<FFFFFFF>!  <F808080>A guard is here<088>}
+#substitute {^A surly secretary is sitting at the desk} {<FFFFFFF>!  <F808080>A secretary is here<088>}
+#substitute {^A very large lion with a dark mane watches you lazily} {<FFFFFFF>!  <F808080>A dark-maned lion is here<088>}
+#substitute {^A powerful lioness is barely visible in the grass} {<FFFFFFF>!  <F808080>A powerful lioness is here<088>}
+#substitute {^A lion cub is here hunting grasshoppers} {<FFFFFFF>!  <F808080>A fuzzy little lion cub is here<088>}
+#substitute {^A large wild horse is here, protecting his herd} {<FFFFFFF>!  <F808080>A wild stallion is here<088>}
+#substitute {^A wild mare is watching you warily} {<FFFFFFF>!  <F808080>A wild mare is here<088>}
+#substitute {^A young filly is just learning to walk} {<FFFFFFF>!  <F808080>A young filly is here<088>}
+#substitute {^A young colt is frolicking playfully} {<FFFFFFF>!  <F808080>A young colt is here<088>}
+#substitute {^A woolly sheep is grazing here} {<FFFFFFF>!  <F808080>A sheep is here<088>}
+#substitute {^A cute rabbit is here} {<FFFFFFF>!  <F808080>A cute rabbit is here<088>}
+#substitute {^A black snake hurries towards you with sly intentions} {<FFFFFFF>!  <F808080>A black snake is here<088>}
+#substitute {^A large brown snake with black patches is coiled here} {<FFFFFFF>!  <F808080>A dreadful snake is here<088>}
+#substitute {^A cute, fluffy owlet is waiting here for its mother to return with food} {<FFFFFFF>!  <F808080>A fluffy owlet is here<088>}
+#substitute {^A shady man looks commanding} {<FFFFFFF>!  <FB22222>A bandit leader is here<088>}
+#substitute {^A spirit floats towards you and howls with an evil laughter} {<FFFFFFF>!  <F808080>A spirit is here<088>}
+#substitute {^A shade is here, shrouded in an inky blackness} {<FFFFFFF>!  <F808080>A shade is here<088>}
+#substitute {^A goat is here, grazing in the hills} {<FFFFFFF>!  <F808080>A goat is here<088>}
+#substitute {^A young goat playfully charges and hops away} {<FFFFFFF>!  <F808080>A kid is here<088>}
+#substitute {^A giant forest troll, limber and strong, protects the burrow} {<FFFFFFF>!  <FB22222>Urgorl is here<088>}
+#substitute {^The lowly bent shape of a forest troll stands before you} {<FFFFFFF>!  <F808080>A gnarled forest troll is here<088>}
+#substitute {^A snaga orc stares at you with interest} {<FFFFFFF>!  <F808080>A snaga orc is here<088>}
+#substitute {^A bloodthirsty orc stands here, hell-bent on battle} {<FFFFFFF>!  <F808080>A bloodthirsty orc is here<088>}
+#substitute {^An aged man with a cadaverous appearance is here} {<FFFFFFF>!  <FB22222>The liche is here<088>}
+#substitute {^A big cavebear is padding around here} {<FFFFFFF>!  <FB22222>A cavebear is here<088>}
+#substitute {^A shadow suddenly leaves its place on the wall, trying to reach your neck} {<FFFFFFF>!  <F808080>A shadow is here<088>}
+#substitute {^A sly cat prepares to pounce from its grassy hiding place} {<FFFFFFF>!  <F808080>A sly grass cat is here<088>}
+#substitute {^A cow stands here, chewing her cud} {<FFFFFFF>!  <F808080>A cow is here<088>}
+#substitute {^A field mouse noses about hungrily, searching for food} {<FFFFFFF>!  <F808080>A field mouse is here<088>}
+#substitute {^A small black cricket is here, chirping loudly} {<FFFFFFF>!  <F808080>A cricket is here<088>}
+#substitute {^A tiny firefly flits around the foliage} {<FFFFFFF>!  <F808080>A firefly is here<088>}
+#substitute {^An officer of the Urughásh stands here with great pride} {<FFFFFFF>!  <F808080>An Urughásh officer is here<088>}
+#substitute {^An old man, swathed in a great light-coloured cloak, is standing here} {<FFFFFFF>!  <FFFFFFF>An old man is here<088>}
+#substitute {^A lone hawk soars high above you} {<FFFFFFF>!  <F808080>A hawk is here<088>}
+#substitute {^A thin, crippled deer looks around timidly} {<FFFFFFF>!  <F808080>A crippled deer is here<088>}
+#substitute {^A young mountain lion is here} {<FFFFFFF>!  <F808080>A young mountain lion is here<088>}
+#substitute {^A mountain lion eyes you closely and prepares to pounce for his next meal} {<FFFFFFF>!  <F808080>A mountain lion is here<088>}
+#substitute {^A mountain lioness pads quietly through the terrain} {<FFFFFFF>!  <F808080>A mountain lioness is here<088>}
+#substitute {^A wild dog bares his yellow fangs at you} {<FFFFFFF>!  <F808080>A wild dog is here<088>}
+#substitute {^A black and white skunk is scuttling about here, searching for food} {<FFFFFFF>!  <F808080>A skunk is here<088>}
+#substitute {^A gigantic weasel glares at you} {<FFFFFFF>!  <F808080>A weasel is here<088>}
+#substitute {^An opossum stands here, sniffing around the ground} {<FFFFFFF>!  <F808080>An opossum is here<088>}
+#substitute {^A mole is looking out of a mole-hill here} {<FFFFFFF>!  <F808080>A mole is here<088>}
+#substitute {^An angry bee is here, collecting nectar from all the flowers of the garden} {<FFFFFFF>!  <F808080>An angry bee is here<088>}
+#substitute {^A renegade uruk is here, dirty and ragged} {<FFFFFFF>!  <F808080>A dirty uruk is here<088>}
+#substitute {^A bulky cave troll is here, looking like a massive pile of stone} {<FFFFFFF>!  <F808080>A bulky cave troll is here<088>}
+#substitute {^A blue dragonfly is circling around} {<FFFFFFF>!  <F808080>A blue dragonfly is here<088>}
+#substitute {^A big, brown, angry-looking bear is here} {<FFFFFFF>!  <F808080>A brown bear is here<088>}
+#substitute {^An elf, clad in the garments of a woodsman, moves stealthily among the trees} {<FFFFFFF>!  <F808080>An elven huntsman is here<088>}
+#substitute {^A long slender eel glides along the water, its body coiled to strike} {<FFFFFFF>!  <F808080>An eel is here<088>}
+#substitute {^A grey snake slides along the water} {<FFFFFFF>!  <F808080>A watersnake is here<088>}
+#substitute {^A grizzly cub is here, snarling loudly} {<FFFFFFF>!  <F808080>A grizzly cub is here<088>}
+#substitute {^A huge grizzly bear is here, roaming the wild} {<FFFFFFF>!  <F808080>A grizzly bear is here<088>}
+#substitute {^Rikurr, the disingenuous captain is here, observing and commanding his men} {<FFFFFFF>!  <FB22222>Rikurr is here<088>}
+#substitute {^A mewlip is here, faintly wailing at you} {<FFFFFFF>!  <F808080>A mewlip is here<088>}
+#substitute {^A spirit floats around, making strange magical gestures} {<FFFFFFF>!  <F808080>A spirit is here<088>}
+#substitute {^A dark intangible shadow turns to face you} {<FFFFFFF>!  <F808080>A dark wraith is here<088>}
+#substitute {^A bear cub is here, looking around for something to play with} {<FFFFFFF>!  <F808080>A bear cub is here<088>}
+#substitute {^Bulgôtha, the Captain of the Zaugurz outpost, is standing here} {<FFFFFFF>!  <FB22222>Bulgôtha is here<088>}
+#substitute {^A swallow flies high above the ground} {<FFFFFFF>!  <F808080>A swallow is here<088>}
+#substitute {^Some black, oozing vines reach out from the choked canopy towards you} {<FFFFFFF>!  <F808080>A coil of oozing vines is here<088>}
+#substitute {^A tangled creeper writhes its shoots between the forest's roots upwards} {<FFFFFFF>!  <F808080>A tangled creeper is here<088>}
+#substitute {^An elaborate red flower sits within a dark mass of briars} {<FFFFFFF>!  <F808080>A mass of briars is here<088>}
+#substitute {^A sand viper is slithering here on the ground} {<FFFFFFF>!  <F808080>A sand viper is here<088>}
+#substitute {^The wicked undergrowth rustles malevolently, shifting and widening} {<FFFFFFF>!  <F808080>An entangled growth is here<088>}
+#substitute {^A green-skinned hill troll is pacing around with a nervous zeal} {<FFFFFFF>!  <F808080>A green-skinned troll is here<088>}
+#substitute {^A massive hill troll is here, sniffing the air for the scent of enemies} {<FFFFFFF>!  <F808080>A massive hill troll is here<088>}
+#substitute {^A small, dense tangle of roots covers the ground} {<FFFFFFF>!  <FDAA520>A tangle of roots is here<088>}
+#substitute {^A deeply black, oddly shaped cloud of mist has gathered here} {<FFFFFFF>!  <F808080>A black, freezing mist is here<088>}
+#substitute {^A grim-looking wolverine growls threateningly} {<FFFFFFF>!  <F808080>A grim wolverine is here<088>}
+#substitute {^A black, leather-scaled reptile glances around with gleaming eyes} {<FFFFFFF>!  <F808080>A black, scaled reptile is here<088>}
+#substitute {^A moss-covered beast advances, its movement twitchy and erratic} {<FFFFFFF>!  <F808080>A moss-covered beast is here<088>}
+#substitute {^A monstrous grey, putrid fungus is growing on a large oak here} {<FFFFFFF>!  <F808080>A grey, putrid fungus is here<088>}
+#substitute {^The undergrowth rustles, shifts and widens} {<FFFFFFF>!  <F808080>A malicious undergrowth is here<088>}
+#substitute {^A swift carnivore bustles around} {<FFFFFFF>!  <F808080>A black ferret is here<088>}
+#substitute {^A small centipede is here scurrying about} {<FFFFFFF>!  <F808080>A small centipede is here<088>}
+#substitute {^A large cockroach is crawling on the ground} {<FFFFFFF>!  <F808080>A cockroach is here<088>}
+#substitute {^A huge, hungry-looking rat is here} {<FFFFFFF>!  <F808080>A great rat is here<088>}
+#substitute {^A hideous mottled spider advances with startling speed} {<FFFFFFF>!  <F808080>A hideous mottled spider is here<088>}
+#substitute {^A menacing mottled spider is here, lurking in the shadows} {<FFFFFFF>!  <F808080>A menacing mottled spider is here<088>}
+#substitute {^A spiderling skitters about, looking for small prey to devour} {<FFFFFFF>!  <F808080>A mottled spiderling is here<088>}
+#substitute {^A mottled spider crouches in the shadows, watching over her young} {<FFFFFFF>!  <F808080>A mottled spider matriarch is here<088>}
+#substitute {^A tiny, harmless centipede is here} {<FFFFFFF>!  <F808080>A tiny centipede is here<088>}
+#substitute {^A small rat runs about, oblivious to your presence} {<FFFFFFF>!  <F808080>A small rat is here<088>}
+#substitute {^A giant rat patters against you, squeaking maliciously} {<FFFFFFF>!  <F808080>A giant rat is here<088>}
+#substitute {^A dread guardsman of Dol Guldur is here, compelling the slaves to work harder} {<FFFFFFF>!  <F808080>A dread guardsman of Dol Guldur is here<088>}
+#substitute {^A vigilant bat-like creature skulks through the tunnels, alert for intruders} {<FFFFFFF>!  <F808080>A vigilant bat-like creature is here<088>}
+#substitute {^A cold shroud of dark grey mist covers the ground} {<FFFFFFF>!  <F808080>A grey cloud of mist is here<088>}
+#substitute {^A large pale fish with bulbous eyes is swimming here} {<FFFFFFF>!  <F808080>A pale fish is here<088>}
+#substitute {^A monstrous grey, putrid fungus is here entirely enveloping a large boulder} {<FFFFFFF>!  <F808080>A monstrous grey, putrid fungus is here<088>}
+#substitute {^A massive tangle of roots grows down from above, covering the walls and floor} {<FFFFFFF>!  <FDAA520>A massive tangle of roots is here<088>}
+#substitute {^A thick tangle of vines whip around from cracks in the earthen dome above} {<FFFFFFF>!  <F808080>A thick tangle of vines is here<088>}
+#substitute {^A goblin warrior is threatening to start a fight here} {<FFFFFFF>!  <F808080>A goblin warrior is here<088>}
+#substitute {^A nasty goblin is here walking around} {<FFFFFFF>!  <F808080>A goblin is here<088>}
+#substitute {^A large, squat goblin gestures with a black knife} {<FFFFFFF>!  <F808080>A goblin shaman is here<088>}
+#substitute {^A huge fierce goblin is here, dark as evil itself} {<FFFFFFF>!  <FB22222>A goblin leader is here<088>}
+#substitute {^A well-fed cow stands here chewing her cud listlessly} {<FFFFFFF>!  <F808080>A well-fed cow is here<088>}
+#substitute {^A swarm of midges is here, humming around you} {<FFFFFFF>!  <F808080>A midge swarm is here<088>}
+#substitute {^A Beorning herder is standing here, watching around} {<FFFFFFF>!  <F808080>A Beorning herder is here<088>}
+#substitute {^A large green shrub grows in the middle of a large pool of mud} {<FFFFFFF>!  <F808080>A large green shrub is here<088>}
+#substitute {^An emaciated warg, half-mad with hunger, is here} {<FFFFFFF>!  <F808080>A starving warg is here<088>}
+#substitute {^A seasoned orkish scout is keeping an eye out for any intruders} {<FFFFFFF>!  <F808080>A seasoned Durbûk-hai scout is here<088>}
+#substitute {^A deft Durbûk-hai slinger lurks in the shadows} {<FFFFFFF>!  <F808080>A deft Durbûk-hai slinger is here<088>}
+#substitute {^A wiry elf is treading quietly here} {<FFFFFFF>!  <FB22222>Coubhel the elven wanderer is here<088>}
+#substitute {^An elven scout stands here, blending in with the background} {<FFFFFFF>!  <F808080>An elven scout is here<088>}
+#substitute {^An ibex is watching you from afar} {<FFFFFFF>!  <F808080>An ibex is here<088>}
+#substitute {^A brown stag looks around with big, startled eyes} {<FFFFFFF>!  <F808080>A brown stag is here<088>}
+#substitute {^A large, black butterfly is fluttering about erratically} {<FFFFFFF>!  <F808080>A black emperor butterfly is here<088>}
+#substitute {^A huge black bear, saliva frothing from its jaws, bellows a challenge} {<FFFFFFF>!  <F808080>A huge, frothing bear is here<088>}
+#substitute {^A swarm of mosquitoes is here, humming around you} {<FFFFFFF>!  <F808080>A mosquito swarm is here<088>}
+#substitute {^A ghostly-white stag eyes its surroundings cautiously} {<FFFFFFF>!  <F808080>A white stag is here<088>}
+#substitute {^A dark wisent struggles to move through the morass} {<FFFFFFF>!  <F808080>A dark wisent is here<088>}
+#substitute {^A black squirrel peers down from the branches of the trees} {<FFFFFFF>!  <F808080>A black squirrel is here<088>}
+#substitute {^Kral the Zaugurz scout surveys the forest far below} {<FFFFFFF>!  <FB22222>Kral the Zaugurz scout is here<088>}
+#substitute {^A small bat is standing here} {<FFFFFFF>!  <F808080>A small bat is here<088>}
+#substitute {^A scrawny Durbûk-hai orc struggles to clear a rockslide} {<FFFFFFF>!  <F808080>A scrawny Durbûk-hai orc is here<088>}
+#substitute {^A large hawk-like bird is here overlooking its territory} {<FFFFFFF>!  <F808080>A scavenging buzzard is here<088>}
+#substitute {^A lithe, devious-looking Durbûk-hai shaman is standing here} {<FFFFFFF>!  <F808080>A cunning Durbûk-hai shaman is here<088>}
+#substitute {^A mugger lurks here, looking for a stranger to rob} {<FFFFFFF>!  <F808080>A mugger is here<088>}
+#substitute {^Cinard the Master Thief is here looking furious} {<FFFFFFF>!  <FB22222>Cinard the Master Thief is here<088>}
+#substitute {^A crazed dwarf is here, drooling down his beard} {<FFFFFFF>!  <FB22222>A crazed dwarf is here<088>}
+#substitute {^A furtive footpad is here waiting for his prey} {<FFFFFFF>!  <F808080>A furtive footpad is here<088>}
+#substitute {^A sleek silver ferret darts from place to place} {<FFFFFFF>!  <F808080>A silver ferret is here<088>}
+
+#nop {{ ---- generic fallbacks for unlisted mobs ---- }};
+#substitute {^{[A-Z].* is standing here.*}} {<FFFFFFF>!  <F808080>%1<088>}
+#substitute {^{[A-Z].* is sleeping here.*}} {<FFFFFFF>!  <F808080>%1<088>}
+#substitute {^{[A-Z].* is lying here,.*}} {<FFFFFFF>!  <F808080>%1<088>}
+#substitute {^{[A-Z].* is .*here, fighting.*}} {<FFFFFFF>!  <F808080>%1<088>}
+#substitute {^{The shadow of .* is floating here.*}} {<FFFFFFF>!  <F808080>%1<088>}
+
+#nop {{ ---- flag highlights ---- }};
+#substitute {(glowing)} {<FFFFFFF>(glowing)<088>}
+#substitute {(hidden)}  {<F708090>(hidden)<088>}
