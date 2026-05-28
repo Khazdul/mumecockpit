@@ -2784,7 +2784,15 @@ All frames render through `prompt_toolkit` controls. Layout building blocks:
   frame. A `<any>`-filter binding swallows key input while the gate is
   on; Ctrl-C / Ctrl-Q still exit. Resizing past the threshold restores
   the normal UI transparently because the gate is checked on every
-  render.
+  render. Under `MUME_TERMINAL=foot-managed` the gate adds a second
+  centred hint line and binds R / Shift+R to a self-healing reset that
+  rewrites foot.ini to `initial-window-mode=fullscreen` + font `size=15`
+  (family, colours, cursor, and pad preserved) and relaunches foot via
+  the same sentinel + resume tail the Options → Terminal Apply uses —
+  the escape hatch for users who lock themselves out by picking
+  `windowed` with a large font. The explicit R binding beats the
+  `<any>` swallow only when the foot-managed filter matches; on any
+  other terminal R is swallowed as before.
 - **Mouse hover / click** — every selectable row carries a per-fragment
   `mouse_handler`. `MOUSE_DOWN` selects-and-activates in a single click.
   `MOUSE_MOVE` updates a hover index that paints the row in `C_HOVER`

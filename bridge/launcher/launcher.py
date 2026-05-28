@@ -3290,15 +3290,7 @@ def _options_terminal_activate(row_idx=None):
 
 def _options_terminal_apply():
     """Write the pending foot.ini, drop the relaunch sentinel + resume
-    hint, exit.
-
-    Order matters: write the foot.ini first so a crash before the
-    sentinel still produces a useful config on the next manual launch;
-    write the sentinel before the resume hint so a crash between them
-    falls back to "relaunch but start on main menu" (the resume hint
-    is a one-shot consumed by the fresh launcher); call `app.exit()`
-    last so the supervisor's loop sees both files when foot returns.
-    """
+    hint, exit."""
     if _options_terminal_pending is None:
         # Defensive — Apply is gated on a pending != disk delta.
         return
@@ -3308,12 +3300,52 @@ def _options_terminal_apply():
         # The write failed (permissions, disk full, …). Bail out
         # without exiting — the user keeps their pending values.
         return
-    _write_relaunch_sentinel()
-    _write_launcher_resume(
+    _relaunch_with_resume(
         frame="options_terminal", cursor=_options_terminal_cursor,
     )
+
+
+def _relaunch_with_resume(frame, cursor):
+    """Drop the foot relaunch sentinel + resume hint, then exit.
+
+    Order matters: the sentinel goes down before the resume hint so a
+    crash between them falls back to "relaunch but start on main menu"
+    (the resume hint is a one-shot consumed by the fresh launcher);
+    `app.exit()` runs last so the supervisor's loop sees both files
+    when foot returns.
+    """
+    _write_relaunch_sentinel()
+    _write_launcher_resume(frame=frame, cursor=cursor)
     if _app:
         _app.exit()
+
+
+# Safe-fallback size used by the in-gate reset hatch. Pairs with
+# `window_mode=fullscreen` to guarantee the relaunched foot lands
+# above the MIN_COLS / MIN_ROWS gate on any reasonable display.
+_RESET_FONT_SIZE = 15
+
+
+def _too_small_reset_terminal():
+    """In-gate escape hatch for the foot-managed deployment: force the
+    window mode + font size back to safe defaults and relaunch foot.
+
+    Preserves family / colours / cursor / pad — minimal blast radius —
+    so the reset can never make a working install worse, only rescue a
+    locked-out one. Bound to R/Shift+R only while the too-small gate
+    is active under `MUME_TERMINAL=foot-managed`.
+    """
+    try:
+        current = foot_config.read_settings()
+        safe = dataclasses.replace(
+            current, window_mode="fullscreen", size=_RESET_FONT_SIZE,
+        )
+        foot_config.write_settings(safe)
+    except OSError:
+        # The write failed (permissions, disk full, …). Stay on the
+        # gate — Ctrl-C / Ctrl-Q still exit.
+        return
+    _relaunch_with_resume(frame="main", cursor=0)
 
 
 def _write_relaunch_sentinel():
@@ -8444,10 +8476,16 @@ def _update_result_keypress():
 def _too_small_text():
     cols = _term_cols()
     msg = f"Terminal too small — resize to at least {MIN_COLS}×{MIN_ROWS}"
-    return [
+    frags = [
         ("", _pad_centre(msg, cols)),
         (C_YELLOW, msg),
     ]
+    if _FOOT_MANAGED:
+        hint = "Press R to reset terminal settings to defaults"
+        frags.append(("", "\n"))
+        frags.append(("", _pad_centre(hint, cols)))
+        frags.append((C_HINT, hint))
+    return frags
 
 
 # ---------------------------------------------------------------------------
@@ -8479,6 +8517,15 @@ def _kb_ctrl_q(event):
 
 
 # Too-small gate — only Ctrl-C / Ctrl-Q accepted; everything else swallowed.
+# Under MUME_TERMINAL=foot-managed, R/Shift+R is an in-gate escape hatch
+# that rewrites foot.ini to fullscreen + size 15 and relaunches foot; the
+# explicit binding beats the `<any>` swallow when its filter matches.
+@kb.add("r", filter=_too_small() & Condition(lambda: _FOOT_MANAGED))
+@kb.add("R", filter=_too_small() & Condition(lambda: _FOOT_MANAGED))
+def _kb_too_small_reset(event):
+    _too_small_reset_terminal()
+
+
 @kb.add("<any>", filter=_too_small())
 def _kb_too_small_any(event):
     pass

@@ -493,7 +493,12 @@ managed-keys read/modify/write over `~/.config/foot/foot.ini` that
 preserves every unmanaged line verbatim. Apply writes the file, drops
 the relaunch sentinel and a one-shot `bridge/runtime/.launcher_resume`
 hint, then exits so the supervisor relaunches foot with the new
-config and the fresh launcher restores the user's cursor. See
+config and the fresh launcher restores the user's cursor. If a user
+picks `windowed` with a font large enough to drop the cockpit below
+the minimum-size gate, the gate itself binds R/Shift+R to a
+self-healing reset that rewrites only the window mode and font size
+back to safe defaults and reuses the same relaunch tail — the escape
+hatch lives where the user is stuck. See
 [ADR 0103](docs/decisions/0103-windows-flicker-terminal.md) for the
 flicker investigation that drove the move off Windows-Alacritty,
 [ADR 0104](docs/decisions/0104-windows-deployment-foot-wslg.md) for
