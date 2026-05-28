@@ -148,9 +148,23 @@ Use the wrapper functions instead:
   `#unaction`, `#delay`, `#undelay`)
 - `send(cmd)` — sends MUD commands to GAME_SESSION
 
+Both `game_cmd` and `session_cmd` automatically append `{3}` to any
+`#action` / `#alias` / `#highlight` / `#substitute` registration that
+arrives in the canonical two-brace-arg form (pattern + body, no
+explicit priority). This places every Lua-relayed core registration in
+the priority band reserved for core (1–4) — see
+[ADR 0115](decisions/0115-core-priority-band.md). Registrations that
+already carry an explicit priority pass through unchanged, as do other
+kinds (`#delay`, `#unaction`, `#var`, `#event`, …). Command-name
+prefixes are resolved by tt++'s unambiguous-prefix rule, so `#sub`,
+`#hi`, `#act`, and `#al` are recognised too. The injection happens once
+inside `_tintin_class_core_cmd` so the on-disk relay file reflects the
+final form.
+
 Direct `tintin_cmd(ses, cmd)` and `tintin(ses, cmd)` calls are for
 infrastructure internals only (e.g. `set_game_session`,
-`clear_game_session`).
+`clear_game_session`) and do NOT inject any priority — they serve
+plumbing callers that have nothing to register.
 
 **`tintin_show(ses, msg)`** — for `#showme` display (messages rarely contain braces):
 ```lua
