@@ -120,6 +120,42 @@ there is only one entry left. The interaction between `#class read`
 and pre-existing entries with the same key needs empirical
 verification — flagged as follow-up work, not blocking this ADR.
 
+## 2026-05-28 update — resolution
+
+The collision vector is now closed by a pair of save-side filters
+keyed off a launcher-generated allowlist:
+
+- `bridge/launcher/core_aliases.py` scans `ttpp/main.tin` and
+  `ttpp/core/*.tin` at cockpit start and writes the alias names it
+  finds to `bridge/runtime/core_aliases.list`.
+- The profile editor's save path
+  (`bridge/launcher/profile_io.save_profile`) strips any `#alias`
+  entry whose pattern is in the list and surfaces the count and names
+  through the editor UI. Closes the editor vector (PR 1).
+- `bridge/release/strip_core_collisions.sh` is invoked from
+  `_save_profile` after `sanitize_profile.sh` and applies the same
+  filter to the on-disk file. Closes the live-typed-prompt vector by
+  dropping any shadowing alias that `#class write` would otherwise
+  persist; the override survives only within the current session.
+  Surfaces a `system_ui` line — `Profile save: stripped N shadowing
+  aliases (a, b, c).` — when anything is removed. Closes the
+  `cp -s` / `cp -e` / SESSION DEACTIVATED save paths (PR 2).
+
+Both filters fail open: an empty or missing
+`bridge/runtime/core_aliases.list` skips filtering rather than
+blocking the save. The ADR 0115 escape hatch is preserved — a power
+user can still type `#alias {cp} {...}` at the prompt and have it
+fire within the live session — only persistence is denied.
+
+**Remaining gap.** Lua-registered script aliases (`cp -autostab`,
+`cp -autobow`, etc.) are not in `bridge/runtime/core_aliases.list`
+because they are registered from Lua at runtime rather than parsed
+out of `.tin` source. A profile that hand-edits in an alias shadowing
+one of those names is not caught. The surface is small — there is
+no UI path that produces such an entry — and surfacing runtime-Lua
+registrations into the allowlist is deferred until a real-world
+incident motivates it.
+
 ## Alternatives considered
 
 **(a) Single magic priority for everything core.** Set every core

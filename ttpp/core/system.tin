@@ -80,16 +80,30 @@
 #alias {cp -reset-heights} {#system {bash $HOME/MUME/bridge/layout/reset_heights.sh}} {3}
 
 #nop _save_profile — single definition of the profile save sequence
-#nop (#class write + sanitize). Session-context-only by design: must be
-#nop invoked from the session whose class is being written. The session
-#nop owns the profile class and the _profile_loaded flag gts cannot
-#nop see them. Used by cp -s, cp -e, the SESSION DEACTIVATED handler,
-#nop and the MMapper "Status: MUME closed the connection." text action
-#nop — all of which fire in session context. See ADR 0064.
+#nop (#class write + sanitize + strip-core-collisions). Session-context-only
+#nop by design: must be invoked from the session whose class is being
+#nop written. The session owns the profile class and the _profile_loaded
+#nop flag gts cannot see them. Used by cp -s, cp -e, the SESSION
+#nop DEACTIVATED handler, and the MMapper "Status: MUME closed the
+#nop connection." text action — all of which fire in session context.
+#nop See ADR 0064.
+#nop
+#nop strip_core_collisions.sh drops any #alias whose pattern matches a
+#nop core-registered name (live-typed shadowing aliases that #class write
+#nop would otherwise persist). When it strips anything its stdout carries
+#nop two lines — count and comma-joined names — captured via #script and
+#nop surfaced through system_ui. Silent no-op when nothing was stripped.
+#nop See ADR 0115.
 #alias {_save_profile} {
     #if {"$_profile" != "" && $_profile_loaded} {
         #class {$_profile} {write} {ttpp/profiles/$_profile.tin};
-        #system {bash $HOME/MUME/bridge/release/sanitize_profile.sh ttpp/profiles/$_profile.tin}
+        #system {bash $HOME/MUME/bridge/release/sanitize_profile.sh ttpp/profiles/$_profile.tin};
+        #unvar {_strip_out};
+        #script {_strip_out} {bash $HOME/MUME/bridge/release/strip_core_collisions.sh ttpp/profiles/$_profile.tin};
+        #if {&_strip_out[]} {
+            #lua {system_ui("Profile save: stripped " .. ui_var("$_strip_out[1]") .. " shadowing aliases (" .. ui_var("$_strip_out[2]") .. ").")}
+        };
+        #unvar {_strip_out}
     }
 } {3}
 

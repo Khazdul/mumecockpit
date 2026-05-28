@@ -180,6 +180,26 @@ Non-existent path: exits 0 silently (handles first connect on a new profile).
 The script is idempotent — a second run on an already-clean file is a no-op.
 Trailing blank lines are untouched.
 
+**Core-collision strip:** `bridge/release/strip_core_collisions.sh <path>` runs
+immediately after `sanitize_profile.sh` from inside `_save_profile`. It scans
+the just-written profile file for `#alias {name} {...}` entries whose name
+matches any pattern in `bridge/runtime/core_aliases.list` (the runtime
+allowlist of core-registered alias names produced at launcher startup by
+`bridge/launcher/core_aliases.py`) and rewrites the file with those lines
+removed via the same atomic temp + rename pattern as the sanitizer. When
+anything is stripped its stdout carries two lines — decimal count then
+comma+space-joined names — which `_save_profile` captures via tt++'s `#script`
+and surfaces as a `system_ui` line: `Profile save: stripped N shadowing
+aliases (a, b, c).`. Closes the live-typed prompt vector where a user types
+`#alias {cp} {...}` directly into tt++ and `#class write` would otherwise
+persist it on the next save; the override survives only within the current
+session, preserving the ADR 0115 escape hatch without granting it permanence.
+Fail-open: a missing or empty allowlist exits silently with no stripping.
+Lua-registered script aliases (`cp -autostab` etc.) are not in the allowlist
+and are therefore not caught — flagged as a known gap in ADR 0115. The two
+scripts are orthogonal and compose: sanitize handles file-shape hygiene,
+strip handles content-shape hygiene.
+
 The `mume` alias is retained as a legacy shortcut that connects as `default`
 — the game session name is always `default` unless a profile is explicitly
 selected (Phase 2).
@@ -336,9 +356,10 @@ drains. (Earlier the triple was three separate relay files and could be interlea
 foreign-session triggers — see ADR 0097.) Two-class model: `{<profile>}` holds user data,
 `{core}` holds all script and infrastructure registrations.
 
-**Save sequence** (same two-step body, defined once in `_save_profile`):
+**Save sequence** (single body, defined once in `_save_profile`):
 1. `#class {$_profile} {write} {ttpp/profiles/$_profile.tin}` — writes file with wrapping
 2. `sanitize_profile.sh ttpp/profiles/$_profile.tin` — normalizes the file (strips wrapping and header artifacts)
+3. `strip_core_collisions.sh ttpp/profiles/$_profile.tin` — drops any `#alias` line whose pattern shadows a core registration; surfaces a `system_ui` line when anything was stripped, silent otherwise. See "Core-collision strip" under Sanitizer above.
 
 Call sites of `_save_profile`: `cp -s` (user-triggered), `cp -e` (explicit
 save before the gts switch), the SESSION DEACTIVATED handler (covers `#zap`
