@@ -248,6 +248,65 @@ def _xterm256_to_hex(n):
     return f"#{level:02x}{level:02x}{level:02x}"
 
 
+def _wrap_fragments(frags, width, indent="  "):
+    """Word-wrap a list of (style, text) fragments to `width` visible
+    cells, prefixing every output row with an ("", indent) fragment.
+
+    Indent counts toward `width`. Breaks on spaces; hard-splits any
+    single word longer than the content width. Whitespace runs at a
+    wrap boundary are dropped (not carried onto the next row).
+    Per-fragment style is preserved across wraps. Always returns at
+    least one row — an empty `frags` yields a single indent-only row.
+    """
+    avail = max(1, width - len(indent))
+
+    tokens = []
+    for style, text in frags:
+        if not text:
+            continue
+        for m in re.finditer(r"\S+|\s+", text):
+            tokens.append((style, m.group()))
+
+    rows = []
+    current = [("", indent)]
+    used = 0
+    pending_space = 0
+
+    for style, tok in tokens:
+        if tok.isspace():
+            pending_space += len(tok)
+            continue
+
+        tlen = len(tok)
+        gap = pending_space if used > 0 else 0
+        pending_space = 0
+
+        if used + gap + tlen <= avail:
+            if gap > 0:
+                current.append(("", " " * gap))
+                used += gap
+            current.append((style, tok))
+            used += tlen
+        elif tlen <= avail:
+            rows.append(current)
+            current = [("", indent), (style, tok)]
+            used = tlen
+        else:
+            if used > 0:
+                rows.append(current)
+                current = [("", indent)]
+                used = 0
+            while len(tok) > avail:
+                rows.append([("", indent), (style, tok[:avail])])
+                tok = tok[avail:]
+            if tok:
+                current = [("", indent), (style, tok)]
+                used = len(tok)
+
+    rows.append(current)
+    return rows
+
+
 def _ansi_line_to_fragments(text):
     """Convert a string with ANSI SGR escapes into a list of
     (style, text) tuples suitable for prompt_toolkit rendering."""
@@ -330,8 +389,12 @@ def package_width(term_cols, list_w):
 # ---------------------------------------------------------------------------
 def render_detail_lines(module, detail_w):
     """Return a list of fragment lists (one per visual row) describing
-    the module's detail panel."""
+    the module's detail panel. All rows are wrapped to
+    `detail_w - SB_W` so they never overlap the detail scrollbar
+    column (reserved unconditionally — the unused cell is harmless
+    when the panel doesn't overflow)."""
     rows = []
+    content_w = max(1, detail_w - SB_W)
 
     # Title.
     rows.append([(C_SECTION, module.name)])
@@ -345,23 +408,26 @@ def render_detail_lines(module, detail_w):
     # Description.
     if module.description:
         rows.append([])
-        for line in (textwrap.wrap(module.description, detail_w) or [""]):
+        for line in (textwrap.wrap(module.description, content_w) or [""]):
             rows.append([(C_BODY, line)])
 
-    # Before.
+    # Before (plain text — 2-space hanging indent).
     if module.example_before:
         rows.append([])
         rows.append([(C_HINT, "Before")])
         for line in module.example_before:
-            rows.append([(C_ITEM, "  " + line)])
+            for piece in (textwrap.wrap(line, max(1, content_w - 2))
+                          or [""]):
+                rows.append([(C_ITEM, "  " + piece)])
 
-    # After (with ANSI rendering).
+    # After (ANSI — wrap fragments to preserve colours across breaks).
     if module.example_after:
         rows.append([])
         rows.append([(C_HINT, "After")])
         for line in module.example_after:
-            frags = _ansi_line_to_fragments("  " + line)
-            rows.append(frags)
+            frags = _ansi_line_to_fragments(line)
+            for wrapped in _wrap_fragments(frags, content_w, indent="  "):
+                rows.append(wrapped)
 
     return rows
 
