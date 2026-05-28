@@ -1,4 +1,4 @@
-description = "Mobs readability - room-contents mobs. Each verbose mob line becomes a short two-tone \"<name> is here.\" with no prefix: the name is colour-coded by tier (blue-grey = trivial, gold = dangerous / named / boss, pink = roots / snare), while the body and trailing period are dark grey. Flags sit in white parens: (glowing) bright lilac, (hidden) blue-grey. 446 named mobs + 5 generic fallbacks (also two-tone) for unlisted mobs. Trivial blue-grey is cool + light so names pop against default-FG room text without out-shouting gold; red is retired so it never clashes with the game's own damage colour. Examples below are a representative selection, live tt++ render."
+description = "Mume readability - room-contents mobs. Each verbose mob line becomes a short two-tone \"<name> is here.\" with no prefix: dangerous / named / boss names are gold, roots / snare names pink, and trivial names keep the default colour - only the dark-grey body ('is here.' + the period) marks them, keeping the palette minimal. Flags sit in white parens: (glowing) bright lilac, (hidden) dark grey. 446 named mobs + 5 generic fallbacks (also two-tone, default name) for unlisted mobs. Red is retired so it never clashes with the game's own damage colour. Examples below are a representative selection, live tt++ render."
 
 example_before = [
     "A squirrel scampers around here, looking for nuts from the trees.",
@@ -15,15 +15,15 @@ example_before = [
 ]
 
 example_after = [
-    "\u001B[0m\u001B[38;2;196;212;240mA squirrel\u001B[38;2;110;110;110m is here.",
-    "\u001B[0m\u001B[38;2;196;212;240mA rabid, grey wolf\u001B[38;2;110;110;110m is here.",
+    "\u001B[0mA squirrel\u001B[38;2;110;110;110m is here.",
+    "\u001B[0mA rabid, grey wolf\u001B[38;2;110;110;110m is here.",
     "\u001B[0m\u001B[38;2;240;200;80mBill Ferny\u001B[38;2;110;110;110m is here.",
     "\u001B[0m\u001B[38;2;240;200;80mThe huge, black bear\u001B[38;2;110;110;110m is here.",
     "\u001B[0m\u001B[38;2;239;111;166mA clump of roots\u001B[38;2;110;110;110m is here.",
     "\u001B[0m\u001B[38;2;239;111;166mA packrat\u001B[38;2;110;110;110m is here.",
     "\u001B[0m\u001B[38;2;240;200;80mAn old man\u001B[38;2;110;110;110m is here.",
     "\u001B[0m\u001B[38;2;240;200;80mLuxzúm the Morgundul Shaman\u001B[38;2;110;110;110m is here.\u001B[0m \u001B[38;2;255;255;255m(\u001B[38;2;218;155;255mglowing\u001B[38;2;255;255;255m)",
-    "\u001B[0m\u001B[38;2;196;212;240mAn orc-guard\u001B[38;2;110;110;110m is here.\u001B[0m \u001B[38;2;255;255;255m(\u001B[38;2;196;212;240mhidden\u001B[38;2;255;255;255m)",
-    "\u001B[0m\u001B[38;2;196;212;240mA wandering nameless pilgrim\u001B[38;2;110;110;110m is standing here.",
+    "\u001B[0mAn orc-guard\u001B[38;2;110;110;110m is here.\u001B[0m \u001B[38;2;255;255;255m(\u001B[38;2;110;110;110mhidden\u001B[38;2;255;255;255m)",
+    "\u001B[0mA wandering nameless pilgrim\u001B[38;2;110;110;110m is standing here.",
     "\u001B[0m\u001B[38;2;240;200;80mTreebeard the Ent\u001B[38;2;110;110;110m is here.",
 ]

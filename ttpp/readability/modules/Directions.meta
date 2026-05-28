@@ -1,0 +1,23 @@
+description = "Mume readability - directions. Two concerns. (1) Movement lines: '<name> leaves <dir>' keeps the mover name in the default colour, dims 'leaves' to dark grey, and tints the direction word + travel arrow muted teal (north ▲ south ▼ east ► ◄ west up ⇑ down ⇓); '<name> has arrived from the <dir>.' tints the from-direction teal, and the same sub also catches the directionless portal form '<name> has arrived.'. (2) The room Exits line: label dark grey, the whole direction list in muted teal (door parens included). Teal is muted so exits read below room mobs. Examples below are a live tt++ render."
+
+example_before = [
+    "A young troll leaves north.",
+    "A young troll leaves east.",
+    "Frodo leaves west.",
+    "A young troll leaves up.",
+    "A young troll leaves down.",
+    "A young troll has arrived from the west.",
+    "A young troll has arrived.",
+    "Exits: (north), east, south, west, up.",
+]
+
+example_after = [
+    "\u001B[0mA young troll\u001B[38;2;110;110;110m leaves \u001B[38;2;63;176;160mnorth ▲",
+    "\u001B[0mA young troll\u001B[38;2;110;110;110m leaves \u001B[38;2;63;176;160meast ►",
+    "\u001B[0mFrodo\u001B[38;2;110;110;110m leaves \u001B[38;2;63;176;160m◄ west",
+    "\u001B[0mA young troll\u001B[38;2;110;110;110m leaves \u001B[38;2;63;176;160mup ⇑",
+    "\u001B[0mA young troll\u001B[38;2;110;110;110m leaves \u001B[38;2;63;176;160mdown ⇓",
+    "\u001B[0mA young troll\u001B[38;2;110;110;110m has arrived\u001B[38;2;63;176;160m from the west\u001B[38;2;110;110;110m.",
+    "\u001B[0mA young troll\u001B[38;2;110;110;110m has arrived\u001B[38;2;63;176;160m\u001B[38;2;110;110;110m.",
+    "\u001B[0m\u001B[38;2;110;110;110mExits: \u001B[38;2;63;176;160m(north), east, south, west, up.",
+]

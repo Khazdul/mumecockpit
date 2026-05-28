@@ -1,0 +1,47 @@
+#nop { =================================================================== };
+#nop {  Mume readability module - Directions };
+#nop {  6 leave subs + 1 arrival sub + 1 exits sub };
+#nop {  };
+#nop {  Two concerns: movement lines (who left / arrived, which way) and };
+#nop {  the room Exits line. Colours sync with the Mobs module: };
+#nop {  };
+#nop {  Colour legend (tt++ truecolor, see #help colors): };
+#nop {    <F3FB0A0> teal   direction (muted, below mobs in salience)  #54857e };
+#nop {    <F6E6E6E> grey   boilerplate 'leaves' / 'has arrived' / label #6e6e6e };
+#nop {    (mover name renders in the default colour, like trivial mobs); };
+#nop {    <088>  reset to default colour };
+#nop {  };
+#nop {  Glyph key (style 1, arrow points the travel direction): };
+#nop {    north ▲   south ▼   east ►   ◄ west   up ⇑   down ⇓ };
+#nop {  };
+#nop {  Direction teal is deliberately muted: exits must be visible but };
+#nop {  rank below room mobs. Red stays the game's own damage colour. };
+#nop {  };
+#nop {  Arrival: one sub matches BOTH 'X has arrived from the <dir>.' and };
+#nop {  the portal form 'X has arrived.' - the middle %2 is empty in the };
+#nop {  portal case, so the dir-colour span collapses to nothing. };
+#nop {  };
+#nop {  Exits: one anchored sub (^Exits: ...$). Label + list rebuilt as };
+#nop {  dark label + dir-colour list. Per-word colouring with dark commas };
+#nop {  is not done: direction words also appear in prose (can't anchor a };
+#nop {  bare-word sub to the exits line) and tt++ does not re-scan a }; 
+#nop {  substituted %1, so the whole list (incl. door parens, commas, }; 
+#nop {  period) takes the dir colour. }; 
+#nop {  };
+#nop {  Install:  #read mume_readability_directions.tin };
+#nop {  Remove:   #killall substitute };
+#nop { =================================================================== };
+
+#nop {{ ---- movement: leaves (glyph style 1) ---- }};
+#substitute {^%1 leaves north.$} {%1<F6E6E6E> leaves <F3FB0A0>north ▲<088>}
+#substitute {^%1 leaves south.$} {%1<F6E6E6E> leaves <F3FB0A0>south ▼<088>}
+#substitute {^%1 leaves east.$}  {%1<F6E6E6E> leaves <F3FB0A0>east ►<088>}
+#substitute {^%1 leaves west.$}  {%1<F6E6E6E> leaves <F3FB0A0>◄ west<088>}
+#substitute {^%1 leaves up.$}    {%1<F6E6E6E> leaves <F3FB0A0>up ⇑<088>}
+#substitute {^%1 leaves down.$}  {%1<F6E6E6E> leaves <F3FB0A0>down ⇓<088>}
+
+#nop {{ ---- movement: arrival (one sub: direction + portal) ---- }};
+#substitute {^%1 has arrived%2.$} {%1<F6E6E6E> has arrived<F3FB0A0>%2<F6E6E6E>.<088>}
+
+#nop {{ ---- exits line (one sub: dark label + dir-colour list) ---- }};
+#substitute {^Exits: {.*}$} {<F6E6E6E>Exits: <F3FB0A0>%1<088>}
