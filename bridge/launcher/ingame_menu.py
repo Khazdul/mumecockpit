@@ -1123,12 +1123,38 @@ def _scripts_set_hover_back(on):
 
 
 def _scripts_clear_hover(ev):
-    """MOUSE_MOVE handler attached to title/footer chrome and blank
-    padding so the hover highlight clears the moment the pointer
-    leaves a selectable row — the hover-clear invariant from
-    docs/popup-menu.md."""
+    """MOUSE_MOVE handler attached to title/footer chrome so the hover
+    highlight clears the moment the pointer leaves a selectable row —
+    the hover-clear invariant from docs/popup-menu.md. Title/footer
+    span both columns; wheel here forwards to the detail panel (the
+    primary content surface) so the chrome doesn't absorb the event
+    (ADR 0062)."""
     if ev.event_type == MouseEventType.MOUSE_MOVE:
         _scripts_set_hover(None)
+        return None
+    if ev.event_type == MouseEventType.SCROLL_UP:
+        _scripts_scroll_detail(-3)
+        return None
+    if ev.event_type == MouseEventType.SCROLL_DOWN:
+        _scripts_scroll_detail(3)
+        return None
+    return NotImplemented
+
+
+def _scripts_list_chrome_wheel_handler(ev):
+    """MOUSE_MOVE + wheel handler for cells living in the list column
+    (the blank spacer above Back). Wheel moves the list cursor by 1
+    row per notch, matching the row handler above it."""
+    if ev.event_type == MouseEventType.MOUSE_MOVE:
+        _scripts_set_hover(None)
+        return None
+    if ev.event_type == MouseEventType.SCROLL_UP:
+        _scripts_move_up()
+        return None
+    if ev.event_type == MouseEventType.SCROLL_DOWN:
+        _scripts_move_down()
+        return None
+    return NotImplemented
 
 
 def _scripts_select_row(row_idx):
@@ -1150,7 +1176,8 @@ def _scripts_select_row(row_idx):
 
 def _scripts_row_handler(row_idx):
     """Mouse handler for one list row — click moves the cursor (no
-    toggle: the popup is read-only); MOUSE_MOVE updates hover."""
+    toggle: the popup is read-only); MOUSE_MOVE updates hover; wheel
+    moves the cursor by 1 row per notch (mirrors the launcher)."""
     def _h(ev):
         if ev.event_type == MouseEventType.MOUSE_MOVE:
             _scripts_set_hover(row_idx)
@@ -1158,14 +1185,27 @@ def _scripts_row_handler(row_idx):
         if ev.event_type == MouseEventType.MOUSE_DOWN:
             _scripts_select_row(row_idx)
             return None
+        if ev.event_type == MouseEventType.SCROLL_UP:
+            _scripts_move_up()
+            return None
+        if ev.event_type == MouseEventType.SCROLL_DOWN:
+            _scripts_move_down()
+            return None
         return NotImplemented
     return _h
 
 
 def _scripts_list_sb_handler(local_row):
     """Click on the list scrollbar — page-step toward the click row.
-    No wheel branch (the popup is wheel-free)."""
+    Wheel forwarded to the cursor-movement handlers so the list and
+    its scrollbar feel like one surface."""
     def _h(ev):
+        if ev.event_type == MouseEventType.SCROLL_UP:
+            _scripts_move_up()
+            return None
+        if ev.event_type == MouseEventType.SCROLL_DOWN:
+            _scripts_move_down()
+            return None
         if ev.event_type != MouseEventType.MOUSE_DOWN:
             return NotImplemented
         body = _scripts_list_rows()
@@ -1181,7 +1221,8 @@ def _scripts_list_sb_handler(local_row):
 
 def _scripts_back_handler():
     """Mouse handler for the in-column Back row — click pops the
-    frame; MOUSE_MOVE highlights Back."""
+    frame; MOUSE_MOVE highlights Back; wheel moves the list cursor
+    (Back sits in the list column)."""
     def _h(ev):
         if ev.event_type == MouseEventType.MOUSE_MOVE:
             _scripts_set_hover_back(True)
@@ -1189,18 +1230,30 @@ def _scripts_back_handler():
         if ev.event_type == MouseEventType.MOUSE_DOWN:
             _pop_frame()
             return None
+        if ev.event_type == MouseEventType.SCROLL_UP:
+            _scripts_move_up()
+            return None
+        if ev.event_type == MouseEventType.SCROLL_DOWN:
+            _scripts_move_down()
+            return None
         return NotImplemented
     return _h
 
 
 def _scripts_detail_handler(body_row):
     """Mouse handler over a detail-panel cell — clears the list/Back
-    hover so previously-glowing rows stop glowing on MOUSE_MOVE.
-    Click is a no-op (the detail panel is read-only); the popup has
-    no mouse-wheel binding."""
+    hover so previously-glowing rows stop glowing on MOUSE_MOVE; wheel
+    scrolls the detail panel 3 rows per notch (mirrors the launcher).
+    Click is a no-op (the detail panel is read-only)."""
     def _h(ev):
         if ev.event_type == MouseEventType.MOUSE_MOVE:
             _scripts_set_hover(None)
+            return None
+        if ev.event_type == MouseEventType.SCROLL_UP:
+            _scripts_scroll_detail(-3)
+            return None
+        if ev.event_type == MouseEventType.SCROLL_DOWN:
+            _scripts_scroll_detail(3)
             return None
         return NotImplemented
     return _h
@@ -1208,8 +1261,15 @@ def _scripts_detail_handler(body_row):
 
 def _scripts_detail_sb_handler(local_row):
     """Click on the detail scrollbar — page-step toward the click row.
-    No wheel branch (the popup is wheel-free)."""
+    Wheel scrolls the detail panel (so the scrollbar cell behaves like
+    the panel it serves)."""
     def _h(ev):
+        if ev.event_type == MouseEventType.SCROLL_UP:
+            _scripts_scroll_detail(-3)
+            return None
+        if ev.event_type == MouseEventType.SCROLL_DOWN:
+            _scripts_scroll_detail(3)
+            return None
         if ev.event_type != MouseEventType.MOUSE_DOWN:
             return NotImplemented
         body = _scripts_visible_rows()
@@ -1250,10 +1310,11 @@ def _scripts_back_row_frags(list_w):
 
 
 def _scripts_blank_row_frags(list_w):
-    """Blank spacer row in the left column. Carries a clear-hover
-    handler so the highlight does not stick when the pointer crosses
-    the spacer."""
-    return [("", " " * list_w, _scripts_clear_hover)]
+    """Blank spacer row in the left column. Carries a clear-hover +
+    wheel-forwarding handler so the highlight does not stick when the
+    pointer crosses the spacer and wheel events don't get absorbed
+    (ADR 0062)."""
+    return [("", " " * list_w, _scripts_list_chrome_wheel_handler)]
 
 
 def _scripts_text():
@@ -1491,8 +1552,34 @@ def _readability_set_hover_back(on):
 
 
 def _readability_clear_hover(ev):
+    """Title/footer chrome handler. Wheel forwards to the detail panel
+    so the chrome doesn't absorb the event (ADR 0062)."""
     if ev.event_type == MouseEventType.MOUSE_MOVE:
         _readability_set_hover(None)
+        return None
+    if ev.event_type == MouseEventType.SCROLL_UP:
+        _readability_scroll_detail(-3)
+        return None
+    if ev.event_type == MouseEventType.SCROLL_DOWN:
+        _readability_scroll_detail(3)
+        return None
+    return NotImplemented
+
+
+def _readability_list_chrome_wheel_handler(ev):
+    """Clear-hover + wheel-forwarding handler for cells in the list
+    column (the blank spacer above Back). Wheel moves the list cursor
+    by 1 row per notch, matching the row handler above it."""
+    if ev.event_type == MouseEventType.MOUSE_MOVE:
+        _readability_set_hover(None)
+        return None
+    if ev.event_type == MouseEventType.SCROLL_UP:
+        _readability_move_up()
+        return None
+    if ev.event_type == MouseEventType.SCROLL_DOWN:
+        _readability_move_down()
+        return None
+    return NotImplemented
 
 
 def _readability_row_handler(row_idx):
@@ -1509,12 +1596,24 @@ def _readability_row_handler(row_idx):
                 _readability_ensure_cursor_visible()
             _readability_toggle_cursor()
             return None
+        if ev.event_type == MouseEventType.SCROLL_UP:
+            _readability_move_up()
+            return None
+        if ev.event_type == MouseEventType.SCROLL_DOWN:
+            _readability_move_down()
+            return None
         return NotImplemented
     return _h
 
 
 def _readability_list_sb_handler(local_row):
     def _h(ev):
+        if ev.event_type == MouseEventType.SCROLL_UP:
+            _readability_move_up()
+            return None
+        if ev.event_type == MouseEventType.SCROLL_DOWN:
+            _readability_move_down()
+            return None
         if ev.event_type != MouseEventType.MOUSE_DOWN:
             return NotImplemented
         body = _readability_list_rows()
@@ -1536,6 +1635,12 @@ def _readability_back_handler():
         if ev.event_type == MouseEventType.MOUSE_DOWN:
             _readability_save_and_pop()
             return None
+        if ev.event_type == MouseEventType.SCROLL_UP:
+            _readability_move_up()
+            return None
+        if ev.event_type == MouseEventType.SCROLL_DOWN:
+            _readability_move_down()
+            return None
         return NotImplemented
     return _h
 
@@ -1545,12 +1650,24 @@ def _readability_detail_handler(body_row):
         if ev.event_type == MouseEventType.MOUSE_MOVE:
             _readability_set_hover(None)
             return None
+        if ev.event_type == MouseEventType.SCROLL_UP:
+            _readability_scroll_detail(-3)
+            return None
+        if ev.event_type == MouseEventType.SCROLL_DOWN:
+            _readability_scroll_detail(3)
+            return None
         return NotImplemented
     return _h
 
 
 def _readability_detail_sb_handler(local_row):
     def _h(ev):
+        if ev.event_type == MouseEventType.SCROLL_UP:
+            _readability_scroll_detail(-3)
+            return None
+        if ev.event_type == MouseEventType.SCROLL_DOWN:
+            _readability_scroll_detail(3)
+            return None
         if ev.event_type != MouseEventType.MOUSE_DOWN:
             return NotImplemented
         body = _readability_visible_rows()
@@ -1584,7 +1701,7 @@ def _readability_back_row_frags(list_w):
 
 
 def _readability_blank_row_frags(list_w):
-    return [("", " " * list_w, _readability_clear_hover)]
+    return [("", " " * list_w, _readability_list_chrome_wheel_handler)]
 
 
 def _readability_text():
@@ -2562,21 +2679,46 @@ def _append_sparklines(frags, stats, cols):
     frags.append(("", "\n"))
 
 
+def _stats_wheel_scroll(table_idx, delta):
+    """Scroll the table at `table_idx` by `delta` rows (the keyboard step)
+    and move keyboard focus to it. Mirrors the click-sets-focus behaviour
+    on the wheel surface so wheel scrolling always tracks the table the
+    user is interacting with."""
+    global _stats_focused
+    sbs = (_kills_sb, _pkills_sb, _allies_sb, _achievements_sb)
+    sb = sbs[table_idx]
+    if sb is None:
+        return
+    _stats_focused = table_idx
+    sb.scroll_by(delta)
+    if _app:
+        _app.invalidate()
+
+
 def _make_focus_handler(idx):
     def _handler(ev):
-        if ev.event_type != MouseEventType.MOUSE_DOWN:
-            return
-        global _stats_focused
-        _stats_focused = idx
-        if _app:
-            _app.invalidate()
+        if ev.event_type == MouseEventType.MOUSE_DOWN:
+            global _stats_focused
+            _stats_focused = idx
+            if _app:
+                _app.invalidate()
+            return None
+        if ev.event_type == MouseEventType.SCROLL_UP:
+            _stats_wheel_scroll(idx, -1)
+            return None
+        if ev.event_type == MouseEventType.SCROLL_DOWN:
+            _stats_wheel_scroll(idx, 1)
+            return None
+        return NotImplemented
     return _handler
 
 
 def _scrollbar_row_cells(sb, table_idx):
     """Render `sb` and return one fragment per row (newlines stripped).
 
-    Wraps each cell handler so a click also moves keyboard focus to this table.
+    Wraps each cell handler so a click also moves keyboard focus to this
+    table, and so the wheel scrolls this table (matching the click-sets-
+    focus behaviour on the table proper).
     """
     out = []
     for f in sb.render():
@@ -2586,6 +2728,12 @@ def _scrollbar_row_cells(sb, table_idx):
             style, text, orig = f
 
             def _wrapped(ev, orig=orig, idx=table_idx):
+                if ev.event_type == MouseEventType.SCROLL_UP:
+                    _stats_wheel_scroll(idx, -1)
+                    return None
+                if ev.event_type == MouseEventType.SCROLL_DOWN:
+                    _stats_wheel_scroll(idx, 1)
+                    return None
                 if ev.event_type == MouseEventType.MOUSE_DOWN:
                     global _stats_focused
                     _stats_focused = idx
@@ -2611,27 +2759,41 @@ def _toggle_sort(state_tuple, col):
 
 def _make_kill_header_handler(col):
     def _h(ev):
+        if ev.event_type == MouseEventType.SCROLL_UP:
+            _stats_wheel_scroll(0, -1)
+            return None
+        if ev.event_type == MouseEventType.SCROLL_DOWN:
+            _stats_wheel_scroll(0, 1)
+            return None
         if ev.event_type != MouseEventType.MOUSE_DOWN:
-            return
+            return NotImplemented
         global _stats_kills_sort, _stats_focused
         _stats_focused = 0
         _stats_kills_sort = _toggle_sort(_stats_kills_sort, col)
         _kills_sb.scroll_to(0)
         if _app:
             _app.invalidate()
+        return None
     return _h
 
 
 def _make_pkill_header_handler(col):
     def _h(ev):
+        if ev.event_type == MouseEventType.SCROLL_UP:
+            _stats_wheel_scroll(1, -1)
+            return None
+        if ev.event_type == MouseEventType.SCROLL_DOWN:
+            _stats_wheel_scroll(1, 1)
+            return None
         if ev.event_type != MouseEventType.MOUSE_DOWN:
-            return
+            return NotImplemented
         global _stats_pkills_sort, _stats_focused
         _stats_focused = 1
         _stats_pkills_sort = _toggle_sort(_stats_pkills_sort, col)
         _pkills_sb.scroll_to(0)
         if _app:
             _app.invalidate()
+        return None
     return _h
 
 
