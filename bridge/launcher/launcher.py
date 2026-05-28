@@ -1194,22 +1194,51 @@ def _main_text():
     frags = []
     clear_hover = _main_clear_hover
 
-    # Starfield + wordmark banner — the logo is the launcher's signature,
-    # not a section title, and does not go through `menu_chrome.title_block`.
-    # Art lives in launcher_banner.py (decoupled from the popup's banner.py
-    # so the launcher banner can evolve independently).
-    banner_pad = _pad_centre(" " * launcher_banner.BANNER_WIDTH, cols)
-    frags.append(("", "\n", clear_hover))
-    for line_frags in launcher_banner.banner_lines():
-        frags.append(("", banner_pad, clear_hover))
-        for style, text in line_frags:
-            frags.append((style, text, clear_hover))
-        frags.append(("", "\n", clear_hover))
-    frags.append(("", "\n", clear_hover))
-    banner_rows = 1 + launcher_banner.BANNER_HEIGHT + 1
-
     items = _main_items
     sel_idx = _sel_main if 0 <= _sel_main < len(items) else 0
+
+    # Predict the quote block's row count so we can include it in the
+    # reserved-rows tally before any fragments are emitted. The block
+    # is `text [+ attr] + trailing blank`, mirroring the emission below.
+    if _quote_text:
+        quote_rows = 1 + (1 if _quote_attr else 0) + 1
+    else:
+        quote_rows = 0
+
+    # `reserved_rows` is the exact row count the surface emits *without*
+    # the banner block: the single separator blank above the menu +
+    # every menu row + the blank between the menu and the quote + the
+    # quote rows (if any) + the anchored footer. The shared
+    # `launcher_banner.banner_fits` helper checks whether the banner
+    # block fits on top — when it doesn't, we drop the banner so the
+    # menu always wins on a short terminal.
+    sep_above_menu     = 1
+    blank_above_quote  = 1
+    footer_rows        = 1
+    reserved_rows = (sep_above_menu + len(items) + blank_above_quote
+                     + quote_rows + footer_rows)
+    show_banner   = launcher_banner.banner_fits(rows_h, reserved_rows)
+
+    # Starfield + wordmark banner — the logo is the launcher's signature,
+    # not a section title, and does not go through `menu_chrome.title_block`.
+    # Art lives in launcher_banner.py and is shared with the popup main
+    # frame; both surfaces drop the banner at the same threshold via the
+    # shared `banner_fits` helper so the layout decision is one place.
+    if show_banner:
+        banner_pad = _pad_centre(" " * launcher_banner.BANNER_WIDTH, cols)
+        frags.append(("", "\n", clear_hover))
+        for line_frags in launcher_banner.banner_lines():
+            frags.append(("", banner_pad, clear_hover))
+            for style, text in line_frags:
+                frags.append((style, text, clear_hover))
+            frags.append(("", "\n", clear_hover))
+        frags.append(("", "\n", clear_hover))
+        banner_rows = 1 + launcher_banner.BANNER_HEIGHT + 1
+    else:
+        # Single blank above the menu so it doesn't crowd the top of
+        # the terminal — replaces the banner block's trailing blank.
+        frags.append(("", "\n", clear_hover))
+        banner_rows = 0
 
     # Plain `<< label >>` menu: centre each row independently
     # (ragged-centred). The row width is `len(label) + 6` (3-cell
@@ -1239,24 +1268,24 @@ def _main_text():
 
     frags.append(("", "\n", clear_hover))
 
-    quote_rows = 0
     if _quote_text:
         quoted = f'"{_quote_text}"'
         frags.append(("", _pad_centre(quoted, cols), clear_hover))
         frags.append((C_QUOTE, quoted, clear_hover))
         frags.append(("", "\n", clear_hover))
-        quote_rows += 1
         if _quote_attr:
             attr = f"— {_quote_attr}"
             frags.append(("", _pad_centre(attr, cols), clear_hover))
             frags.append((C_QUOTE_ATTR, attr, clear_hover))
             frags.append(("", "\n", clear_hover))
-            quote_rows += 1
         frags.append(("", "\n", clear_hover))
-        quote_rows += 1
 
+    # Account for the leading separator blank we emit when the banner
+    # is hidden — it sits at the top in place of the banner's own
+    # leading blank row.
+    sep_rows = 0 if show_banner else sep_above_menu
     footer = "↑↓ Navigate · Enter/Space Select"
-    content_rows = banner_rows + len(items) + 1 + quote_rows
+    content_rows = banner_rows + sep_rows + len(items) + 1 + quote_rows
     frags.extend(footer_block(
         footer, cols, rows_h, content_rows, mouse_handler=clear_hover,
     ))

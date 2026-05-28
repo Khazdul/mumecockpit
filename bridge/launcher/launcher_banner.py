@@ -181,3 +181,16 @@ def banner_lines(now=None):
             glyph = _SWAP_GLYPH[glyph]
         grid[row][col] = (glyph, _INT_TO_STYLE[tier])
     return [_row_fragments(row) for row in grid]
+
+
+def banner_fits(available_rows, reserved_rows):
+    """True when `available_rows` of vertical space can fit both
+    `reserved_rows` of non-banner content and the full banner block
+    (BANNER_HEIGHT logo rows + the leading and trailing blank rows).
+
+    Shared by the launcher main page and the in-game popup main frame
+    so they make the same decision at the same row counts. Callers pass
+    the row count their surface emits *without* the banner block; the
+    banner-block geometry stays in this module so no magic row numbers
+    leak into the callers."""
+    return available_rows >= reserved_rows + (BANNER_HEIGHT + 2)

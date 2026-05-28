@@ -260,7 +260,11 @@ animated starfield + wordmark banner is shared with the launcher via
 `bridge/launcher/launcher_banner.py` (the logo, not a section title —
 so it does not go through `title_block`); see the
 [Shared banner](launcher.md#shared-banner) section in `docs/launcher.md`
-for the call contract and ADR 0100 for the unification rationale. The
+for the call contract and ADR 0100 for the unification rationale. On a
+short popup the `main` frame drops the banner via
+`launcher_banner.banner_fits` so the status header, menu rows, and
+footer stay visible — same shared gate the launcher uses, so the two
+surfaces never disagree at the same `reserved_rows` / `rows`. The
 popup runs its own main-frame-gated `_banner_tick_task` at
 `_BANNER_TICK_HZ = 6` (alongside the existing 1 Hz `_tick` that
 refreshes the status header), so the twinkle redraws only while the

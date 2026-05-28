@@ -546,38 +546,57 @@ def _main_text():
     frags  = []
     clear_hover = _main_clear_hover
 
-    # Status header on the topmost row of the frame (Profile · Mode · Link),
-    # followed by a newline that terminates that row.
-    _append_status_header(frags, cols, clear_hover=clear_hover)
-    frags.append(("", "\n", clear_hover))
-    status_rows = 1
-
-    # Starfield + wordmark banner — the logo is the popup's signature,
-    # not a section title, and does not go through `menu_chrome.title_block`.
-    # Art lives in launcher_banner.py and is shared with the launcher main page.
-    # The banner block contributes its own leading + trailing blank rows, which
-    # double as the visual separators between status / banner / menu items.
-    banner_pad = _pad_centre(" " * launcher_banner.BANNER_WIDTH, cols)
-    frags.append(("", "\n", clear_hover))
-    for line_frags in launcher_banner.banner_lines():
-        frags.append(("", banner_pad, clear_hover))
-        for style, text in line_frags:
-            frags.append((style, text, clear_hover))
-        frags.append(("", "\n", clear_hover))
-    frags.append(("", "\n", clear_hover))
-    banner_rows = 1 + launcher_banner.BANNER_HEIGHT + 1
-
-    # Blank between the banner and the menu items — preserves the pre-move
-    # total row count above the footer (the moved status header consumed a
-    # blank that previously sat between status and menu).
-    frags.append(("", "\n", clear_hover))
-    spacer_rows = 1
-
-    # Menu rows — plain `<< label >>` grammar, centred per row.
     items   = _main_items()
     sel_idx = _sel_main
     if sel_idx >= len(items):
         sel_idx = len(items) - 1
+
+    flash_active = bool(_profile_flash_text
+                        and time.monotonic() < _profile_flash_until)
+    flash_row = 1 if flash_active else 0
+
+    # `reserved_rows` is the exact row count the surface emits *without*
+    # the banner block: status header + the single separator blank +
+    # every menu row + optional flash row + the anchored footer. The
+    # shared `launcher_banner.banner_fits` helper checks whether the
+    # banner block (its own leading + trailing blank + BANNER_HEIGHT
+    # logo rows) fits on top — when it doesn't, we drop the banner so
+    # the menu always wins on a short terminal.
+    status_rows   = 1
+    spacer_rows   = 1
+    footer_rows   = 1
+    reserved_rows = (status_rows + spacer_rows
+                     + len(items) + flash_row + footer_rows)
+    show_banner   = launcher_banner.banner_fits(rows_h, reserved_rows)
+
+    # Status header on the topmost row of the frame (Profile · Mode · Link),
+    # followed by a newline that terminates that row.
+    _append_status_header(frags, cols, clear_hover=clear_hover)
+    frags.append(("", "\n", clear_hover))
+
+    # Starfield + wordmark banner — the logo is the popup's signature,
+    # not a section title, and does not go through `menu_chrome.title_block`.
+    # Art lives in launcher_banner.py and is shared with the launcher main
+    # page; both surfaces drop the banner at the same threshold via the
+    # shared `banner_fits` helper so the layout decision is one place.
+    if show_banner:
+        banner_pad = _pad_centre(" " * launcher_banner.BANNER_WIDTH, cols)
+        frags.append(("", "\n", clear_hover))
+        for line_frags in launcher_banner.banner_lines():
+            frags.append(("", banner_pad, clear_hover))
+            for style, text in line_frags:
+                frags.append((style, text, clear_hover))
+            frags.append(("", "\n", clear_hover))
+        frags.append(("", "\n", clear_hover))
+        banner_rows = 1 + launcher_banner.BANNER_HEIGHT + 1
+    else:
+        banner_rows = 0
+
+    # Single blank between the top section (status / banner) and the
+    # menu — when the banner is shown this stacks with its trailing
+    # blank for breathing room; when the banner is hidden it's the
+    # sole separator so the menu doesn't crowd the status header.
+    frags.append(("", "\n", clear_hover))
 
     for i, (label, action, kind, payload) in enumerate(items):
         row_w     = len(label) + 6
@@ -620,13 +639,10 @@ def _main_text():
         frags.append(("", " " * right_pad, clear_hover))
         frags.append(("", "\n", clear_hover))
 
-    flash_row = 0
-    if (_profile_flash_text
-            and time.monotonic() < _profile_flash_until):
+    if flash_active:
         frags.append(("", "\n", clear_hover))
         frags.append(("", _pad_centre(_profile_flash_text, cols), clear_hover))
         frags.append((_profile_flash_style, _profile_flash_text, clear_hover))
-        flash_row = 1
 
     footer = "↑↓ Navigate · Enter Select · ESC Dismiss"
     content_rows = status_rows + banner_rows + spacer_rows + len(items) + flash_row

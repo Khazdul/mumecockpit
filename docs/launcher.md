@@ -2895,7 +2895,11 @@ title, and does not go through `title_block`; the banner is rendered
 via `bridge/launcher/launcher_banner.py` (shared with the in-game
 popup — see the [Shared banner](#shared-banner) section below). The
 banner is top-anchored, the menu rows and quote sit in the middle,
-and the footer is bottom-anchored via `footer_block`.
+and the footer is bottom-anchored via `footer_block`. On a short
+terminal the main page drops the banner via `launcher_banner.banner_fits`
+so the menu rows, quote, and footer always stay visible — the
+[Responsive fit](#shared-banner) paragraph in the shared-banner
+section documents the gating rule.
 Every other swept frame's shortcut row also sits on the final terminal
 row — the footer no longer shifts vertically when the user moves
 between sibling frames. The `update_result` modal dialog deliberately
@@ -2983,6 +2987,7 @@ source of truth, one render call, one twinkle layer (ADR 0100).
 | `BANNER_WIDTH = 45`  | Visible width in cells of every banner row. |
 | `BANNER_HEIGHT = 11` | Row count: 5 starfield rows + 3 MUME wordmark rows + 3 COCKPIT wordmark rows. No blank separator row between the starfield and the wordmark — the spacing is carried by the starfield's bottom rows. |
 | `banner_lines(now=None)` | Returns the 11 rows as a list of `(style, text)` 2-tuple lists. Each row's visible widths sum to `BANNER_WIDTH`; callers centre each row with their existing `_pad_centre` helper and attach the per-row hover / mouse handler. `now` (monotonic seconds) drives the twinkle and defaults to `time.monotonic()`; the function is a pure function of the clock with no mutable per-frame state, so a test can pin a specific instant by passing `now` in. |
+| `banner_fits(available_rows, reserved_rows)` | True when `available_rows` cells of vertical space can hold both `reserved_rows` of non-banner content and the full banner block (its leading + trailing blank + `BANNER_HEIGHT` logo rows, i.e. `BANNER_HEIGHT + 2`). Shared by the launcher main page and the popup main frame so they make the same banner-visibility decision at the same row counts; banner-block geometry stays inside this module so no magic row numbers leak into the callers. |
 
 **Starfield as data.** `STARS` is the editable source of truth: a list
 of `(row, col, glyph, tier)` records. `glyph ∈ {· ◦ ✦ ✧}` (dots and
@@ -3013,6 +3018,21 @@ runs at `_BANNER_TICK_HZ = 12`; the popup's runs at 6 Hz. Both loops
 invalidate their `Application` only while the main frame is showing
 (submenus are static), and both stop cleanly when the surface
 shuts down.
+
+**Responsive fit.** Both main builders consult `banner_fits` on every
+render to decide whether to emit the banner block at all. Each surface
+computes the row count it would emit *without* the banner — status
+header (popup) / nothing (launcher) + the single separator blank above
+the menu + every menu row + the optional flash row (popup) or quote
+rows (launcher) + the anchored footer — and passes that as
+`reserved_rows`. When the banner block cannot co-fit with that reserved
+content, the banner drops out and the menu wins; a single blank takes
+its place as the separator so the menu does not crowd the row above.
+Re-evaluated on every frame, so a resize past the threshold toggles
+the banner live with no leftover gaps or doubled separators. The
+launcher's threshold runs one row conservative (its banner-shown
+layout has no leading blank above the banner, while the helper budgets
+for one) so that one helper drives both surfaces — the popup is exact.
 
 The tt++ welcome screen (`ttpp/core/welcome.tin`) deliberately does
 **not** share this module — it prints a hardcoded, static, starless
