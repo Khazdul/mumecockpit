@@ -230,6 +230,25 @@ _SGR_TO_STYLE = {
     "46": "bg:#00aaaa", "47": "bg:#aaaaaa",
 }
 
+_ANSI_16_HEX = tuple(
+    _SGR_TO_STYLE[c][len("fg:"):]
+    for c in ("30", "31", "32", "33", "34", "35", "36", "37",
+              "90", "91", "92", "93", "94", "95", "96", "97")
+)
+
+
+def _xterm256_to_hex(n):
+    """xterm-256 palette index → #rrggbb."""
+    if n < 16:
+        return _ANSI_16_HEX[n]
+    if n < 232:
+        i = n - 16
+        r, g, b = i // 36, (i // 6) % 6, i % 6
+        chan = lambda v: 0 if v == 0 else 55 + 40 * v
+        return f"#{chan(r):02x}{chan(g):02x}{chan(b):02x}"
+    level = min(255, 8 + 10 * (n - 232))
+    return f"#{level:02x}{level:02x}{level:02x}"
+
 
 def _ansi_line_to_fragments(text):
     """Convert a string with ANSI SGR escapes into a list of
@@ -245,11 +264,40 @@ def _ansi_line_to_fragments(text):
         if not params or params == "0":
             style = C_ITEM
         else:
+            codes = params.split(";")
             parts = []
-            for code in params.split(";"):
+            i = 0
+            while i < len(codes):
+                code = codes[i]
+                if code in ("38", "48") and i + 1 < len(codes):
+                    prefix = "fg" if code == "38" else "bg"
+                    sub = codes[i + 1]
+                    if sub == "2" and i + 4 < len(codes):
+                        try:
+                            r = int(codes[i + 2])
+                            g = int(codes[i + 3])
+                            b = int(codes[i + 4])
+                            parts.append(
+                                f"{prefix}:#{r:02x}{g:02x}{b:02x}"
+                            )
+                            i += 5
+                            continue
+                        except ValueError:
+                            pass
+                    elif sub == "5" and i + 2 < len(codes):
+                        try:
+                            n = int(codes[i + 2])
+                            parts.append(
+                                f"{prefix}:{_xterm256_to_hex(n)}"
+                            )
+                            i += 3
+                            continue
+                        except ValueError:
+                            pass
                 s = _SGR_TO_STYLE.get(code, "")
                 if s:
                     parts.append(s)
+                i += 1
             style = " ".join(parts) if parts else C_ITEM
         pos = m.end()
     if pos < len(text):
