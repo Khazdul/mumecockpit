@@ -186,21 +186,21 @@ the just-written profile file for `#alias {name} {...}` entries whose name
 matches any pattern in `bridge/runtime/core_aliases.list` (the runtime
 allowlist of core-registered alias names produced at launcher startup by
 `bridge/launcher/core_aliases.py`) and rewrites the file with those lines
-removed via the same atomic temp + rename pattern as the sanitizer. When
-anything is stripped, the script appends a single timestamped line to
-`logs/debug.log` naming the stripped aliases; `_save_profile` invokes it as
-a fire-and-forget `#system` call with no UI surface, because the only path
+removed via the same atomic temp + rename pattern as the sanitizer. The
+strip is silent — no stdout, no log, no UI surface — because the only path
 that produces a shadowing alias is direct prompt typing (`#alias {cp} {...}`
-at the tt++ prompt) and that action is intentional. Closes the live-typed
-prompt vector where a user types `#alias {cp} {...}` directly into tt++ and
-`#class write` would otherwise persist it on the next save; the override
-survives only within the current session, preserving the ADR 0115 escape
-hatch without granting it permanence. Fail-open: a missing or empty
-allowlist exits silently with no stripping. Lua-registered script aliases
-(`cp -autostab` etc.) are not in the allowlist and are therefore not caught
-— flagged as a known gap in ADR 0115. The two scripts are orthogonal and
-compose: sanitize handles file-shape hygiene, strip handles content-shape
-hygiene.
+at the tt++ prompt), an intentional action that already self-explains;
+verification is via direct inspection of the profile file after save.
+`_save_profile` invokes it as a fire-and-forget `#system` call. Closes the
+live-typed prompt vector where a user types `#alias {cp} {...}` directly
+into tt++ and `#class write` would otherwise persist it on the next save;
+the override survives only within the current session, preserving the
+ADR 0115 escape hatch without granting it permanence. Fail-open: a missing
+or empty allowlist exits silently with no stripping. Lua-registered script
+aliases (`cp -autostab` etc.) are not in the allowlist and are therefore
+not caught — flagged as a known gap in ADR 0115. The two scripts are
+orthogonal and compose: sanitize handles file-shape hygiene, strip handles
+content-shape hygiene.
 
 The `mume` alias is retained as a legacy shortcut that connects as `default`
 — the game session name is always `default` unless a profile is explicitly
@@ -361,7 +361,7 @@ foreign-session triggers — see ADR 0097.) Two-class model: `{<profile>}` holds
 **Save sequence** (single body, defined once in `_save_profile`):
 1. `#class {$_profile} {write} {ttpp/profiles/$_profile.tin}` — writes file with wrapping
 2. `sanitize_profile.sh ttpp/profiles/$_profile.tin` — normalizes the file (strips wrapping and header artifacts)
-3. `strip_core_collisions.sh ttpp/profiles/$_profile.tin` — drops any `#alias` line whose pattern shadows a core registration; appends a timestamped line to `logs/debug.log` when anything was stripped, silent otherwise. See "Core-collision strip" under Sanitizer above.
+3. `strip_core_collisions.sh ttpp/profiles/$_profile.tin` — drops any `#alias` line whose pattern shadows a core registration. Silent in every path — no stdout, no log, no UI surface. See "Core-collision strip" under Sanitizer above.
 
 Call sites of `_save_profile`: `cp -s` (user-triggered), `cp -e` (explicit
 save before the gts switch), the SESSION DEACTIVATED handler (covers `#zap`

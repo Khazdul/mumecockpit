@@ -27,18 +27,15 @@
 # Contract:
 #   - Non-existent profile path: exit 0 silently (mirrors sanitize).
 #   - Empty / missing core_aliases.list: exit 0 silently (fail open).
-#   - No collisions found: file unchanged, no debug.log entry, exit 0.
-#   - Collisions found: file rewritten atomically (temp + rename) and
-#     a single timestamped line is appended to $HOME/MUME/logs/debug.log
-#     naming what was stripped. No stdout in any path — `_save_profile`
-#     invokes this as a fire-and-forget `#system` call. Exit 0.
+#   - No collisions found: file unchanged, exit 0.
+#   - Collisions found: file rewritten atomically (temp + rename).
+#     No stdout, no log, no UI surface — silent strip. Exit 0.
 #   - I/O failure: non-zero exit via set -e.
 #
-# Why debug.log instead of UI: the only path that produces a shadowing
-# alias is direct prompt typing (`#alias {cp} {...}` at the tt++
-# prompt) — an action that comes with its own awareness. A UI line on
-# every save would add noise for a self-explaining event; debug-log
-# preserves the audit trail without surfacing.
+# Silent by design: the only path that produces a shadowing alias is
+# direct prompt typing (`#alias {cp} {...}` at the tt++ prompt) — an
+# intentional action that already self-explains. Verification is via
+# inspection of the profile file after save.
 
 set -euo pipefail
 
@@ -77,16 +74,3 @@ fi
 
 mv -- "$tmp" "$FILE"
 trap - EXIT
-
-joined=""
-for n in "${stripped[@]}"; do
-    if [ -z "$joined" ]; then
-        joined="$n"
-    else
-        joined="$joined, $n"
-    fi
-done
-
-printf '[%s] strip_core_collisions: %d shadowing aliases stripped from %s: %s\n' \
-    "$(date '+%H:%M:%S')" "${#stripped[@]}" "$FILE" "$joined" \
-    >> "$HOME/MUME/logs/debug.log"

@@ -137,12 +137,12 @@ keyed off a launcher-generated allowlist:
   filter to the on-disk file. Closes the live-typed-prompt vector by
   dropping any shadowing alias that `#class write` would otherwise
   persist; the override survives only within the current session.
-  When anything is stripped, the script appends a single timestamped
-  line to `logs/debug.log` identifying the stripped names; no
-  user-facing UI message is emitted, because the only path that
-  produces a shadowing alias is direct prompt typing (`#alias {cp}
-  {...}` at the tt++ prompt) and that action is intentional. Closes
-  the `cp -s` / `cp -e` / SESSION DEACTIVATED save paths (PR 2).
+  The strip is silent — no stdout, no log, no UI surface — because
+  the only path that produces a shadowing alias is direct prompt
+  typing (`#alias {cp} {...}` at the tt++ prompt), an intentional
+  action that already self-explains; verification is via inspection
+  of the profile file after save. Closes the `cp -s` / `cp -e` /
+  SESSION DEACTIVATED save paths (PR 2).
 
 Both filters fail open: an empty or missing
 `bridge/runtime/core_aliases.list` skips filtering rather than
@@ -150,18 +150,22 @@ blocking the save. The ADR 0115 escape hatch is preserved — a power
 user can still type `#alias {cp} {...}` at the prompt and have it
 fire within the live session — only persistence is denied.
 
-The third bullet above supersedes an earlier `system_ui` formulation:
-the original `_save_profile` body captured the script's stdout via
+The third bullet above supersedes two earlier formulations. The
+original `_save_profile` body captured the script's stdout via
 `#script` and surfaced a `Profile save: stripped N shadowing aliases
-(a, b, c).` line. The `#script` capture is asynchronous — by the
-time the immediately following `#if {&_strip_out[]}` ran, the bash
-process had not yet written into the variable, so the UI line never
-fired (same async timing class as
+(a, b, c).` line through `system_ui`. The `#script` capture is
+asynchronous — by the time the immediately following `#if
+{&_strip_out[]}` ran, the bash process had not yet written into the
+variable, so the UI line never fired (same async timing class as
 [ADR 0050](0050-synchronous-nested-actions-with-class-discipline.md)).
-Moving the channel to debug.log let `_save_profile` invoke the script
-as a fire-and-forget `#system` call and removed the async coupling
-entirely. Choosing debug-log over fixing the synchronisation was the
-better fit for the event itself, per the reasoning above.
+The channel was then moved to a single timestamped `logs/debug.log`
+line so `_save_profile` could invoke the script as a fire-and-forget
+`#system` call without async coupling. The debug-log emission itself
+was subsequently dropped (see "2026-05-28 update — drop debug-log
+emission" below): the line worked when the script was invoked
+manually but never appeared from tt++'s `#system` context, and the
+event is rare, self-explaining when it happens, and verifiable by
+inspecting the profile file directly.
 
 **Remaining gap.** Lua-registered script aliases (`cp -autostab`,
 `cp -autobow`, etc.) are not in `bridge/runtime/core_aliases.list`
@@ -171,6 +175,18 @@ one of those names is not caught. The surface is small — there is
 no UI path that produces such an entry — and surfacing runtime-Lua
 registrations into the allowlist is deferred until a real-world
 incident motivates it.
+
+## 2026-05-28 update — drop debug-log emission
+
+The single timestamped `logs/debug.log` line emitted by
+`strip_core_collisions.sh` when anything was stripped is removed. The
+line worked when the script was invoked manually but never appeared
+when invoked from tt++'s `#system` context (the actual `_save_profile`
+call site), and the filter behaviour itself is verified working from
+the on-disk file. The strip is now silent — no stdout, no log, no UI
+surface — and verification is via direct inspection of the profile
+file after save. Supersedes the "appends a single timestamped line to
+`logs/debug.log`" wording in the resolution above.
 
 ## Alternatives considered
 
