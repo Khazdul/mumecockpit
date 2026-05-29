@@ -1,6 +1,6 @@
 # ADR 0050 — Synchronous nested #action for two-stage triggers, with profile-class discipline
 
-**Status:** Accepted  
+**Status:** Superseded by [ADR 0117](0117-achievement-capture-via-gmcp.md)
 **Date:** 2026-05-09
 
 ## Context
