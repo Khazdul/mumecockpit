@@ -2107,17 +2107,12 @@ def _append_star_row(frags, cols):
 
 def _exit_confirm_text():
     """Combined exit confirmation + optional run rating. Top to bottom:
-    title, status header, label, star row, the exit warning, footer."""
+    title, label, star row, the exit warning, footer."""
     cols   = _term_cols()
     rows_h = _term_rows()
     frags  = []
 
-    # Title + the Profile · Mode · Link status header (same stack as
-    # rate_session and the main frame).
     frags.extend(title_block("─── Exit session ───", cols, blank_above=1))
-    _append_status_header(frags, cols)
-    frags.append(("", "\n"))
-    status_rows = 1
 
     # Blank spacer, then the centred opt-in label above the star row.
     frags.append(("", "\n"))
@@ -2141,7 +2136,7 @@ def _exit_confirm_text():
     warn_rows = 1
 
     footer = "0-5 Rate · ←→ Adjust · Y Exit · ESC Cancel"
-    content_rows = (title_block_height(1) + status_rows + spacer_above_rows
+    content_rows = (title_block_height(1) + spacer_above_rows
                     + label_rows + star_rows + spacer_below_rows + warn_rows)
     frags.extend(footer_block(footer, cols, rows_h, content_rows))
     return frags
