@@ -55,6 +55,7 @@ Active ADRs by area. Click through for context, alternatives, and consequences.
 - [ADR 0026](0026-anchored-core-actions.md) — Anchored core `#action` patterns — all core `#action` patterns are anchored `^…$` to prevent false triggers from player-quoted text.
 - [ADR 0027](0027-drop-driven-affect-expiry.md) — Drop-driven affect expiry — affects with a drop string expire on the drop message; the tick is a 2.5× safety net only.
 - [ADR 0032](0032-buffs-pane-extracted-from-status.md) — Buffs pane extracted from status — affects are visualised in a dedicated buffs pane (`cp -b`); the status pane no longer renders affects.
+- [ADR 0118](0118-armour-damage-drop-sample-gate.md) — Armour damage-drop sample gate — for affects flagged `damage_droppable`, drops earlier than the data-table `duration` are treated as damage-triggered and not recorded as samples; the floor on the sample side keeps the learned mean from being dragged below the spell's true maximum. (builds on 0027)
 
 ### Lua architecture
 
