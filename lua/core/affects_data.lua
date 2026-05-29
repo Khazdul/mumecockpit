@@ -26,11 +26,12 @@ M.affects = {
     },
 
     ["armour"] = {
-        type         = "spell",
-        duration     = 1100,
-        initString_1 = "^A blue transparent wall slowly appears around you.$",
-        initString_2 = "^Your magic armour is revitalised.$",
-        dropString_1 = "^You feel less protected.$",
+        type            = "spell",
+        duration        = 1100,
+        damage_droppable = true,
+        initString_1    = "^A blue transparent wall slowly appears around you.$",
+        initString_2    = "^Your magic armour is revitalised.$",
+        dropString_1    = "^You feel less protected.$",
     },
 
     ["strength"] = {

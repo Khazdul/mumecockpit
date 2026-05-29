@@ -321,13 +321,23 @@ events.subscribe("affect_down", function(name)
     local untracked = existing.tracked == false or not existing.started_at
     if not untracked and data and data.duration then
         local observed = os.time() - existing.started_at
-        local times = state.char.affect_times
-        if not times[name] then times[name] = {} end
-        local arr = times[name]
-        arr[#arr + 1] = observed
-        if #arr > 3 then table.remove(arr, 1) end
-        _save()
-        dbg("[AFFECTS] down: " .. name .. " observed=" .. observed)
+        -- Damage-droppable affects (e.g. armour) can drop early when the
+        -- character takes damage, not only at max duration. Treat data.duration
+        -- as a floor: drops earlier than it are damage-triggered and would
+        -- pollute the learned mean downward, so skip the sample. Natural decay
+        -- (observed >= duration) still records, letting the mean learn upward.
+        if data.damage_droppable and observed < data.duration then
+            dbg("[AFFECTS] down: " .. name .. " damage-drop (observed=" ..
+                observed .. " < " .. data.duration .. "), no sample")
+        else
+            local times = state.char.affect_times
+            if not times[name] then times[name] = {} end
+            local arr = times[name]
+            arr[#arr + 1] = observed
+            if #arr > 3 then table.remove(arr, 1) end
+            _save()
+            dbg("[AFFECTS] down: " .. name .. " observed=" .. observed)
+        end
     else
         dbg("[AFFECTS] down: " .. name .. " (untracked, no sample)")
     end
