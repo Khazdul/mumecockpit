@@ -622,8 +622,13 @@ on the following line — see
 for the historical mechanism and its constraints. The contract is unchanged;
 only the source moved from tt++ to GMCP.
 
-**Subscribers:** `lua/core/run_log.lua` — writes an `achievement` row to
-`current.jsonl`.
+**Subscribers:**
+- `lua/core/run_log.lua` — writes an `achievement` row to `current.jsonl`.
+- `lua/core/world_state.lua` — UI announcement: `script_ui("ACHIEVEMENT", "Unlocked.")`
+  plus `tintin_show` of `## ACHIEVEMENT: <text>` to the mume main window. The
+  split is because the achievement string routinely exceeds the 33-char
+  `script_ui` budget; `script_ui` carries a short fixed notice and the full
+  text goes to the game window.
 
 ## Adding a new event
 
