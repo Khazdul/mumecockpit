@@ -432,21 +432,16 @@ def _save_session_state():
 def _main_items():
     """Rows on the main frame.
 
-    Each entry is (label, action, kind, payload):
-      kind == "normal"  → selectable, normal handlers attached
-      kind == "saved"   → dead-grey, no handlers
+    Each entry is (label, action, kind, payload). Every row is `"normal"`
+    (selectable, handlers attached); run rating/save now lives in the
+    exit_confirm frame rather than a dedicated main-menu row.
     """
     items = []
     if _is_connected():
         items.append(("Continue", "continue", "normal", None))
     items.append(("Reconnect", "reconnect", "normal", None))
 
-    rating, char, _ = _save_session_state()
-    if char is not None:
-        if rating is None:
-            items.append(("Save run", "save_session", "normal", None))
-        else:
-            items.append(("Save run", "save_session_dead", "saved", None))
+    if _statistics_character() is not None:
         items.append(("Statistics", "statistics", "normal", None))
 
     items.append(("Profile",      "profile",  "normal", None))
@@ -456,7 +451,7 @@ def _main_items():
 
 
 def _main_selectable_indices():
-    return [i for i, t in enumerate(_main_items()) if t[2] != "saved"]
+    return list(range(len(_main_items())))
 
 
 def _activate_main_item(action):
@@ -466,11 +461,6 @@ def _activate_main_item(action):
     elif action == "reconnect":
         _send_to_game("reconnect")
         _app.exit()
-    elif action == "save_session":
-        _rate_session_rating = 0
-        _push_frame("rate_session")
-    elif action == "save_session_dead":
-        pass  # dead row; defensive no-op (keyboard nav already skips it)
     elif action == "profile":
         _enter_profile_editor()
     elif action == "options":
@@ -485,6 +475,11 @@ def _activate_main_item(action):
             _push_frame("statistics")
             _start_stats_tick()
     elif action == "exit":
+        # Pre-fill the rating widget from disk: the saved rating if this
+        # run was already saved this session, else 0. Mirrors how the old
+        # save_session action reset the rating before pushing rate_session.
+        rating, _, _ = _save_session_state()
+        _rate_session_rating = rating if rating is not None else 0
         _push_frame("exit_confirm")
 
 
@@ -603,20 +598,6 @@ def _main_text():
         row_w     = len(label) + 6
         left_pad  = max(0, (cols - row_w) // 2)
         right_pad = max(0, cols - left_pad - row_w)
-
-        if kind == "saved":
-            # Dead-grey one-shot row: label painted dim, no row handler
-            # (keyboard navigation skips this index; clicks are no-ops).
-            # The chrome's clear_hover handler rides on the padding so
-            # MOUSE_MOVE here clears hover instead of leaving it stuck.
-            frags.append(("", " " * left_pad, clear_hover))
-            frags.extend(menu_row(
-                label, "inactive",
-                mouse_handler=clear_hover, inactive_style=C_HINT,
-            ))
-            frags.append(("", " " * right_pad, clear_hover))
-            frags.append(("", "\n", clear_hover))
-            continue
 
         state = _menu_row_state(i == sel_idx, i == _hover_main)
 
@@ -2096,25 +2077,74 @@ def _profile_apply_confirm_text():
 # ---------------------------------------------------------------------------
 # Exit-confirm frame
 # ---------------------------------------------------------------------------
+def _append_star_row(frags, cols):
+    """Append the centred five-star rating widget to `frags`.
+
+    First `_rate_session_rating` stars paint in gold (`_S_STAR`), the rest
+    in dim grey (`C_HINT`); single-space separated, visual width 9 cells.
+    Each star carries a click handler that sets the rating to its
+    1-indexed position. Shared by `rate_session` and `exit_confirm`."""
+    rating = max(0, min(5, _rate_session_rating))
+    frags.append(("", _pad_centre("★ ★ ★ ★ ★", cols)))
+    for i in range(5):
+        if i > 0:
+            frags.append(("", " "))
+        style = _S_STAR if i < rating else C_HINT
+
+        def _make_star_handler(val=i + 1):
+            def _h(ev):
+                if ev.event_type != MouseEventType.MOUSE_DOWN:
+                    return
+                global _rate_session_rating
+                _rate_session_rating = val
+                if _app:
+                    _app.invalidate()
+            return _h
+
+        frags.append((style, "★", _make_star_handler()))
+    frags.append(("", "\n"))
+
+
 def _exit_confirm_text():
-    cols  = _term_cols()
-    msg   = "Exit to main menu?  Y to confirm · any other key to cancel"
-    warn  = "Attention! This terminates the current session."
-    hint  = "ESC Back"
-    # Modal dialog: vertically positioned by leading blanks; no footer
-    # anchoring. Title adopts the `C_SECTION` colour shared with the
-    # swept menu chrome.
-    return [
-        ("", "\n\n"),
-        ("", _pad_centre(msg, cols)),
-        (C_SECTION, msg),
-        ("", "\n\n"),
-        ("", _pad_centre(warn, cols)),
-        (C_ERR, warn),
-        ("", "\n\n"),
-        ("", _pad_centre(hint, cols)),
-        (C_HINT, hint),
-    ]
+    """Combined exit confirmation + optional run rating. Top to bottom:
+    title, status header, label, star row, the exit warning, footer."""
+    cols   = _term_cols()
+    rows_h = _term_rows()
+    frags  = []
+
+    # Title + the Profile · Mode · Link status header (same stack as
+    # rate_session and the main frame).
+    frags.extend(title_block("─── Exit session ───", cols, blank_above=1))
+    _append_status_header(frags, cols)
+    frags.append(("", "\n"))
+    status_rows = 1
+
+    # Blank spacer, then the centred opt-in label above the star row.
+    frags.append(("", "\n"))
+    spacer_above_rows = 1
+    label = "Rate & save this run (optional)"
+    frags.append(("", _pad_centre(label, cols)))
+    frags.append((C_HINT, label))
+    frags.append(("", "\n"))
+    label_rows = 1
+
+    _append_star_row(frags, cols)
+    star_rows = 1
+
+    # Blank spacer, then the terminate-session warning.
+    frags.append(("", "\n"))
+    spacer_below_rows = 1
+    warn = "Attention! This terminates the current session."
+    frags.append(("", _pad_centre(warn, cols)))
+    frags.append((C_ERR, warn))
+    frags.append(("", "\n"))
+    warn_rows = 1
+
+    footer = "0-5 Rate · ←→ Adjust · Y Exit · ESC Cancel"
+    content_rows = (title_block_height(1) + status_rows + spacer_above_rows
+                    + label_rows + star_rows + spacer_below_rows + warn_rows)
+    frags.extend(footer_block(footer, cols, rows_h, content_rows))
+    return frags
 
 
 # ---------------------------------------------------------------------------
@@ -2138,28 +2168,8 @@ def _rate_session_text():
     frags.append(("", "\n"))
     spacer_rows = 1
 
-    # Star row: ★ ★ ★ ★ ★ (single-space separators). First `rating` stars
-    # paint in gold (_S_STAR), the rest in dim grey (C_HINT). Visual width
-    # is 9 cells: 5 stars + 4 spaces.
-    rating = max(0, min(5, _rate_session_rating))
-    frags.append(("", _pad_centre("★ ★ ★ ★ ★", cols)))
-    for i in range(5):
-        if i > 0:
-            frags.append(("", " "))
-        style = _S_STAR if i < rating else C_HINT
-
-        def _make_star_handler(val=i + 1):
-            def _h(ev):
-                if ev.event_type != MouseEventType.MOUSE_DOWN:
-                    return
-                global _rate_session_rating
-                _rate_session_rating = val
-                if _app:
-                    _app.invalidate()
-            return _h
-
-        frags.append((style, "★", _make_star_handler()))
-    frags.append(("", "\n"))
+    # Star row — shared widget with the exit_confirm frame.
+    _append_star_row(frags, cols)
     star_rows = 1
 
     footer = "0-5 Set · ←→ Adjust · Enter Save · ESC Cancel"
@@ -2167,6 +2177,21 @@ def _rate_session_text():
     frags.extend(footer_block(footer, cols, rows_h, content_rows))
 
     return frags
+
+
+def _save_run_with_rating(rating):
+    """Chain-save the active run and its stitched predecessors with the
+    given 0..5 `rating`. No-op when no run is being tracked. Shared by the
+    rate_session Save action and the exit_confirm commit; does not touch
+    frames or cursor state."""
+    char = _statistics_character()
+    if char is None:
+        return
+    run_id = run_stats.current_run_id_for(char)
+    if run_id is None:
+        return
+    chain = run_stats.previous_run_chain(char, run_id)
+    run_meta.save_run_chain(char, chain, rating)
 
 
 def _rate_session_save():
@@ -2179,8 +2204,7 @@ def _rate_session_save():
     if run_id is None:
         _pop_frame()
         return
-    chain = run_stats.previous_run_chain(char, run_id)
-    run_meta.save_run_chain(char, chain, _rate_session_rating)
+    _save_run_with_rating(_rate_session_rating)
     # The row at _sel_main just turned into the dead "saved" row. Move
     # the cursor to the next selectable index so the <<>> decoration
     # doesn't vanish silently on the post-pop main frame.
@@ -3462,10 +3486,43 @@ def _rs_escape(event):
     _pop_frame()
 
 
-# Exit-confirm frame
+# Exit-confirm frame — combined exit + optional rating. No `<any>`
+# catch-all cancel: 0..5 are now rating keys, so only ESC cancels.
+for _n in range(6):
+    def _make_ec_digit(val=_n):
+        def _h(event):
+            global _rate_session_rating
+            _rate_session_rating = val
+            if _app:
+                _app.invalidate()
+        return _h
+    kb.add(str(_n), filter=_in_frame("exit_confirm"))(_make_ec_digit())
+del _n
+
+
+@kb.add("left", filter=_in_frame("exit_confirm"))
+def _ec_left(event):
+    global _rate_session_rating
+    _rate_session_rating = max(0, _rate_session_rating - 1)
+    if _app:
+        _app.invalidate()
+
+
+@kb.add("right", filter=_in_frame("exit_confirm"))
+def _ec_right(event):
+    global _rate_session_rating
+    _rate_session_rating = min(5, _rate_session_rating + 1)
+    if _app:
+        _app.invalidate()
+
+
 @kb.add("y", filter=_in_frame("exit_confirm"))
 @kb.add("Y", filter=_in_frame("exit_confirm"))
 def _ec_confirm(event):
+    # Save first (synchronous sidecar writes), then exit. A 0-star rating
+    # never saves — exit never un-saves a previously-saved run.
+    if _rate_session_rating > 0:
+        _save_run_with_rating(_rate_session_rating)
     _write_sentinel(RETURN_TO_MENU_SENT)
     _send_to_game("cp -e")
     event.app.exit()
@@ -3473,11 +3530,6 @@ def _ec_confirm(event):
 
 @kb.add("escape", filter=_in_frame("exit_confirm"), eager=True)
 def _ec_escape(event):
-    _pop_frame()
-
-
-@kb.add("<any>", filter=_in_frame("exit_confirm"))
-def _ec_cancel(event):
     _pop_frame()
 
 
