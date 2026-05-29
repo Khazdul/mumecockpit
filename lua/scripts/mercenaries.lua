@@ -107,6 +107,22 @@ local TIME_W   = 12
 local STATUS_W = 11
 local GOLD_W   = 26
 
+-- Visual cell width of a string. Strips tt++ markup (`<...>`, all zero-width)
+-- and counts UTF-8 code points by skipping continuation bytes (`0x80–0xBF`).
+-- Every glyph used in this panel — box-drawing, ⚠, em-dash, ASCII — is one
+-- cell, so code-point count equals cell count without an East-Asian-width
+-- table.
+local function _vlen(s)
+    if not s or s == "" then return 0 end
+    local stripped = s:gsub("<[^>]*>", "")
+    local n = 0
+    for i = 1, #stripped do
+        local b = stripped:byte(i)
+        if b < 0x80 or b >= 0xC0 then n = n + 1 end
+    end
+    return n
+end
+
 local function _wrap_row(content)
     return FRAME .. "│" .. R .. content .. FRAME .. "│" .. R
 end
@@ -117,7 +133,7 @@ end
 
 local function _top_border()
     local title_str = "  MERCENARIES  "
-    local dashes = PANEL_W - #title_str
+    local dashes = PANEL_W - _vlen(title_str)
     local left_d  = math.floor(dashes / 2)
     local right_d = dashes - left_d
     return FRAME .. "╭" .. string.rep("─", left_d) .. R
@@ -143,7 +159,7 @@ local function _header_row()
     }
     for _, c in ipairs(cols) do
         local label, w = c[1], c[2]
-        s[#s+1] = DIM .. label .. R .. string.rep(" ", w - #label)
+        s[#s+1] = DIM .. label .. R .. string.rep(" ", w - _vlen(label))
     end
     -- visual total: 3 + 15 + 12 + 11 + 26 = 67
     return _wrap_row(table.concat(s))
@@ -172,13 +188,13 @@ local function _merc_row(rec)
     local s = {}
     s[#s+1] = "   "                                                       -- 3
     s[#s+1] = WHITE .. rec.name .. R
-        .. string.rep(" ", NAME_W - #rec.name)                            -- 15
+        .. string.rep(" ", NAME_W - _vlen(rec.name))                      -- 15
     s[#s+1] = warn_seg .. time_color .. time_str .. R
-        .. string.rep(" ", TIME_W - 2 - #time_str)                        -- 12
+        .. string.rep(" ", TIME_W - 2 - _vlen(time_str))                  -- 12
     s[#s+1] = status_color .. status_text .. R
-        .. string.rep(" ", STATUS_W - #status_text)                       -- 11
+        .. string.rep(" ", STATUS_W - _vlen(status_text))                 -- 11
     s[#s+1] = GOLD_FG .. gold_str .. R
-        .. string.rep(" ", GOLD_W - #gold_str)                            -- 26
+        .. string.rep(" ", GOLD_W - _vlen(gold_str))                      -- 26
     -- visual total: 3 + 15 + 12 + 11 + 26 = 67
     return _wrap_row(table.concat(s))
 end
@@ -196,8 +212,8 @@ local function _footer_row()
     local left_label  = "   Autopay: "
     local right_label = "Total spent: "
     local trailing    = "   "
-    local left_vlen   = #left_label + #autopay_text
-    local right_vlen  = #right_label + #total_str + #trailing
+    local left_vlen   = _vlen(left_label) + _vlen(autopay_text)
+    local right_vlen  = _vlen(right_label) + _vlen(total_str) + _vlen(trailing)
     local pad_count   = PANEL_W - left_vlen - right_vlen
 
     local s = {}
@@ -214,14 +230,15 @@ local function _empty_state()
     local ses = GAME_SESSION or "gts"
 
     local function _centered(text, color)
-        local pad = math.floor((PANEL_W - #text) / 2)
+        local w   = _vlen(text)
+        local pad = math.floor((PANEL_W - w) / 2)
         return _wrap_row(string.rep(" ", pad) .. color .. text .. R
-            .. string.rep(" ", PANEL_W - pad - #text))
+            .. string.rep(" ", PANEL_W - pad - w))
     end
 
     local function _left(text)
         return _wrap_row("   " .. WHITE .. text .. R
-            .. string.rep(" ", PANEL_W - 3 - #text))
+            .. string.rep(" ", PANEL_W - 3 - _vlen(text)))
     end
 
     tintin_show(ses, _top_border())
@@ -240,7 +257,7 @@ local function _empty_state()
     local pre  = "Tip: `"
     local cmd  = "merc autopay"
     local post = "` pays your mercenaries automatically."
-    local vlen = #pre + #cmd + #post
+    local vlen = _vlen(pre) + _vlen(cmd) + _vlen(post)
     tintin_show(ses, _wrap_row("   "
         .. WHITE .. pre .. R
         .. GOLD_FG .. cmd .. R
