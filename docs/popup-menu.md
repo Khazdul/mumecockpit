@@ -63,7 +63,9 @@ before the disconnect step — see "Auto-open on disconnect" below.
   browse cursor through the list; `PgUp` / `PgDn` scrolls the detail
   panel by one body's worth of rows.
 - **Enter / Space** — activates the highlighted row. In `exit_confirm`,
-  Y confirms; any other key cancels back to main.
+  `0`..`5` set the run rating, `←` / `→` adjust it, `Y` commits
+  (save-if-rated, then exit), and `ESC` cancels back to main — see
+  [Exit confirmation](#exit-confirmation).
 - **Mouse click** — clicks on a row both select and activate it in a
   single click. Implemented as per-fragment `mouse_handler` callbacks
   on `MouseEventType.MOUSE_DOWN`.
@@ -228,7 +230,7 @@ runtime-only — no value across popup sessions.
 
 ## Options grouping
 
-Between **Save run** (when present) and **Exit session** sit
+Between **Statistics** (when present) and **Exit session** sit
 **Profile** and **Options**. Profile opens the shared `ProfileEditor`
 (ADR 0109) — see the [Profile frame](#profile-frame) section below.
 Options pushes a thin index frame whose sole purpose is to group
@@ -282,21 +284,20 @@ invalidate. The launcher's redraw loop runs at 12 Hz — the popup's
 slower rate is deliberate, because it runs as an overlay over a live
 game. Selectable menu rows render
 through `menu_chrome.menu_row`: gold `<< >>` on the cursor row, hover
-lightens the label (`C_HOVER`). The dead-grey "Save run" row reuses
-the `menu_row` "inactive" state with `inactive_style=C_HINT` and no
-row handler. The `rate_session` frame also anchors its
-`0-5 Set · ←→ Adjust · Enter Save · ESC Cancel` shortcut row via
-`menu_chrome.footer_block` — title row + status header + star row
-stay top-anchored, the shortcut row sits on the popup's last row, and
-the title adopts `C_SECTION` to match the swept menu chrome. The
-`exit_confirm` modal keeps its vertical layout — no footer anchoring —
-and adopts `C_SECTION` for the title row.
+lightens the label (`C_HOVER`). The `exit_confirm` frame anchors its
+`0-5 Rate · ←→ Adjust · Y Exit · ESC Cancel` shortcut row via
+`menu_chrome.footer_block` — title row + opt-in label + star row +
+warning line stay top-anchored, the shortcut row sits on the popup's
+last row, and the title adopts `C_SECTION` to match the swept menu
+chrome. The (no-longer-reachable) `rate_session` frame anchors its own
+`0-5 Set · ←→ Adjust · Enter Save · ESC Cancel` shortcut row the same
+way, with title row + status header + star row top-anchored.
 
 **Hover-clear invariant.** Each frame with hover state attaches a
 small clear-hover handler (resets the frame's hover index on
 MOUSE_MOVE) to its `title_block` / `footer_block` chrome, blank
-separator rows, status header (on `main`), banner rows, dead-grey
-"Save run" row, and per-row left/right padding so the hover highlight
+separator rows, status header (on `main`), banner rows, and per-row
+left/right padding so the hover highlight
 clears the moment the pointer moves off a selectable row — above the
 top, below the bottom, between rows, or to the side. Selectable rows
 own their own MOUSE_MOVE handler that sets hover to that row instead.
@@ -537,7 +538,7 @@ stop-all-scripts button — both parked.
 ## Statistics frame
 
 A read-only view of the current run, opened from a "Statistics" row on the
-main frame. The row sits between **Save run** and **Options** and is
+main frame. The row sits between **Reconnect** and **Profile** and is
 gated on two conditions, re-checked on every render of `_main_items()`:
 
 1. `bridge/runtime/status.state` exists, parses as JSON, and contains a
@@ -722,81 +723,95 @@ The aggregation library backing this frame lives at
 run-browser. See [ADR 0065](decisions/0065-run-stats-python-aggregator.md)
 for the rationale.
 
-## Save run
+## Exit confirmation
 
-A "Save run" row sits above Statistics on the main frame, gated on the
-same `_statistics_character()` check as the Statistics row: it appears
-only while an active run is being tracked (`status.state` names a
-character and `data/runs/<character>/current.jsonl` exists). When no
-active run is being tracked the row is not emitted at all.
+`Exit session` on the main frame pushes the `exit_confirm` frame — the
+single touchpoint for both rating/saving the run and terminating the
+session. There is no standalone "Save run" main-menu row; run rating and
+save now happen here, at the moment the player knows whether the run was
+worth keeping (ADR 0119).
 
-The row is one-shot per active run and has two visual states, decided on
-every render from the meta sidecar:
+The frame renders, top to bottom (no status header — Profile · Mode ·
+Link was removed):
 
-- **Not saved** — normal `C_ITEM` style, selectable; activation (Enter /
-  Space / click) pushes the `rate_session` frame.
-- **Saved** — dead-grey: just the label `"Save run"` painted in
-  `C_HINT` (no `<<>>` decoration, no star suffix, no hover highlight);
-  no mouse handlers are attached, and keyboard navigation
-  (`_main_selectable_indices`) skips the index, so Enter and click are
-  both no-ops. The rating itself surfaces on the Statistics header,
-  not this row. The saved state is read fresh on each render from
-  `data/runs/<character>/<run-id>.meta.json` (`run_meta.is_saved`), so
-  closing and reopening the popup within the same run preserves the
-  dead state.
+1. Title `─── Exit session ───` (`title_block` with `blank_above=1`).
+2. Blank spacer.
+3. Opt-in label `Rate & save this run (optional)`, centred, in `C_HINT`.
+4. The five-star rating row — `_append_star_row`, shared with the
+   `rate_session` frame. First `_rate_session_rating` stars paint in
+   `_S_STAR` (gold), the rest in `C_HINT` (grey); single-space
+   separated, centred. Each star carries a click handler.
+5. Blank spacer.
+6. Warning line `Attention! This terminates the current session.`,
+   centred, in `C_ERR`.
+7. Footer `0-5 Rate · ←→ Adjust · Y Exit · ESC Cancel`, anchored to the
+   popup's last row via `menu_chrome.footer_block`.
 
-### Rate-session frame
+**Pre-selected rating.** On push (`_activate_main_item` for the `exit`
+action), `_rate_session_rating` is initialised from
+`_save_session_state()`: the run's existing saved rating if it was
+already saved this session, else `0`. Re-entering the frame within the
+same run therefore shows the prior rating rather than resetting to
+unrated.
 
-Pushing the row presents the `─── Rate the run ───` title row
-(`title_block` with `blank_above=1`), the same Profile · Mode · Link
-status header used on the main frame directly below it, and a centred
-row of five `★` glyphs (single-space separated; gold for the first
-`_rate_session_rating` stars, grey for the rest). The
-`0-5 Set · ←→ Adjust · Enter Save · ESC Cancel` shortcut row is
-anchored to the popup's final row via `menu_chrome.footer_block` —
-title / status / stars stay top-anchored while the shortcut row sits
-at the bottom. The frame follows the focus-on-push contract (ADR
-0066): `_rate_session_window` is registered in `_focus_current_frame()`
-so per-star click handlers route correctly.
-
-`_rate_session_rating` resets to `0` on every push of the frame —
-unrated by default — so opening the rating screen never carries over
-a prior session's stars.
-
-Key bindings (filter: `_in_frame("rate_session")`):
+Key bindings (filter: `_in_frame("exit_confirm")`):
 
 | Key      | Action                                                    |
 |----------|-----------------------------------------------------------|
 | `0`..`5` | Set `_rate_session_rating` to that value                  |
 | `Left`   | `rating = max(0, rating - 1)`                             |
 | `Right`  | `rating = min(5, rating + 1)`                             |
-| `Enter`  | Save and pop back to main                                 |
-| `Space`  | Save and pop back to main                                 |
-| `ESC`    | Pop back to main without saving                           |
+| `Y`/`y`  | Commit: save-if-rated, then exit                          |
+| `ESC`    | Cancel the exit, pop back to main (eager)                 |
 
-Mouse: clicking star N (1-indexed) sets the rating to N.
+Mouse: clicking star N (1-indexed) sets the rating to N. There is no
+`<any>` catch-all cancel — `0`..`5` are rating keys now, so only `ESC`
+cancels.
+
+**Commit semantics (`Y`).** If `_rate_session_rating > 0`, the run is
+saved first via `_save_run_with_rating` (see [Chain save
+semantics](#chain-save-semantics)), synchronously, before the popup
+tears down. Then the exit sequence runs unchanged: write the
+return-to-menu sentinel (`RETURN_TO_MENU_SENT`), `_send_to_game("cp -e")`,
+and `event.app.exit()`. If the rating is `0`, saving is skipped entirely
+— a no-op on the save side regardless of prior state. **Exit never
+un-saves a run:** `0` means "leave untouched", never "remove a prior
+saving". De-saving is exclusive to the launcher history delete flow
+(ADR 0075).
 
 ### Chain save semantics
 
-Enter walks the stitched run chain via
+`_save_run_with_rating(rating)` walks the stitched run chain via
 `run_stats.previous_run_chain(character, current_run_id)` (the
 [ADR 0056](decisions/0056-previous-run-id-linking.md) definition,
 default `max_gap_seconds=3600`) and calls
 `run_meta.save_run_chain(character, chain, rating)`, which writes one
 atomic `<run-id>.meta.json` sidecar per run in the chain — including
 the current (still-`current.jsonl`) run, whose meta uses its computed
-run-id. There is no on-screen confirmation flash or banner; the
-re-rendered main frame's dead-grey "Save run" row is the
-user-visible confirmation. The chosen rating surfaces on the
-Statistics frame's header as an inline ` · <stars>` field at the end
-of the centred header line.
+run-id. Only the trigger changed (formerly the `rate_session` Save
+action, now the `exit_confirm` `Y` commit); the mechanism is unchanged.
+The chosen rating surfaces on the Statistics frame's header as an
+inline ` · <stars>` field at the end of the centred header line.
 
-The keyboard alias `cp -s` (profile save) is independent of the popup
-row and unchanged: it still runs
+The keyboard alias `cp -s` (profile save) is independent of this flow
+and unchanged: it still runs
 `#class {$_profile} {write} {ttpp/profiles/$_profile.tin}` inside the
-profile's tt++ session and works after link loss. The popup's
-"Save run" is a separate concept — saving the *play session*'s
-run logs from the 14-day retention sweep, not saving the tt++ profile.
+profile's tt++ session and works after link loss. The exit_confirm save
+is a separate concept — saving the *play session*'s run logs from the
+14-day retention sweep, not saving the tt++ profile.
+
+### Rate-session frame (legacy, unreachable)
+
+The `rate_session` frame still exists in `ingame_menu.py` — built,
+registered in the `DynamicContainer` frame map, and key-bound — but is
+**no longer reachable from the main menu** since the "Save run" row was
+removed. It presents the `─── Rate the run ───` title row, the
+Profile · Mode · Link status header, and the shared star row, with a
+`0-5 Set · ←→ Adjust · Enter Save · ESC Cancel` footer; `Enter`/`Space`
+saves via `_rate_session_save`, `ESC` pops. It shares the star widget,
+key grammar, and `_save_run_with_rating` mechanism that `exit_confirm`
+now drives. Retained pending removal; document it as legacy, not as a
+live entry point.
 
 ## Auto-open on disconnect
 
