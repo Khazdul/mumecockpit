@@ -182,6 +182,7 @@ M.affects = {
         initString_1 = "^You are thirsty.$",
         dropString_1 = "^You do not feel thirsty anymore.$",
         dropString_2 = "^You are not thirsty anymore.$",
+        dropString_3 = "^You feel less thirsty.$",
     },
 
     ["comfortable"] = {

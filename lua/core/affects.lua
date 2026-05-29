@@ -440,6 +440,7 @@ function _affects_register_triggers()
         initString_2 = "affect_refresh",
         dropString_1 = "affect_down",
         dropString_2 = "affect_down",
+        dropString_3 = "affect_down",
     }
 
     local pat_map = {}
