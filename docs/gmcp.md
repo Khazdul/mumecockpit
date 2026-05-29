@@ -158,8 +158,9 @@ No channel list is hardcoded client-side — whatever the server advertises gets
 | Event.Moon     | `{what: "rise"\|"set"}`                                     | lua/core/world_state.lua |
 | Event.Moved    | `{dir: "north"\|"east"\|...}` (dir optional)                | lua/core/world_state.lua |
 | Event.Sun      | `{what: "light"\|"rise"\|"set"\|"dark"}`                    | lua/core/world_state.lua |
+| Event.Achieved | `{what: "<achievement description>"}`                       | lua/core/world_state.lua — re-emits as `achievement` event |
 
-All Event handlers store the decoded body as-is under the corresponding `state.world.<event>` field.
+Event.Darkness, Event.Moon, Event.Moved, and Event.Sun handlers store the decoded body as-is under the corresponding `state.world.<event>` field. Event.Achieved is not stored — it is re-emitted as the `achievement` event with the description string as payload (see [events.md](events.md#achievement)).
 
 **Group**
 

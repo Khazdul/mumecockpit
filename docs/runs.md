@@ -276,8 +276,9 @@ whichever is last — receives the remainder. Schema version is unchanged at `1`
 
 ### `achievement`
 
-Written when the game sends `"You achieved something new!"` and the inner
-one-shot action captures the description line that immediately follows.
+Written when the game sends GMCP `Event.Achieved {"what": "<description>"}`;
+`lua/core/world_state.lua` re-emits the `achievement` event and `run_log.lua`
+appends the row.
 
 ```json
 {"event":"achievement","ts":1746642000,"name":"That was a quick trip!"}
@@ -286,7 +287,7 @@ one-shot action captures the description line that immediately follows.
 | Field | Type | Notes |
 |-------|------|-------|
 | `ts` | integer | `os.time()` when the row is written |
-| `name` | string | Achievement description line as captured by the inner action |
+| `name` | string | Achievement description from the GMCP `what` field |
 
 Schema version is unchanged at `1`; this event is additive.
 

@@ -1,5 +1,6 @@
 -- Passive world-state collector.
 -- Stores Event.Darkness, Event.Moon, Event.Moved, and Event.Sun bodies into state.world.
+-- Re-emits Event.Achieved as the `achievement` event.
 -- No alias, no metadata header — background collector only.
 
 gmcp.handlers["Event.Darkness"] = function(body)
@@ -16,6 +17,13 @@ end
 
 gmcp.handlers["Event.Moved"] = function(body)
     state.world.moved = body
+end
+
+gmcp.handlers["Event.Achieved"] = function(body)
+    body = body or {}
+    local what = body.what
+    if what == nil or what == gmcp.null then return end
+    events.emit("achievement", what)
 end
 
 dbg("[WORLD_STATE] loaded")

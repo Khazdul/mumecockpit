@@ -95,7 +95,7 @@ event flow. Same pattern as `gmcp.trace`.
 | `char_death` | (none) | `ttpp/core/mud_events.tin` — `"You are dead! Sorry..."` pattern |
 | `pc_death` | PC name+race-suffix string | `ttpp/core/mud_events.tin` — three asterisk-wrapped R.I.P. patterns |
 | `pkill_attributed` | `{name = "<pc name>", race = "<race suffix>", xp = <integer>}` | `lua/core/run_state.lua` `_fold()` — emitted once per attributed PC kill after `script_ui` announce |
-| `achievement` | achievement description string | `ttpp/core/mud_events.tin` — two-stage trigger on `"You achieved something new!"` |
+| `achievement` | achievement description string | `lua/core/world_state.lua` — re-emit of GMCP `Event.Achieved` |
 
 ### `gmcp_<module>` events
 
@@ -606,39 +606,21 @@ receives the remainder. See `kill_attributed` for the attribution model.
 
 ### `achievement`
 
-Emitted by a two-stage trigger in `ttpp/core/mud_events.tin`. Payload is the
-achievement description string captured from the line immediately following the
-marker line.
+Re-emitted by `lua/core/world_state.lua` from the GMCP `Event.Achieved` message.
+Payload is the achievement description string carried in the `what` field of
+the GMCP body.
 
-**Trigger mechanism.** The outer action matches `^You achieved something new!$`
-at priority 3. Its body registers a one-shot inner `#action` synchronously —
-the inner action fires on the very next received line, emits `achievement` with
-that line as the payload, and `#unaction`s itself. Registration is synchronous
-because Lua-armed registration via `session_cmd` is asynchronous (`tintin_cmd`
-writes a temp file and signals tt++ via stdout), causing the inner action to
-land after the current server-line block is consumed and the description line
-is already past.
+**Source.** MUME sends `Event.Achieved {"what": "<description>"}` directly when
+a new achievement is unlocked. The world-state collector pulls `body.what` and
+emits `achievement` with that string. Bodies with missing or null `what` are
+dropped silently.
 
-**Class discipline.** The inner action registration is wrapped in
-`#class {core} {open}` / `{close}` inside the outer body. Without this wrap,
-the inner action would be registered while the profile class is open (per ADR
-0049), land in the profile auto-save, and persist across restarts, accumulating
-stale registrations. See
+**History.** This event was previously sourced from a two-stage tt++ trigger on
+the `"You achieved something new!"` marker line plus a one-shot inner `#action`
+on the following line — see
 [ADR 0050](decisions/0050-synchronous-nested-actions-with-class-discipline.md)
-for the full derivation.
-
-**Escape split (3/3/4).** The trigger line lives inside the
-`_register_mud_events` alias body, adding one substitution pass. Three `%`
-signs in the file produce the inner pattern `^%1$` stored at outer firing (3);
-three `%` signs produce the emit argument substituted at inner firing (3); four
-`%` signs produce the literal `^%1$` unaction pattern that must match the stored
-inner action (4). Moving this line out of the alias body would silently change
-the required counts; see ADR 0050 before refactoring.
-
-**Limitation.** The inner action matches the very next received line after the
-marker. If a non-achievement line interleaves between the marker and the
-description (rare in MUME's output stream), that line is captured instead. No
-mitigation in this iteration.
+for the historical mechanism and its constraints. The contract is unchanged;
+only the source moved from tt++ to GMCP.
 
 **Subscribers:** `lua/core/run_log.lua` — writes an `achievement` row to
 `current.jsonl`.
