@@ -1,6 +1,6 @@
 # 0080 — End-of-reel scrolling credits
 
-**Status:** Accepted
+**Status:** Superseded by 0122
 **Date:** 2026-05-17
 
 ## Context
