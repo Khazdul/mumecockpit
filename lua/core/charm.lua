@@ -9,6 +9,11 @@
 --   concentrating, or a recalled stored charm). A follow with no in-flight
 --   charm is some other follower and is ignored.
 --
+--   A second success line, "Your control on <name> is renewed!", fires when
+--   re-charming an already-charmed mob. It is unambiguous but runs through the
+--   same in-flight gate and handler, adding a fresh entry (the player drops any
+--   stale duplicate manually).
+--
 -- Pending charm casts live in the shared spellcast FIFO (lua/core/
 -- spellcast.lua), tagged kind = "charm". This module enqueues on snoop, marks
 -- the front in-flight on the concentration/recall signal, and pops it on the
@@ -64,14 +69,16 @@ local function _parse_charm_cast(raw)
     return true
 end
 
--- Strip a leading "An ", "A ", or "The " article only when followed by
--- whitespace, so player/mob names like "Anaru" or "Theoden" are left intact.
+-- Strip a leading "an "/"a "/"the " article (either case) when followed by
+-- whitespace, so names like "Anaru" or "Theoden" stay intact. Case-insensitive
+-- because the control-renewed line carries a mid-sentence lowercase article,
+-- while the follow line carries a sentence-start capitalised one.
 local function _strip_article(name)
-    local rest = name:match("^An%s+(.+)$")
+    local rest = name:match("^[Aa]n%s+(.+)$")
     if rest then return rest end
-    rest = name:match("^A%s+(.+)$")
+    rest = name:match("^[Aa]%s+(.+)$")
     if rest then return rest end
-    rest = name:match("^The%s+(.+)$")
+    rest = name:match("^[Tt]he%s+(.+)$")
     if rest then return rest end
     return name
 end
@@ -268,6 +275,12 @@ end)
 
 function _register_charm_actions()
     session_cmd([[#action {^%1 starts following you.$} {#lua {_charm_on_followed("%1")}} {3}]])
+
+    -- A second, unambiguous success line: re-casting charm on an already-charmed
+    -- mob renews control instead of a fresh follow. Reuses the follow handler —
+    -- same in-flight gate (this line also comes after the concentration signal),
+    -- adds a fresh entry. Any stale duplicate is dropped by the player via the X.
+    session_cmd([[#action {^Your control on %1 is renewed!$} {#lua {_charm_on_followed("%1")}} {3}]])
 
     -- The charm-specific resist failure. Cast-queue-only (not a shared store
     -- failure line), so it drains the shared FIFO front directly.
