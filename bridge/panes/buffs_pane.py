@@ -25,6 +25,7 @@ import json
 import math
 import os
 import signal
+import subprocess
 import sys
 import time
 
@@ -59,6 +60,11 @@ C_STORED_UNTRACKED_FG    = "fg:#cccccc"
 C_BLIND_FILL_BG = "bg:#00cccc"
 C_BLIND_SEP_FG  = "fg:#00cccc"
 
+# Charms — one per row, no bar (see _charm_row_frags)
+C_CHARM_NAME_FG = "fg:#B388FF"   # light violet — matches the char_ui CHARM tag (Step 4)
+C_CHARM_MINS_FG = "fg:#888888"   # darker grey
+C_CHARM_X_FG    = "fg:#CC5555"   # muted red (not a screaming red)
+
 C_CELL_FG       = "fg:#000000"
 C_INDICATOR     = "fg:#d4a04e italic"
 C_NAME_DEPLETED = "fg:#666666"
@@ -80,6 +86,7 @@ _PALETTES = {
 _affects       = []
 _stored_spells = []
 _blinds        = []
+_charms        = []
 _last_mtime    = None
 _app           = None
 _scroll_offset = 0   # 0 = top (first row at top of pane); N = N rows hidden above
@@ -139,16 +146,20 @@ def _split_groups():
         _blinds,
         key=lambda e: (-(e.get("expires_at") or 0), e.get("name", "").lower()),
     )
-    return spells, buffs, debuffs, stored, blinds
+    # Charms render one per row, oldest first (ascending started_at) so the
+    # longest-running — most likely stale — sits at the top.
+    charms = sorted(_charms, key=lambda e: (e.get("started_at") or 0))
+    return spells, buffs, debuffs, stored, blinds, charms
 
 
-def _total_rows(spells, buffs, debuffs, stored, blinds):
+def _total_rows(spells, buffs, debuffs, stored, blinds, charms):
     return (
         (math.ceil(len(spells)  / 4) if spells  else 0) +
         (math.ceil(len(buffs)   / 4) if buffs   else 0) +
         (math.ceil(len(debuffs) / 4) if debuffs else 0) +
         (math.ceil(len(stored)  / 4) if stored  else 0) +
-        (math.ceil(len(blinds)  / 2) if blinds  else 0)
+        (math.ceil(len(blinds)  / 2) if blinds  else 0) +
+        len(charms)
     )
 
 
@@ -209,9 +220,52 @@ def _untracked_affect_cell_frags(entry, cell_w):
     return frags
 
 
+def _send_charm_drop(cid):
+    """Fire-and-forget: reach the game/tt++ pane to invoke the Step-4 drop alias.
+
+    Reuses the same tmux send-keys channel input_pane.py forwards keystrokes
+    through. Never blocks or raises into the render loop; the state file stays
+    authoritative, so the row disappears only once tt++ rewrites buffs.state.
+    """
+    if cid is None:
+        return
+    target = "mume:cockpit.0"   # the game/tt++ pane — same target input_pane.py forwards to
+    try:
+        subprocess.run(["tmux", "send-keys", "-t", target, "-l", f"_cp_charm_drop {cid}"],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+        subprocess.run(["tmux", "send-keys", "-t", target, "Enter"],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+    except Exception:
+        pass
+
+
+def _charm_row_frags(entry, W):
+    """One charm per row, full width, no bar: name (violet) · mins (grey) · X (red)."""
+    cid        = entry.get("id")
+    name       = entry.get("name", "")
+    started_at = entry.get("started_at")
+    mins       = 0
+    if started_at:
+        mins = min(99, int((time.time() - started_at) // 60))
+    mins_txt   = f"{mins}m".rjust(3)            # " 0m" .. "99m"
+    name_w     = max(0, W - 6)                  # 1 X + 1 gap + 3 mins + 1 gap
+    name_txt   = name[:name_w].ljust(name_w)    # preserve case (mob long-name)
+
+    frags = [(C_CHARM_NAME_FG, ch) for ch in name_txt]
+    frags.append(("", " "))
+    frags.extend((C_CHARM_MINS_FG, ch) for ch in mins_txt)
+    frags.append(("", " "))
+
+    def _drop_handler(mouse_event, _cid=cid):   # capture id via default arg —
+        if mouse_event.event_type == MouseEventType.MOUSE_DOWN:   # avoids the
+            _send_charm_drop(_cid)                                # loop late-bind bug
+    frags.append((C_CHARM_X_FG, "X", _drop_handler))
+    return frags
+
+
 def _build_all_rows():
     """Return every grid row as a list of fragment-lists (one per row)."""
-    spells, buffs, debuffs, stored, blinds = _split_groups()
+    spells, buffs, debuffs, stored, blinds, charms = _split_groups()
     W      = max(4, _term_cols())
     widths = _cell_widths(W)
 
@@ -263,6 +317,9 @@ def _build_all_rows():
                     break
                 row_frags.extend(_cell_frags(blinds[idx], blind_widths[col], _PALETTES["blind"]))
             all_rows.append(row_frags)
+
+    for c in charms:
+        all_rows.append(_charm_row_frags(c, W))
 
     return all_rows
 
@@ -346,7 +403,7 @@ def _restore_cursor():
 
 
 async def _poll_state(app):
-    global _affects, _stored_spells, _blinds, _last_mtime, _run_active
+    global _affects, _stored_spells, _blinds, _charms, _last_mtime, _run_active
 
     while True:
         try:
@@ -364,16 +421,19 @@ async def _poll_state(app):
                         _affects       = loaded
                         _stored_spells = []
                         _blinds        = []
+                        _charms        = []
                     else:
                         _affects       = loaded.get("affects", [])
                         _stored_spells = loaded.get("stored_spells", [])
                         _blinds        = loaded.get("blinds", [])
+                        _charms        = loaded.get("charms", [])
                 except Exception:
                     pass
             else:
                 _affects       = []
                 _stored_spells = []
                 _blinds        = []
+                _charms        = []
             app.invalidate()
 
         new_run_active = os.path.exists(CONNECTION_STATE_PATH)
