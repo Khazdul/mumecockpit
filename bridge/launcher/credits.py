@@ -315,7 +315,6 @@ def generate_credits_lines(
     Returns a list of strings, one per wrapped line, in scroll order
     (top of the list scrolls off first; bottom appears last). Structure:
 
-    - 5 leading blank rows
     - opening line
     - 5 blank rows
     - per character (oldest-first by first event):
@@ -356,8 +355,8 @@ def generate_credits_lines(
 
     out: list[str] = []
 
-    # Leading blanks + opening.
-    out.extend([""] * 5)
+    # Opening line — no leading blank pad, so the chronicle climbs out of
+    # the bottom fade band immediately rather than after ~5 s of black.
     out.extend(_wrap(_OPENING_LINE, text_width))
     out.extend([""] * 5)
 
