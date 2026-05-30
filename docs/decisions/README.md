@@ -56,6 +56,7 @@ Active ADRs by area. Click through for context, alternatives, and consequences.
 - [ADR 0027](0027-drop-driven-affect-expiry.md) — Drop-driven affect expiry — affects with a drop string expire on the drop message; the tick is a 2.5× safety net only.
 - [ADR 0032](0032-buffs-pane-extracted-from-status.md) — Buffs pane extracted from status — affects are visualised in a dedicated buffs pane (`cp -b`); the status pane no longer renders affects.
 - [ADR 0118](0118-armour-damage-drop-sample-gate.md) — Armour damage-drop sample gate — for affects flagged `damage_droppable`, drops earlier than the data-table `duration` are treated as damage-triggered and not recorded as samples; the floor on the sample side keeps the learned mean from being dragged below the spell's true maximum. (builds on 0027)
+- [ADR 0123](0123-shared-cast-feedback-ownership.md) — Shared cast-feedback ownership — `lua/core/spellcast.lua` registers each shared cast-failure / recall / concentration line exactly once and emits a neutral event (`spell_cast_failed`/`spell_cast_started`/`spell_cast_recalled`); blindness, charm, and stored-spells subscribe instead of re-registering, avoiding tt++ one-action-per-pattern shadowing. spellcast owns a kind-tagged cast-attempt FIFO; the accepted trade-off is a cross-pop between it and stored-spells' separate queue.
 
 ### Lua architecture
 
