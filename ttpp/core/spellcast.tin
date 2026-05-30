@@ -1,0 +1,9 @@
+#nop ===== SPELLCAST =====
+#nop Trigger registration alias for the shared cast-failure owner.
+#nop Called from SESSION CONNECTED in system.tin.
+#nop The alias delegates to Lua which registers one #action per shared
+#nop cast-failure pattern in the game session.
+
+#alias {_register_spellcast_actions} {
+    #lua {_register_spellcast_actions()}
+} {3}

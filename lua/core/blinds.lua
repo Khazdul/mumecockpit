@@ -2,7 +2,8 @@
 -- Two decoupled layers:
 --   1. Inbound "<name> seems to be blinded!" creates a bar (always works).
 --   2. Outgoing cast snoop supplies the numeric prefix ("2.orc"); best-effort.
--- MUME serialises spellcasting, so a plain FIFO of attempt prefixes is correct.
+-- The prefix FIFO lives in the shared spellcast queue (lua/core/spellcast.lua),
+-- which MUME's serialised spellcasting keeps in success/failure order.
 --
 -- Session-only — not persisted; wiped on char_reset by the standard
 -- char_state.lua non-function-key sweep.
@@ -11,9 +12,10 @@ local BLIND_DURATION = 90
 
 state.char.blinds = {}
 
--- FIFO of pending number prefixes. Each element is a string like "2." or
--- false (cast carried no explicit number). false (not nil) so #fifo works.
-local _pending_blinds = {}
+-- Pending blindness casts live in the shared spellcast FIFO (lua/core/
+-- spellcast.lua), tagged kind = "blindness" with a `prefix` field. spellcast
+-- owns the shared failure lines and the idle flush; this module only enqueues
+-- on snoop and pops on the landed-blindness line.
 
 -- ---------------------------------------------------------------------------
 -- Helpers
@@ -56,20 +58,6 @@ local function _strip_article(name)
 end
 
 -- ---------------------------------------------------------------------------
--- FIFO management
--- ---------------------------------------------------------------------------
-
-function _blinds_queue_flush()
-    _pending_blinds = {}
-end
-
-function _blinds_failure_pop()
-    if #_pending_blinds > 0 then
-        table.remove(_pending_blinds, 1)
-    end
-end
-
--- ---------------------------------------------------------------------------
 -- Tick (global — called from #delay body in GAME_SESSION)
 -- ---------------------------------------------------------------------------
 
@@ -101,22 +89,13 @@ end
 events.subscribe("user_input", function(raw)
     local num = _parse_blindness_cast(raw)
     if num == nil then return end
-    _pending_blinds[#_pending_blinds + 1] = num
-    -- Re-arm idle flush: any unconsumed prefix is dropped after 10 s.
-    session_cmd("#delay {blind_que_flush} {#lua {_blinds_queue_flush()}} {10}")
+    spellcast.enqueue({ kind = "blindness", prefix = num })
     dbg("[BLINDS] cast queued: " .. tostring(num))
 end)
 
--- MUME treats Enter on an empty line as a cast-abort; pop one queued prefix
--- so a cancelled blind cannot mis-label the next successful one. Guarded:
--- empty FIFO is a silent no-op (same shape as the failure-line pop). Does
--- NOT re-arm the idle flush — a cancel is not a cast.
-events.subscribe("user_input_empty", function()
-    if #_pending_blinds > 0 then
-        local popped = table.remove(_pending_blinds, 1)
-        dbg("[BLINDS] cast cancelled, popped: " .. tostring(popped))
-    end
-end)
+-- Empty-input cast-abort and the shared failure lines drain the front entry
+-- via spellcast (spellcast.fail_front, subscribed there). This module no
+-- longer subscribes to user_input_empty.
 
 -- ---------------------------------------------------------------------------
 -- Layer 1 — landed-blindness action handler (called from tt++ #action)
@@ -125,7 +104,8 @@ end)
 function _blinds_on_blinded(raw_name)
     if not raw_name or raw_name == "" then return end
     local name = _strip_article(raw_name)
-    local num  = (#_pending_blinds > 0) and table.remove(_pending_blinds, 1) or false
+    local e    = spellcast.pop_if_front_kind("blindness")
+    local num  = e and e.prefix or false
     local now  = os.time()
     local entry = {
         name              = (num or "") .. name,
@@ -147,14 +127,11 @@ end
 
 events.subscribe("gmcp_char_name", function()
     state.char.blinds = {}
-    _pending_blinds   = {}
 end)
 
 events.subscribe("char_reset", function()
-    _pending_blinds = {}
     if GAME_SESSION then
         session_cmd("#undelay {blinds_tick}")
-        session_cmd("#undelay {blind_que_flush}")
     end
 end)
 
@@ -165,21 +142,11 @@ end)
 function _register_blinds_actions()
     session_cmd([[#action {^%1 seems to be blinded!$} {#lua {_blinds_on_blinded("%1")}} {3}]])
 
-    local failure_patterns = {
-        "^Argh! You cannot concentrate any more...$",
-        "^Nah... You feel too relaxed to do that.$",
-        "^In your dreams, or what?$",
-        "^Alas, not enough mana flows through you...$",
-        "^Your spell backfired!$",
-        "^Nothing seems to happen.$",
-        "^Nobody here by that name.$",
-        "^You flee %1.$",
-        "^You are too afraid.$",
-        "^Your victim is already blind.$",
-    }
-    for _, pat in ipairs(failure_patterns) do
-        session_cmd(string.format('#action {%s} {#lua {_blinds_failure_pop()}} {3}', pat))
-    end
+    -- The eight shared failure lines and "Nobody here by that name." are
+    -- registered once by spellcast (→ spell_cast_failed / spellcast.fail_front).
+    -- Only the blindness-specific failure is owned here; it drains the shared
+    -- FIFO front directly.
+    session_cmd('#action {^Your victim is already blind.$} {#lua {spellcast.fail_front()}} {3}')
 end
 
 dbg("[BLINDS] loaded")

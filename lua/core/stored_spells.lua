@@ -271,14 +271,20 @@ events.subscribe("store_attempt_started", function(spell_full)
     dbg("[STORED_SPELLS] attempt: " .. spell_full)
 end)
 
-events.subscribe("store_attempt_failed", function()
+-- Drain one pending store attempt. Both the store-specific failure lines
+-- (store_attempt_failed) and the shared cast-failure lines (spell_cast_failed,
+-- owned by spellcast) route here, so a failed store drains the FIFO on either.
+local function _drain_pending_attempt()
     if #_pending_attempts == 0 then
         dbg("[STORED_SPELLS] fail: queue empty (out of sync)")
         return
     end
     local name = table.remove(_pending_attempts, 1)
     script_ui("STORE", "cast attempt for " .. ui_var(name) .. " failed.")
-end)
+end
+
+events.subscribe("store_attempt_failed", _drain_pending_attempt)
+events.subscribe("spell_cast_failed",    _drain_pending_attempt)
 
 events.subscribe("user_input_empty", function()
     if #_pending_attempts > 0 then
@@ -493,15 +499,10 @@ function _register_stored_spells_actions()
     -- ttpp/core/input_ipc.tin — cross-cutting infrastructure, not a
     -- stored-spells concern. This module just subscribes to the event.
 
+    -- The eight failure lines shared with other casters are registered once by
+    -- spellcast (→ spell_cast_failed), which this module subscribes to via
+    -- _drain_pending_attempt. Only the store-specific failures are owned here.
     local failure_patterns = {
-        "^Alas, not enough mana flows through you...$",
-        "^Your spell backfired!$",
-        "^Nothing seems to happen.$",
-        "^In your dreams, or what?$",
-        "^Nah... You feel too relaxed to do that.$",
-        "^Argh! You cannot concentrate any more...$",
-        "^You flee %1.$",
-        "^You are too afraid.$",
         "^Your mind is too full to store it.$",
         "^You failed.$",
         "^You do not know any such a spell.$",
