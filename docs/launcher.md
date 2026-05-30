@@ -2403,8 +2403,16 @@ stored on `_credits_empty_reason`:
 - **`"no_data"`** — no tracked event of any kind anywhere yet; the
   chronicle appears once the player has kills / deaths / level-ups /
   achievements.
+
+  > No chronicle yet. Your tale is written as you play — kills, deaths,
+  > level-ups, and achievements all earn a line. Come back once you
+  > have made some history.
+
 - **`"filtered"`** — events exist but every shown kind is toggled off
   in [Options → Spotlights](#options_spotlights-frame).
+
+  > Your chronicle has entries, but every shown kind is disabled.
+  > Enable some in Options → Spotlights to roll the credits.
 
 ### `log_view` in spotlight mode
 
@@ -2594,8 +2602,9 @@ it parks on the final event and flips to pause — the reel no longer
 rolls into credits. The keyboard `→` and the info-box `►` click at the
 last spotlight are no-ops. The scrolling chronicle is reachable only
 via the standalone [Credits](#credits-frame) main-menu entry — see
-[ADR 0080](decisions/0080-end-of-reel-credits.md) for the original
-end-of-reel design this supersedes.
+[ADR 0122](decisions/0122-credits-standalone-launcher-entry.md), which
+supersedes the original end-of-reel design
+([ADR 0080](decisions/0080-end-of-reel-credits.md)).
 
 **ESC.** Returns to the launcher main menu (Spotlights is pushed from
 `main`, not from `history`, so the frame stack's previous entry is
@@ -2608,10 +2617,15 @@ standalone `Credits` main-menu entry, sibling of `Spotlights`. It
 aggregates the reel (`spotlights.aggregate_spotlights()`), and on
 `total_count == 0` pushes [`credits_empty`](#credits_empty-frame)
 instead; otherwise it builds the frame straight from `reel.spotlights`
-with no per-spotlight `.log` loading. This is the **only** route to the
-credits frame; the spotlight reel no longer rolls into it
-([ADR 0080](decisions/0080-end-of-reel-credits.md) documents the
-superseded end-of-reel origin). Full-screen
+with no per-spotlight `.log` loading. The chronicle therefore covers
+**all** tracked events (respecting the Options → Spotlights toggles),
+including the empty-window events the reel drops per ADR 0079 — so it
+can be non-empty even when the Spotlights reel itself is empty. This is
+the **only** route to the credits frame; the spotlight reel no longer
+rolls into it
+([ADR 0122](decisions/0122-credits-standalone-launcher-entry.md), which
+supersedes the [ADR 0080](decisions/0080-end-of-reel-credits.md)
+end-of-reel origin). Full-screen
 canvas matched to the host terminal background — the launcher probes
 OSC 11 on `/dev/tty` at startup and falls back to `terminal_bg_fallback`
 from `startup.conf` (default `#000000`) when the terminal does not
@@ -2630,9 +2644,13 @@ multiple runs of the credits, because template selection hashes
 Events are grouped by character with a chapter header per character
 (also deterministic on character name); characters appear in
 oldest-first order. Dates render as `"<ordinal> of <Month>, <Year>"`
-(e.g. `"first of May, 2026"`). Fixed opening (`Herein are recorded
-the deeds of your characters.`) and closing (`The End.`) lines bracket
-the content with 5 blank-row pads. `text_width = min(60, max(40,
+(e.g. `"first of May, 2026"`). A fixed opening line (`Herein are
+recorded the deeds of your characters.`) leads with **no** leading
+blank pad — the chronicle climbs out of the bottom fade band
+immediately rather than after ~5 s of black — and a fixed closing line
+(`The End.`) follows the body, each separated from the content by 5
+blank rows, with trailing blank padding after the close. `text_width =
+min(60, max(40,
 term_cols - 8))` keeps the centred column readable on wide
 terminals; `textwrap.wrap(..., break_long_words=False,
 break_on_hyphens=False)` preserves word boundaries.
@@ -2642,10 +2660,14 @@ the integer scroll offset is `int((monotonic() - start) *
 _CREDITS_SCROLL_ROWS_PER_SEC)`, so the visible step advances once
 per second. The redraw tick runs at `_CREDITS_TICK_HZ = 15` — well
 above the visible step rate, so the integer-row transition is
-observed promptly on every terminal. Auto-exit fires when
-`offset_floor >= len(_credits_lines) + term_rows`; the trailing pad
-of `term_rows` blank rows appended at frame-entry time is what
-guarantees the closing line clears the top before the frame pops.
+observed promptly on every terminal. Auto-exit
+(`_credits_check_finished`) fires when `offset_floor >=
+_credits_last_visible_row + _credits_term_rows` — the moment the last
+non-blank line (the closing `The End.`) has scrolled clear of the top
+edge, rather than waiting for the trailing blank pad to also scroll
+past (which would strand the user on a blank screen for ~6 s).
+`_credits_finish()` then cancels the tick and `_reset_to_main()`s back
+to the launcher main menu — the same destination as ESC.
 
 **Fade bands.** `_CREDITS_FADE_BAND_FRAC = 0.35`. Bottom 35% of the
 viewport ramps brightness from 0 to 1 (`tr / fb`); top 35% ramps

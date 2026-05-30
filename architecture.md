@@ -91,7 +91,8 @@ tracking, and UI feedback.
 │   │   │                     #   Statistics frame and the future launcher run-browser (ADR 0065)
 │   │   ├── spotlights.py     # Cross-character spotlight reel aggregator + playback
 │   │   │                     #   adapter for log_view spotlight mode (ADR 0077)
-│   │   ├── credits.py        # End-of-reel scrolling credits content generator (ADR 0080)
+│   │   ├── credits.py        # Scrolling credits chronicle content generator —
+│   │   │                     #   standalone Credits main-menu entry (ADR 0122, supersedes 0080)
 │   │   ├── run_retention.py  # 14-day retention sweep for run logs (ADR 0074)
 │   │   ├── launch.sh         # Former Alacritty desktop-shortcut target (ADR 0028);
 │   │   │                     #   obsolete after the foot/WSLg switch — kept for
@@ -439,9 +440,11 @@ implementations, `cp -s` internals, and toggle-pane persistence details.
 
 See the project board on GitHub for active work and parked ideas. The
 cross-character Spotlights feature (launcher main menu → Spotlights,
-ADR 0077–0080) is complete: rotation/per-event windows, scroll-clear
-transitions, pre-roll trim, and the end-of-reel scrolling credits all
-shipped.
+ADR 0077–0079) is complete: rotation/per-event windows, scroll-clear
+transitions, and pre-roll trim all shipped. The scrolling credits
+chronicle is now a standalone Credits main-menu entry, sibling of
+Spotlights (ADR 0122, superseding the original end-of-reel credits in
+ADR 0080); the reel itself ends in a park-and-pause.
 
 The launcher's profile editor is GUI-complete for all five tt++
 command kinds (aliases, actions, macros, highlights, substitutes):
@@ -517,7 +520,7 @@ mode.
 - [docs/session-lifecycle.md](docs/session-lifecycle.md) — Session connect/disconnect, connection.state, settings persistence. Touched when changing session handling or startup flow.
 - [docs/input-pane.md](docs/input-pane.md) — Input pane key forwarding, Enter semantics, history navigation, clock strip. Touched when changing input behaviour, forwarded keys, or the clock strip.
 - [docs/tmux-bindings.md](docs/tmux-bindings.md) — tmux root-table bindings, mouse model, clipboard. Touched when changing tmux key bindings or mouse behaviour.
-- [docs/launcher.md](docs/launcher.md) — Pre-tmux startup menu, rendering conventions, exec-chain. Touched when changing launcher pages or startup options. The [Spotlights sub-menu](docs/launcher.md#spotlights-sub-menu) section covers the cross-character highlights reel; see [ADR 0077](docs/decisions/0077-spotlight-reel-scope-rotation-per-event.md) (scope/rotation/per-event), [ADR 0078](docs/decisions/0078-spotlight-scroll-clear-via-phantom-rows.md) (scroll-clear transitions), [ADR 0079](docs/decisions/0079-spotlight-pre-roll-trim-post-roll-unclamped.md) (pre-roll trim, unclamped post-roll), and [ADR 0080](docs/decisions/0080-end-of-reel-credits.md) (end-of-reel scrolling credits).
+- [docs/launcher.md](docs/launcher.md) — Pre-tmux startup menu, rendering conventions, exec-chain. Touched when changing launcher pages or startup options. The [Spotlights sub-menu](docs/launcher.md#spotlights-sub-menu) section covers the cross-character highlights reel; see [ADR 0077](docs/decisions/0077-spotlight-reel-scope-rotation-per-event.md) (scope/rotation/per-event), [ADR 0078](docs/decisions/0078-spotlight-scroll-clear-via-phantom-rows.md) (scroll-clear transitions), and [ADR 0079](docs/decisions/0079-spotlight-pre-roll-trim-post-roll-unclamped.md) (pre-roll trim, unclamped post-roll). The scrolling credits chronicle is now its own main-menu entry (the [`credits` frame](docs/launcher.md#credits-frame), sibling of Spotlights — the reel ends in a park-and-pause, no longer rolling into it); see [ADR 0122](docs/decisions/0122-credits-standalone-launcher-entry.md) (standalone Credits entry), which supersedes [ADR 0080](docs/decisions/0080-end-of-reel-credits.md) (the original end-of-reel credits).
 - [docs/popup-menu.md](docs/popup-menu.md) — In-game ESC popup: submenus, status header, save-profile flow. Touched when changing the in-game overlay.
 - [docs/bridge-services.md](docs/bridge-services.md) — Ping monitor, version check, self-update, layout and config file formats. Touched when changing background services or persisted config.
 - [docs/release-process.md](docs/release-process.md) — Release runbook: version bump, tagging, GitHub release. Touched when changing the release process.
