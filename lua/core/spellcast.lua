@@ -96,6 +96,11 @@ function _register_spellcast_actions()
     -- line, so it pops the front entry directly rather than emitting the shared
     -- event. Owned here so charm can reuse it without a later move.
     session_cmd('#action {^Nobody here by that name.$} {#lua {spellcast.fail_front()}} {3}')
+
+    -- A recalled stored spell is a spell-in-flight signal, not a failure: it
+    -- emits the neutral event for consumers (stored-spells today, charm later)
+    -- and deliberately does NOT touch the cast queue.
+    session_cmd('#action {^You quickly recall your stored spell...$} {#lua {events.emit("spell_cast_recalled")}} {3}')
 end
 
 dbg("[SPELLCAST] loaded")

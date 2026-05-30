@@ -315,7 +315,7 @@ events.subscribe("store_succeeded", function()
     dbg("[STORED_SPELLS] stored: " .. name)
 end)
 
-events.subscribe("store_recalled", function()
+events.subscribe("spell_cast_recalled", function()
     if not _last_cast_intent then
         dbg("[STORED_SPELLS] recall: no last cast intent")
         return
@@ -514,7 +514,6 @@ function _register_stored_spells_actions()
 
     session_cmd('#action {^You stored it.$} {#lua {events.emit("store_succeeded")}} {3}')
     session_cmd('#action {^Your mind feels empty for a while.$} {#lua {events.emit("store_decayed")}} {3}')
-    session_cmd('#action {^You quickly recall your stored spell...$} {#lua {events.emit("store_recalled")}} {3}')
     session_cmd('#action {^You blast the area with magical energies.$} {#lua {events.emit("stored_spells_untracked")}} {3}')
     session_cmd('#action {^%1 blasts the area with magical energies.$} {#lua {events.emit("stored_spells_untracked")}} {3}')
 
