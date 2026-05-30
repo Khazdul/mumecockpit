@@ -113,6 +113,12 @@ def _cell_widths(W):
     return [base + 1] * rem + [base] * (4 - rem)
 
 
+def _blind_cell_widths(W):
+    base  = W // 2
+    extra = W % 2
+    return [base + (1 if i < extra else 0) for i in range(2)]
+
+
 def _split_groups():
     spells  = sorted([e for e in _affects if e.get("type") == "spell"],  key=_sort_key)
     debuffs = sorted([e for e in _affects if e.get("type") == "debuff"], key=_sort_key)
@@ -142,7 +148,7 @@ def _total_rows(spells, buffs, debuffs, stored, blinds):
         (math.ceil(len(buffs)   / 4) if buffs   else 0) +
         (math.ceil(len(debuffs) / 4) if debuffs else 0) +
         (math.ceil(len(stored)  / 4) if stored  else 0) +
-        (math.ceil(len(blinds)  / 4) if blinds  else 0)
+        (math.ceil(len(blinds)  / 2) if blinds  else 0)
     )
 
 
@@ -247,14 +253,15 @@ def _build_all_rows():
             all_rows.append(row_frags)
 
     if blinds:
+        blind_widths = _blind_cell_widths(W)
         n = len(blinds)
-        for row in range(math.ceil(n / 4)):
+        for row in range(math.ceil(n / 2)):
             row_frags = []
-            for col in range(4):
-                idx = row * 4 + col
+            for col in range(2):
+                idx = row * 2 + col
                 if idx >= n:
                     break
-                row_frags.extend(_cell_frags(blinds[idx], widths[col], _PALETTES["blind"]))
+                row_frags.extend(_cell_frags(blinds[idx], blind_widths[col], _PALETTES["blind"]))
             all_rows.append(row_frags)
 
     return all_rows

@@ -86,7 +86,8 @@ groups produce no rows.
 | Stored  | `stored_spells` | all entries (tracked and untracked)                |
 | Blinds  | `blinds`        | all entries                                        |
 
-Each group lays out 4 entries per row.
+Each group lays out 4 entries per row, except **Blinds**, which lays out 2
+entries per row (see "Blinds two-up layout").
 
 ### Sort within a group
 
@@ -124,6 +125,33 @@ Each cell occupies `cell_w` columns: `(cell_w - 1)` characters of
 `NAME.upper()[:cell_w-1].ljust(cell_w-1)` followed by the `▌` separator.
 Empty slots on a partial last row are omitted — the row ends after the last
 populated cell's separator.
+
+### Blinds two-up layout
+
+The Blinds group is the sole exception to the 4-up grid. It renders **2 cells
+per row** so the wider mob names fit. This is the *only* divergence — the cell
+content is identical to every other group's, so the Blinds branch of
+`_build_all_rows` reuses the shared `_cell_frags` renderer; it just lays out 2
+cells per row instead of 4.
+
+Cell width distribution over full width `W` uses the round-extra helper adapted
+to 2 cells (same shape as the 3-bar group pane):
+
+```
+base   = W // 2
+extra  = W % 2
+widths = [base + (1 if i < extra else 0) for i in range(2)]
+```
+
+Each block occupies `cell_w` columns with the standard cell content —
+`NAME.upper()[:cell_w-1].ljust(cell_w-1)` plus the `▌` separator — and inherits
+the timed-cell drain (`filled = int(pct * cell_w + 0.5)`), the Blinds palette
+(`#00cccc` fill / `#000000` fg / `#00cccc` separator), the depleted-grey
+(`#666666`), the expiring-blink rule, and the separator rule, all unchanged.
+
+Narrowing the pane truncates the name from the right
+(`PACK HORSE` → `PACK HO` → `PA`). An odd blind count leaves a single block on
+the last row; the row ends after that block's separator.
 
 ### Per-group palette
 
