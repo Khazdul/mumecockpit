@@ -58,10 +58,12 @@ Array of currently-blinded target entries:
 }
 ```
 
-Initialised to `{}` at module load and on every `gmcp_char_name` (login).
-`state.char.reset()` (called on disconnect) wipes it via the standard
-non-function-key sweep in `char_state.lua`. **Not persisted** — blinds are
-session-only state; a disconnect wipes them.
+Initialised to `{}` at module load and on every `gmcp_char_name` (login),
+then repopulated from `blinds_active.json` (see [Persistence](#persistence)).
+`state.char.reset()` (called on disconnect) wipes the in-memory list via the
+standard non-function-key sweep in `char_state.lua`, but the on-disk file is
+the cross-session survivor and is **not** touched on disconnect — reconnect
+reloads it.
 
 ### Pending-attempts FIFO
 
@@ -181,6 +183,35 @@ is the only removal path — so there is no overrun / no 2.5× safety net.
   dying clears its delays automatically).
 - Emits `blinds_changed` only on a prune cycle (the renderer's blink/drain
   is wall-clock-driven and does not need ticking events).
+
+## Persistence
+
+Active blinds survive reconnect and a full application restart, mirroring the
+stored-spells active list (see [docs/stored-spells.md](stored-spells.md) and
+[docs/affects.md](affects.md)). The store is
+`data/characters/<char>/blinds_active.json`, where `<char>` is
+`state.char.name` verbatim (the `data/characters/<character>/` convention in
+[architecture.md](../architecture.md)).
+
+- **Write** — `_save_active()` does an atomic temp-file + `os.rename` write of
+  `state.char.blinds`. An empty list is written as `[]` (the file is never
+  deleted), so reconnect always finds a definitive answer. It is called at
+  exactly two mutation points: at the end of `_blinds_on_blinded` (after the
+  entry is appended) and in `_blinds_tick` after the prune sweep, gated on the
+  `pruned` flag. It is **not** called on `char_reset` — disconnect must never
+  overwrite or delete the file.
+- **Load** — `_load_active(char_name)` runs from the `gmcp_char_name` handler
+  (cold start and reconnect), after the in-memory list is reset to `{}`. It
+  reads the file (absent/malformed → leave `{}` with a non-fatal `dbg`),
+  repopulates `state.char.blinds`, and drops any entry with
+  `expires_at <= os.time()` (its 90 s elapsed during downtime). There is no
+  name validation — blind names are mob names, not a canonical table. If any
+  blind survives, the prune tick is armed; `blinds_changed` is emitted at the
+  end regardless so the buffs pane re-serialises independent of module load
+  order. Logs `[BLINDS] restored N (M expired)`.
+
+No migration shim exists — blinds were never persisted before, so there is no
+old `logs/` location to migrate from.
 
 ## Registration global
 
