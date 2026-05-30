@@ -1,0 +1,9 @@
+#nop ===== CHARM =====
+#nop Trigger registration alias for the charm tracker.
+#nop Called from SESSION CONNECTED in system.tin.
+#nop The alias delegates to Lua which registers the charm #action lines and the
+#nop click-to-drop alias in the game session.
+
+#alias {_register_charm_actions} {
+    #lua {_register_charm_actions()}
+} {3}

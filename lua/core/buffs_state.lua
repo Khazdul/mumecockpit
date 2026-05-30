@@ -1,7 +1,7 @@
--- Serialises state.char.affects, state.char.stored_spells, and
--- state.char.blinds to bridge/runtime/buffs.state (JSON) whenever
--- affects_changed, stored_spells_changed, blinds_changed, char_reset, or
--- gmcp_char_name fires.
+-- Serialises state.char.affects, state.char.stored_spells, state.char.blinds,
+-- and state.char.charms to bridge/runtime/buffs.state (JSON) whenever
+-- affects_changed, stored_spells_changed, blinds_changed, charms_changed,
+-- char_reset, or gmcp_char_name fires.
 --
 -- Atomic write: buffs.state.tmp → os.rename → buffs.state.
 
@@ -46,10 +46,21 @@ local function serialize()
         }
     end
 
+    local charms = state.char.charms or {}
+    local charms_out = {}
+    for _, e in ipairs(charms) do
+        charms_out[#charms_out + 1] = {
+            id         = e.id,
+            name       = e.name,
+            started_at = e.started_at,
+        }
+    end
+
     local payload = {
         affects       = affects_out,
         stored_spells = stored_out,
         blinds        = blinds_out,
+        charms        = charms_out,
     }
     local ok, encoded = pcall(json.encode, payload)
     if not ok then
@@ -72,6 +83,7 @@ end
 events.subscribe("affects_changed",        serialize)
 events.subscribe("stored_spells_changed",  serialize)
 events.subscribe("blinds_changed",         serialize)
+events.subscribe("charms_changed",         serialize)
 events.subscribe("char_reset",             function() serialize() end)
 events.subscribe("gmcp_char_name",         function() serialize() end)
 

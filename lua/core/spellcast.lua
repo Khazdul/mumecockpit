@@ -43,6 +43,26 @@ function spellcast.pop_if_front_kind(kind)
     return nil
 end
 
+-- Mark the front entry in-flight when its kind matches. Charm uses this to gate
+-- the ambiguous "<name> starts following you." line on a self-cast that has
+-- actually begun concentrating (or a recalled stored charm).
+function spellcast.mark_front_inflight(kind)
+    local front = _cast_queue[1]
+    if front and front.kind == kind then front.inflight = true end
+end
+
+-- Pop and return the front entry only when its kind matches AND it has been
+-- marked in-flight; else leave the queue untouched and return nil. Charm pops
+-- via this so a follow with no in-flight charm at the front is left for whatever
+-- actually owns it (and ignored by charm).
+function spellcast.pop_if_front_inflight(kind)
+    local front = _cast_queue[1]
+    if front and front.kind == kind and front.inflight then
+        return table.remove(_cast_queue, 1)
+    end
+    return nil
+end
+
 -- Drop the front entry unconditionally. Guarded: an empty queue is a silent
 -- no-op. No event emitted.
 function spellcast.fail_front()
@@ -101,6 +121,11 @@ function _register_spellcast_actions()
     -- emits the neutral event for consumers (stored-spells today, charm later)
     -- and deliberately does NOT touch the cast queue.
     session_cmd('#action {^You quickly recall your stored spell...$} {#lua {events.emit("spell_cast_recalled")}} {3}')
+
+    -- Concentration start lines: a self-cast that has begun concentrating.
+    -- charm is the only consumer (its in-flight gate); nothing else reacts.
+    session_cmd('#action {^You start to concentrate...$} {#lua {events.emit("spell_cast_started")}} {3}')
+    session_cmd('#action {^You muster all of your concentration...$} {#lua {events.emit("spell_cast_started")}} {3}')
 end
 
 dbg("[SPELLCAST] loaded")
