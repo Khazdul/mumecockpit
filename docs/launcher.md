@@ -2690,11 +2690,13 @@ skew on chain rollover.
 **Render.** A single focusable `Window` (`_log_view_window`)
 holds a `_LogViewControl` (a `FormattedTextControl` subclass)
 over the full frame. The visual lines are produced by wrapping
-each event's fragment list at `cols - _LOG_STRIP_W` (server text
-runs all the way up to the 2-col strip — the only persistent
-occluder) and concatenating them; the wrap is a fragment-aware split, not
-`wrap_lines=True`, so style runs remain stable across the wrap
-boundary. The wrapping cache re-builds when the terminal width
+each event's fragment list at the **full terminal width** —
+nothing is reserved for the rail. The 2-col strip and the
+marker layer are pure overlays that occlude the cells beneath
+them while shown, and reveal the full-width text (no gutter, no
+reflow) when they hide. Wrapped lines are concatenated; the wrap
+is a fragment-aware split, not `wrap_lines=True`, so style runs
+remain stable across the wrap boundary. The wrapping cache re-builds when the terminal width
 changes, alongside the parallel `_log_view_event_rows` map
 (event index → `(visual_start, visual_end_exclusive)`) used by
 pause-mode cursor painting and click-to-cursor row resolution.
@@ -2705,9 +2707,9 @@ slices `_log_view_lines[start_row:end_excl]` with
 (`_log_view_text_pause`) the view renders the full buffer at
 `_log_view_scroll` with a `C_LOG_CURSOR` background highlight
 on every visual row in the cursor event's row range — each
-painted row is padded to `_log_view_cols - _LOG_STRIP_W` (the
-strip's left edge) so the highlight spans the trailing area past
-the line's text without bleeding under the strip.
+painted row is padded to the full `_log_view_cols` so the
+highlight spans the trailing area past the line's text; the
+strip Float overdraws the rightmost cols on top.
 
 **Playback engine.** Two modes: `play` and `pause`.
 
@@ -2798,8 +2800,15 @@ tracked event within `[0, total_duration_us]`, `letter ∈
 `level_up`→L). `SpotlightPlayback.event_markers()` builds them from
 each spotlight's summary events + `event_offsets_us`, shifted by the
 spotlight's `spotlight_start_offsets_us`. `LogPlayback.event_markers()`
-(chain) returns `[]` for now — a follow-up adds the JSONL→offset
-join.
+(chain) returns the list cached by `set_marker_events()`, which
+`_enter_log_view` populates once on push from
+`run_stats.marker_events(character, run_ids)` — the dedicated four-kind
+reader over the chain's run-archive JSONL — mapping each event's
+epoch-second `ts` onto a playback offset via `offset_for_ts_us`
+(snap to the nearest `.log` line by `ts_us`, so markers land
+correctly across stitched runs regardless of gap clamping, at
+~1 s precision). RunStats was insufficient — it tracks a timestamp
+only for achievements — hence the separate reader.
 
 **Keyboard.**
 
