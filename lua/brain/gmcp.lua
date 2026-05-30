@@ -4,7 +4,7 @@
 
 -- Keep in sync with Core.Supports.Set payload in ttpp/core/gmcp.tin.
 gmcp.modules     = { "Char 1", "Comm.Channel 1", "Event 1", "Core 1", "Group 1" }
-gmcp.trace       = true
+gmcp.trace       = false
 gmcp.trace_only  = { Group = false }  -- whitelist table: exact key or package prefix; nil = off
 
 local function should_trace(module)
