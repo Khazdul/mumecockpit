@@ -490,6 +490,7 @@ _options_spotlights_window       = None
 _options_terminal_window         = None
 _terminal_font_picker_window     = None
 _spotlights_empty_window         = None
+_credits_empty_window            = None
 _scripts_window      = None
 _readability_window  = None
 _about_window        = None
@@ -969,6 +970,7 @@ def _focus_current_frame():
             "options_terminal":           _options_terminal_window,
             "terminal_font_picker":       _terminal_font_picker_window,
             "spotlights_empty":           _spotlights_empty_window,
+            "credits_empty":              _credits_empty_window,
             "scripts":                    _scripts_window,
             "readability":                _readability_window,
             "about":                      _about_window,
@@ -1132,7 +1134,7 @@ def _rebuild_main_items(*, preserve_label=True):
     items = [first]
     if _update_available():
         items.append("Update")
-    items.extend(["Profile", "Options", "History", "Spotlights", "About", "Quit"])
+    items.extend(["Profile", "Options", "History", "Spotlights", "Credits", "About", "Quit"])
     _main_items = items
     if prev and prev in items:
         _sel_main = items.index(prev)
@@ -1181,6 +1183,8 @@ def _activate_main(idx):
         _enter_history_frame()
     elif label == "Spotlights":
         _enter_spotlights()
+    elif label == "Credits":
+        _enter_credits()
     elif label == "Options":
         _enter_options_frame()
     elif label == "About":
@@ -3821,6 +3825,46 @@ def _spotlights_empty_text():
     body = (_SPOTLIGHTS_EMPTY_FILTERED_BODY
             if _spotlights_empty_reason == "filtered"
             else _SPOTLIGHTS_EMPTY_BODY)
+    wrapped = _wrap_text(body, body_w)
+
+    frags = []
+    frags.extend(title_block(title, cols, blank_above=2))
+    for line in wrapped:
+        frags.append(("", _pad_centre(line, cols)))
+        frags.append((C_BODY, line))
+        frags.append(("", "\n"))
+
+    content_rows = title_block_height(2) + len(wrapped)
+    frags.extend(footer_block(footer, cols, rows_h, content_rows))
+    return frags
+
+
+_CREDITS_EMPTY_BODY = (
+    "No chronicle yet. Your tale is written as you play — kills, deaths, "
+    "level-ups, and achievements all earn a line. Come back once you have "
+    "made some history."
+)
+_CREDITS_EMPTY_FILTERED_BODY = (
+    "Your chronicle has entries, but every shown kind is disabled. Enable "
+    "some in Options → Spotlights to roll the credits."
+)
+
+# Set by _enter_credits to pick which empty-state copy to render.
+# "no_data" — no tracked events of any kind anywhere.
+# "filtered" — at least one per-kind toggle is off (cheap shortcut, mirrors
+# _spotlights_empty_reason — nudges the user toward Options → Spotlights).
+_credits_empty_reason = "no_data"
+
+
+def _credits_empty_text():
+    cols   = _term_cols()
+    rows_h = _term_rows()
+    title  = "─── Credits ───"
+    footer = "Any key to return"
+    body_w = max(20, min(72, cols - 4))
+    body = (_CREDITS_EMPTY_FILTERED_BODY
+            if _credits_empty_reason == "filtered"
+            else _CREDITS_EMPTY_BODY)
     wrapped = _wrap_text(body, body_w)
 
     frags = []
@@ -7095,19 +7139,37 @@ def _credits_check_finished() -> bool:
     return False
 
 
-def _enter_credits(spotlights_list):
-    """Push the credits frame, snapshotting terminal size and generating
-    the wrapped narrative content from `spotlights_list` (a list of
-    Spotlight objects, typically the reel's `.spotlights`)."""
+def _enter_credits():
+    """Aggregate spotlights from every character's sealed runs and either
+    push the empty-state frame or build + roll the scrolling credits
+    chronicle. Reachable only via the Credits main-menu entry.
+
+    Unlike Spotlights this needs no per-spotlight `.log` loading — the
+    chronicle is generated from the aggregated event set alone, so
+    emptiness is decided on `reel.total_count` only."""
+    global _credits_empty_reason
     global _credits_lines, _credits_start_monotonic
     global _credits_term_rows, _credits_term_cols, _credits_text_width
+    # Mirror _enter_spotlights: if any per-kind toggle is off, attribute an
+    # empty reel to the filter and nudge toward Options → Spotlights.
+    any_disabled = any(
+        _conf.get(key) == "0"
+        for key, _label in _SPOTLIGHT_TOGGLES
+    )
+    _credits_empty_reason = "filtered" if any_disabled else "no_data"
+
+    reel = spotlights.aggregate_spotlights()
+    if reel.total_count == 0:
+        _push_frame("credits_empty")
+        return
+
     term_rows = max(1, _term_rows())
     term_cols = max(1, _term_cols())
     text_width = min(60, max(40, term_cols - 8))
     _credits_term_rows = term_rows
     _credits_term_cols = term_cols
     _credits_text_width = text_width
-    _credits_lines = credits.generate_credits_lines(spotlights_list, text_width)
+    _credits_lines = credits.generate_credits_lines(reel.spotlights, text_width)
     # Trailing pad: enough blank rows after the closing line so it
     # scrolls fully off the top before the auto-exit fires. The module
     # adds a small baseline buffer; we top it up with `term_rows` here
@@ -7368,32 +7430,14 @@ def _log_toggle_play_pause():
         _log_resume()
 
 
-def _log_spotlight_jump_to_credits():
-    """Cancel spotlight playback, pop log_view, and push the credits
-    frame for the active reel. Shared by the end-of-reel auto-pause path
-    and the discoverable "advance past the last spotlight" path (→ key
-    / ► click at the last spotlight) so both routes use one transition."""
-    reel = _log_view_reel
-    spotlights_list = list(reel.spotlights) if reel is not None else []
-    _log_cancel_tick_task()
-    _exit_log_view()
-    if spotlights_list:
-        _enter_credits(spotlights_list)
-
-
 def _log_auto_pause_at_end():
-    """End-of-log auto-pause. In chain mode this parks on the final
-    event and flips to pause. In spotlight mode the reel is finished, so
-    we cancel the playback, pop log_view, and roll the credits frame —
-    no hold delay (the last spotlight's content naturally fades out as
-    credits scroll up)."""
+    """End-of-log auto-pause. In both chain and spotlight mode this parks
+    on the final event and flips to pause — the reel no longer rolls into
+    credits (the standalone Credits menu entry owns that now)."""
     global _log_mode, _log_paused_offset_us, _log_cursor_index
     global _log_overlays_visible, _log_overlays_hide_at
     pb = _log_view_playback
     if pb is None or not pb.events:
-        return
-    if _log_view_mode == "spotlight":
-        _log_spotlight_jump_to_credits()
         return
     _log_cursor_index     = len(pb.events) - 1
     _log_paused_offset_us = pb.total_duration_us
@@ -8107,23 +8151,15 @@ def _log_spotlight_nav_row(spot_idx, total, inner):
     mouse handler. The arrows are padded with single spaces (e.g. ` ◄ `)
     so the click target is 3 cells wide rather than a single glyph.
 
-    On the last spotlight the `►` glyph no longer seeks to a next
-    spotlight — it jumps straight into credits — so we append a
-    ` CREDITS` label after `►` to surface that altered destination.
-    The next-click handler then covers the whole ` ► CREDITS` fragment
-    so clicking the label triggers the same action."""
+    The `►` glyph is rendered on every spotlight, including the last,
+    where its click handler is a no-op (the seek refuses to advance past
+    the final entry)."""
     if total <= 0:
         return [(C_SPOTLIGHT_BOX_BG, " " * inner)]
     idx_text     = f"{spot_idx + 1} of {total}"
     left_arrow   = " ◄ "
-    is_last      = (spot_idx >= total - 1)
-    right_chunk  = " ► CREDITS" if is_last else " ► "
+    right_chunk  = " ► "
     used = len(left_arrow) + len(idx_text) + len(right_chunk)
-    if used > inner and is_last:
-        # Pathologically narrow interior for the CREDITS label — drop it
-        # rather than the arrow, so the row stays usable.
-        right_chunk = " ► "
-        used = len(left_arrow) + len(idx_text) + len(right_chunk)
     if used > inner:
         return [(C_SPOTLIGHT_BOX_BG, " " * inner)]
     pad_total = inner - used
@@ -8172,9 +8208,7 @@ def _log_spotlight_seek_relative(delta_spotlights):
     `delta_spotlights == -1` and we're more than ~1.5 s into the current
     spotlight, restart the current one first (standard media-player feel).
     Stepping past the last spotlight (`delta_spotlights >= 1` at the
-    final entry) rolls straight into the end-of-reel credits — the same
-    transition `_log_auto_pause_at_end` uses, so "jump to credits" is a
-    discoverable action rather than a passive end behaviour."""
+    final entry) is a no-op — the reel ends on the last spotlight."""
     reel = _log_view_reel
     if reel is None or not reel.spotlights:
         return
@@ -8190,8 +8224,7 @@ def _log_spotlight_seek_relative(delta_spotlights):
     if target_idx < 0:
         target_idx = 0
     if target_idx >= len(reel.spotlights):
-        if delta_spotlights > 0:
-            _log_spotlight_jump_to_credits()
+        # Already at the last spotlight; a forward step has nowhere to go.
         return
     _log_scrubber_seek(reel.spotlight_start_offsets_us[target_idx])
 
@@ -9219,6 +9252,17 @@ def _kb_spemp_any(event):
     _pop_frame()
 
 
+# Credits — empty-state placeholder (any key returns)
+@kb.add("escape", filter=_in_frame("credits_empty"), eager=True)
+def _kb_credemp_escape(event):
+    _pop_frame()
+
+
+@kb.add("<any>", filter=_in_frame("credits_empty"))
+def _kb_credemp_any(event):
+    _pop_frame()
+
+
 # Scripts — single-column navigation. Up/Down steps the cursor through
 # script rows and Back (skipping the blank spacer). PageUp/PageDown
 # scrolls the detail panel unconditionally — there is no focus model
@@ -9882,6 +9926,7 @@ def main():
     global _options_terminal_window
     global _terminal_font_picker_window
     global _spotlights_empty_window
+    global _credits_empty_window
     global _scripts_window, _readability_window, _about_window
     global _update_running_window, _update_result_window
     global _too_small_window
@@ -9956,6 +10001,7 @@ def main():
     _options_terminal_window,           options_terminal_frame         = _build_simple(_options_terminal_text)
     _terminal_font_picker_window,       terminal_font_picker_frame     = _build_simple(_terminal_font_picker_text)
     _spotlights_empty_window,           spotlights_empty_frame         = _build_simple(_spotlights_empty_text)
+    _credits_empty_window,              credits_empty_frame            = _build_simple(_credits_empty_text)
     _scripts_window,               scripts_frame             = _build_simple(_scripts_text)
     _readability_window,           readability_frame         = _build_simple(_readability_text)
     _about_window,                 about_frame               = _build_simple(_about_text)
@@ -10113,6 +10159,7 @@ def main():
         "options_terminal":           options_terminal_frame,
         "terminal_font_picker":       terminal_font_picker_frame,
         "spotlights_empty":           spotlights_empty_frame,
+        "credits_empty":              credits_empty_frame,
         "scripts":                    scripts_frame,
         "readability":                readability_frame,
         "about":                      about_frame,

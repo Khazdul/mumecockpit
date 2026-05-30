@@ -53,7 +53,8 @@ The UI is a frame stack: a single `DynamicContainer` swaps between `main`,
 `options_connection_custom`, `options_spotlights`,
 `options_terminal`, `terminal_font_picker`, `scripts`, `readability`, `about`,
 `history`, `history_detail`, `history_rate`, `history_delete_confirm`,
-`log_view`, `spotlights_empty`, `credits`, `update_running`,
+`log_view`, `spotlights_empty`, `credits`, `credits_empty`,
+`update_running`,
 and `update_result` containers, pushed and popped via
 `_push_frame` / `_pop_frame`. Each
 frame owns its own `KeyBindings` filter (`_in_frame(name)`) so
@@ -69,7 +70,8 @@ no longer a per-pane subframe.
 | Profile page | Sortable table of `ttpp/profiles/*.tin` (Name + Selected columns) paired with a centred Options widget — Select, New, Edit, Rename, Delete, Export, Back. See the [Profile sub-menu](#profile-sub-menu) section below. `default` cannot be renamed or deleted. "Create blank" copies from `bridge/launcher/templates/blank_profile.tin` (single source of truth — see ADR 0042). The active profile is written to `startup.conf` and consumed by `ttpp/core/config.tin` at tt++ startup. |
 | Options page | Navigation hub: **Connection**, **Terminal** (managed-foot deployment only), **Panes**, **Readability**, **Scripts**, **Spotlights**, blank row, **Back**. See the [Options sub-menu](#options-sub-menu) section below for each child frame. All Options changes persist to `bridge/runtime/startup.conf` on Back / ESC; the Terminal child writes its own foot.ini and is not a `startup.conf` consumer. |
 | Scripts page | Opened from Options → Scripts. Two-column `[ list \| detail ]` manager of `lua/scripts/<name>.lua`; toggles enabled state via `bridge/runtime/scripts.conf` (deferred write on Back/ESC). See [`options_scripts` frame](#options_scripts-frame) below. |
-| Spotlights | Cross-character reel of deaths, level-ups, pvp-kills, and achievements aggregated from every character's sealed runs. Opens `log_view` in spotlight mode; empty-state frame when nothing has been captured yet. See the [Spotlights sub-menu](#spotlights-sub-menu) section and ADR 0077. |
+| Spotlights | Cross-character reel of deaths, level-ups, pvp-kills, and achievements aggregated from every character's sealed runs. Opens `log_view` in spotlight mode; empty-state frame when nothing has been captured yet. Plays to the end and parks on the last spotlight (no roll into credits). See the [Spotlights sub-menu](#spotlights-sub-menu) section and ADR 0077. |
+| Credits | Scrolling end-credits chronicle generated from the same aggregated event set as Spotlights, respecting the Options → Spotlights toggles. Sibling of Spotlights; opens the [`credits` frame](#credits-frame) directly (no `.log` loading), or `credits_empty` when `total_count == 0`. The only route to the credits frame. |
 | About page | Reads `bridge/launcher/about.txt`; word-wrapped, cached per resize, scrollable. Current version on the right of the title; an "Update available: vX.Y.Z" line appears in `C_ACCENT` when `version.cache` contains a newer tag |
 | Update flow | Selecting "Update" runs `bridge/release/update.sh` in a worker thread; result keyed off update.sh's exit codes (0/10/20/21/22/other → complete/no-update/aborted/failed). rc==0 re-execs `bridge/launcher/launcher.sh` to pick up the new code |
 | Quit | Selecting Quit exits the launcher immediately to the shell. ESC on the main frame is a no-op (intentionally unbound). |
@@ -2268,7 +2270,8 @@ ESC Back · ↑↓ Scroll · Tab/Shift+Tab Switch table
 ## Spotlights sub-menu
 
 Cross-character reel of significant events. The launcher main menu entry
-sits between `History` and `About`. Two surfaces:
+sits between `History` and `Credits` (with `About` following `Credits`).
+Two surfaces:
 
 - `spotlights_empty` — shown when no spotlights have been captured yet
   (fresh install or every character's sealed runs lack tracked events).
@@ -2346,7 +2349,10 @@ reel, eagerly loads every spotlight's log events (acceptable: total
 volume is bounded — N spotlights × ~15 s each), drops spotlights whose
 clamped window left zero log events, and either pushes
 `spotlights_empty` (zero playable spotlights) or pushes `log_view` in
-spotlight mode via `_enter_log_view_spotlight(playback)`.
+spotlight mode via `_enter_log_view_spotlight(playback)`. The reel plays
+to its end and parks-and-pauses on the last spotlight — it no longer
+rolls into credits (the standalone [Credits](#credits-frame) entry owns
+that).
 
 ### `spotlights_empty` frame
 
@@ -2382,6 +2388,23 @@ but still nudges them toward the right place). The precise
 "unfiltered would have content" check is intentionally not run, since
 a second full JSONL walk for a marginal copy improvement isn't
 worthwhile.
+
+### `credits_empty` frame
+
+The Credits sibling of `spotlights_empty`, wired identically (title
+`─── Credits ───`, centred `C_BODY` body, `Any key to return` `C_HINT`
+footer; any key or ESC pops to the main menu). Pushed by
+`_enter_credits()` when `reel.total_count == 0` — credits is generated
+from the aggregated event set alone, so emptiness is decided on
+`total_count`, with no `.log` loading. The body has the same two
+variants as `spotlights_empty`, picked from the per-kind toggles and
+stored on `_credits_empty_reason`:
+
+- **`"no_data"`** — no tracked event of any kind anywhere yet; the
+  chronicle appears once the player has kills / deaths / level-ups /
+  achievements.
+- **`"filtered"`** — events exist but every shown kind is toggled off
+  in [Options → Spotlights](#options_spotlights-frame).
 
 ### `log_view` in spotlight mode
 
@@ -2477,15 +2500,12 @@ Row layout (8 rows: 2 frame + 6 interior):
   over a 3-cell click region (` ◄ ` / ` ► `); the index text in
   between is inert. Click semantics mirror the `←` and `→` keys:
   `◄` calls `_log_spotlight_seek_relative(-1)` (restart-vs-previous
-  follows the 1.5 s rule); `►` calls `_log_spotlight_seek_relative(1)`,
-  which at the last spotlight delegates to
-  `_log_spotlight_jump_to_credits()` — the same transition
-  `_log_auto_pause_at_end()` uses. On the last spotlight the row
-  reads `◄ <idx> of <total> ► CREDITS` (the suffix in the same
-  primary style) to surface that altered destination; the
-  next-click handler covers the full ` ► CREDITS` fragment so
-  clicking the label triggers the same jump. The centring
-  recomputes per spotlight so the row stays balanced in both modes.
+  follows the 1.5 s rule); `►` calls `_log_spotlight_seek_relative(1)`.
+  The `►` glyph renders on every spotlight, including the last, where
+  its handler is a no-op (the seek refuses to advance past the final
+  entry). There is no `CREDITS` label or special last-spotlight casing —
+  the credits chronicle is reachable only via the main-menu Credits
+  entry.
 - Row 3: `<CHAR>` — uppercased character name, centred,
   `C_SPOTLIGHT_TEXT_PRIMARY`. (The date used to live here; it's been
   dropped — the top header still carries it.)
@@ -2551,16 +2571,15 @@ behaviour). Two spotlight-mode-only additions:
 
 | Key   | Action                                                          |
 |-------|-----------------------------------------------------------------|
-| `→`   | Seek to next spotlight start; **at the last spotlight, jump straight into credits** (same transition `_log_auto_pause_at_end` uses) |
+| `→`   | Seek to next spotlight start; **at the last spotlight, a no-op** (the reel ends there) |
 | `←`   | Seek to previous spotlight start; if `> ~1.5 s` into current, restart current; at the first spotlight, restart it |
 
 Both route through `_log_spotlight_seek_relative`; intermediate seeks
 go through `_log_scrubber_seek` targeting
 `reel.spotlight_start_offsets_us[idx]`, so the play/pause mode and
-overlay timer behave as for any other seek. The "next past the last"
-branch calls `_log_spotlight_jump_to_credits()` directly (cancel
-playback, pop `log_view`, push `credits`). The mouse equivalents are
-the `◄` / `►` glyphs in the info box's top nav row.
+overlay timer behave as for any other seek. A forward step at the last
+spotlight returns without action. The mouse equivalents are the `◄` /
+`►` glyphs in the info box's top nav row.
 
 **Strip scope.** The right-edge strip's click/drag-to-seek covers the
 entire reel timeline (each spotlight is ~15 s, so the global strip
@@ -2570,14 +2589,13 @@ already chunks playback into discrete spotlights, and ←/→ provides
 per-spotlight seeking.
 
 **End of reel.** At `total_duration_us` the existing
-`_log_auto_pause_at_end()` hook fires. In chain mode it parks on the
-final event and flips to pause; in spotlight mode it delegates to
-`_log_spotlight_jump_to_credits()` which cancels playback, pops
-`log_view`, and pushes the `credits` frame with the reel's spotlight
-list. The keyboard `→` and the info-box `►` click at the last
-spotlight take the same path — see the
-[`credits` frame section](#credits-frame) below and
-[ADR 0080](decisions/0080-end-of-reel-credits.md).
+`_log_auto_pause_at_end()` hook fires. In both chain and spotlight mode
+it parks on the final event and flips to pause — the reel no longer
+rolls into credits. The keyboard `→` and the info-box `►` click at the
+last spotlight are no-ops. The scrolling chronicle is reachable only
+via the standalone [Credits](#credits-frame) main-menu entry — see
+[ADR 0080](decisions/0080-end-of-reel-credits.md) for the original
+end-of-reel design this supersedes.
 
 **ESC.** Returns to the launcher main menu (Spotlights is pushed from
 `main`, not from `history`, so the frame stack's previous entry is
@@ -2585,9 +2603,15 @@ spotlight take the same path — see the
 
 ### `credits` frame
 
-End-of-reel scrolling chronicle. Pushed automatically by
-`_log_auto_pause_at_end()` when the spotlight reel finishes
-([ADR 0080](decisions/0080-end-of-reel-credits.md)). Full-screen
+Scrolling end-credits chronicle. Pushed by `_enter_credits()` — the
+standalone `Credits` main-menu entry, sibling of `Spotlights`. It
+aggregates the reel (`spotlights.aggregate_spotlights()`), and on
+`total_count == 0` pushes [`credits_empty`](#credits_empty-frame)
+instead; otherwise it builds the frame straight from `reel.spotlights`
+with no per-spotlight `.log` loading. This is the **only** route to the
+credits frame; the spotlight reel no longer rolls into it
+([ADR 0080](decisions/0080-end-of-reel-credits.md) documents the
+superseded end-of-reel origin). Full-screen
 canvas matched to the host terminal background — the launcher probes
 OSC 11 on `/dev/tty` at startup and falls back to `terminal_bg_fallback`
 from `startup.conf` (default `#000000`) when the terminal does not
@@ -2645,7 +2669,7 @@ in row 0 doesn't clobber it.
 
 **Input.** ESC pops back to the launcher main menu (via
 `_reset_to_main()` — the previous frame stack entry is `main` because
-`_log_auto_pause_at_end()` pops `log_view` before pushing `credits`).
+`_enter_credits()` pushes `credits` directly from the main menu).
 Mouse activity does nothing — the credits control has no mouse
 handler. No other keys are bound.
 
@@ -2999,7 +3023,8 @@ for its title row, footer anchoring, and selectable-row styling —
 `main`, the full Options chain (`options`, `options_panes`,
 `options_connection`, `options_connection_custom`,
 `options_spotlights`), `scripts`, `about`,
-`spotlights_empty`, and the `update_result` modal dialog. The
+`spotlights_empty`, `credits_empty`, and the `update_result` modal
+dialog. The
 `profile` and `history` chains keep their
 bespoke widget grammars; `log_view` keeps its own `C_LOG_*` palette.
 See [ADR 0085](decisions/0085-shared-menu-chrome.md).
