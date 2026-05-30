@@ -49,10 +49,10 @@ from palette import (  # noqa: E402
     C_BUTTON, C_BUTTON_HOVER, C_BUTTON_DISABLED,
     C_BUTTON_INACTIVE, C_BUTTON_ACTIVE_UNFOCUSED, C_BUTTON_ACTIVE_FOCUSED,
     C_OK, C_CURSOR_CELL,
-    C_LOG_CURSOR,
-    C_LOG_OVERLAY_BG, C_LOG_OVERLAY_FG, C_LOG_OVERLAY_HINT,
-    C_LOG_SCRUBBER_FILLED, C_LOG_SCRUBBER_EMPTY, C_LOG_SCRUBBER_THUMB,
-    C_LOG_BUTTON_IDLE, C_LOG_BUTTON_HOVER,
+    C_LOG_CURSOR, C_PANE_OFF,
+    C_LOG_STRIP_PLAYED, C_LOG_STRIP_REMAINING, C_LOG_STRIP_MARKER,
+    C_LOG_EVENT_MARK,
+    C_LOG_BOX_FRAME, C_LOG_BOX_FG, C_LOG_BOX_DIM, C_LOG_BOX_BTN_HOVER,
     C_SPOTLIGHT_BOX_BG, C_SPOTLIGHT_FRAME, spotlight_frame_style,
     C_SPOTLIGHT_TEXT_PRIMARY, C_SPOTLIGHT_TEXT_SECONDARY,
     _S_GAINED, _S_LOSS, _S_LABEL, _S_VALUE, _S_TP_BAR,
@@ -412,18 +412,23 @@ _log_last_playhead_index    = -1       # last index pushed to renderer (tick dir
 _log_tick_task              = None     # asyncio.Task driving play-mode redraws
 _LOG_TICK_HZ                = 30
 _LOG_PAGE_STEP              = 20       # PgUp/PgDn cursor delta in pause
-# Floating overlays (top header + bottom controls)
-_log_overlays_visible       = True     # forced True in pause; auto-hidden after 3 s in play
+# Floating chrome (top header + right-edge vertical strip + control box).
+# All three hide together after _LOG_OVERLAY_HIDE_DELAY seconds in play
+# and are permanent in pause; gated by _log_overlays_visible.
+_log_overlays_visible       = True     # forced True in pause; auto-hidden in play
 _log_overlays_hide_at       = None     # monotonic() deadline; None disables timer
 _log_overlay_hover          = None     # "rewind" | "playpause" | None
-_LOG_OVERLAY_HIDE_DELAY     = 3.0
+_LOG_OVERLAY_HIDE_DELAY     = 6.0
 _LOG_OVERLAY_HEADER_W       = 80
-_LOG_OVERLAY_CONTROLS_W     = 70
-_LOG_OVERLAY_SCRUBBER_W     = 30
-# Scrubber drag capture
-_log_dragging_scrubber      = False    # True between MOUSE_DOWN on scrubber and release
-_log_scrubber_left          = 0        # absolute column of the scrubber's first cell
-_log_scrubber_width         = 0        # number of scrubber cells in the current render
+# Right-edge vertical strip geometry: a 5-col event-marker field followed
+# by a 2-col playhead track, pinned to the right edge full-height.
+_LOG_STRIP_W                = 2        # playhead track width (cols)
+_LOG_MARK_W                 = 5        # event-marker field width (cols)
+_LOG_RAIL_W                 = _LOG_STRIP_W + _LOG_MARK_W   # 7
+# Strip drag capture + last-render geometry for vertical click/drag-seek.
+_log_dragging_strip         = False    # True between MOUSE_DOWN on strip and release
+_log_strip_top              = 0        # absolute top row of the strip in the last render
+_log_strip_rows             = 0        # number of strip rows in the last render
 
 # log_view mode: "chain" plays a SessionSummary's stitched chain; "spotlight"
 # plays a SpotlightReel via SpotlightPlayback. The playback is set on
@@ -6982,7 +6987,7 @@ def _exit_log_view():
     global _log_view_scroll, _log_view_cols, _log_view_lines
     global _log_view_event_rows, _log_last_playhead_index
     global _log_overlays_visible, _log_overlays_hide_at, _log_overlay_hover
-    global _log_dragging_scrubber
+    global _log_dragging_strip
     global _log_view_mode, _log_view_reel
     _log_cancel_tick_task()
     _log_view_summary    = None
@@ -6997,7 +7002,7 @@ def _exit_log_view():
     _log_overlays_visible    = True
     _log_overlays_hide_at    = None
     _log_overlay_hover       = None
-    _log_dragging_scrubber   = False
+    _log_dragging_strip      = False
     _pop_frame()
 
 
@@ -7743,7 +7748,7 @@ class _LogViewControl(FormattedTextControl):
 
 
 # ---------------------------------------------------------------------------
-# log_view overlays — top header + bottom controls (Phase 3, prompt 3)
+# log_view chrome — top header + right-edge strip + floating control box
 # ---------------------------------------------------------------------------
 def _log_format_mmss(us):
     """Format a microsecond duration as MM:SS. Allows minutes to exceed
@@ -7764,10 +7769,18 @@ def _log_current_run_index():
     return max(0, min(len(pb.events) - 1, _log_cursor_index))
 
 
+def _log_overlay_bg():
+    """Background style for log_view chrome cells. The chrome blends with
+    the host canvas by painting its blank cells in the resolved terminal
+    background (ADR 0099) rather than a panel tint; on a black terminal
+    this is just `bg:#000000`."""
+    return f"bg:{_terminal_bg or '#000000'}"
+
+
 def _log_overlay_inert_handler(ev):
     """MOUSE_MOVE on an overlay area not bound to a control: refresh the
     timer and clear any stale button hover so it doesn't linger. While a
-    scrubber drag is in progress, route the event to the seek dispatcher
+    strip drag is in progress, route the event to the seek dispatcher
     so a drag that drifts onto overlay padding keeps tracking."""
     if _log_maybe_handle_drag(ev):
         return
@@ -7781,19 +7794,69 @@ def _log_pad(width, handler=None):
     overlay bg, optionally with a mouse handler."""
     if width <= 0:
         return None
-    if handler is None:
-        return (C_LOG_OVERLAY_BG, " " * width, _log_overlay_inert_handler)
-    return (C_LOG_OVERLAY_BG, " " * width, handler)
+    return (_log_overlay_bg(), " " * width, handler or _log_overlay_inert_handler)
 
 
 # --- Top header ------------------------------------------------------------
+def _log_header_trunc(frags, maxlen):
+    """Truncate a (style, text) fragment list to at most `maxlen` cells,
+    preserving per-fragment styles. Returns (frags, total_len)."""
+    out, used = [], 0
+    for style, text in frags:
+        if used >= maxlen:
+            break
+        take = text[: maxlen - used]
+        if take:
+            out.append((style, take))
+            used += len(take)
+    return out, used
+
+
+def _log_header_assemble(left_frags, hint, cols):
+    """Lay out a header row: a styled left run, a flexible gap, and the
+    right-aligned `hint`, centred in an ~80-col inner block and padded to
+    full width with terminal-bg fill (no panel tint). Each fragment is
+    composited onto the overlay bg and carries the inert overlay handler
+    so mouse motion re-arms the auto-hide timer. The centred block is
+    confined to the canvas left of the playback rail (`_LOG_RAIL_W`); the
+    rail region is bg-filled here and overdrawn by the strip Float."""
+    bg = _log_overlay_bg()
+    usable = max(1, cols - _LOG_RAIL_W)
+    inner_w = min(_LOG_OVERLAY_HEADER_W, usable)
+    left_len = sum(len(t) for _, t in left_frags)
+    avail_left = max(0, inner_w - len(hint) - 1)
+    if left_len > avail_left:
+        left_frags, left_len = _log_header_trunc(left_frags, avail_left)
+    gap = max(1, inner_w - left_len - len(hint))
+    hint_text = hint[:inner_w]
+    side = max(0, (usable - inner_w) // 2)
+    right_side = max(0, cols - inner_w - side)
+
+    frags = []
+    pad = _log_pad(side)
+    if pad:
+        frags.append(pad)
+    for style, text in left_frags:
+        if text:
+            frags.append((f"{style} {bg}", text, _log_overlay_inert_handler))
+    frags.append((bg, " " * gap, _log_overlay_inert_handler))
+    frags.append((f"{C_HINT} {bg}", hint_text, _log_overlay_inert_handler))
+    pad = _log_pad(right_side)
+    if pad:
+        frags.append(pad)
+    return frags
+
+
 def _log_header_text():
     """Build the top header overlay row. Always returns one row's worth
-    of fragments, sized to the terminal width."""
+    of fragments, sized to the terminal width. Rendered on the host
+    canvas (no panel tint): the character name reads a touch brighter
+    (C_BODY), the rest in dim grey (C_HINT), separators dimmer still
+    (C_PANE_OFF). The elapsed/total clock now lives in the control box."""
     pb = _log_view_playback
     cols = max(1, _term_cols())
     if pb is None or not pb.events:
-        return [(C_LOG_OVERLAY_BG, " " * cols, _log_overlay_inert_handler)]
+        return [(_log_overlay_bg(), " " * cols, _log_overlay_inert_handler)]
 
     if _log_view_mode == "spotlight":
         return _log_spotlight_header_text(cols)
@@ -7809,52 +7872,11 @@ def _log_header_text():
     ts        = info.get("start_ts")
     when_part = time.strftime("%Y-%m-%d %H:%M", time.localtime(ts)) if isinstance(ts, int) else ""
 
-    elapsed = _log_format_mmss(_log_current_playback_us())
-    at_end = (_log_mode == "pause"
-              and _log_current_playback_us() >= pb.total_duration_us
-              and pb.total_duration_us > 0)
-    if at_end:
-        elapsed_part = f"{elapsed} · End of session"
-    else:
-        elapsed_part = elapsed
-
-    hint = "ESC Back"
-
-    left_pieces = [char_part, run_part]
+    sep = "  ·  "
+    left_frags = [(C_BODY, char_part), (C_PANE_OFF, sep), (C_HINT, run_part)]
     if when_part:
-        left_pieces.append(when_part)
-    left_pieces.append(elapsed_part)
-    left_text = "  ·  ".join(left_pieces)
-
-    # Inner block: ~80 cols when the terminal is wider, else full width.
-    inner_w = min(_LOG_OVERLAY_HEADER_W, cols)
-    gap = max(1, inner_w - len(left_text) - len(hint))
-    body = left_text + (" " * gap) + hint
-    if len(body) > inner_w:
-        overflow = len(body) - inner_w
-        trimmed_left = left_text[: max(0, len(left_text) - overflow)]
-        body = trimmed_left + " " + hint
-        if len(body) > inner_w:
-            body = body[:inner_w]
-    body_len = len(body)
-    body_hint = body[body_len - len(hint):] if body_len >= len(hint) else hint
-    body_left = body[: body_len - len(body_hint)] if body_len > len(body_hint) else ""
-
-    side = max(0, (cols - inner_w) // 2)
-    right_side = max(0, cols - inner_w - side)
-
-    frags = []
-    pad = _log_pad(side)
-    if pad:
-        frags.append(pad)
-    if body_left:
-        frags.append((C_LOG_OVERLAY_FG, body_left, _log_overlay_inert_handler))
-    if body_hint:
-        frags.append((C_LOG_OVERLAY_HINT, body_hint, _log_overlay_inert_handler))
-    pad = _log_pad(right_side)
-    if pad:
-        frags.append(pad)
-    return frags
+        left_frags += [(C_PANE_OFF, sep), (C_HINT, when_part)]
+    return _log_header_assemble(left_frags, "ESC Back", cols)
 
 
 # --- Spotlight-mode helpers (header + floating overlay + seek) ------------
@@ -7879,10 +7901,11 @@ def _log_spotlight_header_text(cols):
     spotlight's first-event date instead of the run's run_start ts.
     Trims the clock/elapsed segment that chain mode shows — the
     nav row inside the floating info box surfaces position within
-    the reel, and the freed space holds the ←/→ hint."""
+    the reel, and the freed space holds the ←/→ hint. Shares the
+    chain header's de-cyaned styling via `_log_header_assemble`."""
     info = _log_spotlight_current()
     if info is None:
-        return [(C_LOG_OVERLAY_BG, " " * cols, _log_overlay_inert_handler)]
+        return [(_log_overlay_bg(), " " * cols, _log_overlay_inert_handler)]
     spot, spot_idx, _ = info
     reel = _log_view_reel
 
@@ -7899,60 +7922,37 @@ def _log_spotlight_header_text(cols):
     first_ts = spot.events[0].ts
     when_part = time.strftime("%Y-%m-%d", time.localtime(first_ts))
 
-    hint = "ESC Back · ←→ Prev/next"
-    left_text = "  ·  ".join([char_part, n_part, when_part])
-
-    inner_w = min(_LOG_OVERLAY_HEADER_W, cols)
-    gap = max(1, inner_w - len(left_text) - len(hint))
-    body = left_text + (" " * gap) + hint
-    if len(body) > inner_w:
-        overflow = len(body) - inner_w
-        trimmed_left = left_text[: max(0, len(left_text) - overflow)]
-        body = trimmed_left + " " + hint
-        if len(body) > inner_w:
-            body = body[:inner_w]
-    body_len  = len(body)
-    body_hint = body[body_len - len(hint):] if body_len >= len(hint) else hint
-    body_left = body[: body_len - len(body_hint)] if body_len > len(body_hint) else ""
-
-    side = max(0, (cols - inner_w) // 2)
-    right_side = max(0, cols - inner_w - side)
-
-    frags = []
-    pad = _log_pad(side)
-    if pad:
-        frags.append(pad)
-    if body_left:
-        frags.append((C_LOG_OVERLAY_FG, body_left, _log_overlay_inert_handler))
-    if body_hint:
-        frags.append((C_LOG_OVERLAY_HINT, body_hint, _log_overlay_inert_handler))
-    pad = _log_pad(right_side)
-    if pad:
-        frags.append(pad)
-    return frags
+    sep = "  ·  "
+    left_frags = [
+        (C_BODY, char_part), (C_PANE_OFF, sep),
+        (C_HINT, n_part),    (C_PANE_OFF, sep),
+        (C_HINT, when_part),
+    ]
+    return _log_header_assemble(left_frags, "ESC Back · ←→ Prev/next", cols)
 
 
 # Floating spotlight info box. A 30×8 framed rectangle: top/bottom rows
 # are the half-block frame (`█▀▄▌▐` in black on the cyan BG), 6 interior
 # rows of `interior_width = _SPOTLIGHT_BOX_W - 2 = 28` cells flanked by
-# `▌` / `▐` side glyphs. The 2-cell top/right margin lives in the Float
-# positioning (top=2, right=2); the narrow-terminal suppression
-# threshold is box width + 4 (margin + box + breathing room).
+# `▌` / `▐` side glyphs. Pinned top=2; its right offset clears the
+# full-height playback rail (`_LOG_RAIL_W`) plus a 2-cell margin so the
+# box sits to the left of the strip rather than overlapping it.
 _SPOTLIGHT_BOX_W      = 30
 _SPOTLIGHT_BOX_H      = 8
 _SPOTLIGHT_BOX_MARGIN = 2
+_SPOTLIGHT_BOX_RIGHT  = _LOG_RAIL_W + _SPOTLIGHT_BOX_MARGIN
 
 
 def _log_spotlight_overlay_visible():
     """The spotlight info box is always visible while in spotlight mode
-    (the top header and bottom controls keep their auto-hide; the box
+    (the header, strip, and control box keep their auto-hide; the box
     does not). Hides only when the terminal is too narrow for the box
-    plus its margin — playback continues without it."""
+    plus its margin and the rail — playback continues without it."""
     if _log_view_mode != "spotlight":
         return False
     if _log_view_reel is None or not _log_view_reel.spotlights:
         return False
-    if _term_cols() < _SPOTLIGHT_BOX_W + _SPOTLIGHT_BOX_MARGIN * 2:
+    if _term_cols() < _SPOTLIGHT_BOX_W + _SPOTLIGHT_BOX_RIGHT + _SPOTLIGHT_BOX_MARGIN:
         return False
     return True
 
@@ -8231,7 +8231,7 @@ def _log_scrubber_seek(target_us):
 
 def _log_make_button_handler(name, on_click):
     """Build a fragment mouse handler for a named overlay button. While a
-    scrubber drag is in progress, hover is NOT updated (so buttons the
+    strip drag is in progress, hover is NOT updated (so buttons the
     pointer crosses mid-drag don't flicker) and the event is routed to
     the seek dispatcher instead of the button's normal handling."""
     def _h(ev):
@@ -8250,53 +8250,51 @@ def _log_make_button_handler(name, on_click):
     return _h
 
 
-def _log_seek_to_cell(cell, total_cells):
-    """Map a scrubber cell index (0-based) to a playback offset and seek
-    there. Uses c / (W - 1) so c=0 lands exactly at 0 and c=W-1 lands
-    exactly at total_duration_us — the rightmost cell must be reachable
-    so end-of-session click/drag can trigger auto-pause. No-op when the
-    chain has no duration."""
+def _log_strip_seek_to_row(row):
+    """Map an absolute strip row to a playback offset and seek there.
+    `f = (row - strip_top) / (rows - 1)`, clamped to [0, 1]: the top row
+    lands at offset 0, the bottom row exactly at total_duration_us (so
+    a click/drag to the very bottom can trigger end-of-session
+    auto-pause). No-op when the chain has no duration."""
     pb = _log_view_playback
-    if pb is None or pb.total_duration_us <= 0 or total_cells <= 0:
+    rows = _log_strip_rows
+    if pb is None or pb.total_duration_us <= 0 or rows <= 0:
         return
-    c = max(0, min(total_cells - 1, int(cell)))
-    if total_cells == 1:
-        target = 0
+    if rows == 1:
+        f = 0.0
     else:
-        target = int(c / (total_cells - 1) * pb.total_duration_us)
-    _log_scrubber_seek(target)
+        f = (row - _log_strip_top) / (rows - 1)
+        f = max(0.0, min(1.0, f))
+    _log_scrubber_seek(round(f * pb.total_duration_us))
 
 
 def _log_handle_drag_event(ev):
-    """Route a mouse event from any log_view control to the scrubber-seek
-    logic. The scrubber column is derived from the event's absolute column
-    relative to the last rendered scrubber's left edge (the overlays all
-    span the full width, so ev.position.x is absolute). Clamps to
-    [0, W-1] so drift past either end pins to the corresponding endpoint."""
-    if _log_scrubber_width <= 0:
-        return
-    col = ev.position.x - _log_scrubber_left
-    _log_seek_to_cell(col, _log_scrubber_width)
+    """Route a mouse event from any log_view control to the vertical
+    strip-seek logic. The strip spans the full terminal height pinned at
+    row 0, so `ev.position.y` is the absolute strip row; the clamp in
+    `_log_strip_seek_to_row` pins drift past either end to the
+    corresponding endpoint."""
+    _log_strip_seek_to_row(ev.position.y)
 
 
 def _log_end_drag():
-    """Clear the scrubber-drag capture flag and force a redraw so any
-    stale state (e.g. the playhead position at release) is rendered."""
-    global _log_dragging_scrubber
-    if not _log_dragging_scrubber:
+    """Clear the strip-drag capture flag and force a redraw so any stale
+    state (e.g. the playhead position at release) is rendered."""
+    global _log_dragging_strip
+    if not _log_dragging_strip:
         return
-    _log_dragging_scrubber = False
+    _log_dragging_strip = False
     if _app:
         _app.invalidate()
 
 
 def _log_maybe_handle_drag(ev):
-    """If a scrubber drag is in progress, consume `ev` according to its
+    """If a strip drag is in progress, consume `ev` according to its
     type and return True. Returns False otherwise so the caller falls
     through to normal handling. MOUSE_DOWN always ends any stale drag
     but is not consumed — the receiving handler (which may be the
-    scrubber itself, re-arming the flag) still runs."""
-    if not _log_dragging_scrubber:
+    strip itself, re-arming the flag) still runs."""
+    if not _log_dragging_strip:
         return False
     t = ev.event_type
     if t == MouseEventType.MOUSE_MOVE:
@@ -8315,125 +8313,194 @@ def _log_maybe_handle_drag(ev):
     return False
 
 
-def _log_make_scrubber_handler(cell_index, total_cells):
-    """Per-cell scrubber mouse handler. MOUSE_DOWN sets the drag-capture
-    flag (so subsequent MOUSE_MOVE events on any control are routed back
-    to the seek dispatcher) and performs the initial seek. In-row drag
-    is normally consumed by `_log_maybe_handle_drag` before this branch
-    runs; the local `is_drag` branch is a defensive fallback that uses
-    the per-cell index directly, in case the absolute-column mapping is
-    ever out of date. Release ends the drag through
-    `_log_maybe_handle_drag` on any log_view control."""
-    def _h(ev):
-        if _log_maybe_handle_drag(ev):
-            return
-        global _log_dragging_scrubber
-        t = ev.event_type
-        is_drag = (t == MouseEventType.MOUSE_MOVE
-                   and getattr(ev, "button", MouseButton.NONE) != MouseButton.NONE)
-        if t == MouseEventType.MOUSE_DOWN:
-            _log_dragging_scrubber = True
-            _log_set_overlay_hover(None)
-            _log_touch_overlays()
-            _log_seek_to_cell(cell_index, total_cells)
-            return
-        if is_drag:
-            _log_set_overlay_hover(None)
-            _log_touch_overlays()
-            _log_seek_to_cell(cell_index, total_cells)
-            return
-        if t == MouseEventType.MOUSE_MOVE:
-            _log_set_overlay_hover(None)
-            _log_touch_overlays()
-            return
+def _log_strip_handler(ev):
+    """Mouse handler shared by every cell of the right-edge strip:
+    click / drag-to-seek. MOUSE_DOWN arms the drag capture (so subsequent
+    MOUSE_MOVE events on any log_view control route back through
+    `_log_maybe_handle_drag`) and performs the initial seek; an in-row
+    drag is normally consumed by `_log_maybe_handle_drag` before this
+    body runs. In play mode the same gesture both touches (reveals) the
+    chrome and seeks."""
+    if _log_maybe_handle_drag(ev):
+        return
+    global _log_dragging_strip
+    t = ev.event_type
+    is_drag = (t == MouseEventType.MOUSE_MOVE
+               and getattr(ev, "button", MouseButton.NONE) != MouseButton.NONE)
+    if t == MouseEventType.MOUSE_DOWN:
+        _log_dragging_strip = True
+        _log_set_overlay_hover(None)
         _log_touch_overlays()
-    return _h
+        _log_strip_seek_to_row(ev.position.y)
+        return
+    if is_drag:
+        _log_set_overlay_hover(None)
+        _log_touch_overlays()
+        _log_strip_seek_to_row(ev.position.y)
+        return
+    if t == MouseEventType.MOUSE_MOVE:
+        _log_set_overlay_hover(None)
+        _log_touch_overlays()
+        return
+    _log_touch_overlays()
 
 
-def _log_controls_text():
-    """Build the bottom controls overlay row (rewind / play-pause /
-    scrubber / time). The whole row is filled with the overlay bg.
-    Also publishes the scrubber's absolute column range into
-    `_log_scrubber_left` / `_log_scrubber_width` for the drag
-    dispatcher (see `_log_handle_drag_event`)."""
-    global _log_scrubber_left, _log_scrubber_width
+# --- Right-edge vertical strip ---------------------------------------------
+def _log_strip_text():
+    """Build the right-edge vertical playback strip: a 5-col event-marker
+    field followed by a 2-col playhead track, full terminal height. The
+    top is run start (offset 0), the bottom is the end. Every cell is
+    painted (blank cells in the terminal bg) so the rail fully occludes
+    any server text under it. Also records the strip's absolute top row
+    and height for the vertical seek (`_log_strip_seek_to_row`)."""
+    global _log_strip_top, _log_strip_rows
     pb = _log_view_playback
-    cols = max(1, _term_cols())
+    rows = max(1, _term_rows())
+    _log_strip_top  = 0
+    _log_strip_rows = rows
+
+    bg_style   = f"bg:{_terminal_bg or '#000000'}"
+    mark_blank = (f"{C_LOG_EVENT_MARK} {bg_style}", " " * _LOG_MARK_W, _log_strip_handler)
+
     if pb is None or not pb.events:
-        _log_scrubber_left  = 0
-        _log_scrubber_width = 0
-        return [(C_LOG_OVERLAY_BG, " " * cols, _log_overlay_inert_handler)]
+        frags = []
+        for i in range(rows):
+            frags.append(mark_blank)
+            frags.append((C_LOG_STRIP_REMAINING, "█" * _LOG_STRIP_W, _log_strip_handler))
+            if i < rows - 1:
+                frags.append(("", "\n"))
+        return frags
 
-    # Button glyphs. play_glyph reflects the ACTION a click would take —
-    # standard video-player convention: play icon while paused, pause
-    # icon while playing.
-    rewind_label = " ⏮ Rewind "
-    if _log_mode == "play":
-        pp_label = " ⏸ Pause "
-    else:
-        pp_label = " ▶ Play  "
+    total = pb.total_duration_us
+    cur   = _log_current_playback_us()
+    f = 0.0 if total <= 0 else max(0.0, min(1.0, cur / total))
+    # Sub-row-precise playhead: `half` indexes half-rows top→bottom; the
+    # boundary row `r` carries a gold half-block sitting on the exact
+    # played/unplayed seam (upper half when `half` is even).
+    half  = round(f * (rows * 2 - 1))
+    r     = half // 2
+    upper = (half % 2 == 0)
 
-    elapsed = _log_format_mmss(_log_current_playback_us())
-    total   = _log_format_mmss(pb.total_duration_us)
-    time_label = f" {elapsed} / {total} "
+    # Group event markers by row; distinct kinds per row render in the
+    # fixed order A, D, K, L followed by one ►.
+    by_row = {}
+    if total > 0:
+        for letter, off in pb.event_markers():
+            mr = round(off / total * (rows - 1))
+            if 0 <= mr < rows:
+                by_row.setdefault(mr, set()).add(letter)
 
-    scrubber_w = _LOG_OVERLAY_SCRUBBER_W
-    gap = "  "
-    inner_w = len(rewind_label) + len(pp_label) + len(gap) + scrubber_w + len(gap) + len(time_label)
-    inner_w = min(inner_w, _LOG_OVERLAY_CONTROLS_W, cols)
-
-    overflow = (len(rewind_label) + len(pp_label) + len(gap)
-                + scrubber_w + len(gap) + len(time_label)) - inner_w
-    if overflow > 0:
-        scrubber_w = max(4, scrubber_w - overflow)
-
-    side = max(0, (cols - inner_w) // 2)
-    right_side = max(0, cols - inner_w - side)
+    played_bg    = C_LOG_STRIP_PLAYED.replace("fg:", "bg:")
+    remaining_bg = C_LOG_STRIP_REMAINING.replace("fg:", "bg:")
+    marker_upper = f"fg:{C_LOG_STRIP_MARKER} {remaining_bg}"
+    marker_lower = f"fg:{C_LOG_STRIP_MARKER} {played_bg}"
+    mark_style   = f"{C_LOG_EVENT_MARK} {bg_style}"
 
     frags = []
-    pad = _log_pad(side)
-    if pad:
-        frags.append(pad)
-
-    rewind_style = C_LOG_BUTTON_HOVER if _log_overlay_hover == "rewind" else C_LOG_BUTTON_IDLE
-    frags.append((rewind_style, rewind_label,
-                  _log_make_button_handler("rewind", _log_rewind_click)))
-
-    pp_style = C_LOG_BUTTON_HOVER if _log_overlay_hover == "playpause" else C_LOG_BUTTON_IDLE
-    frags.append((pp_style, pp_label,
-                  _log_make_button_handler("playpause", _log_toggle_play_pause)))
-
-    frags.append((C_LOG_OVERLAY_BG, gap, _log_overlay_inert_handler))
-
-    # Record the scrubber's absolute left edge + width so a drag that
-    # drifts off the scrubber row can still map ev.position.x → cell.
-    # The bottom overlay Float spans full width with left=0, so the
-    # accumulated "side + buttons + gap" column count is absolute.
-    _log_scrubber_left  = side + len(rewind_label) + len(pp_label) + len(gap)
-    _log_scrubber_width = scrubber_w
-
-    if pb.total_duration_us > 0:
-        thumb_cell = int(_log_current_playback_us() / pb.total_duration_us * scrubber_w)
-        if thumb_cell >= scrubber_w:
-            thumb_cell = scrubber_w - 1
-    else:
-        thumb_cell = 0
-    for c in range(scrubber_w):
-        if c < thumb_cell:
-            style, glyph = C_LOG_SCRUBBER_FILLED, "━"
-        elif c == thumb_cell:
-            style, glyph = C_LOG_SCRUBBER_THUMB, "●"
+    for i in range(rows):
+        letters = by_row.get(i)
+        if letters:
+            field = ("".join(c for c in "ADKL" if c in letters) + "►").rjust(_LOG_MARK_W)
         else:
-            style, glyph = C_LOG_SCRUBBER_EMPTY, "─"
-        frags.append((style, glyph, _log_make_scrubber_handler(c, scrubber_w)))
+            field = " " * _LOG_MARK_W
+        frags.append((mark_style, field, _log_strip_handler))
+        if i < r:
+            frags.append((C_LOG_STRIP_PLAYED, "█" * _LOG_STRIP_W, _log_strip_handler))
+        elif i > r:
+            frags.append((C_LOG_STRIP_REMAINING, "█" * _LOG_STRIP_W, _log_strip_handler))
+        elif upper:
+            frags.append((marker_upper, "▀" * _LOG_STRIP_W, _log_strip_handler))
+        else:
+            frags.append((marker_lower, "▄" * _LOG_STRIP_W, _log_strip_handler))
+        if i < rows - 1:
+            frags.append(("", "\n"))
+    return frags
 
-    frags.append((C_LOG_OVERLAY_BG, gap, _log_overlay_inert_handler))
 
-    frags.append((C_LOG_OVERLAY_FG, time_label, _log_overlay_inert_handler))
+# --- Floating control box --------------------------------------------------
+# Row 1 is `◄◄ Rewind` + a play/pause control; the control's glyph and
+# label are emitted as separate fragments (gold glyph, grey label, both
+# hover-lit) so the box can't reuse a single play-state string. The inner
+# width is sized to the wider `▌▌ Pause` state so the frame is stable
+# across the toggle; +2 for the framing │ columns.
+_LOG_BOX_REWIND  = "◄◄ Rewind"
+_LOG_BOX_PAUSE   = "▌▌ Pause"
+_LOG_BOX_SEP     = "  "
+_LOG_BOX_INNER_W = 1 + len(_LOG_BOX_REWIND) + len(_LOG_BOX_SEP) + len(_LOG_BOX_PAUSE) + 1
+_LOG_BOX_W       = _LOG_BOX_INNER_W + 2
+_LOG_BOX_H       = 4
 
-    pad = _log_pad(right_side)
-    if pad:
-        frags.append(pad)
+
+def _log_box_text():
+    """Build the floating control box: a framed 2-content-row panel with
+    `◄◄ Rewind` + a gold play/pause control on row 1 and the
+    `MM:SS / MM:SS` clock on row 2. Painted on the host canvas (terminal
+    bg, no panel tint, no shadow) so it blends like the header; frame in
+    safe glyphs `┌ ─ ┐ │ └ ┘`. The Rewind and play/pause segments each
+    light up with `C_LOG_BOX_BTN_HOVER` on mouse-over and reuse
+    `_log_rewind_click` / `_log_toggle_play_pause` on click."""
+    pb = _log_view_playback
+    bg_style    = f"bg:{_terminal_bg or '#000000'}"
+    frame_style = f"{C_LOG_BOX_FRAME} {bg_style}"
+    label_style = f"{C_LOG_BOX_FG} {bg_style}"
+    dim_style   = f"{C_LOG_BOX_DIM} {bg_style}"
+    gold_style  = f"fg:{C_LOG_STRIP_MARKER} {bg_style}"
+    hover_style = C_LOG_BOX_BTN_HOVER
+    inner = _LOG_BOX_INNER_W
+
+    if _log_mode == "play":
+        pp_glyph, pp_label = "▌▌", " Pause"
+    else:
+        pp_glyph, pp_label = "►", " Play"
+
+    content_len = len(_LOG_BOX_REWIND) + len(_LOG_BOX_SEP) + len(pp_glyph) + len(pp_label)
+    pad_total = max(0, inner - content_len)
+    pad_l = pad_total // 2
+    pad_r = pad_total - pad_l
+
+    rewind_h = _log_make_button_handler("rewind", _log_rewind_click)
+    pp_h     = _log_make_button_handler("playpause", _log_toggle_play_pause)
+    rewind_st = hover_style if _log_overlay_hover == "rewind" else label_style
+    if _log_overlay_hover == "playpause":
+        pp_glyph_st = pp_label_st = hover_style
+    else:
+        pp_glyph_st, pp_label_st = gold_style, label_style
+
+    frags = []
+    # Top frame.
+    frags.append((frame_style, "┌" + "─" * inner + "┐", _log_overlay_inert_handler))
+    frags.append(("", "\n"))
+    # Row 1: Rewind + play/pause, centred.
+    frags.append((frame_style, "│", _log_overlay_inert_handler))
+    if pad_l:
+        frags.append((bg_style, " " * pad_l, _log_overlay_inert_handler))
+    frags.append((rewind_st, _LOG_BOX_REWIND, rewind_h))
+    frags.append((bg_style, _LOG_BOX_SEP, _log_overlay_inert_handler))
+    frags.append((pp_glyph_st, pp_glyph, pp_h))
+    frags.append((pp_label_st, pp_label, pp_h))
+    if pad_r:
+        frags.append((bg_style, " " * pad_r, _log_overlay_inert_handler))
+    frags.append((frame_style, "│", _log_overlay_inert_handler))
+    frags.append(("", "\n"))
+    # Row 2: elapsed / total clock, centred.
+    if pb is not None and pb.events:
+        time_text = f"{_log_format_mmss(_log_current_playback_us())} / {_log_format_mmss(pb.total_duration_us)}"
+    else:
+        time_text = ""
+    time_text = time_text[:inner]
+    tl = (inner - len(time_text)) // 2
+    tr = inner - len(time_text) - tl
+    frags.append((frame_style, "│", _log_overlay_inert_handler))
+    if tl:
+        frags.append((bg_style, " " * tl, _log_overlay_inert_handler))
+    if time_text:
+        frags.append((dim_style, time_text, _log_overlay_inert_handler))
+    if tr:
+        frags.append((bg_style, " " * tr, _log_overlay_inert_handler))
+    frags.append((frame_style, "│", _log_overlay_inert_handler))
+    frags.append(("", "\n"))
+    # Bottom frame.
+    frags.append((frame_style, "└" + "─" * inner + "┘", _log_overlay_inert_handler))
     return frags
 
 
@@ -9871,9 +9938,19 @@ def main():
         content=FormattedTextControl(text=_log_header_text, focusable=False),
         height=1, wrap_lines=False, always_hide_cursor=True,
     )
-    log_controls_win = Window(
-        content=FormattedTextControl(text=_log_controls_text, focusable=False),
-        height=1, wrap_lines=False, always_hide_cursor=True,
+    # Right-edge vertical strip: a full-height Float of _LOG_RAIL_W cols
+    # pinned to the right edge, gated by the shared auto-hide filter.
+    log_strip_win = Window(
+        content=FormattedTextControl(text=_log_strip_text, focusable=False),
+        width=_LOG_RAIL_W, wrap_lines=False, always_hide_cursor=True,
+        style=f"bg:{_terminal_bg}" if _terminal_bg else "bg:#000000",
+    )
+    # Floating control box: pinned 8 cols in from the right edge, 1 row up
+    # from the bottom (clear of the strip rail), gated by the same filter.
+    log_box_win = Window(
+        content=FormattedTextControl(text=_log_box_text, focusable=False),
+        width=_LOG_BOX_W, height=_LOG_BOX_H,
+        wrap_lines=False, always_hide_cursor=True,
     )
     log_spotlight_win = Window(
         content=FormattedTextControl(text=_log_spotlight_overlay_text,
@@ -9893,20 +9970,29 @@ def main():
                                              filter=_log_overlays_filter),
             ),
             # Top-right floating spotlight info box (spotlight mode only).
-            # Pinned with a 2-cell margin from both the top and right edges
-            # of the log_view frame; framed in half-block glyphs with
+            # Pinned to the right of the playback rail (top=2,
+            # right=_SPOTLIGHT_BOX_RIGHT) so it sits beside the strip
+            # rather than overlapping it; framed in half-block glyphs with
             # full-block █ corners on a bright banner-hue fill. Visibility
-            # is *not* gated by the bottom controls' auto-hide — only by
-            # the spotlight-mode predicate and a narrow-terminal fallback.
+            # is *not* gated by the auto-hide — only by the spotlight-mode
+            # predicate and a narrow-terminal fallback.
             Float(
-                top=_SPOTLIGHT_BOX_MARGIN, right=_SPOTLIGHT_BOX_MARGIN,
+                top=_SPOTLIGHT_BOX_MARGIN, right=_SPOTLIGHT_BOX_RIGHT,
                 width=_SPOTLIGHT_BOX_W, height=_SPOTLIGHT_BOX_H,
                 content=ConditionalContainer(content=log_spotlight_win,
                                              filter=_log_spotlight_overlay_filter),
             ),
+            # Right-edge vertical strip — drawn after the header so the
+            # rail occludes the header's right padding cleanly.
             Float(
-                bottom=0, left=0, right=0, height=1,
-                content=ConditionalContainer(content=log_controls_win,
+                top=0, bottom=0, right=0, width=_LOG_RAIL_W,
+                content=ConditionalContainer(content=log_strip_win,
+                                             filter=_log_overlays_filter),
+            ),
+            Float(
+                bottom=1, right=8,
+                width=_LOG_BOX_W, height=_LOG_BOX_H,
+                content=ConditionalContainer(content=log_box_win,
                                              filter=_log_overlays_filter),
             ),
         ],

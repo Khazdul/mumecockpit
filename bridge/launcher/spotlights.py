@@ -543,6 +543,35 @@ class SpotlightPlayback:
         seconds = max(0.0, (next_off - cur) / 1_000_000.0)
         return (active, seconds)
 
+    def event_markers(self):
+        """(letter, offset_us) for each tracked event, offset within
+        [0, total_duration_us]. letter ∈ {'K','D','A','L'}.
+
+        Built from each spotlight's summary events and their offsets
+        within the spotlight (`event_offsets_us`), shifted by the
+        spotlight's start offset in the stitched timeline. `kind`
+        normalises death to `"death"`; both that and the run-archive
+        `"char_death"` map to D. Read by the launcher's right-edge
+        playback strip (mode-agnostic contract with LogPlayback)."""
+        kind_letter = {
+            "pkill":       "K",
+            "char_death":  "D",
+            "death":       "D",
+            "achievement": "A",
+            "level_up":    "L",
+        }
+        out: list = []
+        for spot_idx, spot in enumerate(self.spotlights):
+            start = self.spotlight_start_offsets_us[spot_idx]
+            offsets = spot.event_offsets_us
+            for ev_idx, ev in enumerate(spot.events):
+                letter = kind_letter.get(ev.kind)
+                if letter is None:
+                    continue
+                off = offsets[ev_idx] if ev_idx < len(offsets) else 0
+                out.append((letter, start + off))
+        return out
+
 
 # ---------------------------------------------------------------------------
 # Smoke entry point

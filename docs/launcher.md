@@ -2273,7 +2273,7 @@ sits between `History` and `About`. Two surfaces:
 - `spotlights_empty` — shown when no spotlights have been captured yet
   (fresh install or every character's sealed runs lack tracked events).
 - `log_view` in spotlight mode — the reel itself, sharing the chain log
-  player's playback engine, overlays, and scrubber.
+  player's playback engine, overlays, and right-edge playback strip.
 
 The data layer lives in `bridge/launcher/spotlights.py`:
 `aggregate_spotlights()` walks `data/runs/<character>/*.jsonl` for every
@@ -2391,8 +2391,8 @@ state `_log_view_mode == "spotlight"` and reading its playback from
 is `_enter_log_view(summary)`; the spotlight-mode entry point is
 `_enter_log_view_spotlight(playback)`. Both share the same
 `_log_view_window`, the same playback engine (anchor + offset,
-auto-pause-at-end, 30 Hz tick task), the same bottom controls overlay,
-and the same scrubber drag plumbing.
+auto-pause-at-end, 30 Hz tick task), the same right-edge strip +
+control box chrome, and the same strip drag plumbing.
 
 Unlike chain mode the spotlight entry point auto-plays: it initialises
 state then calls `_log_resume()` so the reel starts rolling immediately
@@ -2401,11 +2401,11 @@ transitions" below) keeps the viewport blank while the first spotlight's
 pre-roll counts down, so the user sees the upcoming spotlight's info box
 on an empty backdrop before content begins — no Space needed.
 
-The top header and bottom-controls overlays are **hidden on entry**:
+The header, strip, and control box are **hidden on entry**:
 `_enter_log_view_spotlight` clears `_log_overlays_visible` after the
 `_log_resume()` call (which would otherwise arm them), so the user
 sees a clean scene with only the spotlight info box overlaid. Mouse
-activity in the frame re-arms the overlays via the regular
+activity in the frame re-arms all three via the regular
 `_log_touch_overlays()` path; they fade again after
 `_LOG_OVERLAY_HIDE_DELAY`. The spotlight info box itself stays
 visible at all times — that rule is unchanged.
@@ -2427,8 +2427,10 @@ the keyboard hint on the right). The right-aligned hint is
 `ESC Back · ←→ Prev/next`.
 
 **Floating info box (top-right).** A 30×8 framed rectangle pinned to
-`top=2, right=2` — a 2-cell margin from both the top and right edges
-of `log_view`. The frame is the half-block outline `█▀▄▌▐` rendered in
+`top=2, right=_SPOTLIGHT_BOX_RIGHT` (`= _LOG_RAIL_W + 2 = 9`) so it
+sits to the left of the full-height playback rail rather than
+overlapping it; a 2-cell top margin. The frame is the half-block
+outline `█▀▄▌▐` rendered in
 the effective host terminal background colour (OSC 11 detected hex,
 or `terminal_bg_fallback` from `startup.conf` when detection fails —
 default `#000000`) on the bright cyan BG: top row `█` + `▀` ×
@@ -2503,12 +2505,12 @@ information lives in the top header (the in-box nav row uses the
 shorter `<idx> of <total>` form).
 
 **Visibility.** The spotlight info box stays visible at all times in
-spotlight mode — it does **not** participate in the top header / bottom
-controls auto-hide. The only fallback is narrow terminals: if
-`cols < _SPOTLIGHT_BOX_W + _SPOTLIGHT_BOX_MARGIN * 2` (i.e. the box
-plus its 2-cell margin doesn't fit with some breathing room),
-`_log_spotlight_overlay_visible()` returns False and the box is
-suppressed for that frame; playback continues without it.
+spotlight mode — it does **not** participate in the header / strip /
+control box auto-hide. The only fallback is narrow terminals: if
+`cols < _SPOTLIGHT_BOX_W + _SPOTLIGHT_BOX_RIGHT + _SPOTLIGHT_BOX_MARGIN`
+(i.e. the box plus its right offset past the rail and a left margin
+doesn't fit), `_log_spotlight_overlay_visible()` returns False and the
+box is suppressed for that frame; playback continues without it.
 
 **Scroll-clear transitions.** Spotlight transitions (and the initial
 entry into the reel) use a scroll-clear approach: 100 phantom blank
@@ -2536,7 +2538,7 @@ phantom rows as a block of blank rows between spotlights — acceptable
 scene separation, no special handling. The cursor, however, skips
 phantoms: `_log_set_cursor` calls `_log_skip_phantoms` which snaps the
 landing index to the nearest non-phantom event in the direction of
-travel (forward for `↓`/`PgDn`/`End`/click/scrubber-seek, backward for
+travel (forward for `↓`/`PgDn`/`End`/click/strip-seek, backward for
 `↑`/`PgUp`). `_log_is_phantom(idx)` delegates to the
 `SpotlightPlayback.is_phantom(idx)` helper; chain mode is unaffected
 because the helper short-circuits when `_log_view_mode != "spotlight"`.
@@ -2558,11 +2560,12 @@ branch calls `_log_spotlight_jump_to_credits()` directly (cancel
 playback, pop `log_view`, push `credits`). The mouse equivalents are
 the `◄` / `►` glyphs in the info box's top nav row.
 
-**Scrubber scope.** The bottom-controls scrubber drag continues to
-scrub the entire reel timeline (each spotlight is ~15 s, so the global
-scrubber stays usable). A per-spotlight scrubber was considered but
-rejected for v1: the rotation already chunks playback into discrete
-spotlights, and ←/→ provides per-spotlight seeking.
+**Strip scope.** The right-edge strip's click/drag-to-seek covers the
+entire reel timeline (each spotlight is ~15 s, so the global strip
+stays usable), and the strip's event markers span the whole reel. A
+per-spotlight track was considered but rejected for v1: the rotation
+already chunks playback into discrete spotlights, and ←/→ provides
+per-spotlight seeking.
 
 **End of reel.** At `total_duration_us` the existing
 `_log_auto_pause_at_end()` hook fires. In chain mode it parks on the
@@ -2649,13 +2652,13 @@ handler. No other keys are bound.
 Chain log player. Opened from `history` (Run log button, or
 Enter / click on a row when `has_log`). Reads the `.log` siblings of the
 chain's `summary.run_ids` for the current character and replays
-them as a single timeline with play / pause, a scrubber, and a
-pause-mode cursor.
+them as a single timeline with play / pause, a right-edge playback
+strip, and a pause-mode cursor.
 
 **Load.** On push, `_enter_log_view(summary)` builds a
 `log_player.LogPlayback(summary.character, summary.run_ids)`,
 initialises the playback engine in pause mode at event 0 with
-overlays visible (so Space, the scrubber, and the buttons are
+overlays visible (so Space, the strip, and the control box are
 discoverable on the first frame), and pushes the frame. The active
 summary is stashed on the module-level `_log_view_summary` slot so
 the frame survives independently of the `history_detail` state.
@@ -2723,28 +2726,59 @@ the trailing area past the line's text.
   `_log_play_anchor_offset_us = pb.playback_offset_us[cursor]`
   and re-anchoring `_log_play_anchor_wall`.
 
-**Overlays.** Two row-tall overlays float over the log: the top
-header (`_LOG_OVERLAY_HEADER_W = 80` inner cells, centred)
-showing `<character> (L<level>)  ·  Run X of Y  ·  YYYY-MM-DD HH:MM
-·  <elapsed>` on the left and `ESC Back` on the right, and
-the bottom controls (`_LOG_OVERLAY_CONTROLS_W = 70` inner cells,
-centred) carrying a rewind button, a play/pause button (icon
-reflects the action a click would take), a 30-cell scrubber
-(`_LOG_OVERLAY_SCRUBBER_W`) with filled / thumb / empty
-segments, and a `MM:SS / MM:SS` time field. `_log_format_mmss`
-emits minutes verbatim and does not wrap to hours, so a
-78-minute chain reads `78:34`. Overlays are permanent in pause
-mode; in play they auto-hide after `_LOG_OVERLAY_HIDE_DELAY =
-3.0` seconds. Any mouse activity in the frame calls
-`_log_touch_overlays()` to re-arm the deadline and re-reveal
-overlays if they had faded. The overlay palette
-(`C_LOG_OVERLAY_BG` / `C_LOG_OVERLAY_FG` / `C_LOG_OVERLAY_HINT`,
-`C_LOG_SCRUBBER_FILLED` / `_EMPTY` / `_THUMB`,
-`C_LOG_BUTTON_IDLE` / `_HOVER`) lives in
-[`palette.py`](../bridge/launcher/palette.py). The overlay bg is a
-deep-shadow variant of the spotlight box hue (`C_SPOTLIGHT_BOX_BG`),
-so both bars read as part of the same theme family in spotlight mode
-and in chain mode from history.
+**Overlays.** Three chrome Floats blend with the log canvas (no
+panel tint): all paint their cells in the resolved `_terminal_bg`
+(ADR 0099), so on a black terminal they read flat against the
+backdrop and on a tinted one they blend instead of pasting a panel.
+
+- **Top header** (`_LOG_OVERLAY_HEADER_W = 80` inner cells, centred
+  within the canvas left of the rail) shows `<character> (L<level>)
+  ·  Run X of Y  ·  YYYY-MM-DD HH:MM` on the left (`ESC Back` on the
+  right). The character name reads a touch brighter (`C_BODY`), the
+  rest dim grey (`C_HINT`), separators dimmer still (`C_PANE_OFF`).
+  Built via `_log_header_assemble`, shared by the spotlight-mode
+  header. The elapsed/total clock moved into the control box.
+- **Right-edge vertical strip** (`_log_strip_text`) — a full-height
+  Float of `_LOG_RAIL_W = _LOG_STRIP_W + _LOG_MARK_W = 2 + 5 = 7`
+  cols pinned to the right edge. Per row: a 5-col event-marker field
+  (right-aligned) then a 2-col playhead track. The track is a grey
+  ramp — `C_LOG_STRIP_PLAYED` (light) above the playhead,
+  `C_LOG_STRIP_REMAINING` (dark) below — with a sub-row-precise gold
+  half-block playhead (`C_LOG_STRIP_MARKER`, bg set to the
+  played/unplayed side it borders) on the exact seam. Event markers
+  (`C_LOG_EVENT_MARK`) read from the playback's `event_markers()`
+  (section below); kinds sharing a row stack as the distinct letters
+  in fixed order `A D K L` followed by one `►` (`K►` … `ADKL►`).
+  Every cell is painted so the rail fully occludes server text under
+  it.
+- **Floating control box** (`_log_box_text`) — pinned 8 cols in from
+  the right edge, 1 row up from the bottom (clear of the rail). A
+  framed 2-row panel in safe glyphs `┌ ─ ┐ │ └ ┘` (`C_LOG_BOX_FRAME`):
+  row 1 is `◄◄ Rewind` + the play/pause control (`► Play` /
+  `▌▌ Pause` in gold, sized to the wider pause state so the frame
+  doesn't resize on toggle), row 2 the `MM:SS / MM:SS` clock
+  (`C_LOG_BOX_DIM`). The Rewind and play/pause segments hover-light
+  with `C_LOG_BOX_BTN_HOVER` and reuse `_log_rewind_click` /
+  `_log_toggle_play_pause` on click. `_log_format_mmss` emits minutes
+  verbatim (a 78-minute chain reads `78:34`).
+
+All three are gated by the same `_log_overlays_visible` filter:
+permanent in pause, auto-hidden after `_LOG_OVERLAY_HIDE_DELAY =
+6.0` seconds in play. Any mouse activity calls `_log_touch_overlays()`
+to re-arm the deadline and re-reveal all three if they had faded.
+The chrome palette (`C_LOG_STRIP_*`, `C_LOG_EVENT_MARK`,
+`C_LOG_BOX_*`) lives in
+[`palette.py`](../bridge/launcher/palette.py).
+
+**Event markers.** `playback.event_markers()` is the mode-agnostic
+contract the strip reads: a list of `(letter, offset_us)` for each
+tracked event within `[0, total_duration_us]`, `letter ∈
+{K,D,A,L}` (`pkill`→K, `char_death`/`death`→D, `achievement`→A,
+`level_up`→L). `SpotlightPlayback.event_markers()` builds them from
+each spotlight's summary events + `event_offsets_us`, shifted by the
+spotlight's `spotlight_start_offsets_us`. `LogPlayback.event_markers()`
+(chain) returns `[]` for now — a follow-up adds the JSONL→offset
+join.
 
 **Keyboard.**
 
@@ -2756,7 +2790,7 @@ and in chain mode from history.
 - `↑ / ↓` — move the cursor by one event (routes through
   `_log_move_cursor`, which auto-pauses first if currently
   playing, then routes through `_log_set_cursor` for clamping
-  and scrubber/time sync).
+  and strip/time sync).
 - `PgUp / PgDn` — move the cursor by `_LOG_PAGE_STEP = 20`
   events; same auto-pause behaviour.
 - `Home / End` — jump the cursor to the first / last event;
@@ -2776,16 +2810,19 @@ controls flash back into view on any keypress in play mode.
 - **Play mode:** wheel and click on log content refresh the
   overlay-visibility timer only — they do not move the cursor or
   switch modes.
-- **Scrubber drag:** MOUSE_DOWN on any scrubber cell sets
-  `_log_dragging_scrubber = True` and performs the initial seek.
-  While the flag is set, `_log_maybe_handle_drag` intercepts
-  every mouse event anywhere in the frame — MOUSE_MOVE seeks
-  (`_log_handle_drag_event` maps `ev.position.x - _log_scrubber_left`
-  to a cell index against `_log_scrubber_width`, both published
-  by `_log_controls_text` on each render), MOUSE_UP or a
-  MOUSE_MOVE with the button released ends the drag. The
-  rightmost scrubber cell maps exactly to `total_duration_us` so
-  end-of-session click/drag triggers `_log_auto_pause_at_end`.
+- **Strip click / drag-to-seek:** MOUSE_DOWN anywhere on the
+  right-edge strip sets `_log_dragging_strip = True` and performs
+  the initial seek. The strip spans the full terminal height pinned
+  at row 0, so `ev.position.y` is the absolute strip row;
+  `_log_strip_seek_to_row` maps it to `f = (row - _log_strip_top) /
+  (_log_strip_rows - 1)` (clamped 0–1) and seeks to
+  `round(f * total_duration_us)`. While the flag is set,
+  `_log_maybe_handle_drag` intercepts every mouse event anywhere in
+  the frame — MOUSE_MOVE seeks via `_log_handle_drag_event`, MOUSE_UP
+  or a MOUSE_MOVE with the button released ends the drag. The bottom
+  row maps exactly to `total_duration_us` so an end-of-session
+  click/drag triggers `_log_auto_pause_at_end`. In play mode the
+  same gesture both reveals the chrome (touch) and seeks.
 
 **Frame focus.** Per ADR 0066, `_log_view_window` is the primary
 focusable window and is dispatched by `_focus_current_frame()`
@@ -2867,7 +2904,10 @@ shared with the in-game popup. Roles:
 | `C_SELECTED`        | History cursor row — black on light-grey background fill (sidebar active filter, table cursor row) |
 | `C_ROW_HOVER`       | History detail data-table row hover — subtle background fill that composes with cell foreground colours |
 | `C_LOG_PLAYER_INPUT`| log_view outbound (player command) lines — muted grey with a faint light-cyan tint                  |
-| `C_LOG_OVERLAY_BG`  | log_view top header + bottom controls fill — deep-shadow variant of the spotlight box hue so chain and spotlight modes read as one theme family |
+| `C_LOG_STRIP_PLAYED` / `C_LOG_STRIP_REMAINING` | log_view playback strip track — light-grey (played) / dark-grey (unplayed) full blocks |
+| `C_LOG_STRIP_MARKER` | log_view strip playhead — gold half-block (= `C_ACCENT` hue), bg set per side at render; also the box play/pause control |
+| `C_LOG_EVENT_MARK`  | log_view strip event letters + `►` — dark grey, a hair above the unplayed block for legibility |
+| `C_LOG_BOX_FRAME` / `C_LOG_BOX_FG` / `C_LOG_BOX_DIM` / `C_LOG_BOX_BTN_HOVER` | log_view control box — frame glyphs / labels / time field / hovered-button lift; box paints its cells in `_terminal_bg` (no panel tint) |
 | `C_SPOTLIGHT_BOX_BG`         | Spotlight info-box fill — bright banner hue (same as `C_TITLE`) painted under every cell of the floating overlay |
 | `C_SPOTLIGHT_FRAME`          | Spotlight info-box outline glyphs default — black on the box bg. Live renderer uses `spotlight_frame_style(_terminal_bg)` instead so the outer edge blends into the effective host terminal background (detected via OSC 11, else `terminal_bg_fallback`); this constant is the guarded fallback if `_terminal_bg` is ever `None` |
 | `C_SPOTLIGHT_TEXT_PRIMARY`   | Spotlight info-box primary text — near-black on box bg (character name, event label) |

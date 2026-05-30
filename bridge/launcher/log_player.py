@@ -246,6 +246,16 @@ class LogPlayback:
     def __len__(self):
         return len(self.events)
 
+    def event_markers(self):
+        """(letter, offset_us) for each tracked event, offset within
+        [0, total_duration_us]. letter ∈ {'K','D','A','L'}.
+
+        Mode-agnostic contract read by the launcher's right-edge playback
+        strip (mirrors `SpotlightPlayback.event_markers`). Chain mode
+        returns `[]` for now; a follow-up adds the JSONL→offset join that
+        maps run-archive events onto chain playback offsets."""
+        return []
+
     def run_at(self, event_index: int):
         """Return (run_id, run_ordinal, total_runs) for an event index.
 

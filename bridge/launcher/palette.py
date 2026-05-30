@@ -15,9 +15,9 @@ __all__ = [
     "C_BANNER_WORD", "C_BANNER_WORD_DIM",
     "C_BANNER_STAR_DIM", "C_BANNER_STAR_MID", "C_BANNER_STAR_BRIGHT",
     "C_LOG_PLAYER_INPUT", "C_LOG_CURSOR",
-    "C_LOG_OVERLAY_BG", "C_LOG_OVERLAY_FG", "C_LOG_OVERLAY_HINT",
-    "C_LOG_SCRUBBER_FILLED", "C_LOG_SCRUBBER_EMPTY", "C_LOG_SCRUBBER_THUMB",
-    "C_LOG_BUTTON_IDLE", "C_LOG_BUTTON_HOVER",
+    "C_LOG_STRIP_PLAYED", "C_LOG_STRIP_REMAINING", "C_LOG_STRIP_MARKER",
+    "C_LOG_EVENT_MARK",
+    "C_LOG_BOX_FRAME", "C_LOG_BOX_FG", "C_LOG_BOX_DIM", "C_LOG_BOX_BTN_HOVER",
     "C_SPOTLIGHT_BOX_BG", "C_SPOTLIGHT_FRAME", "spotlight_frame_style",
     "C_SPOTLIGHT_TEXT_PRIMARY", "C_SPOTLIGHT_TEXT_SECONDARY",
     "_S_VALUE", "_S_LABEL", "_S_GAINED", "_S_LOSS", "_S_TP_BAR",
@@ -143,28 +143,29 @@ C_LOG_PLAYER_INPUT = "fg:#86a0a0"
 # with each fragment's existing fg in the renderer so colours survive.
 C_LOG_CURSOR = "bg:#303030"
 
-# log_view floating overlays (top header + bottom controls). Very dark
-# cyan-leaning fill — a deep-shadow variant of the spotlight box's
-# banner hue (C_SPOTLIGHT_BOX_BG = #00d7d7), so both overlay bars read
-# as part of the same theme family. Light enough behind the foreground
-# text to keep C_LOG_OVERLAY_FG and the dimmer C_LOG_OVERLAY_HINT
-# clearly legible.
-C_LOG_OVERLAY_BG     = "bg:#091e22"
-C_LOG_OVERLAY_FG     = "fg:#dadada bg:#091e22"
-C_LOG_OVERLAY_HINT   = "fg:#6c6c6c bg:#091e22"
+# log_view playback chrome (right-edge vertical strip + floating control
+# box). De-cyaned so the chrome blends with the terminal canvas rather
+# than reading as a panel: blank cells are painted in the resolved
+# `_terminal_bg` (ADR 0099), the played/unplayed track is a grey ramp,
+# and only the playhead + play/pause control carry the C_ACCENT gold hue.
+#
+# Right-edge strip. The played portion is a light-grey full block, the
+# unplayed portion a dark-grey full block, and the playhead a gold
+# half-block sitting precisely on the boundary (sub-row precise). The
+# marker glyphs are a hair brighter than the unplayed block so the
+# A/D/K/L letters + ► stay legible against it.
+C_LOG_STRIP_PLAYED    = "fg:#9a9a9a"   # played portion, light-grey full block
+C_LOG_STRIP_REMAINING = "fg:#242424"   # unplayed portion, dark-grey full block
+C_LOG_STRIP_MARKER    = "#ffaf00"      # gold playhead (= C_ACCENT hue); half-block, bg set per side at render
+C_LOG_EVENT_MARK      = "fg:#4d4d4d"   # event letters + ► (dark grey, a hair above the unplayed block for glyph legibility)
 
-# Scrubber: filled stretch before the playhead, single-cell thumb at the
-# playhead, empty stretch after. All share the overlay bg so the bar
-# blends into the controls row. _EMPTY shifts to a cyan-tinted dim grey
-# so it stays distinct against the deepened bg.
-C_LOG_SCRUBBER_FILLED = "fg:#ffaf00 bg:#091e22"
-C_LOG_SCRUBBER_EMPTY  = "fg:#2c4448 bg:#091e22"
-C_LOG_SCRUBBER_THUMB  = "bold fg:#ffffff bg:#091e22"
-
-# Rewind / play-pause buttons. Hover bg is a one-step lift on the cyan
-# axis so the button reads as raised without leaving the family.
-C_LOG_BUTTON_IDLE  = "fg:#dadada bg:#091e22"
-C_LOG_BUTTON_HOVER = "bold fg:#ffffff bg:#143038"
+# Floating control box. The frame glyphs and labels are quiet greys; the
+# box paints every cell in `_terminal_bg` (no panel tint), so only the
+# gold play/pause control and the hovered-button lift stand out.
+C_LOG_BOX_FRAME       = "fg:#585858"   # box ┌─┐│└┘ glyphs
+C_LOG_BOX_FG          = "fg:#9a9a9a"   # box labels (Rewind / Play)
+C_LOG_BOX_DIM         = "fg:#6f6f6f"   # box time field
+C_LOG_BOX_BTN_HOVER   = "bold fg:#dde4e0 bg:#242a27"  # hovered button, subtle lift on a dark canvas
 
 # Spotlight info box (log_view spotlight-mode floating overlay). Bright
 # banner-hue fill anchored on C_TITLE (#00d7d7) so the box pops as a
