@@ -7259,11 +7259,11 @@ def _log_view_rebuild_if_needed():
     cols = _term_cols()
     if _log_view_lines is not None and cols == _log_view_cols:
         return
-    # Reserve only the 2-col playhead strip (the sole persistent occluder);
-    # server text wraps all the way up to the strip's left edge. Event
-    # markers float over the log in a transparent layer, so they need no
-    # reserved gutter.
-    width = max(1, cols - _LOG_STRIP_W)
+    # Wrap to the full terminal width — reserve nothing. The 2-col playhead
+    # strip and the event-marker layer are pure overlays that float on top of
+    # the log and occlude the cells beneath them while shown; when they hide,
+    # the full-width text is revealed with no right gutter.
+    width = max(1, cols)
     visual = []
     ev_rows = []
     for ev in _log_view_playback.events:
@@ -7598,11 +7598,11 @@ def _log_lines_to_fragments(sliced, sliced_start, cursor_idx):
         abs_row = sliced_start + i
         if cursor_start <= abs_row < cursor_end:
             painted = _log_apply_cursor_bg(line)
-            # Pad to the strip's left edge so the bg highlight spans the
-            # whole row, including the trailing area past the line's text,
-            # without bleeding under the 2-col strip.
+            # Pad to the full terminal width so the bg highlight spans the
+            # whole row, including the trailing area past the line's text.
+            # The strip Float overdraws the rightmost cols on top.
             line_w = sum(len(r) for _, r in line)
-            pad = max(0, (_log_view_cols - _LOG_STRIP_W) - line_w)
+            pad = max(0, _log_view_cols - line_w)
             if pad:
                 painted.append((C_LOG_CURSOR, " " * pad))
             frags.extend(painted)
