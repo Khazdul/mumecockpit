@@ -64,6 +64,7 @@ C_BLIND_SEP_FG  = "fg:#00cccc"
 C_CHARM_NAME_FG = "fg:#B388FF"   # light violet — matches the char_ui CHARM tag (Step 4)
 C_CHARM_MINS_FG = "fg:#888888"   # darker grey
 C_CHARM_X_FG    = "fg:#CC5555"   # muted red (not a screaming red)
+C_CHARM_X_HOVER_FG = "fg:#E88888"   # lighter than C_CHARM_X_FG — hover cue
 
 C_CELL_FG       = "fg:#000000"
 C_INDICATOR     = "fg:#d4a04e italic"
@@ -91,6 +92,7 @@ _last_mtime    = None
 _app           = None
 _scroll_offset = 0   # 0 = top (first row at top of pane); N = N rows hidden above
 _run_active    = False
+_hover_charm_id = None   # charm id whose X the pointer is currently over (hover cue)
 
 
 def _term_rows():
@@ -231,9 +233,9 @@ def _send_charm_drop(cid):
         return
     target = "mume:cockpit.0"   # the game/tt++ pane — same target input_pane.py forwards to
     try:
-        subprocess.run(["tmux", "send-keys", "-t", target, "-l", f"_cp_charm_drop {cid}"],
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
-        subprocess.run(["tmux", "send-keys", "-t", target, "Enter"],
+        # Match input_pane.py's send(): one send-keys call, line and Enter
+        # together, no -l — keeps the command out of the tt++ window.
+        subprocess.run(["tmux", "send-keys", "-t", target, f"_cp_charm_drop {cid}", "Enter"],
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
     except Exception:
         pass
@@ -249,17 +251,25 @@ def _charm_row_frags(entry, W):
         mins = min(99, int((time.time() - started_at) // 60))
     mins_txt   = f"{mins}m".rjust(3)            # " 0m" .. "99m"
     name_w     = max(0, W - 6)                  # 1 X + 1 gap + 3 mins + 1 gap
-    name_txt   = name[:name_w].ljust(name_w)    # preserve case (mob long-name)
+    disp       = (name[:1].upper() + name[1:]) if name else name   # capitalise first letter
+    name_txt   = disp[:name_w].ljust(name_w)    # preserve inner case (mob long-name)
 
     frags = [(C_CHARM_NAME_FG, ch) for ch in name_txt]
     frags.append(("", " "))
     frags.extend((C_CHARM_MINS_FG, ch) for ch in mins_txt)
     frags.append(("", " "))
 
-    def _drop_handler(mouse_event, _cid=cid):   # capture id via default arg —
-        if mouse_event.event_type == MouseEventType.MOUSE_DOWN:   # avoids the
-            _send_charm_drop(_cid)                                # loop late-bind bug
-    frags.append((C_CHARM_X_FG, "X", _drop_handler))
+    x_style = C_CHARM_X_HOVER_FG if cid == _hover_charm_id else C_CHARM_X_FG
+    def _x_handler(mouse_event, _cid=cid):      # capture id via default arg —
+        global _hover_charm_id                  # avoids the loop late-bind bug
+        if mouse_event.event_type == MouseEventType.MOUSE_DOWN:
+            _send_charm_drop(_cid)
+        elif mouse_event.event_type == MouseEventType.MOUSE_MOVE:
+            if _hover_charm_id != _cid:
+                _hover_charm_id = _cid
+                if _app:
+                    _app.invalidate()
+    frags.append((x_style, "X", _x_handler))
     return frags
 
 
@@ -378,7 +388,16 @@ def _indicator_text():
 
 class ListControl(FormattedTextControl):
     def mouse_handler(self, mouse_event):
-        global _scroll_offset
+        global _scroll_offset, _hover_charm_id
+        # Let fragment handlers (the charm X) fire first — mirrors ui_pane.py.
+        result = super().mouse_handler(mouse_event)
+        if result is not NotImplemented:
+            return result
+        # No fragment handled it: a move landed on a non-X cell — clear hover.
+        if mouse_event.event_type == MouseEventType.MOUSE_MOVE and _hover_charm_id is not None:
+            _hover_charm_id = None
+            if _app:
+                _app.invalidate()
         if mouse_event.event_type == MouseEventType.SCROLL_DOWN:
             total          = _total_rows(*_split_groups())
             H              = max(1, _term_rows())
@@ -394,7 +413,7 @@ class ListControl(FormattedTextControl):
             if _app:
                 _app.invalidate()
             return None
-        return super().mouse_handler(mouse_event)
+        return NotImplemented
 
 
 def _restore_cursor():
