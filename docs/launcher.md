@@ -2427,9 +2427,11 @@ the keyboard hint on the right). The right-aligned hint is
 `ESC Back · ←→ Prev/next`.
 
 **Floating info box (top-right).** A 30×8 framed rectangle pinned to
-`top=2, right=_SPOTLIGHT_BOX_RIGHT` (`= _LOG_RAIL_W + 2 = 9`) so it
-sits to the left of the full-height playback rail rather than
-overlapping it; a 2-cell top margin. The frame is the half-block
+`top=2, right=_SPOTLIGHT_BOX_RIGHT` (`= _LOG_STRIP_W + 2 = 4`) so it
+clears the 2-col playhead strip without a wide gap; a 2-cell top
+margin. Sparse event markers may briefly float near it at an event
+row — acceptable, since the marker layer is transparent between
+events. The frame is the half-block
 outline `█▀▄▌▐` rendered in
 the effective host terminal background colour (OSC 11 detected hex,
 or `terminal_bg_fallback` from `startup.conf` when detection fails —
@@ -2508,7 +2510,7 @@ shorter `<idx> of <total>` form).
 spotlight mode — it does **not** participate in the header / strip /
 control box auto-hide. The only fallback is narrow terminals: if
 `cols < _SPOTLIGHT_BOX_W + _SPOTLIGHT_BOX_RIGHT + _SPOTLIGHT_BOX_MARGIN`
-(i.e. the box plus its right offset past the rail and a left margin
+(i.e. the box plus its right offset past the strip and a left margin
 doesn't fit), `_log_spotlight_overlay_visible()` returns False and the
 box is suppressed for that frame; playback continues without it.
 
@@ -2657,9 +2659,10 @@ strip, and a pause-mode cursor.
 
 **Load.** On push, `_enter_log_view(summary)` builds a
 `log_player.LogPlayback(summary.character, summary.run_ids)`,
-initialises the playback engine in pause mode at event 0 with
-overlays visible (so Space, the strip, and the control box are
-discoverable on the first frame), and pushes the frame. The active
+pushes the frame, and calls `_log_resume()` so the chain opens
+**playing from 00:00** (matching spotlight mode) with overlays
+visible and the 6 s auto-hide armed — any mouse/key activity
+re-reveals and re-arms them. The active
 summary is stashed on the module-level `_log_view_summary` slot so
 the frame survives independently of the `history_detail` state.
 For each `run_id`, the loader tries
@@ -2687,8 +2690,9 @@ skew on chain rollover.
 **Render.** A single focusable `Window` (`_log_view_window`)
 holds a `_LogViewControl` (a `FormattedTextControl` subclass)
 over the full frame. The visual lines are produced by wrapping
-each event's fragment list at the terminal width and
-concatenating them; the wrap is a fragment-aware split, not
+each event's fragment list at `cols - _LOG_STRIP_W` (server text
+runs all the way up to the 2-col strip — the only persistent
+occluder) and concatenating them; the wrap is a fragment-aware split, not
 `wrap_lines=True`, so style runs remain stable across the wrap
 boundary. The wrapping cache re-builds when the terminal width
 changes, alongside the parallel `_log_view_event_rows` map
@@ -2701,8 +2705,9 @@ slices `_log_view_lines[start_row:end_excl]` with
 (`_log_view_text_pause`) the view renders the full buffer at
 `_log_view_scroll` with a `C_LOG_CURSOR` background highlight
 on every visual row in the cursor event's row range — each
-painted row is padded to `_log_view_cols` so the highlight spans
-the trailing area past the line's text.
+painted row is padded to `_log_view_cols - _LOG_STRIP_W` (the
+strip's left edge) so the highlight spans the trailing area past
+the line's text without bleeding under the strip.
 
 **Playback engine.** Two modes: `play` and `pause`.
 
@@ -2739,33 +2744,49 @@ backdrop and on a tinted one they blend instead of pasting a panel.
   Built via `_log_header_assemble`, shared by the spotlight-mode
   header. The elapsed/total clock moved into the control box.
 - **Right-edge vertical strip** (`_log_strip_text`) — a full-height
-  Float of `_LOG_RAIL_W = _LOG_STRIP_W + _LOG_MARK_W = 2 + 5 = 7`
-  cols pinned to the right edge. Per row: a 5-col event-marker field
-  (right-aligned) then a 2-col playhead track. The track is a grey
-  ramp — `C_LOG_STRIP_PLAYED` (light) above the playhead,
-  `C_LOG_STRIP_REMAINING` (dark) below — with a sub-row-precise gold
-  half-block playhead (`C_LOG_STRIP_MARKER`, bg set to the
-  played/unplayed side it borders) on the exact seam. Event markers
-  (`C_LOG_EVENT_MARK`) read from the playback's `event_markers()`
-  (section below); kinds sharing a row stack as the distinct letters
-  in fixed order `A D K L` followed by one `►` (`K►` … `ADKL►`).
-  Every cell is painted so the rail fully occludes server text under
-  it.
+  Float of `_LOG_STRIP_W = 2` cols pinned to the right edge, the
+  **only persistent occluding region**. It renders just the playhead
+  track: a grey ramp — `C_LOG_STRIP_PLAYED` (light) above the
+  playhead, `C_LOG_STRIP_REMAINING` (dark) below — with a
+  sub-row-precise gold half-block playhead (`C_LOG_STRIP_MARKER`, bg
+  set to the played/unplayed side it borders) on the exact seam.
+  Every cell is painted (window-level `_terminal_bg` style) so the
+  strip fully occludes server text under it.
+- **Floating event-marker layer** (`_log_marker_text`, control class
+  `_LogMarkerControl`) — a `transparent=True` full-height Float of
+  `_LOG_MARK_W = 5` cols pinned just left of the strip
+  (`right=_LOG_STRIP_W`). Between events every cell is left unwritten,
+  so the log shows through to the strip. At an event's row (same
+  time-offset → screen-row mapping as the playhead) a stacked
+  `C_LOG_EVENT_MARK` glyph group floats **right-aligned** against the
+  strip (`WindowAlign.RIGHT` on the bare, un-padded string), with
+  `_terminal_bg` painted behind just the marker's own glyph cells so
+  it stays legible atop busy log lines. Markers read from the
+  playback's `event_markers()` (section below); kinds sharing a row
+  stack as the distinct letters in fixed order `A D K L` followed by
+  one `►` (`K►` … `ADKL►`). The window carries no background style, so
+  prompt_toolkit's `_apply_style` no-ops and the leading transparent
+  cells keep the log underneath. Mouse activity here re-arms the
+  overlay auto-hide but does not seek — the 2-col strip owns
+  click/drag-to-seek. Gated by the same `_log_overlays_visible`
+  filter as the strip.
 - **Floating control box** (`_log_box_text`) — pinned 8 cols in from
-  the right edge, 1 row up from the bottom (clear of the rail). A
+  the right edge, 1 row up from the bottom (clear of the strip). A
   framed 2-row panel in safe glyphs `┌ ─ ┐ │ └ ┘` (`C_LOG_BOX_FRAME`):
   row 1 is `◄◄ Rewind` + the play/pause control (`► Play` /
-  `▌▌ Pause` in gold, sized to the wider pause state so the frame
+  `▌▌ Pause` in grey `C_LOG_BOX_FG` — gold stays exclusive to the
+  strip playhead — sized to the wider pause state so the frame
   doesn't resize on toggle), row 2 the `MM:SS / MM:SS` clock
   (`C_LOG_BOX_DIM`). The Rewind and play/pause segments hover-light
   with `C_LOG_BOX_BTN_HOVER` and reuse `_log_rewind_click` /
   `_log_toggle_play_pause` on click. `_log_format_mmss` emits minutes
   verbatim (a 78-minute chain reads `78:34`).
 
-All three are gated by the same `_log_overlays_visible` filter:
-permanent in pause, auto-hidden after `_LOG_OVERLAY_HIDE_DELAY =
-6.0` seconds in play. Any mouse activity calls `_log_touch_overlays()`
-to re-arm the deadline and re-reveal all three if they had faded.
+All four (header, strip, marker layer, control box) are gated by the
+same `_log_overlays_visible` filter: permanent in pause, auto-hidden
+after `_LOG_OVERLAY_HIDE_DELAY = 6.0` seconds in play. Any mouse
+activity calls `_log_touch_overlays()` to re-arm the deadline and
+re-reveal them if they had faded.
 The chrome palette (`C_LOG_STRIP_*`, `C_LOG_EVENT_MARK`,
 `C_LOG_BOX_*`) lives in
 [`palette.py`](../bridge/launcher/palette.py).

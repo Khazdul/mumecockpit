@@ -12,6 +12,7 @@ try:
     from prompt_toolkit.layout import DynamicContainer, Layout, VerticalAlign
     from prompt_toolkit.layout.containers import (
         ConditionalContainer, Float, FloatContainer, HSplit, VSplit, Window,
+        WindowAlign,
     )
     from prompt_toolkit.layout.controls import FormattedTextControl
     from prompt_toolkit.layout.dimension import Dimension
@@ -6924,9 +6925,11 @@ def _enter_log_view(summary=None):
     _log_view_cols            = 0
     _log_view_lines           = None
     _log_view_event_rows      = None
-    # Start paused at event 0 with overlays visible so Space, the
-    # scrubber, and the buttons are discoverable on the first frame.
-    # Space begins playback.
+    # Open playing from the beginning, matching spotlight mode: the chain
+    # rolls immediately from 00:00. Initialise in pause so the _log_resume()
+    # below sees a clean state; it flips to play, snaps to event 0 (offset
+    # 0), arms the overlays visible with the 6 s auto-hide, and starts the
+    # 30 Hz tick task. Any mouse/key activity re-arms the hide thereafter.
     _log_mode                 = "pause"
     _log_play_anchor_wall     = time.monotonic()
     _log_play_anchor_offset_us = 0
@@ -6937,6 +6940,7 @@ def _enter_log_view(summary=None):
     _log_overlays_hide_at     = None
     _log_overlay_hover        = None
     _push_frame("log_view")
+    _log_resume()
 
 
 def _enter_log_view_spotlight(playback):
@@ -7255,11 +7259,16 @@ def _log_view_rebuild_if_needed():
     cols = _term_cols()
     if _log_view_lines is not None and cols == _log_view_cols:
         return
+    # Reserve only the 2-col playhead strip (the sole persistent occluder);
+    # server text wraps all the way up to the strip's left edge. Event
+    # markers float over the log in a transparent layer, so they need no
+    # reserved gutter.
+    width = max(1, cols - _LOG_STRIP_W)
     visual = []
     ev_rows = []
     for ev in _log_view_playback.events:
         start = len(visual)
-        wrapped = _log_view_wrap_fragments(ev.fragments, cols)
+        wrapped = _log_view_wrap_fragments(ev.fragments, width)
         visual.extend(wrapped)
         ev_rows.append((start, len(visual)))
     _log_view_lines      = visual
@@ -7589,10 +7598,11 @@ def _log_lines_to_fragments(sliced, sliced_start, cursor_idx):
         abs_row = sliced_start + i
         if cursor_start <= abs_row < cursor_end:
             painted = _log_apply_cursor_bg(line)
-            # Pad to terminal width so the bg highlight spans the whole row,
-            # including the trailing area past the line's text.
+            # Pad to the strip's left edge so the bg highlight spans the
+            # whole row, including the trailing area past the line's text,
+            # without bleeding under the 2-col strip.
             line_w = sum(len(r) for _, r in line)
-            pad = max(0, _log_view_cols - line_w)
+            pad = max(0, (_log_view_cols - _LOG_STRIP_W) - line_w)
             if pad:
                 painted.append((C_LOG_CURSOR, " " * pad))
             frags.extend(painted)
@@ -7934,13 +7944,14 @@ def _log_spotlight_header_text(cols):
 # Floating spotlight info box. A 30×8 framed rectangle: top/bottom rows
 # are the half-block frame (`█▀▄▌▐` in black on the cyan BG), 6 interior
 # rows of `interior_width = _SPOTLIGHT_BOX_W - 2 = 28` cells flanked by
-# `▌` / `▐` side glyphs. Pinned top=2; its right offset clears the
-# full-height playback rail (`_LOG_RAIL_W`) plus a 2-cell margin so the
-# box sits to the left of the strip rather than overlapping it.
+# `▌` / `▐` side glyphs. Pinned top=2; its right offset clears just the
+# 2-col playhead strip plus a small margin so the box sits beside the
+# strip. Sparse markers may briefly float near it at an event row —
+# acceptable, since the marker layer is transparent between events.
 _SPOTLIGHT_BOX_W      = 30
 _SPOTLIGHT_BOX_H      = 8
 _SPOTLIGHT_BOX_MARGIN = 2
-_SPOTLIGHT_BOX_RIGHT  = _LOG_RAIL_W + _SPOTLIGHT_BOX_MARGIN
+_SPOTLIGHT_BOX_RIGHT  = _LOG_STRIP_W + _SPOTLIGHT_BOX_MARGIN
 
 
 def _log_spotlight_overlay_visible():
@@ -8347,25 +8358,23 @@ def _log_strip_handler(ev):
 
 # --- Right-edge vertical strip ---------------------------------------------
 def _log_strip_text():
-    """Build the right-edge vertical playback strip: a 5-col event-marker
-    field followed by a 2-col playhead track, full terminal height. The
-    top is run start (offset 0), the bottom is the end. Every cell is
-    painted (blank cells in the terminal bg) so the rail fully occludes
-    any server text under it. Also records the strip's absolute top row
-    and height for the vertical seek (`_log_strip_seek_to_row`)."""
+    """Build the right-edge vertical playback strip: a 2-col playhead track,
+    full terminal height. The top is run start (offset 0), the bottom is the
+    end. Every cell is painted (in the terminal bg via the window style) so
+    the strip fully occludes any server text under it — it is the only
+    persistent occluding region. Also records the strip's absolute top row
+    and height for the vertical seek (`_log_strip_seek_to_row`). Event
+    markers float over the log in a separate transparent layer
+    (`_log_marker_text`)."""
     global _log_strip_top, _log_strip_rows
     pb = _log_view_playback
     rows = max(1, _term_rows())
     _log_strip_top  = 0
     _log_strip_rows = rows
 
-    bg_style   = f"bg:{_terminal_bg or '#000000'}"
-    mark_blank = (f"{C_LOG_EVENT_MARK} {bg_style}", " " * _LOG_MARK_W, _log_strip_handler)
-
     if pb is None or not pb.events:
         frags = []
         for i in range(rows):
-            frags.append(mark_blank)
             frags.append((C_LOG_STRIP_REMAINING, "█" * _LOG_STRIP_W, _log_strip_handler))
             if i < rows - 1:
                 frags.append(("", "\n"))
@@ -8381,6 +8390,57 @@ def _log_strip_text():
     r     = half // 2
     upper = (half % 2 == 0)
 
+    played_bg    = C_LOG_STRIP_PLAYED.replace("fg:", "bg:")
+    remaining_bg = C_LOG_STRIP_REMAINING.replace("fg:", "bg:")
+    marker_upper = f"fg:{C_LOG_STRIP_MARKER} {remaining_bg}"
+    marker_lower = f"fg:{C_LOG_STRIP_MARKER} {played_bg}"
+
+    frags = []
+    for i in range(rows):
+        if i < r:
+            frags.append((C_LOG_STRIP_PLAYED, "█" * _LOG_STRIP_W, _log_strip_handler))
+        elif i > r:
+            frags.append((C_LOG_STRIP_REMAINING, "█" * _LOG_STRIP_W, _log_strip_handler))
+        elif upper:
+            frags.append((marker_upper, "▀" * _LOG_STRIP_W, _log_strip_handler))
+        else:
+            frags.append((marker_lower, "▄" * _LOG_STRIP_W, _log_strip_handler))
+        if i < rows - 1:
+            frags.append(("", "\n"))
+    return frags
+
+
+class _LogMarkerControl(FormattedTextControl):
+    """Mouse routing for the floating event-marker layer. The layer sits
+    transparently over the log's right edge; any mouse activity here re-arms
+    the overlay auto-hide and clears stale button hover, mirroring the log
+    content's behaviour. It does not itself seek — the 2-col strip beside it
+    owns click/drag-to-seek."""
+    def mouse_handler(self, ev):
+        if _log_view_playback is None:
+            return NotImplemented
+        if ev.event_type == MouseEventType.MOUSE_MOVE:
+            _log_set_overlay_hover(None)
+        _log_touch_overlays()
+        return None
+
+
+def _log_marker_text():
+    """Build the floating event-marker layer: a transparent column pinned
+    just left of the 2-col strip. At each event's row (time-offset → screen
+    row, the same mapping as the strip's playhead) a stacked `ADKL►` glyph
+    group floats right-aligned against the strip, each glyph painted over
+    `_terminal_bg` so it stays legible atop busy log lines. Every other cell
+    is left unwritten so the log shows through (the float is `transparent`
+    and the window carries no background fill). The marker string is emitted
+    bare — no padding — and the window's RIGHT alignment lands it flush
+    against the strip's left edge while leaving the cells to its left
+    transparent."""
+    pb = _log_view_playback
+    rows = max(1, _term_rows())
+    if pb is None or not pb.events:
+        return []
+    total = pb.total_duration_us
     # Group event markers by row; distinct kinds per row render in the
     # fixed order A, D, K, L followed by one ►.
     by_row = {}
@@ -8390,28 +8450,13 @@ def _log_strip_text():
             if 0 <= mr < rows:
                 by_row.setdefault(mr, set()).add(letter)
 
-    played_bg    = C_LOG_STRIP_PLAYED.replace("fg:", "bg:")
-    remaining_bg = C_LOG_STRIP_REMAINING.replace("fg:", "bg:")
-    marker_upper = f"fg:{C_LOG_STRIP_MARKER} {remaining_bg}"
-    marker_lower = f"fg:{C_LOG_STRIP_MARKER} {played_bg}"
-    mark_style   = f"{C_LOG_EVENT_MARK} {bg_style}"
-
+    mark_style = f"{C_LOG_EVENT_MARK} bg:{_terminal_bg or '#000000'}"
     frags = []
     for i in range(rows):
         letters = by_row.get(i)
         if letters:
-            field = ("".join(c for c in "ADKL" if c in letters) + "►").rjust(_LOG_MARK_W)
-        else:
-            field = " " * _LOG_MARK_W
-        frags.append((mark_style, field, _log_strip_handler))
-        if i < r:
-            frags.append((C_LOG_STRIP_PLAYED, "█" * _LOG_STRIP_W, _log_strip_handler))
-        elif i > r:
-            frags.append((C_LOG_STRIP_REMAINING, "█" * _LOG_STRIP_W, _log_strip_handler))
-        elif upper:
-            frags.append((marker_upper, "▀" * _LOG_STRIP_W, _log_strip_handler))
-        else:
-            frags.append((marker_lower, "▄" * _LOG_STRIP_W, _log_strip_handler))
+            field = "".join(c for c in "ADKL" if c in letters) + "►"
+            frags.append((mark_style, field))
         if i < rows - 1:
             frags.append(("", "\n"))
     return frags
@@ -8444,7 +8489,6 @@ def _log_box_text():
     frame_style = f"{C_LOG_BOX_FRAME} {bg_style}"
     label_style = f"{C_LOG_BOX_FG} {bg_style}"
     dim_style   = f"{C_LOG_BOX_DIM} {bg_style}"
-    gold_style  = f"fg:{C_LOG_STRIP_MARKER} {bg_style}"
     hover_style = C_LOG_BOX_BTN_HOVER
     inner = _LOG_BOX_INNER_W
 
@@ -8464,7 +8508,8 @@ def _log_box_text():
     if _log_overlay_hover == "playpause":
         pp_glyph_st = pp_label_st = hover_style
     else:
-        pp_glyph_st, pp_label_st = gold_style, label_style
+        # Grey play/pause glyph — gold stays exclusive to the strip playhead.
+        pp_glyph_st, pp_label_st = label_style, label_style
 
     frags = []
     # Top frame.
@@ -9938,15 +9983,24 @@ def main():
         content=FormattedTextControl(text=_log_header_text, focusable=False),
         height=1, wrap_lines=False, always_hide_cursor=True,
     )
-    # Right-edge vertical strip: a full-height Float of _LOG_RAIL_W cols
-    # pinned to the right edge, gated by the shared auto-hide filter.
+    # Right-edge vertical strip: a full-height Float of the 2-col playhead
+    # track pinned to the right edge, gated by the shared auto-hide filter.
+    # This is the only persistent occluding region.
     log_strip_win = Window(
         content=FormattedTextControl(text=_log_strip_text, focusable=False),
-        width=_LOG_RAIL_W, wrap_lines=False, always_hide_cursor=True,
+        width=_LOG_STRIP_W, wrap_lines=False, always_hide_cursor=True,
         style=f"bg:{_terminal_bg}" if _terminal_bg else "bg:#000000",
     )
+    # Floating event-marker layer: a transparent full-height column just to
+    # the left of the strip. RIGHT-aligned so the bare marker string lands
+    # flush against the strip; all other cells stay transparent.
+    log_marker_win = Window(
+        content=_LogMarkerControl(text=_log_marker_text, focusable=False),
+        width=_LOG_MARK_W, wrap_lines=False, always_hide_cursor=True,
+        align=WindowAlign.RIGHT,
+    )
     # Floating control box: pinned 8 cols in from the right edge, 1 row up
-    # from the bottom (clear of the strip rail), gated by the same filter.
+    # from the bottom (clear of the strip), gated by the same filter.
     log_box_win = Window(
         content=FormattedTextControl(text=_log_box_text, focusable=False),
         width=_LOG_BOX_W, height=_LOG_BOX_H,
@@ -9970,9 +10024,9 @@ def main():
                                              filter=_log_overlays_filter),
             ),
             # Top-right floating spotlight info box (spotlight mode only).
-            # Pinned to the right of the playback rail (top=2,
-            # right=_SPOTLIGHT_BOX_RIGHT) so it sits beside the strip
-            # rather than overlapping it; framed in half-block glyphs with
+            # Pinned beside the 2-col playhead strip (top=2,
+            # right=_SPOTLIGHT_BOX_RIGHT) so it clears the strip without a
+            # wide gap; framed in half-block glyphs with
             # full-block █ corners on a bright banner-hue fill. Visibility
             # is *not* gated by the auto-hide — only by the spotlight-mode
             # predicate and a narrow-terminal fallback.
@@ -9982,10 +10036,20 @@ def main():
                 content=ConditionalContainer(content=log_spotlight_win,
                                              filter=_log_spotlight_overlay_filter),
             ),
-            # Right-edge vertical strip — drawn after the header so the
-            # rail occludes the header's right padding cleanly.
+            # Floating event-marker layer — transparent column just left of
+            # the strip; markers float over the log, every other cell shows
+            # through. Drawn after the header so a row-0 marker floats over
+            # the header rather than under it.
             Float(
-                top=0, bottom=0, right=0, width=_LOG_RAIL_W,
+                top=0, bottom=0, right=_LOG_STRIP_W, width=_LOG_MARK_W,
+                transparent=True,
+                content=ConditionalContainer(content=log_marker_win,
+                                             filter=_log_overlays_filter),
+            ),
+            # Right-edge vertical strip — drawn after the header so the
+            # strip occludes the header's right padding cleanly.
+            Float(
+                top=0, bottom=0, right=0, width=_LOG_STRIP_W,
                 content=ConditionalContainer(content=log_strip_win,
                                              filter=_log_overlays_filter),
             ),
