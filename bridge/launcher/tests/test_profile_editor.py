@@ -1780,6 +1780,61 @@ class TestEditorModeToggle(unittest.TestCase):
         )
 
 
+class TestToggleRowEnterSpaceDescends(unittest.TestCase):
+    """The LITE/EDITOR toggle row accepts Enter / Space as descend
+    affordances. Both drop focus into the current mode's first zone —
+    same outcome as ↓ — and never flip `_editor_mode`."""
+
+    class _FakeEvent:
+        data = " "
+
+    @staticmethod
+    def _toggle_handler(key):
+        """Return the registered toggle-mode handler whose filter is
+        currently active. `enter` resolves to Keys.ControlM and `space`
+        to a literal ' ' in prompt_toolkit."""
+        from prompt_toolkit.keys import Keys
+        target = {"enter": Keys.ControlM, "space": " "}[key]
+        kb = _ed.key_bindings()
+        for b in kb.bindings:
+            if b.keys == (target,) and b.filter():
+                return b.handler
+        raise KeyError(f"no toggle-mode handler for {key!r}")
+
+    def _setup(self, mode):
+        prof, _src, _td = _make_profile("#alias {k} {kill}\n")
+        _reset_editor_state(prof)
+        _ed._editor_mode           = mode
+        _ed._editor_toggle_focused = True
+        _ed._editor_buffer_text    = ""
+        _ed._editor_buffer_cursor  = 0
+        _ed._editor_buffer_scroll  = 0
+
+    def _descends(self, key, mode):
+        self._setup(mode)
+        self._toggle_handler(key)(self._FakeEvent())
+        # Toggle focus is cleared (we left the toggle row)...
+        self.assertFalse(_ed._editor_toggle_focused)
+        # ...and the mode is untouched — only Left/Right/click flip it.
+        self.assertEqual(_ed._editor_mode, mode)
+
+    def test_enter_lite_drops_to_focus_zero(self):
+        self._descends("enter", "lite")
+        self.assertEqual(_ed._editor_focus, 0)
+
+    def test_space_lite_drops_to_focus_zero(self):
+        self._descends("space", "lite")
+        self.assertEqual(_ed._editor_focus, 0)
+
+    def test_enter_editor_drops_into_buffer(self):
+        # Editor mode: the buffer is the only other zone — clearing the
+        # toggle focus drops straight into it (no focus-zone change needed).
+        self._descends("enter", "editor")
+
+    def test_space_editor_drops_into_buffer(self):
+        self._descends("space", "editor")
+
+
 class TestEditorModeBraceAssistance(unittest.TestCase):
     """Phase B — `{` auto-close + `}` overtype + `→` step-over + Backspace
     pair-delete, plus the brace-balance footer count. Logic lives in

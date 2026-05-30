@@ -2918,6 +2918,18 @@ class ProfileEditor:
                 self._host.app.invalidate()
     
     
+    def _editor_toggle_descend(self):
+        """Drop from the LITE/EDITOR toggle into the current mode's first
+        zone: lite → focus 0; editor → just unfocus the toggle, which drops
+        straight into the buffer (the only other zone). Shared by ↓ and
+        Enter/Space so they behave identically — none of them flip the mode."""
+        self._editor_unfocus_toggle()
+        if self._editor_mode == "lite":
+            self._profile_editor_set_focus(0)
+        # In editor mode the buffer is the only other zone — clearing the
+        # toggle focus drops us straight into it.
+
+
     def _editor_flip_mode(self):
         """Toggle between lite and editor mode. Edits in either mode survive
         the flip:
@@ -5709,13 +5721,22 @@ class ProfileEditor:
         
         @kb.add("down", filter=_in_pe_toggle())
         def _kb_peditor_toggle_down(event):
-            self._editor_unfocus_toggle()
-            if self._editor_mode == "lite":
-                self._profile_editor_set_focus(0)
-            # In editor mode the buffer is the only other zone — clearing the
-            # toggle focus drops us straight into it.
-        
-        
+            self._editor_toggle_descend()
+
+
+        @kb.add("enter", filter=_in_pe_toggle())
+        def _kb_peditor_toggle_enter(event):
+            # Enter descends like ↓ — it does NOT flip the mode (Left/Right/
+            # click remain the only mode-flip affordances).
+            self._editor_toggle_descend()
+
+
+        @kb.add("space", filter=_in_pe_toggle())
+        def _kb_peditor_toggle_space(event):
+            # Space descends like ↓ — it does NOT flip the mode.
+            self._editor_toggle_descend()
+
+
         @kb.add("left", filter=_in_pe_toggle())
         def _kb_peditor_toggle_left(event):
             # Left selects LITE. No-op when LITE is already active.

@@ -3287,6 +3287,13 @@ _OPTIONS_TERMINAL_ARROW_STEPPERS = {
     "cursor_blink": _options_terminal_cursor_blink_step,
 }
 
+# Cycle rows wrap through a fixed set of values; Enter/Space advance one
+# step (≡ →). The remaining arrow steppers are numeric (size/width/height/
+# padding) and stay ←/→ only — Enter/Space no-op on them.
+_OPTIONS_TERMINAL_CYCLERS = {
+    "window_mode", "background", "cursor_style", "cursor_blink",
+}
+
 
 def _options_terminal_arrow_step(delta):
     """Dispatch a ←/→ on the current cursor row to the right field's
@@ -3309,9 +3316,10 @@ def _options_terminal_activate(row_idx=None):
     action, _label = rows[idx]
     if action == "font":
         _enter_terminal_font_picker_frame()
+    elif action in _OPTIONS_TERMINAL_CYCLERS:
+        _OPTIONS_TERMINAL_ARROW_STEPPERS[action](1)   # advance, wraps
     elif action in _OPTIONS_TERMINAL_ARROW_STEPPERS:
-        # Stepper / cycle rows are driven by ← / → — Enter is a no-op.
-        pass
+        pass   # numeric stepper (size/width/height/padding) — ←/→ only
     elif action == "apply":
         _options_terminal_apply()
     elif action == "apply_disabled":
@@ -5089,6 +5097,15 @@ def _history_set_focus(panel):
 
 def _history_cycle_focus(delta):
     _history_set_focus((_history_focused + delta) % 3)
+
+
+def _history_descend_to_table():
+    """Move focus from the filter pill row into the runs table, cursor
+    on row 0. Shared by ↓ and Enter/Space so they behave identically.
+    The filter is already applied live on pill move; this only changes
+    focus + table cursor."""
+    _history_jump_table(0)
+    _history_set_focus(1)
 
 
 def _history_set_hover(panel, row):
@@ -9234,14 +9251,9 @@ def _kb_hist_up(event):
 
 @kb.add("down", filter=_in_frame("history"))
 def _kb_hist_down(event):
-    # ↓ on the filter row drops into the options column at the topmost
-    # enabled button (RUN LOG when it's enabled).
-    global _history_menu_cursor
+    # ↓ on the filter row descends into the runs table at row 0.
     if _history_focused == 0:
-        enabled = _history_menu_enabled_indices()
-        if enabled:
-            _history_menu_cursor = enabled[0]
-        _history_set_focus(2)
+        _history_descend_to_table()
     elif _history_focused == 1:
         _history_move_table(1)
     elif _history_focused == 2:
@@ -9276,7 +9288,7 @@ def _kb_hist_end(event):
 @kb.add(" ",     filter=_in_frame("history"))
 def _kb_hist_enter(event):
     if _history_focused == 0:
-        _history_apply_cursor_filter()
+        _history_descend_to_table()
     elif _history_focused == 1:
         _history_activate_table_row(_history_table_cursor)
     else:
