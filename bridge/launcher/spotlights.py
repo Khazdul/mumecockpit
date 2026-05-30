@@ -553,19 +553,12 @@ class SpotlightPlayback:
         normalises death to `"death"`; both that and the run-archive
         `"char_death"` map to D. Read by the launcher's right-edge
         playback strip (mode-agnostic contract with LogPlayback)."""
-        kind_letter = {
-            "pkill":       "K",
-            "char_death":  "D",
-            "death":       "D",
-            "achievement": "A",
-            "level_up":    "L",
-        }
         out: list = []
         for spot_idx, spot in enumerate(self.spotlights):
             start = self.spotlight_start_offsets_us[spot_idx]
             offsets = spot.event_offsets_us
             for ev_idx, ev in enumerate(spot.events):
-                letter = kind_letter.get(ev.kind)
+                letter = log_player.MARKER_KIND_TO_LETTER.get(ev.kind)
                 if letter is None:
                     continue
                 off = offsets[ev_idx] if ev_idx < len(offsets) else 0

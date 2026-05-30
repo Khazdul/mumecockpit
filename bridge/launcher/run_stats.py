@@ -240,6 +240,31 @@ def aggregate(character: str, run_ids: list[str]) -> RunStats:
     return stats
 
 
+_MARKER_EVENTS = ("pkill", "char_death", "achievement", "level_up")
+
+
+def marker_events(character: str, run_ids: list[str]) -> list[tuple[str, int]]:
+    """(kind, ts) for every row whose event is one of pkill / char_death /
+    achievement / level_up, across all run_ids in the chain, sorted by ts.
+    ts is epoch seconds. Reuses the existing per-run JSONL row iteration."""
+    cur_id = current_run_id_for(character)
+    out: list[tuple[str, int]] = []
+    for run_id in run_ids:
+        path = _resolve_path(character, run_id, cur_id)
+        if path is None:
+            continue
+        for row in _iter_rows(path):
+            event = row.get("event")
+            if event not in _MARKER_EVENTS:
+                continue
+            ts = row.get("ts")
+            if not isinstance(ts, (int, float)) or isinstance(ts, bool):
+                continue
+            out.append((event, int(ts)))
+    out.sort(key=lambda e: e[1])
+    return out
+
+
 def load_current_run_stats(character: str) -> RunStats | None:
     cur_id = current_run_id_for(character)
     if cur_id is None:

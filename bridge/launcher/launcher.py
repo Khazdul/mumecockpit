@@ -6917,6 +6917,10 @@ def _enter_log_view(summary=None):
     if not playback.events:
         # Defensive — every run's .log was missing; stay on history_detail.
         return
+    # Populate the right-edge strip's K/D/A/L markers from the chain's
+    # run-archive JSONL (spotlight mode does this off SpotlightPlayback).
+    playback.set_marker_events(
+        run_stats.marker_events(summary.character, summary.run_ids))
     _log_view_mode            = "chain"
     _log_view_reel            = None
     _log_view_summary         = summary

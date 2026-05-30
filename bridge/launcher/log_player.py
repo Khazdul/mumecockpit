@@ -7,12 +7,25 @@
 
 from __future__ import annotations
 
+import bisect
 import json
 import os
 import re
 from dataclasses import dataclass, field
 
 from palette import C_LOG_PLAYER_INPUT
+
+# Tracked-event kind → strip letter. Shared by both playback modes:
+# chain mode keys off the raw run-archive JSONL `event` names, spotlight
+# mode off `SpotlightEvent.kind` (which normalises char_death to "death").
+# Both "char_death" and "death" map to D so the contract is mode-agnostic.
+MARKER_KIND_TO_LETTER = {
+    "pkill":      "K",
+    "char_death": "D",
+    "death":      "D",
+    "achievement": "A",
+    "level_up":   "L",
+}
 
 _BRIDGE_DIR    = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _PROJECT_DIR   = os.path.dirname(_BRIDGE_DIR)
@@ -240,21 +253,65 @@ class LogPlayback:
             prev_ts = ev.ts_us
         self.total_duration_us = self.playback_offset_us[-1] if self.playback_offset_us else 0
 
+        # Tracked-event strip markers, computed once by set_marker_events().
+        self._marker_offsets: list = []
+
     def __bool__(self):
         return bool(self.events)
 
     def __len__(self):
         return len(self.events)
 
+    def offset_for_ts_us(self, ts_us: int) -> int:
+        """Map a wall-clock timestamp (microseconds since epoch) onto a
+        playback offset by snapping to the nearest log line by ts_us, then
+        returning that line's `playback_offset_us`. Handles stitched runs
+        and the chain's gap clamping transparently. Result is clamped to
+        `[0, total_duration_us]`. Returns 0 when there are no events."""
+        if not self.events:
+            return 0
+        ts_list = [ev.ts_us for ev in self.events]
+        i = bisect.bisect_left(ts_list, ts_us)
+        # Pick whichever neighbour is closest in wall-clock time.
+        if i <= 0:
+            idx = 0
+        elif i >= len(ts_list):
+            idx = len(ts_list) - 1
+        else:
+            before = ts_list[i - 1]
+            after  = ts_list[i]
+            idx = i if (after - ts_us) < (ts_us - before) else i - 1
+        off = self.playback_offset_us[idx]
+        if off < 0:
+            return 0
+        if off > self.total_duration_us:
+            return self.total_duration_us
+        return off
+
+    def set_marker_events(self, events: list) -> None:
+        """Build the strip-marker list from `(kind, ts_seconds)` tuples
+        (as produced by `run_stats.marker_events`). Each kind is mapped to
+        a strip letter via `MARKER_KIND_TO_LETTER` (unknown kinds skipped)
+        and its wall-clock ts snapped to a playback offset via
+        `offset_for_ts_us`. Computed once and cached for `event_markers()`."""
+        out: list = []
+        for kind, ts in events:
+            letter = MARKER_KIND_TO_LETTER.get(kind)
+            if letter is None:
+                continue
+            off = self.offset_for_ts_us(int(ts) * 1_000_000)
+            out.append((letter, off))
+        self._marker_offsets = out
+
     def event_markers(self):
         """(letter, offset_us) for each tracked event, offset within
         [0, total_duration_us]. letter ∈ {'K','D','A','L'}.
 
         Mode-agnostic contract read by the launcher's right-edge playback
-        strip (mirrors `SpotlightPlayback.event_markers`). Chain mode
-        returns `[]` for now; a follow-up adds the JSONL→offset join that
-        maps run-archive events onto chain playback offsets."""
-        return []
+        strip (mirrors `SpotlightPlayback.event_markers`). Populated by
+        `set_marker_events()` from the chain's run-archive JSONL; defaults
+        to `[]` until then."""
+        return self._marker_offsets
 
     def run_at(self, event_index: int):
         """Return (run_id, run_ordinal, total_runs) for an event index.
