@@ -75,6 +75,24 @@ no longer a per-pane subframe.
 | Quit | Selecting Quit exits the launcher immediately to the shell. ESC on the main frame is a no-op (intentionally unbound). |
 | Persistence | Options saved to `bridge/runtime/startup.conf` on Back / ESC; profile selection saved immediately on Enter |
 
+## Navigation grammar
+
+The convention every launcher frame follows, so new frames inherit it
+rather than reinventing key semantics:
+
+- **Arrows move.** Step within a zone; at a zone edge, cross into the
+  spatially-adjacent zone.
+- **Tab / Shift+Tab cycle zones; ESC = back / save.**
+- **Enter / Space always do a *forward* action** — never a dead key on
+  a selectable element. They activate an action (button / openable
+  row); advance a toggle or cycler one value; or, on a live-applied
+  selector (history filter pills, profile-editor kind buttons, the
+  LITE/EDITOR toggle), commit-and-descend into the governed content at
+  row 0.
+- **Sole exception:** a bare numeric stepper, where Enter / Space are
+  inert because there is no discrete target and no governed content
+  zone.
+
 ## Profile sub-menu
 
 Two interactive frames: `profile` (table + actions) and `profile_rename`
@@ -383,9 +401,12 @@ never sacrificed.
 
 - Activation (Phase 6.2): `Left` selects LITE, `Right` selects
   EDITOR when the toggle has keyboard focus — no-op when the
-  requested mode is already active. `Enter` and `Space` are no
-  longer toggle activators (they're free for the buffer and other
-  zones). Mouse click on the inactive block flips; click on the
+  requested mode is already active. `Enter` / `Space` on the focused
+  toggle drop into the current mode's first zone (lite → kind-buttons
+  row; editor → buffer), mirroring `↓`; they never *flip* the mode —
+  Left / Right / click remain the only mode-flip affordances (the
+  buffer's own Enter = newline is a separate zone and is unaffected).
+  Mouse click on the inactive block flips; click on the
   active block is a no-op. Mouse hover on the inactive block
   paints `C_BUTTON_ACTIVE_UNFOCUSED` (preview).
 - Focus: `_editor_toggle_focused` is a separate flag — when True,
@@ -965,6 +986,8 @@ text-bodied + macro; `0..3` for highlights).
 - From toggle, lite mode → kind-buttons row.
 - From any kind button → entry list (cursor at row 0).
 - From toggle, editor mode → buffer (cursor at offset 0).
+- `Enter` / `Space` on the focused toggle mirror the from-toggle
+  descend in both modes (lite → kind-buttons row; editor → buffer).
 
 **Left / Right within the kind-buttons row** (Phase 6.3): step to
 the previous / next button. No wrap — `←` on the first button
@@ -1638,7 +1661,8 @@ values stack on one column:
    applying the first nudge.
 3. **Window mode** — fixed-value cycle through
    `windowed / maximized / fullscreen` via `_cycle_pick`. ← / → wraps
-   at both ends; Enter is a no-op. Selecting `windowed` reveals the
+   at both ends; Enter / Space advance the value one step (≡ →,
+   wrapping). Selecting `windowed` reveals the
    conditional Width / Height rows directly below this row; cycling
    to `maximized` or `fullscreen` hides them. The pending config keeps
    carrying `window_width` / `window_height` either way, so a round
@@ -1655,12 +1679,14 @@ values stack on one column:
 6. **Background** — fixed-value cycle through the launcher's hex
    palette, with any off-palette on-disk value prepended so the user
    never silently loses a custom colour. The label uses the palette
-   name when available, falling back to the raw hex.
+   name when available, falling back to the raw hex. Enter / Space
+   advance the value one step (≡ →, wrapping).
 7. **Cursor style** — fixed-value cycle through
-   `block / beam / underline` via `_cycle_pick`. ← / → wraps; Enter
-   is a no-op.
+   `block / beam / underline` via `_cycle_pick`. ← / → wraps; Enter /
+   Space advance the value one step (≡ →, wrapping).
 8. **Cursor blink** — fixed-value cycle through `Off / On` (foot's
-   `cursor.blink=no/yes`).
+   `cursor.blink=no/yes`). Enter / Space advance the value one step
+   (≡ →, wrapping).
 9. **Apply** — active only when `pending != disk`; with no delta it
    renders in the dead-grey inactive `menu_row` state (no handler,
    ↑/↓ keyboard navigation skips it, mirroring the inactive "Save
@@ -1984,9 +2010,9 @@ landing spot even with an empty table.
 | Focus   | Key                | Action                                |
 |---------|--------------------|---------------------------------------|
 | filter  | ←/→                | move pill cursor (clamp, no wrap; window scrolls minimally) |
-| filter  | Enter / Space      | re-apply cursor pill's filter         |
+| filter  | Enter / Space      | focus the runs table, cursor on row 0 |
 | filter  | ↑                  | no-op (filter is the top zone)        |
-| filter  | ↓                  | focus options column at the topmost enabled button |
+| filter  | ↓                  | focus the runs table, cursor on row 0 |
 | table   | ↑                  | move cursor up; falls through to the filter row when on row 0 |
 | table   | ↓                  | move cursor down (clamp)              |
 | table   | PgUp/PgDn          | scroll 10                             |
@@ -2006,16 +2032,19 @@ when it overflows. On the table they focus the button column (`←`
 only — `→` is a no-op since nothing sits right of the table). On the
 button column `→` focuses the table; `←` is a no-op.
 
-The filter row is reached above each zone below it via the spatial
+The filter row is reached from each zone below it via the spatial
 arrow path: `↑` at row 0 of the table, or `↑` on the topmost enabled
 button of the options column (`RUN LOG` when enabled), focuses the
-filter row. `↓` from the filter row reciprocates by focusing the
-options column at the topmost enabled button.
+filter row. `↓` and Enter / Space from the filter row descend into the
+runs table at row 0; the button column is reached from the table via
+`←`. The reciprocal `↑` (from table row 0, and from the topmost
+options button) still returns to the filter row.
 
 **Filter behaviour.** Cursor equals the active filter; moving the
-cursor with ←/→ or clicking a pill re-filters immediately. Filter
-resets to `All` on every frame push. Filter change resets table scroll
-and cursor to 0; sort state is preserved.
+cursor with ←/→ or clicking a pill re-filters immediately. Descending
+into the table (↓ or Enter / Space) does not re-apply the filter — it
+is already live. Filter resets to `All` on every frame push. Filter
+change resets table scroll and cursor to 0; sort state is preserved.
 
 **Mouse.** Click activates (and switches focus to that panel).
 Clicking a runs-table row with `has_log` true opens `log_view` for
