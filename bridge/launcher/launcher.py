@@ -444,6 +444,7 @@ _log_view_reel              = None     # SpotlightPlayback | None
 # black canvas, narrative lines scroll bottom-to-top with fade bands at
 # the top and bottom. See ADR 0080 and docs/launcher.md "credits frame".
 _credits_lines: list             = []
+_credits_last_visible_row: int   = 0
 _credits_start_monotonic: float  = 0.0
 _credits_term_rows: int          = 0
 _credits_term_cols: int          = 0
@@ -7133,7 +7134,7 @@ def _credits_check_finished() -> bool:
     offset_floor = int(
         (time.monotonic() - _credits_start_monotonic) * _CREDITS_SCROLL_ROWS_PER_SEC
     )
-    if offset_floor >= len(_credits_lines) + _credits_term_rows:
+    if offset_floor >= _credits_last_visible_row + _credits_term_rows:
         _credits_finish()
         return True
     return False
@@ -7148,7 +7149,7 @@ def _enter_credits():
     chronicle is generated from the aggregated event set alone, so
     emptiness is decided on `reel.total_count` only."""
     global _credits_empty_reason
-    global _credits_lines, _credits_start_monotonic
+    global _credits_lines, _credits_last_visible_row, _credits_start_monotonic
     global _credits_term_rows, _credits_term_cols, _credits_text_width
     # Mirror _enter_spotlights: if any per-kind toggle is off, attribute an
     # empty reel to the filter and nudge toward Options → Spotlights.
@@ -7170,6 +7171,14 @@ def _enter_credits():
     _credits_term_cols = term_cols
     _credits_text_width = text_width
     _credits_lines = credits.generate_credits_lines(reel.spotlights, text_width)
+    # Auto-exit keys off the last *non-blank* line so the frame pops the
+    # moment the closing "The End." clears the top edge — not after the
+    # trailing blank pad (credits.py's + the one below) has also scrolled
+    # past, which would strand the user on a black screen for ~6 s.
+    _credits_last_visible_row = max(
+        (i for i, ln in enumerate(_credits_lines) if ln.strip()),
+        default=0,
+    )
     # Trailing pad: enough blank rows after the closing line so it
     # scrolls fully off the top before the auto-exit fires. The module
     # adds a small baseline buffer; we top it up with `term_rows` here
@@ -7182,10 +7191,11 @@ def _enter_credits():
 
 def _credits_finish():
     """Stop the tick, clear state, and return to the launcher main menu."""
-    global _credits_lines, _credits_start_monotonic
+    global _credits_lines, _credits_last_visible_row, _credits_start_monotonic
     global _credits_term_rows, _credits_term_cols, _credits_text_width
     _credits_cancel_tick_task()
     _credits_lines = []
+    _credits_last_visible_row = 0
     _credits_start_monotonic = 0.0
     _credits_term_rows = 0
     _credits_term_cols = 0
