@@ -213,3 +213,15 @@ or detail.Pattern → kind row (not directly to toggle as in Phase
 cramped editing surface. Tab cycle length is unchanged; the
 five focus stops are now toggle → kind row → list → Pattern →
 Body.
+
+### Enter/Space on the toggle now descend (2026-05-30)
+
+ADR 0120 narrows §4. §4's "Phase 6.2 unbinds both [`Enter` and
+`Space`]" no longer holds: `Enter` / `Space` on the focused
+LITE/EDITOR toggle now descend into the current mode's first zone
+(kind-buttons row in lite, buffer in editor), mirroring `↓`. They
+still do **not** *flip* the mode — Left / Right / click remain the
+only mode-flip affordances — and the editor buffer's `Enter` =
+newline is a separate zone and is unaffected. The §4 body above is
+left intact. See ADR 0120 for the launcher-wide grammar this aligns
+to.

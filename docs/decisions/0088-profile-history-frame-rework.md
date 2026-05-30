@@ -239,3 +239,14 @@ inverting any of the decisions above.
    labels and the dim disabled state the column reads as more of a
    single block, so the 1-cell gap looked cramped. P4.1 widens the
    gap to 2 cells in both frames.
+
+## Amendment — filter Enter/Space descend (2026-05-30)
+
+ADR 0120 retires the P4.1 history-filter row behaviour where
+`Enter` / `Space` "re-apply cursor pill's filter". The filter row's
+`Enter` / `Space` (and `↓`) now descend into the runs table at row
+0; the button column is reached from the table via `←`. The filter
+still applies live on pill move / click — descending no longer
+re-applies it. The reciprocal `↑` from table row 0 (and from the
+topmost options button) still returns to the filter row. See ADR
+0120 for the launcher-wide grammar.
