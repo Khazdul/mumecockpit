@@ -80,6 +80,11 @@ C_HERB_NAME        = "fg:#999999"   # medium grey name
 C_HERB_NAME_HOVER  = "fg:#cccccc"   # name on hover
 
 C_CELL_FG       = "fg:#000000"
+# Group header label rows ("Spells:" etc). fg ONLY — no bg — so the label
+# renders directly on the tmux pane bg tint. Very dark grey, just legible on
+# every PANE_COLORS tint (tightest against grey #161616); bump to #454545 if
+# too faint there.
+C_GROUP_HEADER_FG = "fg:#3a3a3a"
 C_INDICATOR     = "fg:#d4a04e italic"
 C_NAME_DEPLETED = "fg:#666666"
 # Untracked affect cells (reconciled from stat/info, no observed timing yet):
@@ -101,12 +106,26 @@ _LAYOUT_DEFAULTS = {
     "blind":  {"enabled": True, "color": "#00cccc", "cols": 2},
     "charm":  {"enabled": True, "color": "#B388FF", "cols": 1},
 }
-# Vertical spacing between rendered groups. GLOBAL toggle (not per-type):
-# True (default) = historic dense layout, no blank line between groups; False =
-# one blank line between consecutive rendered groups. Restated here and in
-# bridge/launcher/timers_layout_grid.py — the two packages share no import path
-# (same cross-package reason as _LAYOUT_DEFAULTS; see ADR 0126).
-TIMERS_COMPACT_DEFAULT = True
+# Group header labels above each rendered group. GLOBAL toggle (not per-type):
+# True (default) renders a dim "Group:" label row above each rendered (enabled
+# and non-empty) group — the header row doubles as the separator, so there are
+# no blank rows; False = historic dense layout (no headers, no blanks). Restated
+# here and in bridge/launcher/timers_layout_grid.py — the two packages share no
+# import path (same cross-package reason as _LAYOUT_DEFAULTS; see ADR 0126).
+TIMERS_HEADERS_DEFAULT = True
+
+# Display names for each group's header row, mirroring
+# timers_layout_grid.TIMERS_LAYOUT_LABELS. Restated locally for the same
+# cross-package reason as _LAYOUT_DEFAULTS (the two packages share no import
+# path; see ADR 0126).
+_GROUP_LABELS = {
+    "spell":  "Spells",
+    "buff":   "Buffs",
+    "debuff": "Debuffs",
+    "stored": "Stored",
+    "blind":  "Blinds",
+    "charm":  "Charmies",
+}
 _COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 
 
@@ -126,15 +145,15 @@ def _load_layout():
     timers_layout.conf (key=value, one per line; same trivial format as
     startup.conf). Unknown keys are ignored; an unparseable value falls back to
     that key's default. Keys: timers_<type>_{enabled,color,cols} plus the
-    global timers_compact. Returns (layout, compact); an absent or unparseable
-    timers_compact resolves to TIMERS_COMPACT_DEFAULT."""
+    global timers_headers. Returns (layout, headers); an absent or unparseable
+    timers_headers resolves to TIMERS_HEADERS_DEFAULT."""
     layout = {t: dict(v) for t, v in _LAYOUT_DEFAULTS.items()}
-    compact = TIMERS_COMPACT_DEFAULT
+    headers = TIMERS_HEADERS_DEFAULT
     try:
         with open(TIMERS_LAYOUT_PATH, "r") as fh:
             raw = fh.read()
     except OSError:
-        return layout, compact
+        return layout, headers
     for line in raw.splitlines():
         line = line.strip()
         if not line or line.startswith("#") or "=" not in line:
@@ -142,11 +161,11 @@ def _load_layout():
         key, _, val = line.partition("=")
         key = key.strip()
         val = val.strip()
-        # timers_compact is a global toggle with no second underscore, so it
+        # timers_headers is a global toggle with no second underscore, so it
         # must branch before the type-split below (which would drop it).
-        if key == "timers_compact":
+        if key == "timers_headers":
             if val in ("0", "1"):
-                compact = (val == "1")
+                headers = (val == "1")
             continue
         if not key.startswith("timers_"):
             continue
@@ -167,7 +186,7 @@ def _load_layout():
             n = _clamp_cols(typ, val)
             if n is not None:
                 layout[typ]["cols"] = n
-    return layout, compact
+    return layout, headers
 
 
 def _palette(typ):
@@ -176,7 +195,7 @@ def _palette(typ):
     return (C_CELL_FG + " bg:" + hex_, "fg:" + hex_)
 
 
-_layout, _compact  = _load_layout()
+_layout, _headers  = _load_layout()
 _last_layout_mtime = None
 
 _affects          = []
@@ -260,8 +279,8 @@ def _split_groups():
 
 def _rendered_groups(spells, buffs, debuffs, stored, blinds, charms):
     """Ordered list of (items, typ) for each group that actually renders — i.e.
-    is enabled AND non-empty. The single source of truth for both the separator
-    placement in _build_all_rows and the separator count in _total_rows, so the
+    is enabled AND non-empty. The single source of truth for both the header-row
+    placement in _build_all_rows and the header-row count in _total_rows, so the
     overflow indicator, scroll clamp, and corner-yield never desync."""
     groups = (
         (spells,  "spell"),  (buffs,  "buff"),  (debuffs, "debuff"),
@@ -275,8 +294,9 @@ def _total_rows(spells, buffs, debuffs, stored, blinds, charms):
     rendered = _rendered_groups(spells, buffs, debuffs, stored, blinds, charms)
     body = sum(math.ceil(len(items) / _layout[typ]["cols"])
                for items, typ in rendered)
-    separators = (len(rendered) - 1) if (not _compact and rendered) else 0
-    return body + separators
+    # Each rendered group contributes one header row when headers are on.
+    headers_extra = len(rendered) if _headers else 0
+    return body + headers_extra
 
 
 def _cell_frags(entry, cell_w, palette):
@@ -468,18 +488,20 @@ def _build_all_rows():
     Column counts, colours, and per-group visibility come from _layout. A group
     with enabled == 0 is skipped entirely (no rows); since herblores fold into
     the buff/debuff groups, disabling buff/debuff hides their herblores too.
-    When _compact is False, one blank row ([] — an empty fragment-list) is
-    inserted between each pair of consecutive rendered groups (none before the
-    first or after the last). Separator placement is derived from the same
+    When _headers is True, a single dim "Group:" label row is emitted immediately
+    above each rendered group's content (including the first), doubling as the
+    separator — no blank rows anywhere. When _headers is False: today's dense
+    layout (no headers, no blanks). Header placement is derived from the same
     _rendered_groups list _total_rows counts, keeping the two in lockstep."""
     spells, buffs, debuffs, stored, blinds, charms = _split_groups()
     W = max(4, _term_cols())
 
     all_rows = []
-    for i, (items, typ) in enumerate(
-            _rendered_groups(spells, buffs, debuffs, stored, blinds, charms)):
-        if i > 0 and not _compact:
-            all_rows.append([])   # blank separator row between groups
+    for items, typ in _rendered_groups(
+            spells, buffs, debuffs, stored, blinds, charms):
+        if _headers:
+            label = f"{_GROUP_LABELS[typ]}:"[:W]   # left-aligned at col 0
+            all_rows.append([(C_GROUP_HEADER_FG, label)])   # non-interactive
         all_rows.extend(_group_rows(items, typ, W))
 
     return all_rows
@@ -748,7 +770,7 @@ async def _poll_state(app):
     global _affects, _stored_spells, _blinds, _charms, _herblores, _herblore_catalog
     global _last_mtime, _run_active, _scroll_offset
     global _view_mode, _hover_plus, _hover_herblore_key, _hover_close, _hover_charm_id
-    global _layout, _compact, _last_layout_mtime
+    global _layout, _headers, _last_layout_mtime
 
     while True:
         try:
@@ -757,7 +779,7 @@ async def _poll_state(app):
             layout_mtime = None
         if layout_mtime != _last_layout_mtime:
             _last_layout_mtime = layout_mtime
-            _layout, _compact = _load_layout()   # absent file → defaults; live re-colour / re-layout / re-space
+            _layout, _headers = _load_layout()   # absent file → defaults; live re-colour / re-layout / re-headers
             app.invalidate()
 
         try:

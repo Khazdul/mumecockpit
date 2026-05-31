@@ -137,14 +137,17 @@ type:
 timers_<type>_enabled = 0 | 1
 timers_<type>_color   = #rrggbb
 timers_<type>_cols    = <int>
-timers_compact        = 0 | 1     # global, not per-type (default 1)
+timers_headers        = 0 | 1     # global, not per-type (default 1)
 ```
 
-`timers_compact` is a **global** toggle, not a per-type key: `1` (the default)
-is the historic dense layout (no blank line between groups); `0` inserts one
-blank line between consecutive rendered groups. Because it has no second
-underscore, every reader branches on the exact key `timers_compact` *before* the
-type-split (which would otherwise drop it); absent or unparseable → default `1`.
+`timers_headers` is a **global** toggle, not a per-type key: `1` (the default)
+renders a dim `Group:` label row above each rendered group — the header row
+doubles as the separator, so there are no blank rows; `0` is the historic dense
+layout (no headers, no blanks). Because it has no second underscore, every reader
+branches on the exact key `timers_headers` *before* the type-split (which would
+otherwise drop it); absent or unparseable → default `1`. (This supersedes the
+former `timers_compact` blank-line toggle; a leftover `timers_compact` line in an
+existing config is harmlessly ignored — no migration.)
 
 Defaults (reproduce today's behaviour exactly):
 
@@ -164,9 +167,9 @@ default rather than failing the whole file.
 
 **Live re-read.** The poll loop tracks `timers_layout.conf`'s mtime alongside
 `timers.state`'s; on change it re-reads and invalidates, so a colour / cols /
-enabled / compact edit re-colours, re-lays-out, re-spaces, or hides the matching
-group within ~100 ms with no restart. An absent file is treated as defaults, no
-crash.
+enabled / headers edit re-colours, re-lays-out, toggles headers, or hides the
+matching group within ~100 ms with no restart. An absent file is treated as
+defaults, no crash.
 
 **What the colour drives.** Each group's filled-cell style is `fg:#000000 bg:<hex>`
 and its separator is `fg:<hex>`. The charm group has no bar — its `color` themes
@@ -185,15 +188,21 @@ herblores.
 
 ### Grouping
 
-Groups are rendered top-to-bottom. Empty groups produce no rows. The vertical
-spacing between groups is governed by the global `timers_compact` toggle (see
-[Layout config](#layout-config-timers_layoutconf)): when compact (the default)
-there are no blank rows between groups; when off, one blank row is inserted
-between each pair of consecutive *rendered* groups (a group renders iff enabled
-and non-empty) — none before the first or after the last. `_build_all_rows` and
-`_total_rows` derive their separator placement and count from the same
-`_rendered_groups` list, so the overflow indicator, scroll clamp, and
-charm-corner yield stay in lockstep.
+Groups are rendered top-to-bottom. Empty groups produce no rows. Group header
+labels are governed by the global `timers_headers` toggle (see
+[Layout config](#layout-config-timers_layoutconf)): when headers are on (the
+default) a single dim `Group:` label row (`C_GROUP_HEADER_FG`, fg only so it
+renders on the pane bg tint) is emitted immediately above each *rendered* group's
+content (a group renders iff enabled and non-empty), including the first — it
+doubles as the separator, so there are no blank rows. When off, today's dense
+layout: no headers, no blanks. `_build_all_rows` and `_total_rows` derive their
+header placement and count from the same `_rendered_groups` list — each rendered
+group contributes one header row when headers are on
+(`headers_extra = n_rendered`) — so the overflow indicator, scroll clamp, and
+charm-corner yield stay in lockstep. The charm corner-yield is unaffected:
+`charm_content_rows` stays content-only, so with headers on the `Charmies:`
+header sits at `first_charm_row - 1` and `_scroll_offset >= first_charm_row`
+still means a charm content row is topmost.
 
 | Group   | Source          | Condition                                          |
 |---------|-----------------|----------------------------------------------------|
