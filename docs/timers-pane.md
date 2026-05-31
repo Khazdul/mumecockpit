@@ -562,8 +562,11 @@ visually on any background.
 
 ### Depleted name colour
 
-When `filled < cell_w` the name characters render as `fg:#666666` (mid-grey on
-terminal background), unless the cell is blinking — see below.
+When `filled < cell_w` the name characters render as `fg:#C0C0C0` (the status
+pane's `C_VALUE` grey, RGB 192,192,192) on the terminal background, unless the
+cell is blinking — see below. This is deliberately lighter than the `#606060`
+group-header / label grey so a drained bar's name stays clearly legible and
+distinct from the headers.
 
 ## Blink
 
@@ -575,8 +578,8 @@ An affect blinks when both conditions hold:
 Blink continues past the predicted expiry (`remaining` goes negative) until
 `affect_down` fires. Indefinite affects never blink.
 
-**Phase:** `int(time.time()) % 2 == 0` → visible (`fg:#666666`); `== 1` →
-hidden (unstyled space — invisible on any background). Both halves are equal
+**Phase:** `int(time.time()) % 2 == 0` → visible (the depleted-name `fg:#C0C0C0`);
+`== 1` → hidden (unstyled space — invisible on any background). Both halves are equal
 length because the blink tick wakes just after each wall-clock second boundary
 (see Polling below).
 

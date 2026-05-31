@@ -86,7 +86,7 @@ C_CELL_FG       = "fg:#000000"
 # in sync. Legible on every PANE_COLORS tint (tightest against grey #161616).
 C_GROUP_HEADER_FG = "fg:#606060"
 C_INDICATOR     = "fg:#d4a04e italic"
-C_NAME_DEPLETED = "fg:#666666"
+C_NAME_DEPLETED = "fg:#C0C0C0"   # status-pane C_VALUE grey (192,192,192); distinct from the #606060 headers
 # Untracked affect cells (reconciled from stat/info, no observed timing yet):
 # render with no bar fill and a darker grey than the depleted-name grey, so
 # they read as "present but unknown duration" without looking like the
