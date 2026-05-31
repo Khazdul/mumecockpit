@@ -9,12 +9,6 @@
 local json = require("dkjson")
 local STATE_PATH  = os.getenv("HOME") .. "/MUME/bridge/runtime/status.state"
 local TMP_PATH    = STATE_PATH .. ".tmp"
-local LAYOUT_PATH = os.getenv("HOME") .. "/MUME/bridge/runtime/layout.conf"
-
--- 6 rows (2 progress-bar rows + 1 toggle row + 1 blank + 2 data rows). Bump when rows are added in bridge/panes/status_pane.py.
-local STATIC_ROWS = 6
-
-local _last_height = nil
 
 local function fmt_num(n)
     if type(n) ~= "number" then return n end
@@ -86,36 +80,6 @@ local function serialize()
     f:write(encoded)
     f:close()
     os.rename(TMP_PATH, STATE_PATH)
-
-    local new_height = STATIC_ROWS
-    if new_height ~= _last_height then
-        local conf_lines = {}
-        local found = false
-        local lf = io.open(LAYOUT_PATH, "r")
-        if lf then
-            for line in lf:lines() do
-                if line:match("^status_height=") then
-                    conf_lines[#conf_lines + 1] = "status_height=" .. new_height
-                    found = true
-                else
-                    conf_lines[#conf_lines + 1] = line
-                end
-            end
-            lf:close()
-        end
-        if not found then
-            conf_lines[#conf_lines + 1] = "status_height=" .. new_height
-        end
-        local ltmp = LAYOUT_PATH .. ".tmp"
-        local lf2 = io.open(ltmp, "w")
-        if lf2 then
-            lf2:write(table.concat(conf_lines, "\n") .. "\n")
-            lf2:close()
-            os.rename(ltmp, LAYOUT_PATH)
-        end
-        tintin_cmd("gts", "#system {bash bridge/layout/apply_layout.sh}")
-        _last_height = new_height
-    end
 end
 
 events.subscribe("gmcp_char_name",        function() serialize() end)
