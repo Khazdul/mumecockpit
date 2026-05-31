@@ -452,7 +452,8 @@ def _add_view_frags():
         sign_style = C_HERB_REMOVE if is_active else C_HERB_ADD
         name_style = C_HERB_NAME_HOVER if key == _hover_herblore_key else C_HERB_NAME
         name_w     = max(0, W - 3)              # 3 = "[" + sign + "]"
-        name_txt   = (" " + str(key))[:name_w].ljust(name_w)
+        label_txt  = (" " + str(key))[:name_w]
+        pad_txt    = " " * (name_w - len(label_txt))
 
         def _row_handler(mouse_event, _key=key, _active=is_active):
             global _hover_herblore_key
@@ -464,12 +465,15 @@ def _add_view_frags():
                     if _app:
                         _app.invalidate()
 
-        # The toggle handler rides every fragment, so the whole row is clickable.
+        # The toggle handler rides the label (brackets + sign + name) so it stays
+        # clickable, but the trailing pad is handler-less: that bare surface lets
+        # the ListControl fallthrough clear _hover_herblore_key on mouse-out.
         all_rows.append([
-            (C_HERB_BRACKET, "[",      _row_handler),
-            (sign_style,     sign,     _row_handler),
-            (C_HERB_BRACKET, "]",      _row_handler),
-            (name_style,     name_txt, _row_handler),
+            (C_HERB_BRACKET, "[",        _row_handler),
+            (sign_style,     sign,       _row_handler),
+            (C_HERB_BRACKET, "]",        _row_handler),
+            (name_style,     label_txt,  _row_handler),
+            ("",             pad_txt),
         ])
 
     total          = len(all_rows)
