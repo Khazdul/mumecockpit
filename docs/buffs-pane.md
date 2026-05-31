@@ -263,31 +263,45 @@ The pane has two view modes, held in the module global `_view_mode`
 Both modes are mouse-driven — there are **no** keybindings, mirroring the charm
 X's click model and authoritative-state rule (see [docs/charm.md](charm.md)).
 
+### Accent colour
+
+The grid "+" and the add-view "X" share one accent: `C_ACCENT_FG` (`#d4a04e`,
+the gold of the overflow indicator), brightening to `C_ACCENT_HOVER_FG`
+(`#f0c070`) on hover. They deliberately do **not** reuse the charm-X red — only
+the charm row's drop X is red.
+
 ### The "+" button
 
 In grid mode, when `_run_active`, a "+" is overlaid onto the **last column of
-the first visible row** by `_overlay_plus` — it replaces the corner glyph
-in-place, keeping that cell's background (`_bg_of`) and overriding only the fg,
-so a full green buff in the corner shows green behind the "+" rather than a
-default-bg hole. This transparency is why it is an in-grid overlay and **not** a
-`FloatContainer` (a Float cannot see what is beneath it). The "+" is pinned to
-the first *visible* row, so it stays top-right as the grid scrolls. When the
-grid is empty (run active, no rows), a single otherwise-blank row carries it.
+the first visible row** by `_overlay_corner` — it replaces the corner glyph
+in-place. The "+" fragment carries the accent fg and **no background**, so it
+renders on the pane's default bg rather than the underlying cell's bar colour
+(the bar colour is not shown in that one column — accepted). It is an in-row
+overlay, not a `FloatContainer`, only so the click handler rides the same
+fragment stream the `ListControl` already dispatches. The "+" is pinned to the
+first *visible* row, so it stays top-right as the grid scrolls. When the grid is
+empty (run active, no rows), a single otherwise-blank row carries it.
 
-- Colours: `C_PLUS_FG` (`#d4a04e`, the indicator amber), brightening to
-  `C_PLUS_HOVER_FG` (`#f0c070`) while the pointer hovers (`_hover_plus`).
-- Click switches `_view_mode` to `"add"` and invalidates.
+- Hover via `_hover_plus`.
+- Click switches `_view_mode` to `"add"`, resets `_scroll_offset` to 0, and
+  invalidates.
 
 ### The add-view (`_add_view_frags`)
 
-- **Row 0:** an "X" right-aligned at the last column (reuses the charm X palette
-  `C_CHARM_X_FG` / `C_CHARM_X_HOVER_FG`, hover via `_hover_add_x`). Click returns
-  to grid mode.
 - **One row per `herblore_catalog` key**, in catalog order: `[+] Name` when the
   key is **not** in the active set, `[-] Name` when it **is**. The active set is
-  `{e["key"] for e in herblores}`. The whole row is clickable and brightens on
-  hover (`_hover_herblore_key`, `C_ADD_ROW_FG` → `C_ADD_ROW_HOVER_FG`). Click:
-  active → remove, else add. An empty/absent `herblore_catalog` shows just the X.
+  `{e["key"] for e in herblores}`. The whole row is left-aligned, right-padded to
+  full width, clickable, and brightens on hover (`_hover_herblore_key`,
+  `C_ADD_ROW_FG` → `C_ADD_ROW_HOVER_FG`). Click: active → remove, else add.
+- **The close "X"** is **not** its own row. `_overlay_corner` paints it onto the
+  **last column of the first visible row** (same technique as the grid "+"), in
+  the accent gold, hover via `_hover_close`. Click returns to grid mode, resets
+  `_scroll_offset` to 0, and invalidates. Keeping it on the first *visible* row
+  pins it top-right and reachable under scroll. An empty/absent `herblore_catalog`
+  yields a single blank row that carries only the X.
+- The view paginates by `_scroll_offset` exactly like `_grid_text` (build all
+  rows, slice `[offset : offset + list_height]`); the X overlays the first row
+  **after** slicing.
 
 ### Send helper and authoritative state
 
@@ -301,10 +315,10 @@ rewrites `buffs.state`, same as the charm X.
 ### Hover and reset
 
 `ListControl.mouse_handler`'s "non-fragment move clears hover" branch clears
-`_hover_plus`, `_hover_herblore_key`, and `_hover_add_x` alongside
+`_hover_plus`, `_hover_herblore_key`, and `_hover_close` alongside
 `_hover_charm_id`. When `_run_active` transitions True→False (disconnect), the
-poll loop resets `_view_mode` to `"grid"` and clears every hover global, so a
-disconnect mid-add-view returns to the grid.
+poll loop resets `_view_mode` to `"grid"`, `_scroll_offset` to 0, and clears
+every hover global, so a disconnect mid-add-view returns to the grid.
 
 ### Untracked affect cells
 
@@ -400,6 +414,14 @@ visible        = all_rows[start_idx:end_idx]
 New affects arriving while `_scroll_offset == 0` extend the bottom of the list
 without shifting the visible window. New affects arriving while scrolled leave
 the visible content unchanged — the renderer clamps `_scroll_offset` each frame.
+
+Scroll is **view-aware**: `_current_total_rows()` returns the grid row count in
+grid mode (`_total_rows(*_split_groups())`) and the catalog row count in the
+add-view (`len(herblore_catalog)`, min 1 for the blank X row). The wheel handler,
+`_indicator_text`, and the indicator `ConditionalContainer` filter all key off
+`_current_total_rows()`, so the sticky "↓ N more rows" / "↑ N rows above" row
+works in **both** views. Switching `_view_mode` (either direction) resets
+`_scroll_offset` to 0, so each view starts at the top.
 
 ### Indicator variants
 
