@@ -66,12 +66,16 @@ C_CHARM_MINS_FG = "fg:#888888"   # darker grey
 C_CHARM_X_FG    = "fg:#CC5555"   # muted red (not a screaming red)
 C_CHARM_X_HOVER_FG = "fg:#E88888"   # lighter than C_CHARM_X_FG — hover cue
 
-# Herblore add-view accent — shared by the grid "+" overlay and the add-view "X"
+# Herblore add-view accent — shared by the grid ⊕ overlay and the add-view ╳
 # (gold, matches the overflow indicator; deliberately NOT the charm red).
-C_ACCENT_FG        = "fg:#d4a04e"   # gold — matches the overflow indicator
+C_ACCENT_FG        = "fg:#d4a04e"   # gold — add ⊕ and close ╳
 C_ACCENT_HOVER_FG  = "fg:#f0c070"   # brighter gold on hover
-C_ADD_ROW_FG       = "fg:#bbbbbb"   # catalog [+]/[-] row text
-C_ADD_ROW_HOVER_FG = "fg:#ffffff"   # brightened on hover
+# Add-view catalog rows — per-fragment "[±] Name" styling.
+C_HERB_BRACKET     = "fg:#666666"   # dark grey  [ ]
+C_HERB_ADD         = "fg:#7ED07E"   # light green + (inactive row)
+C_HERB_REMOVE      = "fg:#E88888"   # light red  - (active row)
+C_HERB_NAME        = "fg:#999999"   # medium grey name
+C_HERB_NAME_HOVER  = "fg:#cccccc"   # name on hover
 
 C_CELL_FG       = "fg:#000000"
 C_INDICATOR     = "fg:#d4a04e italic"
@@ -104,7 +108,7 @@ _run_active    = False
 _hover_charm_id = None   # charm id whose X the pointer is currently over (hover cue)
 
 _view_mode          = "grid"   # "grid" | "add" — add-view is the herblore picker
-_hover_plus         = False    # pointer is over the "+" overlay button
+_hover_plus         = False    # pointer is over the ⊕ overlay button
 _hover_herblore_key = None     # catalog key whose row the pointer is over
 _hover_close        = False    # pointer is over the add-view's X (return-to-grid)
 
@@ -409,8 +413,9 @@ def _overlay_corner(row, glyph, handler, hover):
     """Replace the last column of `row` with `glyph` in the accent gold and NO
     background, so it renders on the pane's default bg rather than the underlying
     cell (the bar colour is not shown in that one column — accepted). Shared by
-    the grid "+" (rows are single-char cell fragments) and the add-view X (one
-    full-width fragment, split here so its leading toggle text survives). It is an
+    the grid ⊕ (rows are single-char cell fragments) and the add-view ╳ (the row
+    ends in a wide name fragment, split here so its leading toggle text survives).
+    It is an
     in-row overlay, not a FloatContainer, only so the click handler rides the same
     fragment stream the ListControl already dispatches.
     """
@@ -427,7 +432,7 @@ def _overlay_corner(row, glyph, handler, hover):
 
 
 def _add_view_frags():
-    """The herblore picker: one [+]/[-] toggle row per catalog key, with a gold X
+    """The herblore picker: one [+]/[-] toggle row per catalog key, with a gold ╳
     overlaid on the first visible row (return-to-grid). Mouse-driven, no
     keybindings. Click flips add/remove via the PR-1 aliases; the row label
     follows the state file on the next poll. Paginated by _scroll_offset exactly
@@ -439,9 +444,12 @@ def _add_view_frags():
 
     all_rows = []
     for key in _herblore_catalog:
-        is_active = key in active
-        label     = ("[-] " if is_active else "[+] ") + str(key)
-        style     = C_ADD_ROW_HOVER_FG if key == _hover_herblore_key else C_ADD_ROW_FG
+        is_active  = key in active
+        sign       = "-" if is_active else "+"
+        sign_style = C_HERB_REMOVE if is_active else C_HERB_ADD
+        name_style = C_HERB_NAME_HOVER if key == _hover_herblore_key else C_HERB_NAME
+        name_w     = max(0, W - 3)              # 3 = "[" + sign + "]"
+        name_txt   = (" " + str(key))[:name_w].ljust(name_w)
 
         def _row_handler(mouse_event, _key=key, _active=is_active):
             global _hover_herblore_key
@@ -453,7 +461,13 @@ def _add_view_frags():
                     if _app:
                         _app.invalidate()
 
-        all_rows.append([(style, label[:W].ljust(W), _row_handler)])
+        # The toggle handler rides every fragment, so the whole row is clickable.
+        all_rows.append([
+            (C_HERB_BRACKET, "[",      _row_handler),
+            (sign_style,     sign,     _row_handler),
+            (C_HERB_BRACKET, "]",      _row_handler),
+            (name_style,     name_txt, _row_handler),
+        ])
 
     if not all_rows:
         all_rows = [[("", " " * W)]]            # empty catalog: a blank row to carry the X
@@ -467,7 +481,7 @@ def _add_view_frags():
     visible        = all_rows[start_idx:end_idx]
 
     if visible:
-        _overlay_corner(visible[0], "X", _close_handler, _hover_close)
+        _overlay_corner(visible[0], "╳", _close_handler, _hover_close)
 
     frags = []
     for i, row_frags in enumerate(visible):
@@ -498,8 +512,8 @@ def _grid_text():
     total    = len(all_rows)
 
     if total == 0:
-        # Run active but no rows: still surface the "+" on an otherwise-blank row.
-        return _overlay_corner([("", " ") for _ in range(W)], "+", _plus_handler, _hover_plus)
+        # Run active but no rows: still surface the ⊕ on an otherwise-blank row.
+        return _overlay_corner([("", " ") for _ in range(W)], "⊕", _plus_handler, _hover_plus)
 
     list_height    = H - (1 if (_scroll_offset > 0 or total > H) else 0)
     max_offset     = max(0, total - list_height)
@@ -509,8 +523,8 @@ def _grid_text():
     visible        = all_rows[start_idx:end_idx]
 
     if visible:
-        # pin the "+" to the top-right of the viewport
-        _overlay_corner(visible[0], "+", _plus_handler, _hover_plus)
+        # pin the ⊕ to the top-right of the viewport
+        _overlay_corner(visible[0], "⊕", _plus_handler, _hover_plus)
 
     frags = []
     for i, row_frags in enumerate(visible):
@@ -557,7 +571,7 @@ def _indicator_text():
 class ListControl(FormattedTextControl):
     def mouse_handler(self, mouse_event):
         global _scroll_offset, _hover_charm_id, _hover_plus, _hover_herblore_key, _hover_close
-        # Let fragment handlers (the charm X, "+", add-view rows) fire first — mirrors ui_pane.py.
+        # Let fragment handlers (the charm X, ⊕, add-view rows) fire first — mirrors ui_pane.py.
         result = super().mouse_handler(mouse_event)
         if result is not NotImplemented:
             return result
