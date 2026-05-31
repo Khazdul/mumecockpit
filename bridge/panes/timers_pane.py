@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 # bridge/panes/timers_pane.py — affect grid renderer for the timers pane.
-# 4-per-row coloured grid grouped by type: spells (blue), buffs (green),
-# debuffs (red). Within each group: untimed first (alphabetical), then timed
-# by expires_at descending (alphabetical tie-break). Empty groups produce no
-# rows. Row-based scroll via mouse wheel; anchor-top; bidirectional overflow indicator.
+# Coloured grid grouped by type: spells (blue), buffs (green), debuffs (red),
+# stored (magenta), blinds (cyan), charms (violet). Within each group: untimed
+# first (alphabetical), then timed by expires_at descending (alphabetical
+# tie-break). Empty groups produce no rows. Group colours, per-group column
+# counts, and per-group visibility are read from bridge/runtime/timers_layout.conf
+# (defaults below reproduce the historic hardcoded behaviour when the file is
+# absent). Row-based scroll via mouse wheel; anchor-top; bidirectional overflow indicator.
 
 try:
     from prompt_toolkit import Application
@@ -30,6 +33,7 @@ import atexit
 import json
 import math
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -39,35 +43,26 @@ TIMERS_STATE_PATH = os.environ.get(
     "TIMERS_STATE_PATH",
     os.path.join(os.environ["HOME"], "MUME", "bridge", "runtime", "timers.state"),
 )
+TIMERS_LAYOUT_PATH = os.environ.get(
+    "TIMERS_LAYOUT_PATH",
+    os.path.join(os.environ["HOME"], "MUME", "bridge", "runtime", "timers_layout.conf"),
+)
 CONNECTION_STATE_PATH = os.path.join(
     os.environ["HOME"], "MUME", "bridge", "runtime", "connection.state"
 )
 POLL_MS = 0.1
 
-# Spells — blue
-C_SPELL_FILL_BG = "bg:#66b2ff"
-C_SPELL_SEP_FG  = "fg:#66b2ff"
+# Group fill/separator colours are read from timers_layout.conf (see
+# _LAYOUT_DEFAULTS / _palette below). The historic hardcoded values now live as
+# the per-type defaults in _LAYOUT_DEFAULTS.
 
-# Buffs — green
-C_BUFF_FILL_BG  = "bg:#00d900"
-C_BUFF_SEP_FG   = "fg:#00d900"
-
-# Debuffs — red
-C_DEBUFF_FILL_BG = "bg:#d90000"
-C_DEBUFF_SEP_FG  = "fg:#d90000"
-
-# Stored — magenta; untracked variant grey
-C_STORED_FILL_BG         = "bg:#ff66ff"
-C_STORED_SEP_FG          = "fg:#ff66ff"
+# Stored untracked variant — fixed grey, NOT themed: the grey is a degraded-state
+# signal (post magic-blast), not a colour choice, so it ignores the config.
 C_STORED_UNTRACKED_BG    = "bg:#cccccc"
 C_STORED_UNTRACKED_FG    = "fg:#cccccc"
 
-# Blinds — cyan (distinct from the spell light-blue)
-C_BLIND_FILL_BG = "bg:#00cccc"
-C_BLIND_SEP_FG  = "fg:#00cccc"
-
-# Charms — one per row, no bar (see _charm_row_frags)
-C_CHARM_NAME_FG = "fg:#B388FF"   # light violet — matches the char_ui CHARM tag (Step 4)
+# Charms — no bar (see _charm_cell_frags). The name FG is themed from
+# layout["charm"].color; the minutes and × keep these fixed colours.
 C_CHARM_MINS_FG = "fg:#888888"   # darker grey
 C_CHARM_X_FG    = "fg:#CC5555"   # muted red (not a screaming red)
 C_CHARM_X_HOVER_FG = "fg:#E88888"   # lighter than C_CHARM_X_FG — hover cue
@@ -93,14 +88,81 @@ C_NAME_DEPLETED = "fg:#666666"
 # untracked-stored grey bar.
 C_NAME_UNTRACKED_AFFECT = "fg:#3a3a3a"
 
-# Each palette tuple: (filled_cell_style, filled_sep_style)
-_PALETTES = {
-    "spell":  (C_CELL_FG + " " + C_SPELL_FILL_BG,  C_SPELL_SEP_FG),
-    "buff":   (C_CELL_FG + " " + C_BUFF_FILL_BG,   C_BUFF_SEP_FG),
-    "debuff": (C_CELL_FG + " " + C_DEBUFF_FILL_BG,  C_DEBUFF_SEP_FG),
-    "stored": (C_CELL_FG + " " + C_STORED_FILL_BG,  C_STORED_SEP_FG),
-    "blind":  (C_CELL_FG + " " + C_BLIND_FILL_BG,   C_BLIND_SEP_FG),
+# Layout config (bridge/runtime/timers_layout.conf). Each type carries an
+# enabled flag, a #rrggbb colour, and a per-group column count. The defaults
+# below reproduce the historic hardcoded grid exactly, so an absent config file
+# (or any missing key) leaves the pane visually unchanged.
+_LAYOUT_TYPES    = ("spell", "buff", "debuff", "stored", "blind", "charm")
+_LAYOUT_DEFAULTS = {
+    "spell":  {"enabled": True, "color": "#66b2ff", "cols": 4},
+    "buff":   {"enabled": True, "color": "#00d900", "cols": 4},
+    "debuff": {"enabled": True, "color": "#d90000", "cols": 4},
+    "stored": {"enabled": True, "color": "#ff66ff", "cols": 4},
+    "blind":  {"enabled": True, "color": "#00cccc", "cols": 2},
+    "charm":  {"enabled": True, "color": "#B388FF", "cols": 1},
 }
+_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
+
+
+def _clamp_cols(typ, raw):
+    """Parse and clamp a cols value: charm → [1, 2]; others → [1, 6]; floor 1.
+    Returns None when unparseable (caller keeps the type's default)."""
+    try:
+        n = int(raw)
+    except (TypeError, ValueError):
+        return None
+    lo, hi = (1, 2) if typ == "charm" else (1, 6)
+    return max(lo, min(hi, n))
+
+
+def _load_layout():
+    """Resolve the layout dict from _LAYOUT_DEFAULTS overridden by
+    timers_layout.conf (key=value, one per line; same trivial format as
+    startup.conf). Unknown keys are ignored; an unparseable value falls back to
+    that key's default. Keys: timers_<type>_{enabled,color,cols}."""
+    layout = {t: dict(v) for t, v in _LAYOUT_DEFAULTS.items()}
+    try:
+        with open(TIMERS_LAYOUT_PATH, "r") as fh:
+            raw = fh.read()
+    except OSError:
+        return layout
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, val = line.partition("=")
+        key = key.strip()
+        val = val.strip()
+        if not key.startswith("timers_"):
+            continue
+        rest = key[len("timers_"):]
+        idx  = rest.rfind("_")          # type tokens have no underscore; attr is the last segment
+        if idx < 0:
+            continue
+        typ, attr = rest[:idx], rest[idx + 1:]
+        if typ not in layout:
+            continue
+        if attr == "enabled":
+            if val in ("0", "1"):
+                layout[typ]["enabled"] = (val == "1")
+        elif attr == "color":
+            if _COLOR_RE.match(val):
+                layout[typ]["color"] = val
+        elif attr == "cols":
+            n = _clamp_cols(typ, val)
+            if n is not None:
+                layout[typ]["cols"] = n
+    return layout
+
+
+def _palette(typ):
+    """(filled_cell_style, sep_style) for a group from its configured colour."""
+    hex_ = _layout[typ]["color"]
+    return (C_CELL_FG + " bg:" + hex_, "fg:" + hex_)
+
+
+_layout            = _load_layout()
+_last_layout_mtime = None
 
 _affects          = []
 _stored_spells    = []
@@ -141,16 +203,10 @@ def _sort_key(e):
     return (1, -ea, e.get("name", "").lower())
 
 
-def _cell_widths(W):
-    base = W // 4
-    rem  = W % 4
-    return [base + 1] * rem + [base] * (4 - rem)
-
-
-def _blind_cell_widths(W):
-    base  = W // 2
-    extra = W % 2
-    return [base + (1 if i < extra else 0) for i in range(2)]
+def _cell_widths(W, n):
+    base = W // n
+    rem  = W % n
+    return [base + 1] * rem + [base] * (n - rem)
 
 
 def _split_groups():
@@ -188,13 +244,17 @@ def _split_groups():
 
 
 def _total_rows(spells, buffs, debuffs, stored, blinds, charms):
+    def rows(items, typ):
+        if not items or not _layout[typ]["enabled"]:
+            return 0
+        return math.ceil(len(items) / _layout[typ]["cols"])
     return (
-        (math.ceil(len(spells)  / 4) if spells  else 0) +
-        (math.ceil(len(buffs)   / 4) if buffs   else 0) +
-        (math.ceil(len(debuffs) / 4) if debuffs else 0) +
-        (math.ceil(len(stored)  / 4) if stored  else 0) +
-        (math.ceil(len(blinds)  / 2) if blinds  else 0) +
-        len(charms)
+        rows(spells,  "spell")  +
+        rows(buffs,   "buff")   +
+        rows(debuffs, "debuff") +
+        rows(stored,  "stored") +
+        rows(blinds,  "blind")  +
+        rows(charms,  "charm")
     )
 
 
@@ -292,25 +352,35 @@ def _send_herblore(action, key):
         pass
 
 
-def _charm_row_frags(entry, W):
-    """One charm per row, full width, no bar: name (violet) · mins (grey) · × (red)."""
+def _charm_cell_frags(entry, cell_w, name_fg):
+    """One charm cell, width cell_w, no bar: name (themed) · mins (grey) · × (red).
+
+    The right side reserves 6 columns (× + gap + 3 mins + gap), so the name
+    truncates to cell_w - 6. When cell_w - 6 < 5 (cell_w < 11) the minutes region
+    is dropped for the whole cell and the name takes cell_w - 2 (gap + ×). The
+    test is on cell_w only — never on whether the entry is timed — so a timed and
+    a permanent charm in the same column keep identical geometry. At charm_cols=1
+    (cell_w == W) this reproduces the historic full-width row exactly."""
     cid        = entry.get("id")
     name       = entry.get("name", "")
     started_at = entry.get("started_at")
-    if entry.get("expires_at") is None:
-        mins_txt = "   "                        # permanent controlled mob — no timer shown
-    else:
-        mins = 0
-        if started_at:
-            mins = min(99, int((time.time() - started_at) // 60))
-        mins_txt = f"{mins}m".rjust(3)          # " 0m" .. "99m"
-    name_w     = max(0, W - 6)                  # 1 X + 1 gap + 3 mins + 1 gap
+
+    show_mins  = (cell_w - 6) >= 5              # cell_w >= 11
+    name_w     = max(0, cell_w - 6) if show_mins else max(0, cell_w - 2)
     disp       = (name[:1].upper() + name[1:]) if name else name   # capitalise first letter
     name_txt   = disp[:name_w].ljust(name_w)    # preserve inner case (mob long-name)
 
-    frags = [(C_CHARM_NAME_FG, ch) for ch in name_txt]
-    frags.append(("", " "))
-    frags.extend((C_CHARM_MINS_FG, ch) for ch in mins_txt)
+    frags = [(name_fg, ch) for ch in name_txt]
+    if show_mins:
+        if entry.get("expires_at") is None:
+            mins_txt = "   "                    # permanent controlled mob — no timer shown
+        else:
+            mins = 0
+            if started_at:
+                mins = min(99, int((time.time() - started_at) // 60))
+            mins_txt = f"{mins}m".rjust(3)      # " 0m" .. "99m"
+        frags.append(("", " "))
+        frags.extend((C_CHARM_MINS_FG, ch) for ch in mins_txt)
     frags.append(("", " "))
 
     x_style = C_CHARM_X_HOVER_FG if cid == _hover_charm_id else C_CHARM_X_FG
@@ -328,24 +398,26 @@ def _charm_row_frags(entry, W):
 
 
 def _build_all_rows():
-    """Return every grid row as a list of fragment-lists (one per row)."""
+    """Return every grid row as a list of fragment-lists (one per row).
+
+    Column counts, colours, and per-group visibility come from _layout. A group
+    with enabled == 0 is skipped entirely (no rows); since herblores fold into
+    the buff/debuff groups, disabling buff/debuff hides their herblores too."""
     spells, buffs, debuffs, stored, blinds, charms = _split_groups()
-    W      = max(4, _term_cols())
-    widths = _cell_widths(W)
+    W = max(4, _term_cols())
 
     all_rows = []
-    for group, palette in (
-        (spells,  _PALETTES["spell"]),
-        (buffs,   _PALETTES["buff"]),
-        (debuffs, _PALETTES["debuff"]),
-    ):
-        if not group:
+    for group, typ in ((spells, "spell"), (buffs, "buff"), (debuffs, "debuff")):
+        if not group or not _layout[typ]["enabled"]:
             continue
+        palette = _palette(typ)
+        cols    = _layout[typ]["cols"]
+        widths  = _cell_widths(W, cols)
         n = len(group)
-        for row in range(math.ceil(n / 4)):
+        for row in range(math.ceil(n / cols)):
             row_frags = []
-            for col in range(4):
-                idx = row * 4 + col
+            for col in range(cols):
+                idx = row * cols + col
                 if idx >= n:
                     break
                 entry = group[idx]
@@ -355,35 +427,51 @@ def _build_all_rows():
                     row_frags.extend(_cell_frags(entry, widths[col], palette))
             all_rows.append(row_frags)
 
-    if stored:
+    if stored and _layout["stored"]["enabled"]:
+        palette = _palette("stored")
+        cols    = _layout["stored"]["cols"]
+        widths  = _cell_widths(W, cols)
         n = len(stored)
-        for row in range(math.ceil(n / 4)):
+        for row in range(math.ceil(n / cols)):
             row_frags = []
-            for col in range(4):
-                idx = row * 4 + col
+            for col in range(cols):
+                idx = row * cols + col
                 if idx >= n:
                     break
                 entry = stored[idx]
                 if entry.get("tracked"):
-                    row_frags.extend(_cell_frags(entry, widths[col], _PALETTES["stored"]))
+                    row_frags.extend(_cell_frags(entry, widths[col], palette))
                 else:
                     row_frags.extend(_untracked_cell_frags(entry, widths[col]))
             all_rows.append(row_frags)
 
-    if blinds:
-        blind_widths = _blind_cell_widths(W)
+    if blinds and _layout["blind"]["enabled"]:
+        palette = _palette("blind")
+        cols    = _layout["blind"]["cols"]
+        widths  = _cell_widths(W, cols)
         n = len(blinds)
-        for row in range(math.ceil(n / 2)):
+        for row in range(math.ceil(n / cols)):
             row_frags = []
-            for col in range(2):
-                idx = row * 2 + col
+            for col in range(cols):
+                idx = row * cols + col
                 if idx >= n:
                     break
-                row_frags.extend(_cell_frags(blinds[idx], blind_widths[col], _PALETTES["blind"]))
+                row_frags.extend(_cell_frags(blinds[idx], widths[col], palette))
             all_rows.append(row_frags)
 
-    for c in charms:
-        all_rows.append(_charm_row_frags(c, W))
+    if charms and _layout["charm"]["enabled"]:
+        cols    = _layout["charm"]["cols"]
+        widths  = _cell_widths(W, cols)
+        name_fg = "fg:" + _layout["charm"]["color"]
+        n = len(charms)
+        for row in range(math.ceil(n / cols)):
+            row_frags = []
+            for col in range(cols):
+                idx = row * cols + col
+                if idx >= n:
+                    break
+                row_frags.extend(_charm_cell_frags(charms[idx], widths[col], name_fg))
+            all_rows.append(row_frags)
 
     return all_rows
 
@@ -429,6 +517,18 @@ def _corner_text():
     if _view_mode == "add":
         style = C_ACCENT_HOVER_FG if _hover_close else C_ACCENT_FG
         return [(style, "×", _close_handler)]
+    # Grid mode: when the topmost *visible* row is a charm row, yield the corner
+    # so that charm's own drop × (in the grid window beneath the Float) is
+    # clickable — otherwise the + Float would sit over it. + reappears once the
+    # charm group empties, is disabled, or is scrolled away from the top. The
+    # add-view has no charm rows, so its close × (above) is unaffected.
+    groups = _split_groups()
+    charms = groups[5]
+    if charms and _layout["charm"]["enabled"]:
+        charm_row_count = math.ceil(len(charms) / _layout["charm"]["cols"])
+        first_charm_row = _total_rows(*groups) - charm_row_count
+        if _scroll_offset >= first_charm_row:
+            return []
     style = C_ACCENT_HOVER_FG if _hover_plus else C_ACCENT_FG
     return [(style, "+", _open_handler)]
 
@@ -616,8 +716,18 @@ async def _poll_state(app):
     global _affects, _stored_spells, _blinds, _charms, _herblores, _herblore_catalog
     global _last_mtime, _run_active, _scroll_offset
     global _view_mode, _hover_plus, _hover_herblore_key, _hover_close, _hover_charm_id
+    global _layout, _last_layout_mtime
 
     while True:
+        try:
+            layout_mtime = os.stat(TIMERS_LAYOUT_PATH).st_mtime
+        except OSError:
+            layout_mtime = None
+        if layout_mtime != _last_layout_mtime:
+            _last_layout_mtime = layout_mtime
+            _layout = _load_layout()   # absent file → defaults; live re-colour / re-layout
+            app.invalidate()
+
         try:
             mtime = os.stat(TIMERS_STATE_PATH).st_mtime
         except OSError:

@@ -5,7 +5,10 @@ A `prompt_toolkit` full-screen application that renders `state.char.affects`,
 `state.char.herblores` as a colour-coded grid grouped by type (spells, buffs,
 debuffs, stored, blinds, charms; herblores fold into the buffs/debuffs groups),
 with bar-drain animation, blink alerts for expiring entries, and row-based
-scroll. Touch this file when changing the renderer, the pane position, or the
+scroll. Each group's colour, per-group column count, and visibility are read
+from [`bridge/runtime/timers_layout.conf`](#layout-config-timers_layoutconf);
+with no config file present every value falls back to the historic hardcoded
+behaviour. Touch this file when changing the renderer, the pane position, or the
 toggle wiring.
 
 ## Architecture
@@ -110,6 +113,57 @@ state file), the renderer treats it as
 `{ "affects": loaded, "stored_spells": [], "blinds": [], "charms": [], "herblores": [] }`
 and shows only affects — no crash, no Stored, Blinds, Charm, or herblore cells.
 
+## Layout config (`bridge/runtime/timers_layout.conf`)
+
+Per-group colour, column count, and visibility are read from a small
+`key=value` file (one pair per line, same trivial format as
+`bridge/runtime/startup.conf`). The `TIMERS_LAYOUT_PATH` env var overrides the
+path (mirroring `TIMERS_STATE_PATH`). The file is **optional** — with no file
+present, or any individual key missing, the renderer falls back to the defaults
+below, which reproduce the historic hardcoded grid exactly. A companion
+launcher/popup "Timers layout" menu writes this file; the pane only reads it.
+
+Type tokens: `spell`, `buff`, `debuff`, `stored`, `blind`, `charm`. Keys per
+type:
+
+```
+timers_<type>_enabled = 0 | 1
+timers_<type>_color   = #rrggbb
+timers_<type>_cols    = <int>
+```
+
+Defaults (reproduce today's behaviour exactly):
+
+| type   | enabled | color     | cols |
+|--------|---------|-----------|------|
+| spell  | 1       | `#66b2ff` | 4    |
+| buff   | 1       | `#00d900` | 4    |
+| debuff | 1       | `#d90000` | 4    |
+| stored | 1       | `#ff66ff` | 4    |
+| blind  | 1       | `#00cccc` | 2    |
+| charm  | 1       | `#B388FF` | 1    |
+
+**Parse rules.** Per-type `cols` clamps on read: `charm` → `[1, 2]`; all others →
+`[1, 6]`; floor `1`. Unknown keys are ignored. An unparseable value (bad hex, a
+non-integer `cols`, an `enabled` that is not `0`/`1`) falls back to that key's
+default rather than failing the whole file.
+
+**Live re-read.** The poll loop tracks `timers_layout.conf`'s mtime alongside
+`timers.state`'s; on change it re-reads and invalidates, so a colour / cols /
+enabled edit re-colours, re-lays-out, or hides the matching group within ~100 ms
+with no restart. An absent file is treated as defaults, no crash.
+
+**What the colour drives.** Each group's filled-cell style is `fg:#000000 bg:<hex>`
+and its separator is `fg:<hex>`. The charm group has no bar — its `color` themes
+only the **name** foreground; the drop × stays `#CC5555` and the minutes stay
+grey. Untracked Stored cells stay fixed grey (`#cccccc`) regardless of the
+`stored` colour — the grey is a degraded-state signal (post magic-blast), not a
+theme choice.
+
+**Disabling a group** (`enabled = 0`) drops all of its rows. Because herblores
+fold into the buff/debuff groups, disabling `buff` or `debuff` also hides their
+herblores.
+
 ## Rendering
 
 `bridge/panes/timers_pane.py` is a `prompt_toolkit` full-screen `Application`.
@@ -128,8 +182,10 @@ groups produce no rows.
 | Blinds  | `blinds`        | all entries                                        |
 | Charm   | `charms`        | all entries (one per row, after Blinds)            |
 
-Each group lays out 4 entries per row, except **Blinds** (2 entries per row,
-see "Blinds two-up layout") and **Charm** (1 entry per row, see "Charm group").
+Each group lays out `layout[type].cols` entries per row (the shipped defaults are
+4 for spells/buffs/debuffs/stored, 2 for **Blinds**, and 1 for **Charm**; see
+[Layout config](#layout-config-timers_layoutconf)). A group with
+`layout[type].enabled == 0` produces no rows at all.
 
 ### Sort within a group
 
@@ -157,15 +213,20 @@ sits at the top of the group.
 
 ### Grid layout
 
-Terminal width `W = _term_cols()`, height `H = _term_rows()`, 4 cells per row.
+Terminal width `W = _term_cols()`, height `H = _term_rows()`, `n` cells per row
+(`n = layout[type].cols` for the group).
 
-Cell width distribution (left to right):
+Cell width distribution (left to right) is computed by the shared `_cell_widths(W, n)`:
 
 ```
-base   = W // 4
-rem    = W % 4
-widths = [base + 1] * rem + [base] * (4 - rem)
+base   = W // n
+rem    = W % n
+widths = [base + 1] * rem + [base] * (n - rem)
 ```
+
+This single parameterised helper replaces the former 4-hardcoded path and the
+2-hardcoded blind helper; every group (including Blinds and Charm) lays out
+through it with its own `n`.
 
 Each cell occupies `cell_w` columns: `(cell_w - 1)` characters of
 `NAME.upper()[:cell_w-1].ljust(cell_w-1)` followed by the `▌` separator.
@@ -174,20 +235,12 @@ populated cell's separator.
 
 ### Blinds two-up layout
 
-The Blinds group is the sole exception to the 4-up grid. It renders **2 cells
-per row** so the wider mob names fit. This is the *only* divergence — the cell
-content is identical to every other group's, so the Blinds branch of
-`_build_all_rows` reuses the shared `_cell_frags` renderer; it just lays out 2
-cells per row instead of 4.
-
-Cell width distribution over full width `W` uses the round-extra helper adapted
-to 2 cells (same shape as the 3-bar group pane):
-
-```
-base   = W // 2
-extra  = W % 2
-widths = [base + (1 if i < extra else 0) for i in range(2)]
-```
+The Blinds group ships with **2 cells per row** (the `blind` cols default) so the
+wider mob names fit. The cell content is identical to every other group's, so the
+Blinds branch of `_build_all_rows` reuses the shared `_cell_frags` renderer and
+the shared `_cell_widths(W, n)` helper; it just passes `n = layout["blind"].cols`.
+The column count is configurable like every other group (clamped to `[1, 6]`); 2
+is only the default.
 
 Each block occupies `cell_w` columns with the standard cell content —
 `NAME.upper()[:cell_w-1].ljust(cell_w-1)` plus the `▌` separator — and inherits
@@ -201,24 +254,38 @@ the last row; the row ends after that block's separator.
 
 ### Charm group
 
-The Charm group is the second exception to the grid: it renders **one entry per
-row, full width, with no bar**. Each row (`_charm_row_frags`) is laid out as:
+The Charm group renders **with no bar**, `layout["charm"].cols` cells per row
+(default 1, clamped to `[1, 2]`). Each cell (`_charm_cell_frags(entry, cell_w,
+name_fg)`) is laid out, over its `cell_w` from `_cell_widths(W, charm_cols)`, as:
 
 ```
 <name, left-justified>  <mins, right-justified width 3>  ×
 ```
 
-- **Name** — light violet `#B388FF`. The **first letter is capitalised** and the
-  inner case is preserved (mob long-names like `huge stone troll` →
-  `Huge stone troll`), unlike the grid groups which upper-case the whole label.
-  Truncated from the right to `W - 6` columns (1 × + 1 gap + 3 mins + 1 gap).
-- **Minutes** — darker grey `#888888`, a count-**up** rendered as `Nm`
-  right-justified in 3 columns (`" 0m"` … `"99m"`), computed as
+At `charm_cols = 1` each cell spans the full width and the result is identical to
+the historic one-per-row layout. At `charm_cols = 2` charmies lay out two per row
+(mirroring the blinds two-up branch); each cell's × carries its own drop handler
+for that charm's id, with per-cell hover via `_hover_charm_id`.
+
+- **Name** — themed from `layout["charm"].color` (default light violet `#B388FF`).
+  The **first letter is capitalised** and the inner case is preserved (mob
+  long-names like `huge stone troll` → `Huge stone troll`), unlike the grid
+  groups which upper-case the whole label.
+- **Minutes** — darker grey `#888888` (fixed, not themed), a count-**up** rendered
+  as `Nm` right-justified in 3 columns (`" 0m"` … `"99m"`), computed as
   `min(99, int((now - started_at) // 60))` and capped at 99. A **permanent**
-  controlled mob (`expires_at` absent) shows three blank spaces here instead, so
-  timed and permanent rows keep an identical column layout.
-- **×** — a clickable drop control in muted red `#CC5555`, brightening to
-  `#E88888` while the pointer hovers over it (the `_hover_charm_id` cue).
+  controlled mob (`expires_at` absent) shows three blank spaces here instead.
+- **×** — a clickable drop control in muted red `#CC5555` (fixed, not themed),
+  brightening to `#E88888` while the pointer hovers over it (the
+  `_hover_charm_id` cue).
+
+**Compacting rule.** The right side reserves 6 columns (× + gap + 3 mins + gap),
+so the name truncates to `cell_w - 6`. When `cell_w - 6 < 5` (i.e. `cell_w < 11`)
+the **minutes region is dropped for the whole cell** and the name takes
+`cell_w - 2` (gap + ×). The test is on `cell_w` **only**, never on whether the
+entry is timed, so a timed and a permanent charm in the same column keep
+identical geometry. This is what lets a narrowed two-up charm row drop the
+minutes (never the ×) once the per-cell name space falls below 5 columns.
 
 **Click-to-drop.** Clicking the × calls `_send_charm_drop(id)`, which invokes
 `_cp_charm_drop <id>` in the game/tt++ pane over the **same** `tmux send-keys`
@@ -231,6 +298,11 @@ run the drop and `timers_state.lua` rewrites `timers.state`. See
 **Known limitation (parked):** the `_cp_charm_drop` command shows up as a
 persistent line in the tt++ game scrollback — a tt++ command-echo behaviour not
 yet solved. The drop itself works correctly.
+
+The fill/separator BG values below are the **defaults** — each is the
+`layout[type].color` for that group and is overridable via
+[`timers_layout.conf`](#layout-config-timers_layoutconf). Cell FG is always
+`#000000`; the separator FG always tracks the fill colour.
 
 | Group          | Filled cell BG | Cell FG   | Separator FG |
 |----------------|----------------|-----------|--------------|
@@ -284,8 +356,22 @@ a partial first row omits its trailing cells, or the grid is empty.
 `_corner_text()` returns:
 
 - `[]` (nothing) when not `_run_active`.
-- `[(C_ACCENT_FG, "+", _open_handler)]` in grid mode.
 - `[(C_ACCENT_FG, "×", _close_handler)]` in add mode.
+- `[]` in grid mode **when the topmost visible row is a charm row** — see below.
+- `[(C_ACCENT_FG, "+", _open_handler)]` in grid mode otherwise.
+
+**Yielding the corner to a charm's drop ×.** The + Float pins to `top=0, right=0`,
+the same cell a charm row's own × occupies when that row sits at the top of the
+grid window. To keep the charm × clickable, grid mode suppresses the + (returns
+`[]`) when a charm row holds the topmost visible cell. Concretely, with
+`charm_row_count = ceil(len(charms) / charm_cols)` and
+`first_charm_row = total_rows - charm_row_count`, the + is suppressed when charms
+exist (and the charm group is enabled) and `_scroll_offset >= first_charm_row`.
+The + reappears automatically once the charm group empties, is disabled, or is
+scrolled away from the top. The add-view × is unaffected — the add view has no
+charm rows. This also fixes a latent case: a player with **only** charmies active
+(no other timers) has `first_charm_row == 0`, so the + previously sat over their
+first charm ×; it now yields.
 
 + (ASCII, U+002B) and × (U+00D7) are single-width, so the 1×1 corner never
 over- or under-flows its cell; the close × is the same glyph the charm row uses
@@ -475,6 +561,10 @@ updated by the existing 100 ms poll loop on each tick.
 - **State poll:** `os.stat(bridge/runtime/timers.state).st_mtime` checked every 100 ms.
   On mtime change: reload JSON, call `app.invalidate()`. The renderer clamps
   `_scroll_offset` on the next frame.
+- **Layout-config poll:** `os.stat(bridge/runtime/timers_layout.conf).st_mtime`
+  checked on the same 100 ms loop. On change (or first read): re-run
+  `_load_layout()` and `app.invalidate()`, so a colour / cols / enabled edit
+  takes effect within ~100 ms. An absent file resolves to the defaults.
 - **Blink tick:** `asyncio` task that sleeps `1.0 - frac + 0.01` seconds,
   waking just after the wall-clock second boundary. Calls `app.invalidate()`
   each cycle so blink phase transitions are synchronised to wall-clock seconds
