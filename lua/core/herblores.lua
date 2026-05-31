@@ -26,7 +26,7 @@ local json = require("dkjson")
 -- (Lua table iteration is unordered) for the timers pane's add-view in PR 2.
 -- ---------------------------------------------------------------------------
 
-local CATALOG_KEYS = { "Healing", "Travelling", "Clearthought", "Walking", "Haste" }
+local CATALOG_KEYS = { "Healing", "Travelling", "Clearthought", "Walking", "Haste", "DarkAura" }
 
 local CATALOG = {
     Healing = {
@@ -51,6 +51,10 @@ local CATALOG = {
     Haste = {
         { name = "Haste",            duration = 360,  type = "buff" },
         { name = "Haste (recovery)", duration = 1080, type = "debuff" },
+    },
+    DarkAura = {
+        { name = "Dark aura",         duration = 210,  type = "buff" },
+        { name = "Dark aura (faded)", duration = 3600, type = "debuff" },
     },
 }
 
