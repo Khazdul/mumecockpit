@@ -72,7 +72,7 @@ C_CHARM_MINS_FG = "fg:#888888"   # darker grey
 C_CHARM_X_FG    = "fg:#CC5555"   # muted red (not a screaming red)
 C_CHARM_X_HOVER_FG = "fg:#E88888"   # lighter than C_CHARM_X_FG — hover cue
 
-# Herblore add-view accent — shared by the grid ╋ button and the add-view ╳.
+# Herblore add-view accent — shared by the grid + button and the add-view ×.
 # Inverted filled-button look: black glyph on a gold background (gold matches
 # the overflow indicator; deliberately NOT the charm red).
 C_ACCENT_BTN       = "fg:#000000 bg:#d4a04e"   # black glyph on gold — button
@@ -115,7 +115,7 @@ _run_active    = False
 _hover_charm_id = None   # charm id whose X the pointer is currently over (hover cue)
 
 _view_mode          = "grid"   # "grid" | "add" — add-view is the herblore picker
-_hover_plus         = False    # pointer is over the ╋ corner button
+_hover_plus         = False    # pointer is over the + corner button
 _hover_herblore_key = None     # catalog key whose row the pointer is over
 _hover_close        = False    # pointer is over the add-view's X (return-to-grid)
 
@@ -435,7 +435,7 @@ def _corner_text():
 
 def _add_view_frags():
     """The herblore picker: one [+]/[-] toggle row per catalog key. The return-to-
-    grid ╳ is NOT drawn here — the top-right corner Float owns it (see
+    grid × is NOT drawn here — the top-right corner Float owns it (see
     _corner_text). Mouse-driven, no keybindings. Click flips add/remove via the
     PR-1 aliases; the row label follows the state file on the next poll. Paginated
     by _scroll_offset exactly like _grid_text, so the overflow indicator works in
@@ -513,7 +513,7 @@ def _grid_text():
     total    = len(all_rows)
 
     if total == 0:
-        # Run active but no rows: the corner Float still shows the ╋ over a blank pane.
+        # Run active but no rows: the corner Float still shows the + over a blank pane.
         return [("", "")]
 
     list_height    = H - (1 if (_scroll_offset > 0 or total > H) else 0)
@@ -568,7 +568,7 @@ def _indicator_text():
 class ListControl(FormattedTextControl):
     def mouse_handler(self, mouse_event):
         global _scroll_offset, _hover_charm_id, _hover_plus, _hover_herblore_key, _hover_close
-        # Let fragment handlers (the charm ×, ╋, add-view rows) fire first — mirrors ui_pane.py.
+        # Let fragment handlers (the charm ×, +, add-view rows) fire first — mirrors ui_pane.py.
         result = super().mouse_handler(mouse_event)
         if result is not NotImplemented:
             return result
