@@ -111,6 +111,17 @@ These dedicated actions bypass the in-flight gate on purpose. The generic
 an in-flight charm at the front of the queue, so only `_control_on_followed`
 records them.
 
+The `wood elf` also has a real in-game **leave** line,
+`^A wood elf leaves and vanishes into the distance.$`, routed to the global
+`_control_on_left("wood elf")`. This is the **primary** drop path; the 99-min
+cap is only a safety ceiling for a missed line (the drop-signal-primary,
+tick-cap-fallback pattern of
+[ADR 0027](decisions/0027-drop-driven-affect-expiry.md)).
+`_control_on_left` removes the oldest matching entry via `_remove_first_by_name`
+(which already surfaces the `char_ui(..., "down")` line), then persists and emits
+`charms_changed`; with none tracked it is a no-op. Permanent controlled mobs
+have no leave line — they are dropped only by the X.
+
 ## The 99-minute cap
 
 Charm has no real in-game duration and no drop string. `CHARM_CAP` is

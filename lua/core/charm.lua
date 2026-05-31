@@ -296,6 +296,18 @@ function _control_on_followed(name)
     char_ui("charm", name, "up")
 end
 
+-- A controlled follower that leaves on its own (a wood elf's charm expiring
+-- in-game). Removes the oldest matching entry, then persists and re-serialises.
+-- No-op if none tracked. The 99-min cap stays as a safety ceiling for a missed
+-- leave line (ADR 0027: drop signal primary, tick cap fallback). _remove_first_by_name
+-- already surfaces the char_ui "down" line, so it is not re-emitted here.
+function _control_on_left(name)
+    if _remove_first_by_name(name) then
+        _save_active()
+        events.emit("charms_changed")
+    end
+end
+
 -- ---------------------------------------------------------------------------
 -- Explicit drop (global — invoked by the pane's X via _cp_charm_drop alias)
 -- ---------------------------------------------------------------------------
@@ -360,6 +372,10 @@ function _register_charm_actions()
     session_cmd([[#action {^An enslaved shadow starts following you.$} {#lua {_control_on_followed("enslaved shadow")}} {3}]])
     session_cmd([[#action {^A wood elf starts following you.$} {#lua {_control_on_followed("wood elf")}} {3}]])
     session_cmd([[#action {^A dreadful warg starts following you.$} {#lua {_control_on_followed("dreadful warg")}} {3}]])
+
+    -- The wood elf's real in-game drop line — the primary drop path. The 99-min
+    -- cap stays only as a safety ceiling for a missed line (ADR 0027).
+    session_cmd([[#action {^A wood elf leaves and vanishes into the distance.$} {#lua {_control_on_left("wood elf")}} {3}]])
 
     -- Click-to-drop alias: the buffs pane's X invokes this via tmux send-keys
     -- in Step 5; testable now by typing `_cp_charm_drop <id>` in the input pane.
