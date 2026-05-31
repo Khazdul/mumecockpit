@@ -63,8 +63,8 @@ JSON object with affect/stored/blind/charm arrays plus the herblore arrays
     {"name": "troll", "expires_at": 1714000085, "expected_duration": 90}
   ],
   "charms": [
-    {"id": 7, "name": "orc",              "started_at": 1714000000},
-    {"id": 8, "name": "huge stone troll", "started_at": 1714000300}
+    {"id": 7, "name": "orc",              "started_at": 1714000000, "expires_at": 1714005940, "expected_duration": 5940},
+    {"id": 8, "name": "enslaved shadow",  "started_at": 1714000300, "expires_at": null,       "expected_duration": null}
   ],
   "herblores": [
     {"key": "Clearthought", "name": "Clearthought (neg)", "type": "debuff", "expires_at": 1714000720, "expected_duration": 360}
@@ -84,8 +84,10 @@ JSON object with affect/stored/blind/charm arrays plus the herblore arrays
 `expected_duration` for **timed** entries (charmed mobs and the timed
 control-without-charm `wood elf`, which have a 99-min cap). The pane never reads
 those for a countdown — it displays a count-**up** of minutes from `started_at`.
-**Permanent** control-without-charm entries (`enslaved shadow`, `dreadful warg`)
-omit `expires_at`; the pane keys off its absence to show no minutes (see "Charm
+The serialiser emits both fields (mirroring blinds), `null` for permanent
+entries. **Permanent** control-without-charm entries (`enslaved shadow`,
+`dreadful warg`) carry `expires_at: null`; the pane keys off its absence to show
+no minutes and let the name reclaim the time block's columns (see "Charm
 group"). `id` is the monotonic per-session id the click-to-drop × targets. A
 missing top-level `charms` key is treated as an empty array. See
 [docs/charm.md](charm.md).
@@ -322,19 +324,29 @@ for that charm's id, with per-cell hover via `_hover_charm_id`.
   groups which upper-case the whole label.
 - **Minutes** — darker grey `#888888` (fixed, not themed), a count-**up** rendered
   as `Nm` right-justified in 3 columns (`" 0m"` … `"99m"`), computed as
-  `min(99, int((now - started_at) // 60))` and capped at 99. A **permanent**
-  controlled mob (`expires_at` absent) shows three blank spaces here instead.
+  `min(99, int((now - started_at) // 60))` and capped at 99. Shown only for
+  **timed** entries. A **permanent** controlled mob (`expires_at: null`) shows
+  **no** minutes block at all — its name reclaims those columns (see "Layout
+  split" below), so there is no blank gap (`Enslaved shadow ×`, not
+  `Enslaved sh    ×`).
 - **×** — a clickable drop control in muted red `#CC5555` (fixed, not themed),
   brightening to `#E88888` while the pointer hovers over it (the
   `_hover_charm_id` cue).
 
-**Compacting rule.** The right side reserves 6 columns (× + gap + 3 mins + gap),
-so the name truncates to `cell_w - 6`. When `cell_w - 6 < 5` (i.e. `cell_w < 11`)
-the **minutes region is dropped for the whole cell** and the name takes
-`cell_w - 2` (gap + ×). The test is on `cell_w` **only**, never on whether the
-entry is timed, so a timed and a permanent charm in the same column keep
-identical geometry. This is what lets a narrowed two-up charm row drop the
-minutes (never the ×) once the per-cell name space falls below 5 columns.
+**Layout split.** The cell layout branches on **timed vs permanent**, not on
+width. The × always sits in the cell's right-most column in both branches (the
+charm-corner yield depends on the rightmost cell's × at `top=0,right=0`):
+
+- **Timed** (`expires_at` present) and `cell_w >= 7`: `name_w = cell_w - 6`, then
+  `name · " " · Nm · " " · ×`. The count-up is always shown; the name truncates
+  from the right as the cell narrows
+  (`Pack horse 21m ×` → `Pac 21m ×` → `P 21m ×`).
+- **Permanent** (`expires_at: null`), OR timed but `cell_w < 7` (rare degenerate):
+  `name_w = max(0, cell_w - 2)`, then `name · " " · ×`. No time block — the name
+  reclaims the 4 columns the time would have used, so there is no blank gap. In
+  practice `cell_w >= ~16` (charm caps at 2 cols; the right column is `>= 33`), so
+  a timed cell always takes the count-up branch and the `cell_w < 7` fallback is
+  effectively unreachable.
 
 **Click-to-drop.** Clicking the × calls `_send_charm_drop(id)`, which invokes
 `_cp_charm_drop <id>` in the game/tt++ pane over the **same** `tmux send-keys`

@@ -406,32 +406,35 @@ def _send_herblore(action, key):
 
 
 def _charm_cell_frags(entry, cell_w, name_fg):
-    """One charm cell, width cell_w, no bar: name (themed) · mins (grey) · × (red).
+    """One charm cell, width cell_w, no bar. Layout splits on timed vs permanent:
 
-    The right side reserves 6 columns (× + gap + 3 mins + gap), so the name
-    truncates to cell_w - 6. When cell_w - 6 < 5 (cell_w < 11) the minutes region
-    is dropped for the whole cell and the name takes cell_w - 2 (gap + ×). The
-    test is on cell_w only — never on whether the entry is timed — so a timed and
-    a permanent charm in the same column keep identical geometry. At charm_cols=1
+    - TIMED (expires_at present) and cell_w >= 7: name · mins · × — the right side
+      reserves 6 columns (gap + 3 mins + gap + ×), so the name truncates to
+      cell_w - 6 and shows an elapsed count-up ("0m".."99m", auto-dropped at 99
+      by the Lua prune tick).
+    - PERMANENT (expires_at is None), OR timed but cell_w < 7 (degenerate): name · ×
+      with NO time block — the name reclaims those columns (name_w = cell_w - 2),
+      so a permanent mob fills the gap instead of showing blanks (ADR 0124).
+
+    The × sits in the cell's right-most column in BOTH branches (the charm-corner
+    yield depends on the rightmost cell's × at top=0,right=0). At charm_cols=1
     (cell_w == W) this reproduces the historic full-width row exactly."""
     cid        = entry.get("id")
     name       = entry.get("name", "")
     started_at = entry.get("started_at")
+    expires_at = entry.get("expires_at")
 
-    show_mins  = (cell_w - 6) >= 5              # cell_w >= 11
-    name_w     = max(0, cell_w - 6) if show_mins else max(0, cell_w - 2)
+    timed      = expires_at is not None and cell_w >= 7
+    name_w     = (cell_w - 6) if timed else max(0, cell_w - 2)
     disp       = (name[:1].upper() + name[1:]) if name else name   # capitalise first letter
     name_txt   = disp[:name_w].ljust(name_w)    # preserve inner case (mob long-name)
 
     frags = [(name_fg, ch) for ch in name_txt]
-    if show_mins:
-        if entry.get("expires_at") is None:
-            mins_txt = "   "                    # permanent controlled mob — no timer shown
-        else:
-            mins = 0
-            if started_at:
-                mins = min(99, int((time.time() - started_at) // 60))
-            mins_txt = f"{mins}m".rjust(3)      # " 0m" .. "99m"
+    if timed:
+        mins = 0
+        if started_at:
+            mins = min(99, int((time.time() - started_at) // 60))
+        mins_txt = f"{mins}m".rjust(3)          # " 0m" .. "99m"
         frags.append(("", " "))
         frags.extend((C_CHARM_MINS_FG, ch) for ch in mins_txt)
     frags.append(("", " "))
