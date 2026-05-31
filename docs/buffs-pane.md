@@ -67,10 +67,13 @@ JSON object with four arrays:
 (90 s fixed) and never indefinite or untracked; a missing top-level
 `blinds` key is treated as an empty array.
 
-`charms` entries carry only `{id, name, started_at}` — the serialised form has
-**no** `expires_at` / `expected_duration` (the in-memory entry has a 99-min cap,
-but the pane displays a count-**up** of minutes from `started_at`, not a
-countdown). `id` is the monotonic per-session id the click-to-drop X targets. A
+`charms` entries carry `{id, name, started_at}`, plus `expires_at` /
+`expected_duration` for **timed** entries (charmed mobs and the timed
+control-without-charm `wood elf`, which have a 99-min cap). The pane never reads
+those for a countdown — it displays a count-**up** of minutes from `started_at`.
+**Permanent** control-without-charm entries (`enslaved shadow`, `dreadful warg`)
+omit `expires_at`; the pane keys off its absence to show no minutes (see "Charm
+group"). `id` is the monotonic per-session id the click-to-drop X targets. A
 missing top-level `charms` key is treated as an empty array. See
 [docs/charm.md](charm.md).
 
@@ -189,7 +192,9 @@ row, full width, with no bar**. Each row (`_charm_row_frags`) is laid out as:
   Truncated from the right to `W - 6` columns (1 X + 1 gap + 3 mins + 1 gap).
 - **Minutes** — darker grey `#888888`, a count-**up** rendered as `Nm`
   right-justified in 3 columns (`" 0m"` … `"99m"`), computed as
-  `min(99, int((now - started_at) // 60))` and capped at 99.
+  `min(99, int((now - started_at) // 60))` and capped at 99. A **permanent**
+  controlled mob (`expires_at` absent) shows three blank spaces here instead, so
+  timed and permanent rows keep an identical column layout.
 - **X** — a clickable drop control in muted red `#CC5555`, brightening to
   `#E88888` while the pointer hovers over it (the `_hover_charm_id` cue).
 

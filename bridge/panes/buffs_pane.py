@@ -246,10 +246,13 @@ def _charm_row_frags(entry, W):
     cid        = entry.get("id")
     name       = entry.get("name", "")
     started_at = entry.get("started_at")
-    mins       = 0
-    if started_at:
-        mins = min(99, int((time.time() - started_at) // 60))
-    mins_txt   = f"{mins}m".rjust(3)            # " 0m" .. "99m"
+    if entry.get("expires_at") is None:
+        mins_txt = "   "                        # permanent controlled mob — no timer shown
+    else:
+        mins = 0
+        if started_at:
+            mins = min(99, int((time.time() - started_at) // 60))
+        mins_txt = f"{mins}m".rjust(3)          # " 0m" .. "99m"
     name_w     = max(0, W - 6)                  # 1 X + 1 gap + 3 mins + 1 gap
     disp       = (name[:1].upper() + name[1:]) if name else name   # capitalise first letter
     name_txt   = disp[:name_w].ljust(name_w)    # preserve inner case (mob long-name)

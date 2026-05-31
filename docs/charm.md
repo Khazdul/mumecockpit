@@ -77,6 +77,40 @@ A charm-specific resist failure, `^%1 seems to be ruled by powers other than
 yours...$`, calls `spellcast.fail_front()` directly (queue-only, no event) — it
 is not a shared store-failure line, so it drains the FIFO front itself.
 
+## Control-without-charm followers
+
+Some mobs are commanded **without** casting charm. Each produces a fixed,
+unambiguous follow line, so unlike charm they need **no** in-flight cast gate —
+the line itself is the proof. They share `state.char.charms`, rendering,
+persistence, and click-to-drop with charmed mobs, and are added by
+`_control_on_followed(name)` (a global, called from dedicated priority-3
+`#action` lines that pass the canonical name directly — no article stripping).
+
+The mobs and their behaviours live in the module-local `CONTROLLED` table:
+
+| Mob               | Behaviour                                                        |
+| ----------------- | --------------------------------------------------------------- |
+| `enslaved shadow` | **Permanent** — no timer, never tick-pruned, dropped only by X. |
+| `wood elf`        | **Timed** — 99-min cap, ticked and auto-dropped like a charm.   |
+| `dreadful warg`   | **Permanent**, and **supersedes** `enslaved shadow`.            |
+
+Permanent entries carry **no** `expected_duration`/`expires_at`, so the tick
+never prunes them and the buffs pane shows no minutes for them. Timed entries
+get the same fields a landed charm does.
+
+`dreadful warg` supersedes `enslaved shadow`: an enslaved shadow can transform
+into a dreadful warg in-game, and the warg's follow line is the only signal. So
+`_control_on_followed("dreadful warg")` first calls `_remove_first_by_name(
+"enslaved shadow")` — which removes the **oldest** matching entry (it cannot
+disambiguate duplicates) and surfaces its `char_ui(..., "down")` line — then adds
+the warg, with a single `_save_active()`/`charms_changed` covering both. With no
+shadow present, only the warg is added.
+
+These dedicated actions bypass the in-flight gate on purpose. The generic
+`^%1 starts following you.$` action also matches their lines, but no-ops without
+an in-flight charm at the front of the queue, so only `_control_on_followed`
+records them.
+
 ## The 99-minute cap
 
 Charm has no real in-game duration and no drop string. `CHARM_CAP` is
@@ -107,6 +141,10 @@ pane's click-to-drop X to target a specific entry. It is **never reused within a
 session**; on reload `_next_id` is restored past the highest persisted id so a
 restored charm and a freshly-landed one never collide.
 
+Permanent control-without-charm entries (see above) omit `expected_duration`
+and `expires_at` entirely — those nil fields are what mark an entry untimed for
+the tick (never pruned) and for the buffs pane (no minutes column).
+
 The list is initialised to `{}` at load and on every `gmcp_char_name`, then
 repopulated from disk. `char_reset` (disconnect) wipes the in-memory list via
 the standard `char_state.lua` sweep, but the disk file survives.
@@ -125,8 +163,11 @@ stored-spells. The store is `data/characters/<char>/charms_active.json`, where
 - **Load** — `_load_active(char_name)` runs from the `gmcp_char_name` handler
   (cold start and reconnect), after the in-memory list is reset to `{}`. It
   drops any entry with `expires_at <= os.time()` (its 99 min elapsed during
-  downtime), restores `_next_id` past the highest surviving id, arms the tick if
-  anything survived, and **always emits `charms_changed`** at the end. The final
+  downtime), restores `_next_id` past the highest surviving id, arms the tick
+  **only when a restored entry has an `expires_at`** (permanent-only state would
+  otherwise run an idle 2 s no-op loop forever), and **always emits
+  `charms_changed`** at the end. Permanent entries have no `expires_at`, so the
+  prune guard never drops them and they survive any downtime. The final
   emit is load-bearing: `charm.lua` loads after `buffs_state.lua` alphabetically,
   so the buffs pane re-serialises regardless of module load order. Logs
   `[CHARM] restored N (M expired)`.

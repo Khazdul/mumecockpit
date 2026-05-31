@@ -30,6 +30,19 @@ local json = require("dkjson")
 
 local CHARM_CAP = 99 * 60
 
+-- Control-without-charm followers: mobs you command without casting charm. Each
+-- produces a fixed, unambiguous follow line, so unlike charm they need NO
+-- in-flight cast gate — the line itself is the proof. They share state.char.charms,
+-- rendering, persistence and click-to-drop with charmed mobs.
+--   permanent  — no timer, never tick-pruned, lives until the player clicks the X.
+--   supersedes — the in-game transform replaces this mob: remove one existing
+--                entry of that name before adding (e.g. shadow → warg).
+local CONTROLLED = {
+    ["enslaved shadow"] = { permanent = true },
+    ["wood elf"]        = { permanent = false },  -- 99-min cap, like charm
+    ["dreadful warg"]   = { permanent = true, supersedes = "enslaved shadow" },
+}
+
 state.char.charms = {}
 
 -- Monotonic id assigned per charm, used by the buffs pane's click-to-drop X to
@@ -143,17 +156,21 @@ local function _load_active(char_name)
     local restored = 0
     local expired  = 0
     local max_id   = 0
+    local has_timed = false   -- any restored entry with an expiry → arm the prune tick
     for _, e in ipairs(loaded) do
         if e.expires_at and e.expires_at <= now then
             expired = expired + 1
         else
             state.char.charms[#state.char.charms + 1] = e
             if e.id and e.id > max_id then max_id = e.id end
+            if e.expires_at then has_timed = true end
             restored = restored + 1
         end
     end
     _next_id = max_id + 1
-    if #state.char.charms > 0 then
+    -- Arm the tick only when a timed entry survived; permanent-only state would
+    -- otherwise run an idle 2 s no-op loop forever.
+    if has_timed then
         session_cmd("#delay {charms_tick} {#lua {_charms_tick()}} {2}")
     end
     dbg("[CHARM] restored " .. restored .. " (" .. expired .. " expired)")
@@ -232,6 +249,54 @@ function _charm_on_followed(raw_name)
 end
 
 -- ---------------------------------------------------------------------------
+-- Control-without-charm followers (no cast gate — the follow line is the proof)
+-- ---------------------------------------------------------------------------
+
+-- Remove the oldest tracker entry whose name matches. Cannot disambiguate when
+-- several share the name; removes the first/oldest. Used by the dreadful-warg
+-- transform, which replaces the enslaved shadow it was made from. Does NOT
+-- persist or emit on its own — the caller does a single save/emit covering both
+-- the remove and the add. It DOES surface the removal UI line.
+local function _remove_first_by_name(name)
+    local t = state.char.charms
+    for i = 1, #t do
+        if t[i].name == name then
+            table.remove(t, i)
+            char_ui("charm", name, "down")
+            return true
+        end
+    end
+    return false
+end
+
+-- Add a controlled follower (no charm cast involved). Permanent entries carry
+-- no expiry and are never tick-pruned; timed entries use the 99-min charm cap.
+-- A `supersedes` mob is removed first (the in-game transform replaces it).
+function _control_on_followed(name)
+    local def = CONTROLLED[name]
+    if not def then return end
+    if def.supersedes then
+        _remove_first_by_name(def.supersedes)
+    end
+    local now   = os.time()
+    local entry = { id = _next_id, name = name, started_at = now }
+    if not def.permanent then
+        entry.expected_duration = CHARM_CAP
+        entry.expires_at        = now + CHARM_CAP
+    end
+    _next_id = _next_id + 1
+    state.char.charms[#state.char.charms + 1] = entry
+    _save_active()
+    if entry.expires_at then
+        -- Only timed entries need the prune tick; permanent entries never expire.
+        session_cmd("#delay {charms_tick} {#lua {_charms_tick()}} {2}")
+    end
+    dbg("[CHARM] controlled: " .. name)
+    events.emit("charms_changed")
+    char_ui("charm", name, "up")
+end
+
+-- ---------------------------------------------------------------------------
 -- Explicit drop (global — invoked by the pane's X via _cp_charm_drop alias)
 -- ---------------------------------------------------------------------------
 
@@ -285,6 +350,16 @@ function _register_charm_actions()
     -- The charm-specific resist failure. Cast-queue-only (not a shared store
     -- failure line), so it drains the shared FIFO front directly.
     session_cmd('#action {^%1 seems to be ruled by powers other than yours...$} {#lua {spellcast.fail_front()}} {3}')
+
+    -- Control-without-charm followers. These bypass the in-flight cast gate on
+    -- purpose: each follow line is fixed and unambiguous, so it is its own proof.
+    -- The generic "%1 starts following you." action above also matches these
+    -- lines, but no-ops without an in-flight charm, so the explicit handler is
+    -- the only one that records them. The canonical name is passed directly — no
+    -- article stripping needed.
+    session_cmd([[#action {^An enslaved shadow starts following you.$} {#lua {_control_on_followed("enslaved shadow")}} {3}]])
+    session_cmd([[#action {^A wood elf starts following you.$} {#lua {_control_on_followed("wood elf")}} {3}]])
+    session_cmd([[#action {^A dreadful warg starts following you.$} {#lua {_control_on_followed("dreadful warg")}} {3}]])
 
     -- Click-to-drop alias: the buffs pane's X invokes this via tmux send-keys
     -- in Step 5; testable now by typing `_cp_charm_drop <id>` in the input pane.
