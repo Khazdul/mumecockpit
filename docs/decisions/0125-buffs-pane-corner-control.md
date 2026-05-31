@@ -43,3 +43,14 @@ its glyph had to occupy exactly one terminal column.
   send no off-pane mouse events) — a known, accepted limitation across panes.
 
 Cross-reference [docs/buffs-pane.md](../buffs-pane.md).
+
+## Update — corner styling reverted
+
+The inverted gold-button styling (black glyph on a gold background) was reverted
+to a **gold foreground glyph on the terminal/pane background**, with hover
+brightening the foreground (`C_ACCENT_FG` → `C_ACCENT_HOVER_FG`).
+
+The rest of this ADR stands unchanged: the `Float` pinning at `top=0, right=0`,
+the add-view-as-mode decision, and the ASCII/Latin-1 single-cell glyph rule are
+unaffected. The "no underlying bar colour in the corner column" consequence still
+holds — the `Float` paints the default bg.
