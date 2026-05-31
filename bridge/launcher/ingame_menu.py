@@ -38,6 +38,7 @@ from menu_chrome import (
 from panes_grid import apply_cell_toggle, panes_grid_fragments
 from timers_layout_grid import (
     TIMERS_LAYOUT_TYPES, TIMERS_LAYOUT_LABELS, TIMERS_LAYOUT_DEFAULTS,
+    TIMERS_COMPACT_DEFAULT,
     max_cols_for, clamp_cols, step_cols, timers_grid_fragments,
 )
 import core_aliases
@@ -769,13 +770,15 @@ _PANES_BACK_ROW    = _PANES_GRID_ROWS + 1          # 7
 _PANES_LAST_ROW    = _PANES_BACK_ROW
 _PANES_LAST_COL    = len(PANE_COLOR_ORDER) - 1     # 6
 
-# Timers-layout grid geometry. One row per group plus a Back row. The
-# column stepper occupies two cursor columns (◄ at N, ► at N+1) after the
-# N colour cells. See timers_layout_grid.py and docs/timers-pane.md.
-_TIMERS_GRID_ROWS  = len(TIMERS_LAYOUT_TYPES)      # 6
-_TIMERS_BACK_ROW   = _TIMERS_GRID_ROWS             # Back is the 7th row
-_TIMERS_LAST_ROW   = _TIMERS_BACK_ROW
-_TIMERS_LAST_COL   = len(TIMERS_COLOR_ORDER) + 1   # colour cols + ◄ + ►
+# Timers-layout grid geometry. One row per group, then a [X] Compact layout
+# toggle and a Back row. The column stepper occupies two cursor columns (◄ at
+# N, ► at N+1) after the N colour cells. See timers_layout_grid.py and
+# docs/timers-pane.md.
+_TIMERS_GRID_ROWS    = len(TIMERS_LAYOUT_TYPES)    # 6
+_TIMERS_COMPACT_ROW  = _TIMERS_GRID_ROWS           # 6
+_TIMERS_BACK_ROW     = _TIMERS_GRID_ROWS + 1       # Back is the 8th row
+_TIMERS_LAST_ROW     = _TIMERS_BACK_ROW
+_TIMERS_LAST_COL     = len(TIMERS_COLOR_ORDER) + 1 # colour cols + ◄ + ►
 
 
 def _set_panes_cursor(row, col=None):
@@ -905,7 +908,14 @@ def _read_timers_layout():
     layout = {
         typ: dict(TIMERS_LAYOUT_DEFAULTS[typ]) for typ in TIMERS_LAYOUT_TYPES
     }
+    layout["compact"] = TIMERS_COMPACT_DEFAULT
     for key, val in conf.items():
+        # timers_compact is a global toggle with no second underscore, so it
+        # must branch before the type-split below (rpartition would drop it).
+        if key == "timers_compact":
+            if val in ("0", "1"):
+                layout["compact"] = (val == "1")
+            continue
         if not key.startswith("timers_"):
             continue
         typ, _sep, attr = key[len("timers_"):].rpartition("_")
@@ -980,6 +990,15 @@ def _apply_timers_step(row, delta):
     cur = _read_timers_layout()[typ]
     new = step_cols(cur["cols"], max_cols_for(typ), delta)
     _persist_timers_layout_key(f"timers_{typ}_cols", str(new))
+    if _app:
+        _app.invalidate()
+
+
+def _toggle_timers_compact():
+    """Flip timers_compact and persist immediately. The running timers pane
+    polls timers_layout.conf (~100 ms) and re-renders — no tmux interaction."""
+    compact = _read_timers_layout()["compact"]
+    _persist_timers_layout_key("timers_compact", "0" if compact else "1")
     if _app:
         _app.invalidate()
 
@@ -3460,6 +3479,8 @@ def _timers_select(event):
             _apply_timers_step(r, -1)
         elif _timers_col == n + 1:
             _apply_timers_step(r, +1)
+    elif r == _TIMERS_COMPACT_ROW:
+        _toggle_timers_compact()
     elif r == _TIMERS_BACK_ROW:
         _pop_frame()
 
@@ -3853,6 +3874,29 @@ def _timers_text():
 
     frags.append(("", "\n"))
 
+    # Compact layout toggle, mirroring the panes "Display pane headers" row.
+    # Checked = compact (today's dense look); unchecked = airy.
+    compact_on    = layout["compact"]
+    compact_label = f"[{'X' if compact_on else ' '}] Compact layout"
+    compact_w     = len(compact_label) + 4
+    state_c = "selected_focused" if cur_row == _TIMERS_COMPACT_ROW else "inactive"
+    style_c, text_c = button_fragment(compact_label, compact_w, state_c)
+
+    def _compact_handler(ev):
+        if ev.event_type == MouseEventType.MOUSE_MOVE:
+            _set_timers_cursor(_TIMERS_COMPACT_ROW)
+            return
+        if ev.event_type == MouseEventType.MOUSE_DOWN:
+            _set_timers_cursor(_TIMERS_COMPACT_ROW)
+            _toggle_timers_compact()
+
+    pad_c = max(0, (cols - compact_w) // 2)
+    frags.append(("", " " * pad_c))
+    frags.append((style_c, text_c, _compact_handler))
+    frags.append(("", "\n"))
+
+    frags.append(("", "\n"))
+
     state_b = "selected_focused" if cur_row == _TIMERS_BACK_ROW else "inactive"
     style_b, text_b = button_fragment(back_label, back_w, state_b)
 
@@ -3869,8 +3913,8 @@ def _timers_text():
     frags.append(("", "\n"))
 
     # title block (3 rows for popup) + header row + 6 group rows + blank
-    # + Back.
-    content_rows = title_block_height(1) + 1 + _TIMERS_GRID_ROWS + 2
+    # + compact + blank + Back (4 rows).
+    content_rows = title_block_height(1) + 1 + _TIMERS_GRID_ROWS + 4
     footer = "↑↓←→ Move · Enter Toggle · ESC Back"
     frags.extend(footer_block(footer, cols, rows_h, content_rows))
 

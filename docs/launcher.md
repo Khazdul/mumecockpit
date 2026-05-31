@@ -1392,8 +1392,9 @@ Orange / Yellow / Teal), followed by a trailing inline `◄ N ►` column
 stepper per row. A dim, non-interactive header row sits above the six
 group rows — each colour name centred over its swatch (Magenta truncates
 to `Magent`) and a `Cols` label centred over the `◄ N ►` stepper. Below
-the grid sit a blank row and `Back`. There is **no** headers toggle
-(unlike Panes). The frame uses the `menu_chrome.title_block` / `footer_block` helpers
+the grid sit a blank row, a `[X] Compact layout` toggle, a blank row, and
+`Back` — the same `blank · toggle · blank · Back` shape as the Panes
+`Display pane headers` toggle. The frame uses the `menu_chrome.title_block` / `footer_block` helpers
 (`blank_above=2`) and the shared `timers_layout_grid` module — see
 ADR 0126 and the [Timers-layout grid model](#timers-layout-grid-model)
 section below.
@@ -1413,6 +1414,10 @@ Enter / click semantics:
 - On the `◄` / `►` stepper — decrements / increments the group's column
   count, clamped to `[1, max]` where `max` is 2 for Charmies and 6 for
   every other group. The digit between the arrows is display-only.
+- On the `[X] Compact layout` toggle — flips the global `timers_compact`
+  key (checked = compact, today's dense look; unchecked = one blank line
+  between each rendered group). Layout-identical to the Panes headers
+  toggle; deferred like the rest of this frame.
 - On `Back` — saves and pops (same as ESC).
 
 The colour cells use the **swatch-cell grammar** (gold *foreground* on
@@ -1426,13 +1431,16 @@ Back / ESC. This is the persistence asymmetry vs. the popup — the
 popup's equivalent frame writes each changed key in place immediately,
 and the running timers pane picks it up within ~100 ms. Both surfaces
 write the same `timers_layout.conf` keys (`timers_<type>_enabled` /
-`_color` / `_cols`). A separate parse/save pair
+`_color` / `_cols`, plus the global `timers_compact`; the in-memory
+`_timers_layout` dict carries `compact` under a reserved key the
+per-type save loop skips). A separate parse/save pair
 (`_parse_timers_layout` / `_save_timers_layout`) mirrors the
 `startup.conf` `_parse_conf` / `_save_conf` pair rather than reusing it
 — a different file and schema.
 
-**Cursor / navigation.** Seven navigable rows: the six grid rows and the
-`Back` row (`_TIMERS_BACK_ROW`). `↑` / `↓` move between them (clamped, no
+**Cursor / navigation.** Eight navigable rows: the six grid rows, the
+`Compact layout` toggle (`_TIMERS_COMPACT_ROW`, row 6), and the `Back`
+row (`_TIMERS_BACK_ROW`, row 7). `↑` / `↓` move between them (clamped, no
 wrap). `←` / `→` move the column **only while the cursor is on a grid
 row**, across the nine colour columns then the `◄` (col 9) and `►`
 (col 10) stepper cells; the column persists across grid rows. Footer:
