@@ -72,10 +72,11 @@ C_CHARM_MINS_FG = "fg:#888888"   # darker grey
 C_CHARM_X_FG    = "fg:#CC5555"   # muted red (not a screaming red)
 C_CHARM_X_HOVER_FG = "fg:#E88888"   # lighter than C_CHARM_X_FG — hover cue
 
-# Herblore add-view accent — shared by the grid ⊕ overlay and the add-view ╳
-# (gold, matches the overflow indicator; deliberately NOT the charm red).
-C_ACCENT_FG        = "fg:#d4a04e"   # gold — add ⊕ and close ╳
-C_ACCENT_HOVER_FG  = "fg:#f0c070"   # brighter gold on hover
+# Herblore add-view accent — shared by the grid ╋ button and the add-view ╳.
+# Inverted filled-button look: black glyph on a gold background (gold matches
+# the overflow indicator; deliberately NOT the charm red).
+C_ACCENT_BTN       = "fg:#000000 bg:#d4a04e"   # black glyph on gold — button
+C_ACCENT_BTN_HOVER = "fg:#000000 bg:#f0c070"   # brighter gold bg on hover
 # Add-view catalog rows — per-fragment "[±] Name" styling.
 C_HERB_BRACKET     = "fg:#666666"   # dark grey  [ ]
 C_HERB_ADD         = "fg:#7ED07E"   # light green + (inactive row)
@@ -114,7 +115,7 @@ _run_active    = False
 _hover_charm_id = None   # charm id whose X the pointer is currently over (hover cue)
 
 _view_mode          = "grid"   # "grid" | "add" — add-view is the herblore picker
-_hover_plus         = False    # pointer is over the ⊕ overlay button
+_hover_plus         = False    # pointer is over the ╋ corner button
 _hover_herblore_key = None     # catalog key whose row the pointer is over
 _hover_close        = False    # pointer is over the add-view's X (return-to-grid)
 
@@ -418,17 +419,18 @@ def _close_handler(mouse_event):
 
 
 def _corner_text():
-    """The position-pinned ⊕/╳ corner control (owned by a top-right Float, not by
-    any row). No background on the fragment, so it renders on the pane's default
-    window bg, overwriting whatever cell sits beneath it. Blank when the run is
-    inactive; ⊕ (open add-view) in grid mode, ╳ (return to grid) in add mode."""
+    """The position-pinned ╋/╳ corner control (owned by a top-right Float, not by
+    any row). The fragment carries an explicit gold bg, so the 1×1 Float renders
+    as a filled gold button overwriting whatever cell sits beneath it. Box-drawing
+    glyphs are guaranteed single-width. Blank when the run is inactive; ╋ (open
+    add-view) in grid mode, ╳ (return to grid) in add mode."""
     if not _run_active:
         return []
     if _view_mode == "add":
-        fg = C_ACCENT_HOVER_FG if _hover_close else C_ACCENT_FG
-        return [(fg, "╳", _close_handler)]
-    fg = C_ACCENT_HOVER_FG if _hover_plus else C_ACCENT_FG
-    return [(fg, "⊕", _open_handler)]
+        style = C_ACCENT_BTN_HOVER if _hover_close else C_ACCENT_BTN
+        return [(style, "╳", _close_handler)]
+    style = C_ACCENT_BTN_HOVER if _hover_plus else C_ACCENT_BTN
+    return [(style, "╋", _open_handler)]
 
 
 def _add_view_frags():
@@ -507,7 +509,7 @@ def _grid_text():
     total    = len(all_rows)
 
     if total == 0:
-        # Run active but no rows: the corner Float still shows the ⊕ over a blank pane.
+        # Run active but no rows: the corner Float still shows the ╋ over a blank pane.
         return [("", "")]
 
     list_height    = H - (1 if (_scroll_offset > 0 or total > H) else 0)
@@ -562,7 +564,7 @@ def _indicator_text():
 class ListControl(FormattedTextControl):
     def mouse_handler(self, mouse_event):
         global _scroll_offset, _hover_charm_id, _hover_plus, _hover_herblore_key, _hover_close
-        # Let fragment handlers (the charm ×, ⊕, add-view rows) fire first — mirrors ui_pane.py.
+        # Let fragment handlers (the charm ×, ╋, add-view rows) fire first — mirrors ui_pane.py.
         result = super().mouse_handler(mouse_event)
         if result is not NotImplemented:
             return result

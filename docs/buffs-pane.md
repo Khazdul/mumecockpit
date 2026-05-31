@@ -265,12 +265,13 @@ X's click model and authoritative-state rule (see [docs/charm.md](charm.md)).
 
 ### Accent colour
 
-The grid ⊕ and the add-view ╳ share one accent: `C_ACCENT_FG` (`#d4a04e`,
-the gold of the overflow indicator), brightening to `C_ACCENT_HOVER_FG`
-(`#f0c070`) on hover. They deliberately do **not** reuse the charm-X red — only
-the charm row's drop X is red.
+The grid ╋ and the add-view ╳ share one accent — an inverted filled button:
+black glyph on gold. `C_ACCENT_BTN` (`fg:#000000 bg:#d4a04e`, the gold of the
+overflow indicator), brightening the background to `C_ACCENT_BTN_HOVER`
+(`bg:#f0c070`) on hover. They deliberately do **not** reuse the charm-X red —
+only the charm row's drop X is red.
 
-### The corner control (⊕ / ╳)
+### The corner control (╋ / ╳)
 
 Both corner glyphs are owned by a single **position-pinned `Float`** at
 `top=0, right=0`, not by any row. The root is a `FloatContainer` wrapping the
@@ -283,17 +284,21 @@ a partial first row omits its trailing cells, or the grid is empty.
 `_corner_text()` returns:
 
 - `[]` (nothing) when not `_run_active`.
-- `[(accent, "⊕", _open_handler)]` in grid mode.
-- `[(accent, "╳", _close_handler)]` in add mode.
+- `[(C_ACCENT_BTN, "╋", _open_handler)]` in grid mode.
+- `[(C_ACCENT_BTN, "╳", _close_handler)]` in add mode.
 
-The fragment carries the accent fg and **no background**, so it renders on the
-pane's default window bg, overwriting whatever cell sits beneath it (the bar
-colour is not shown in that one column — accepted, and the intended look). The
-click handler rides the Float's own fragment stream.
+Both glyphs are box-drawing (╋ = U+254B, ╳ = U+2573), guaranteed single-width,
+so the 1×1 corner never over- or under-flows its cell.
 
-- ⊕ hover via `_hover_plus`; ╳ hover via `_hover_close`. Each handler's
-  `MOUSE_MOVE` sets its own hover flag and clears the other's.
-- `_open_handler` (⊕) `MOUSE_DOWN`: switches `_view_mode` to `"add"`, resets
+The fragment carries an explicit gold **background**, so the Float renders as a
+filled gold button overwriting whatever cell sits beneath it (the bar colour is
+not shown in that one column — accepted, and the intended look). The click
+handler rides the Float's own fragment stream.
+
+- ╋ hover via `_hover_plus`; ╳ hover via `_hover_close`. Each handler's
+  `MOUSE_MOVE` sets its own hover flag and clears the other's. Hover brightens
+  the gold background; the glyph stays black.
+- `_open_handler` (╋) `MOUSE_DOWN`: switches `_view_mode` to `"add"`, resets
   `_scroll_offset` to 0, invalidates. `_close_handler` (╳) `MOUSE_DOWN`:
   switches back to `"grid"`, resets `_scroll_offset` to 0, invalidates.
 
