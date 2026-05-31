@@ -83,8 +83,8 @@ Some mobs are commanded **without** casting charm. Each produces a fixed,
 unambiguous follow line, so unlike charm they need **no** in-flight cast gate —
 the line itself is the proof. They share `state.char.charms`, rendering,
 persistence, and click-to-drop with charmed mobs, and are added by
-`_control_on_followed(name)` (a global, called from dedicated priority-3
-`#action` lines that pass the canonical name directly — no article stripping).
+`_control_on_followed(name)` (a global, called from `_charm_on_followed` once it
+recognises a known controlled-mob name).
 
 The mobs and their behaviours live in the module-local `CONTROLLED` table:
 
@@ -106,10 +106,15 @@ disambiguate duplicates) and surfaces its `char_ui(..., "down")` line — then a
 the warg, with a single `_save_active()`/`charms_changed` covering both. With no
 shadow present, only the warg is added.
 
-These dedicated actions bypass the in-flight gate on purpose. The generic
-`^%1 starts following you.$` action also matches their lines, but no-ops without
-an in-flight charm at the front of the queue, so only `_control_on_followed`
-records them.
+There are **no** per-mob `#action` lines. The generic
+`^%1 starts following you.$` action is the only matcher; `_charm_on_followed`
+strips the article and, if the name is in `CONTROLLED`, dispatches to
+`_control_on_followed` and returns **before** the cast FIFO is touched (a
+controlled-mob follow must not consume a queued charm). tt++ fires only one
+matching `#action` per line ([ADR 0115](decisions/0115-core-priority-band.md)),
+so a separate per-mob trigger at the same priority would tie on alphabetical
+order and risk silently suppressing one side — dispatching by name in Lua avoids
+that race by design.
 
 The `wood elf` also has a real in-game **leave** line,
 `^A wood elf leaves and vanishes into the distance.$`, routed to the global

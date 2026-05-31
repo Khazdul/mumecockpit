@@ -225,11 +225,18 @@ events.subscribe("spell_cast_recalled", function() spellcast.mark_front_inflight
 
 function _charm_on_followed(raw_name)
     if not raw_name or raw_name == "" then return end
+    local name = _strip_article(raw_name)
+    -- Control-without-charm mobs share this follow line but are unambiguous by
+    -- name. Dispatch them to the ungated add and return before the cast FIFO is
+    -- touched — a controlled-mob follow is not a charm cast and must not consume
+    -- a queued charm.
+    if CONTROLLED[name] then
+        return _control_on_followed(name)
+    end
     -- The gate: only an in-flight charm at the front of the queue makes this a
     -- real charm. A follow with no in-flight charm is a merc/pet/group follow.
     local e = spellcast.pop_if_front_inflight("charm")
     if not e then return end
-    local name = _strip_article(raw_name)
     local now  = os.time()
     local entry = {
         id                = _next_id,
@@ -363,15 +370,11 @@ function _register_charm_actions()
     -- failure line), so it drains the shared FIFO front directly.
     session_cmd('#action {^%1 seems to be ruled by powers other than yours...$} {#lua {spellcast.fail_front()}} {3}')
 
-    -- Control-without-charm followers. These bypass the in-flight cast gate on
-    -- purpose: each follow line is fixed and unambiguous, so it is its own proof.
-    -- The generic "%1 starts following you." action above also matches these
-    -- lines, but no-ops without an in-flight charm, so the explicit handler is
-    -- the only one that records them. The canonical name is passed directly — no
-    -- article stripping needed.
-    session_cmd([[#action {^An enslaved shadow starts following you.$} {#lua {_control_on_followed("enslaved shadow")}} {3}]])
-    session_cmd([[#action {^A wood elf starts following you.$} {#lua {_control_on_followed("wood elf")}} {3}]])
-    session_cmd([[#action {^A dreadful warg starts following you.$} {#lua {_control_on_followed("dreadful warg")}} {3}]])
+    -- Control-without-charm followers share the generic "%1 starts following
+    -- you." action above. tt++ fires only ONE matching #action per line (ADR
+    -- 0115), so there is no separate per-mob trigger: _charm_on_followed strips
+    -- the article and dispatches a known controlled-mob name to the ungated add,
+    -- avoiding a same-priority overlap race by design.
 
     -- The wood elf's real in-game drop line — the primary drop path. The 99-min
     -- cap stays only as a safety ceiling for a missed line (ADR 0027).
