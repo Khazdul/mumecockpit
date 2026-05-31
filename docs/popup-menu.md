@@ -403,12 +403,12 @@ Cyan / Violet / Orange / Yellow / Teal), each row trailed by an inline
 — a 3-cell checkbox and a 3-cell swatch. A dim, non-interactive header
 row sits above the six group rows — each colour name centred over its
 swatch (Magenta truncates to `Magent`) and a `Cols` label centred over
-the `◄ N ►` stepper. Below the grid sit a blank row, a `[X] Compact
-layout` toggle, a blank row, and `Back` — the same `blank · toggle ·
+the `◄ N ►` stepper. Below the grid sit a blank row, a `[X] Display
+headers` toggle, a blank row, and `Back` — the same `blank · toggle ·
 blank · Back` shape as the Panes `Display pane headers` toggle. The frame
 uses `menu_chrome.title_block` /
 `footer_block` (`blank_above=1`) and the `menu_chrome.button_fragment`
-three-state grammar for the `Compact layout` toggle and `Back`.
+three-state grammar for the `Display headers` toggle and `Back`.
 
 Per row, **0 or 1 colour cells are checked**: zero checked means the
 group is hidden (and the row paints dim end-to-end via `C_PANE_OFF`);
@@ -427,10 +427,10 @@ Click / Enter semantics:
   `_persist_conf_key` targeting `timers_layout.conf`).
 - On the `◄` / `►` stepper — decrements / increments `timers_<type>_cols`,
   clamped to `[1, max]` (max 2 for Charmies, 6 otherwise).
-- On the `[X] Compact layout` toggle — flips the global `timers_compact`
-  key in place (checked = compact / today's dense look; unchecked = one
-  blank line between each rendered group). The running pane re-renders
-  within ~100 ms.
+- On the `[X] Display headers` toggle — flips the global `timers_headers`
+  key in place (checked = a dim `Group:` label row above each rendered
+  group; unchecked = today's dense look, no headers). The running pane
+  re-renders within ~100 ms.
 - On `Back` — pops back to `options`.
 
 **No tmux interaction.** Unlike the Panes submenu, nothing is driven
@@ -448,7 +448,7 @@ end-to-end). Swatch hexes come from `TIMERS_COLOR_ORDER`
 absent, the grid opens from `TIMERS_LAYOUT_DEFAULTS`.
 
 **Cursor / navigation.** Eight navigable rows: the six grid rows, the
-`Compact layout` toggle (row 6), and the `Back` row (row 7). `↑` / `↓`
+`Display headers` toggle (row 6), and the `Back` row (row 7). `↑` / `↓`
 move between them (clamped). `←` / `→` move the column only while the
 cursor is on a grid row, across the nine colour columns then the `◄`
 (col 9) and `►` (col 10) stepper cells; the column persists across grid

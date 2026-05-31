@@ -84,7 +84,7 @@ from menu_chrome import (  # noqa: E402
 from panes_grid import apply_cell_toggle, panes_grid_fragments  # noqa: E402
 from timers_layout_grid import (  # noqa: E402
     TIMERS_LAYOUT_TYPES, TIMERS_LAYOUT_LABELS, TIMERS_LAYOUT_DEFAULTS,
-    TIMERS_COMPACT_DEFAULT,
+    TIMERS_HEADERS_DEFAULT,
     max_cols_for, clamp_cols, step_cols, timers_grid_fragments,
 )
 import readability_view  # noqa: E402
@@ -283,7 +283,7 @@ _options_panes_row        = 0
 _options_panes_col        = 0
 # Options — Timers layout submenu (timer-group × colour grid + col stepper).
 # Eight navigable rows: 0..5 grid rows (spell/buff/debuff/stored/blind/charm),
-# row 6 is the [X] Compact layout toggle, row 7 is Back. `_options_timers_col`
+# row 6 is the [X] Display headers toggle, row 7 is Back. `_options_timers_col`
 # is the persistent column across grid rows; deferred edits live in
 # `_timers_layout` and flush on the exit path.
 _options_timers_row       = 0
@@ -822,10 +822,10 @@ _timers_layout = {}
 
 def _parse_timers_layout(path):
     # Start from a deep copy of the defaults, then overlay file values. The
-    # global compact toggle rides alongside the per-type entries under the
-    # reserved "compact" key (never a timer type, so the save loop skips it).
+    # global headers toggle rides alongside the per-type entries under the
+    # reserved "headers" key (never a timer type, so the save loop skips it).
     layout = {typ: dict(TIMERS_LAYOUT_DEFAULTS[typ]) for typ in TIMERS_LAYOUT_TYPES}
-    layout["compact"] = TIMERS_COMPACT_DEFAULT
+    layout["headers"] = TIMERS_HEADERS_DEFAULT
     try:
         with open(path) as fh:
             for raw in fh:
@@ -835,11 +835,11 @@ def _parse_timers_layout(path):
                 key, val = line.split("=", 1)
                 key = key.strip()
                 val = val.strip()
-                # timers_compact is a global toggle with no second underscore,
+                # timers_headers is a global toggle with no second underscore,
                 # so it must branch before the type-split below.
-                if key == "timers_compact":
+                if key == "timers_headers":
                     if val in ("0", "1"):
-                        layout["compact"] = (val == "1")
+                        layout["headers"] = (val == "1")
                     continue
                 if not key.startswith("timers_"):
                     continue
@@ -882,8 +882,8 @@ def _save_timers_layout():
                 fh.write("timers_%s_enabled=%s\n" % (typ, "1" if cur["enabled"] else "0"))
                 fh.write("timers_%s_color=%s\n" % (typ, cur["color"]))
                 fh.write("timers_%s_cols=%s\n" % (typ, cur["cols"]))
-            compact = _timers_layout.get("compact", TIMERS_COMPACT_DEFAULT)
-            fh.write("timers_compact=%s\n" % ("1" if compact else "0"))
+            headers = _timers_layout.get("headers", TIMERS_HEADERS_DEFAULT)
+            fh.write("timers_headers=%s\n" % ("1" if headers else "0"))
     except OSError:
         pass
 
@@ -2698,14 +2698,14 @@ def _options_panes_text():
 #
 # Eight navigable rows: rows 0..5 are group rows (←/→ moves between the
 # colour columns and the two steppers; the column persists across grid
-# rows). Row 6 is the [X] Compact layout toggle, row 7 is Back. ↑/↓ moves
+# rows). Row 6 is the [X] Display headers toggle, row 7 is Back. ↑/↓ moves
 # between all eight rows; ←/→ only on grid rows. Enter activates: a colour
 # cell toggles via the model above, the steppers nudge the column count, the
-# compact row flips timers_compact, Back saves and pops. ESC = Back. All
+# headers row flips timers_headers, Back saves and pops. ESC = Back. All
 # writes are deferred — _save_timers_layout fires on the exit path.
 
 _TIMERS_GRID_ROWS    = len(TIMERS_LAYOUT_TYPES)     # 6
-_TIMERS_COMPACT_ROW  = _TIMERS_GRID_ROWS            # 6
+_TIMERS_HEADERS_ROW  = _TIMERS_GRID_ROWS            # 6
 _TIMERS_BACK_ROW     = _TIMERS_GRID_ROWS + 1        # 7
 _TIMERS_LAST_ROW     = _TIMERS_BACK_ROW
 _TIMERS_LAST_COL     = len(TIMERS_COLOR_ORDER) + 1  # colour cols + ◄ + ►
@@ -2754,10 +2754,10 @@ def _apply_timers_step(row, delta):
         _app.invalidate()
 
 
-def _toggle_timers_compact():
-    """Flip the in-memory compact toggle; persisted on the deferred exit path."""
-    cur = _timers_layout.get("compact", TIMERS_COMPACT_DEFAULT)
-    _timers_layout["compact"] = not cur
+def _toggle_timers_headers():
+    """Flip the in-memory headers toggle; persisted on the deferred exit path."""
+    cur = _timers_layout.get("headers", TIMERS_HEADERS_DEFAULT)
+    _timers_layout["headers"] = not cur
     if _app:
         _app.invalidate()
 
@@ -2825,33 +2825,33 @@ def _options_timers_text():
         stepper_handler=_make_stepper_handler,
     ))
 
-    # Blank row between grid and the compact toggle.
+    # Blank row between grid and the headers toggle.
     frags.append(("", "\n", clear_hover))
 
-    # Compact layout — << label >> menu-row grammar, mirroring the panes
-    # "Display pane headers" toggle. Checked = compact (today's dense look).
-    compact_on    = _timers_layout.get("compact", TIMERS_COMPACT_DEFAULT)
-    compact_label = f"[{'X' if compact_on else ' '}] Compact layout"
-    state_c = "selected" if cur_row == _TIMERS_COMPACT_ROW else "inactive"
+    # Display headers — << label >> menu-row grammar, mirroring the panes
+    # "Display pane headers" toggle. Checked = group headers shown.
+    headers_on    = _timers_layout.get("headers", TIMERS_HEADERS_DEFAULT)
+    headers_label = f"[{'X' if headers_on else ' '}] Display headers"
+    state_c = "selected" if cur_row == _TIMERS_HEADERS_ROW else "inactive"
 
-    def _compact_handler(ev):
+    def _headers_handler(ev):
         if ev.event_type == MouseEventType.MOUSE_MOVE:
-            _set_timers_cursor(_TIMERS_COMPACT_ROW)
+            _set_timers_cursor(_TIMERS_HEADERS_ROW)
             return
         if ev.event_type == MouseEventType.MOUSE_DOWN:
-            _set_timers_cursor(_TIMERS_COMPACT_ROW)
-            _toggle_timers_compact()
+            _set_timers_cursor(_TIMERS_HEADERS_ROW)
+            _toggle_timers_headers()
 
-    compact_left_pad  = max(0, (cols - (len(compact_label) + 6)) // 2)
-    compact_right_pad = max(0, cols - compact_left_pad - len(compact_label) - 6)
-    frags.append(("", " " * compact_left_pad, clear_hover))
+    headers_left_pad  = max(0, (cols - (len(headers_label) + 6)) // 2)
+    headers_right_pad = max(0, cols - headers_left_pad - len(headers_label) - 6)
+    frags.append(("", " " * headers_left_pad, clear_hover))
     frags.extend(menu_row(
-        compact_label, state_c, mouse_handler=_compact_handler,
+        headers_label, state_c, mouse_handler=_headers_handler,
     ))
-    frags.append(("", " " * compact_right_pad, clear_hover))
+    frags.append(("", " " * headers_right_pad, clear_hover))
     frags.append(("", "\n", clear_hover))
 
-    # Blank row between the compact toggle and Back.
+    # Blank row between the headers toggle and Back.
     frags.append(("", "\n", clear_hover))
 
     # Back — plain << label >> row, centred per row.
@@ -2876,7 +2876,7 @@ def _options_timers_text():
 
     # Footer block anchored to the final terminal row. Content rows above
     # the footer = title block + header row + 6 group rows + 4 rows of
-    # bottom chrome (blank · compact · blank · Back).
+    # bottom chrome (blank · headers · blank · Back).
     content_rows = title_block_height(2) + 1 + _TIMERS_GRID_ROWS + 4
     footer = "↑↓←→ Move · Enter Toggle · ESC Back"
     frags.extend(footer_block(
@@ -9415,8 +9415,8 @@ def _kb_optt_layout_select(event):
             _apply_timers_step(r, -1)
         elif _options_timers_col == n + 1:
             _apply_timers_step(r, 1)
-    elif r == _TIMERS_COMPACT_ROW:
-        _toggle_timers_compact()
+    elif r == _TIMERS_HEADERS_ROW:
+        _toggle_timers_headers()
     elif r == _TIMERS_BACK_ROW:
         _options_timers_back()
 
