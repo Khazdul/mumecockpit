@@ -1392,9 +1392,9 @@ Orange / Yellow / Teal), followed by a trailing inline `◄ N ►` column
 stepper per row. A dim, non-interactive header row sits above the six
 group rows — each colour name centred over its swatch (Magenta truncates
 to `Magent`) and a `Cols` label centred over the `◄ N ►` stepper. Below
-the grid sit a blank row, a `[X] Display headers` toggle, a blank row, and
-`Back` — the same `blank · toggle · blank · Back` shape as the Panes
-`Display pane headers` toggle. The frame uses the `menu_chrome.title_block` / `footer_block` helpers
+the grid sit a blank row, a `[X] Display headers` toggle, a `[X] Compact layout`
+toggle, a blank row, and `Back` — the two toggles consecutive, each in the same
+`<< label >>` menu-row grammar as the Panes `Display pane headers` toggle. The frame uses the `menu_chrome.title_block` / `footer_block` helpers
 (`blank_above=2`) and the shared `timers_layout_grid` module — see
 ADR 0126 and the [Timers-layout grid model](#timers-layout-grid-model)
 section below.
@@ -1416,8 +1416,11 @@ Enter / click semantics:
   every other group. The digit between the arrows is display-only.
 - On the `[X] Display headers` toggle — flips the global `timers_headers`
   key (checked = a dim `Group:` label row above each rendered group;
-  unchecked = today's dense look, no headers). Layout-identical to the
-  Panes headers toggle; deferred like the rest of this frame.
+  unchecked = no headers). Layout-identical to the Panes headers toggle;
+  deferred like the rest of this frame.
+- On the `[X] Compact layout` toggle — flips the global `timers_compact`
+  key, **independent** of headers (checked = compact, no blank lines between
+  groups; unchecked = one blank row between consecutive groups). Deferred.
 - On `Back` — saves and pops (same as ESC).
 
 The colour cells use the **swatch-cell grammar** (gold *foreground* on
@@ -1431,16 +1434,17 @@ Back / ESC. This is the persistence asymmetry vs. the popup — the
 popup's equivalent frame writes each changed key in place immediately,
 and the running timers pane picks it up within ~100 ms. Both surfaces
 write the same `timers_layout.conf` keys (`timers_<type>_enabled` /
-`_color` / `_cols`, plus the global `timers_headers`; the in-memory
-`_timers_layout` dict carries `headers` under a reserved key the
-per-type save loop skips). A separate parse/save pair
+`_color` / `_cols`, plus the global `timers_headers` and `timers_compact`;
+the in-memory `_timers_layout` dict carries `headers` and `compact` under
+reserved keys the per-type save loop skips). A separate parse/save pair
 (`_parse_timers_layout` / `_save_timers_layout`) mirrors the
 `startup.conf` `_parse_conf` / `_save_conf` pair rather than reusing it
 — a different file and schema.
 
-**Cursor / navigation.** Eight navigable rows: the six grid rows, the
-`Display headers` toggle (`_TIMERS_HEADERS_ROW`, row 6), and the `Back`
-row (`_TIMERS_BACK_ROW`, row 7). `↑` / `↓` move between them (clamped, no
+**Cursor / navigation.** Nine navigable rows: the six grid rows, the
+`Display headers` toggle (`_TIMERS_HEADERS_ROW`, row 6), the `Compact layout`
+toggle (`_TIMERS_COMPACT_ROW`, row 7), and the `Back` row
+(`_TIMERS_BACK_ROW`, row 8). `↑` / `↓` move between them (clamped, no
 wrap). `←` / `→` move the column **only while the cursor is on a grid
 row**, across the nine colour columns then the `◄` (col 9) and `►`
 (col 10) stepper cells; the column persists across grid rows. Footer:
