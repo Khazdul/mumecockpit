@@ -469,6 +469,10 @@ def _charm_cell_frags(entry, cell_w, name_fg):
                 _hover_charm_id = _cid
                 if _app:
                     _app.invalidate()
+        else:
+            # Let unhandled events (e.g. scroll) propagate to the list scroll
+            # branch via super().mouse_handler(). See ListControl.mouse_handler.
+            return NotImplemented
     frags.append((x_style, "×", _x_handler))
     return frags
 
@@ -558,6 +562,9 @@ def _open_handler(mouse_event):
             _hover_close = False
             if _app:
                 _app.invalidate()
+    else:
+        # Let unhandled events (e.g. scroll) propagate to the list scroll branch.
+        return NotImplemented
 
 
 def _close_handler(mouse_event):
@@ -573,6 +580,9 @@ def _close_handler(mouse_event):
             _hover_plus  = False
             if _app:
                 _app.invalidate()
+    else:
+        # Let unhandled events (e.g. scroll) propagate to the list scroll branch.
+        return NotImplemented
 
 
 def _charm_row_at_top():
@@ -659,6 +669,11 @@ def _add_view_frags():
                     _hover_herblore_key = _key
                     if _app:
                         _app.invalidate()
+            else:
+                # Let unhandled events (e.g. scroll) propagate to the list
+                # scroll branch via super().mouse_handler(), so the wheel
+                # scrolls the catalog even with the pointer over a row cell.
+                return NotImplemented
 
         # The toggle handler rides the label (brackets + sign + name) so it stays
         # clickable, but the trailing pad is handler-less: that bare surface lets
@@ -751,6 +766,9 @@ def _indicator_text():
                 _scroll_offset = 0
                 if _app:
                     _app.invalidate()
+            else:
+                # Let unhandled events (e.g. scroll) propagate.
+                return NotImplemented
         return [(C_INDICATOR, f"↑ {_scroll_offset} rows above", _handler)]
 
     if total > H:
