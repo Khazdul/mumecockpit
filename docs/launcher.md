@@ -1389,9 +1389,11 @@ Renders a **group × colour grid** where rows are the six timer groups
 (Spells / Buffs / Debuffs / Stored / Blinds / Charmies) and columns are
 the nine palette entries (Blue / Green / Red / Magenta / Cyan / Violet /
 Orange / Yellow / Teal), followed by a trailing inline `◄ N ►` column
-stepper per row. Below the grid sit a blank row and `Back`. There is
-**no** colour-name header row and **no** headers toggle (unlike Panes).
-The frame uses the `menu_chrome.title_block` / `footer_block` helpers
+stepper per row. A dim, non-interactive header row sits above the six
+group rows — each colour name centred over its swatch (Magenta truncates
+to `Magent`) and a `Cols` label centred over the `◄ N ►` stepper. Below
+the grid sit a blank row and `Back`. There is **no** headers toggle
+(unlike Panes). The frame uses the `menu_chrome.title_block` / `footer_block` helpers
 (`blank_above=2`) and the shared `timers_layout_grid` module — see
 ADR 0126 and the [Timers-layout grid model](#timers-layout-grid-model)
 section below.
@@ -1445,8 +1447,12 @@ launcher and the popup, modelled on `panes_grid.py`. It re-exports
 0-or-1 model) and adds:
 
 - `timers_grid_fragments(rows, term_cols, cursor, cell_handler=None,
-  stepper_handler=None)` — one row per group: label, nine colour
-  swatches, then the inline `◄ N ►` stepper. `rows` is a list of
+  stepper_handler=None)` — a leading dim (`C_HINT`) header row carrying
+  each colour name centred over its swatch and a `Cols` label over the
+  stepper, then one row per group: label, nine colour swatches, then the
+  inline `◄ N ►` stepper. The header carries no mouse handlers, is never
+  a cursor stop, and does not shift the `(row_idx, col_idx)` mapping —
+  it is purely a leading rendered line. `rows` is a list of
   `(label, enabled, colour_index, cols, max_cols)`. Cursor columns are
   colour cells `0..8`, `◄` at 9, `►` at 10. Cell-colour precedence
   matches the panes grid; the stepper arrows follow it too, while the

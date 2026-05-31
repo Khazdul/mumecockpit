@@ -20,6 +20,7 @@ from timers_layout_grid import (  # noqa: E402
 )
 from palette import (  # noqa: E402
     C_CURSOR_CELL,
+    C_HINT,
     TIMERS_COLOR_ORDER,
     timers_color_hex,
     timers_color_index,
@@ -105,12 +106,41 @@ def _row(label, enabled, idx, cols, maxc):
     return (label, enabled, idx, cols, maxc)
 
 
-def test_grid_fragments_row_count_no_header():
+def test_grid_fragments_row_count_with_header():
     rows = [_row("Spells", True, 0, 4, 6), _row("Charmies", False, 5, 1, 2)]
     frags = timers_grid_fragments(rows, 100, (0, 0))
     text = _plain(frags)
-    # No colour-name header row: one newline per group row.
-    assert text.count("\n") == 2
+    # One leading colour-name header row + one newline per group row.
+    assert text.count("\n") == 3
+
+
+def test_grid_fragments_header_names_and_cols_label():
+    rows = [_row("Spells", True, 0, 4, 6)]
+    frags = timers_grid_fragments(rows, 100, None)
+    text = _plain(frags)
+    # Header carries each colour name (Magenta truncates to "Magent") and
+    # the "Cols" label above the stepper.
+    for name, _hex in TIMERS_COLOR_ORDER:
+        assert name[:6] in text
+    assert "Cols" in text
+
+
+def test_grid_fragments_header_is_dim_with_no_handlers():
+    rows = [_row("Spells", True, 0, 4, 6)]
+    frags = timers_grid_fragments(
+        rows, 100, None,
+        cell_handler=lambda r, c: (lambda ev: None),
+        stepper_handler=lambda r, d: (lambda ev: None),
+    )
+    # The header is everything up to and including its trailing newline.
+    header = []
+    for f in frags:
+        header.append(f)
+        if f[1] == "\n":
+            break
+    # Colour-name / Cols fragments are styled C_HINT; none carry a handler.
+    assert any(f[0] == C_HINT for f in header)
+    assert all(len(f) == 2 for f in header)
 
 
 def test_grid_fragments_has_stepper_and_count():

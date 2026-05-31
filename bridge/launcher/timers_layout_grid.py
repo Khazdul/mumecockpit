@@ -113,10 +113,19 @@ def _swatch_style(colour_index):
     return f"bg:{hex_color} fg:{hex_color}"
 
 
+def _centre_in(text, width):
+    """Centre ``text`` within ``width`` cells, truncating when it overflows."""
+    if len(text) >= width:
+        return text[:width]
+    pad = width - len(text)
+    left = pad // 2
+    return " " * left + text + " " * (pad - left)
+
+
 def timers_grid_fragments(rows, term_cols, cursor,
                           cell_handler=None, stepper_handler=None):
-    """Fragments for one row per group: label, N colour swatches, and an
-    inline `◄ N ►` column stepper.
+    """Fragments for a dim colour-name header row, then one row per group:
+    label, N colour swatches, and an inline `◄ N ►` column stepper.
 
     Args:
         rows: iterable of ``(label, enabled, colour_index, cols, max_cols)``.
@@ -142,6 +151,22 @@ def timers_grid_fragments(rows, term_cols, cursor,
     pad = " " * max(0, (term_cols - total_w) // 2)
 
     frags = []
+
+    # Header row: blank where the labels live, then the colour name centred
+    # above each swatch, then "Cols" centred above the ◄ N ► stepper. Styled
+    # flat C_HINT (dim) like the panes grid; it carries no mouse handlers and
+    # is not a cursor stop — purely a leading rendered line, so the grid's
+    # (row_idx, col_idx) mapping is unchanged.
+    frags.append(("", pad))
+    frags.append(("", " " * (_LABEL_W + _LABEL_GAP)))
+    for ci, (name, _hex) in enumerate(TIMERS_COLOR_ORDER):
+        if ci > 0:
+            frags.append(("", " " * _COL_GAP))
+        frags.append((C_HINT, _centre_in(name, _CELL_W)))
+    frags.append(("", " " * _STEP_GAP))
+    frags.append((C_HINT, _centre_in("Cols", _STEP_W)))
+    frags.append(("", "\n"))
+
     for ri, (label, enabled, colour_index, cols, _max_cols) in enumerate(rows):
         frags.append(("", pad))
         frags.append((C_ITEM if enabled else C_PANE_OFF,

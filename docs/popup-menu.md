@@ -400,9 +400,12 @@ timer groups (Spells / Buffs / Debuffs / Stored / Blinds / Charmies),
 columns are the nine palette entries (Blue / Green / Red / Magenta /
 Cyan / Violet / Orange / Yellow / Teal), each row trailed by an inline
 `◄ N ►` column stepper. Each colour cell renders as `[X]███` or `[ ]███`
-— a 3-cell checkbox and a 3-cell swatch. Below the grid sit a blank row
-and `Back`. There is **no** colour-name header row and **no** headers
-toggle (unlike Panes). The frame uses `menu_chrome.title_block` /
+— a 3-cell checkbox and a 3-cell swatch. A dim, non-interactive header
+row sits above the six group rows — each colour name centred over its
+swatch (Magenta truncates to `Magent`) and a `Cols` label centred over
+the `◄ N ►` stepper. Below the grid sit a blank row and `Back`. There is
+**no** headers toggle (unlike Panes). The frame uses
+`menu_chrome.title_block` /
 `footer_block` (`blank_above=1`) and the `menu_chrome.button_fragment`
 three-state grammar for `Back`.
 

@@ -3868,8 +3868,9 @@ def _timers_text():
     frags.append((style_b, text_b, _back_handler))
     frags.append(("", "\n"))
 
-    # title block (3 rows for popup) + 6 group rows + blank + Back.
-    content_rows = title_block_height(1) + _TIMERS_GRID_ROWS + 2
+    # title block (3 rows for popup) + header row + 6 group rows + blank
+    # + Back.
+    content_rows = title_block_height(1) + 1 + _TIMERS_GRID_ROWS + 2
     footer = "↑↓←→ Move · Enter Toggle · ESC Back"
     frags.extend(footer_block(footer, cols, rows_h, content_rows))
 

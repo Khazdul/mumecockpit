@@ -2680,8 +2680,8 @@ def _options_panes_text():
 # increment. A row with zero checked colour cells is hidden; exactly one
 # checked cell is shown in that colour. apply_cell_toggle handles the
 # on/off/switch-colour logic; the cols stepper is clamped per group via
-# step_cols / max_cols_for. Rendering goes through timers_grid_fragments;
-# there is no colour-name header row.
+# step_cols / max_cols_for. Rendering goes through timers_grid_fragments,
+# which emits a dim colour-name + "Cols" header row above the group rows.
 #
 # Seven navigable rows: rows 0..5 are group rows (←/→ moves between the
 # colour columns and the two steppers; the column persists across grid
@@ -2826,9 +2826,9 @@ def _options_timers_text():
     frags.append(("", "\n", clear_hover))
 
     # Footer block anchored to the final terminal row. Content rows above
-    # the footer = title block + 6 group rows + 2 rows of bottom chrome
-    # (blank · Back).
-    content_rows = title_block_height(2) + _TIMERS_GRID_ROWS + 2
+    # the footer = title block + header row + 6 group rows + 2 rows of
+    # bottom chrome (blank · Back).
+    content_rows = title_block_height(2) + 1 + _TIMERS_GRID_ROWS + 2
     footer = "↑↓←→ Move · Enter Toggle · ESC Back"
     frags.extend(footer_block(
         footer, cols, rows_h, content_rows, mouse_handler=clear_hover,
