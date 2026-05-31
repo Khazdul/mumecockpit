@@ -16,9 +16,14 @@ layer and event flow; rendering lives in the timers pane — see
 
 ## Catalog
 
-The catalog is static, module-local in `lua/core/herblores.lua`. Each key is the
-**phase-1 base name** — a single token, safe to pass through `tmux send-keys`.
-Each phase is `{name, duration (s), type}`:
+The catalog is static, module-local in `lua/core/herblores.lua`. Each key is a
+single token, safe to pass through `tmux send-keys`. For single-word herblores
+the key is the **phase-1 name verbatim** (e.g. `Healing`); for multi-word ones
+it is a **single-token contraction** (e.g. `DarkAura` for "Dark aura"), because
+the key is sent unquoted and the spaced display name lives only in the phase
+`name` fields. The add-view lists the key, so a contracted key shows in the
+picker as `DarkAura` while the live cell renders "Dark aura". Each phase is
+`{name, duration (s), type}`:
 
 | Key            | Phases (name · duration · type)                                                         |
 | -------------- | --------------------------------------------------------------------------------------- |
@@ -27,6 +32,7 @@ Each phase is `{name, duration (s), type}`:
 | `Clearthought` | Clearthought 120 buff → Clearthought (low) 240 buff → Clearthought (neg) 360 **debuff**  |
 | `Walking`      | Walking 1440 buff → Walking (med) 7200 buff → Walking (min) 1440 buff                    |
 | `Haste`        | Haste 360 buff → Haste (recovery) 1080 **debuff**                                        |
+| `DarkAura`     | Dark aura 210 buff → Dark aura (faded) 3600 **debuff**                                   |
 
 `CATALOG_KEYS` keeps a stable key order (Lua table iteration is unordered) and is
 exposed through the global `herblore_catalog_keys()` for the timers pane's PR 2
