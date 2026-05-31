@@ -26,13 +26,11 @@ import re
 import textwrap
 from dataclasses import dataclass, field
 
+from menu_chrome import menu_row
 from palette import (
     C_ACTIVE,
     C_BODY,
-    C_BUTTON_ACTIVE_FOCUSED,
-    C_BUTTON_ACTIVE_UNFOCUSED,
     C_HINT,
-    C_HOVER,
     C_ITEM,
     C_OK,
     C_PANE_OFF,
@@ -269,10 +267,13 @@ def parse_scripts_cache(path):
 # Layout helpers
 # ---------------------------------------------------------------------------
 def list_panel_width(scripts):
-    """`[X] ` (4 cells) + longest script name + 1 right-pad. Floored at
-    `MIN_LIST_W` so the column doesn't collapse on a one-script catalog."""
+    """Longest composed `[X] name` width + 6 — the trailing 6 reserves
+    the `<< `/` >>` marker cells the menu-row grammar adds around each
+    module label (and the centred `<< Back >>` row that shares the
+    column). Floored at `MIN_LIST_W` so the column doesn't collapse on a
+    one-script catalog."""
     longest = max((len(s.name) for s in scripts), default=0)
-    return max(MIN_LIST_W, 4 + longest + 1)
+    return max(MIN_LIST_W, 4 + longest + 6)
 
 
 def detail_panel_width(term_cols, list_w):
@@ -510,11 +511,10 @@ def render_body(scripts, cursor_idx, list_scroll, detail_scroll,
         # ----- Left column: list cell, extra row, or blank filler -----
         if body_row < list_h:
             list_row = list_scroll + body_row
-            list_frag = _list_cell_frag(
+            frags.extend(_list_cell_frag(
                 scripts, n, list_row, cursor_idx, focus, mode, hover_row,
                 list_w, row_handler,
-            )
-            frags.append(list_frag)
+            ))
         elif body_row < extras_end:
             extra_idx = body_row - list_h
             extra_frags = list(extra[extra_idx])
@@ -573,11 +573,20 @@ def render_body(scripts, cursor_idx, list_scroll, detail_scroll,
 # ---------------------------------------------------------------------------
 def _list_cell_frag(scripts, n, list_row, cursor_idx, focus, mode,
                     hover_row, list_w, row_handler):
-    """One list-column cell — either a script row (with checkbox + name,
-    cursor / hover / enabled styling) or blank padding when scrolled
-    past the catalog."""
+    """Fragments for one list-column cell — either a script row in the
+    `<< [X] name >>` menu-row grammar or blank padding when scrolled
+    past the catalog. Returns a list of fragments spanning exactly
+    `list_w` cells.
+
+    The composed `[X] name` label is left-aligned to `list_w - 6` so
+    the leading glyphs stack vertically down the column and the row
+    spans the full width (the 6 trailing cells are the `<< `/` >>`
+    markers menu_row adds). `focus` no longer splits the cursor colour —
+    these frames always pass `focus="list"`; the cursor row is always
+    the gold-arrow `selected` state. Disabled rows stay dim
+    (`C_PANE_OFF`)."""
     if not (0 <= list_row < n):
-        return ("", " " * list_w)
+        return [("", " " * list_w)]
 
     script = scripts[list_row]
     is_cursor = (list_row == cursor_idx)
@@ -585,23 +594,20 @@ def _list_cell_frag(scripts, n, list_row, cursor_idx, focus, mode,
                  and hover_row == list_row
                  and not is_cursor)
     ck = "[X]" if script.enabled else "[ ]"
-    text = f"{ck} {script.name}".ljust(list_w)
+    label = f"{ck} {script.name}".ljust(max(0, list_w - 6))
 
     if is_cursor:
-        style = (C_BUTTON_ACTIVE_FOCUSED if focus == "list"
-                 else C_BUTTON_ACTIVE_UNFOCUSED)
+        state, inactive_style = "selected", C_ITEM
     elif is_hover:
-        style = C_HOVER
+        state, inactive_style = "hover", C_ITEM
     elif script.enabled:
-        style = C_ITEM
+        state, inactive_style = "inactive", C_ITEM
     else:
-        style = C_PANE_OFF
+        state, inactive_style = "inactive", C_PANE_OFF
 
-    if row_handler is not None:
-        h = row_handler(list_row)
-        if h is not None:
-            return (style, text, h)
-    return (style, text)
+    h = row_handler(list_row) if row_handler is not None else None
+    return menu_row(label, state, mouse_handler=h,
+                    inactive_style=inactive_style)
 
 
 def _sb_cell(body_row, sb_top, sb_thumb_h, sb_handler):

@@ -1393,8 +1393,11 @@ stepper per row. A dim, non-interactive header row sits above the six
 group rows — each colour name centred over its swatch (Magenta truncates
 to `Magent`) and a `Cols` label centred over the `◄ N ►` stepper. Below
 the grid sit a blank row, a `[X] Display headers` toggle, a `[X] Compact layout`
-toggle, a blank row, and `Back` — the two toggles consecutive, each in the same
-`<< label >>` menu-row grammar as the Panes `Display pane headers` toggle. The frame uses the `menu_chrome.title_block` / `footer_block` helpers
+toggle, a blank row, and `Back` — the two toggles consecutive, both in the
+`<< label >>` menu-row grammar. The two toggle labels share one `label_col_w`
+(the wider composed `[X] …` width) and the block (`label_col_w + 6`) is centred
+as a unit, so their `[X]` glyphs stack vertically; `Back` centres on its own
+width. The frame uses the `menu_chrome.title_block` / `footer_block` helpers
 (`blank_above=2`) and the shared `timers_layout_grid` module — see
 ADR 0126 and the [Timers-layout grid model](#timers-layout-grid-model)
 section below.
@@ -1525,25 +1528,35 @@ renderer.
 **Left column** is one navigable column structured identically to
 `options_spotlights` (toggle rows + blank + Back):
 
-1. **Script rows** — `[X]` / `[ ]` + name, left-aligned inside the
-   column, padded to the column width.
+1. **Script rows** — `[X]` / `[ ]` + name rendered through
+   `menu_chrome.menu_row` (`<< [X] name >>` grammar). The composed
+   `[X] name` label is left-aligned inside the column minus the 6
+   marker cells the arrows occupy, so the leading glyphs stack
+   vertically; `list_panel_width` reserves those 6 cells (longest
+   composed `[X] name` width + 6).
 2. **Blank spacer** — one row, not selectable, sitting immediately
    below the last script row.
 3. **Back row** — `Back` rendered through `menu_chrome.menu_row`
    (`<< Back >>` grammar) and horizontally centred inside the column
-   width. Carries no checkbox.
+   width. Carries no checkbox. It shares the (now +6-wider) column
+   with the script rows, so the two-column package re-centres cleanly.
 
-The list-row colour grammar matches the panes-grid /
-profile-editor pattern:
+The list-row colour grammar is the `menu_chrome.menu_row` gold-arrow
+grammar (no background fill in any state — the cursor signal is the
+gold arrows, never an inverted/filled button):
 
-- cursor on a script row → `C_BUTTON_ACTIVE_FOCUSED` (amber bg,
-  black fg — the whole row, including the checkbox glyph, paints
-  black-on-amber);
-- non-cursor enabled row → `C_ITEM` (bright text on the default bg);
-- non-cursor disabled row → `C_PANE_OFF` (dim grey across the whole
-  row — same token the panes grid uses for an off pane, so the
-  "this is inert" signal is consistent across both frames);
-- hover on a non-cursor row → `C_HOVER` (text-only hover lift).
+- cursor on a script row → `selected`: `<< … >>` arrows in gold
+  (`C_CURSOR_CELL`) over a bright (`C_ACTIVE`) label, glyph included;
+- non-cursor enabled row → `inactive` with `inactive_style=C_ITEM`
+  (bright text, blank `   ` margins);
+- non-cursor disabled row → `inactive` with `inactive_style=C_PANE_OFF`
+  (dim grey across the row — same token the panes grid uses for an off
+  pane, so the "this is inert" signal is consistent across frames);
+- hover on a non-cursor row → `hover` (text-only `C_HOVER` lift).
+
+(The shared `focus` parameter no longer splits a focused/unfocused
+cursor colour for these rows — they always render the gold-arrow
+`selected` state.)
 
 The Back row uses the `menu_chrome.menu_row` grammar — grammatically
 identical to the `options_spotlights` Back row: `selected` (gold
@@ -3200,8 +3213,11 @@ state:
 - **Gold-arrow `<< label >>` menu rows** (`menu_row`) — every vertical
   menu list in the launcher's startup-menu surface (`main`,
   `options`, the headers-toggle / `Back` rows of `options_panes`,
-  `options_connection`, `options_spotlights`, and the popup-side
-  equivalents under P5). Cursor row → gold `<<` / `>>` arrows
+  `options_connection`, `options_spotlights`, the `[X] Display headers`
+  / `[X] Compact layout` toggles + `Back` of `options_timers`, the
+  `<< [X] name >>` module rows + `Back` of `options_scripts` /
+  `options_readability`, and the popup-side equivalents under P5).
+  Cursor row → gold `<<` / `>>` arrows
   (`C_CURSOR_CELL`) with the label in `C_ACTIVE`; mouse hover →
   blank arrows with the label lightened to `C_HOVER`; inactive
   rows → blank arrows with the label in `C_ITEM`. Selection (the
@@ -3231,14 +3247,22 @@ rule.
   block. The block is `label_col_w + 6` cells wide, where
   `label_col_w` is the widest composed label across the block's
   rows; the caller prepends the same left margin to every row so
-  the glyphs stack at one column. `menu_row` does not pad the label,
-  so the per-row right pad is computed from each row's actual width
-  to fill out to the right screen edge (and carries the clear-hover
-  handler). Applied to the `(•) / ( )` mode rows of
-  `options_connection`, the `[X] / [ ]` toggle rows of
-  `options_spotlights`, and the `[X] / [ ]` headers-toggle row of
-  `options_panes`. `Back` is not part of these blocks — it is
-  always per-row centred, even when it sits below a glyph block.
+  the glyphs stack at one column. Two variants both keep the glyphs
+  stacked: `options_connection` / `options_spotlights` /
+  `options_panes` do **not** pad the label, computing the per-row
+  right pad from each row's actual width to fill out to the right edge
+  (and carrying the clear-hover handler), so the trailing `>>` arrows
+  stay ragged; `options_timers` (the two toggles) and the
+  `options_scripts` / `options_readability` module rows instead
+  left-pad each composed label to `label_col_w` (`ljust`) so the rows
+  are equal width and the trailing `>>` arrows align too. Applied to
+  the `(•) / ( )` mode rows of `options_connection`, the `[X] / [ ]`
+  toggle rows of `options_spotlights`, the `[X] / [ ]` headers-toggle
+  row of `options_panes`, the two `[X] / [ ]` toggles of
+  `options_timers`, and the `<< [X] name >>` module rows of
+  `options_scripts` / `options_readability`. `Back` is not part of
+  these blocks — it is always per-row centred, even when it sits below
+  a glyph block.
 
 In both rules, the row geometry re-centres on every render so a
 resize is immediate, and the `<< >>` arrows hug the label with one

@@ -22,12 +22,10 @@ try:
 except ModuleNotFoundError:
     import tomli as tomllib  # type: ignore[no-redef]
 
+from menu_chrome import menu_row
 from palette import (
     C_BODY,
-    C_BUTTON_ACTIVE_FOCUSED,
-    C_BUTTON_ACTIVE_UNFOCUSED,
     C_HINT,
-    C_HOVER,
     C_ITEM,
     C_OK,
     C_PANE_OFF,
@@ -366,10 +364,12 @@ def _ansi_line_to_fragments(text):
 # Layout helpers
 # ---------------------------------------------------------------------------
 def list_panel_width(modules):
-    """[X]  (4 cells) + longest module name + 1 right-pad. Floored at
-    MIN_LIST_W."""
+    """Longest composed `[X] name` width + 6 — the trailing 6 reserves
+    the `<< `/` >>` marker cells the menu-row grammar adds around each
+    module label (and the centred `<< Back >>` row that shares the
+    column). Floored at MIN_LIST_W."""
     longest = max((len(m.name) for m in modules), default=0)
-    return max(MIN_LIST_W, 4 + longest + 1)
+    return max(MIN_LIST_W, 4 + longest + 6)
 
 
 def detail_panel_width(term_cols, list_w):
@@ -510,11 +510,10 @@ def render_body(modules, cursor_idx, list_scroll, detail_scroll,
         # ----- Left column: list cell, extra row, or blank filler -----
         if body_row < list_h:
             list_row = list_scroll + body_row
-            list_frag = _list_cell_frag(
+            frags.extend(_list_cell_frag(
                 modules, n, list_row, cursor_idx, focus, mode, hover_row,
                 list_w, row_handler,
-            )
-            frags.append(list_frag)
+            ))
         elif body_row < extras_end:
             extra_idx = body_row - list_h
             extra_frags = list(extra[extra_idx])
@@ -573,8 +572,12 @@ def render_body(modules, cursor_idx, list_scroll, detail_scroll,
 # ---------------------------------------------------------------------------
 def _list_cell_frag(modules, n, list_row, cursor_idx, focus, mode,
                     hover_row, list_w, row_handler):
+    """Fragments for one list-column cell — either a module row in the
+    `<< [X] name >>` menu-row grammar or blank padding when scrolled
+    past the catalog. Returns a list of fragments spanning exactly
+    `list_w` cells. Mirror of scripts_view._list_cell_frag."""
     if not (0 <= list_row < n):
-        return ("", " " * list_w)
+        return [("", " " * list_w)]
 
     module = modules[list_row]
     is_cursor = (list_row == cursor_idx)
@@ -582,23 +585,20 @@ def _list_cell_frag(modules, n, list_row, cursor_idx, focus, mode,
                  and hover_row == list_row
                  and not is_cursor)
     ck = "[X]" if module.enabled else "[ ]"
-    text = f"{ck} {module.name}".ljust(list_w)
+    label = f"{ck} {module.name}".ljust(max(0, list_w - 6))
 
     if is_cursor:
-        style = (C_BUTTON_ACTIVE_FOCUSED if focus == "list"
-                 else C_BUTTON_ACTIVE_UNFOCUSED)
+        state, inactive_style = "selected", C_ITEM
     elif is_hover:
-        style = C_HOVER
+        state, inactive_style = "hover", C_ITEM
     elif module.enabled:
-        style = C_ITEM
+        state, inactive_style = "inactive", C_ITEM
     else:
-        style = C_PANE_OFF
+        state, inactive_style = "inactive", C_PANE_OFF
 
-    if row_handler is not None:
-        h = row_handler(list_row)
-        if h is not None:
-            return (style, text, h)
-    return (style, text)
+    h = row_handler(list_row) if row_handler is not None else None
+    return menu_row(label, state, mouse_handler=h,
+                    inactive_style=inactive_style)
 
 
 def _sb_cell(body_row, sb_top, sb_thumb_h, sb_handler):

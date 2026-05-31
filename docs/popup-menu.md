@@ -323,11 +323,12 @@ or `[ ]███` — a 3-cell checkbox and a 3-cell colour swatch. Below the
 grid sit a blank row, a `[X] Display pane headers` toggle, a blank
 row, and `Back`. The frame uses `menu_chrome.title_block` /
 `footer_block` (`blank_above=1` for the popup) and the
-`menu_chrome.button_fragment` three-state grammar for the headers
-toggle and `Back`. The inactive state of `button_fragment` is
-foreground-only (no background fill) — at rest those two cells fall
-through to the host terminal background; only the cursor-row and
-hover states paint a fill.
+`menu_chrome.menu_row` `<< label >>` gold-arrow grammar for the
+headers toggle and `Back` — the cursor row paints `<< … >>` arrows in
+gold (`C_CURSOR_CELL`) over a bright label, every other row sits at
+rest with three-space margins and no background fill (ADR 0087's P5,
+extended). Each is centred on its own width (`len(label) + 6`); this
+is a cursor-only frame, so there is no separate mouse-hover state.
 
 Per row, **0 or 1 cells are checked**: zero checked means the pane is
 off (and the row paints dim end-to-end via `C_PANE_OFF`); one checked
@@ -407,8 +408,11 @@ the `◄ N ►` stepper. Below the grid sit a blank row, a `[X] Display
 headers` toggle, a `[X] Compact layout` toggle, a blank row, and `Back` —
 the two toggles consecutive, mirroring the Panes `Display pane headers`
 toggle. The frame uses `menu_chrome.title_block` /
-`footer_block` (`blank_above=1`) and the `menu_chrome.button_fragment`
-three-state grammar for the two toggles and `Back`.
+`footer_block` (`blank_above=1`) and the `menu_chrome.menu_row`
+`<< label >>` gold-arrow grammar for the two toggles and `Back`. The
+two toggle labels share one `label_col_w` (the wider composed `[X] …`
+width) and the block (`label_col_w + 6`) is centred as a unit, so the
+`[X]` glyphs stack vertically; `Back` centres on its own width.
 
 Per row, **0 or 1 colour cells are checked**: zero checked means the
 group is hidden (and the row paints dim end-to-end via `C_PANE_OFF`);

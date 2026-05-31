@@ -2845,10 +2845,21 @@ def _options_timers_text():
     # Blank row between grid and the headers toggle.
     frags.append(("", "\n", clear_hover))
 
-    # Display headers — << label >> menu-row grammar, mirroring the panes
-    # "Display pane headers" toggle. Checked = group headers shown.
+    # Display headers + Compact layout — two << label >> toggles that
+    # form one centred block. Both composed labels are left-padded to a
+    # shared label_col_w and the block (label_col_w + 6) is centred as a
+    # unit, so the leading `[X]` glyphs stack vertically. Checked headers
+    # = group headers shown; checked compact = no blank lines between
+    # groups.
     headers_on    = _timers_layout.get("headers", TIMERS_HEADERS_DEFAULT)
+    compact_on    = _timers_layout.get("compact", TIMERS_COMPACT_DEFAULT)
     headers_label = f"[{'X' if headers_on else ' '}] Display headers"
+    compact_label = f"[{'X' if compact_on else ' '}] Compact layout"
+    label_col_w   = max(len(headers_label), len(compact_label))
+    block_w       = label_col_w + 6
+    block_left    = max(0, (cols - block_w) // 2)
+    block_right   = max(0, cols - block_left - block_w)
+
     state_c = "selected" if cur_row == _TIMERS_HEADERS_ROW else "inactive"
 
     def _headers_handler(ev):
@@ -2859,20 +2870,14 @@ def _options_timers_text():
             _set_timers_cursor(_TIMERS_HEADERS_ROW)
             _toggle_timers_headers()
 
-    headers_left_pad  = max(0, (cols - (len(headers_label) + 6)) // 2)
-    headers_right_pad = max(0, cols - headers_left_pad - len(headers_label) - 6)
-    frags.append(("", " " * headers_left_pad, clear_hover))
+    frags.append(("", " " * block_left, clear_hover))
     frags.extend(menu_row(
-        headers_label, state_c, mouse_handler=_headers_handler,
+        headers_label.ljust(label_col_w), state_c,
+        mouse_handler=_headers_handler,
     ))
-    frags.append(("", " " * headers_right_pad, clear_hover))
+    frags.append(("", " " * block_right, clear_hover))
     frags.append(("", "\n", clear_hover))
 
-    # Compact layout — second independent toggle, directly below Display
-    # headers. Checked = compact (no blank lines between groups); unchecked =
-    # a blank row separates consecutive groups.
-    compact_on    = _timers_layout.get("compact", TIMERS_COMPACT_DEFAULT)
-    compact_label = f"[{'X' if compact_on else ' '}] Compact layout"
     state_cp = "selected" if cur_row == _TIMERS_COMPACT_ROW else "inactive"
 
     def _compact_handler(ev):
@@ -2883,13 +2888,12 @@ def _options_timers_text():
             _set_timers_cursor(_TIMERS_COMPACT_ROW)
             _toggle_timers_compact()
 
-    compact_left_pad  = max(0, (cols - (len(compact_label) + 6)) // 2)
-    compact_right_pad = max(0, cols - compact_left_pad - len(compact_label) - 6)
-    frags.append(("", " " * compact_left_pad, clear_hover))
+    frags.append(("", " " * block_left, clear_hover))
     frags.extend(menu_row(
-        compact_label, state_cp, mouse_handler=_compact_handler,
+        compact_label.ljust(label_col_w), state_cp,
+        mouse_handler=_compact_handler,
     ))
-    frags.append(("", " " * compact_right_pad, clear_hover))
+    frags.append(("", " " * block_right, clear_hover))
     frags.append(("", "\n", clear_hover))
 
     # Blank row between the toggles and Back.

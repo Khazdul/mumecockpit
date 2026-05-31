@@ -195,3 +195,46 @@ Glyph menus still compute `left_pad` from `label_col_w + 6` (centred
 on the widest composed row), but now compute the per-row right pad
 from each row's actual width to fill out to the right screen edge,
 since `menu_row` no longer pads the label.
+
+## Amendment — 2026-05-31 (P5 + toggle-list extension)
+
+P5 — the popup side of the menu-row grammar — is now complete, and the
+grammar is extended to the scripts/readability toggle lists on both
+surfaces. The remaining `button_fragment` toggle / `Back` rows are
+converted to `menu_row`, so the filled-button background-fill grammar
+no longer paints any toggle or `Back` row black-on-amber (the
+regression P3.1 fixed for the launcher's vertical menus, now closed on
+the popup too):
+
+- **Popup `panes` / `timers` frames** (`ingame_menu.py`): the
+  `[X] Display pane headers`, `[X] Display headers`, `[X] Compact
+  layout` toggles and both `Back` rows move from `button_fragment` to
+  `menu_row`. These grid frames have no separate mouse-hover index, so
+  the state map is cursor-row → `selected`, otherwise `inactive`.
+  `button_fragment` is no longer imported by `ingame_menu.py`.
+- **`options_scripts` / `options_readability` module rows** (the
+  shared `scripts_view.py` / `readability_view.py` `_list_cell_frag` +
+  `render_body`, both surfaces): the cursor row was `C_BUTTON_ACTIVE_*`
+  (filled-button background). It now uses `menu_row`
+  (`<< [X] name >>`): cursor → `selected`, hover → `hover`, enabled
+  non-cursor → `inactive` (`C_ITEM`), disabled non-cursor → `inactive`
+  (`C_PANE_OFF`). The shared `focus` parameter no longer splits a
+  focused/unfocused cursor colour for these rows (the dead path is
+  left in the signature, not preserved). `list_panel_width` widens by
+  the 6 marker cells (longest composed `[X] name` + 6) so the module
+  rows and the centred `<< Back >>` row share one column.
+
+**Glyph stacking, padded variant.** The two `options_timers` toggles
+(both surfaces) and the scripts/readability module rows left-pad each
+composed label to a shared width (`ljust` to `label_col_w`, resp.
+`list_w - 6`) rather than leaving it unpadded — so within these blocks
+the trailing `>>` arrows align as well as the leading `[X]` glyphs.
+The earlier glyph menus (`options_connection` / `options_spotlights` /
+`options_panes`) keep the unpadded variant from the P3.2 amendment;
+both variants stack the leading glyphs. `docs/launcher.md` "Alignment
+convention" carries the two-variant wording.
+
+`button_fragment` is unchanged and still correct for its zones — the
+Profile / History button columns and the profile editor's kind-buttons
+/ MENU-EDITOR toggle — and the panes/timers grid CELL rendering keeps
+its gold-foreground swatch grammar.

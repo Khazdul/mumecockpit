@@ -33,7 +33,7 @@ import threading
 import run_meta
 import run_stats
 from menu_chrome import (
-    button_fragment, footer_block, menu_row, title_block, title_block_height,
+    footer_block, menu_row, title_block, title_block_height,
 )
 from panes_grid import apply_cell_toggle, panes_grid_fragments
 from timers_layout_grid import (
@@ -1042,9 +1042,7 @@ def _panes_text():
 
     headers_on    = (_tmux_border_status() != "off")
     headers_label = f"[{'X' if headers_on else ' '}] Display pane headers"
-    headers_w     = len(headers_label) + 4
     back_label    = "Back"
-    back_w        = 8
 
     frags = []
     frags.extend(title_block("─── Panes ───", cols, blank_above=1))
@@ -1065,8 +1063,10 @@ def _panes_text():
 
     frags.append(("", "\n"))
 
-    state_h = "selected_focused" if cur_row == _PANES_HEADERS_ROW else "inactive"
-    style_h, text_h = button_fragment(headers_label, headers_w, state_h)
+    # Display pane headers — single << label >> toggle, centred per row.
+    # Cursor row → gold-arrow `selected`; otherwise `inactive` (cursor-only
+    # frame, no separate mouse-hover index).
+    state_h = "selected" if cur_row == _PANES_HEADERS_ROW else "inactive"
 
     def _headers_handler(ev):
         if ev.event_type == MouseEventType.MOUSE_MOVE:
@@ -1076,15 +1076,15 @@ def _panes_text():
             _set_panes_cursor(_PANES_HEADERS_ROW)
             _toggle_pane_headers()
 
-    pad_h = max(0, (cols - headers_w) // 2)
+    pad_h = max(0, (cols - (len(headers_label) + 6)) // 2)
     frags.append(("", " " * pad_h))
-    frags.append((style_h, text_h, _headers_handler))
+    frags.extend(menu_row(headers_label, state_h, mouse_handler=_headers_handler))
     frags.append(("", "\n"))
 
     frags.append(("", "\n"))
 
-    state_b = "selected_focused" if cur_row == _PANES_BACK_ROW else "inactive"
-    style_b, text_b = button_fragment(back_label, back_w, state_b)
+    # Back — plain << label >> row, centred per row.
+    state_b = "selected" if cur_row == _PANES_BACK_ROW else "inactive"
 
     def _back_handler(ev):
         if ev.event_type == MouseEventType.MOUSE_MOVE:
@@ -1093,9 +1093,9 @@ def _panes_text():
         if ev.event_type == MouseEventType.MOUSE_DOWN:
             _pop_frame()
 
-    pad_b = max(0, (cols - back_w) // 2)
+    pad_b = max(0, (cols - (len(back_label) + 6)) // 2)
     frags.append(("", " " * pad_b))
-    frags.append((style_b, text_b, _back_handler))
+    frags.extend(menu_row(back_label, state_b, mouse_handler=_back_handler))
     frags.append(("", "\n"))
 
     # title block (3 rows for popup) + grid header (1) + 6 pane rows
@@ -3856,7 +3856,6 @@ def _timers_text():
     grid_cursor = (cur_row, cur_col) if cur_row < _TIMERS_GRID_ROWS else None
 
     back_label = "Back"
-    back_w     = 8
 
     frags = []
     frags.extend(title_block("─── Timers layout ───", cols, blank_above=1))
@@ -3892,13 +3891,19 @@ def _timers_text():
 
     frags.append(("", "\n"))
 
-    # Display headers toggle, mirroring the panes "Display pane headers" row.
-    # Checked = group headers shown.
+    # Display headers + Compact layout — two << label >> toggles that form
+    # one centred block. Both composed labels are left-padded to a shared
+    # label_col_w and the block (label_col_w + 6) is centred as a unit, so
+    # the leading `[X]` glyphs stack vertically. Checked headers = group
+    # headers shown; checked compact = no blank lines between groups.
     headers_on    = layout["headers"]
+    compact_on    = layout["compact"]
     headers_label = f"[{'X' if headers_on else ' '}] Display headers"
-    headers_w     = len(headers_label) + 4
-    state_c = "selected_focused" if cur_row == _TIMERS_HEADERS_ROW else "inactive"
-    style_c, text_c = button_fragment(headers_label, headers_w, state_c)
+    compact_label = f"[{'X' if compact_on else ' '}] Compact layout"
+    label_col_w   = max(len(headers_label), len(compact_label))
+    block_left    = max(0, (cols - (label_col_w + 6)) // 2)
+
+    state_c = "selected" if cur_row == _TIMERS_HEADERS_ROW else "inactive"
 
     def _headers_handler(ev):
         if ev.event_type == MouseEventType.MOUSE_MOVE:
@@ -3908,18 +3913,14 @@ def _timers_text():
             _set_timers_cursor(_TIMERS_HEADERS_ROW)
             _toggle_timers_headers()
 
-    pad_c = max(0, (cols - headers_w) // 2)
-    frags.append(("", " " * pad_c))
-    frags.append((style_c, text_c, _headers_handler))
+    frags.append(("", " " * block_left))
+    frags.extend(menu_row(
+        headers_label.ljust(label_col_w), state_c,
+        mouse_handler=_headers_handler,
+    ))
     frags.append(("", "\n"))
 
-    # Compact layout toggle — second independent toggle below Display headers.
-    # Checked = compact (no blank lines between groups).
-    compact_on    = layout["compact"]
-    compact_label = f"[{'X' if compact_on else ' '}] Compact layout"
-    compact_w     = len(compact_label) + 4
-    state_cp = "selected_focused" if cur_row == _TIMERS_COMPACT_ROW else "inactive"
-    style_cp, text_cp = button_fragment(compact_label, compact_w, state_cp)
+    state_cp = "selected" if cur_row == _TIMERS_COMPACT_ROW else "inactive"
 
     def _compact_handler(ev):
         if ev.event_type == MouseEventType.MOUSE_MOVE:
@@ -3929,15 +3930,17 @@ def _timers_text():
             _set_timers_cursor(_TIMERS_COMPACT_ROW)
             _toggle_timers_compact()
 
-    pad_cp = max(0, (cols - compact_w) // 2)
-    frags.append(("", " " * pad_cp))
-    frags.append((style_cp, text_cp, _compact_handler))
+    frags.append(("", " " * block_left))
+    frags.extend(menu_row(
+        compact_label.ljust(label_col_w), state_cp,
+        mouse_handler=_compact_handler,
+    ))
     frags.append(("", "\n"))
 
     frags.append(("", "\n"))
 
-    state_b = "selected_focused" if cur_row == _TIMERS_BACK_ROW else "inactive"
-    style_b, text_b = button_fragment(back_label, back_w, state_b)
+    # Back — plain << label >> row, centred per row.
+    state_b = "selected" if cur_row == _TIMERS_BACK_ROW else "inactive"
 
     def _back_handler(ev):
         if ev.event_type == MouseEventType.MOUSE_MOVE:
@@ -3946,9 +3949,9 @@ def _timers_text():
         if ev.event_type == MouseEventType.MOUSE_DOWN:
             _pop_frame()
 
-    pad_b = max(0, (cols - back_w) // 2)
+    pad_b = max(0, (cols - (len(back_label) + 6)) // 2)
     frags.append(("", " " * pad_b))
-    frags.append((style_b, text_b, _back_handler))
+    frags.extend(menu_row(back_label, state_b, mouse_handler=_back_handler))
     frags.append(("", "\n"))
 
     # title block (3 rows for popup) + header row + 6 group rows + blank
