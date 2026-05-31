@@ -61,7 +61,7 @@ _can_split_after_equalize() {
 }
 
 case "$TYPE" in
-    status|buffs|group|comm|ui|dev)
+    status|timers|group|comm|ui|dev)
         if ! rc_fits_one_more; then
             echo "[layout] cannot open $TYPE — terminal too short; close another pane first." \
                 >> "$HOME/MUME/logs/debug.log"
@@ -78,24 +78,24 @@ COLS=$(tmux display-message -p -t mume:cockpit '#{window_width}')
 LEFT=$(( COLS - ui_width - 1 ))
 
 # Check if any right pane already exists
-HAS_RIGHT=$(tmux list-panes -t mume:cockpit -F '#{pane_title}' | grep -E '^(ui|comm|dev|status|buffs|group)$')
+HAS_RIGHT=$(tmux list-panes -t mume:cockpit -F '#{pane_title}' | grep -E '^(ui|comm|dev|status|timers|group)$')
 
 # Geometric helpers: pick right-column panes by vertical position.
 _right_pane_at_top() {
     tmux list-panes -t mume:cockpit \
         -F '#{pane_top} #{pane_index} #{pane_title}' \
-      | awk '$3=="ui" || $3=="comm" || $3=="dev" || $3=="status" || $3=="buffs" || $3=="group"' \
+      | awk '$3=="ui" || $3=="comm" || $3=="dev" || $3=="status" || $3=="timers" || $3=="group"' \
       | sort -n | head -1 | awk '{print $2}'
 }
 _right_pane_at_bottom() {
     tmux list-panes -t mume:cockpit \
         -F '#{pane_top} #{pane_index} #{pane_title}' \
-      | awk '$3=="ui" || $3=="comm" || $3=="dev" || $3=="status" || $3=="buffs" || $3=="group"' \
+      | awk '$3=="ui" || $3=="comm" || $3=="dev" || $3=="status" || $3=="timers" || $3=="group"' \
       | sort -rn | head -1 | awk '{print $2}'
 }
 
 # Pane background (per-pane tmux style; cells the renderer doesn't paint
-# fall through to this bg). Applied to status/buffs/group/comm/ui/dev only —
+# fall through to this bg). Applied to status/timers/group/comm/ui/dev only —
 # game and input panes keep terminal default.
 #
 # Per-pane colour names are stored in bridge/runtime/startup.conf under
@@ -130,14 +130,14 @@ _pane_bg_for() {
 
 # Pane commands
 STATUS_CMD="bash -c 'stty -isig 2>/dev/null; trap \"\" INT; while true; do python3 $MUME/bridge/panes/status_pane.py; printf \"\\n[pane kept alive — use cp -c to close]\\n\"; sleep 0.2; done'"
-BUFFS_CMD="bash -c 'stty -isig 2>/dev/null; trap \"\" INT; while true; do python3 $MUME/bridge/panes/buffs_pane.py; printf \"\\n[pane kept alive — use cp -b to close]\\n\"; sleep 0.2; done'"
+TIMERS_CMD="bash -c 'stty -isig 2>/dev/null; trap \"\" INT; while true; do python3 $MUME/bridge/panes/timers_pane.py; printf \"\\n[pane kept alive — use cp -t to close]\\n\"; sleep 0.2; done'"
 COMM_CMD="bash -c 'stty -isig 2>/dev/null; trap \"\" INT; while true; do python3 $MUME/bridge/panes/comm_pane.py; printf \"\\n[pane kept alive — use cp -m to close]\\n\"; sleep 0.2; done'"
 GROUP_CMD="bash -c 'stty -isig 2>/dev/null; trap \"\" INT; while true; do python3 $MUME/bridge/panes/group_pane.py; printf \"\\n[pane kept alive — use cp -g to close]\\n\"; sleep 0.2; done'"
 UI_CMD="bash -c 'stty -isig 2>/dev/null; trap \"\" INT; while true; do python3 $MUME/bridge/panes/ui_pane.py; printf \"\\n[pane kept alive — use cp -u to close]\\n\"; sleep 0.2; done'"
 
 if [ -n "$HAS_RIGHT" ]; then
     # Right column exists — split vertically inside it using geometric position.
-    # Column ordering (top to bottom): status → buffs → group → comm → ui → dev
+    # Column ordering (top to bottom): status → timers → group → comm → ui → dev
 
     case $TYPE in
         status)
@@ -163,8 +163,8 @@ if [ -n "$HAS_RIGHT" ]; then
             bash "$MUME/bridge/layout/apply_layout.sh"
             ;;
 
-        buffs)
-            # buffs goes below status, above group/comm.
+        timers)
+            # timers goes below status, above group/comm.
             STATUS_INDEX=$(tmux list-panes -t mume:cockpit -F '#{pane_index} #{pane_title}' \
               | awk '$2=="status" {print $1; exit}')
             GROUP_INDEX=$(tmux list-panes -t mume:cockpit -F '#{pane_index} #{pane_title}' \
@@ -201,23 +201,23 @@ if [ -n "$HAS_RIGHT" ]; then
                 _warn_pane_too_short "$TYPE"
                 exit 1
             fi
-            NEW_INDEX=$(tmux split-window -v $SPLIT_DIR -t mume:cockpit.$TARGET_IDX -P -F '#{pane_index}' "$BUFFS_CMD")
+            NEW_INDEX=$(tmux split-window -v $SPLIT_DIR -t mume:cockpit.$TARGET_IDX -P -F '#{pane_index}' "$TIMERS_CMD")
             if [ -z "$NEW_INDEX" ]; then
                 echo "[layout] split-window failed for $TYPE (target idx=$TARGET_IDX); aborting open." \
                     >> "$HOME/MUME/logs/debug.log"
                 _warn_pane_too_short "$TYPE"
                 exit 1
             fi
-            tmux select-pane -t mume:cockpit.$NEW_INDEX -T "buffs"
-            tmux select-pane -t mume:cockpit.$NEW_INDEX -P "$(_pane_bg_for buffs)"
+            tmux select-pane -t mume:cockpit.$NEW_INDEX -T "timers"
+            tmux select-pane -t mume:cockpit.$NEW_INDEX -P "$(_pane_bg_for timers)"
             tmux select-pane -t "$(resolve_focus_target)"
             bash "$MUME/bridge/layout/apply_layout.sh"
             ;;
 
         group)
-            # group goes below buffs (or status if buffs absent), above comm.
-            BUFFS_INDEX=$(tmux list-panes -t mume:cockpit -F '#{pane_index} #{pane_title}' \
-              | awk '$2=="buffs" {print $1; exit}')
+            # group goes below timers (or status if timers absent), above comm.
+            TIMERS_INDEX=$(tmux list-panes -t mume:cockpit -F '#{pane_index} #{pane_title}' \
+              | awk '$2=="timers" {print $1; exit}')
             STATUS_INDEX=$(tmux list-panes -t mume:cockpit -F '#{pane_index} #{pane_title}' \
               | awk '$2=="status" {print $1; exit}')
             COMM_INDEX=$(tmux list-panes -t mume:cockpit -F '#{pane_index} #{pane_title}' \
@@ -227,14 +227,14 @@ if [ -n "$HAS_RIGHT" ]; then
             DEV_INDEX=$(tmux list-panes -t mume:cockpit -F '#{pane_index} #{pane_title}' \
               | awk '$2=="dev" {print $1; exit}')
 
-            if [ -n "$BUFFS_INDEX" ]; then
-                # Split below buffs
-                TARGET_IDX=$BUFFS_INDEX; SPLIT_DIR=""
+            if [ -n "$TIMERS_INDEX" ]; then
+                # Split below timers
+                TARGET_IDX=$TIMERS_INDEX; SPLIT_DIR=""
             elif [ -n "$STATUS_INDEX" ]; then
-                # No buffs — split below status
+                # No timers — split below status
                 TARGET_IDX=$STATUS_INDEX; SPLIT_DIR=""
             elif [ -n "$COMM_INDEX" ]; then
-                # No status or buffs — split above comm
+                # No status or timers — split above comm
                 TARGET_IDX=$COMM_INDEX; SPLIT_DIR="-b"
             elif [ -n "$UI_INDEX" ]; then
                 # Split above ui
@@ -266,11 +266,11 @@ if [ -n "$HAS_RIGHT" ]; then
             ;;
 
         comm)
-            # comm goes below group (or buffs, or status if those are absent), above ui.
+            # comm goes below group (or timers, or status if those are absent), above ui.
             GROUP_INDEX=$(tmux list-panes -t mume:cockpit -F '#{pane_index} #{pane_title}' \
               | awk '$2=="group" {print $1; exit}')
-            BUFFS_INDEX=$(tmux list-panes -t mume:cockpit -F '#{pane_index} #{pane_title}' \
-              | awk '$2=="buffs" {print $1; exit}')
+            TIMERS_INDEX=$(tmux list-panes -t mume:cockpit -F '#{pane_index} #{pane_title}' \
+              | awk '$2=="timers" {print $1; exit}')
             STATUS_INDEX=$(tmux list-panes -t mume:cockpit -F '#{pane_index} #{pane_title}' \
               | awk '$2=="status" {print $1; exit}')
             UI_INDEX=$(tmux list-panes -t mume:cockpit -F '#{pane_index} #{pane_title}' \
@@ -281,9 +281,9 @@ if [ -n "$HAS_RIGHT" ]; then
             if [ -n "$GROUP_INDEX" ]; then
                 # Split below group (predecessor)
                 TARGET_IDX=$GROUP_INDEX; SPLIT_DIR=""
-            elif [ -n "$BUFFS_INDEX" ]; then
-                # Split below buffs (predecessor)
-                TARGET_IDX=$BUFFS_INDEX; SPLIT_DIR=""
+            elif [ -n "$TIMERS_INDEX" ]; then
+                # Split below timers (predecessor)
+                TARGET_IDX=$TIMERS_INDEX; SPLIT_DIR=""
             elif [ -n "$STATUS_INDEX" ]; then
                 # Split below status (predecessor)
                 TARGET_IDX=$STATUS_INDEX; SPLIT_DIR=""
@@ -322,8 +322,8 @@ if [ -n "$HAS_RIGHT" ]; then
               | awk '$2=="comm" {print $1; exit}')
             GROUP_INDEX=$(tmux list-panes -t mume:cockpit -F '#{pane_index} #{pane_title}' \
               | awk '$2=="group" {print $1; exit}')
-            BUFFS_INDEX=$(tmux list-panes -t mume:cockpit -F '#{pane_index} #{pane_title}' \
-              | awk '$2=="buffs" {print $1; exit}')
+            TIMERS_INDEX=$(tmux list-panes -t mume:cockpit -F '#{pane_index} #{pane_title}' \
+              | awk '$2=="timers" {print $1; exit}')
             STATUS_INDEX=$(tmux list-panes -t mume:cockpit -F '#{pane_index} #{pane_title}' \
               | awk '$2=="status" {print $1; exit}')
             DEV_INDEX=$(tmux list-panes -t mume:cockpit -F '#{pane_index} #{pane_title}' \
@@ -335,9 +335,9 @@ if [ -n "$HAS_RIGHT" ]; then
             elif [ -n "$GROUP_INDEX" ]; then
                 # Split below group (predecessor)
                 TARGET_IDX=$GROUP_INDEX; SPLIT_DIR=""
-            elif [ -n "$BUFFS_INDEX" ]; then
-                # Split below buffs (predecessor)
-                TARGET_IDX=$BUFFS_INDEX; SPLIT_DIR=""
+            elif [ -n "$TIMERS_INDEX" ]; then
+                # Split below timers (predecessor)
+                TARGET_IDX=$TIMERS_INDEX; SPLIT_DIR=""
             elif [ -n "$STATUS_INDEX" ]; then
                 # Split below status (predecessor)
                 TARGET_IDX=$STATUS_INDEX; SPLIT_DIR=""
@@ -409,10 +409,10 @@ else
             tmux select-pane -t "$(resolve_focus_target)"
             bash "$MUME/bridge/layout/apply_layout.sh"
             ;;
-        buffs)
-            NEW_INDEX=$(tmux split-window -h -t mume:cockpit.0 -P -F '#{pane_index}' "$BUFFS_CMD")
-            tmux select-pane -t mume:cockpit.$NEW_INDEX -T "buffs"
-            tmux select-pane -t mume:cockpit.$NEW_INDEX -P "$(_pane_bg_for buffs)"
+        timers)
+            NEW_INDEX=$(tmux split-window -h -t mume:cockpit.0 -P -F '#{pane_index}' "$TIMERS_CMD")
+            tmux select-pane -t mume:cockpit.$NEW_INDEX -T "timers"
+            tmux select-pane -t mume:cockpit.$NEW_INDEX -P "$(_pane_bg_for timers)"
             tmux select-pane -t "$(resolve_focus_target)"
             bash "$MUME/bridge/layout/apply_layout.sh"
             ;;

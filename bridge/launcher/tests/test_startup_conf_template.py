@@ -63,7 +63,7 @@ class TestStartupConfTemplate(unittest.TestCase):
     def test_show_dev_off_others_on(self):
         self.assertEqual(self.tpl["show_dev"], "0")
         for key in (
-            "show_status", "show_buffs", "show_group",
+            "show_status", "show_timers", "show_group",
             "show_comm", "show_ui", "show_pane_dividers",
         ):
             self.assertEqual(

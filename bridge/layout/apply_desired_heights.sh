@@ -22,7 +22,7 @@ while IFS= read -r p; do
     REQUESTED+=("$p")
 done < <(tmux list-panes -t mume:cockpit \
     -F '#{pane_top} #{pane_title}' 2>/dev/null \
-    | awk '$2 ~ /^(status|buffs|group|comm|ui|dev)$/' \
+    | awk '$2 ~ /^(status|timers|group|comm|ui|dev)$/' \
     | sort -n \
     | awk '{print $2}')
 
@@ -32,7 +32,7 @@ done < <(tmux list-panes -t mume:cockpit \
 declare -A PIDX
 while IFS=$'\t' read -r idx title; do
     case "$title" in
-        status|buffs|group|comm|ui|dev)
+        status|timers|group|comm|ui|dev)
             PIDX[$title]=$idx
             ;;
     esac

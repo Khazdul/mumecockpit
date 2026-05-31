@@ -16,7 +16,7 @@ source bridge/layout/right_column_budget.sh
 
 mapfile -t RC_INDICES < <(
     tmux list-panes -t mume:cockpit -F '#{pane_top} #{pane_index} #{pane_title}' 2>/dev/null \
-    | awk '$3 ~ /^(status|buffs|group|comm|ui|dev)$/' \
+    | awk '$3 ~ /^(status|timers|group|comm|ui|dev)$/' \
     | sort -n \
     | awk '{print $2}'
 )

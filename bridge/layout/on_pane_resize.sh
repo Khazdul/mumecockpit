@@ -9,7 +9,7 @@ source "$HOME/MUME/bridge/lib/conf_io.sh"
 # ── Width persistence ─────────────────────────────────────────────────────
 NEW_WIDTH=$(tmux list-panes -t mume:cockpit \
   -F '#{pane_title} #{pane_width}' \
-  | awk '$1=="ui" || $1=="comm" || $1=="dev" || $1=="status" || $1=="buffs" {print $2; exit}')
+  | awk '$1=="ui" || $1=="comm" || $1=="dev" || $1=="status" || $1=="timers" {print $2; exit}')
 [ -z "$NEW_WIDTH" ] && exit 0
 
 sed_inplace "s/^ui_width=.*/ui_width=$NEW_WIDTH/" "$LAYOUT_CONF"
@@ -24,7 +24,7 @@ while IFS= read -r line; do
     pname=$(echo "$line" | awk '{print $2}')
     pheight=$(echo "$line" | awk '{print $3}')
     case "$pname" in
-        status|buffs|group|comm|ui|dev)
+        status|timers|group|comm|ui|dev)
             if grep -q "^desired_${pname}=" "$LAYOUT_CONF"; then
                 sed_inplace "s/^desired_${pname}=.*/desired_${pname}=${pheight}/" "$LAYOUT_CONF"
             else

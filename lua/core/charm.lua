@@ -45,7 +45,7 @@ local CONTROLLED = {
 
 state.char.charms = {}
 
--- Monotonic id assigned per charm, used by the buffs pane's click-to-drop X to
+-- Monotonic id assigned per charm, used by the timers pane's click-to-drop X to
 -- target a specific entry (_cp_charm_drop <id>). Never reused within a session;
 -- reload restores it past the highest persisted id.
 local _next_id = 1
@@ -137,9 +137,9 @@ end
 -- Reload persisted charms on login, dropping any whose 99 min elapsed during
 -- downtime. No name validation — charm names are mob names, not a canonical
 -- table. Restores _next_id past the highest surviving id, arms the tick if
--- anything survived, and always emits charms_changed so the buffs pane
--- re-serialises regardless of module load order (charm.lua loads after
--- buffs_state.lua alphabetically, so this is load-bearing).
+-- anything survived, and always emits charms_changed so the timers pane
+-- re-serialises regardless of module load order (charm.lua loads before
+-- timers_state.lua alphabetically, so this is load-bearing).
 local function _load_active(char_name)
     local dir  = _char_dir(char_name)
     local path = dir .. "charms_active.json"
@@ -380,7 +380,7 @@ function _register_charm_actions()
     -- cap stays only as a safety ceiling for a missed line (ADR 0027).
     session_cmd([[#action {^A wood elf leaves and vanishes into the distance.$} {#lua {_control_on_left("wood elf")}} {3}]])
 
-    -- Click-to-drop alias: the buffs pane's X invokes this via tmux send-keys
+    -- Click-to-drop alias: the timers pane's X invokes this via tmux send-keys
     -- in Step 5; testable now by typing `_cp_charm_drop <id>` in the input pane.
     session_cmd('#alias {_cp_charm_drop %1} {#lua {charm_drop("%1")}} {3}')
 end

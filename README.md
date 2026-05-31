@@ -56,7 +56,7 @@ Background collectors populate `state.char`, `state.comm`, `state.world`,
 - **Character** — vitals, position, mood, alertness, in-game time,
   session XP/TP deltas with an XP-progress ruler that tracks the
   current level.
-- **Buffs** — colour-coded grid of active spells, buffs, debuffs,
+- **Timers** — colour-coded grid of active spells, buffs, debuffs,
   and stored spells. Per-character observed durations are learned
   over time; expiring entries blink.
 - **Group** — vitals for group members and labelled NPCs (e.g. hired

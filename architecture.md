@@ -112,7 +112,7 @@ tracking, and UI feedback.
 │   ├── panes/                # Python prompt_toolkit pane renderers
 │   │   ├── input_pane.py     # Input pane — CLI, forwards to TT++, right-aligned clock
 │   │   ├── comm_pane.py      # Comm pane — clickable channel-filter header + scrollable history
-│   │   ├── buffs_pane.py     # Buffs pane — affect grid (grouped, bar drain, blink)
+│   │   ├── timers_pane.py     # Timers pane — affect grid (grouped, bar drain, blink)
 │   │   ├── group_pane.py     # Group pane — member HP/Mana/Moves bars with name overlay
 │   │   ├── status_pane.py    # Status pane — polls status.state
 │   │   └── ui_pane.py        # UI pane — tails logs/ui.log
@@ -122,7 +122,7 @@ tracking, and UI feedback.
 │   │   │                     #   the separator row to match layout.conf:terminal_bg
 │   │   ├── on_window_resize.sh  # Fired on terminal resize — re-applies stored layout
 │   │   ├── on_pane_resize.sh    # Fired on border drag — saves new layout values
-│   │   ├── toggle_pane.sh    # Toggle ui/dev/comm/status/buffs panes and pane headers
+│   │   ├── toggle_pane.sh    # Toggle ui/dev/comm/status/timers panes and pane headers
 │   │   │                     #   (called by cp aliases and in-game popup)
 │   │   └── focus_input.sh    # Resolves input pane index at click time (MouseUp1Pane target)
 │   ├── release/              # Release/update operations
@@ -141,7 +141,7 @@ tracking, and UI feedback.
 │   │   ├── startup.conf      # Persisted startup-menu state
 │   │   ├── layout.conf       # Persisted layout state (keys: ui_width, window_cols, desired_<pane>, terminal_bg)
 │   │   ├── status.state      # Character status JSON written by status_state.lua
-│   │   ├── buffs.state       # Affect grid snapshot written by buffs_state.lua
+│   │   ├── timers.state       # Affect grid snapshot written by timers_state.lua
 │   │   ├── group.state       # Group member vitals JSON written by group_state.lua
 │   │   ├── comm.state        # Comm history + channel projection
 │   │   ├── comm_filters.conf # Persisted channel filter overrides, sparse map
@@ -213,7 +213,7 @@ tracking, and UI feedback.
 │            tmux Cockpit                  │
 │  pane 0 (top-left):  TinTin++ — game I/O │
 │  pane 1 (top-right): status — status_pane.py  │
-│  pane 1b (right):    buffs — buffs_pane.py    │
+│  pane 1b (right):    timers — timers_pane.py   │
 │  pane 1c (right):    group — group_pane.py    │
 │  pane 1d (right):    comm — comm_pane.py      │
 │  pane 1e (right):    ui  — ui_pane.py         │
@@ -418,7 +418,7 @@ Unified window and system management via `cp` commands:
 |---------------|---------------------------------|
 | `cp`          | Show help                       |
 | `cp -c`       | Toggle status pane              |
-| `cp -b`       | Toggle buffs pane               |
+| `cp -t`       | Toggle timers pane               |
 | `cp -g`       | Toggle group pane               |
 | `cp -m`       | Toggle comm pane                |
 | `cp -u`       | Toggle UI pane                  |
@@ -535,7 +535,7 @@ mode.
 - [docs/blinds.md](docs/blinds.md) — Blinds tracker: 90 s fixed-duration landing and per-character persistence. The cast-attempt FIFO and shared failure handling live in [docs/spellcast.md](docs/spellcast.md). Touched when changing blind tracking.
 - [docs/readability.md](docs/readability.md) — Readability modules: drop-in `.tin` loader, `.meta` format spec, startup.conf toggle, cold/hot reload lifecycle. Touched when adding a module, changing the loader contract, or modifying the `.meta` format.
 - [docs/runs.md](docs/runs.md) — Run log contract: file layout, event schema (run_start/level_up/run_end), lifecycle, schema versioning. Touched when changing run-log behaviour or adding new row types.
-- [docs/buffs-pane.md](docs/buffs-pane.md) — Buffs pane: renderer, scroll, blink, layout integration. Touched when changing the buffs pane renderer or the buffs.state schema.
+- [docs/timers-pane.md](docs/timers-pane.md) — Timers pane: renderer, scroll, blink, layout integration. Touched when changing the timers pane renderer or the timers.state schema.
 - [docs/group-pane.md](docs/group-pane.md) — Group pane: renderer, state-file schema, bar fill, threshold colours, name overlay, overflow indicator. Touched when changing the group pane renderer or the group.state schema.
 - [docs/ui-pane.md](docs/ui-pane.md) — UI pane: renderer, scroll, log-tail mechanics. Touched when changing the UI pane.
 - [docs/install-bootstrap.md](docs/install-bootstrap.md) — Cross-platform install: macOS/Linux bootstrap scripts and the Windows foot/WSLg installer. Touched when changing installation or the bootstrap/installer scripts.

@@ -1,4 +1,4 @@
-# Buffs Pane
+# Timers Pane
 
 A `prompt_toolkit` full-screen application that renders `state.char.affects`,
 `state.char.stored_spells`, `state.char.blinds`, `state.char.charms`, and
@@ -15,12 +15,12 @@ lua/core/affects.lua ──► state.char.affects ──────────
                                 │                                  │
                     affects_changed event                          │
                                 │                                  ▼
-lua/core/stored_spells.lua ──► state.char.stored_spells    lua/core/buffs_state.lua ──► bridge/runtime/buffs.state (JSON)
+lua/core/stored_spells.lua ──► state.char.stored_spells    lua/core/timers_state.lua ──► bridge/runtime/timers.state (JSON)
                                 │                                  ▲           │
                     stored_spells_changed event ───────────────────┤    mtime poll (100 ms)
                                                                    │            │
 lua/core/blinds.lua ──► state.char.blinds                          │            ▼
-                                │                                  │  bridge/panes/buffs_pane.py
+                                │                                  │  bridge/panes/timers_pane.py
                     blinds_changed event ──────────────────────────┤
                                                                    │
 lua/core/charm.lua ──► state.char.charms                           │
@@ -32,14 +32,14 @@ lua/core/herblores.lua ──► state.char.herblores                    │
                     herblores_changed event ───────────────────────┘
 ```
 
-`buffs_state.lua` serialises `state.char.affects`,
+`timers_state.lua` serialises `state.char.affects`,
 `state.char.stored_spells`, `state.char.blinds`, `state.char.charms`, and
-`state.char.herblores` to `bridge/runtime/buffs.state` on every
+`state.char.herblores` to `bridge/runtime/timers.state` on every
 `affects_changed`, `stored_spells_changed`, `blinds_changed`, `charms_changed`,
 or `herblores_changed` event, on character reset (disconnect), and on login.
-`buffs_pane.py` polls that file and renders the grid.
+`timers_pane.py` polls that file and renders the grid.
 
-## State file schema (`bridge/runtime/buffs.state`)
+## State file schema (`bridge/runtime/timers.state`)
 
 JSON object with affect/stored/blind/charm arrays plus the herblore arrays
 (`herblores`, `herblore_catalog`):
@@ -112,7 +112,7 @@ and shows only affects — no crash, no Stored, Blinds, Charm, or herblore cells
 
 ## Rendering
 
-`bridge/panes/buffs_pane.py` is a `prompt_toolkit` full-screen `Application`.
+`bridge/panes/timers_pane.py` is a `prompt_toolkit` full-screen `Application`.
 
 ### Grouping
 
@@ -225,7 +225,7 @@ row, full width, with no bar**. Each row (`_charm_row_frags`) is laid out as:
 channel `input_pane.py` forwards keystrokes through (target `mume:cockpit.0`,
 one send-keys call with the line and `Enter`). The render loop never blocks on
 it; the state file stays authoritative, so the row clears only once tt++ has
-run the drop and `buffs_state.lua` rewrites `buffs.state`. See
+run the drop and `timers_state.lua` rewrites `timers.state`. See
 [docs/charm.md](charm.md) for the drop handler.
 
 **Known limitation (parked):** the `_cp_charm_drop` command shows up as a
@@ -331,7 +331,7 @@ fragment stream.
 `_cp_herblore_add` (add) or `_cp_herblore_remove` (remove). Catalog keys are
 single tokens, so no quoting is needed. There is **no** optimistic UI update —
 the `[+]/[-]` label flips on the next poll (~100 ms) once `herblores.lua`
-rewrites `buffs.state`, same as the charm X.
+rewrites `timers.state`, same as the charm X.
 
 ### Hover and reset
 
@@ -472,7 +472,7 @@ updated by the existing 100 ms poll loop on each tick.
 
 ## Polling and redraw cadence
 
-- **State poll:** `os.stat(bridge/runtime/buffs.state).st_mtime` checked every 100 ms.
+- **State poll:** `os.stat(bridge/runtime/timers.state).st_mtime` checked every 100 ms.
   On mtime change: reload JSON, call `app.invalidate()`. The renderer clamps
   `_scroll_offset` on the next frame.
 - **Blink tick:** `asyncio` task that sleeps `1.0 - frac + 0.01` seconds,
@@ -482,47 +482,47 @@ updated by the existing 100 ms poll loop on each tick.
 
 ## Position
 
-Right column (top to bottom): `status` → `buffs` → `comm` → `ui` → `dev`.
+Right column (top to bottom): `status` → `timers` → `comm` → `ui` → `dev`.
 
-When a subset of right panes is open, ordering is preserved — buffs always
+When a subset of right panes is open, ordering is preserved — timers always
 sits directly below status (when status is open) and above comm (when comm
 is open). Toggling other right panes in any order does not break the
 vertical order.
 
 ## Default height
 
-`desired_buffs=5` in `bridge/runtime/layout.conf` (content rows, excludes
+`desired_timers=5` in `bridge/runtime/layout.conf` (content rows, excludes
 title row). Cold start and WINCH size the pane from this value via the
 per-pane allocation algorithm in [ADR 0071](decisions/0071-per-pane-desired-heights.md);
 mid-session drag adjusts the height freely and the new value persists as
-the next `desired_buffs` via `on_pane_resize.sh`. `cp -reset-heights`
+the next `desired_timers` via `on_pane_resize.sh`. `cp -reset-heights`
 restores the shipped default.
 
 ## Toggle
 
 | Method                  | Mechanism                                        |
 |-------------------------|--------------------------------------------------|
-| `cp -b`                 | `toggle_pane.sh buffs --persist`                 |
-| Launcher Options        | `_save_conf` → `startup.conf show_buffs`         |
-| In-game popup → Options | `toggle_pane.sh buffs --persist`                 |
+| `cp -t`                 | `toggle_pane.sh timers --persist`                 |
+| Launcher Options        | `_save_conf` → `startup.conf show_timers`         |
+| In-game popup → Options | `toggle_pane.sh timers --persist`                 |
 
-Persistence key: `show_buffs` in `bridge/runtime/startup.conf`. Fresh-install
+Persistence key: `show_timers` in `bridge/runtime/startup.conf`. Fresh-install
 default is `1` (pane open), seeded by `bridge/launcher/templates/startup.conf`
 (see ADR 0101). Upgraded installs that pre-date the key fall through to the
-aligned `${show_buffs:-1}` runtime guard in
-`bridge/launcher/build_initial_layout.sh`, so the buffs pane will open on the
+aligned `${show_timers:-1}` runtime guard in
+`bridge/launcher/build_initial_layout.sh`, so the timers pane will open on the
 next cockpit start.
 
 ## Pane title and border
 
-Pane title: `buffs`. The `pane-border-format` in `bridge/launcher/tmux_start.sh`
-maps this to the label ` Buffs ` when headers are on.
+Pane title: `timers`. The `pane-border-format` in `bridge/launcher/tmux_start.sh`
+maps this to the label ` Timers ` when headers are on.
 
 ## Data layer
 
 `state.char.affects` and the supporting disk files under
 `data/characters/<character>/` continue to be maintained by
-`lua/core/affects.lua` regardless of whether the buffs pane is open. The data
+`lua/core/affects.lua` regardless of whether the timers pane is open. The data
 layer is independent of the visualisation layer. The same applies to
 `state.char.stored_spells` (`lua/core/stored_spells.lua`, persists to
 `stored_spells_active.json`), `state.char.blinds` (`lua/core/blinds.lua`,

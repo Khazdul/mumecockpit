@@ -45,18 +45,18 @@ _persist_key() {
 }
 
 case "$TARGET" in
-    buffs)
-        if _pane_exists "buffs"; then
-            _kill_pane "buffs"
+    timers)
+        if _pane_exists "timers"; then
+            _kill_pane "timers"
             bash "$SCRIPT_DIR/apply_layout.sh"
         else
-            bash "$BRIDGE_DIR/launcher/open_pane.sh" buffs
+            bash "$BRIDGE_DIR/launcher/open_pane.sh" timers
         fi
         if [ "$PERSIST" -eq 1 ]; then
-            if _pane_exists "buffs"; then
-                _persist_key "show_buffs" "1"
+            if _pane_exists "timers"; then
+                _persist_key "show_timers" "1"
             else
-                _persist_key "show_buffs" "0"
+                _persist_key "show_timers" "0"
             fi
         fi
         ;;

@@ -120,7 +120,7 @@ after all core modules and subscribe last.
 Detailed subscriber lists for the high-traffic events:
 
 **`gmcp_char_name`** — `lua/core/affects.lua` (re-init affects, load
-persisted data), `lua/core/buffs_state.lua` (serialize), `lua/core/comm_store.lua`
+persisted data), `lua/core/timers_state.lua` (serialize), `lua/core/comm_store.lua`
 (init per-character archive), `lua/core/server_prefs.lua` (assert width),
 `lua/core/status_state.lua` (serialize), `lua/core/stored_spells.lua`
 (re-init stored spells, load persisted data).
@@ -173,7 +173,7 @@ wiping all non-function keys from `state.char`. No payload. Called from
 `mark_mume_disconnected()` in `lua/brain.lua`.
 
 **Subscribers:** `lua/core/affects.lua` (cancel the affects tick timer),
-`lua/core/buffs_state.lua` (serialize blank buffs.state),
+`lua/core/timers_state.lua` (serialize blank timers.state),
 `lua/core/group_collector.lua` (calls `state.group.reset()`, which wipes members and emits `group_changed`),
 `lua/core/group_state.lua` (serialize blank group.state),
 `lua/core/status_state.lua` (serialize blank status.state).
@@ -300,8 +300,8 @@ Subscribers should read `state.char.affects` directly for the new state.
 
 **Subscribers:** `lua/core/status_state.lua` — calls `serialize()` to update
 `bridge/runtime/status.state` and rewrite `status_height` in `bridge/runtime/layout.conf`
-when the affect count changes. `lua/core/buffs_state.lua` — calls `serialize()`
-to update `bridge/runtime/buffs.state` (affects and stored spells written together).
+when the affect count changes. `lua/core/timers_state.lua` — calls `serialize()`
+to update `bridge/runtime/timers.state` (affects and stored spells written together).
 
 ### `affects_observed`
 
@@ -586,9 +586,9 @@ persisted entries on `Char.Name`.
 
 Subscribers should read `state.char.stored_spells` directly for the new state.
 
-**Subscribers:** `lua/core/buffs_state.lua` — calls `serialize()` to write the
-updated `stored_spells` array (alongside `affects`) to `bridge/runtime/buffs.state`
-atomically, giving the buffs-pane renderer a fresh snapshot within one poll
+**Subscribers:** `lua/core/timers_state.lua` — calls `serialize()` to write the
+updated `stored_spells` array (alongside `affects`) to `bridge/runtime/timers.state`
+atomically, giving the timers-pane renderer a fresh snapshot within one poll
 tick.
 
 ### `blinds_changed`
@@ -602,9 +602,9 @@ when nothing changed would be pure noise).
 
 Subscribers should read `state.char.blinds` directly for the new state.
 
-**Subscribers:** `lua/core/buffs_state.lua` — calls `serialize()` to
+**Subscribers:** `lua/core/timers_state.lua` — calls `serialize()` to
 write the updated `blinds` array (alongside `affects` and `stored_spells`)
-to `bridge/runtime/buffs.state` atomically, giving the buffs-pane renderer
+to `bridge/runtime/timers.state` atomically, giving the timers-pane renderer
 a fresh snapshot within one poll tick.
 
 ### `charms_changed`
@@ -617,10 +617,10 @@ at least one expired entry, on explicit drop (`charm_drop`), and at the end of
 
 Subscribers should read `state.char.charms` directly for the new state.
 
-**Subscribers:** `lua/core/buffs_state.lua` — calls `serialize()` to write the
+**Subscribers:** `lua/core/timers_state.lua` — calls `serialize()` to write the
 updated `charms` array (alongside `affects`, `stored_spells`, and `blinds`) to
-`bridge/runtime/buffs.state` atomically. The `_load_active` emit is load-bearing:
-`charm.lua` loads after `buffs_state.lua` alphabetically, so the buffs pane
+`bridge/runtime/timers.state` atomically. The `_load_active` emit is load-bearing:
+`charm.lua` loads before `timers_state.lua` alphabetically, so the timers pane
 re-serialises regardless of module load order. See [docs/charm.md](charm.md).
 
 ### `herblores_changed`
@@ -633,9 +633,9 @@ restoring persisted entries on `gmcp_char_name`. Mirrors `charms_changed`.
 
 Subscribers should read `state.char.herblores` directly for the new state.
 
-**Subscribers:** `lua/core/buffs_state.lua` — calls `serialize()` to write the
+**Subscribers:** `lua/core/timers_state.lua` — calls `serialize()` to write the
 updated `herblores` array (the current phase of each entry, alongside `affects`,
-`stored_spells`, `blinds`, and `charms`) to `bridge/runtime/buffs.state`
+`stored_spells`, `blinds`, and `charms`) to `bridge/runtime/timers.state`
 atomically. The `_load_active` emit is load-bearing, exactly as for
 `charms_changed`. See [docs/herblores.md](herblores.md).
 

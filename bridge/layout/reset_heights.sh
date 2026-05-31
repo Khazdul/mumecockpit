@@ -11,7 +11,7 @@ source "$HOME/MUME/bridge/lib/conf_io.sh"
 
 [ -f "$LAYOUT_CONF" ] || exit 0
 
-for p in status buffs group comm ui dev; do
+for p in status timers group comm ui dev; do
     sed_inplace "/^desired_${p}=/d" "$LAYOUT_CONF"
     echo "desired_${p}=${DEFAULT_DESIRED[$p]}" >> "$LAYOUT_CONF"
 done

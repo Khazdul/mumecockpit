@@ -131,7 +131,7 @@ PROFILE_NAME_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9_]*$")
 # startup.conf entry written by the colour radios.
 _PANE_OPTIONS = [
     ("status", "Character",     "show_status", "pane_color_status"),
-    ("buffs",  "Buffs",         "show_buffs",  "pane_color_buffs"),
+    ("timers", "Timers",        "show_timers",  "pane_color_timers"),
     ("group",  "Group",         "show_group",  "pane_color_group"),
     ("comm",   "Communication", "show_comm",   "pane_color_comm"),
     ("ui",     "UI",            "show_ui",     "pane_color_ui"),
@@ -163,14 +163,14 @@ _CONF_DEFAULTS_FALLBACK = {
     "connection_host":    "localhost",
     "connection_port":    "4242",
     "show_status":        "1",
-    "show_buffs":         "1",
+    "show_timers":         "1",
     "show_group":         "1",
     "show_comm":          "1",
     "show_ui":            "1",
     "show_dev":           "0",
     "show_pane_dividers": "1",
     "pane_color_status":  "black",
-    "pane_color_buffs":   "red",
+    "pane_color_timers":   "red",
     "pane_color_group":   "green",
     "pane_color_comm":    "blue",
     "pane_color_ui":      "black",
@@ -266,7 +266,7 @@ _profile_editor_instance = None
 _sel_options              = 0
 _hover_options            = -1
 # Options — Panes submenu (pane × colour grid). Eight navigable rows:
-#   0..5 — pane rows (Character / Buffs / Group / Comm / UI / Developer).
+#   0..5 — pane rows (Character / Timers / Group / Comm / UI / Developer).
 #   6    — Display pane headers toggle.
 #   7    — Back.
 # _options_panes_col is the persistent column (0..6) for grid rows; it is
@@ -780,9 +780,9 @@ def _save_conf():
             fh.write("# Phase 1 cosmetic options — launcher display only\n")
             for key in (
                 "connection_mode", "connection_host", "connection_port",
-                "show_status", "show_buffs", "show_group",
+                "show_status", "show_timers", "show_group",
                 "show_comm", "show_ui", "show_dev", "show_pane_dividers",
-                "pane_color_status", "pane_color_buffs", "pane_color_group",
+                "pane_color_status", "pane_color_timers", "pane_color_group",
                 "pane_color_comm", "pane_color_ui", "pane_color_dev",
                 "profile",
                 "spotlights_show_deaths", "spotlights_show_levelups",

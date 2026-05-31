@@ -60,7 +60,7 @@ pick from a known map without re-reading help files.
 | Message         | Direction | Body                           | Handler        |
 |-----------------|-----------|--------------------------------|----------------|
 | Char.Login      | → server  | `{name, password}`             | not sent       |
-| Char.Name       | ← server  | `{name, fullname}`             | lua/core/char_state.lua (primary writer; also drives connection.state); downstream via `gmcp_char_name` event: status_state.lua, server_prefs.lua, buffs_state.lua, comm_store.lua, affects.lua, stored_spells.lua |
+| Char.Name       | ← server  | `{name, fullname}`             | lua/core/char_state.lua (primary writer; also drives connection.state); downstream via `gmcp_char_name` event: status_state.lua, server_prefs.lua, timers_state.lua, comm_store.lua, affects.lua, stored_spells.lua |
 | Char.StatusVars | ← server  | name/caption pairs (see below) | lua/core/char_state.lua |
 | Char.Vitals     | ← server  | flat object (see below)        | lua/core/char_state.lua (primary writer); downstream via `gmcp_char_vitals` event: group_collector.lua (cross-applies buffer/opponent HP onto state.group.members) |
 

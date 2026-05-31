@@ -70,7 +70,7 @@ Terminal width `W = shutil.get_terminal_size().columns` per frame.
 
 Three bars fill the entire row with no name prefix column and no separator
 spaces between bars. Bar widths are distributed left-to-right using the same
-round-extra helper as the buffs pane (adapted for 3 bars):
+round-extra helper as the timers pane (adapted for 3 bars):
 
 ```python
 base   = W // 3
@@ -160,16 +160,16 @@ updated by the existing 100 ms poll loop on each tick.
 
 `os.stat(group.state).st_mtime` is checked every **100 ms** via an asyncio
 task. On mtime change: reload JSON, call `app.invalidate()`. Same pattern as
-`buffs_pane.py`. Atomic-write semantics (`.tmp` → `os.rename`) on the producer
+`timers_pane.py`. Atomic-write semantics (`.tmp` → `os.rename`) on the producer
 side ensure no partial reads.
 
 ## Position
 
-Right column (top to bottom): `status` → `buffs` → **`group`** → `comm` →
+Right column (top to bottom): `status` → `timers` → **`group`** → `comm` →
 `ui` → `dev`.
 
 When a subset of right panes is open, ordering is preserved — group always
-sits directly below buffs (when buffs is open) or below status (when buffs is
+sits directly below timers (when timers is open) or below status (when timers is
 closed and status is open), and above comm (when comm is open). Toggling other
 right panes in any order does not break the vertical order.
 

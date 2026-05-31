@@ -99,7 +99,7 @@ must never block on parse errors. Readers may silently ignore unknown
 keys for forward compatibility.
 
 Consumer: `bridge/launcher/ingame_menu.sh` and the four right-column data
-panes (status, buffs, group, comm) test for file existence to gate
+panes (status, timers, group, comm) test for file existence to gate
 rendering. The connection-mode label in the popup status header is
 sourced from `bridge/runtime/startup.conf`, not from this file.
 

@@ -7,7 +7,7 @@
 # Per-pane content-row floor (excludes title row).
 declare -A MIN_HEIGHT=(
     [status]=2
-    [buffs]=1
+    [timers]=1
     [group]=1
     [comm]=1
     [ui]=1
@@ -19,7 +19,7 @@ declare -A MIN_HEIGHT=(
 # for `cp -reset-heights`.
 declare -A DEFAULT_DESIRED=(
     [status]=6
-    [buffs]=5
+    [timers]=5
     [group]=5
     [comm]=10
     [ui]=5
@@ -28,8 +28,8 @@ declare -A DEFAULT_DESIRED=(
 
 # Drop order: lowest priority first. Reversed yields PRIORITY_ORDER —
 # the highest-priority surviving pane absorbs residual rows.
-DROP_ORDER=(dev group buffs comm status ui)
-PRIORITY_ORDER=(ui status comm buffs group dev)
+DROP_ORDER=(dev group timers comm status ui)
+PRIORITY_ORDER=(ui status comm timers group dev)
 
 # Deprecated: kept one release for the rc_max_panes / rc_fits_one_more
 # runtime-open gate in open_pane.sh, which is not changed in this PR.
@@ -40,7 +40,7 @@ INPUT_RESERVE=1
 
 rc_count() {
     tmux list-panes -t mume:cockpit -F '#{pane_title}' 2>/dev/null \
-        | grep -cE '^(status|buffs|group|comm|ui|dev)$'
+        | grep -cE '^(status|timers|group|comm|ui|dev)$'
 }
 
 rc_window_height() {

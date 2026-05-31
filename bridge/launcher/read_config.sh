@@ -9,7 +9,7 @@ if [ -f "$CONF" ]; then
 fi
 : "${profile:=default}"
 : "${connection_mode:=mmapper}"
-: "${show_buffs:=0}"
+: "${show_timers:=0}"
 : "${connection_host:=localhost}"
 : "${connection_port:=4242}"
 case "$connection_mode" in
@@ -21,4 +21,4 @@ echo "#var {_profile}   {$profile}"
 echo "#var {_host}      {$host}"
 echo "#var {_port}      {$port}"
 echo "#var {_ses_cmd}   {$ses_cmd}"
-echo "#var {show_buffs} {$show_buffs}"
+echo "#var {show_timers} {$show_timers}"

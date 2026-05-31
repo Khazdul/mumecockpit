@@ -22,7 +22,7 @@ with a scripting brain on top.
 - `docs/session-lifecycle.md` — SESSION events, game session tracking.
 - `docs/input-pane.md` — Enter semantics, recall, history, key forwarding.
 - `docs/status-pane.md` — character status pane: renderer, schema, field layout.
-- `docs/buffs-pane.md` — buffs pane: renderer, grouping, palette, blink, scroll.
+- `docs/timers-pane.md` — timers pane: renderer, grouping, palette, blink, scroll.
 - `docs/comm-pane.md` — comm pane: renderer, comm.state schema, filter persistence.
 - `docs/ui-pane.md` — UI pane: renderer, scroll, log-tail mechanics.
 - `docs/clock.md` — game clock: sync sources, state schema, degradation rules.

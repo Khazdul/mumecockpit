@@ -1,13 +1,13 @@
 # Charm Tracker
 
 Tracks charmed mobs with a 99-minute auto-drop ceiling, a count-up timer, and
-click-to-drop from the buffs pane. Mirrors the blinds tracker
+click-to-drop from the timers pane. Mirrors the blinds tracker
 ([`lua/core/blinds.lua`](../lua/core/blinds.lua)) in shape, but its success line
 is ambiguous, so it gates on an in-flight cast rather than landing
 unconditionally.
 
 This document covers the data layer and event flow; rendering lives in the
-buffs pane — see [docs/buffs-pane.md](buffs-pane.md). Pending charm casts ride
+timers pane — see [docs/timers-pane.md](timers-pane.md). Pending charm casts ride
 the shared cast-attempt FIFO owned by [`lua/core/spellcast.lua`](../lua/core/spellcast.lua);
 see [docs/spellcast.md](spellcast.md) and
 [ADR 0123](decisions/0123-shared-cast-feedback-ownership.md).
@@ -95,7 +95,7 @@ The mobs and their behaviours live in the module-local `CONTROLLED` table:
 | `dreadful warg`   | **Permanent**, and **supersedes** `enslaved shadow`.            |
 
 Permanent entries carry **no** `expected_duration`/`expires_at`, so the tick
-never prunes them and the buffs pane shows no minutes for them. Timed entries
+never prunes them and the timers pane shows no minutes for them. Timed entries
 get the same fields a landed charm does.
 
 `dreadful warg` supersedes `enslaved shadow`: an enslaved shadow can transform
@@ -156,14 +156,14 @@ Array of currently-charmed mob entries:
 }
 ```
 
-`id` is assigned from a module-local `_next_id` counter, used by the buffs
+`id` is assigned from a module-local `_next_id` counter, used by the timers
 pane's click-to-drop × to target a specific entry. It is **never reused within a
 session**; on reload `_next_id` is restored past the highest persisted id so a
 restored charm and a freshly-landed one never collide.
 
 Permanent control-without-charm entries (see above) omit `expected_duration`
 and `expires_at` entirely — those nil fields are what mark an entry untimed for
-the tick (never pruned) and for the buffs pane (no minutes column).
+the tick (never pruned) and for the timers pane (no minutes column).
 
 The list is initialised to `{}` at load and on every `gmcp_char_name`, then
 repopulated from disk. `char_reset` (disconnect) wipes the in-memory list via
@@ -188,8 +188,8 @@ stored-spells. The store is `data/characters/<char>/charms_active.json`, where
   otherwise run an idle 2 s no-op loop forever), and **always emits
   `charms_changed`** at the end. Permanent entries have no `expires_at`, so the
   prune guard never drops them and they survive any downtime. The final
-  emit is load-bearing: `charm.lua` loads after `buffs_state.lua` alphabetically,
-  so the buffs pane re-serialises regardless of module load order. Logs
+  emit is load-bearing: `charm.lua` loads before `timers_state.lua` alphabetically,
+  so the timers pane re-serialises regardless of module load order. Logs
   `[CHARM] restored N (M expired)`.
 
 `char_reset` only undelays the tick (when `GAME_SESSION` is still set) and never
@@ -197,7 +197,7 @@ touches disk.
 
 ## Click-to-drop
 
-The buffs pane's × invokes `_cp_charm_drop <id>` (a `#alias` registered
+The timers pane's × invokes `_cp_charm_drop <id>` (a `#alias` registered
 alongside the actions), which calls `charm_drop(id)`. `charm_drop` removes the
 matching entry by id, persists, emits `charms_changed`, and surfaces
 `char_ui("charm", name, "down")` — it **sends nothing to the game** (it only
@@ -210,9 +210,9 @@ yet solved. The drop itself works correctly.
 
 ## Rendering and announcements
 
-`state.char.charms` is serialised into `bridge/runtime/buffs.state` and rendered
-by the buffs pane as a one-per-row group with no bar (name · count-up minutes ·
-drop ×). See [docs/buffs-pane.md](buffs-pane.md) for the cell appearance and
+`state.char.charms` is serialised into `bridge/runtime/timers.state` and rendered
+by the timers pane as a one-per-row group with no bar (name · count-up minutes ·
+drop ×). See [docs/timers-pane.md](timers-pane.md) for the cell appearance and
 palette.
 
 Landing and removal surface to the UI pane via

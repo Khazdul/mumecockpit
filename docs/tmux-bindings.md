@@ -72,7 +72,7 @@ cockpit session. The pane no longer closes during normal use.
 
 tmux fires drag-end on the **release** surface, not the drag-start surface. This creates a matrix problem: a drag that starts in the main pane (entering copy-mode) can release on a different pane, a border, or the status bar. The originating pane is left in copy-mode with an active selection, and tmux focus does not return to the input pane.
 
-Independently, prompt_toolkit panes (comm, buffs) have `mouse_support=True` and forward mouse events via `send-keys -M`. They never enter tmux copy-mode, so the copy-mode `MouseDragEnd1Pane` binding never fires for drags that start and end inside them.
+Independently, prompt_toolkit panes (comm, timers) have `mouse_support=True` and forward mouse events via `send-keys -M`. They never enter tmux copy-mode, so the copy-mode `MouseDragEnd1Pane` binding never fires for drags that start and end inside them.
 
 The fix is `focus_input.sh --sweep`, which iterates all panes in `mume:cockpit` and calls `copy-pipe-and-cancel` on every non-input pane where `pane_in_mode == 1`. `copy-pipe-and-cancel` preserves the selection (copies via OSC 52) and exits copy-mode. Every drag-end surface — other panes (root table), borders, and status bar — runs `--sweep` before refocusing the input pane.
 

@@ -2,8 +2,8 @@
 
 Tracks active affects per character, learns observed durations from the last
 3 sessions, and persists per character to disk. This document covers the
-data layer and event bus; rendering is handled by the buffs pane — see
-[`docs/buffs-pane.md`](buffs-pane.md) for the rendering spec.
+data layer and event bus; rendering is handled by the timers pane — see
+[`docs/timers-pane.md`](timers-pane.md) for the rendering spec.
 
 ## Data flow
 
@@ -313,8 +313,8 @@ An affect with a drop string that remains active past its `expires_at` is in
 
 ## Rendering
 
-`state.char.affects` is the data source for the buffs pane renderer. See
-[docs/buffs-pane.md](buffs-pane.md) for the rendering phase details.
+`state.char.affects` is the data source for the timers pane renderer. See
+[docs/timers-pane.md](timers-pane.md) for the rendering phase details.
 
 Each `affect_init`, `affect_refresh`, and `affect_down` event also emits a
 `◆ TAG: name verb.` line to the UI pane via `char_ui()` — see

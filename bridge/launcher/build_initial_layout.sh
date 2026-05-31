@@ -16,7 +16,7 @@ source bridge/runtime/startup.conf 2>/dev/null || true
 SHOW_UI="${show_ui:-1}"
 SHOW_DEV="${show_dev:-0}"
 SHOW_STATUS="${show_status:-1}"
-SHOW_BUFFS="${show_buffs:-1}"
+SHOW_TIMERS="${show_timers:-1}"
 SHOW_GROUP="${show_group:-1}"
 SHOW_COMM="${show_comm:-1}"
 SHOW_DIVIDERS="${show_pane_dividers:-1}"
@@ -34,7 +34,7 @@ source bridge/layout/right_column_budget.sh
 # Migration: append any missing desired_<pane> key with the shipped default.
 # Same pattern as the window_cols migration above. Once persisted, drags on
 # vertical right-column borders will update these in place.
-for p in status buffs group comm ui dev; do
+for p in status timers group comm ui dev; do
     grep -q "^desired_${p}=" "$LAYOUT_CONF" \
         || echo "desired_${p}=${DEFAULT_DESIRED[$p]}" >> "$LAYOUT_CONF"
 done
@@ -55,7 +55,7 @@ sed_inplace "s/^window_cols=.*/window_cols=$COLS/" "$LAYOUT_CONF"
 
 REQUESTED=()
 [ "$SHOW_STATUS" -eq 1 ] && REQUESTED+=(status)
-[ "$SHOW_BUFFS"  -eq 1 ] && REQUESTED+=(buffs)
+[ "$SHOW_TIMERS"  -eq 1 ] && REQUESTED+=(timers)
 [ "$SHOW_GROUP"  -eq 1 ] && REQUESTED+=(group)
 [ "$SHOW_COMM"   -eq 1 ] && REQUESTED+=(comm)
 [ "$SHOW_UI"     -eq 1 ] && REQUESTED+=(ui)

@@ -1,6 +1,6 @@
 -- Stored spells tracker: detects cast/store commands from SENT OUTPUT, tracks
 -- pending attempts in a FIFO queue, persists active stored spells and learned
--- durations per character. No rendering — buffs pane integration follows.
+-- durations per character. No rendering — timers pane integration follows.
 --
 -- spells_data.lua loaded explicitly via dofile() below.
 -- gmcp_char_name subscription registered at load time.

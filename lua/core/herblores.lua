@@ -1,7 +1,7 @@
 -- Herblore tracker: manually-tracked, timed phase machines. A herblore is a
 -- fixed sequence of phases; each phase is a buff or debuff with its own
 -- duration. When a phase's time elapses the tracker advances to the next phase;
--- the current phase renders in the buffs pane exactly like an ordinary affect
+-- the current phase renders in the timers pane exactly like an ordinary affect
 -- (buff cell while type=="buff", debuff cell while type=="debuff"), moving
 -- between groups by itself when a phase flips type.
 --
@@ -23,7 +23,7 @@ local json = require("dkjson")
 -- ---------------------------------------------------------------------------
 -- Catalog (static). Key = phase-1 base name (single token, send-keys-safe).
 -- Each phase = {name, duration (s), type}. CATALOG_KEYS keeps a stable order
--- (Lua table iteration is unordered) for the buffs pane's add-view in PR 2.
+-- (Lua table iteration is unordered) for the timers pane's add-view in PR 2.
 -- ---------------------------------------------------------------------------
 
 local CATALOG_KEYS = { "Healing", "Travelling", "Clearthought", "Walking", "Haste" }
@@ -56,9 +56,9 @@ local CATALOG = {
 
 state.char.herblores = {}
 
--- The ordered catalog keys, read by lua/core/buffs_state.lua to serialise the
--- static "herblore_catalog" field for PR 2's add-view. A global because
--- buffs_state.lua loads before this module alphabetically and cannot require it.
+-- The ordered catalog keys, read by lua/core/timers_state.lua to serialise the
+-- static "herblore_catalog" field for PR 2's add-view. A global because core
+-- files load via dofile in separate scopes and cannot require each other.
 function herblore_catalog_keys()
     return CATALOG_KEYS
 end
@@ -71,7 +71,7 @@ end
 --   phase_index, name, type, expires_at, expected_duration
 -- for the phase active at `now`, or nil if every phase has elapsed.
 -- expires_at is the end of the current phase; expected_duration is that phase's
--- full length, so the buffs pane's bar drains 100%→0% across the phase.
+-- full length, so the timers pane's bar drains 100%→0% across the phase.
 local function _derive(key, started_at, now)
     local phases = CATALOG[key]
     if not phases then return nil end
@@ -133,8 +133,8 @@ end
 -- Reload persisted herblores on login. Each {key, started_at} is run through
 -- _derive: dropped if every phase elapsed during downtime, otherwise rebuilt at
 -- its current phase. Arms the tick if anything survived, and always emits
--- herblores_changed so the buffs pane re-serialises regardless of module load
--- order (herblores.lua loads after buffs_state.lua alphabetically).
+-- herblores_changed so the timers pane re-serialises regardless of module load
+-- order (herblores.lua loads before timers_state.lua alphabetically).
 local function _load_active(char_name)
     local path = _char_dir(char_name) .. "herblores_active.json"
     local f = io.open(path, "r")

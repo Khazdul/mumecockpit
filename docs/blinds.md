@@ -14,7 +14,7 @@ mechanics and the shared failure handling. See [docs/spellcast.md](spellcast.md)
 and [ADR 0123](decisions/0123-shared-cast-feedback-ownership.md).
 
 This document covers the data layer and event bus; rendering is handled by
-the buffs pane — see [`docs/buffs-pane.md`](buffs-pane.md) for the rendering
+the timers pane — see [`docs/timers-pane.md`](timers-pane.md) for the rendering
 spec.
 
 ## Data flow
@@ -45,7 +45,7 @@ tt++ #action (GAME_SESSION, priority 3)       │
       │     front is not a blindness)
       ▼
 state.char.blinds  ──►  events.emit("blinds_changed")
-                    ──►  buffs_state.lua serialises
+                    ──►  timers_state.lua serialises
 ```
 
 ## State schema
@@ -213,7 +213,7 @@ stored-spells active list (see [docs/stored-spells.md](stored-spells.md) and
   `expires_at <= os.time()` (its 90 s elapsed during downtime). There is no
   name validation — blind names are mob names, not a canonical table. If any
   blind survives, the prune tick is armed; `blinds_changed` is emitted at the
-  end regardless so the buffs pane re-serialises independent of module load
+  end regardless so the timers pane re-serialises independent of module load
   order. Logs `[BLINDS] restored N (M expired)`.
 
 No migration shim exists — blinds were never persisted before, so there is no
@@ -232,13 +232,13 @@ the game session's action list.
 
 ## Rendering
 
-`state.char.blinds` is serialised into `bridge/runtime/buffs.state` as a
-top-level array `blinds`. The buffs pane renders it as the fourth group
+`state.char.blinds` is serialised into `bridge/runtime/timers.state` as a
+top-level array `blinds`. The timers pane renders it as the fourth group
 (after Spells / Buffs / Debuffs / Stored) and immediately **before** the
 Charm group, using the standard timed-affect cell renderer (drain bar +
 expiring-blink) laid out **2 cells per row** so the wider mob names fit. See
-[docs/buffs-pane.md](buffs-pane.md#blinds-two-up-layout) for the two-up layout
-and [docs/buffs-pane.md](buffs-pane.md#per-group-palette) for the cell
+[docs/timers-pane.md](timers-pane.md#blinds-two-up-layout) for the two-up layout
+and [docs/timers-pane.md](timers-pane.md#per-group-palette) for the cell
 appearance and the palette entry.
 
 ## UI-pane announcements
@@ -261,7 +261,7 @@ Renders as:
 ◆ BLIND: 2.orc down.
 ```
 
-The `BLIND` tag renders in the same cyan (`#00CCCC`) as the buffs-pane
+The `BLIND` tag renders in the same cyan (`#00CCCC`) as the timers-pane
 Blinds group, so the UI-pane line and the pane bar read as one surface.
 
 No UI line is emitted on:

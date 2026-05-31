@@ -2,7 +2,7 @@
 # bridge/panes/group_pane.py — group member bars renderer.
 # Three horizontal bars per member (HP / Mana / Moves) with a name overlay
 # centred across the full row. Anchor-top; overflow indicator when clipped.
-# Polling and prompt_toolkit patterns mirror buffs_pane.py.
+# Polling and prompt_toolkit patterns mirror timers_pane.py.
 
 try:
     from prompt_toolkit import Application

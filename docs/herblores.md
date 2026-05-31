@@ -3,7 +3,7 @@
 Tracks manually-added **herblores** — fixed sequences of timed phases, where
 each phase is a buff or debuff with its own duration. When a phase's time
 elapses the tracker advances to the next phase; the current phase renders in the
-buffs pane exactly like an ordinary affect and moves between the Buffs and
+timers pane exactly like an ordinary affect and moves between the Buffs and
 Debuffs groups by itself when a phase flips type.
 
 Mirrors the charm tracker ([`lua/core/charm.lua`](../lua/core/charm.lua)) in
@@ -11,8 +11,8 @@ shape — atomic per-character JSON persistence, a named `#delay` tick, restore 
 `gmcp_char_name`, undelay on `char_reset`, and a `_register_*_actions`
 registration seam — but there is **no cast snoop and no in-flight gate**:
 herblores are added and removed entirely by hand. This document covers the data
-layer and event flow; rendering lives in the buffs pane — see
-[docs/buffs-pane.md](buffs-pane.md).
+layer and event flow; rendering lives in the timers pane — see
+[docs/timers-pane.md](timers-pane.md).
 
 ## Catalog
 
@@ -29,8 +29,8 @@ Each phase is `{name, duration (s), type}`:
 | `Haste`        | Haste 360 buff → Haste (recovery) 1080 **debuff**                                        |
 
 `CATALOG_KEYS` keeps a stable key order (Lua table iteration is unordered) and is
-exposed through the global `herblore_catalog_keys()` for the buffs pane's PR 2
-add-view; `lua/core/buffs_state.lua` serialises it as the static
+exposed through the global `herblore_catalog_keys()` for the timers pane's PR 2
+add-view; `lua/core/timers_state.lua` serialises it as the static
 `herblore_catalog` field.
 
 ## Phase derivation
@@ -40,7 +40,7 @@ phase is active now", shared by the live tick and the restore path. It walks the
 catalog durations from `started_at` and returns
 `phase_index, name, type, expires_at, expected_duration` for the active phase,
 or `nil` once every phase has elapsed. `expires_at` is the end of the current
-phase and `expected_duration` is that phase's full length, so the buffs pane's
+phase and `expected_duration` is that phase's full length, so the timers pane's
 bar drains 100 %→0 % across each phase.
 
 ## Data model
@@ -119,8 +119,8 @@ store is `data/characters/<char>/herblores_active.json`, where `<char>` is
   persisted `{key, started_at}` is run through `_derive`: dropped if every phase
   elapsed during downtime, otherwise rebuilt at its current phase. Arms the tick
   if anything survived, and **always emits `herblores_changed`** at the end
-  (load-bearing: `herblores.lua` loads after `buffs_state.lua` alphabetically, so
-  the buffs pane re-serialises regardless of module load order). Logs
+  (load-bearing: `herblores.lua` loads before `timers_state.lua` alphabetically, so
+  the timers pane re-serialises regardless of module load order). Logs
   `[HERB] restored N (M expired)`.
 
 `char_reset` only undelays the tick (when `GAME_SESSION` is still set) and never
@@ -128,9 +128,9 @@ touches disk.
 
 ## Rendering and announcements
 
-`state.char.herblores` is serialised into `bridge/runtime/buffs.state` (current
-phase only) and rendered by the buffs pane as ordinary buff/debuff cells — see
-[docs/buffs-pane.md](buffs-pane.md). Lifecycle lines go to the UI pane via
+`state.char.herblores` is serialised into `bridge/runtime/timers.state` (current
+phase only) and rendered by the timers pane as ordinary buff/debuff cells — see
+[docs/timers-pane.md](timers-pane.md). Lifecycle lines go to the UI pane via
 `char_ui("herb", name, "up" | "down")` (the `HERB` tag, herb-green `#9CCC65`;
 see [docs/ui-messaging.md](ui-messaging.md#character-events)).
 

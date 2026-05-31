@@ -321,7 +321,7 @@ when `state.char.race` lowercases to `"troll"`. Sanity check: at level 5 with
 
 ### Pane position
 
-Right column (top to bottom): `status` → `buffs` → `comm` → `ui` → `dev`. Status stays at the top
+Right column (top to bottom): `status` → `timers` → `comm` → `ui` → `dev`. Status stays at the top
 of the right column whenever it exists.
 
 ### Pane height

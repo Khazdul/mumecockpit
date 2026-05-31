@@ -91,7 +91,7 @@ import launcher_banner
 # ---------------------------------------------------------------------------
 _PANE_TARGETS = [
     ("status", "Character",     "pane_color_status"),
-    ("buffs",  "Buffs",         "pane_color_buffs"),
+    ("timers", "Timers",        "pane_color_timers"),
     ("group",  "Group",         "pane_color_group"),
     ("comm",   "Communication", "pane_color_comm"),
     ("ui",     "UI",            "pane_color_ui"),

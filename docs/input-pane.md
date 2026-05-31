@@ -323,8 +323,8 @@ The renderer runs two asyncio tasks for clock updates:
   `time_transition_at` (rare: only on day/night flips or precision upgrades).
 - **`_clock_tick`** (boundary-aligned 1 Hz) — wakes just after each wall-clock
   second boundary and calls `app.invalidate()`, so the countdown decrements at
-  uniform cadence regardless of file-poll phase. Same pattern as the buffs blink
-  tick in `bridge/panes/buffs_pane.py` (see [docs/buffs-pane.md](buffs-pane.md)).
+  uniform cadence regardless of file-poll phase. Same pattern as the timers blink
+  tick in `bridge/panes/timers_pane.py` (see [docs/timers-pane.md](timers-pane.md)).
 
 See [ADR 0067](decisions/0067-remove-input-pane-buttons.md) for the
 removal of the prior CHR/BUF/GRP/COM/UI button strip. Pane toggles are

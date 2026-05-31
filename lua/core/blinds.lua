@@ -104,7 +104,7 @@ end
 -- Reload persisted blinds on login, dropping any whose 90 s elapsed during
 -- downtime. No name validation — blind names are mob names, not a canonical
 -- table. Arms the tick if anything survived and always emits blinds_changed so
--- the buffs pane re-serialises regardless of module load order.
+-- the timers pane re-serialises regardless of module load order.
 local function _load_active(char_name)
     local dir  = _char_dir(char_name)
     local path = dir .. "blinds_active.json"

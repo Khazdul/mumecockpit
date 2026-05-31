@@ -2,7 +2,7 @@
 
 Tracks active stored spells per character, learns observed decay durations from
 the last 3 samples, and persists per character to disk. This document covers the
-data layer and event bus; rendering is deferred to a future buffs-pane
+data layer and event bus; rendering is deferred to a future timers-pane
 integration PR.
 
 ## Data flow
@@ -94,7 +94,7 @@ lua/core/stored_spells.lua  ──►  state.char.stored_spells       (active li
   │
   ▼ events.emit("stored_spells_changed")
   ▼
-lua/core/buffs_state.lua    ──►  bridge/runtime/buffs.state   (JSON, atomic write)
+lua/core/timers_state.lua    ──►  bridge/runtime/timers.state   (JSON, atomic write)
 ```
 
 ## State schema
@@ -293,7 +293,7 @@ natural decay). If anything changed, `stored_spells_changed` is emitted and
 helper used by the store handlers.
 
 Tracked entries the block confirms keep their existing `expires_at`, so
-the buffs-pane countdown is uninterrupted. Newly-added entries render with
+the timers-pane countdown is uninterrupted. Newly-added entries render with
 the existing full-grey-bar untracked styling — no renderer change.
 
 ## Persistence

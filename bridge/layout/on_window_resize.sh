@@ -10,7 +10,7 @@ source "$HOME/MUME/bridge/lib/conf_io.sh"
 _reapply_desired_heights() {
     local has_right
     has_right=$(tmux list-panes -t mume:cockpit -F '#{pane_title}' 2>/dev/null \
-        | grep -E '^(ui|comm|dev|status|buffs|group)$' | head -1)
+        | grep -E '^(ui|comm|dev|status|timers|group)$' | head -1)
     if [ -n "$has_right" ]; then
         bash "$HOME/MUME/bridge/layout/apply_desired_heights.sh"
     fi
@@ -37,7 +37,7 @@ MAIN_MIN=30
 RIGHT_FLOOR=$ui_width
 
 HAS_RIGHT=$(tmux list-panes -t mume:cockpit -F '#{pane_title}' \
-    | grep -E '^(ui|comm|dev|status|buffs|group)$' | head -1)
+    | grep -E '^(ui|comm|dev|status|timers|group)$' | head -1)
 
 AVAILABLE_RIGHT=$(( COLS - MAIN_MIN - 1 ))
 
@@ -46,7 +46,7 @@ if [ -n "$HAS_RIGHT" ] && [ "$AVAILABLE_RIGHT" -lt "$RIGHT_FLOOR" ]; then
     # Terminal too narrow: record open right panes and kill them.
     touch "$LOCK"
     tmux list-panes -t mume:cockpit -F '#{pane_title}' \
-        | grep -E '^(ui|comm|dev|status|buffs|group)$' > "$SENTINEL"
+        | grep -E '^(ui|comm|dev|status|timers|group)$' > "$SENTINEL"
     while IFS= read -r pname; do
         PIDX=$(tmux list-panes -t mume:cockpit -F '#{pane_index} #{pane_title}' \
             | awk -v n="$pname" '$2==n {print $1; exit}')
@@ -83,7 +83,7 @@ elif [ -f "$SENTINEL" ]; then
         source "$LAYOUT_CONF"
         RIGHT_FLOOR=$ui_width
         HAS_RIGHT=$(tmux list-panes -t mume:cockpit -F '#{pane_title}' \
-            | grep -E '^(ui|comm|dev|status|buffs|group)$' | head -1)
+            | grep -E '^(ui|comm|dev|status|timers|group)$' | head -1)
     fi
 fi
 

@@ -1,12 +1,12 @@
 -- Serialises state.char.affects, state.char.stored_spells, state.char.blinds,
--- state.char.charms, and state.char.herblores to bridge/runtime/buffs.state
+-- state.char.charms, and state.char.herblores to bridge/runtime/timers.state
 -- (JSON) whenever affects_changed, stored_spells_changed, blinds_changed,
 -- charms_changed, herblores_changed, char_reset, or gmcp_char_name fires.
 --
--- Atomic write: buffs.state.tmp → os.rename → buffs.state.
+-- Atomic write: timers.state.tmp → os.rename → timers.state.
 
 local json       = require("dkjson")
-local STATE_PATH = os.getenv("HOME") .. "/MUME/bridge/runtime/buffs.state"
+local STATE_PATH = os.getenv("HOME") .. "/MUME/bridge/runtime/timers.state"
 local TMP_PATH   = STATE_PATH .. ".tmp"
 
 local function serialize()
@@ -87,12 +87,12 @@ local function serialize()
     }
     local ok, encoded = pcall(json.encode, payload)
     if not ok then
-        dbg("[BUFFS_STATE] encode failed: " .. tostring(encoded))
+        dbg("[TIMERS_STATE] encode failed: " .. tostring(encoded))
         return
     end
     local f, err = io.open(TMP_PATH, "w")
     if not f then
-        dbg("[BUFFS_STATE] open tmp failed: " .. tostring(err))
+        dbg("[TIMERS_STATE] open tmp failed: " .. tostring(err))
         return
     end
     f:write(encoded)
@@ -114,4 +114,4 @@ events.subscribe("gmcp_char_name",         function() serialize() end)
 -- Initial write so the renderer has a file on first start.
 serialize()
 
-dbg("[BUFFS_STATE] loaded")
+dbg("[TIMERS_STATE] loaded")

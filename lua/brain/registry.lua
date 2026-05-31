@@ -81,7 +81,7 @@ function _register_cockpit_help(catalog)
         "   cp -u       toggle UI pane",
         "   cp -m       toggle comm pane",
         "   cp -c       toggle status pane",
-        "   cp -b       toggle buffs pane",
+        "   cp -t       toggle timers pane",
         "   cp -g       toggle group pane",
         "   cp -d       toggle dev pane",
         "   cp -h       toggle headers",

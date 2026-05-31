@@ -377,7 +377,7 @@ Connection mode (MMapper / Direct / Custom) and profile switch are
 deliberately **not** present in the popup — they require a restart and
 are launcher-only.
 
-`cp -u`, `cp -d`, `cp -m`, `cp -c`, `cp -b`, `cp -g`, and `cp -h` are thin wrappers
+`cp -u`, `cp -d`, `cp -m`, `cp -c`, `cp -t`, `cp -g`, and `cp -h` are thin wrappers
 around `bridge/layout/toggle_pane.sh`, each passing `--persist`. All toggle paths —
 popup, launcher Options, and `cp -X` aliases — are equivalent and write to
 `startup.conf`. Colour selections do **not** have `cp -X` equivalents

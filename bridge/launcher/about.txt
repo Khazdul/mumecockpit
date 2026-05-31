@@ -53,7 +53,7 @@ PANES
 Beyond the main game window, the cockpit shows up to six side panes,
 each toggleable at runtime: a character panel with live vitals,
 position, mood, alertness, in-game time, and session XP/TP deltas
-against a level-progress ruler; a buffs grid with active spells,
+against a level-progress ruler; a timers grid with active spells,
 buffs, debuffs, and stored spells — colour-coded by group, with
 per-character durations learned over time and blink alerts on entries
 about to expire; a group panel with party member vitals and
@@ -101,7 +101,7 @@ the same controls plus a few extras useful for scripting:
   cp -e              clean shutdown
   cp -s              save the current profile to disk
   cp -c              toggle character panel
-  cp -b              toggle buffs pane
+  cp -t              toggle timers pane
   cp -g              toggle group pane
   cp -m              toggle communication pane
   cp -u              toggle UI pane

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# bridge/panes/buffs_pane.py — affect grid renderer for the buffs pane.
+# bridge/panes/timers_pane.py — affect grid renderer for the timers pane.
 # 4-per-row coloured grid grouped by type: spells (blue), buffs (green),
 # debuffs (red). Within each group: untimed first (alphabetical), then timed
 # by expires_at descending (alphabetical tie-break). Empty groups produce no
@@ -35,9 +35,9 @@ import subprocess
 import sys
 import time
 
-BUFFS_STATE_PATH = os.environ.get(
-    "BUFFS_STATE_PATH",
-    os.path.join(os.environ["HOME"], "MUME", "bridge", "runtime", "buffs.state"),
+TIMERS_STATE_PATH = os.environ.get(
+    "TIMERS_STATE_PATH",
+    os.path.join(os.environ["HOME"], "MUME", "bridge", "runtime", "timers.state"),
 )
 CONNECTION_STATE_PATH = os.path.join(
     os.environ["HOME"], "MUME", "bridge", "runtime", "connection.state"
@@ -260,7 +260,7 @@ def _send_charm_drop(cid):
 
     Reuses the same tmux send-keys channel input_pane.py forwards keystrokes
     through. Never blocks or raises into the render loop; the state file stays
-    authoritative, so the row disappears only once tt++ rewrites buffs.state.
+    authoritative, so the row disappears only once tt++ rewrites timers.state.
     """
     if cid is None:
         return
@@ -278,7 +278,7 @@ def _send_herblore(action, key):
     """Fire-and-forget: invoke the PR-1 add/remove alias in the game/tt++ pane.
 
     Mirrors _send_charm_drop. No optimistic UI update — the [+]/[-] flips on the
-    next poll once Lua rewrites buffs.state (~100 ms lag). Catalog keys are
+    next poll once Lua rewrites timers.state (~100 ms lag). Catalog keys are
     single tokens, so no quoting is needed.
     """
     if not key:
@@ -619,7 +619,7 @@ async def _poll_state(app):
 
     while True:
         try:
-            mtime = os.stat(BUFFS_STATE_PATH).st_mtime
+            mtime = os.stat(TIMERS_STATE_PATH).st_mtime
         except OSError:
             mtime = None
 
@@ -627,7 +627,7 @@ async def _poll_state(app):
             _last_mtime = mtime
             if mtime is not None:
                 try:
-                    with open(BUFFS_STATE_PATH, "r") as fh:
+                    with open(TIMERS_STATE_PATH, "r") as fh:
                         loaded = json.load(fh)
                     if isinstance(loaded, list):
                         _affects          = loaded

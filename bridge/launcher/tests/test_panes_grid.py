@@ -34,7 +34,7 @@ def _sample_rows():
     # test can pick the row it needs.
     return [
         ("Character",     True,  0),   # row 0 — enabled, Black
-        ("Buffs",         False, 0),   # row 1 — disabled
+        ("Timers",         False, 0),   # row 1 — disabled
         ("Group",         True,  3),   # row 2 — enabled, Blue (index 3)
         ("Communication", False, 0),   # row 3 — disabled
         ("UI",            True,  6),   # row 4 — enabled, Purple (index 6)
@@ -85,7 +85,7 @@ class TestFragmentsCellColourPrecedence(unittest.TestCase):
             self.assertIn(style, (C_CURSOR_CELL, C_ACTIVE))
 
     def test_cursor_bracket_paints_gold_on_disabled_row(self):
-        # Cursor on row 1 (Buffs / disabled). Every cell on the row is
+        # Cursor on row 1 (Timers / disabled). Every cell on the row is
         # `[ ]`. The cursor cell's brackets must stay gold; all other
         # cells stay dim so the row reads as off.
         frags = panes_grid.panes_grid_fragments(
@@ -130,10 +130,10 @@ class TestFragmentsCellColourPrecedence(unittest.TestCase):
         frags = panes_grid.panes_grid_fragments(
             _sample_rows(), term_cols=120, cursor=None,
         )
-        # The Buffs row label is left-padded to _LABEL_W (13) cells.
-        buffs_label = "Buffs".ljust(13)
-        buffs_label_styles = list(_styles_for_text(frags, buffs_label))
-        self.assertEqual(buffs_label_styles, [C_PANE_OFF])
+        # The Timers row label is left-padded to _LABEL_W (13) cells.
+        timers_label = "Timers".ljust(13)
+        timers_label_styles = list(_styles_for_text(frags, timers_label))
+        self.assertEqual(timers_label_styles, [C_PANE_OFF])
 
         # Every bracket on row 1 is dim.
         bracket_styles_on_row = _row_bracket_styles(frags, row_idx=1)

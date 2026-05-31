@@ -161,8 +161,8 @@ Prose form: `◆ TAG: name verb.` or `◆ TAG: name verb (detail).` Trailing per
 | `buff`      | `BUFF`   | Soft sage green  | `#8FBC8F` |                                          |
 | `debuff`    | `DEBUFF` | Muted brick red  | `#C97070` |                                          |
 | `store`     | `STORE`  | Muted lavender   | `#B39DDB` |                                          |
-| `blind`     | `BLIND`  | Cyan             | `#00CCCC` | Matches the buffs-pane Blinds group      |
-| `charm`     | `CHARM`  | Light violet     | `#B388FF` | Matches the buffs-pane Charm group       |
+| `blind`     | `BLIND`  | Cyan             | `#00CCCC` | Matches the timers-pane Blinds group      |
+| `charm`     | `CHARM`  | Light violet     | `#B388FF` | Matches the timers-pane Charm group       |
 | `herb`      | `HERB`   | Herb green       | `#9CCC65` | Manual herblore phase-machine tracker    |
 | *(unknown)* | `AFFECT` | Teal             | `#26C6DA` | Defensive fallback                       |
 
@@ -296,8 +296,8 @@ are known without guessing.
 | `_C_BUFF`   | `"\027[38;2;143;188;143m"`          | Soft sage green `#8FBC8F` — `◆ BUFF` prefix |
 | `_C_DEBUFF` | `"\027[38;2;201;112;112m"`          | Muted brick red `#C97070` — `◆ DEBUFF` prefix |
 | `_C_STORE`  | `"\027[38;2;179;157;219m"`          | Muted lavender `#B39DDB` — `◆ STORE` prefix |
-| `_C_BLIND`  | `"\027[38;2;0;204;204m"`            | Cyan `#00CCCC` — `◆ BLIND` prefix (matches buffs-pane Blinds group) |
-| `_C_CHARM`  | `"\027[38;2;179;136;255m"`          | Light violet `#B388FF` — `◆ CHARM` prefix (matches buffs-pane Charm group) |
+| `_C_BLIND`  | `"\027[38;2;0;204;204m"`            | Cyan `#00CCCC` — `◆ BLIND` prefix (matches timers-pane Blinds group) |
+| `_C_CHARM`  | `"\027[38;2;179;136;255m"`          | Light violet `#B388FF` — `◆ CHARM` prefix (matches timers-pane Charm group) |
 | `_C_VAR`    | `"\027[1;38;2;255;238;88m"`         | Bold yellow `#FFEE58` — dynamic values |
 | `_C_TEXT`   | `"\027[1;97m"`                      | Bold bright white — base message text |
 | `_C_RESET`  | `"\027[0m"`                         | Reset all attributes                  |

@@ -421,7 +421,7 @@ end)
 -- ---------------------------------------------------------------------------
 
 -- Re-init affects state and load persisted data on every new character login.
--- Alphabetical load order ensures this runs before buffs_state.lua's subscriber.
+-- Alphabetical load order ensures this runs before timers_state.lua's subscriber.
 events.subscribe("gmcp_char_name", function()
     state.char.affects      = {}
     state.char.affect_times = {}

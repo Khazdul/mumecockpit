@@ -141,7 +141,7 @@ is `1` (UI pane on).
 
 ### Pane position
 
-Right column (top to bottom): `status` → `buffs` → `comm` → `ui` → `dev`.
+Right column (top to bottom): `status` → `timers` → `comm` → `ui` → `dev`.
 
 ### Height
 

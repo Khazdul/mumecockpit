@@ -120,7 +120,7 @@ tmux set-option -as terminal-overrides ",*:RGB"
 tmux set-option -as terminal-features  ",*:RGB"
 
 tmux set-option -t mume pane-border-format \
-  "#{?#{==:#{pane_title},status},#[fg=colour235] Character #[default],#{?#{==:#{pane_title},buffs},#[fg=colour235] Buffs #[default],#{?#{==:#{pane_title},group},#[fg=colour235] Group #[default],#{?#{==:#{pane_title},comm},#[fg=colour235] Communication #[default],#{?#{==:#{pane_title},ui},#[fg=colour235] UI #[default],#{?#{==:#{pane_title},dev},#[fg=colour235] Dev #[default],}}}}}}"
+  "#{?#{==:#{pane_title},status},#[fg=colour235] Character #[default],#{?#{==:#{pane_title},timers},#[fg=colour235] Timers #[default],#{?#{==:#{pane_title},group},#[fg=colour235] Group #[default],#{?#{==:#{pane_title},comm},#[fg=colour235] Communication #[default],#{?#{==:#{pane_title},ui},#[fg=colour235] UI #[default],#{?#{==:#{pane_title},dev},#[fg=colour235] Dev #[default],}}}}}}"
 
 # ---------------------------------------------------------------------------
 # 3. Register layout hooks
