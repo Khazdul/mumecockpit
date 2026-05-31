@@ -63,7 +63,7 @@ Two `#action` patterns (priority 3) route to the same handler,
 - `^Your control on %1 is renewed!$` — fires when re-charming an
   already-charmed mob. It is unambiguous, but runs through the same in-flight
   gate and handler, adding a **fresh** entry (a re-cast is a new charm). The
-  player drops any stale duplicate manually with the pane's X.
+  player drops any stale duplicate manually with the pane's ×.
 
 `_charm_on_followed` strips a leading article from the captured name
 **case-insensitively** (`an `/`a `/`the `, each only when followed by
@@ -90,7 +90,7 @@ The mobs and their behaviours live in the module-local `CONTROLLED` table:
 
 | Mob               | Behaviour                                                        |
 | ----------------- | --------------------------------------------------------------- |
-| `enslaved shadow` | **Permanent** — no timer, never tick-pruned, dropped only by X. |
+| `enslaved shadow` | **Permanent** — no timer, never tick-pruned, dropped only by ×. |
 | `wood elf`        | **Timed** — 99-min cap, ticked and auto-dropped like a charm.   |
 | `dreadful warg`   | **Permanent**, and **supersedes** `enslaved shadow`.            |
 
@@ -125,7 +125,7 @@ tick-cap-fallback pattern of
 `_control_on_left` removes the oldest matching entry via `_remove_first_by_name`
 (which already surfaces the `char_ui(..., "down")` line), then persists and emits
 `charms_changed`; with none tracked it is a no-op. Permanent controlled mobs
-have no leave line — they are dropped only by the X.
+have no leave line — they are dropped only by the ×.
 
 See [ADR 0124](decisions/0124-controlled-without-charm-followers.md) for the
 design rationale (one matcher with in-handler name dispatch over a separate
@@ -157,7 +157,7 @@ Array of currently-charmed mob entries:
 ```
 
 `id` is assigned from a module-local `_next_id` counter, used by the buffs
-pane's click-to-drop X to target a specific entry. It is **never reused within a
+pane's click-to-drop × to target a specific entry. It is **never reused within a
 session**; on reload `_next_id` is restored past the highest persisted id so a
 restored charm and a freshly-landed one never collide.
 
@@ -197,7 +197,7 @@ touches disk.
 
 ## Click-to-drop
 
-The buffs pane's X invokes `_cp_charm_drop <id>` (a `#alias` registered
+The buffs pane's × invokes `_cp_charm_drop <id>` (a `#alias` registered
 alongside the actions), which calls `charm_drop(id)`. `charm_drop` removes the
 matching entry by id, persists, emits `charms_changed`, and surfaces
 `char_ui("charm", name, "down")` — it **sends nothing to the game** (it only
@@ -212,7 +212,7 @@ yet solved. The drop itself works correctly.
 
 `state.char.charms` is serialised into `bridge/runtime/buffs.state` and rendered
 by the buffs pane as a one-per-row group with no bar (name · count-up minutes ·
-drop X). See [docs/buffs-pane.md](buffs-pane.md) for the cell appearance and
+drop ×). See [docs/buffs-pane.md](buffs-pane.md) for the cell appearance and
 palette.
 
 Landing and removal surface to the UI pane via

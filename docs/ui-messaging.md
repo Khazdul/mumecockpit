@@ -170,7 +170,7 @@ Prose form: `◆ TAG: name verb.` or `◆ TAG: name verb (detail).` Trailing per
 
 | Verb        | Meaning                                  | Emitters                  |
 |-------------|------------------------------------------|---------------------------|
-| `up`        | Effect became active                     | affects (init), blinds (landing), charm (landing), herblore (add) |
+| `up`        | Effect became active                     | affects (init), blinds (landing), charm (landing), herblore (add / phase transition) |
 | `refreshed` | Effect re-applied while already active   | affects (refresh)         |
 | `expiring`  | Effect about to drop (**reserved**)      | *(none yet)*              |
 | `down`      | Effect dropped                           | affects (drop), blinds (tick prune at 90 s), charm (tick prune at 99 m / explicit drop), herblore (final phase elapsed / manual remove) |

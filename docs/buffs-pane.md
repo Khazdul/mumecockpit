@@ -83,7 +83,7 @@ control-without-charm `wood elf`, which have a 99-min cap). The pane never reads
 those for a countdown — it displays a count-**up** of minutes from `started_at`.
 **Permanent** control-without-charm entries (`enslaved shadow`, `dreadful warg`)
 omit `expires_at`; the pane keys off its absence to show no minutes (see "Charm
-group"). `id` is the monotonic per-session id the click-to-drop X targets. A
+group"). `id` is the monotonic per-session id the click-to-drop × targets. A
 missing top-level `charms` key is treated as an empty array. See
 [docs/charm.md](charm.md).
 
@@ -205,22 +205,22 @@ The Charm group is the second exception to the grid: it renders **one entry per
 row, full width, with no bar**. Each row (`_charm_row_frags`) is laid out as:
 
 ```
-<name, left-justified>  <mins, right-justified width 3>  X
+<name, left-justified>  <mins, right-justified width 3>  ×
 ```
 
 - **Name** — light violet `#B388FF`. The **first letter is capitalised** and the
   inner case is preserved (mob long-names like `huge stone troll` →
   `Huge stone troll`), unlike the grid groups which upper-case the whole label.
-  Truncated from the right to `W - 6` columns (1 X + 1 gap + 3 mins + 1 gap).
+  Truncated from the right to `W - 6` columns (1 × + 1 gap + 3 mins + 1 gap).
 - **Minutes** — darker grey `#888888`, a count-**up** rendered as `Nm`
   right-justified in 3 columns (`" 0m"` … `"99m"`), computed as
   `min(99, int((now - started_at) // 60))` and capped at 99. A **permanent**
   controlled mob (`expires_at` absent) shows three blank spaces here instead, so
   timed and permanent rows keep an identical column layout.
-- **X** — a clickable drop control in muted red `#CC5555`, brightening to
+- **×** — a clickable drop control in muted red `#CC5555`, brightening to
   `#E88888` while the pointer hovers over it (the `_hover_charm_id` cue).
 
-**Click-to-drop.** Clicking the X calls `_send_charm_drop(id)`, which invokes
+**Click-to-drop.** Clicking the × calls `_send_charm_drop(id)`, which invokes
 `_cp_charm_drop <id>` in the game/tt++ pane over the **same** `tmux send-keys`
 channel `input_pane.py` forwards keystrokes through (target `mume:cockpit.0`,
 one send-keys call with the line and `Enter`). The render loop never blocks on
@@ -250,8 +250,8 @@ fill/separator columns above. Its colours are per-fragment instead:
 |-----------------|-----------|------------------------------------------------|
 | Name            | `#B388FF` | light violet — matches the `◆ CHARM` UI tag    |
 | Minutes         | `#888888` | darker grey — count-up `Nm`                    |
-| Drop X          | `#CC5555` | muted red                                      |
-| Drop X (hover)  | `#E88888` | brighter than `#CC5555` — pointer-hover cue    |
+| Drop ×          | `#CC5555` | muted red                                      |
+| Drop × (hover)  | `#E88888` | brighter than `#CC5555` — pointer-hover cue    |
 
 Overflow indicator style: `fg:#d4a04e italic`.
 
@@ -287,8 +287,9 @@ a partial first row omits its trailing cells, or the grid is empty.
 - `[(C_ACCENT_BTN, "+", _open_handler)]` in grid mode.
 - `[(C_ACCENT_BTN, "×", _close_handler)]` in add mode.
 
-Both glyphs are ASCII/Latin-1 (+ = U+002B, × = U+00D7), single-width, so the
-1×1 corner never over- or under-flows its cell.
++ (ASCII, U+002B) and × (U+00D7) are single-width, so the 1×1 corner never
+over- or under-flows its cell; the close × is the same glyph the charm row uses
+to drop.
 
 The fragment carries an explicit gold **background**, so the Float renders as a
 filled gold button overwriting whatever cell sits beneath it (the bar colour is
@@ -338,6 +339,11 @@ rewrites `buffs.state`, same as the charm X.
 `_hover_charm_id`. When `_run_active` transitions True→False (disconnect), the
 poll loop resets `_view_mode` to `"grid"`, `_scroll_offset` to 0, and clears
 every hover global, so a disconnect mid-add-view returns to the grid.
+
+**Known limitation — off-pane edge.** Leaving the pane via an edge (e.g. moving
+up off the corner "+") freezes the last hover cue, because the terminal sends no
+mouse events once the pointer is off-pane. This is unavoidable and applies to
+every pane; moving anywhere within the pane clears it.
 
 ### Untracked affect cells
 
