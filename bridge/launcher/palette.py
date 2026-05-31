@@ -24,6 +24,7 @@ __all__ = [
     "_S_TRACK", "_S_MARKER", "_S_THUMB", "_S_TOTAL", "_S_ARROW",
     "_S_HINT", "_S_PVP", "_S_ALLY", "_S_STAR",
     "PANE_COLORS", "PANE_COLOR_ORDER", "pane_color_hex",
+    "PANE_COLOR_LABELS", "pane_color_label",
     "TIMERS_COLOR_ORDER", "timers_color_hex", "timers_color_index",
     "TTPP_COLOR_STYLES", "TTPP_COLOR_NAMES",
     "C_SYN_COMMAND", "C_SYN_BRACE", "C_SYN_DELIM", "C_SYN_VAR", "C_SYN_CODE",
@@ -222,6 +223,21 @@ def pane_color_hex(name):
     """Resolve a pane-colour name to its hex string, or None for the terminal
     default. Unknown names fall back to black (i.e. None)."""
     return PANE_COLORS.get(name, None) if name in PANE_COLORS else None
+
+
+# Display labels decoupled from the stored colour names. The "black" column is
+# really "terminal default" (PANE_COLORS["black"] is None → open_pane.sh maps
+# it to bg=default), so it shows the terminal background rather than literal
+# black; label it "Term" to match. Names absent from this map fall back to
+# their capitalised key. The stored value and startup.conf schema keep using
+# the "black" key — only the presentation changes.
+PANE_COLOR_LABELS = {"black": "Term"}
+
+
+def pane_color_label(name):
+    """Display label for a pane-colour name. Falls back to the capitalised
+    name for any colour without an explicit label override."""
+    return PANE_COLOR_LABELS.get(name, name.capitalize())
 
 
 # ---------------------------------------------------------------------------

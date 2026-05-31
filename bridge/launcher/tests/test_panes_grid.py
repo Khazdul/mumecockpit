@@ -162,6 +162,37 @@ class TestFragmentsCellColourPrecedence(unittest.TestCase):
         styles = list(_styles_for_text(frags, "Purple"))
         self.assertEqual(styles, [C_HINT])
 
+    def test_first_header_label_is_term(self):
+        # The terminal-default column (internal name "black") is labelled
+        # "Term", centred in the 6-cell column.
+        frags = panes_grid.panes_grid_fragments(
+            _sample_rows(), term_cols=120, cursor=None,
+        )
+        styles = list(_styles_for_text(frags, " Term "))
+        self.assertEqual(styles, [C_HINT])
+        # And no column is labelled "Black" any more.
+        self.assertEqual(list(_styles_for_text(frags, "Black")), [])
+
+    def test_terminal_default_enabled_swatch_is_no_fill(self):
+        # Row 0 (Character / enabled / colour 0 = terminal default). Its
+        # swatch must render as three plain spaces with no bg style so the
+        # preview matches the terminal background (bg=default), not #000000.
+        frags = panes_grid.panes_grid_fragments(
+            _sample_rows(), term_cols=120, cursor=None,
+        )
+        swatch_styles = _row_swatch_styles(frags, row_idx=0)
+        # Column 0 is the terminal-default swatch — no-fill (empty style).
+        self.assertEqual(swatch_styles[0], "")
+        # Other columns on the enabled row keep their bg:hex fg:hex fill.
+        for s in swatch_styles[1:]:
+            self.assertNotEqual(s, "")
+            self.assertIn("bg:", s)
+        # No swatch anywhere paints the old literal-black fill.
+        self.assertEqual(
+            list(_styles_for_text(frags, "███")).count("bg:#000000 fg:#000000"),
+            0,
+        )
+
     def test_cell_handler_attaches_three_tuples(self):
         captured = []
 
@@ -186,10 +217,11 @@ class TestFragmentsCellColourPrecedence(unittest.TestCase):
             if len(f) == 3 and f[1] in ("[X]", "[ ]") and f[2] == "h-0-0"
         ]
         self.assertEqual(len(row0_brackets), 1)
-        # And the matching swatch.
+        # And the matching swatch. Row 0 column 0 is the terminal-default
+        # column, whose swatch renders as three spaces rather than "███".
         row0_swatch = [
             f for f in frags
-            if len(f) == 3 and f[1] == "███" and f[2] == "h-0-0"
+            if len(f) == 3 and f[1] == "   " and f[2] == "h-0-0"
         ]
         self.assertEqual(len(row0_swatch), 1)
 
@@ -216,17 +248,26 @@ def _row_bracket_styles(frags, row_idx):
 
 
 def _row_swatch_styles(frags, row_idx):
+    """Return the styles of the seven swatch fragments on the given row.
+
+    A swatch is the fragment immediately following each bracket fragment.
+    Matching positionally (rather than on the "███" glyph) lets this find
+    the terminal-default swatch too, which renders as three spaces.
+    """
     styles = []
     rows_seen = -1
+    prev_was_bracket = False
     for f in frags:
         text = f[1] if len(f) >= 2 else ""
         if text == "\n":
             rows_seen += 1
+            prev_was_bracket = False
             continue
         if rows_seen != row_idx:
             continue
-        if text == "███":
+        if prev_was_bracket:
             styles.append(f[0])
+        prev_was_bracket = text in ("[X]", "[ ]")
     return styles
 
 

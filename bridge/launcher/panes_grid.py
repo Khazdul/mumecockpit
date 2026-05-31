@@ -13,6 +13,7 @@ from palette import (
     C_PANE_OFF,
     PANE_COLOR_ORDER,
     pane_color_hex,
+    pane_color_label,
 )
 
 __all__ = ["panes_grid_fragments", "apply_cell_toggle", "grid_width"]
@@ -83,7 +84,7 @@ def panes_grid_fragments(rows, term_cols, cursor, cell_handler=None):
     for ci, name in enumerate(PANE_COLOR_ORDER):
         if ci > 0:
             frags.append(("", " " * _COL_GAP))
-        frags.append((C_HINT, _centre_in(name.capitalize(), _CELL_W)))
+        frags.append((C_HINT, _centre_in(pane_color_label(name), _CELL_W)))
     frags.append(("", "\n"))
 
     # Pane rows.
@@ -108,16 +109,19 @@ def panes_grid_fragments(rows, term_cols, cursor, cell_handler=None):
             else:
                 bracket_style = C_ACTIVE if checked else C_HINT
 
-            swatch_style = C_PANE_OFF if not enabled else _enabled_swatch_style(ci)
+            if not enabled:
+                swatch_style, swatch_text = C_PANE_OFF, "███"
+            else:
+                swatch_style, swatch_text = _enabled_swatch(ci)
             bracket = "[X]" if checked else "[ ]"
 
             if cell_handler is not None:
                 h = cell_handler(ri, ci)
                 frags.append((bracket_style, bracket, h))
-                frags.append((swatch_style, "███", h))
+                frags.append((swatch_style, swatch_text, h))
             else:
                 frags.append((bracket_style, bracket))
-                frags.append((swatch_style, "███"))
+                frags.append((swatch_style, swatch_text))
         frags.append(("", "\n"))
 
     return frags
@@ -131,12 +135,18 @@ def _centre_in(text, width):
     return " " * left + text + " " * (pad - left)
 
 
-def _enabled_swatch_style(colour_index):
+def _enabled_swatch(colour_index):
+    """Return ``(style, text)`` for an enabled-row swatch in the given column.
+
+    Solid fill — both fg and bg painted with the same hex so the cell reads as
+    a flat colour block regardless of the terminal's default bg. The terminal-
+    default column (``pane_color_hex`` is None) instead renders three plain
+    spaces with no bg style, so the swatch matches the actual terminal
+    background the pane will take on (bg=default) rather than a misleading
+    literal black. Selection stays visible via the gold cursor brackets / [X].
+    """
     name = PANE_COLOR_ORDER[colour_index]
     hex_color = pane_color_hex(name)
-    # Solid fill — both fg and bg painted with the same hex so the cell
-    # reads as a flat colour block regardless of the terminal's default
-    # bg. Black stays literally black so it pops against the terminal.
     if hex_color is None:
-        return "bg:#000000 fg:#000000"
-    return f"bg:{hex_color} fg:{hex_color}"
+        return "", "   "
+    return f"bg:{hex_color} fg:{hex_color}", "███"

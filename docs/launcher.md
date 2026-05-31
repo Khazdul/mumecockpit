@@ -1280,7 +1280,10 @@ and pops back to `main`.
 Single frame for the Panes submenu. Renders a **pane × colour grid**
 where rows are the six right-column panes (Character / Buffs / Group /
 Communication / UI / Developer) and columns are the seven palette
-entries (Black / Red / Green / Blue / Grey / Orange / Purple). Below
+entries (Term / Red / Green / Blue / Grey / Orange / Purple). The first
+column's internal name is still `black` — only its **display label** is
+`Term`, reflecting that it maps to `bg=default` (the terminal
+background) rather than literal black. Below
 the grid sit a blank row, a `[X] Display pane headers` toggle, a blank
 row, and `Back`. The frame uses the `menu_chrome.title_block` /
 `footer_block` helpers (`blank_above=2`) and the shared
@@ -1338,9 +1341,16 @@ popup. Three entries:
   (gold fg); else on an enabled row, checked `[X]` → `C_ACTIVE`,
   unchecked `[ ]` → `C_HINT`; on a disabled row, label / brackets /
   swatch all paint `C_PANE_OFF`, except the cursor cell's brackets
-  which stay gold. The colour-name header row paints in `C_HINT`.
-  When `cell_handler` is provided the cell fragments are emitted as
-  3-tuples carrying the returned mouse handler; otherwise as 2-tuples.
+  which stay gold. Enabled swatches paint `bg:hex fg:hex` as a solid
+  block, **except** the terminal-default column (`pane_color_hex` is
+  `None`), which renders three plain spaces with no bg style so the
+  preview matches the terminal background the pane will actually take
+  on (`bg=default`); selection there stays visible via the gold cursor
+  brackets / `[X]`. Header labels come from `pane_color_label(name)`
+  (so the `black` column shows `Term`); the header row paints in
+  `C_HINT`. When `cell_handler` is provided the cell fragments are
+  emitted as 3-tuples carrying the returned mouse handler; otherwise as
+  2-tuples.
 - `apply_cell_toggle(enabled, colour_index, col)` — pure state
   transition. Returns `(False, colour_index)` when the clicked column
   matches the active colour of an on pane; otherwise `(True, col)`.
@@ -1350,7 +1360,7 @@ popup. Three entries:
 The launcher and the popup both read / write the existing
 `startup.conf` keys — `show_<key>` and `pane_color_<key>`. The grid
 model maps `show_<key>=1` with an empty or unknown `pane_color_<key>`
-to the Black column.
+to the terminal-default column (internal name `black`, labelled `Term`).
 
 Tests live in `bridge/launcher/tests/test_panes_grid.py` and run
 without prompt_toolkit installed.
@@ -1363,17 +1373,22 @@ start path that applies the colour to a freshly opened tmux pane). The
 two lists must stay in sync; an unknown name in `startup.conf` falls
 back to `bg=default` and logs a debug line.
 
-| Name     | Hex       | tmux bg          |
-|----------|-----------|------------------|
-| `black`  | —         | `bg=default`     |
-| `red`    | `#1a0e0e` | `bg=#1A0E0E`     |
-| `green`  | `#0e1a0e` | `bg=#0E1A0E`     |
-| `blue`   | `#0e141c` | `bg=#0E141C`     |
-| `grey`   | `#161616` | `bg=#161616`     |
-| `orange` | `#1c140a` | `bg=#1C140A`     |
-| `purple` | `#16101c` | `bg=#16101C`     |
+| Name     | Label  | Hex       | tmux bg          |
+|----------|--------|-----------|------------------|
+| `black`  | `Term` | —         | `bg=default`     |
+| `red`    | `Red`    | `#1a0e0e` | `bg=#1A0E0E`     |
+| `green`  | `Green`  | `#0e1a0e` | `bg=#0E1A0E`     |
+| `blue`   | `Blue`   | `#0e141c` | `bg=#0E141C`     |
+| `grey`   | `Grey`   | `#161616` | `bg=#161616`     |
+| `orange` | `Orange` | `#1c140a` | `bg=#1C140A`     |
+| `purple` | `Purple` | `#16101c` | `bg=#16101C`     |
 
 `PANE_COLOR_ORDER` in `palette.py` defines the grid's column order.
+Column labels come from `PANE_COLOR_LABELS` / `pane_color_label(name)`
+(the same `palette.py`): only `black` overrides its label (→ `Term`);
+every other column falls back to its capitalised name. The stored value
+and the `pane_color_<key>` schema keep using the lowercase keys above,
+so existing configs load unchanged.
 
 The `C_PANE_OFF` palette token (also in `palette.py`) is the dim grey
 painted across every cell of a disabled grid row — label, brackets,
