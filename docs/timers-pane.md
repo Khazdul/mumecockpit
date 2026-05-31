@@ -215,9 +215,19 @@ still means a charm content row is topmost.
 | Blinds  | `blinds`        | all entries                                        |
 | Charm   | `charms`        | all entries (one per row, after Blinds)            |
 
-Each group lays out `layout[type].cols` entries per row (the shipped defaults are
-4 for spells/buffs/debuffs/stored, 2 for **Blinds**, and 1 for **Charm**; see
-[Layout config](#layout-config-timers_layoutconf)). A group with
+Each group lays out up to `layout[type].cols` entries per row. The configured
+`cols` is a **ceiling, not a fixed division**: a group renders
+`effective_cols = min(layout[type].cols, max(1, n_items))` columns, so a group
+with fewer items than its cap fills the width with that many columns (a lone item
+spans the full width); only at or above the cap does it use the full cap, with
+extra rows. `effective_cols` is computed once per rendered group inside
+`_rendered_groups` (via `_effective_cols`) and returned as the third tuple field,
+so `_build_all_rows`, `_total_rows`, and the charm-corner yield all share the same
+value and stay in lockstep. The shipped caps are 4 for spells/buffs/debuffs/stored,
+2 for **Blinds**, and 1 for **Charm** (see
+[Layout config](#layout-config-timers_layoutconf)); the layout menu's "Cols" digit
+shows the cap even when the pane currently renders fewer columns because there are
+fewer items — that is expected, not a bug. A group with
 `layout[type].enabled == 0` produces no rows at all.
 
 ### Sort within a group
@@ -247,7 +257,8 @@ sits at the top of the group.
 ### Grid layout
 
 Terminal width `W = _term_cols()`, height `H = _term_rows()`, `n` cells per row
-(`n = layout[type].cols` for the group).
+(`n = effective_cols` for the group — the cap min the item count; see
+[Grouping](#grouping)).
 
 Cell width distribution (left to right) is computed by the shared `_cell_widths(W, n)`:
 
@@ -268,12 +279,14 @@ populated cell's separator.
 
 ### Blinds two-up layout
 
-The Blinds group ships with **2 cells per row** (the `blind` cols default) so the
+The Blinds group ships with a **2-cell cap** (the `blind` cols default) so the
 wider mob names fit. The cell content is identical to every other group's, so the
 Blinds branch of `_build_all_rows` reuses the shared `_cell_frags` renderer and
-the shared `_cell_widths(W, n)` helper; it just passes `n = layout["blind"].cols`.
-The column count is configurable like every other group (clamped to `[1, 6]`); 2
-is only the default.
+the shared `_cell_widths(W, n)` helper; it just passes `n = effective_cols`. The
+cap is configurable like every other group (clamped to `[1, 6]`); 2 is only the
+default. Because the cap is a ceiling, a **lone blind spans the full width**
+(`effective_cols = min(2, 1) = 1`) rather than taking a half-width cell with a
+blank beside it.
 
 Each block occupies `cell_w` columns with the standard cell content —
 `NAME.upper()[:cell_w-1].ljust(cell_w-1)` plus the `▌` separator — and inherits
@@ -287,16 +300,19 @@ the last row; the row ends after that block's separator.
 
 ### Charm group
 
-The Charm group renders **with no bar**, `layout["charm"].cols` cells per row
-(default 1, clamped to `[1, 2]`). Each cell (`_charm_cell_frags(entry, cell_w,
-name_fg)`) is laid out, over its `cell_w` from `_cell_widths(W, charm_cols)`, as:
+The Charm group renders **with no bar**, up to `layout["charm"].cols` cells per
+row (default cap 1, clamped to `[1, 2]`). Each cell (`_charm_cell_frags(entry,
+cell_w, name_fg)`) is laid out, over its `cell_w` from
+`_cell_widths(W, effective_cols)`, as:
 
 ```
 <name, left-justified>  <mins, right-justified width 3>  ×
 ```
 
-At `charm_cols = 1` each cell spans the full width and the result is identical to
-the historic one-per-row layout. At `charm_cols = 2` charmies lay out two per row
+At an effective 1 column each cell spans the full width and the result is
+identical to the historic one-per-row layout — so a **lone charm** at cap 2 also
+spans the full width (`effective_cols = min(2, 1) = 1`). At an effective 2 columns
+charmies lay out two per row
 (mirroring the blinds two-up branch); each cell's × carries its own drop handler
 for that charm's id, with per-cell hover via `_hover_charm_id`.
 
@@ -408,7 +424,9 @@ suppressed case as a belt-and-braces guard.
 `_corner_visible()` returns `False` when not `_run_active`, `True` in add mode,
 and in grid mode `not _charm_row_at_top()`. The charm-row-at-top test is factored
 into `_charm_row_at_top()`, shared by `_corner_visible` and `_corner_text` so the
-two never diverge: with `charm_row_count = ceil(len(charms) / charm_cols)` and
+two never diverge: with `charm_row_count = ceil(len(charms) / charm_cols)` —
+where `charm_cols = _effective_cols("charm", len(charms))`, the same cap-min-count
+value `_rendered_groups` feeds `_total_rows` — and
 `first_charm_row = total_rows - charm_row_count`, it is `True` when charms exist
 (and the charm group is enabled) and `_scroll_offset >= first_charm_row`. The +
 reappears automatically once the charm group empties, is disabled, or is scrolled

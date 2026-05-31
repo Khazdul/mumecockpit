@@ -277,23 +277,35 @@ def _split_groups():
     return spells, buffs, debuffs, stored, blinds, charms
 
 
+def _effective_cols(typ, n_items):
+    """The number of columns a group actually renders: its configured cap capped
+    by the live item count, so a group with fewer items than its cap fills the
+    width with that many columns (a lone item spans the full width). At or above
+    the cap it uses the full cap, with extra rows. The stored cap is unchanged —
+    it remains the ceiling shown in the layout menu's "Cols" digit."""
+    return min(_layout[typ]["cols"], max(1, n_items))
+
+
 def _rendered_groups(spells, buffs, debuffs, stored, blinds, charms):
-    """Ordered list of (items, typ) for each group that actually renders — i.e.
-    is enabled AND non-empty. The single source of truth for both the header-row
-    placement in _build_all_rows and the header-row count in _total_rows, so the
-    overflow indicator, scroll clamp, and corner-yield never desync."""
+    """Ordered list of (items, typ, cols) for each group that actually renders —
+    i.e. is enabled AND non-empty. cols is the effective column count (the
+    configured cap min the item count, see _effective_cols), computed ONCE here
+    so every consumer (header placement in _build_all_rows, row count in
+    _total_rows, charm-corner yield) shares the same value and never desyncs the
+    overflow indicator, scroll clamp, or corner yield."""
     groups = (
         (spells,  "spell"),  (buffs,  "buff"),  (debuffs, "debuff"),
         (stored,  "stored"), (blinds, "blind"), (charms,  "charm"),
     )
-    return [(items, typ) for items, typ in groups
+    return [(items, typ, _effective_cols(typ, len(items)))
+            for items, typ in groups
             if items and _layout[typ]["enabled"]]
 
 
 def _total_rows(spells, buffs, debuffs, stored, blinds, charms):
     rendered = _rendered_groups(spells, buffs, debuffs, stored, blinds, charms)
-    body = sum(math.ceil(len(items) / _layout[typ]["cols"])
-               for items, typ in rendered)
+    body = sum(math.ceil(len(items) / cols)
+               for items, typ, cols in rendered)
     # Each rendered group contributes one header row when headers are on.
     headers_extra = len(rendered) if _headers else 0
     return body + headers_extra
@@ -438,13 +450,13 @@ def _charm_cell_frags(entry, cell_w, name_fg):
     return frags
 
 
-def _group_rows(items, typ, W):
+def _group_rows(items, typ, W, cols):
     """Render one group's items into a list of row fragment-lists. The cell
     style depends on the group: charms have no bar (name · mins · ×); stored
     splits tracked vs untracked-grey; spell/buff/debuff/blind use the themed
     bar, with an affect whose tracked is False rendered as the no-bar grey
-    variant (blinds never carry tracked, so they always take the bar)."""
-    cols   = _layout[typ]["cols"]
+    variant (blinds never carry tracked, so they always take the bar). cols is
+    the effective column count from _rendered_groups (the cap min item count)."""
     widths = _cell_widths(W, cols)
     n      = len(items)
     rows   = []
@@ -497,12 +509,12 @@ def _build_all_rows():
     W = max(4, _term_cols())
 
     all_rows = []
-    for items, typ in _rendered_groups(
+    for items, typ, cols in _rendered_groups(
             spells, buffs, debuffs, stored, blinds, charms):
         if _headers:
             label = f"{_GROUP_LABELS[typ]}:"[:W]   # left-aligned at col 0
             all_rows.append([(C_GROUP_HEADER_FG, label)])   # non-interactive
-        all_rows.extend(_group_rows(items, typ, W))
+        all_rows.extend(_group_rows(items, typ, W, cols))
 
     return all_rows
 
@@ -546,7 +558,10 @@ def _charm_row_at_top():
     charms = groups[5]
     if not (charms and _layout["charm"]["enabled"]):
         return False
-    charm_row_count = math.ceil(len(charms) / _layout["charm"]["cols"])
+    # Effective charm cols (cap min item count), matching _rendered_groups so the
+    # charm content-row count stays in lockstep with _total_rows / _build_all_rows.
+    charm_cols      = _effective_cols("charm", len(charms))
+    charm_row_count = math.ceil(len(charms) / charm_cols)
     first_charm_row = _total_rows(*groups) - charm_row_count
     return _scroll_offset >= first_charm_row
 
