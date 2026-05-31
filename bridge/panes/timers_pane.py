@@ -506,12 +506,40 @@ def _close_handler(mouse_event):
                 _app.invalidate()
 
 
+def _charm_row_at_top():
+    """True when the topmost *visible* grid row belongs to the charm group. In that
+    case the corner + must yield so the charm's own drop × (rendered by the grid
+    beneath the Float) is clickable. Shared by _corner_visible and _corner_text so
+    the two never diverge."""
+    groups = _split_groups()
+    charms = groups[5]
+    if not (charms and _layout["charm"]["enabled"]):
+        return False
+    charm_row_count = math.ceil(len(charms) / _layout["charm"]["cols"])
+    first_charm_row = _total_rows(*groups) - charm_row_count
+    return _scroll_offset >= first_charm_row
+
+
+def _corner_visible():
+    """Filter for the corner Float: True exactly when _corner_text yields a glyph.
+    When False the Float's ConditionalContainer collapses to zero size and paints
+    nothing, so a charm row's own × shows through and stays clickable (a fixed-size
+    Float never vacates its cell — returning [] alone leaves a blank cell that eats
+    the click)."""
+    if not _run_active:
+        return False
+    if _view_mode == "add":
+        return True
+    return not _charm_row_at_top()
+
+
 def _corner_text():
     """The position-pinned +/× corner control (owned by a top-right Float, not by
     any row). The fragment carries a gold fg and no bg, so the 1×1 Float renders
     the glyph on the terminal/pane background (no filled button); hover brightens
-    the glyph. + and × are ASCII/Latin-1, single-width. Blank when the run is
-    inactive; + (open add-view) in grid mode, × (return to grid) in add mode."""
+    the glyph. + and × are ASCII/Latin-1, single-width. Visibility is owned by the
+    _corner_visible filter; this returns [] in the suppressed cases as a belt-and-
+    braces guard. + (open add-view) in grid mode, × (return to grid) in add mode."""
     if not _run_active:
         return []
     if _view_mode == "add":
@@ -522,13 +550,8 @@ def _corner_text():
     # clickable — otherwise the + Float would sit over it. + reappears once the
     # charm group empties, is disabled, or is scrolled away from the top. The
     # add-view has no charm rows, so its close × (above) is unaffected.
-    groups = _split_groups()
-    charms = groups[5]
-    if charms and _layout["charm"]["enabled"]:
-        charm_row_count = math.ceil(len(charms) / _layout["charm"]["cols"])
-        first_charm_row = _total_rows(*groups) - charm_row_count
-        if _scroll_offset >= first_charm_row:
-            return []
+    if _charm_row_at_top():
+        return []
     style = C_ACCENT_HOVER_FG if _hover_plus else C_ACCENT_FG
     return [(style, "+", _open_handler)]
 
@@ -820,12 +843,15 @@ def main():
     corner_float = Float(
         top=0,
         right=0,
-        content=Window(
-            content=FormattedTextControl(_corner_text, focusable=False),
-            width=1,
-            height=1,
-            dont_extend_width=True,
-            dont_extend_height=True,
+        content=ConditionalContainer(
+            content=Window(
+                content=FormattedTextControl(_corner_text, focusable=False),
+                width=1,
+                height=1,
+                dont_extend_width=True,
+                dont_extend_height=True,
+            ),
+            filter=Condition(_corner_visible),
         ),
     )
     root = FloatContainer(

@@ -354,7 +354,8 @@ only the charm row's drop × is red.
 
 Both corner glyphs are owned by a single **position-pinned `Float`** at
 `top=0, right=0`, not by any row. The root is a `FloatContainer` wrapping the
-`HSplit([grid_window, indicator_container])` with one `corner_float` — a 1×1
+`HSplit([grid_window, indicator_container])` with one `corner_float`. Its content
+is a `ConditionalContainer(filter=Condition(_corner_visible))` wrapping a 1×1
 `Window` (`dont_extend_width`/`dont_extend_height`) whose `FormattedTextControl`
 calls `_corner_text`. Pinning to the pane's top-right (rather than overlaying the
 last cell of the first visible row) keeps the glyph in the true corner even when
@@ -369,16 +370,26 @@ a partial first row omits its trailing cells, or the grid is empty.
 
 **Yielding the corner to a charm's drop ×.** The + Float pins to `top=0, right=0`,
 the same cell a charm row's own × occupies when that row sits at the top of the
-grid window. To keep the charm × clickable, grid mode suppresses the + (returns
-`[]`) when a charm row holds the topmost visible cell. Concretely, with
-`charm_row_count = ceil(len(charms) / charm_cols)` and
-`first_charm_row = total_rows - charm_row_count`, the + is suppressed when charms
-exist (and the charm group is enabled) and `_scroll_offset >= first_charm_row`.
-The + reappears automatically once the charm group empties, is disabled, or is
-scrolled away from the top. The add-view × is unaffected — the add view has no
-charm rows. This also fixes a latent case: a player with **only** charmies active
-(no other timers) has `first_charm_row == 0`, so the + previously sat over their
-first charm ×; it now yields.
+grid window. A fixed-size 1×1 `Window` always reserves and paints its cell — even
+when `_corner_text` returns `[]`, the blank default-bg surface would sit over the
+charm's × and swallow the click. So **visibility is owned by the
+`_corner_visible` filter**, not by `_corner_text`: when the filter is `False` the
+`ConditionalContainer` collapses to zero size, the Float paints nothing, and the
+charm row's own × (already rendered by the grid beneath, with its drop handler)
+shows through and stays clickable. `_corner_text` still returns `[]` in the
+suppressed case as a belt-and-braces guard.
+
+`_corner_visible()` returns `False` when not `_run_active`, `True` in add mode,
+and in grid mode `not _charm_row_at_top()`. The charm-row-at-top test is factored
+into `_charm_row_at_top()`, shared by `_corner_visible` and `_corner_text` so the
+two never diverge: with `charm_row_count = ceil(len(charms) / charm_cols)` and
+`first_charm_row = total_rows - charm_row_count`, it is `True` when charms exist
+(and the charm group is enabled) and `_scroll_offset >= first_charm_row`. The +
+reappears automatically once the charm group empties, is disabled, or is scrolled
+away from the top. The add-view × is unaffected — the add view has no charm rows.
+This also covers the case of a player with **only** charmies active (no other
+timers): `first_charm_row == 0`, so the corner yields to their first charm × from
+the start.
 
 + (ASCII, U+002B) and × (U+00D7) are single-width, so the 1×1 corner never
 over- or under-flows its cell; the close × is the same glyph the charm row uses
