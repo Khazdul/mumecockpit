@@ -137,7 +137,14 @@ type:
 timers_<type>_enabled = 0 | 1
 timers_<type>_color   = #rrggbb
 timers_<type>_cols    = <int>
+timers_compact        = 0 | 1     # global, not per-type (default 1)
 ```
+
+`timers_compact` is a **global** toggle, not a per-type key: `1` (the default)
+is the historic dense layout (no blank line between groups); `0` inserts one
+blank line between consecutive rendered groups. Because it has no second
+underscore, every reader branches on the exact key `timers_compact` *before* the
+type-split (which would otherwise drop it); absent or unparseable → default `1`.
 
 Defaults (reproduce today's behaviour exactly):
 
@@ -157,8 +164,9 @@ default rather than failing the whole file.
 
 **Live re-read.** The poll loop tracks `timers_layout.conf`'s mtime alongside
 `timers.state`'s; on change it re-reads and invalidates, so a colour / cols /
-enabled edit re-colours, re-lays-out, or hides the matching group within ~100 ms
-with no restart. An absent file is treated as defaults, no crash.
+enabled / compact edit re-colours, re-lays-out, re-spaces, or hides the matching
+group within ~100 ms with no restart. An absent file is treated as defaults, no
+crash.
 
 **What the colour drives.** Each group's filled-cell style is `fg:#000000 bg:<hex>`
 and its separator is `fg:<hex>`. The charm group has no bar — its `color` themes
@@ -177,8 +185,15 @@ herblores.
 
 ### Grouping
 
-Groups are rendered top-to-bottom with no blank rows between them. Empty
-groups produce no rows.
+Groups are rendered top-to-bottom. Empty groups produce no rows. The vertical
+spacing between groups is governed by the global `timers_compact` toggle (see
+[Layout config](#layout-config-timers_layoutconf)): when compact (the default)
+there are no blank rows between groups; when off, one blank row is inserted
+between each pair of consecutive *rendered* groups (a group renders iff enabled
+and non-empty) — none before the first or after the last. `_build_all_rows` and
+`_total_rows` derive their separator placement and count from the same
+`_rendered_groups` list, so the overflow indicator, scroll clamp, and
+charm-corner yield stay in lockstep.
 
 | Group   | Source          | Condition                                          |
 |---------|-----------------|----------------------------------------------------|

@@ -101,6 +101,12 @@ _LAYOUT_DEFAULTS = {
     "blind":  {"enabled": True, "color": "#00cccc", "cols": 2},
     "charm":  {"enabled": True, "color": "#B388FF", "cols": 1},
 }
+# Vertical spacing between rendered groups. GLOBAL toggle (not per-type):
+# True (default) = historic dense layout, no blank line between groups; False =
+# one blank line between consecutive rendered groups. Restated here and in
+# bridge/launcher/timers_layout_grid.py — the two packages share no import path
+# (same cross-package reason as _LAYOUT_DEFAULTS; see ADR 0126).
+TIMERS_COMPACT_DEFAULT = True
 _COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 
 
@@ -119,13 +125,16 @@ def _load_layout():
     """Resolve the layout dict from _LAYOUT_DEFAULTS overridden by
     timers_layout.conf (key=value, one per line; same trivial format as
     startup.conf). Unknown keys are ignored; an unparseable value falls back to
-    that key's default. Keys: timers_<type>_{enabled,color,cols}."""
+    that key's default. Keys: timers_<type>_{enabled,color,cols} plus the
+    global timers_compact. Returns (layout, compact); an absent or unparseable
+    timers_compact resolves to TIMERS_COMPACT_DEFAULT."""
     layout = {t: dict(v) for t, v in _LAYOUT_DEFAULTS.items()}
+    compact = TIMERS_COMPACT_DEFAULT
     try:
         with open(TIMERS_LAYOUT_PATH, "r") as fh:
             raw = fh.read()
     except OSError:
-        return layout
+        return layout, compact
     for line in raw.splitlines():
         line = line.strip()
         if not line or line.startswith("#") or "=" not in line:
@@ -133,6 +142,12 @@ def _load_layout():
         key, _, val = line.partition("=")
         key = key.strip()
         val = val.strip()
+        # timers_compact is a global toggle with no second underscore, so it
+        # must branch before the type-split below (which would drop it).
+        if key == "timers_compact":
+            if val in ("0", "1"):
+                compact = (val == "1")
+            continue
         if not key.startswith("timers_"):
             continue
         rest = key[len("timers_"):]
@@ -152,7 +167,7 @@ def _load_layout():
             n = _clamp_cols(typ, val)
             if n is not None:
                 layout[typ]["cols"] = n
-    return layout
+    return layout, compact
 
 
 def _palette(typ):
@@ -161,7 +176,7 @@ def _palette(typ):
     return (C_CELL_FG + " bg:" + hex_, "fg:" + hex_)
 
 
-_layout            = _load_layout()
+_layout, _compact  = _load_layout()
 _last_layout_mtime = None
 
 _affects          = []
@@ -243,19 +258,25 @@ def _split_groups():
     return spells, buffs, debuffs, stored, blinds, charms
 
 
-def _total_rows(spells, buffs, debuffs, stored, blinds, charms):
-    def rows(items, typ):
-        if not items or not _layout[typ]["enabled"]:
-            return 0
-        return math.ceil(len(items) / _layout[typ]["cols"])
-    return (
-        rows(spells,  "spell")  +
-        rows(buffs,   "buff")   +
-        rows(debuffs, "debuff") +
-        rows(stored,  "stored") +
-        rows(blinds,  "blind")  +
-        rows(charms,  "charm")
+def _rendered_groups(spells, buffs, debuffs, stored, blinds, charms):
+    """Ordered list of (items, typ) for each group that actually renders — i.e.
+    is enabled AND non-empty. The single source of truth for both the separator
+    placement in _build_all_rows and the separator count in _total_rows, so the
+    overflow indicator, scroll clamp, and corner-yield never desync."""
+    groups = (
+        (spells,  "spell"),  (buffs,  "buff"),  (debuffs, "debuff"),
+        (stored,  "stored"), (blinds, "blind"), (charms,  "charm"),
     )
+    return [(items, typ) for items, typ in groups
+            if items and _layout[typ]["enabled"]]
+
+
+def _total_rows(spells, buffs, debuffs, stored, blinds, charms):
+    rendered = _rendered_groups(spells, buffs, debuffs, stored, blinds, charms)
+    body = sum(math.ceil(len(items) / _layout[typ]["cols"])
+               for items, typ in rendered)
+    separators = (len(rendered) - 1) if (not _compact and rendered) else 0
+    return body + separators
 
 
 def _cell_frags(entry, cell_w, palette):
@@ -397,81 +418,69 @@ def _charm_cell_frags(entry, cell_w, name_fg):
     return frags
 
 
+def _group_rows(items, typ, W):
+    """Render one group's items into a list of row fragment-lists. The cell
+    style depends on the group: charms have no bar (name · mins · ×); stored
+    splits tracked vs untracked-grey; spell/buff/debuff/blind use the themed
+    bar, with an affect whose tracked is False rendered as the no-bar grey
+    variant (blinds never carry tracked, so they always take the bar)."""
+    cols   = _layout[typ]["cols"]
+    widths = _cell_widths(W, cols)
+    n      = len(items)
+    rows   = []
+
+    if typ == "charm":
+        name_fg = "fg:" + _layout["charm"]["color"]
+        for row in range(math.ceil(n / cols)):
+            row_frags = []
+            for col in range(cols):
+                idx = row * cols + col
+                if idx >= n:
+                    break
+                row_frags.extend(_charm_cell_frags(items[idx], widths[col], name_fg))
+            rows.append(row_frags)
+        return rows
+
+    palette = _palette(typ)
+    for row in range(math.ceil(n / cols)):
+        row_frags = []
+        for col in range(cols):
+            idx = row * cols + col
+            if idx >= n:
+                break
+            entry = items[idx]
+            if typ == "stored":
+                if entry.get("tracked"):
+                    row_frags.extend(_cell_frags(entry, widths[col], palette))
+                else:
+                    row_frags.extend(_untracked_cell_frags(entry, widths[col]))
+            elif entry.get("tracked") is False:
+                row_frags.extend(_untracked_affect_cell_frags(entry, widths[col]))
+            else:
+                row_frags.extend(_cell_frags(entry, widths[col], palette))
+        rows.append(row_frags)
+    return rows
+
+
 def _build_all_rows():
     """Return every grid row as a list of fragment-lists (one per row).
 
     Column counts, colours, and per-group visibility come from _layout. A group
     with enabled == 0 is skipped entirely (no rows); since herblores fold into
-    the buff/debuff groups, disabling buff/debuff hides their herblores too."""
+    the buff/debuff groups, disabling buff/debuff hides their herblores too.
+    When _compact is False, one blank row ([] — an empty fragment-list) is
+    inserted between each pair of consecutive rendered groups (none before the
+    first or after the last). Separator placement is derived from the same
+    _rendered_groups list _total_rows counts, keeping the two in lockstep."""
     spells, buffs, debuffs, stored, blinds, charms = _split_groups()
     W = max(4, _term_cols())
 
     all_rows = []
-    for group, typ in ((spells, "spell"), (buffs, "buff"), (debuffs, "debuff")):
-        if not group or not _layout[typ]["enabled"]:
-            continue
-        palette = _palette(typ)
-        cols    = _layout[typ]["cols"]
-        widths  = _cell_widths(W, cols)
-        n = len(group)
-        for row in range(math.ceil(n / cols)):
-            row_frags = []
-            for col in range(cols):
-                idx = row * cols + col
-                if idx >= n:
-                    break
-                entry = group[idx]
-                if entry.get("tracked") is False:
-                    row_frags.extend(_untracked_affect_cell_frags(entry, widths[col]))
-                else:
-                    row_frags.extend(_cell_frags(entry, widths[col], palette))
-            all_rows.append(row_frags)
-
-    if stored and _layout["stored"]["enabled"]:
-        palette = _palette("stored")
-        cols    = _layout["stored"]["cols"]
-        widths  = _cell_widths(W, cols)
-        n = len(stored)
-        for row in range(math.ceil(n / cols)):
-            row_frags = []
-            for col in range(cols):
-                idx = row * cols + col
-                if idx >= n:
-                    break
-                entry = stored[idx]
-                if entry.get("tracked"):
-                    row_frags.extend(_cell_frags(entry, widths[col], palette))
-                else:
-                    row_frags.extend(_untracked_cell_frags(entry, widths[col]))
-            all_rows.append(row_frags)
-
-    if blinds and _layout["blind"]["enabled"]:
-        palette = _palette("blind")
-        cols    = _layout["blind"]["cols"]
-        widths  = _cell_widths(W, cols)
-        n = len(blinds)
-        for row in range(math.ceil(n / cols)):
-            row_frags = []
-            for col in range(cols):
-                idx = row * cols + col
-                if idx >= n:
-                    break
-                row_frags.extend(_cell_frags(blinds[idx], widths[col], palette))
-            all_rows.append(row_frags)
-
-    if charms and _layout["charm"]["enabled"]:
-        cols    = _layout["charm"]["cols"]
-        widths  = _cell_widths(W, cols)
-        name_fg = "fg:" + _layout["charm"]["color"]
-        n = len(charms)
-        for row in range(math.ceil(n / cols)):
-            row_frags = []
-            for col in range(cols):
-                idx = row * cols + col
-                if idx >= n:
-                    break
-                row_frags.extend(_charm_cell_frags(charms[idx], widths[col], name_fg))
-            all_rows.append(row_frags)
+    for i, (items, typ) in enumerate(
+            _rendered_groups(spells, buffs, debuffs, stored, blinds, charms)):
+        if i > 0 and not _compact:
+            all_rows.append([])   # blank separator row between groups
+        all_rows.extend(_group_rows(items, typ, W))
 
     return all_rows
 
@@ -739,7 +748,7 @@ async def _poll_state(app):
     global _affects, _stored_spells, _blinds, _charms, _herblores, _herblore_catalog
     global _last_mtime, _run_active, _scroll_offset
     global _view_mode, _hover_plus, _hover_herblore_key, _hover_close, _hover_charm_id
-    global _layout, _last_layout_mtime
+    global _layout, _compact, _last_layout_mtime
 
     while True:
         try:
@@ -748,7 +757,7 @@ async def _poll_state(app):
             layout_mtime = None
         if layout_mtime != _last_layout_mtime:
             _last_layout_mtime = layout_mtime
-            _layout = _load_layout()   # absent file → defaults; live re-colour / re-layout
+            _layout, _compact = _load_layout()   # absent file → defaults; live re-colour / re-layout / re-space
             app.invalidate()
 
         try:

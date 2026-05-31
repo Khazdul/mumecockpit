@@ -31,6 +31,7 @@ __all__ = [
     "TIMERS_LAYOUT_TYPES",
     "TIMERS_LAYOUT_LABELS",
     "TIMERS_LAYOUT_DEFAULTS",
+    "TIMERS_COMPACT_DEFAULT",
     "max_cols_for",
     "clamp_cols",
     "step_cols",
@@ -62,6 +63,13 @@ TIMERS_LAYOUT_DEFAULTS = {
     "blind":  {"enabled": True, "color": "#00cccc", "cols": 2},
     "charm":  {"enabled": True, "color": "#B388FF", "cols": 1},
 }
+
+# Vertical spacing between rendered timer groups. This is a GLOBAL toggle, not
+# a per-type key: True (default) reproduces the historic dense layout (no blank
+# line between groups); False inserts one blank line between consecutive
+# rendered groups. Restated here (and in bridge/panes/timers_pane.py) for the
+# same cross-package reason as TIMERS_LAYOUT_DEFAULTS — see ADR 0126.
+TIMERS_COMPACT_DEFAULT = True
 
 
 def max_cols_for(typ):
