@@ -50,9 +50,11 @@ local function serialize()
     local charms_out = {}
     for _, e in ipairs(charms) do
         charms_out[#charms_out + 1] = {
-            id         = e.id,
-            name       = e.name,
-            started_at = e.started_at,
+            id                = e.id,
+            name              = e.name,
+            started_at        = e.started_at,
+            expires_at        = e.expires_at or json.null,
+            expected_duration = e.expected_duration or json.null,
         }
     end
 
