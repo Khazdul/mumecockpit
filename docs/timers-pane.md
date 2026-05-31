@@ -140,16 +140,28 @@ timers_<type>_enabled = 0 | 1
 timers_<type>_color   = #rrggbb
 timers_<type>_cols    = <int>
 timers_headers        = 0 | 1     # global, not per-type (default 1)
+timers_compact        = 0 | 1     # global, not per-type (default 1)
 ```
 
-`timers_headers` is a **global** toggle, not a per-type key: `1` (the default)
-renders a dim `Group:` label row above each rendered group — the header row
-doubles as the separator, so there are no blank rows; `0` is the historic dense
-layout (no headers, no blanks). Because it has no second underscore, every reader
-branches on the exact key `timers_headers` *before* the type-split (which would
-otherwise drop it); absent or unparseable → default `1`. (This supersedes the
-former `timers_compact` blank-line toggle; a leftover `timers_compact` line in an
-existing config is harmlessly ignored — no migration.)
+`timers_headers` and `timers_compact` are **independent global** toggles, not
+per-type keys. Because neither has a second underscore, every reader branches on
+the exact key *before* the type-split (which would otherwise drop it); absent or
+unparseable → default `1`.
+
+- `timers_headers` (default `1`) governs the per-group dim `Group:` label row:
+  `1` renders it above each rendered group, `0` omits it.
+- `timers_compact` (default `1`) governs the blank separator between groups:
+  `1` is compact (no blank lines), `0` inserts one blank row between consecutive
+  rendered groups (none above the first or below the last).
+
+The four combinations:
+
+| headers | compact | layout |
+|---------|---------|--------|
+| 1 | 1 | header + content per group, no blank lines (the default / historic look) |
+| 1 | 0 | header + content per group, blank line between groups |
+| 0 | 1 | content only, fully dense |
+| 0 | 0 | content + blank line between groups, no headers |
 
 Defaults (reproduce today's behaviour exactly):
 
@@ -169,9 +181,9 @@ default rather than failing the whole file.
 
 **Live re-read.** The poll loop tracks `timers_layout.conf`'s mtime alongside
 `timers.state`'s; on change it re-reads and invalidates, so a colour / cols /
-enabled / headers edit re-colours, re-lays-out, toggles headers, or hides the
-matching group within ~100 ms with no restart. An absent file is treated as
-defaults, no crash.
+enabled / headers / compact edit re-colours, re-lays-out, toggles headers or the
+blank separators, or hides the matching group within ~100 ms with no restart. An
+absent file is treated as defaults, no crash.
 
 **What the colour drives.** Each group's filled-cell style is `fg:#000000 bg:<hex>`
 and its separator is `fg:<hex>`. The charm group has no bar — its `color` themes
@@ -190,23 +202,36 @@ herblores.
 
 ### Grouping
 
-Groups are rendered top-to-bottom. Empty groups produce no rows. Group header
-labels are governed by the global `timers_headers` toggle (see
-[Layout config](#layout-config-timers_layoutconf)): when headers are on (the
-default) a single dim `Group:` label row (`C_GROUP_HEADER_FG`, `fg:#606060`, fg
-only so it renders on the pane bg tint — the same mid grey as the status pane's
-data-row labels, `status_pane.C_LABEL`; keep the two in sync) is emitted
-immediately above each *rendered* group's
-content (a group renders iff enabled and non-empty), including the first — it
-doubles as the separator, so there are no blank rows. When off, today's dense
-layout: no headers, no blanks. `_build_all_rows` and `_total_rows` derive their
-header placement and count from the same `_rendered_groups` list — each rendered
-group contributes one header row when headers are on
-(`headers_extra = n_rendered`) — so the overflow indicator, scroll clamp, and
-charm-corner yield stay in lockstep. The charm corner-yield is unaffected:
-`charm_content_rows` stays content-only, so with headers on the `Charmies:`
-header sits at `first_charm_row - 1` and `_scroll_offset >= first_charm_row`
-still means a charm content row is topmost.
+Groups are rendered top-to-bottom (a group renders iff enabled and non-empty).
+Empty groups produce no rows. Two independent global toggles shape the layout
+(see [Layout config](#layout-config-timers_layoutconf)):
+
+- `timers_headers` — when on (the default), a single dim `Group:` label row
+  (`C_GROUP_HEADER_FG`, `fg:#606060`, fg only so it renders on the pane bg tint —
+  the same mid grey as the status pane's data-row labels, `status_pane.C_LABEL`;
+  keep the two in sync) is emitted immediately above each rendered group's
+  content, including the first.
+- `timers_compact` — when off, a single blank row is emitted before each rendered
+  group except the first (`n_rendered - 1` separators), so consecutive groups are
+  visually separated. When on (the default), no blank rows.
+
+Per rendered group, `_build_all_rows` emits in order: the blank separator (if
+compact is off and not the first group), the header row (if headers are on), then
+the content rows. `_build_all_rows` and `_total_rows` derive their placement and
+counts from the same `_rendered_groups` list:
+
+```
+content = sum(content rows per rendered group)
+headers = n_rendered          if headers on    else 0
+blanks  = n_rendered - 1      if compact off   else 0   (and n_rendered > 0)
+_total_rows = content + headers + blanks
+```
+
+so the overflow indicator, scroll clamp, and charm-corner yield stay in lockstep.
+The charm corner-yield is unaffected: `charm_content_rows` stays content-only, and
+since charm is the last rendered group, its header (if on) and the blank before it
+(if compact off) are counted in `_total_rows` and sit before the charm content, so
+`_scroll_offset >= first_charm_row` still means a charm content row is topmost.
 
 | Group   | Source          | Condition                                          |
 |---------|-----------------|----------------------------------------------------|

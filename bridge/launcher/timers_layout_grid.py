@@ -32,6 +32,7 @@ __all__ = [
     "TIMERS_LAYOUT_LABELS",
     "TIMERS_LAYOUT_DEFAULTS",
     "TIMERS_HEADERS_DEFAULT",
+    "TIMERS_COMPACT_DEFAULT",
     "max_cols_for",
     "clamp_cols",
     "step_cols",
@@ -71,6 +72,14 @@ TIMERS_LAYOUT_DEFAULTS = {
 # here (and in bridge/panes/timers_pane.py) for the same cross-package reason as
 # TIMERS_LAYOUT_DEFAULTS — see ADR 0126.
 TIMERS_HEADERS_DEFAULT = True
+
+# Blank line between rendered groups. GLOBAL toggle, INDEPENDENT of headers:
+# True (default) = compact, no blank lines between groups; False = one blank
+# row separates consecutive rendered groups. The four headers×compact
+# combinations are documented in docs/timers-pane.md. Restated here (and in
+# bridge/panes/timers_pane.py) for the same cross-package reason as
+# TIMERS_LAYOUT_DEFAULTS — see ADR 0126.
+TIMERS_COMPACT_DEFAULT = True
 
 
 def max_cols_for(typ):

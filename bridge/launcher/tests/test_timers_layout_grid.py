@@ -8,6 +8,8 @@ import sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from timers_layout_grid import (  # noqa: E402
+    TIMERS_COMPACT_DEFAULT,
+    TIMERS_HEADERS_DEFAULT,
     TIMERS_LAYOUT_DEFAULTS,
     TIMERS_LAYOUT_LABELS,
     TIMERS_LAYOUT_TYPES,
@@ -95,6 +97,13 @@ def test_defaults_land_on_palette_swatches():
         hx = TIMERS_LAYOUT_DEFAULTS[typ]["color"]
         assert timers_color_index(hx) is not None
         assert timers_color_hex(timers_color_index(hx)).lower() == hx.lower()
+
+
+def test_global_toggle_defaults():
+    # Fresh install (no conf) renders headers on + compact on — identical to
+    # the historic dense layout (header + content per group, no blank lines).
+    assert TIMERS_HEADERS_DEFAULT is True
+    assert TIMERS_COMPACT_DEFAULT is True
 
 
 # ── grid fragments ─────────────────────────────────────────────────────
