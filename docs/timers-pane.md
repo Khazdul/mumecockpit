@@ -685,7 +685,7 @@ vertical order.
 
 ## Default height
 
-`desired_timers=5` in `bridge/runtime/layout.conf` (content rows, excludes
+`desired_timers=8` in `bridge/runtime/layout.conf` (content rows, excludes
 title row). Cold start and WINCH size the pane from this value via the
 per-pane allocation algorithm in [ADR 0071](decisions/0071-per-pane-desired-heights.md);
 mid-session drag adjusts the height freely and the new value persists as
