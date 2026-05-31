@@ -71,9 +71,10 @@ local function serialize()
         }
     end
 
-    -- Static catalog keys for PR 2's add-view. herblores.lua loads after this
-    -- file alphabetically, so the global may be absent on the initial serialize
-    -- (before any character connects); guard and emit [] until it exists.
+    -- Static catalog keys for PR 2's add-view. herblores.lua (h) loads before
+    -- this file (t) alphabetically, so herblore_catalog_keys is normally defined
+    -- when the initial serialize runs; the guard is now defensive only (kept in
+    -- case the global is ever absent) and no longer load-bearing.
     local herblore_catalog =
         (type(herblore_catalog_keys) == "function") and herblore_catalog_keys() or {}
 
@@ -111,7 +112,10 @@ events.subscribe("herblores_changed",      serialize)
 events.subscribe("char_reset",             function() serialize() end)
 events.subscribe("gmcp_char_name",         function() serialize() end)
 
--- Initial write so the renderer has a file on first start.
+-- Initial write so the renderer has a file on first start. This is correct
+-- precisely because this module loads last (after all producers have restored):
+-- the subscriber above loads after the producers' restore-time emits, so without
+-- this call timers.state would stay empty until the first runtime *_changed emit.
 serialize()
 
 dbg("[TIMERS_STATE] loaded")

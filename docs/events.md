@@ -120,10 +120,11 @@ after all core modules and subscribe last.
 Detailed subscriber lists for the high-traffic events:
 
 **`gmcp_char_name`** — `lua/core/affects.lua` (re-init affects, load
-persisted data), `lua/core/timers_state.lua` (serialize), `lua/core/comm_store.lua`
+persisted data), `lua/core/comm_store.lua`
 (init per-character archive), `lua/core/server_prefs.lua` (assert width),
 `lua/core/status_state.lua` (serialize), `lua/core/stored_spells.lua`
-(re-init stored spells, load persisted data).
+(re-init stored spells, load persisted data), `lua/core/timers_state.lua`
+(serialize).
 
 **`gmcp_char_vitals`** — `lua/core/run_log.lua` (write deferred run_start row on
 first tick), `lua/core/run_state.lua` (update XP/TP baseline; emit `tp_gained`
@@ -173,10 +174,10 @@ wiping all non-function keys from `state.char`. No payload. Called from
 `mark_mume_disconnected()` in `lua/brain.lua`.
 
 **Subscribers:** `lua/core/affects.lua` (cancel the affects tick timer),
-`lua/core/timers_state.lua` (serialize blank timers.state),
 `lua/core/group_collector.lua` (calls `state.group.reset()`, which wipes members and emits `group_changed`),
 `lua/core/group_state.lua` (serialize blank group.state),
-`lua/core/status_state.lua` (serialize blank status.state).
+`lua/core/status_state.lua` (serialize blank status.state),
+`lua/core/timers_state.lua` (serialize blank timers.state).
 
 ### `group_changed`
 
