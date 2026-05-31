@@ -321,18 +321,20 @@ when `state.char.race` lowercases to `"troll"`. Sanity check: at level 5 with
 
 ### Pane position
 
-Right column (top to bottom): `status` → `timers` → `comm` → `ui` → `dev`. Status stays at the top
-of the right column whenever it exists.
+Right column (top to bottom): `status` → `timers` → `group` → `comm` → `ui` →
+`dev`. Status is always the topmost right-column pane whenever it exists.
 
 ### Pane height
 
-The status pane participates in the right-column per-pane desired-height
-allocation (ADR 0071). Current rendered content is ≤ 6 rows (2 progress-bar
-rows + 1 toggle row + 1 blank separator + 2 data rows). Cold start and WINCH
-size the pane from `desired_status` in `bridge/runtime/layout.conf`
-(default 6; floor `MIN_HEIGHT[status]=2`); mid-session drag adjusts the
-height freely and the new value persists for the next cold start
-(ADR 0030 + ADR 0071).
+`desired_status` in `bridge/runtime/layout.conf` (default 6; content rows,
+excludes the title row). Cold start and WINCH size the pane from this value via
+the per-pane allocation algorithm in
+[ADR 0071](decisions/0071-per-pane-desired-heights.md). Status carries
+`MIN_HEIGHT[status]=2` — the only right-column pane held above the shared 1-row
+floor (current content is 6 rows: 2 progress-bar rows + 1 toggle row + 1 blank
+separator + 2 data rows). Mid-session drag adjusts the height freely and the new
+value persists as the next `desired_status` via `on_pane_resize.sh`;
+`cp -reset-heights` restores the shipped default.
 
 ### Width constraint
 
