@@ -286,7 +286,7 @@ def _send_herblore(action, key):
 
 
 def _charm_row_frags(entry, W):
-    """One charm per row, full width, no bar: name (violet) · mins (grey) · X (red)."""
+    """One charm per row, full width, no bar: name (violet) · mins (grey) · × (red)."""
     cid        = entry.get("id")
     name       = entry.get("name", "")
     started_at = entry.get("started_at")
@@ -316,7 +316,7 @@ def _charm_row_frags(entry, W):
                 _hover_charm_id = _cid
                 if _app:
                     _app.invalidate()
-    frags.append((x_style, "X", _x_handler))
+    frags.append((x_style, "×", _x_handler))
     return frags
 
 
@@ -571,7 +571,7 @@ def _indicator_text():
 class ListControl(FormattedTextControl):
     def mouse_handler(self, mouse_event):
         global _scroll_offset, _hover_charm_id, _hover_plus, _hover_herblore_key, _hover_close
-        # Let fragment handlers (the charm X, ⊕, add-view rows) fire first — mirrors ui_pane.py.
+        # Let fragment handlers (the charm ×, ⊕, add-view rows) fire first — mirrors ui_pane.py.
         result = super().mouse_handler(mouse_event)
         if result is not NotImplemented:
             return result
