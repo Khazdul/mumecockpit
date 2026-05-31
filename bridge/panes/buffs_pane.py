@@ -10,7 +10,13 @@ try:
     from prompt_toolkit.filters import Condition
     from prompt_toolkit.key_binding import KeyBindings
     from prompt_toolkit.layout import Layout
-    from prompt_toolkit.layout.containers import ConditionalContainer, HSplit, Window
+    from prompt_toolkit.layout.containers import (
+        ConditionalContainer,
+        Float,
+        FloatContainer,
+        HSplit,
+        Window,
+    )
     from prompt_toolkit.layout.controls import FormattedTextControl
     from prompt_toolkit.mouse_events import MouseEventType
     from prompt_toolkit.output import ColorDepth
@@ -381,62 +387,57 @@ def _build_all_rows():
     return all_rows
 
 
-def _plus_handler(mouse_event):
-    global _view_mode, _scroll_offset, _hover_plus
+def _open_handler(mouse_event):
+    global _view_mode, _scroll_offset, _hover_plus, _hover_close
     if mouse_event.event_type == MouseEventType.MOUSE_DOWN:
         _view_mode     = "add"
         _scroll_offset = 0          # every view switch starts at the top
         if _app:
             _app.invalidate()
     elif mouse_event.event_type == MouseEventType.MOUSE_MOVE:
-        if not _hover_plus:
-            _hover_plus = True
+        if not _hover_plus or _hover_close:
+            _hover_plus  = True
+            _hover_close = False
             if _app:
                 _app.invalidate()
 
 
 def _close_handler(mouse_event):
-    global _view_mode, _scroll_offset, _hover_close
+    global _view_mode, _scroll_offset, _hover_plus, _hover_close
     if mouse_event.event_type == MouseEventType.MOUSE_DOWN:
         _view_mode     = "grid"
         _scroll_offset = 0          # every view switch starts at the top
         if _app:
             _app.invalidate()
     elif mouse_event.event_type == MouseEventType.MOUSE_MOVE:
-        if not _hover_close:
+        if not _hover_close or _hover_plus:
             _hover_close = True
+            _hover_plus  = False
             if _app:
                 _app.invalidate()
 
 
-def _overlay_corner(row, glyph, handler, hover):
-    """Replace the last column of `row` with `glyph` in the accent gold and NO
-    background, so it renders on the pane's default bg rather than the underlying
-    cell (the bar colour is not shown in that one column — accepted). Shared by
-    the grid ⊕ (rows are single-char cell fragments) and the add-view ╳ (the row
-    ends in a wide name fragment, split here so its leading toggle text survives).
-    It is an
-    in-row overlay, not a FloatContainer, only so the click handler rides the same
-    fragment stream the ListControl already dispatches.
-    """
-    if not row:
-        return row
-    style, text = row[-1][0], row[-1][1]
-    if len(text) > 1:                          # full-width add-view fragment: keep the head
-        h = row[-1][2] if len(row[-1]) > 2 else None
-        row[-1] = (style, text[:-1], h) if h else (style, text[:-1])
-        row.append(None)                        # placeholder, overwritten just below
-    fg = C_ACCENT_HOVER_FG if hover else C_ACCENT_FG
-    row[-1] = (fg, glyph, handler)
-    return row
+def _corner_text():
+    """The position-pinned ⊕/╳ corner control (owned by a top-right Float, not by
+    any row). No background on the fragment, so it renders on the pane's default
+    window bg, overwriting whatever cell sits beneath it. Blank when the run is
+    inactive; ⊕ (open add-view) in grid mode, ╳ (return to grid) in add mode."""
+    if not _run_active:
+        return []
+    if _view_mode == "add":
+        fg = C_ACCENT_HOVER_FG if _hover_close else C_ACCENT_FG
+        return [(fg, "╳", _close_handler)]
+    fg = C_ACCENT_HOVER_FG if _hover_plus else C_ACCENT_FG
+    return [(fg, "⊕", _open_handler)]
 
 
 def _add_view_frags():
-    """The herblore picker: one [+]/[-] toggle row per catalog key, with a gold ╳
-    overlaid on the first visible row (return-to-grid). Mouse-driven, no
-    keybindings. Click flips add/remove via the PR-1 aliases; the row label
-    follows the state file on the next poll. Paginated by _scroll_offset exactly
-    like _grid_text, so the overflow indicator works in this view too."""
+    """The herblore picker: one [+]/[-] toggle row per catalog key. The return-to-
+    grid ╳ is NOT drawn here — the top-right corner Float owns it (see
+    _corner_text). Mouse-driven, no keybindings. Click flips add/remove via the
+    PR-1 aliases; the row label follows the state file on the next poll. Paginated
+    by _scroll_offset exactly like _grid_text, so the overflow indicator works in
+    this view too."""
     global _scroll_offset
     H      = max(1, _term_rows())
     W      = max(4, _term_cols())
@@ -469,9 +470,6 @@ def _add_view_frags():
             (name_style,     name_txt, _row_handler),
         ])
 
-    if not all_rows:
-        all_rows = [[("", " " * W)]]            # empty catalog: a blank row to carry the X
-
     total          = len(all_rows)
     list_height    = H - (1 if (_scroll_offset > 0 or total > H) else 0)
     max_offset     = max(0, total - list_height)
@@ -479,9 +477,6 @@ def _add_view_frags():
     start_idx      = _scroll_offset
     end_idx        = min(total, start_idx + list_height)
     visible        = all_rows[start_idx:end_idx]
-
-    if visible:
-        _overlay_corner(visible[0], "╳", _close_handler, _hover_close)
 
     frags = []
     for i, row_frags in enumerate(visible):
@@ -512,8 +507,8 @@ def _grid_text():
     total    = len(all_rows)
 
     if total == 0:
-        # Run active but no rows: still surface the ⊕ on an otherwise-blank row.
-        return _overlay_corner([("", " ") for _ in range(W)], "⊕", _plus_handler, _hover_plus)
+        # Run active but no rows: the corner Float still shows the ⊕ over a blank pane.
+        return [("", "")]
 
     list_height    = H - (1 if (_scroll_offset > 0 or total > H) else 0)
     max_offset     = max(0, total - list_height)
@@ -521,10 +516,6 @@ def _grid_text():
     start_idx      = _scroll_offset
     end_idx        = min(total, start_idx + list_height)
     visible        = all_rows[start_idx:end_idx]
-
-    if visible:
-        # pin the ⊕ to the top-right of the viewport
-        _overlay_corner(visible[0], "⊕", _plus_handler, _hover_plus)
 
     frags = []
     for i, row_frags in enumerate(visible):
@@ -710,7 +701,21 @@ def main():
         filter=Condition(lambda: _run_active and (_scroll_offset > 0 or _current_total_rows() > _term_rows())),
     )
 
-    root   = HSplit([grid_window, indicator_container])
+    corner_float = Float(
+        top=0,
+        right=0,
+        content=Window(
+            content=FormattedTextControl(_corner_text, focusable=False),
+            width=1,
+            height=1,
+            dont_extend_width=True,
+            dont_extend_height=True,
+        ),
+    )
+    root = FloatContainer(
+        content=HSplit([grid_window, indicator_container]),
+        floats=[corner_float],
+    )
     layout = Layout(root)
 
     app = Application(

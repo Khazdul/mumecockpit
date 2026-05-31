@@ -265,26 +265,37 @@ X's click model and authoritative-state rule (see [docs/charm.md](charm.md)).
 
 ### Accent colour
 
-The grid "+" and the add-view "X" share one accent: `C_ACCENT_FG` (`#d4a04e`,
+The grid ⊕ and the add-view ╳ share one accent: `C_ACCENT_FG` (`#d4a04e`,
 the gold of the overflow indicator), brightening to `C_ACCENT_HOVER_FG`
 (`#f0c070`) on hover. They deliberately do **not** reuse the charm-X red — only
 the charm row's drop X is red.
 
-### The "+" button
+### The corner control (⊕ / ╳)
 
-In grid mode, when `_run_active`, a "+" is overlaid onto the **last column of
-the first visible row** by `_overlay_corner` — it replaces the corner glyph
-in-place. The "+" fragment carries the accent fg and **no background**, so it
-renders on the pane's default bg rather than the underlying cell's bar colour
-(the bar colour is not shown in that one column — accepted). It is an in-row
-overlay, not a `FloatContainer`, only so the click handler rides the same
-fragment stream the `ListControl` already dispatches. The "+" is pinned to the
-first *visible* row, so it stays top-right as the grid scrolls. When the grid is
-empty (run active, no rows), a single otherwise-blank row carries it.
+Both corner glyphs are owned by a single **position-pinned `Float`** at
+`top=0, right=0`, not by any row. The root is a `FloatContainer` wrapping the
+`HSplit([grid_window, indicator_container])` with one `corner_float` — a 1×1
+`Window` (`dont_extend_width`/`dont_extend_height`) whose `FormattedTextControl`
+calls `_corner_text`. Pinning to the pane's top-right (rather than overlaying the
+last cell of the first visible row) keeps the glyph in the true corner even when
+a partial first row omits its trailing cells, or the grid is empty.
 
-- Hover via `_hover_plus`.
-- Click switches `_view_mode` to `"add"`, resets `_scroll_offset` to 0, and
-  invalidates.
+`_corner_text()` returns:
+
+- `[]` (nothing) when not `_run_active`.
+- `[(accent, "⊕", _open_handler)]` in grid mode.
+- `[(accent, "╳", _close_handler)]` in add mode.
+
+The fragment carries the accent fg and **no background**, so it renders on the
+pane's default window bg, overwriting whatever cell sits beneath it (the bar
+colour is not shown in that one column — accepted, and the intended look). The
+click handler rides the Float's own fragment stream.
+
+- ⊕ hover via `_hover_plus`; ╳ hover via `_hover_close`. Each handler's
+  `MOUSE_MOVE` sets its own hover flag and clears the other's.
+- `_open_handler` (⊕) `MOUSE_DOWN`: switches `_view_mode` to `"add"`, resets
+  `_scroll_offset` to 0, invalidates. `_close_handler` (╳) `MOUSE_DOWN`:
+  switches back to `"grid"`, resets `_scroll_offset` to 0, invalidates.
 
 ### The add-view (`_add_view_frags`)
 
@@ -293,15 +304,12 @@ empty (run active, no rows), a single otherwise-blank row carries it.
   `{e["key"] for e in herblores}`. The whole row is left-aligned, right-padded to
   full width, clickable, and brightens on hover (`_hover_herblore_key`,
   `C_ADD_ROW_FG` → `C_ADD_ROW_HOVER_FG`). Click: active → remove, else add.
-- **The close "X"** is **not** its own row. `_overlay_corner` paints it onto the
-  **last column of the first visible row** (same technique as the grid "+"), in
-  the accent gold, hover via `_hover_close`. Click returns to grid mode, resets
-  `_scroll_offset` to 0, and invalidates. Keeping it on the first *visible* row
-  pins it top-right and reachable under scroll. An empty/absent `herblore_catalog`
-  yields a single blank row that carries only the X.
+- **The close "╳"** is **not** drawn here — the top-right corner `Float` owns it
+  (see "The corner control" above). `_add_view_frags` builds only the catalog
+  rows; an empty/absent `herblore_catalog` yields no rows (the Float still shows
+  the ╳ over a blank pane).
 - The view paginates by `_scroll_offset` exactly like `_grid_text` (build all
-  rows, slice `[offset : offset + list_height]`); the X overlays the first row
-  **after** slicing.
+  rows, slice `[offset : offset + list_height]`).
 
 ### Send helper and authoritative state
 
