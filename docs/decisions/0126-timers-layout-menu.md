@@ -136,3 +136,18 @@ count as extra checkbox columns rather than a stepper. Rejected: a
 0-or-1 model does not express a 1–6 magnitude, and a six-wide stepper
 strip per row would dwarf the swatches. The inline `◄ N ►` is compact
 and reads as a magnitude control.
+
+## Update — colour-name header row added
+
+The Decision above states there is **no** colour-name header row (unlike the
+panes grid). That has since changed: `timers_grid_fragments` now emits a leading
+dim header row over the matrix — the colour names centred over their swatches
+(with `Magenta` truncated to `Magent` to fit the swatch width) and a `Cols`
+label over the stepper column.
+
+The header row carries **no** mouse handlers and is **never** a cursor stop — it
+is display-only, exactly like the digit between the stepper arrows. Cursor
+columns and every other part of the Decision above stand unchanged.
+
+Both `docs/launcher.md` (timers-layout submenu) and `docs/popup-menu.md` (timers
+submenu) describe the rendered header row.
