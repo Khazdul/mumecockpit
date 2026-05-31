@@ -42,3 +42,20 @@ are allowed when they read more naturally; the structure
   charms.
 - `herb` and `charm` are reserved category names; their colours and verb sets
   are settled when the respective trackers land.
+
+## Update — herb tracker landed
+
+The herblore phase-machine tracker shipped (`lua/core/herblores.lua` plus the
+buffs-pane add-view), which fulfils the reserved `herb` item above.
+
+- **Verb set settled.** `up` is emitted whenever a phase becomes active — on add
+  **and** on every live phase transition (including buff→debuff flips such as
+  Clearthought→neg and Haste→recovery). `down` is emitted on final phase elapse
+  or manual removal. The restore path (state reload on reconnect/restart) is
+  silent.
+- **Colour set.** The `herb` category is herb green `#9CCC65`.
+
+See [docs/herblores.md](../herblores.md) and
+[docs/buffs-pane.md](../buffs-pane.md).
+
+Status stays **Accepted** — this fulfils a reserved item; it is not a reversal.
