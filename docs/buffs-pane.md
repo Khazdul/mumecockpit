@@ -93,10 +93,11 @@ own — `_split_groups` appends each entry to the **Debuffs** list when its
 `type == "debuff"` and to the **Buffs** list otherwise, *before* sorting, so a
 herblore renders as an ordinary timed buff/debuff cell (same palette, same
 bar-drain) and moves between the two groups by itself when a phase flips type.
-`key` is the catalog key (unused by the renderer until the PR 2 add-view).
-`herblore_catalog` is the static list of catalog keys for that add-view; the
-renderer does not read it in this PR. A missing `herblores` / `herblore_catalog`
-key is treated as an empty array. See [docs/herblores.md](herblores.md).
+`key` is the catalog key, used by the add-view to compute the active set and
+drive its `[+]/[-]` toggle. `herblore_catalog` is the static list of catalog
+keys the add-view lists, in order. A missing `herblores` / `herblore_catalog`
+key is treated as an empty array. See [docs/herblores.md](herblores.md) and the
+"Herblore add-view" section below.
 
 The `tracked` field on an affect is `false` only for reconciliation-added
 timed-capable entries that have no observed init/refresh yet (see
@@ -253,6 +254,57 @@ fill/separator columns above. Its colours are per-fragment instead:
 | Drop X (hover)  | `#E88888` | brighter than `#CC5555` — pointer-hover cue    |
 
 Overflow indicator style: `fg:#d4a04e italic`.
+
+## Herblore add-view
+
+The pane has two view modes, held in the module global `_view_mode`
+(`"grid"` | `"add"`, default `"grid"`). The `ListControl`'s text provider
+(`_list_text`) dispatches: `add` → `_add_view_frags()`, else the grid renderer.
+Both modes are mouse-driven — there are **no** keybindings, mirroring the charm
+X's click model and authoritative-state rule (see [docs/charm.md](charm.md)).
+
+### The "+" button
+
+In grid mode, when `_run_active`, a "+" is overlaid onto the **last column of
+the first visible row** by `_overlay_plus` — it replaces the corner glyph
+in-place, keeping that cell's background (`_bg_of`) and overriding only the fg,
+so a full green buff in the corner shows green behind the "+" rather than a
+default-bg hole. This transparency is why it is an in-grid overlay and **not** a
+`FloatContainer` (a Float cannot see what is beneath it). The "+" is pinned to
+the first *visible* row, so it stays top-right as the grid scrolls. When the
+grid is empty (run active, no rows), a single otherwise-blank row carries it.
+
+- Colours: `C_PLUS_FG` (`#d4a04e`, the indicator amber), brightening to
+  `C_PLUS_HOVER_FG` (`#f0c070`) while the pointer hovers (`_hover_plus`).
+- Click switches `_view_mode` to `"add"` and invalidates.
+
+### The add-view (`_add_view_frags`)
+
+- **Row 0:** an "X" right-aligned at the last column (reuses the charm X palette
+  `C_CHARM_X_FG` / `C_CHARM_X_HOVER_FG`, hover via `_hover_add_x`). Click returns
+  to grid mode.
+- **One row per `herblore_catalog` key**, in catalog order: `[+] Name` when the
+  key is **not** in the active set, `[-] Name` when it **is**. The active set is
+  `{e["key"] for e in herblores}`. The whole row is clickable and brightens on
+  hover (`_hover_herblore_key`, `C_ADD_ROW_FG` → `C_ADD_ROW_HOVER_FG`). Click:
+  active → remove, else add. An empty/absent `herblore_catalog` shows just the X.
+
+### Send helper and authoritative state
+
+`_send_herblore(action, key)` mirrors `_send_charm_drop`: one fire-and-forget
+`tmux send-keys -t mume:cockpit.0 "<alias> <key>" Enter`, where `<alias>` is
+`_cp_herblore_add` (add) or `_cp_herblore_remove` (remove). Catalog keys are
+single tokens, so no quoting is needed. There is **no** optimistic UI update —
+the `[+]/[-]` label flips on the next poll (~100 ms) once `herblores.lua`
+rewrites `buffs.state`, same as the charm X.
+
+### Hover and reset
+
+`ListControl.mouse_handler`'s "non-fragment move clears hover" branch clears
+`_hover_plus`, `_hover_herblore_key`, and `_hover_add_x` alongside
+`_hover_charm_id`. When `_run_active` transitions True→False (disconnect), the
+poll loop resets `_view_mode` to `"grid"` and clears every hover global, so a
+disconnect mid-add-view returns to the grid.
 
 ### Untracked affect cells
 

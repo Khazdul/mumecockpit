@@ -66,6 +66,12 @@ C_CHARM_MINS_FG = "fg:#888888"   # darker grey
 C_CHARM_X_FG    = "fg:#CC5555"   # muted red (not a screaming red)
 C_CHARM_X_HOVER_FG = "fg:#E88888"   # lighter than C_CHARM_X_FG — hover cue
 
+# Herblore add-view: the "+" overlay button and the [+]/[-] catalog rows.
+C_PLUS_FG          = "fg:#d4a04e"   # indicator amber — the "+" glyph
+C_PLUS_HOVER_FG    = "fg:#f0c070"   # brighter — pointer-hover cue
+C_ADD_ROW_FG       = "fg:#bbbbbb"   # catalog row text
+C_ADD_ROW_HOVER_FG = "fg:#ffffff"   # brightened on hover
+
 C_CELL_FG       = "fg:#000000"
 C_INDICATOR     = "fg:#d4a04e italic"
 C_NAME_DEPLETED = "fg:#666666"
@@ -84,16 +90,22 @@ _PALETTES = {
     "blind":  (C_CELL_FG + " " + C_BLIND_FILL_BG,   C_BLIND_SEP_FG),
 }
 
-_affects       = []
-_stored_spells = []
-_blinds        = []
-_charms        = []
-_herblores     = []
+_affects          = []
+_stored_spells    = []
+_blinds           = []
+_charms           = []
+_herblores        = []
+_herblore_catalog = []   # static catalog keys, for the add-view
 _last_mtime    = None
 _app           = None
 _scroll_offset = 0   # 0 = top (first row at top of pane); N = N rows hidden above
 _run_active    = False
 _hover_charm_id = None   # charm id whose X the pointer is currently over (hover cue)
+
+_view_mode          = "grid"   # "grid" | "add" — add-view is the herblore picker
+_hover_plus         = False    # pointer is over the "+" overlay button
+_hover_herblore_key = None     # catalog key whose row the pointer is over
+_hover_add_x        = False    # pointer is over the add-view's X (return-to-grid)
 
 
 def _term_rows():
@@ -250,6 +262,24 @@ def _send_charm_drop(cid):
         pass
 
 
+def _send_herblore(action, key):
+    """Fire-and-forget: invoke the PR-1 add/remove alias in the game/tt++ pane.
+
+    Mirrors _send_charm_drop. No optimistic UI update — the [+]/[-] flips on the
+    next poll once Lua rewrites buffs.state (~100 ms lag). Catalog keys are
+    single tokens, so no quoting is needed.
+    """
+    if not key:
+        return
+    alias  = "_cp_herblore_add" if action == "add" else "_cp_herblore_remove"
+    target = "mume:cockpit.0"   # the game/tt++ pane — same target input_pane.py forwards to
+    try:
+        subprocess.run(["tmux", "send-keys", "-t", target, f"{alias} {key}", "Enter"],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+    except Exception:
+        pass
+
+
 def _charm_row_frags(entry, W):
     """One charm per row, full width, no bar: name (violet) · mins (grey) · X (red)."""
     cid        = entry.get("id")
@@ -346,6 +376,99 @@ def _build_all_rows():
     return all_rows
 
 
+def _bg_of(style):
+    """Return the `bg:...` token of a style string, or "" if it has none."""
+    for tok in style.split():
+        if tok.startswith("bg:"):
+            return tok
+    return ""
+
+
+def _plus_handler(mouse_event):
+    global _view_mode, _hover_plus
+    if mouse_event.event_type == MouseEventType.MOUSE_DOWN:
+        _view_mode = "add"
+        if _app:
+            _app.invalidate()
+    elif mouse_event.event_type == MouseEventType.MOUSE_MOVE:
+        if not _hover_plus:
+            _hover_plus = True
+            if _app:
+                _app.invalidate()
+
+
+def _overlay_plus(row):
+    """Overlay a "+" onto the corner glyph of `row`, inheriting the cell's bg.
+
+    Keeps whatever background the corner cell carries (a full green buff shows
+    green behind the "+", a drained cell shows none — no default-bg hole) and
+    overrides only the fg, mirroring the transparency Ole asked for. A Float
+    cannot see what is beneath it; replacing the fragment in-place can.
+    """
+    if not row:
+        return row
+    bg = _bg_of(row[-2][0]) if len(row) >= 2 else ""   # corner cell's fill bg lives on its name chars
+    if not bg:
+        bg = _bg_of(row[-1][0])
+    fg    = C_PLUS_HOVER_FG if _hover_plus else C_PLUS_FG
+    style = (bg + " " + fg).strip()
+    row[-1] = (style, "+", _plus_handler)
+    return row
+
+
+def _add_x_handler(mouse_event):
+    global _view_mode, _hover_add_x
+    if mouse_event.event_type == MouseEventType.MOUSE_DOWN:
+        _view_mode = "grid"
+        if _app:
+            _app.invalidate()
+    elif mouse_event.event_type == MouseEventType.MOUSE_MOVE:
+        if not _hover_add_x:
+            _hover_add_x = True
+            if _app:
+                _app.invalidate()
+
+
+def _add_view_frags():
+    """The herblore picker: an X (top-right, return-to-grid) then one [+]/[-] row
+    per catalog key. Mouse-driven, no keybindings. Click flips add/remove via the
+    PR-1 aliases; the row label follows the state file on the next poll."""
+    W      = max(4, _term_cols())
+    active = {e.get("key") for e in _herblores}
+
+    x_style = C_CHARM_X_HOVER_FG if _hover_add_x else C_CHARM_X_FG
+    frags   = [("", " " * (W - 1)), (x_style, "X", _add_x_handler)]
+
+    for key in _herblore_catalog:
+        is_active = key in active
+        label     = ("[-] " if is_active else "[+] ") + str(key)
+        style     = C_ADD_ROW_HOVER_FG if key == _hover_herblore_key else C_ADD_ROW_FG
+
+        def _row_handler(mouse_event, _key=key, _active=is_active):
+            global _hover_herblore_key
+            if mouse_event.event_type == MouseEventType.MOUSE_DOWN:
+                _send_herblore("remove" if _active else "add", _key)
+            elif mouse_event.event_type == MouseEventType.MOUSE_MOVE:
+                if _hover_herblore_key != _key:
+                    _hover_herblore_key = _key
+                    if _app:
+                        _app.invalidate()
+
+        frags.append(("", "\n"))
+        frags.append((style, label[:W].ljust(W), _row_handler))
+
+    return frags
+
+
+def _list_text():
+    """Text provider for the ListControl: dispatch grid vs add-view."""
+    if not _run_active:
+        return [("", "")]
+    if _view_mode == "add":
+        return _add_view_frags()
+    return _grid_text()
+
+
 def _grid_text():
     global _scroll_offset
 
@@ -353,11 +476,13 @@ def _grid_text():
         return [("", "")]
 
     H        = max(1, _term_rows())
+    W        = max(4, _term_cols())
     all_rows = _build_all_rows()
     total    = len(all_rows)
 
     if total == 0:
-        return []
+        # Run active but no rows: still surface the "+" on an otherwise-blank row.
+        return _overlay_plus([("", " ") for _ in range(W)])
 
     list_height    = H - (1 if (_scroll_offset > 0 or total > H) else 0)
     max_offset     = max(0, total - list_height)
@@ -365,6 +490,9 @@ def _grid_text():
     start_idx      = _scroll_offset
     end_idx        = min(total, start_idx + list_height)
     visible        = all_rows[start_idx:end_idx]
+
+    if visible:
+        _overlay_plus(visible[0])   # pin the "+" to the top-right of the viewport
 
     frags = []
     for i, row_frags in enumerate(visible):
@@ -376,7 +504,7 @@ def _grid_text():
 
 
 def _indicator_text():
-    if not _run_active:
+    if not _run_active or _view_mode != "grid":
         return [("", "")]
 
     H     = max(1, _term_rows())
@@ -400,15 +528,27 @@ def _indicator_text():
 
 class ListControl(FormattedTextControl):
     def mouse_handler(self, mouse_event):
-        global _scroll_offset, _hover_charm_id
-        # Let fragment handlers (the charm X) fire first — mirrors ui_pane.py.
+        global _scroll_offset, _hover_charm_id, _hover_plus, _hover_herblore_key, _hover_add_x
+        # Let fragment handlers (the charm X, "+", add-view rows) fire first — mirrors ui_pane.py.
         result = super().mouse_handler(mouse_event)
         if result is not NotImplemented:
             return result
-        # No fragment handled it: a move landed on a non-X cell — clear hover.
-        if mouse_event.event_type == MouseEventType.MOUSE_MOVE and _hover_charm_id is not None:
-            _hover_charm_id = None
-            if _app:
+        # No fragment handled it: a move landed on a non-interactive cell — clear hover.
+        if mouse_event.event_type == MouseEventType.MOUSE_MOVE:
+            changed = False
+            if _hover_charm_id is not None:
+                _hover_charm_id = None
+                changed = True
+            if _hover_plus:
+                _hover_plus = False
+                changed = True
+            if _hover_herblore_key is not None:
+                _hover_herblore_key = None
+                changed = True
+            if _hover_add_x:
+                _hover_add_x = False
+                changed = True
+            if changed and _app:
                 _app.invalidate()
         if mouse_event.event_type == MouseEventType.SCROLL_DOWN:
             total          = _total_rows(*_split_groups())
@@ -434,7 +574,9 @@ def _restore_cursor():
 
 
 async def _poll_state(app):
-    global _affects, _stored_spells, _blinds, _charms, _herblores, _last_mtime, _run_active
+    global _affects, _stored_spells, _blinds, _charms, _herblores, _herblore_catalog
+    global _last_mtime, _run_active
+    global _view_mode, _hover_plus, _hover_herblore_key, _hover_add_x, _hover_charm_id
 
     while True:
         try:
@@ -449,29 +591,39 @@ async def _poll_state(app):
                     with open(BUFFS_STATE_PATH, "r") as fh:
                         loaded = json.load(fh)
                     if isinstance(loaded, list):
-                        _affects       = loaded
-                        _stored_spells = []
-                        _blinds        = []
-                        _charms        = []
-                        _herblores     = []
+                        _affects          = loaded
+                        _stored_spells    = []
+                        _blinds           = []
+                        _charms           = []
+                        _herblores        = []
+                        _herblore_catalog = []
                     else:
-                        _affects       = loaded.get("affects", [])
-                        _stored_spells = loaded.get("stored_spells", [])
-                        _blinds        = loaded.get("blinds", [])
-                        _charms        = loaded.get("charms", [])
-                        _herblores     = loaded.get("herblores", [])
+                        _affects          = loaded.get("affects", [])
+                        _stored_spells    = loaded.get("stored_spells", [])
+                        _blinds           = loaded.get("blinds", [])
+                        _charms           = loaded.get("charms", [])
+                        _herblores        = loaded.get("herblores", [])
+                        _herblore_catalog = loaded.get("herblore_catalog", [])
                 except Exception:
                     pass
             else:
-                _affects       = []
-                _stored_spells = []
-                _blinds        = []
-                _charms        = []
-                _herblores     = []
+                _affects          = []
+                _stored_spells    = []
+                _blinds           = []
+                _charms           = []
+                _herblores        = []
+                _herblore_catalog = []
             app.invalidate()
 
         new_run_active = os.path.exists(CONNECTION_STATE_PATH)
         if new_run_active != _run_active:
+            if not new_run_active:
+                # Disconnect mid-add-view: fall back to the grid and drop hover cues.
+                _view_mode          = "grid"
+                _hover_plus         = False
+                _hover_herblore_key = None
+                _hover_add_x        = False
+                _hover_charm_id     = None
             _run_active = new_run_active
             app.invalidate()
 
@@ -503,7 +655,7 @@ def main():
     atexit.register(_restore_cursor)
 
     grid_window = Window(
-        content=ListControl(text=_grid_text, focusable=False),
+        content=ListControl(text=_list_text, focusable=False),
     )
 
     indicator_container = ConditionalContainer(
@@ -512,7 +664,7 @@ def main():
             height=1,
             dont_extend_height=True,
         ),
-        filter=Condition(lambda: _run_active and (_scroll_offset > 0 or _total_rows(*_split_groups()) > _term_rows())),
+        filter=Condition(lambda: _run_active and _view_mode == "grid" and (_scroll_offset > 0 or _total_rows(*_split_groups()) > _term_rows())),
     )
 
     root   = HSplit([grid_window, indicator_container])
