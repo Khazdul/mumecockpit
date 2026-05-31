@@ -52,8 +52,9 @@ identity intact so cached references elsewhere stay valid, then emits
 `char_reset`. `status_state.lua`'s `char_reset` subscriber calls `serialize()`,
 producing a single atomic write to `bridge/runtime/status.state` with all character
 fields null. The renderer displays `—` for null name and empty bars for null
-progress. Data rows render as label-only (empty value cells). Pane height stays
-at `STATIC_ROWS = 6` within one poll tick (≤ 50 ms).
+progress. Data rows render as label-only (empty value cells). The content stays
+a fixed 6 rows produced by `_build_frame` in `bridge/panes/status_pane.py`, and
+the tmux slot is sized to `desired_status` (default 6) per ADR 0071.
 
 ### Inactive run
 
