@@ -73,10 +73,10 @@ C_CHARM_X_FG    = "fg:#CC5555"   # muted red (not a screaming red)
 C_CHARM_X_HOVER_FG = "fg:#E88888"   # lighter than C_CHARM_X_FG — hover cue
 
 # Herblore add-view accent — shared by the grid + button and the add-view ×.
-# Inverted filled-button look: black glyph on a gold background (gold matches
-# the overflow indicator; deliberately NOT the charm red).
-C_ACCENT_BTN       = "fg:#000000 bg:#d4a04e"   # black glyph on gold — button
-C_ACCENT_BTN_HOVER = "fg:#000000 bg:#f0c070"   # brighter gold bg on hover
+# Gold glyph on the terminal/pane background (gold matches the overflow
+# indicator; deliberately NOT the charm red).
+C_ACCENT_FG       = "fg:#d4a04e"   # gold glyph on the terminal/pane bg
+C_ACCENT_HOVER_FG = "fg:#f0c070"   # brighter gold glyph on hover
 # Add-view catalog rows — per-fragment "[±] Name" styling.
 C_HERB_BRACKET     = "fg:#666666"   # dark grey  [ ]
 C_HERB_ADD         = "fg:#7ED07E"   # light green + (inactive row)
@@ -420,16 +420,16 @@ def _close_handler(mouse_event):
 
 def _corner_text():
     """The position-pinned +/× corner control (owned by a top-right Float, not by
-    any row). The fragment carries an explicit gold bg, so the 1×1 Float renders
-    as a filled gold button overwriting whatever cell sits beneath it. + and × are
-    ASCII/Latin-1, single-width. Blank when the run is inactive; + (open add-view)
-    in grid mode, × (return to grid) in add mode."""
+    any row). The fragment carries a gold fg and no bg, so the 1×1 Float renders
+    the glyph on the terminal/pane background (no filled button); hover brightens
+    the glyph. + and × are ASCII/Latin-1, single-width. Blank when the run is
+    inactive; + (open add-view) in grid mode, × (return to grid) in add mode."""
     if not _run_active:
         return []
     if _view_mode == "add":
-        style = C_ACCENT_BTN_HOVER if _hover_close else C_ACCENT_BTN
+        style = C_ACCENT_HOVER_FG if _hover_close else C_ACCENT_FG
         return [(style, "×", _close_handler)]
-    style = C_ACCENT_BTN_HOVER if _hover_plus else C_ACCENT_BTN
+    style = C_ACCENT_HOVER_FG if _hover_plus else C_ACCENT_FG
     return [(style, "+", _open_handler)]
 
 
