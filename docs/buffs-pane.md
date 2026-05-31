@@ -1,11 +1,11 @@
 # Buffs Pane
 
 A `prompt_toolkit` full-screen application that renders `state.char.affects`,
-`state.char.stored_spells`, and `state.char.blinds` as a colour-coded grid
-grouped by type (spells, buffs, debuffs, stored, blinds), with bar-drain
-animation, blink alerts for expiring entries, and row-based scroll. Touch
-this file when changing the renderer, the pane position, or the toggle
-wiring.
+`state.char.stored_spells`, `state.char.blinds`, and `state.char.charms` as a
+colour-coded grid grouped by type (spells, buffs, debuffs, stored, blinds,
+charms), with bar-drain animation, blink alerts for expiring entries, and
+row-based scroll. Touch this file when changing the renderer, the pane
+position, or the toggle wiring.
 
 ## Architecture
 
@@ -20,19 +20,23 @@ lua/core/stored_spells.lua ──► state.char.stored_spells    lua/core/buffs_
                                                                    │            │
 lua/core/blinds.lua ──► state.char.blinds                          │            ▼
                                 │                                  │  bridge/panes/buffs_pane.py
-                    blinds_changed event ──────────────────────────┘
+                    blinds_changed event ──────────────────────────┤
+                                                                   │
+lua/core/charm.lua ──► state.char.charms                           │
+                                │                                  │
+                    charms_changed event ──────────────────────────┘
 ```
 
 `buffs_state.lua` serialises `state.char.affects`,
-`state.char.stored_spells`, and `state.char.blinds` to
+`state.char.stored_spells`, `state.char.blinds`, and `state.char.charms` to
 `bridge/runtime/buffs.state` on every `affects_changed`,
-`stored_spells_changed`, or `blinds_changed` event, on character reset
-(disconnect), and on login. `buffs_pane.py` polls that file and renders
-the grid.
+`stored_spells_changed`, `blinds_changed`, or `charms_changed` event, on
+character reset (disconnect), and on login. `buffs_pane.py` polls that file and
+renders the grid.
 
 ## State file schema (`bridge/runtime/buffs.state`)
 
-JSON object with three arrays:
+JSON object with four arrays:
 
 ```json
 {
@@ -48,6 +52,10 @@ JSON object with three arrays:
   "blinds": [
     {"name": "2.orc", "expires_at": 1714000090, "expected_duration": 90},
     {"name": "troll", "expires_at": 1714000085, "expected_duration": 90}
+  ],
+  "charms": [
+    {"id": 7, "name": "orc",              "started_at": 1714000000},
+    {"id": 8, "name": "huge stone troll", "started_at": 1714000300}
   ]
 }
 ```
@@ -59,6 +67,13 @@ JSON object with three arrays:
 (90 s fixed) and never indefinite or untracked; a missing top-level
 `blinds` key is treated as an empty array.
 
+`charms` entries carry only `{id, name, started_at}` — the serialised form has
+**no** `expires_at` / `expected_duration` (the in-memory entry has a 99-min cap,
+but the pane displays a count-**up** of minutes from `started_at`, not a
+countdown). `id` is the monotonic per-session id the click-to-drop X targets. A
+missing top-level `charms` key is treated as an empty array. See
+[docs/charm.md](charm.md).
+
 The `tracked` field on an affect is `false` only for reconciliation-added
 timed-capable entries that have no observed init/refresh yet (see
 [`docs/affects.md`](affects.md#untracked-entries-stat--info-reconcile));
@@ -66,8 +81,9 @@ every other entry — normal timed, indefinite, reconciled-indefinite —
 serializes `true`.
 
 **Legacy fallback:** if the loaded value is a bare JSON array (pre-migration
-state file), the renderer treats it as `{ "affects": loaded, "stored_spells": [], "blinds": [] }`
-and shows only affects — no crash, no Stored or Blinds group.
+state file), the renderer treats it as
+`{ "affects": loaded, "stored_spells": [], "blinds": [], "charms": [] }`
+and shows only affects — no crash, no Stored, Blinds, or Charm group.
 
 ## Rendering
 
@@ -85,9 +101,10 @@ groups produce no rows.
 | Debuffs | `affects`       | `type == "debuff"`                                 |
 | Stored  | `stored_spells` | all entries (tracked and untracked)                |
 | Blinds  | `blinds`        | all entries                                        |
+| Charm   | `charms`        | all entries (one per row, after Blinds)            |
 
-Each group lays out 4 entries per row, except **Blinds**, which lays out 2
-entries per row (see "Blinds two-up layout").
+Each group lays out 4 entries per row, except **Blinds** (2 entries per row,
+see "Blinds two-up layout") and **Charm** (1 entry per row, see "Charm group").
 
 ### Sort within a group
 
@@ -108,6 +125,10 @@ state (post magic-blast) and are rendered last:
 
 **Blinds** are always timed (90 s) — sorted by `expires_at` descending
 (most time remaining first); alphabetical by name as tie-break.
+
+**Charm** is sorted by `started_at` **ascending** (oldest first), so the
+longest-running charm — the one most likely to be stale and want dropping —
+sits at the top of the group.
 
 ### Grid layout
 
@@ -153,7 +174,36 @@ Narrowing the pane truncates the name from the right
 (`PACK HORSE` → `PACK HO` → `PA`). An odd blind count leaves a single block on
 the last row; the row ends after that block's separator.
 
-### Per-group palette
+### Charm group
+
+The Charm group is the second exception to the grid: it renders **one entry per
+row, full width, with no bar**. Each row (`_charm_row_frags`) is laid out as:
+
+```
+<name, left-justified>  <mins, right-justified width 3>  X
+```
+
+- **Name** — light violet `#B388FF`. The **first letter is capitalised** and the
+  inner case is preserved (mob long-names like `huge stone troll` →
+  `Huge stone troll`), unlike the grid groups which upper-case the whole label.
+  Truncated from the right to `W - 6` columns (1 X + 1 gap + 3 mins + 1 gap).
+- **Minutes** — darker grey `#888888`, a count-**up** rendered as `Nm`
+  right-justified in 3 columns (`" 0m"` … `"99m"`), computed as
+  `min(99, int((now - started_at) // 60))` and capped at 99.
+- **X** — a clickable drop control in muted red `#CC5555`, brightening to
+  `#E88888` while the pointer hovers over it (the `_hover_charm_id` cue).
+
+**Click-to-drop.** Clicking the X calls `_send_charm_drop(id)`, which invokes
+`_cp_charm_drop <id>` in the game/tt++ pane over the **same** `tmux send-keys`
+channel `input_pane.py` forwards keystrokes through (target `mume:cockpit.0`,
+one send-keys call with the line and `Enter`). The render loop never blocks on
+it; the state file stays authoritative, so the row clears only once tt++ has
+run the drop and `buffs_state.lua` rewrites `buffs.state`. See
+[docs/charm.md](charm.md) for the drop handler.
+
+**Known limitation (parked):** the `_cp_charm_drop` command shows up as a
+persistent line in the tt++ game scrollback — a tt++ command-echo behaviour not
+yet solved. The drop itself works correctly.
 
 | Group          | Filled cell BG | Cell FG   | Separator FG |
 |----------------|----------------|-----------|--------------|
@@ -165,6 +215,16 @@ the last row; the row ends after that block's separator.
 | Blinds         | `#00cccc`      | `#000000` | `#00cccc`    |
 
 ¹ See "Untracked stored cells" below.
+
+**Charm** has no filled cell and no separator (no bar), so it does not fit the
+fill/separator columns above. Its colours are per-fragment instead:
+
+| Fragment        | FG        | Notes                                          |
+|-----------------|-----------|------------------------------------------------|
+| Name            | `#B388FF` | light violet — matches the `◆ CHARM` UI tag    |
+| Minutes         | `#888888` | darker grey — count-up `Nm`                    |
+| Drop X          | `#CC5555` | muted red                                      |
+| Drop X (hover)  | `#E88888` | brighter than `#CC5555` — pointer-hover cue    |
 
 Overflow indicator style: `fg:#d4a04e italic`.
 
@@ -338,11 +398,15 @@ maps this to the label ` Buffs ` when headers are on.
 `data/characters/<character>/` continue to be maintained by
 `lua/core/affects.lua` regardless of whether the buffs pane is open. The data
 layer is independent of the visualisation layer. The same applies to
-`state.char.stored_spells` (`lua/core/stored_spells.lua`) and
-`state.char.blinds` (`lua/core/blinds.lua` — session-only, no disk).
+`state.char.stored_spells` (`lua/core/stored_spells.lua`, persists to
+`stored_spells_active.json`), `state.char.blinds` (`lua/core/blinds.lua`,
+persists to `blinds_active.json`), and `state.char.charms`
+(`lua/core/charm.lua`, persists to `charms_active.json`). All three survive
+reconnect and a full restart.
 
 See [`docs/affects.md`](affects.md), [`docs/stored-spells.md`](stored-spells.md),
-and [`docs/blinds.md`](blinds.md) for the full data-layer specifications.
+[`docs/blinds.md`](blinds.md), and [`docs/charm.md`](charm.md) for the full
+data-layer specifications.
 
 ---
 Back to [architecture.md](../architecture.md).

@@ -139,14 +139,20 @@ They reset on each fresh brain launch and do not survive a reconnect.
 
 **`_pending_attempts`** — FIFO queue (Lua array) of spell full names. One entry
 is pushed per `store_attempt_started`; the front entry is consumed by
-`store_succeeded` or `store_attempt_failed`. Path 2 (empty Enter) funnels into
-`store_attempt_failed` to pop the front.
+`store_succeeded`, by the store-specific `store_attempt_failed`, or by the
+**shared** `spell_cast_failed` (owned by `lua/core/spellcast.lua`) — both
+failure events route through the same `_drain_pending_attempt` handler. Path 2
+(empty Enter) funnels into `store_attempt_failed` to pop the front. This FIFO is
+stored-spells' own; it is **separate** from spellcast's `_cast_queue` (the
+blind/charm queue), but a single `spell_cast_failed` pops the front of **both**
+— see [Failure queue drain](#failure-queue-drain) and
+[docs/spellcast.md](spellcast.md).
 
 **`_last_cast_intent`** — single slot holding the most recent non-store spell
 full name. Updated by path 1 on direct `cast 'X'` commands and by path 3 on any
-cast including alias-expanded forms. Read by `store_recalled` to identify which
-stored entry to consume. Intentionally not cleared after a recall so successive
-recalls of the same spell work correctly.
+cast including alias-expanded forms. Read by the `spell_cast_recalled` handler
+to identify which stored entry to consume. Intentionally not cleared after a
+recall so successive recalls of the same spell work correctly.
 
 ## Spell-name resolution
 
@@ -330,8 +336,8 @@ filtered out at load time.
 ]
 ```
 
-Written atomically at the end of `store_succeeded`, `store_recalled`,
-`store_decayed`, and `stored_spells_untracked`. All entries are written
+Written atomically at the end of `store_succeeded`, the `spell_cast_recalled`
+handler, `store_decayed`, and `stored_spells_untracked`. All entries are written
 (tracked and untracked). Untracked entries omit `expires_at` (nil is not
 serialised by dkjson).
 
@@ -355,10 +361,17 @@ CONNECTED` in `ttpp/core/system.tin` (immediately after
 
 On each invocation the function registers via `session_cmd()`:
 
-- **Twelve failure-pattern `#action` triggers** (priority 3) — each emits
-  `store_attempt_failed`.
-- **`store_succeeded`, `store_decayed`, `store_recalled` `#action` triggers** —
-  one each, priority 3.
+- **Four store-specific failure-pattern `#action` triggers** (priority 3) — each
+  emits `store_attempt_failed` (`^Your mind is too full to store it.$`,
+  `^You failed.$`, `^You do not know any such a spell.$`,
+  `^You can cast quickly, fast, normally, carefully, or thoroughly.$`). The
+  eight *shared* cast-failure lines are no longer registered here — they are
+  owned by `lua/core/spellcast.lua` (`spell_cast_failed`), which this module
+  subscribes to via `_drain_pending_attempt`. See [docs/spellcast.md](spellcast.md).
+- **`store_succeeded` and `store_decayed` `#action` triggers** — one each,
+  priority 3. The recall line `^You quickly recall your stored spell...$` is no
+  longer registered here either — it is owned by spellcast (`spell_cast_recalled`),
+  which this module subscribes to (the recall handler is unchanged).
 - **`stored_spells_untracked` `#action` triggers** — two patterns (self-cast and
   third-party magic blast).
 - **Two MUME-echo `#action` triggers** — path 3; emit `user_cast`.
@@ -408,7 +421,7 @@ user sends: cast 'fireball' orc
     → _last_cast_intent = "fireball"
 
 MUME: "You quickly recall your stored spell..."
-  → store_recalled
+  → spell_cast_recalled   (owned by spellcast.lua; stored-spells subscribes)
     → find entry with highest started_at where name == "fireball"
     → remove entry, persist active list
     → char_ui("store", name, "recalled")                           -- ◆ STORE: fireball recalled.
@@ -422,14 +435,31 @@ MUME: "You blast the area with magical energies."  (or "%1 blasts...")
 
 ## Failure queue drain
 
-Multiple failure patterns (out of mana, backfire, etc.) each emit
-`store_attempt_failed`, which pops the front of `_pending_attempts`. The queue
-drains FIFO — if two store attempts were pending, the first failure consumes the
-first queued spell.
+Two events drain `_pending_attempts`, both through the same
+`_drain_pending_attempt` handler:
+
+- **`store_attempt_failed`** — the four store-specific failure lines owned by
+  this module (mind too full, you failed, no such spell, bad speed argument),
+  plus the empty-line abort.
+- **`spell_cast_failed`** — the eight shared cast-failure lines (out of mana,
+  backfire, nothing happens, fear, relaxed, concentration lost, flee, too
+  afraid), owned by `lua/core/spellcast.lua`.
+
+Either pops the front of `_pending_attempts`. The queue drains FIFO — if two
+store attempts were pending, the first failure consumes the first queued spell.
 
 An empty line sent to MUME (just Enter) aborts the oldest pending cast attempt.
 Detected via RECEIVED INPUT in GAME_SESSION; reuses the `store_attempt_failed`
 path.
+
+**Cross-pop.** `spell_cast_failed` is subscribed by **both** stored-spells
+(this `_pending_attempts` FIFO) and spellcast (its own `_cast_queue` of
+blind/charm attempts). A single shared failure therefore pops the front of both
+FIFOs. With a store and a blind/charm in flight at once, one failure desyncs
+both — the accepted trade-off; both modules guard the empty case and spellcast's
+10 s idle flush bounds the staleness. See
+[ADR 0123](decisions/0123-shared-cast-feedback-ownership.md) and
+[docs/spellcast.md](spellcast.md).
 
 ## Default duration
 

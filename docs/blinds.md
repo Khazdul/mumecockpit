@@ -4,7 +4,14 @@ Tracks blinded targets with fixed 90 s timers. Two deliberately decoupled
 layers: the inbound "<name> seems to be blinded!" line creates a bar
 unconditionally (Layer 1); the outgoing cast snoop supplies the numeric
 prefix (`2.orc`) when one was typed (Layer 2). MUME serialises spellcasting,
-so a plain FIFO of attempt prefixes is correct, not heuristic.
+so a plain FIFO of attempt entries is correct, not heuristic.
+
+The cast-attempt FIFO, the shared cast-failure lines, and the 10 s idle flush
+no longer live here — they belong to [`lua/core/spellcast.lua`](../lua/core/spellcast.lua),
+which several casters share. Blinds enqueues a `{kind="blindness", prefix=…}`
+entry on snoop and pops it on its own success line; spellcast owns the queue
+mechanics and the shared failure handling. See [docs/spellcast.md](spellcast.md)
+and [ADR 0123](decisions/0123-shared-cast-feedback-ownership.md).
 
 This document covers the data layer and event bus; rendering is handled by
 the buffs pane — see [`docs/buffs-pane.md`](buffs-pane.md) for the rendering
@@ -20,9 +27,9 @@ spec.
                                    — parse blindness cast
                                               │
                                               ▼
-                                   _pending_blinds FIFO
+                       spellcast.enqueue({kind="blindness", prefix=…})
                                               │
-inbound MUME line                             │
+inbound MUME line                  shared _cast_queue (spellcast.lua)
 "... seems to be blinded!"                    │
       │                                       │
       ▼                                       │
@@ -33,8 +40,9 @@ tt++ #action (GAME_SESSION, priority 3)       │
       │                                       │
       ▼ _blinds_on_blinded("<raw name>")     │
       │   — strips "An "/"A " article         │
-      │   — pops one prefix from FIFO (or ◀───┘
-      │     false if empty)
+      │   — spellcast.pop_if_front_kind   ◀───┘
+      │     ("blindness") (or false if
+      │     front is not a blindness)
       ▼
 state.char.blinds  ──►  events.emit("blinds_changed")
                     ──►  buffs_state.lua serialises
@@ -67,10 +75,13 @@ reloads it.
 
 ### Pending-attempts FIFO
 
-A file-local `_pending_blinds` array. Each element is either a string
-number prefix (e.g. `"2."`) or `false` (the cast carried no explicit
-number). `false` is used rather than `nil` so `#fifo` and `table.remove`
-work normally.
+Blinds no longer keeps its own FIFO. Pending casts live in the **shared**
+`_cast_queue` owned by [`lua/core/spellcast.lua`](../lua/core/spellcast.lua).
+A blindness cast enqueues a table `{kind = "blindness", prefix = num}` where
+`prefix` is a string number prefix (e.g. `"2."`) or `false` (the cast carried
+no explicit number). `false` is used rather than `nil` so the field round-trips
+cleanly. spellcast owns the idle flush and the shared failure draining; see
+[docs/spellcast.md](spellcast.md).
 
 ## Layer 2 — outgoing cast snoop
 
@@ -86,13 +97,14 @@ A line is recognised as a blindness cast when:
 
 The trimmed text after the closing quote yields the prefix:
 
-- `^(\d+\.)` (e.g. `2.orc`, `1.troll`) → that exact prefix is pushed onto
-  the FIFO;
-- anything else (bare name, empty, or no target) → `false` is pushed.
+- `^(\d+\.)` (e.g. `2.orc`, `1.troll`) → `{kind="blindness", prefix=that}` is
+  enqueued onto the shared FIFO;
+- anything else (bare name, empty, or no target) → `prefix = false` is enqueued.
 
-A named `#delay {blind_que_flush}` is re-armed on every push. After 10 s of
-no new pushes the FIFO is cleared, so an unanswered cast does not strand a
-stale prefix that mis-labels the next successful blind.
+`spellcast.enqueue` re-arms a named `#delay {spellcast_que_flush}` on every
+push. After 10 s of no new pushes the whole queue is cleared, so an unanswered
+cast does not strand a stale entry that mis-labels the next successful blind.
+The flush is owned by spellcast and is shared across all casters.
 
 ## Layer 1 — landed-blindness handler
 
@@ -107,8 +119,10 @@ Handler steps:
 1. **Normalise the name** — strip a leading `An ` or `A ` article only when
    followed by whitespace, so player names like `Anaru` or `Aragorn` are
    left intact.
-2. **Pop the FIFO** — `num = table.remove(_pending_blinds, 1)` if the FIFO
-   is non-empty, else `false`. The bar is created regardless of FIFO state
+2. **Pop the shared FIFO** — `e = spellcast.pop_if_front_kind("blindness")`,
+   then `num = e and e.prefix or false`. The pop is conditional on the front
+   entry being a blindness; a front belonging to another caster is left
+   untouched and `num` is `false`. The bar is created regardless of FIFO state
    (Layer 1 must always work).
 3. **Append the entry** with `name = (num or "") .. normalised_name`,
    `started_at = now`, `expected_duration = 90`, `expires_at = now + 90`.
@@ -119,55 +133,47 @@ Handler steps:
 
 ## FIFO-pop triggers
 
-Three independent paths pop the front of the FIFO. All three are guarded
-on `#_pending_blinds > 0` — a pop on an empty FIFO is a silent no-op,
-because the trigger may belong to a different spell.
+The shared `_cast_queue` front is dropped by several independent paths. Every
+pop is guarded — a pop on an empty queue is a silent no-op, because the trigger
+may belong to a different spell.
 
 ### 1. Success line
 
-Pop happens inside `_blinds_on_blinded` alongside the bar insertion (see
-[Layer 1](#layer-1--landed-blindness-handler)). The popped prefix becomes
-the bar's name.
+Pop happens inside `_blinds_on_blinded` via `spellcast.pop_if_front_kind("blindness")`
+alongside the bar insertion (see
+[Layer 1](#layer-1--landed-blindness-handler)). The popped entry's `prefix`
+becomes the bar's name. Only a blindness at the front is consumed; a front
+belonging to another caster is left in place.
 
 ### 2. Failure lines
 
-One `#action` per known cast-failure line. Each fires as a signal (no
-captures) and pops the front of the FIFO.
+The **eight shared** cast-failure lines are registered once by spellcast (not
+here); each emits `spell_cast_failed`, and spellcast's own subscriber calls
+`spellcast.fail_front()` to drop the front. Blinds does **not** subscribe to
+`spell_cast_failed` — it relies on spellcast draining the front. See
+[docs/spellcast.md](spellcast.md#registered-lines) for the eight lines.
 
-| Pattern (anchored) | Cause |
-|---|---|
-| `^Argh! You cannot concentrate any more...$` | concentration loss |
-| `^Nah... You feel too relaxed to do that.$` | sitting / resting |
-| `^In your dreams, or what?$` | spell not memorised |
-| `^Alas, not enough mana flows through you...$` | out of mana |
-| `^Your spell backfired!$` | backfire |
-| `^Nothing seems to happen.$` | resisted / no effect |
-| `^Nobody here by that name.$` | invalid target |
-| `^You flee %1.$` | fled mid-cast |
-| `^You are too afraid.$` | fear effect |
-| `^Your victim is already blind.$` | target already blind |
+The only failure line still owned by blinds is the blindness-specific
+`^Your victim is already blind.$`, registered in `_register_blinds_actions()`;
+it calls `spellcast.fail_front()` directly (queue-only, no event). The generic
+`^Nobody here by that name.$` bad-target line is owned by spellcast.
 
 ### 3. Empty input (cast cancel)
 
-Pressing Enter on an empty line tells MUME to abort the current cast;
-the next queued cast (if any) proceeds. The blinds module subscribes to
-the `user_input_empty` event bus topic — emitted by `brain.lua` from the
-`RECEIVED INPUT` registration in `ttpp/core/input_ipc.tin` — and pops the
-FIFO front. **The 10 s idle-flush `#delay` is not re-armed**: a cancel
-is not a cast, and re-arming would extend the flush window for the
-remaining queued attempts.
+Pressing Enter on an empty line tells MUME to abort the current cast.
+**spellcast** (not blinds) subscribes to the `user_input_empty` event bus topic
+and calls `spellcast.fail_front()`. Blinds no longer subscribes to this event.
 
-Accepted narrow desync: if the player has a non-blind cast in flight
-with blinds queued behind it and then aborts, a blind prefix is popped
-instead of the in-flight cast's owner. Low-stakes — Layer 1 still draws
-the bar regardless, just possibly without (or with the wrong) numeric
-prefix.
+Accepted narrow desync: with a mix of casts in flight, a shared failure or
+empty-line abort drops whatever is at the front, which may not be the blind.
+Low-stakes — Layer 1 still draws the bar regardless, just possibly without (or
+with the wrong) numeric prefix.
 
 ### Idle flush
 
-If a typed cast never produces any of the above signals, the 10 s
-idle-flush `#delay` clears the entire FIFO so a stuck prefix cannot
-indefinitely mis-label a later landing.
+If a typed cast never produces any signal, spellcast's 10 s idle-flush `#delay`
+({`spellcast_que_flush`}) clears the entire shared queue so a stuck entry cannot
+indefinitely mis-label a later landing. The flush is owned by spellcast.
 
 ## Periodic tick
 
@@ -227,10 +233,12 @@ the game session's action list.
 ## Rendering
 
 `state.char.blinds` is serialised into `bridge/runtime/buffs.state` as a
-third top-level array `blinds`. The buffs pane renders it as a fourth
-group after Stored, using the standard timed-affect cell renderer
-(drain bar + expiring-blink). See
-[docs/buffs-pane.md](buffs-pane.md#per-group-palette) for the cell
+top-level array `blinds`. The buffs pane renders it as the fourth group
+(after Spells / Buffs / Debuffs / Stored) and immediately **before** the
+Charm group, using the standard timed-affect cell renderer (drain bar +
+expiring-blink) laid out **2 cells per row** so the wider mob names fit. See
+[docs/buffs-pane.md](buffs-pane.md#blinds-two-up-layout) for the two-up layout
+and [docs/buffs-pane.md](buffs-pane.md#per-group-palette) for the cell
 appearance and the palette entry.
 
 ## UI-pane announcements
@@ -257,8 +265,8 @@ The `BLIND` tag renders in the same cyan (`#00CCCC`) as the buffs-pane
 Blinds group, so the UI-pane line and the pane bar read as one surface.
 
 No UI line is emitted on:
-- a failed cast (failure-line FIFO pop is silent);
-- an empty-input cancel (`user_input_empty` FIFO pop is silent);
+- a failed cast (spellcast's failure-line pop of the shared FIFO is silent);
+- an empty-input cancel (spellcast's `user_input_empty` pop is silent);
 - disconnect (the state wipe via `char_reset` is silent).
 
 ---

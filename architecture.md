@@ -360,7 +360,7 @@ scope.
 
 **`state.*`** — shared game and world data. Each sub-namespace has a defined owner:
 
-- `state.char` — populated by `lua/core/char_state.lua` from `Char.Name` / `StatusVars` / `Vitals`; extended by `lua/core/affects.lua` (`affects`, `affect_times`), `lua/core/stored_spells.lua` (`stored_spells`, `stored_spell_times`), and `lua/core/blinds.lua` (`blinds` — session-only); `wimpy` field set by `lua/core/wimpy.lua`. Reset function defined by `char_state.lua`.
+- `state.char` — populated by `lua/core/char_state.lua` from `Char.Name` / `StatusVars` / `Vitals`; extended by `lua/core/affects.lua` (`affects`, `affect_times`), `lua/core/stored_spells.lua` (`stored_spells`, `stored_spell_times`), `lua/core/blinds.lua` (`blinds` — persisted), and `lua/core/charm.lua` (`charms` — persisted); `wimpy` field set by `lua/core/wimpy.lua`. The shared cast-attempt FIFO and the shared cast-feedback lines that blinds/charm/stored-spells consume are owned by `lua/core/spellcast.lua` (runtime-only, not in `state`). Reset function defined by `char_state.lua`.
 - `state.room` — currently unused; reserved.
 - `state.comm` — owned by `lua/core/comm_log.lua` (`history`, `channels`, `max_size`). `lua/core/comm_state.lua` adds the `serialize()` entry point.
 - `state.world` — owned by `lua/core/world_state.lua` (`sun`, `moon`, `moved`, `darkness`) and `lua/core/clock.lua` (`state.world.clock`).
@@ -529,7 +529,9 @@ mode.
 - [docs/clock.md](docs/clock.md) — Game clock: sync sources, state schema, persistence, seed handling, degradation rules. Touched when changing clock sync or consuming game time.
 - [docs/affects.md](docs/affects.md) — Affect tracker: data flow, state schemas, persistence, pattern-conversion rules, tick lifecycle. Touched when changing affect tracking or adding new affect entries.
 - [docs/stored-spells.md](docs/stored-spells.md) — Stored spells tracker: data flow, schemas, spell-name resolver, persistence, SENT OUTPUT snooping. Touched when changing stored-spell tracking or the spells data table.
-- [docs/blinds.md](docs/blinds.md) — Blinds tracker: 90 s fixed-duration timers, two-layer (inbound landing + outgoing cast snoop FIFO), failure-pattern queue cleanup. Touched when changing blind tracking or the cast-snoop heuristics.
+- [docs/spellcast.md](docs/spellcast.md) — Shared cast-feedback pipeline: the runtime-only cast-attempt FIFO, the neutral `spell_cast_failed` / `spell_cast_started` / `spell_cast_recalled` events, and the consumers (blinds, charm, stored-spells). Touched when changing the shared cast lines, the queue mechanics, or the idle flush.
+- [docs/charm.md](docs/charm.md) — Charm tracker: cast snoop + in-flight gate on the ambiguous follow line, the two success lines, the 99-min cap, persistence, and click-to-drop. Touched when changing charm tracking.
+- [docs/blinds.md](docs/blinds.md) — Blinds tracker: 90 s fixed-duration landing and per-character persistence. The cast-attempt FIFO and shared failure handling live in [docs/spellcast.md](docs/spellcast.md). Touched when changing blind tracking.
 - [docs/readability.md](docs/readability.md) — Readability modules: drop-in `.tin` loader, `.meta` format spec, startup.conf toggle, cold/hot reload lifecycle. Touched when adding a module, changing the loader contract, or modifying the `.meta` format.
 - [docs/runs.md](docs/runs.md) — Run log contract: file layout, event schema (run_start/level_up/run_end), lifecycle, schema versioning. Touched when changing run-log behaviour or adding new row types.
 - [docs/buffs-pane.md](docs/buffs-pane.md) — Buffs pane: renderer, scroll, blink, layout integration. Touched when changing the buffs pane renderer or the buffs.state schema.
