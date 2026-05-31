@@ -1280,10 +1280,10 @@ and pops back to `main`.
 Single frame for the Panes submenu. Renders a **pane × colour grid**
 where rows are the six right-column panes (Character / Buffs / Group /
 Communication / UI / Developer) and columns are the seven palette
-entries (Term / Red / Green / Blue / Grey / Orange / Purple). The first
+entries (None / Red / Green / Blue / Grey / Orange / Purple). The first
 column's internal name is still `black` — only its **display label** is
-`Term`, reflecting that it maps to `bg=default` (the terminal
-background) rather than literal black. Below
+`None`, reflecting that it maps to `bg=default` (the terminal
+background, no bg override) rather than literal black. Below
 the grid sit a blank row, a `[X] Display pane headers` toggle, a blank
 row, and `Back`. The frame uses the `menu_chrome.title_block` /
 `footer_block` helpers (`blank_above=2`) and the shared
@@ -1347,7 +1347,7 @@ popup. Three entries:
   preview matches the terminal background the pane will actually take
   on (`bg=default`); selection there stays visible via the gold cursor
   brackets / `[X]`. Header labels come from `pane_color_label(name)`
-  (so the `black` column shows `Term`); the header row paints in
+  (so the `black` column shows `None`); the header row paints in
   `C_HINT`. When `cell_handler` is provided the cell fragments are
   emitted as 3-tuples carrying the returned mouse handler; otherwise as
   2-tuples.
@@ -1360,7 +1360,7 @@ popup. Three entries:
 The launcher and the popup both read / write the existing
 `startup.conf` keys — `show_<key>` and `pane_color_<key>`. The grid
 model maps `show_<key>=1` with an empty or unknown `pane_color_<key>`
-to the terminal-default column (internal name `black`, labelled `Term`).
+to the terminal-default column (internal name `black`, labelled `None`).
 
 Tests live in `bridge/launcher/tests/test_panes_grid.py` and run
 without prompt_toolkit installed.
@@ -1375,7 +1375,7 @@ back to `bg=default` and logs a debug line.
 
 | Name     | Label  | Hex       | tmux bg          |
 |----------|--------|-----------|------------------|
-| `black`  | `Term` | —         | `bg=default`     |
+| `black`  | `None` | —         | `bg=default`     |
 | `red`    | `Red`    | `#1a0e0e` | `bg=#1A0E0E`     |
 | `green`  | `Green`  | `#0e1a0e` | `bg=#0E1A0E`     |
 | `blue`   | `Blue`   | `#0e141c` | `bg=#0E141C`     |
@@ -1385,7 +1385,7 @@ back to `bg=default` and logs a debug line.
 
 `PANE_COLOR_ORDER` in `palette.py` defines the grid's column order.
 Column labels come from `PANE_COLOR_LABELS` / `pane_color_label(name)`
-(the same `palette.py`): only `black` overrides its label (→ `Term`);
+(the same `palette.py`): only `black` overrides its label (→ `None`);
 every other column falls back to its capitalised name. The stored value
 and the `pane_color_<key>` schema keep using the lowercase keys above,
 so existing configs load unchanged.

@@ -162,13 +162,13 @@ class TestFragmentsCellColourPrecedence(unittest.TestCase):
         styles = list(_styles_for_text(frags, "Purple"))
         self.assertEqual(styles, [C_HINT])
 
-    def test_first_header_label_is_term(self):
+    def test_first_header_label_is_none(self):
         # The terminal-default column (internal name "black") is labelled
-        # "Term", centred in the 6-cell column.
+        # "None", centred in the 6-cell column.
         frags = panes_grid.panes_grid_fragments(
             _sample_rows(), term_cols=120, cursor=None,
         )
-        styles = list(_styles_for_text(frags, " Term "))
+        styles = list(_styles_for_text(frags, " None "))
         self.assertEqual(styles, [C_HINT])
         # And no column is labelled "Black" any more.
         self.assertEqual(list(_styles_for_text(frags, "Black")), [])

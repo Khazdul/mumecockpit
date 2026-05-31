@@ -228,10 +228,10 @@ def pane_color_hex(name):
 # Display labels decoupled from the stored colour names. The "black" column is
 # really "terminal default" (PANE_COLORS["black"] is None → open_pane.sh maps
 # it to bg=default), so it shows the terminal background rather than literal
-# black; label it "Term" to match. Names absent from this map fall back to
-# their capitalised key. The stored value and startup.conf schema keep using
-# the "black" key — only the presentation changes.
-PANE_COLOR_LABELS = {"black": "Term"}
+# black; label it "None" to match (no bg override). Names absent from this map
+# fall back to their capitalised key. The stored value and startup.conf schema
+# keep using the "black" key — only the presentation changes.
+PANE_COLOR_LABELS = {"black": "None"}
 
 
 def pane_color_label(name):
