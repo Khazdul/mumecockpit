@@ -180,9 +180,10 @@ end
 -- ---------------------------------------------------------------------------
 
 -- Re-derive every entry. nil → the herblore fully elapsed: remove and announce
--- down. A new phase index → relabel the entry in place; intermediate phase
--- transitions are SILENT (the grid cell relabels itself and may move between the
--- buff and debuff groups). Re-arms while any entry remains.
+-- down. A new phase index → relabel the entry in place and announce up (the grid
+-- cell relabels itself and may move between the buff and debuff groups). Every
+-- live transition surfaces a UI line; only the restore path is silent. Re-arms
+-- while any entry remains.
 function _herblores_tick()
     local t = state.char.herblores
     if not t then return end
@@ -203,6 +204,7 @@ function _herblores_tick()
             e.expires_at        = expires_at
             e.expected_duration = dur
             changed = true
+            char_ui("herb", name, "up")
         end
     end
     if #t > 0 then

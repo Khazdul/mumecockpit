@@ -87,19 +87,21 @@ least one herblore is active. Each entry is re-derived:
 - `nil` → the herblore fully elapsed: removed, with `char_ui("herb", name,
   "down")`.
 - a new phase index → the entry is relabelled in place (`name`/`type`/
-  `expires_at`/`expected_duration`/`phase`). **Intermediate phase transitions are
-  silent** — the grid cell relabels itself and may move between the Buffs and
-  Debuffs groups, with no UI line.
+  `expires_at`/`expected_duration`/`phase`) and the transition is announced with
+  `char_ui("herb", <new phase name>, "up")`. The grid cell relabels itself and
+  may move between the Buffs and Debuffs groups.
 
 The tick re-arms while any entry remains, and persists + emits
 `herblores_changed` only on a change.
 
-> **Announce policy (PR 1).** Only `up` (on add) and `down` (on final drop /
-> manual remove) are emitted; intermediate transitions are silent. Whether a
-> buff→debuff flip (`Clearthought`→neg, `Haste`→recovery) should announce itself
-> is deferred to the doc/ADR step that closes
-> [ADR 0043](decisions/0043-unified-character-event-marker.md)'s reserved `herb`
-> verb set.
+> **Announce policy.** This settles the `herb` verb set
+> [ADR 0043](decisions/0043-unified-character-event-marker.md) left open: `up`
+> is emitted whenever a phase becomes active — on add **and** on every
+> subsequent live phase transition (including a buff→debuff flip such as
+> `Clearthought`→neg or `Haste`→recovery); `down` is emitted on final expiry or
+> manual removal. The **restore path stays silent** — `_load_active` replays
+> phases that elapsed during downtime without per-phase lines; only the live
+> tick announces.
 
 ## Persistence
 
