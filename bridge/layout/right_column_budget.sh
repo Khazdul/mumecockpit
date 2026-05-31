@@ -19,11 +19,11 @@ declare -A MIN_HEIGHT=(
 # for `cp -reset-heights`.
 declare -A DEFAULT_DESIRED=(
     [status]=6
-    [timers]=5
-    [group]=5
+    [timers]=8
+    [group]=6
     [comm]=10
     [ui]=5
-    [dev]=5
+    [dev]=3
 )
 
 # Drop order: lowest priority first. Reversed yields PRIORITY_ORDER —
