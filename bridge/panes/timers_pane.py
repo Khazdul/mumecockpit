@@ -63,7 +63,7 @@ C_STORED_UNTRACKED_FG    = "fg:#cccccc"
 
 # Charms — no bar (see _charm_cell_frags). The name FG is themed from
 # layout["charm"].color; the minutes and × keep these fixed colours.
-C_CHARM_MINS_FG = "fg:#888888"   # darker grey
+C_CHARM_MINS_FG = "fg:#C0C0C0"   # matches the depleted-bar text (C_NAME_DEPLETED)
 C_CHARM_X_FG    = "fg:#CC5555"   # muted red (not a screaming red)
 C_CHARM_X_HOVER_FG = "fg:#E88888"   # lighter than C_CHARM_X_FG — hover cue
 

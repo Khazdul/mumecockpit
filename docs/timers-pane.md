@@ -347,7 +347,8 @@ for that charm's id, with per-cell hover via `_hover_charm_id`.
   The **first letter is capitalised** and the inner case is preserved (mob
   long-names like `huge stone troll` → `Huge stone troll`), unlike the grid
   groups which upper-case the whole label.
-- **Minutes** — darker grey `#888888` (fixed, not themed), a count-**up** rendered
+- **Minutes** — light grey `#C0C0C0` (fixed, not themed; matches the depleted-bar
+  text `C_NAME_DEPLETED`), a count-**up** rendered
   as `Nm` right-justified in 3 columns (`" 0m"` … `"99m"`), computed as
   `min(99, int((now - started_at) // 60))` and capped at 99. Shown only for
   **timed** entries. A **permanent** controlled mob (`expires_at: null`) shows
@@ -407,7 +408,7 @@ fill/separator columns above. Its colours are per-fragment instead:
 | Fragment        | FG        | Notes                                          |
 |-----------------|-----------|------------------------------------------------|
 | Name            | `#B388FF` | light violet — matches the `◆ CHARM` UI tag    |
-| Minutes         | `#888888` | darker grey — count-up `Nm`                    |
+| Minutes         | `#C0C0C0` | light grey — count-up `Nm` (matches depleted bar) |
 | Drop ×          | `#CC5555` | muted red                                      |
 | Drop × (hover)  | `#E88888` | brighter than `#CC5555` — pointer-hover cue    |
 
