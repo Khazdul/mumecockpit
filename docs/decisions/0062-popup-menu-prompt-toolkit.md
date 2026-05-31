@@ -120,6 +120,20 @@ Lessons that apply to prompt_toolkit work elsewhere in the cockpit:
   (`FormattedTextControl`). Either use a cursorless control
   uniformly across frames, or set `always_hide_cursor=True`
   explicitly on the relevant `Window`s.
+- **Fragment handlers must decline unhandled events.** Even when the correct
+  control handles every row (the note above), a per-fragment mouse handler inside
+  it can still swallow events. When a fragment carries a handler (the
+  `(style, text, handler)` 3-tuple), prompt_toolkit's
+  `FormattedTextControl.mouse_handler` returns *that handler's* return value for
+  any event over the fragment. A handler that branches on specific event types
+  (e.g. `MOUSE_DOWN`/`MOUSE_MOVE`) and falls off the end returns an implicit
+  `None`, which counts as "consumed" — so a `mouse_handler` override guarded by
+  `if result is not NotImplemented: return result` short-circuits and never
+  reaches its own wheel/scroll branch. Fragment handlers must therefore
+  `return NotImplemented` for every event type they do not consume. (Worked
+  example: timers-pane wheel scroll worked in the grid, whose cells are mostly
+  handler-less, but was silently swallowed in the herblore add-view, where every
+  row cell carried a click/hover handler.)
 
 ## Relation to other ADRs
 
