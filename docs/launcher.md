@@ -68,7 +68,7 @@ no longer a per-pane subframe.
 |---------|--------|
 | Session detect | `tmux has-session -t mume` + `list-clients` re-probed on every render → top item is "Enter MUME", "Resume MUME", or "Mirror MUME (attached elsewhere)" |
 | Profile page | Sortable table of `ttpp/profiles/*.tin` (Name + Selected columns) paired with a centred Options widget — Select, New, Edit, Rename, Delete, Export, Back. See the [Profile sub-menu](#profile-sub-menu) section below. `default` cannot be renamed or deleted. "Create blank" copies from `bridge/launcher/templates/blank_profile.tin` (single source of truth — see ADR 0042). The active profile is written to `startup.conf` and consumed by `ttpp/core/config.tin` at tt++ startup. |
-| Options page | Navigation hub: **Connection**, **Terminal** (managed-foot deployment only), **Panes**, **Readability**, **Scripts**, **Spotlights**, blank row, **Back**. See the [Options sub-menu](#options-sub-menu) section below for each child frame. All Options changes persist to `bridge/runtime/startup.conf` on Back / ESC; the Terminal child writes its own foot.ini and is not a `startup.conf` consumer. |
+| Options page | Navigation hub: **Connection**, **Terminal** (managed-foot deployment only), **Panes**, **Timers layout**, **Readability**, **Scripts**, **Spotlights**, blank row, **Back**. See the [Options sub-menu](#options-sub-menu) section below for each child frame. Most Options changes persist to `bridge/runtime/startup.conf` on Back / ESC; the Terminal child writes its own foot.ini, and the Timers layout child writes `bridge/runtime/timers_layout.conf` — neither is a `startup.conf` consumer. |
 | Scripts page | Opened from Options → Scripts. Two-column `[ list \| detail ]` manager of `lua/scripts/<name>.lua`; toggles enabled state via `bridge/runtime/scripts.conf` (deferred write on Back/ESC). See [`options_scripts` frame](#options_scripts-frame) below. |
 | Spotlights | Cross-character reel of deaths, level-ups, pvp-kills, and achievements aggregated from every character's sealed runs. Opens `log_view` in spotlight mode; empty-state frame when nothing has been captured yet. Plays to the end and parks on the last spotlight (no roll into credits). See the [Spotlights sub-menu](#spotlights-sub-menu) section and ADR 0077. |
 | Credits | Scrolling end-credits chronicle generated from the same aggregated event set as Spotlights, respecting the Options → Spotlights toggles. Sibling of Spotlights; opens the [`credits` frame](#credits-frame) directly (no `.log` loading), or `credits_empty` when `total_count == 0`. The only route to the credits frame. |
@@ -1260,6 +1260,7 @@ Navigation hub pushed by activating "Options" on the main frame. Children:
   [ADR 0104](decisions/0104-windows-deployment-foot-wslg.md) and
   [ADR 0107](decisions/0107-terminal-settings-managed-keys.md).
 - **Panes** → `options_panes` — per-pane enable/disable + colour selection.
+- **Timers layout** → `options_timers` — per-group colour, column count, and visibility for the timers pane (writes `timers_layout.conf`).
 - **Readability** → `readability` — opens the two-column Readability
   module manager documented under [`readability` frame](#readability-frame).
   ESC saves any pending toggles to `readability_enabled` in
@@ -1379,6 +1380,97 @@ painted across every cell of a disabled grid row — label, brackets,
 and swatch all share it so the row reads as unmistakably off. The
 cursor cell's brackets escape the dim treatment so a disabled row
 stays navigable.
+
+### Timers layout submenu
+
+Single frame (`options_timers`) for the Timers-layout submenu, opened
+from the Options menu's `Timers layout` row (directly below `Panes`).
+Renders a **group × colour grid** where rows are the six timer groups
+(Spells / Buffs / Debuffs / Stored / Blinds / Charmies) and columns are
+the nine palette entries (Blue / Green / Red / Magenta / Cyan / Violet /
+Orange / Yellow / Teal), followed by a trailing inline `◄ N ►` column
+stepper per row. Below the grid sit a blank row and `Back`. There is
+**no** colour-name header row and **no** headers toggle (unlike Panes).
+The frame uses the `menu_chrome.title_block` / `footer_block` helpers
+(`blank_above=2`) and the shared `timers_layout_grid` module — see
+ADR 0126 and the [Timers-layout grid model](#timers-layout-grid-model)
+section below.
+
+Each colour cell renders as `[X]███` or `[ ]███` — a 3-cell checkbox and
+a 3-cell colour swatch, identical to Panes. Per row, **0 or 1 cells are
+checked**: zero checked means the group is hidden (the row paints dim
+end-to-end); one checked means the group is shown with that colour.
+
+Enter / click semantics:
+
+- On a colour cell (per `apply_cell_toggle`, reused from `panes_grid`) —
+  if the cell is the group's currently-checked colour, uncheck it (the
+  group is hidden, but its colour is remembered); otherwise check it
+  (the group is shown with that colour, clearing any other checked cell
+  in the row). Charmies' swatch sets the charm name colour in the pane.
+- On the `◄` / `►` stepper — decrements / increments the group's column
+  count, clamped to `[1, max]` where `max` is 2 for Charmies and 6 for
+  every other group. The digit between the arrows is display-only.
+- On `Back` — saves and pops (same as ESC).
+
+The colour cells use the **swatch-cell grammar** (gold *foreground* on
+the cursor cell's `[ ]` / `[X]` glyphs); the stepper arrows follow the
+same cursor precedence; `Back` uses the **`<< label >>` menu-row
+grammar**.
+
+Persistence is **deferred**: cell / stepper actions mutate an in-memory
+`_timers_layout` dict; `_save_timers_layout` writes the whole file on
+Back / ESC. This is the persistence asymmetry vs. the popup — the
+popup's equivalent frame writes each changed key in place immediately,
+and the running timers pane picks it up within ~100 ms. Both surfaces
+write the same `timers_layout.conf` keys (`timers_<type>_enabled` /
+`_color` / `_cols`). A separate parse/save pair
+(`_parse_timers_layout` / `_save_timers_layout`) mirrors the
+`startup.conf` `_parse_conf` / `_save_conf` pair rather than reusing it
+— a different file and schema.
+
+**Cursor / navigation.** Seven navigable rows: the six grid rows and the
+`Back` row (`_TIMERS_BACK_ROW`). `↑` / `↓` move between them (clamped, no
+wrap). `←` / `→` move the column **only while the cursor is on a grid
+row**, across the nine colour columns then the `◄` (col 9) and `►`
+(col 10) stepper cells; the column persists across grid rows. Footer:
+`↑↓←→ Move · Enter Toggle · ESC Back`.
+
+### Timers-layout grid model
+
+Source: `bridge/launcher/timers_layout_grid.py` — a pure (no
+prompt_toolkit import, no global state) module shared between the
+launcher and the popup, modelled on `panes_grid.py`. It re-exports
+`panes_grid.apply_cell_toggle` (the colour cells use the identical
+0-or-1 model) and adds:
+
+- `timers_grid_fragments(rows, term_cols, cursor, cell_handler=None,
+  stepper_handler=None)` — one row per group: label, nine colour
+  swatches, then the inline `◄ N ►` stepper. `rows` is a list of
+  `(label, enabled, colour_index, cols, max_cols)`. Cursor columns are
+  colour cells `0..8`, `◄` at 9, `►` at 10. Cell-colour precedence
+  matches the panes grid; the stepper arrows follow it too, while the
+  digit is never a cursor stop and never gold. `cell_handler(ri, ci)`
+  and `stepper_handler(ri, delta)` (delta `-1` / `+1`) supply mouse
+  handlers when provided.
+- `clamp_cols(typ, raw)` / `step_cols(cols, max_cols, delta)` /
+  `max_cols_for(typ)` — the column arithmetic and per-type clamp
+  (charm 1–2, others 1–6).
+- `TIMERS_LAYOUT_TYPES` / `TIMERS_LAYOUT_LABELS` /
+  `TIMERS_LAYOUT_DEFAULTS` — the config contract, restated from
+  `bridge/panes/timers_pane.py` (the two packages share no import path;
+  see ADR 0126). `grid_width()` reports the centring width (79).
+
+The colour palette (`TIMERS_COLOR_ORDER`, with `timers_color_hex` /
+`timers_color_index`) lives in `palette.py`; its first six entries are
+the six group default colours so each default lands on a real swatch.
+The grid model maps an empty or unknown `timers_<type>_color` to the
+first column (index 0). The file is optional — absent, all consumers
+fall back to `TIMERS_LAYOUT_DEFAULTS`, so a fresh install opens the
+grid with every group on, today's colours, and today's column counts.
+
+Tests live in `bridge/launcher/tests/test_timers_layout_grid.py` and
+run without prompt_toolkit installed.
 
 ### `options_scripts` frame
 

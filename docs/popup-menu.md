@@ -234,25 +234,29 @@ Between **Statistics** (when present) and **Exit session** sit
 **Profile** and **Options**. Profile opens the shared `ProfileEditor`
 (ADR 0109) — see the [Profile frame](#profile-frame) section below.
 Options pushes a thin index frame whose sole purpose is to group
-**Panes** and **Scripts** under one slot, so the main menu stays short.
+**Panes**, **Timers layout**, and **Scripts** under one slot, so the
+main menu stays short.
 
 ```
 --- Options ---
                    (blank row)
 Panes
+Timers layout
 Readability
 Scripts
                    (blank row)
 Back
 ```
 
-`Options → Panes` reaches the Panes submenu described below; `Options
-→ Readability` reaches the interactive Readability frame (see
+`Options → Panes` reaches the Panes submenu described below; `Options →
+Timers layout` reaches the Timers-layout submenu (see [Timers layout
+submenu](#timers-layout-submenu) below); `Options → Readability`
+reaches the interactive Readability frame (see
 [Readability submenu](#readability-submenu) below); `Options → Scripts`
 reaches the Scripts frame (unchanged from previous versions). ESC
-inside `options` pops back to `main`; ESC inside `panes` or `scripts`
-pops back to `options`; ESC inside `readability` routes through
-save-and-pop (see below). Source of truth is `_OPTIONS_ROWS` in
+inside `options` pops back to `main`; ESC inside `panes`, `timers`, or
+`scripts` pops back to `options`; ESC inside `readability` routes
+through save-and-pop (see below). Source of truth is `_OPTIONS_ROWS` in
 `ingame_menu.py`.
 
 Frame titles in `options` and `panes` emit a blank row between the
@@ -383,6 +387,63 @@ popup, launcher Options, and `cp -X` aliases — are equivalent and write to
 `startup.conf`. Colour selections do **not** have `cp -X` equivalents
 today — they are reachable from the launcher Options page and the
 popup's Panes submenu only.
+
+## Timers layout submenu
+
+`Options → Timers layout`. The grid render and stepper logic live in
+`bridge/launcher/timers_layout_grid.py` (shared with the launcher — see
+the [Timers-layout grid model](launcher.md#timers-layout-grid-model)
+section in `docs/launcher.md` and ADR 0126).
+
+The `timers` frame renders a **group × colour grid**: rows are the six
+timer groups (Spells / Buffs / Debuffs / Stored / Blinds / Charmies),
+columns are the nine palette entries (Blue / Green / Red / Magenta /
+Cyan / Violet / Orange / Yellow / Teal), each row trailed by an inline
+`◄ N ►` column stepper. Each colour cell renders as `[X]███` or `[ ]███`
+— a 3-cell checkbox and a 3-cell swatch. Below the grid sit a blank row
+and `Back`. There is **no** colour-name header row and **no** headers
+toggle (unlike Panes). The frame uses `menu_chrome.title_block` /
+`footer_block` (`blank_above=1`) and the `menu_chrome.button_fragment`
+three-state grammar for `Back`.
+
+Per row, **0 or 1 colour cells are checked**: zero checked means the
+group is hidden (and the row paints dim end-to-end via `C_PANE_OFF`);
+one checked means the group is shown with that colour. The live grid
+state is re-read from `timers_layout.conf` on every render (the popup
+analog of the panes frame's tmux re-probe).
+
+Click / Enter semantics:
+
+- On a colour cell (`apply_cell_toggle`, reused from `panes_grid`) — if
+  the cell is the group's currently-checked colour, uncheck it (the
+  group is hidden, colour remembered); otherwise check it (the group is
+  shown with that colour). Charmies' swatch sets the charm name colour.
+  The change writes `timers_<type>_enabled` and `timers_<type>_color`
+  in place via `_persist_timers_layout_key` (a sibling of
+  `_persist_conf_key` targeting `timers_layout.conf`).
+- On the `◄` / `►` stepper — decrements / increments `timers_<type>_cols`,
+  clamped to `[1, max]` (max 2 for Charmies, 6 otherwise).
+- On `Back` — pops back to `options`.
+
+**No tmux interaction.** Unlike the Panes submenu, nothing is driven
+through `toggle_pane.sh` or `select-pane`: the running timers pane polls
+`timers_layout.conf` (~100 ms) and re-renders, so each edit applies
+live with no restart. Both surfaces write the same keys; the launcher
+batches its writes to Back / ESC while the popup writes each action
+immediately.
+
+Cell render rules follow the shared model (cursor cell brackets gold;
+checked bright, unchecked dim on enabled rows; disabled rows dim
+end-to-end). Swatch hexes come from `TIMERS_COLOR_ORDER`
+(`bridge/launcher/palette.py`); an empty or unknown
+`timers_<type>_color` maps to the first column. The file is optional —
+absent, the grid opens from `TIMERS_LAYOUT_DEFAULTS`.
+
+**Cursor / navigation.** Seven navigable rows: the six grid rows and the
+`Back` row. `↑` / `↓` move between them (clamped). `←` / `→` move the
+column only while the cursor is on a grid row, across the nine colour
+columns then the `◄` (col 9) and `►` (col 10) stepper cells; the column
+persists across grid rows. Footer: `↑↓←→ Move · Enter Toggle · ESC Back`.
 
 ## Readability submenu
 

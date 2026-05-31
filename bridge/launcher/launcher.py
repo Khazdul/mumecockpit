@@ -60,6 +60,7 @@ from palette import (  # noqa: E402
     _S_TRACK, _S_MARKER, _S_THUMB, _S_TOTAL, _S_ARROW,
     _S_HINT, _S_PVP, _S_ALLY, _S_STAR,
     PANE_COLOR_ORDER, pane_color_hex,
+    TIMERS_COLOR_ORDER, timers_color_hex, timers_color_index,
     TTPP_COLOR_STYLES, TTPP_COLOR_NAMES,
     C_SYN_COMMAND, C_SYN_BRACE, C_SYN_DELIM, C_SYN_VAR, C_SYN_CODE,
     C_SYN_BRACE_MATCH,
@@ -81,6 +82,10 @@ from menu_chrome import (  # noqa: E402
     button_fragment, footer_block, menu_row, title_block, title_block_height,
 )
 from panes_grid import apply_cell_toggle, panes_grid_fragments  # noqa: E402
+from timers_layout_grid import (  # noqa: E402
+    TIMERS_LAYOUT_TYPES, TIMERS_LAYOUT_LABELS, TIMERS_LAYOUT_DEFAULTS,
+    max_cols_for, clamp_cols, step_cols, timers_grid_fragments,
+)
 import readability_view  # noqa: E402
 import scripts_view  # noqa: E402
 from widgets.scrollbar import Scrollbar  # noqa: E402
@@ -93,6 +98,7 @@ BRIDGE_DIR         = os.path.dirname(SCRIPT_DIR)
 PROJECT_DIR        = os.path.dirname(BRIDGE_DIR)
 RUNTIME_DIR        = os.path.join(BRIDGE_DIR, "runtime")
 CONF_PATH          = os.path.join(RUNTIME_DIR, "startup.conf")
+TIMERS_LAYOUT_PATH = os.path.join(RUNTIME_DIR, "timers_layout.conf")
 LAYOUT_CONF_PATH   = os.path.join(RUNTIME_DIR, "layout.conf")
 VERSION_CACHE_PATH = os.path.join(RUNTIME_DIR, "version.cache")
 SCRIPTS_CACHE_PATH = os.path.join(RUNTIME_DIR, "scripts.cache")
@@ -274,6 +280,12 @@ _hover_options            = -1
 # to a grid row re-enters the same column.
 _options_panes_row        = 0
 _options_panes_col        = 0
+# Options — Timers layout submenu (timer-group × colour grid + col stepper).
+# Seven navigable rows: 0..5 grid rows (spell/buff/debuff/stored/blind/charm),
+# row 6 is Back. `_options_timers_col` is the persistent column across grid
+# rows; deferred edits live in `_timers_layout` and flush on the exit path.
+_options_timers_row       = 0
+_options_timers_col       = 0
 # Options — Connection submenu (MMapper / Direct / Custom / Back)
 _sel_options_connection   = 0
 _hover_options_connection = -1
@@ -485,6 +497,7 @@ _profile_create_copy_window      = None
 _profile_delete_window           = None
 _options_window                  = None
 _options_panes_window            = None
+_options_timers_window           = None
 _options_connection_window       = None
 _options_connection_custom_window = None
 _options_spotlights_window       = None
@@ -796,6 +809,73 @@ def _save_conf():
 
 
 # ---------------------------------------------------------------------------
+# Timers layout conf (per-group colour, column count, visibility)
+# ---------------------------------------------------------------------------
+# Deferred-write model, mirroring the panes submenu: edits mutate the
+# in-memory `_timers_layout` dict and `_save_timers_layout` flushes on the
+# exit path (Back / ESC). The cockpit is not running while the launcher is
+# up, so there is no live consumer to notify.
+_timers_layout = {}
+
+
+def _parse_timers_layout(path):
+    # Start from a deep copy of the defaults, then overlay file values.
+    layout = {typ: dict(TIMERS_LAYOUT_DEFAULTS[typ]) for typ in TIMERS_LAYOUT_TYPES}
+    try:
+        with open(path) as fh:
+            for raw in fh:
+                line = raw.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, val = line.split("=", 1)
+                key = key.strip()
+                val = val.strip()
+                if not key.startswith("timers_"):
+                    continue
+                # Keys are timers_<type>_<attr>; type tokens carry no
+                # underscore, so split the remainder on the LAST underscore.
+                rest = key[len("timers_"):]
+                if "_" not in rest:
+                    continue
+                typ, attr = rest.rsplit("_", 1)
+                if typ not in layout:
+                    continue
+                if attr == "enabled":
+                    if val in ("0", "1"):
+                        layout[typ]["enabled"] = (val == "1")
+                elif attr == "color":
+                    if re.fullmatch(r"#[0-9a-fA-F]{6}", val):
+                        layout[typ]["color"] = val
+                elif attr == "cols":
+                    cols = clamp_cols(typ, val)
+                    if cols is not None:
+                        layout[typ]["cols"] = cols
+    except OSError:
+        return layout
+    return layout
+
+
+def _load_timers_layout():
+    # Absent file -> defaults. Writing is deferred to the exit path, so we
+    # do not persist on load (matches the panes deferred-write model).
+    global _timers_layout
+    _timers_layout = _parse_timers_layout(TIMERS_LAYOUT_PATH)
+
+
+def _save_timers_layout():
+    try:
+        with open(TIMERS_LAYOUT_PATH, "w") as fh:
+            fh.write("# Timer-group layout — colour, column count, visibility\n")
+            for typ in TIMERS_LAYOUT_TYPES:
+                cur = _timers_layout.get(typ, TIMERS_LAYOUT_DEFAULTS[typ])
+                fh.write("timers_%s_enabled=%s\n" % (typ, "1" if cur["enabled"] else "0"))
+                fh.write("timers_%s_color=%s\n" % (typ, cur["color"]))
+                fh.write("timers_%s_cols=%s\n" % (typ, cur["cols"]))
+    except OSError:
+        pass
+
+
+# ---------------------------------------------------------------------------
 # Version / cache
 # ---------------------------------------------------------------------------
 def _read_version_file():
@@ -965,6 +1045,7 @@ def _focus_current_frame():
             "profile_rename":             _profile_rename_window,
             "options":                    _options_window,
             "options_panes":              _options_panes_window,
+            "options_timers":             _options_timers_window,
             "options_connection":         _options_connection_window,
             "options_connection_custom":  _options_connection_custom_window,
             "options_spotlights":         _options_spotlights_window,
@@ -2286,6 +2367,7 @@ def _build_options_rows():
         rows.append(("terminal", "Terminal"))
     rows.extend([
         ("panes",       "Panes"),
+        ("timers",      "Timers layout"),
         ("readability", "Readability"),
         ("scripts",     "Scripts"),
         ("spotlights",  "Spotlights"),
@@ -2307,6 +2389,7 @@ def _activate_option(idx):
     global _sel_options, _sel_options_connection
     global _sel_options_spotlights
     global _options_panes_row, _options_panes_col
+    global _options_timers_row, _options_timers_col
     if idx < 0 or idx >= len(_OPTIONS_ROWS):
         return
     _sel_options = idx
@@ -2315,6 +2398,11 @@ def _activate_option(idx):
         _options_panes_row = 0
         _options_panes_col = 0
         _push_frame("options_panes")
+    elif action == "timers":
+        _options_timers_row = 0
+        _options_timers_col = 0
+        _load_timers_layout()
+        _push_frame("options_timers")
     elif action == "readability":
         _enter_readability_frame()
     elif action == "scripts":
@@ -2575,6 +2663,172 @@ def _options_panes_text():
     # above the footer = title block + header row + 6 pane rows + 4
     # rows of bottom chrome (blank · headers · blank · Back).
     content_rows = title_block_height(2) + 1 + _PANES_GRID_ROWS + 4
+    footer = "↑↓←→ Move · Enter Toggle · ESC Back"
+    frags.extend(footer_block(
+        footer, cols, rows_h, content_rows, mouse_handler=clear_hover,
+    ))
+
+    return frags
+
+
+# ---------------------------------------------------------------------------
+# Options — Timers layout submenu (timer-group × colour grid + col stepper)
+# ---------------------------------------------------------------------------
+# Mirrors the Panes submenu. Rows of the grid are timer groups (Spells /
+# Buffs / Debuffs / Stored / Blinds / Charmies). Columns 0..N-1 are the
+# nine colours; column N is the ◄ column-count decrement and N+1 the ►
+# increment. A row with zero checked colour cells is hidden; exactly one
+# checked cell is shown in that colour. apply_cell_toggle handles the
+# on/off/switch-colour logic; the cols stepper is clamped per group via
+# step_cols / max_cols_for. Rendering goes through timers_grid_fragments;
+# there is no colour-name header row.
+#
+# Seven navigable rows: rows 0..5 are group rows (←/→ moves between the
+# colour columns and the two steppers; the column persists across grid
+# rows). Row 6 is Back. ↑/↓ moves between all seven rows. Enter activates:
+# a colour cell toggles via the model above, the steppers nudge the column
+# count, Back saves and pops. ESC = Back. All writes are deferred —
+# _save_timers_layout fires on the exit path.
+
+_TIMERS_GRID_ROWS = len(TIMERS_LAYOUT_TYPES)        # 6
+_TIMERS_BACK_ROW  = _TIMERS_GRID_ROWS               # 6
+_TIMERS_LAST_ROW  = _TIMERS_BACK_ROW
+_TIMERS_LAST_COL  = len(TIMERS_COLOR_ORDER) + 1     # colour cols + ◄ + ►
+
+
+def _set_timers_cursor(row, col=None):
+    """Update the timers-grid cursor; invalidate on change."""
+    global _options_timers_row, _options_timers_col
+    changed = False
+    if row != _options_timers_row:
+        _options_timers_row = row
+        changed = True
+    if col is not None and col != _options_timers_col:
+        _options_timers_col = col
+        changed = True
+    if changed and _app:
+        _app.invalidate()
+
+
+def _options_timers_back():
+    _save_timers_layout()
+    _pop_frame()
+
+
+def _apply_timers_grid_toggle(row, col):
+    """Apply a click on colour cell (row, col): on/off or switch-colour."""
+    typ = TIMERS_LAYOUT_TYPES[row]
+    cur = _timers_layout[typ]
+    enabled = cur["enabled"]
+    idx = timers_color_index(cur["color"])
+    new_en, new_idx = apply_cell_toggle(enabled, idx, col)
+    cur["enabled"] = new_en
+    # apply_cell_toggle returns the same index when turning off, so the
+    # colour is preserved across hide/show.
+    cur["color"] = timers_color_hex(new_idx)
+    if _app:
+        _app.invalidate()
+
+
+def _apply_timers_step(row, delta):
+    """Nudge the column count for a group, clamped to its per-group max."""
+    typ = TIMERS_LAYOUT_TYPES[row]
+    cur = _timers_layout[typ]
+    cur["cols"] = step_cols(cur["cols"], max_cols_for(typ), delta)
+    if _app:
+        _app.invalidate()
+
+
+def _options_timers_clear_hover(ev):
+    """MOUSE_MOVE handler for the timers-frame chrome. Like the panes
+    frame, the keyboard cursor and the mouse hover share the same row
+    state, so clearing here would move the cursor — deliberate no-op."""
+    return
+
+
+def _options_timers_text():
+    cols   = _term_cols()
+    rows_h = _term_rows()
+    clear_hover = _options_timers_clear_hover
+
+    # Grid rows from the in-memory layout dict.
+    grid_rows = []
+    for typ in TIMERS_LAYOUT_TYPES:
+        cur = _timers_layout[typ]
+        grid_rows.append((
+            TIMERS_LAYOUT_LABELS[typ],
+            cur["enabled"],
+            timers_color_index(cur["color"]),
+            cur["cols"],
+            max_cols_for(typ),
+        ))
+
+    cur_row = _options_timers_row
+    cur_col = _options_timers_col
+    grid_cursor = (cur_row, cur_col) if cur_row < _TIMERS_GRID_ROWS else None
+
+    back_label = "Back"
+
+    frags = []
+    frags.extend(title_block(
+        "─── Timers layout ───", cols, blank_above=2, mouse_handler=clear_hover,
+    ))
+
+    def _make_cell_handler(ri, ci):
+        def _h(ev):
+            if ev.event_type == MouseEventType.MOUSE_MOVE:
+                _set_timers_cursor(ri, ci)
+                return
+            if ev.event_type == MouseEventType.MOUSE_DOWN:
+                _set_timers_cursor(ri, ci)
+                _apply_timers_grid_toggle(ri, ci)
+        return _h
+
+    def _make_stepper_handler(ri, delta):
+        col = len(TIMERS_COLOR_ORDER) if delta < 0 else len(TIMERS_COLOR_ORDER) + 1
+
+        def _h(ev):
+            if ev.event_type == MouseEventType.MOUSE_MOVE:
+                _set_timers_cursor(ri, col)
+                return
+            if ev.event_type == MouseEventType.MOUSE_DOWN:
+                _set_timers_cursor(ri, col)
+                _apply_timers_step(ri, delta)
+        return _h
+
+    frags.extend(timers_grid_fragments(
+        grid_rows, cols, grid_cursor,
+        cell_handler=_make_cell_handler,
+        stepper_handler=_make_stepper_handler,
+    ))
+
+    # Blank row between grid and Back.
+    frags.append(("", "\n", clear_hover))
+
+    # Back — plain << label >> row, centred per row.
+    state_b = "selected" if cur_row == _TIMERS_BACK_ROW else "inactive"
+
+    def _back_handler(ev):
+        if ev.event_type == MouseEventType.MOUSE_MOVE:
+            _set_timers_cursor(_TIMERS_BACK_ROW)
+            return
+        if ev.event_type == MouseEventType.MOUSE_DOWN:
+            _options_timers_back()
+
+    back_row_w     = len(back_label) + 6
+    back_left_pad  = max(0, (cols - back_row_w) // 2)
+    back_right_pad = max(0, cols - back_left_pad - back_row_w)
+    frags.append(("", " " * back_left_pad, clear_hover))
+    frags.extend(menu_row(
+        back_label, state_b, mouse_handler=_back_handler,
+    ))
+    frags.append(("", " " * back_right_pad, clear_hover))
+    frags.append(("", "\n", clear_hover))
+
+    # Footer block anchored to the final terminal row. Content rows above
+    # the footer = title block + 6 group rows + 2 rows of bottom chrome
+    # (blank · Back).
+    content_rows = title_block_height(2) + _TIMERS_GRID_ROWS + 2
     footer = "↑↓←→ Move · Enter Toggle · ESC Back"
     frags.extend(footer_block(
         footer, cols, rows_h, content_rows, mouse_handler=clear_hover,
@@ -9072,6 +9326,55 @@ def _kb_optp_escape(event):
     _options_panes_back()
 
 
+# Options — Timers layout submenu (colour grid + col steppers). Six group
+# rows + Back; ←/→ moves between the colour columns and the two steppers,
+# Enter toggles a colour / nudges the column count / activates Back, ESC = Back.
+@kb.add("up", filter=_in_frame("options_timers"))
+def _kb_optt_layout_up(event):
+    if _options_timers_row > 0:
+        _set_timers_cursor(_options_timers_row - 1)
+
+
+@kb.add("down", filter=_in_frame("options_timers"))
+def _kb_optt_layout_down(event):
+    if _options_timers_row < _TIMERS_LAST_ROW:
+        _set_timers_cursor(_options_timers_row + 1)
+
+
+@kb.add("left", filter=_in_frame("options_timers"))
+def _kb_optt_layout_left(event):
+    if _options_timers_row < _TIMERS_GRID_ROWS and _options_timers_col > 0:
+        _set_timers_cursor(_options_timers_row, _options_timers_col - 1)
+
+
+@kb.add("right", filter=_in_frame("options_timers"))
+def _kb_optt_layout_right(event):
+    if (_options_timers_row < _TIMERS_GRID_ROWS
+            and _options_timers_col < _TIMERS_LAST_COL):
+        _set_timers_cursor(_options_timers_row, _options_timers_col + 1)
+
+
+@kb.add("enter", filter=_in_frame("options_timers"))
+@kb.add(" ",     filter=_in_frame("options_timers"))
+def _kb_optt_layout_select(event):
+    r = _options_timers_row
+    if r < _TIMERS_GRID_ROWS:
+        n = len(TIMERS_COLOR_ORDER)
+        if _options_timers_col < n:
+            _apply_timers_grid_toggle(r, _options_timers_col)
+        elif _options_timers_col == n:
+            _apply_timers_step(r, -1)
+        elif _options_timers_col == n + 1:
+            _apply_timers_step(r, 1)
+    elif r == _TIMERS_BACK_ROW:
+        _options_timers_back()
+
+
+@kb.add("escape", filter=_in_frame("options_timers"), eager=True)
+def _kb_optt_layout_escape(event):
+    _options_timers_back()
+
+
 # Options — Spotlights submenu
 @kb.add("up", filter=_in_frame("options_spotlights"))
 def _kb_opts_up(event):
@@ -9931,6 +10234,7 @@ def main():
     global _profile_create_name_window, _profile_create_choose_window
     global _profile_create_copy_window, _profile_delete_window
     global _options_window, _options_panes_window
+    global _options_timers_window
     global _options_connection_window, _options_connection_custom_window
     global _options_spotlights_window
     global _options_terminal_window
@@ -10005,6 +10309,7 @@ def main():
         if _profile_editor_instance is not None else Window())
     _options_window,                    options_frame                  = _build_simple(_options_text)
     _options_panes_window,              options_panes_frame            = _build_simple(_options_panes_text)
+    _options_timers_window,             options_timers_frame           = _build_simple(_options_timers_text)
     _options_connection_window,         options_connection_frame       = _build_simple(_options_connection_text)
     _options_connection_custom_window,  options_connection_custom_frame = _build_simple(_options_connection_custom_text)
     _options_spotlights_window,         options_spotlights_frame       = _build_simple(_options_spotlights_text)
@@ -10163,6 +10468,7 @@ def main():
         "profile_editor_macro_keybind": peditor_keybind_frame,
         "options":                    options_frame,
         "options_panes":              options_panes_frame,
+        "options_timers":             options_timers_frame,
         "options_connection":         options_connection_frame,
         "options_connection_custom":  options_connection_custom_frame,
         "options_spotlights":         options_spotlights_frame,

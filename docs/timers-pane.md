@@ -120,8 +120,15 @@ Per-group colour, column count, and visibility are read from a small
 `bridge/runtime/startup.conf`). The `TIMERS_LAYOUT_PATH` env var overrides the
 path (mirroring `TIMERS_STATE_PATH`). The file is **optional** — with no file
 present, or any individual key missing, the renderer falls back to the defaults
-below, which reproduce the historic hardcoded grid exactly. A companion
-launcher/popup "Timers layout" menu writes this file; the pane only reads it.
+below, which reproduce the historic hardcoded grid exactly. The
+companion launcher/popup "Timers layout" menu writes this file; the pane
+only reads it. The menu's grid + stepper render and its copy of the
+defaults / cols-clamp live in `bridge/launcher/timers_layout_grid.py` —
+the defaults below are deliberately restated there because the
+`bridge/launcher` and `bridge/panes` packages share no import path (see
+[docs/launcher.md](launcher.md#timers-layout-submenu) and
+[ADR 0126](decisions/0126-timers-layout-menu.md)). Keep the two copies
+in sync.
 
 Type tokens: `spell`, `buff`, `debuff`, `stored`, `blind`, `charm`. Keys per
 type:

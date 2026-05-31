@@ -62,3 +62,6 @@ lua/scripts/autobow.lua
 
 # WSL clipboard helper — downloaded by bootstrap, never tracked
 bin/
+
+# Claude Code harness transient lock (not project state)
+.claude/scheduled_tasks.lock

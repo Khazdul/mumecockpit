@@ -24,6 +24,7 @@ __all__ = [
     "_S_TRACK", "_S_MARKER", "_S_THUMB", "_S_TOTAL", "_S_ARROW",
     "_S_HINT", "_S_PVP", "_S_ALLY", "_S_STAR",
     "PANE_COLORS", "PANE_COLOR_ORDER", "pane_color_hex",
+    "TIMERS_COLOR_ORDER", "timers_color_hex", "timers_color_index",
     "TTPP_COLOR_STYLES", "TTPP_COLOR_NAMES",
     "C_SYN_COMMAND", "C_SYN_BRACE", "C_SYN_DELIM", "C_SYN_VAR", "C_SYN_CODE",
     "C_SYN_BRACE_MATCH",
@@ -221,6 +222,48 @@ def pane_color_hex(name):
     """Resolve a pane-colour name to its hex string, or None for the terminal
     default. Unknown names fall back to black (i.e. None)."""
     return PANE_COLORS.get(name, None) if name in PANE_COLORS else None
+
+
+# ---------------------------------------------------------------------------
+# Timers-pane group palette
+# ---------------------------------------------------------------------------
+# Ordered (name, hex) swatches for the launcher / popup "Timers layout" grid.
+# The first six entries are exactly the six group default colours (so every
+# type's default lands on a real swatch — spell→Blue, buff→Green, debuff→Red,
+# stored→Magenta, blind→Cyan, charm→Violet); the final three are additions at
+# the same saturation / brightness for users who want to recolour a group.
+# Stored in timers_layout.conf as raw #rrggbb under timers_<type>_color; the
+# timers pane (bridge/panes/timers_pane.py) reads the hex directly.
+TIMERS_COLOR_ORDER = [
+    ("Blue",    "#66b2ff"),
+    ("Green",   "#00d900"),
+    ("Red",     "#d90000"),
+    ("Magenta", "#ff66ff"),
+    ("Cyan",    "#00cccc"),
+    ("Violet",  "#B388FF"),
+    ("Orange",  "#ff9933"),
+    ("Yellow",  "#e8c84d"),
+    ("Teal",    "#33cc99"),
+]
+
+
+def timers_color_hex(index):
+    """Resolve a Timers-grid colour index to its #rrggbb string. Out-of-range
+    indices clamp to the first entry (the grid's default column)."""
+    if 0 <= index < len(TIMERS_COLOR_ORDER):
+        return TIMERS_COLOR_ORDER[index][1]
+    return TIMERS_COLOR_ORDER[0][1]
+
+
+def timers_color_index(hex_str):
+    """Map a stored #rrggbb string back to its Timers-grid column index, case-
+    insensitively. Unknown / empty values fall back to index 0, mirroring the
+    panes grid's unknown-colour-to-first-column rule."""
+    want = (hex_str or "").lower()
+    for i, (_name, hx) in enumerate(TIMERS_COLOR_ORDER):
+        if hx.lower() == want:
+            return i
+    return 0
 
 
 # ---------------------------------------------------------------------------
