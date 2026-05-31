@@ -211,9 +211,11 @@ yet solved. The drop itself works correctly.
 ## Rendering and announcements
 
 `state.char.charms` is serialised into `bridge/runtime/timers.state` and rendered
-by the timers pane as a one-per-row group with no bar (name · count-up minutes ·
-drop ×). See [docs/timers-pane.md](timers-pane.md) for the cell appearance and
-palette.
+by the timers pane in the charm group (up to its configured column cap, default
+1), with no bar: name · count-up minutes · drop ×. Timed entries show the
+count-up; permanent entries (`enslaved shadow`, `dreadful warg`) show no minutes
+and let the name fill that space. See [docs/timers-pane.md](timers-pane.md) for
+the cell appearance and palette.
 
 Landing and removal surface to the UI pane via
 `char_ui("charm", name, "up" | "down")` — the standard `◆`-family

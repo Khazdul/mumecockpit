@@ -319,7 +319,8 @@ Each block occupies `cell_w` columns with the standard cell content —
 `NAME.upper()[:cell_w-1].ljust(cell_w-1)` plus the `▌` separator — and inherits
 the timed-cell drain (`filled = int(pct * cell_w + 0.5)`), the Blinds palette
 (`#00cccc` fill / `#000000` fg / `#00cccc` separator), the depleted-grey
-(`#666666`), the expiring-blink rule, and the separator rule, all unchanged.
+(`#C0C0C0`, the status-pane value grey `status_pane.C_VALUE`, RGB 192,192,192),
+the expiring-blink rule, and the separator rule, all unchanged.
 
 Narrowing the pane truncates the name from the right
 (`PACK HORSE` → `PACK HO` → `PA`). An odd blind count leaves a single block on
