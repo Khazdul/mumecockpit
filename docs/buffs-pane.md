@@ -265,10 +265,10 @@ X's click model and authoritative-state rule (see [docs/charm.md](charm.md)).
 
 ### Accent colour
 
-The grid + and the add-view × share one accent — an inverted filled button:
-black glyph on gold. `C_ACCENT_BTN` (`fg:#000000 bg:#d4a04e`, the gold of the
-overflow indicator), brightening the background to `C_ACCENT_BTN_HOVER`
-(`bg:#f0c070`) on hover. They deliberately do **not** reuse the charm-X red —
+The grid + and the add-view × share one accent — a gold foreground glyph on the
+terminal/pane background. `C_ACCENT_FG` (`fg:#d4a04e`, the gold of the
+overflow indicator), brightening the foreground to `C_ACCENT_HOVER_FG`
+(`fg:#f0c070`) on hover. They deliberately do **not** reuse the charm-X red —
 only the charm row's drop × is red.
 
 ### The corner control (+ / ×)
@@ -284,21 +284,22 @@ a partial first row omits its trailing cells, or the grid is empty.
 `_corner_text()` returns:
 
 - `[]` (nothing) when not `_run_active`.
-- `[(C_ACCENT_BTN, "+", _open_handler)]` in grid mode.
-- `[(C_ACCENT_BTN, "×", _close_handler)]` in add mode.
+- `[(C_ACCENT_FG, "+", _open_handler)]` in grid mode.
+- `[(C_ACCENT_FG, "×", _close_handler)]` in add mode.
 
 + (ASCII, U+002B) and × (U+00D7) are single-width, so the 1×1 corner never
 over- or under-flows its cell; the close × is the same glyph the charm row uses
 to drop.
 
-The fragment carries an explicit gold **background**, so the Float renders as a
-filled gold button overwriting whatever cell sits beneath it (the bar colour is
-not shown in that one column — accepted, and the intended look). The click
-handler rides the Float's own fragment stream.
+The fragment carries a gold **foreground** and no background, so the Float
+renders the glyph on the terminal/pane background (no filled button). The
+underlying bar colour is still not shown in that one corner column — the Float
+paints the default bg (accepted). The click handler rides the Float's own
+fragment stream.
 
 - + hover via `_hover_plus`; × hover via `_hover_close`. Each handler's
   `MOUSE_MOVE` sets its own hover flag and clears the other's. Hover brightens
-  the gold background; the glyph stays black.
+  the glyph (gold foreground).
 - `_open_handler` (+) `MOUSE_DOWN`: switches `_view_mode` to `"add"`, resets
   `_scroll_offset` to 0, invalidates. `_close_handler` (×) `MOUSE_DOWN`:
   switches back to `"grid"`, resets `_scroll_offset` to 0, invalidates.
