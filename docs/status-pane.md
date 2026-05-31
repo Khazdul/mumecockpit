@@ -181,7 +181,7 @@ Constants defined at the top of `bridge/panes/status_pane.py`:
 | `C_BG_RST`| `\x1b[49m`               | Reset background only, keep foreground            |
 | `C_TP_FG` | `\x1b[38;2;0;40;50m`    | TP bar `▀` foreground — baseline segment (RGB 0,40,50) |
 | `C_TP_NEW_FG` | `\x1b[38;2;61;10;60m`   | TP bar session-gain segment `▀` foreground (RGB 61,10,60 — `#3D0A3C`) |
-| `C_LABEL`         | `\x1b[38;2;128;128;128m`    | Data row label foreground (RGB 128,128,128)          |
+| `C_LABEL`         | `\x1b[38;2;96;96;96m`       | Data row label foreground (RGB 96,96,96 — `#606060`, unified with timers group headers) |
 | `C_VALUE`         | `\x1b[38;2;192;192;192m`    | Data row value foreground (RGB 192,192,192)          |
 | `C_TOG_OFF_LABEL` | `\x1b[38;2;83;72;56m`       | Toggle label foreground — off state (RGB 83,72,56 — `#534838` warm dark brown) |
 | `C_TOG_ON_LABEL`  | `\x1b[38;2;212;160;78m`     | Toggle label foreground — on state (RGB 212,160,78 — `#D4A04E` warm gold)        |
@@ -275,7 +275,7 @@ Labels are truncated preserving the trailing colon; values are lowercased and
 sliced. Null/missing values render as empty string (label + col-width spaces).
 Only `wimpy` is a bare integer.
 
-Label foreground: `C_LABEL` (RGB 128,128,128). Value foreground: `C_VALUE`
+Label foreground: `C_LABEL` (RGB 96,96,96 — `#606060`). Value foreground: `C_VALUE`
 (RGB 192,192,192). `C_RESET` between each value and the next label; spacer has
 no SGR.
 

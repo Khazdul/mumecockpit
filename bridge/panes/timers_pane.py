@@ -81,10 +81,10 @@ C_HERB_NAME_HOVER  = "fg:#cccccc"   # name on hover
 
 C_CELL_FG       = "fg:#000000"
 # Group header label rows ("Spells:" etc). fg ONLY — no bg — so the label
-# renders directly on the tmux pane bg tint. Very dark grey, just legible on
-# every PANE_COLORS tint (tightest against grey #161616); bump to #454545 if
-# too faint there.
-C_GROUP_HEADER_FG = "fg:#3a3a3a"
+# renders directly on the tmux pane bg tint. Mid grey, unified with the char
+# (status) pane's data-row labels (status_pane.C_LABEL = #606060); keep the two
+# in sync. Legible on every PANE_COLORS tint (tightest against grey #161616).
+C_GROUP_HEADER_FG = "fg:#606060"
 C_INDICATOR     = "fg:#d4a04e italic"
 C_NAME_DEPLETED = "fg:#666666"
 # Untracked affect cells (reconciled from stat/info, no observed timing yet):

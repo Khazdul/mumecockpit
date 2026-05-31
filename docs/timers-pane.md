@@ -191,8 +191,10 @@ herblores.
 Groups are rendered top-to-bottom. Empty groups produce no rows. Group header
 labels are governed by the global `timers_headers` toggle (see
 [Layout config](#layout-config-timers_layoutconf)): when headers are on (the
-default) a single dim `Group:` label row (`C_GROUP_HEADER_FG`, fg only so it
-renders on the pane bg tint) is emitted immediately above each *rendered* group's
+default) a single dim `Group:` label row (`C_GROUP_HEADER_FG`, `fg:#606060`, fg
+only so it renders on the pane bg tint — the same mid grey as the status pane's
+data-row labels, `status_pane.C_LABEL`; keep the two in sync) is emitted
+immediately above each *rendered* group's
 content (a group renders iff enabled and non-empty), including the first — it
 doubles as the separator, so there are no blank rows. When off, today's dense
 layout: no headers, no blanks. `_build_all_rows` and `_total_rows` derive their
