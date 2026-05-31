@@ -127,6 +127,10 @@ tick-cap-fallback pattern of
 `charms_changed`; with none tracked it is a no-op. Permanent controlled mobs
 have no leave line — they are dropped only by the X.
 
+See [ADR 0124](decisions/0124-controlled-without-charm-followers.md) for the
+design rationale (one matcher with in-handler name dispatch over a separate
+band-4 trigger, and the permanent-vs-timed policy table).
+
 ## The 99-minute cap
 
 Charm has no real in-game duration and no drop string. `CHARM_CAP` is
