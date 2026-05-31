@@ -1,0 +1,9 @@
+#nop ===== HERBLORES =====
+#nop Alias registration for the herblore phase-machine tracker.
+#nop Called from SESSION CONNECTED in system.tin.
+#nop The alias delegates to Lua which registers the manual add/remove aliases
+#nop (_cp_herblore_add / _cp_herblore_remove) in the game session.
+
+#alias {_register_herblore_actions} {
+    #lua {_register_herblore_actions()}
+} {3}

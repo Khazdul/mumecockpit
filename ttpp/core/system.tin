@@ -197,6 +197,7 @@
             _register_stat_reconcile_actions;
             _register_blinds_actions;
             _register_charm_actions;
+            _register_herblore_actions;
             _register_input_ipc_actions %0;
             _register_run_log_capture %0;
             #%0 #class {%0} {open};

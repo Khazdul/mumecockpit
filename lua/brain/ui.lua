@@ -18,7 +18,7 @@ local _C_BUFF   = "\027[38;2;143;188;143m"  -- soft sage green  #8FBC8F
 local _C_DEBUFF = "\027[38;2;201;112;112m"  -- muted brick red  #C97070
 local _C_STORE  = "\027[38;2;179;157;219m"  -- muted lavender   #B39DDB
 local _C_BLIND  = "\027[38;2;0;204;204m"    -- cyan             #00CCCC — matches buffs-pane Blinds group
--- _C_HERB  = nil  -- placeholder: colour TBD when herblore tracker lands
+local _C_HERB   = "\027[38;2;156;204;101m"  -- herb green       #9CCC65 — distinct from the buff sage green
 local _C_CHARM  = "\027[38;2;179;136;255m"  -- light violet     #B388FF — matches buffs-pane Charm group
 local _C_RESET  = "\027[0m"
 
@@ -79,7 +79,7 @@ function ui_err(msg)
 end
 
 -- char_ui(category, name, verb, detail?) — character-state lifecycle line for the UI pane.
--- category: "spell" | "buff" | "debuff" | "store" | "blind" | "charm" — selects prefix colour and tag.
+-- category: "spell" | "buff" | "debuff" | "store" | "blind" | "charm" | "herb" — selects prefix colour and tag.
 -- name: entity name (rendered with ui_var for the dynamic-value style).
 -- verb: "up" | "refreshed" | "expiring" | "down", or domain verbs ("stored", "recalled", "decayed", …).
 -- detail (optional): appended in parentheses — e.g. "89:58 — sample recorded".
@@ -98,6 +98,8 @@ function char_ui(category, name, verb, detail)
         colour, tag = _C_BLIND, "BLIND"
     elseif category == "charm" then
         colour, tag = _C_CHARM, "CHARM"
+    elseif category == "herb" then
+        colour, tag = _C_HERB, "HERB"
     else
         colour, tag = _C_SCRIPT, "AFFECT"  -- defensive fallback
     end

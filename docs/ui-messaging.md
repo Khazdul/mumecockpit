@@ -163,17 +163,17 @@ Prose form: `◆ TAG: name verb.` or `◆ TAG: name verb (detail).` Trailing per
 | `store`     | `STORE`  | Muted lavender   | `#B39DDB` |                                          |
 | `blind`     | `BLIND`  | Cyan             | `#00CCCC` | Matches the buffs-pane Blinds group      |
 | `charm`     | `CHARM`  | Light violet     | `#B388FF` | Matches the buffs-pane Charm group       |
-| `herb`      | —        | TBD              | —         | Reserved; colour set when tracker lands  |
+| `herb`      | `HERB`   | Herb green       | `#9CCC65` | Manual herblore phase-machine tracker    |
 | *(unknown)* | `AFFECT` | Teal             | `#26C6DA` | Defensive fallback                       |
 
 ### Canonical verbs
 
 | Verb        | Meaning                                  | Emitters                  |
 |-------------|------------------------------------------|---------------------------|
-| `up`        | Effect became active                     | affects (init), blinds (landing), charm (landing) |
+| `up`        | Effect became active                     | affects (init), blinds (landing), charm (landing), herblore (add) |
 | `refreshed` | Effect re-applied while already active   | affects (refresh)         |
 | `expiring`  | Effect about to drop (**reserved**)      | *(none yet)*              |
-| `down`      | Effect dropped                           | affects (drop), blinds (tick prune at 90 s), charm (tick prune at 99 m / explicit drop) |
+| `down`      | Effect dropped                           | affects (drop), blinds (tick prune at 90 s), charm (tick prune at 99 m / explicit drop), herblore (final phase elapsed / manual remove) |
 | `stored`    | Spell stored to memory                   | stored\_spells            |
 | `recalled`  | Stored spell recalled                    | stored\_spells            |
 | `decayed`   | Stored spell decayed naturally           | stored\_spells            |

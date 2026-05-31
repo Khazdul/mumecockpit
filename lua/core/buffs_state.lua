@@ -1,7 +1,7 @@
 -- Serialises state.char.affects, state.char.stored_spells, state.char.blinds,
--- and state.char.charms to bridge/runtime/buffs.state (JSON) whenever
--- affects_changed, stored_spells_changed, blinds_changed, charms_changed,
--- char_reset, or gmcp_char_name fires.
+-- state.char.charms, and state.char.herblores to bridge/runtime/buffs.state
+-- (JSON) whenever affects_changed, stored_spells_changed, blinds_changed,
+-- charms_changed, herblores_changed, char_reset, or gmcp_char_name fires.
 --
 -- Atomic write: buffs.state.tmp → os.rename → buffs.state.
 
@@ -56,11 +56,34 @@ local function serialize()
         }
     end
 
+    -- Herblores serialise their CURRENT phase: name/type/expires_at/
+    -- expected_duration let the pane render them as ordinary buff/debuff cells.
+    -- key is unused until PR 2's add-view toggle.
+    local herblores = state.char.herblores or {}
+    local herblores_out = {}
+    for _, e in ipairs(herblores) do
+        herblores_out[#herblores_out + 1] = {
+            key               = e.key,
+            name              = e.name,
+            type              = e.type,
+            expires_at        = e.expires_at,
+            expected_duration = e.expected_duration,
+        }
+    end
+
+    -- Static catalog keys for PR 2's add-view. herblores.lua loads after this
+    -- file alphabetically, so the global may be absent on the initial serialize
+    -- (before any character connects); guard and emit [] until it exists.
+    local herblore_catalog =
+        (type(herblore_catalog_keys) == "function") and herblore_catalog_keys() or {}
+
     local payload = {
-        affects       = affects_out,
-        stored_spells = stored_out,
-        blinds        = blinds_out,
-        charms        = charms_out,
+        affects          = affects_out,
+        stored_spells    = stored_out,
+        blinds           = blinds_out,
+        charms           = charms_out,
+        herblores        = herblores_out,
+        herblore_catalog = herblore_catalog,
     }
     local ok, encoded = pcall(json.encode, payload)
     if not ok then
@@ -84,6 +107,7 @@ events.subscribe("affects_changed",        serialize)
 events.subscribe("stored_spells_changed",  serialize)
 events.subscribe("blinds_changed",         serialize)
 events.subscribe("charms_changed",         serialize)
+events.subscribe("herblores_changed",      serialize)
 events.subscribe("char_reset",             function() serialize() end)
 events.subscribe("gmcp_char_name",         function() serialize() end)
 

@@ -88,6 +88,7 @@ _affects       = []
 _stored_spells = []
 _blinds        = []
 _charms        = []
+_herblores     = []
 _last_mtime    = None
 _app           = None
 _scroll_offset = 0   # 0 = top (first row at top of pane); N = N rows hidden above
@@ -130,11 +131,19 @@ def _blind_cell_widths(W):
 
 def _split_groups():
     spells  = sorted([e for e in _affects if e.get("type") == "spell"],  key=_sort_key)
-    debuffs = sorted([e for e in _affects if e.get("type") == "debuff"], key=_sort_key)
-    buffs   = sorted(
-        [e for e in _affects if e.get("type") not in ("spell", "debuff")],
-        key=_sort_key,
-    )
+    # Herblores render as ordinary affect cells: the current phase's type routes
+    # it into the debuff or buff group, so it moves between groups by itself when
+    # a phase flips type. They carry name/type/expires_at/expected_duration, so
+    # _cell_frags renders palette and bar-drain unchanged.
+    debuff_src = [e for e in _affects if e.get("type") == "debuff"]
+    buff_src   = [e for e in _affects if e.get("type") not in ("spell", "debuff")]
+    for h in _herblores:
+        if h.get("type") == "debuff":
+            debuff_src.append(h)
+        else:
+            buff_src.append(h)
+    debuffs = sorted(debuff_src, key=_sort_key)
+    buffs   = sorted(buff_src,   key=_sort_key)
     tracked   = sorted(
         [e for e in _stored_spells if e.get("tracked")],
         key=lambda e: (-(e.get("expires_at") or 0), e.get("name", "").lower()),
@@ -425,7 +434,7 @@ def _restore_cursor():
 
 
 async def _poll_state(app):
-    global _affects, _stored_spells, _blinds, _charms, _last_mtime, _run_active
+    global _affects, _stored_spells, _blinds, _charms, _herblores, _last_mtime, _run_active
 
     while True:
         try:
@@ -444,11 +453,13 @@ async def _poll_state(app):
                         _stored_spells = []
                         _blinds        = []
                         _charms        = []
+                        _herblores     = []
                     else:
                         _affects       = loaded.get("affects", [])
                         _stored_spells = loaded.get("stored_spells", [])
                         _blinds        = loaded.get("blinds", [])
                         _charms        = loaded.get("charms", [])
+                        _herblores     = loaded.get("herblores", [])
                 except Exception:
                     pass
             else:
@@ -456,6 +467,7 @@ async def _poll_state(app):
                 _stored_spells = []
                 _blinds        = []
                 _charms        = []
+                _herblores     = []
             app.invalidate()
 
         new_run_active = os.path.exists(CONNECTION_STATE_PATH)

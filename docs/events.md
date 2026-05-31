@@ -93,6 +93,7 @@ event flow. Same pattern as `gmcp.trace`.
 | `spell_cast_recalled` | (none) | `lua/core/spellcast.lua` `#action` — `^You quickly recall your stored spell...$` |
 | `blinds_changed` | (none) | `lua/core/blinds.lua` — emitted on every state mutation (landing) and on each tick that prunes at least one expired entry |
 | `charms_changed` | (none) | `lua/core/charm.lua` — emitted on every `state.char.charms` mutation (landing, tick prune, explicit drop, `_load_active`) |
+| `herblores_changed` | (none) | `lua/core/herblores.lua` — emitted on every `state.char.herblores` mutation (add, remove, each tick that advances a phase or drops an elapsed herblore, `_load_active`) |
 | `kill_attributed` | `{name = "<mob name>", xp = <integer>}` | `lua/core/run_state.lua` `_fold()` — emitted once per attributed kill after `script_ui` announce |
 | `tp_gained` | `{delta = <integer>}` | `lua/core/run_state.lua` `gmcp_char_vitals` subscriber — emitted on each positive TP increase |
 | `char_death` | (none) | `ttpp/core/mud_events.tin` — `"You are dead! Sorry..."` pattern |
@@ -621,6 +622,22 @@ updated `charms` array (alongside `affects`, `stored_spells`, and `blinds`) to
 `bridge/runtime/buffs.state` atomically. The `_load_active` emit is load-bearing:
 `charm.lua` loads after `buffs_state.lua` alphabetically, so the buffs pane
 re-serialises regardless of module load order. See [docs/charm.md](charm.md).
+
+### `herblores_changed`
+
+Emitted by `lua/core/herblores.lua` with no payload whenever
+`state.char.herblores` is mutated — on `herblore_add` and `herblore_remove`, on
+each `_herblores_tick` that advances at least one entry to a new phase or drops
+an entry whose phases all elapsed, and at the end of `_load_active` after
+restoring persisted entries on `gmcp_char_name`. Mirrors `charms_changed`.
+
+Subscribers should read `state.char.herblores` directly for the new state.
+
+**Subscribers:** `lua/core/buffs_state.lua` — calls `serialize()` to write the
+updated `herblores` array (the current phase of each entry, alongside `affects`,
+`stored_spells`, `blinds`, and `charms`) to `bridge/runtime/buffs.state`
+atomically. The `_load_active` emit is load-bearing, exactly as for
+`charms_changed`. See [docs/herblores.md](herblores.md).
 
 ### `kill_attributed`
 

@@ -1,11 +1,12 @@
 # Buffs Pane
 
 A `prompt_toolkit` full-screen application that renders `state.char.affects`,
-`state.char.stored_spells`, `state.char.blinds`, and `state.char.charms` as a
-colour-coded grid grouped by type (spells, buffs, debuffs, stored, blinds,
-charms), with bar-drain animation, blink alerts for expiring entries, and
-row-based scroll. Touch this file when changing the renderer, the pane
-position, or the toggle wiring.
+`state.char.stored_spells`, `state.char.blinds`, `state.char.charms`, and
+`state.char.herblores` as a colour-coded grid grouped by type (spells, buffs,
+debuffs, stored, blinds, charms; herblores fold into the buffs/debuffs groups),
+with bar-drain animation, blink alerts for expiring entries, and row-based
+scroll. Touch this file when changing the renderer, the pane position, or the
+toggle wiring.
 
 ## Architecture
 
@@ -24,19 +25,24 @@ lua/core/blinds.lua ──► state.char.blinds                          │    
                                                                    │
 lua/core/charm.lua ──► state.char.charms                           │
                                 │                                  │
-                    charms_changed event ──────────────────────────┘
+                    charms_changed event ──────────────────────────┤
+                                                                   │
+lua/core/herblores.lua ──► state.char.herblores                    │
+                                │                                  │
+                    herblores_changed event ───────────────────────┘
 ```
 
 `buffs_state.lua` serialises `state.char.affects`,
-`state.char.stored_spells`, `state.char.blinds`, and `state.char.charms` to
-`bridge/runtime/buffs.state` on every `affects_changed`,
-`stored_spells_changed`, `blinds_changed`, or `charms_changed` event, on
-character reset (disconnect), and on login. `buffs_pane.py` polls that file and
-renders the grid.
+`state.char.stored_spells`, `state.char.blinds`, `state.char.charms`, and
+`state.char.herblores` to `bridge/runtime/buffs.state` on every
+`affects_changed`, `stored_spells_changed`, `blinds_changed`, `charms_changed`,
+or `herblores_changed` event, on character reset (disconnect), and on login.
+`buffs_pane.py` polls that file and renders the grid.
 
 ## State file schema (`bridge/runtime/buffs.state`)
 
-JSON object with four arrays:
+JSON object with affect/stored/blind/charm arrays plus the herblore arrays
+(`herblores`, `herblore_catalog`):
 
 ```json
 {
@@ -56,7 +62,11 @@ JSON object with four arrays:
   "charms": [
     {"id": 7, "name": "orc",              "started_at": 1714000000},
     {"id": 8, "name": "huge stone troll", "started_at": 1714000300}
-  ]
+  ],
+  "herblores": [
+    {"key": "Clearthought", "name": "Clearthought (neg)", "type": "debuff", "expires_at": 1714000720, "expected_duration": 360}
+  ],
+  "herblore_catalog": ["Healing", "Travelling", "Clearthought", "Walking", "Haste"]
 }
 ```
 
@@ -77,6 +87,17 @@ group"). `id` is the monotonic per-session id the click-to-drop X targets. A
 missing top-level `charms` key is treated as an empty array. See
 [docs/charm.md](charm.md).
 
+`herblores` entries carry the **current phase** of each active herblore:
+`{key, name, type, expires_at, expected_duration}`. They have no group of their
+own — `_split_groups` appends each entry to the **Debuffs** list when its
+`type == "debuff"` and to the **Buffs** list otherwise, *before* sorting, so a
+herblore renders as an ordinary timed buff/debuff cell (same palette, same
+bar-drain) and moves between the two groups by itself when a phase flips type.
+`key` is the catalog key (unused by the renderer until the PR 2 add-view).
+`herblore_catalog` is the static list of catalog keys for that add-view; the
+renderer does not read it in this PR. A missing `herblores` / `herblore_catalog`
+key is treated as an empty array. See [docs/herblores.md](herblores.md).
+
 The `tracked` field on an affect is `false` only for reconciliation-added
 timed-capable entries that have no observed init/refresh yet (see
 [`docs/affects.md`](affects.md#untracked-entries-stat--info-reconcile));
@@ -85,8 +106,8 @@ serializes `true`.
 
 **Legacy fallback:** if the loaded value is a bare JSON array (pre-migration
 state file), the renderer treats it as
-`{ "affects": loaded, "stored_spells": [], "blinds": [], "charms": [] }`
-and shows only affects — no crash, no Stored, Blinds, or Charm group.
+`{ "affects": loaded, "stored_spells": [], "blinds": [], "charms": [], "herblores": [] }`
+and shows only affects — no crash, no Stored, Blinds, Charm, or herblore cells.
 
 ## Rendering
 
@@ -100,8 +121,8 @@ groups produce no rows.
 | Group   | Source          | Condition                                          |
 |---------|-----------------|----------------------------------------------------|
 | Spells  | `affects`       | `type == "spell"`                                  |
-| Buffs   | `affects`       | `type` is neither `"spell"` nor `"debuff"`         |
-| Debuffs | `affects`       | `type == "debuff"`                                 |
+| Buffs   | `affects` + `herblores` | `type` is neither `"spell"` nor `"debuff"` |
+| Debuffs | `affects` + `herblores` | `type == "debuff"`                         |
 | Stored  | `stored_spells` | all entries (tracked and untracked)                |
 | Blinds  | `blinds`        | all entries                                        |
 | Charm   | `charms`        | all entries (one per row, after Blinds)            |
