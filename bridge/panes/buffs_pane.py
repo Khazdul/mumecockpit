@@ -419,18 +419,18 @@ def _close_handler(mouse_event):
 
 
 def _corner_text():
-    """The position-pinned ╋/╳ corner control (owned by a top-right Float, not by
+    """The position-pinned +/× corner control (owned by a top-right Float, not by
     any row). The fragment carries an explicit gold bg, so the 1×1 Float renders
-    as a filled gold button overwriting whatever cell sits beneath it. Box-drawing
-    glyphs are guaranteed single-width. Blank when the run is inactive; ╋ (open
-    add-view) in grid mode, ╳ (return to grid) in add mode."""
+    as a filled gold button overwriting whatever cell sits beneath it. + and × are
+    ASCII/Latin-1, single-width. Blank when the run is inactive; + (open add-view)
+    in grid mode, × (return to grid) in add mode."""
     if not _run_active:
         return []
     if _view_mode == "add":
         style = C_ACCENT_BTN_HOVER if _hover_close else C_ACCENT_BTN
-        return [(style, "╳", _close_handler)]
+        return [(style, "×", _close_handler)]
     style = C_ACCENT_BTN_HOVER if _hover_plus else C_ACCENT_BTN
-    return [(style, "╋", _open_handler)]
+    return [(style, "+", _open_handler)]
 
 
 def _add_view_frags():
