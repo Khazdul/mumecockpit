@@ -25,8 +25,22 @@
     }
 } {3}
 
-#nop _startup schedules the 0.5s delay so tt++ and Lua finish their boot
-#nop output before we wipe. Called explicitly from main.tin.
+#nop _startup arms the readiness gate: a one-shot guard plus a fallback timer.
+#nop brain.lua emits `_lua_ready` once it has finished loading and is reading
+#nop stdin; whichever fires first — the signal or the fallback — runs
+#nop _do_startup exactly once. The fallback only guards against a brain that
+#nop never signals (e.g. a load-time crash) so the client still connects
+#nop rather than hanging. See docs/session-lifecycle.md.
 #alias {_startup} {
-    #delay {3} {_do_startup}
+    #var {_startup_done} {0};
+    #delay {10} {_lua_ready}
+} {3}
+
+#nop Readiness-signal entry point. Idempotent via _startup_done so the signal
+#nop and the fallback timer cannot both connect.
+#alias {_lua_ready} {
+    #if {$_startup_done == 0} {
+        #var {_startup_done} {1};
+        _do_startup
+    }
 } {3}

@@ -72,6 +72,13 @@ _clear_connection_state()
 local _n_core, _n_scripts = load_scripts()
 dbg(_n_core .. " core + " .. _n_scripts .. " scripts loaded")
 
+-- Tell tt++ the brain has finished loading and is now reading stdin.
+-- welcome.tin gates auto-connect on this so `connect` never fires while tt++
+-- is still draining the brain's boot-time registration output (which can
+-- deadlock the tt++Lua pipes during the connect handshake).
+tintin(TT_SESSION, "_lua_ready")
+
+-- Main loop
 for line in io.lines() do
     handle_event(TT_SESSION, line)
 end
