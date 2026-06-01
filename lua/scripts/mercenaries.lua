@@ -306,7 +306,9 @@ end
 
 local function _register_triggers()
     _unregister_triggers()
-    session_cmd("#action {^A citizen mercenary starts following you.$} {#lua {scripts.mercenaries.on_hire()}}")
+    -- Explicit band 3 so this specific hire line wins over charm's generic
+    -- band-4 follow fallback (tt++ fires only one #action per line).
+    session_cmd("#action {^A citizen mercenary starts following you.$} {#lua {scripts.mercenaries.on_hire()}} {3}")
     session_cmd("#action {^A citizen mercenary (%1) taps you on the shoulder.$} {#lua {scripts.mercenaries.on_tap(\"%1\")}}")
     session_cmd("#action {^A citizen mercenary (%1) says 'Thank you. I am at your service.'$} {#lua {scripts.mercenaries.on_renew(\"%1\")}}")
     session_cmd("#action {^A citizen mercenary (%1) leaves and goes to seek another employer.$} {#lua {scripts.mercenaries.on_leave(\"%1\")}}")

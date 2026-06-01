@@ -358,7 +358,10 @@ end)
 -- ---------------------------------------------------------------------------
 
 function _register_charm_actions()
-    session_cmd([[#action {^%1 starts following you.$} {#lua {_charm_on_followed("%1")}} {3}]])
+    -- Band-4 follow fallback: this generic line claims a follow only when no
+    -- specific handler matches. A subsystem with a specific follow line (e.g.
+    -- mercenaries) registers at band 3 and wins the single-fire slot (ADR 0115).
+    session_cmd([[#action {^%1 starts following you.$} {#lua {_charm_on_followed("%1")}} {4}]])
 
     -- A second, unambiguous success line: re-casting charm on an already-charmed
     -- mob renews control instead of a fresh follow. Reuses the follow handler —
