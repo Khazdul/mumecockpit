@@ -47,23 +47,15 @@ if ($build -lt 22621) {
     exit 1
 }
 
-# VirtualMachinePlatform and WSL feature -- a Win 11 22H2 machine can still
-# have WSL disabled (uncommon but possible). Instruct the user to enable it
-# manually and re-run.
+# VirtualMachinePlatform is the real WSL2 prerequisite and `wsl --install`
+# still enables it -- a Win 11 22H2 machine can have it disabled (uncommon
+# but possible). Instruct the user to enable it manually and re-run. We do
+# NOT check the Microsoft-Windows-Subsystem-Linux optional feature: the Store
+# version of WSL (default since `wsl --install` GA) intentionally leaves it
+# Disabled, so requiring it produced false "WSL2 not enabled" loops.
 Write-Host "Checking WSL prerequisites..."
 $vmp = Get-WindowsOptionalFeature -Online -FeatureName VirtualMachinePlatform
 if ($vmp.State -ne 'Enabled') {
-    Write-Host ""
-    Write-Host "WSL2 is not enabled on this machine. Enable it first by running:"
-    Write-Host ""
-    Write-Host "    wsl --install"
-    Write-Host ""
-    Write-Host "in an admin PowerShell, then reboot, and re-run this installer."
-    exit 1
-}
-
-$wslFeature = Get-WindowsOptionalFeature -Online -FeatureName Microsoft-Windows-Subsystem-Linux
-if ($wslFeature.State -ne 'Enabled') {
     Write-Host ""
     Write-Host "WSL2 is not enabled on this machine. Enable it first by running:"
     Write-Host ""
