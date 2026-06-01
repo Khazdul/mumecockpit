@@ -89,7 +89,7 @@ $RUN apt-get install -y $PACKAGES
 # ---------------------------------------------------------------------------
 
 if [ "$IS_WSL" -eq 1 ]; then
-    FONT_PACKAGES="fonts-dejavu fonts-cascadia-code fonts-jetbrains-mono fonts-hack"
+    FONT_PACKAGES="fonts-dejavu fonts-cascadia-code fonts-jetbrains-mono fonts-hack fonts-firacode fonts-ibm-plex fonts-3270 fonts-mononoki fonts-agave fonts-anonymous-pro fonts-fantasque-sans fonts-go fonts-hermit fonts-inconsolata fonts-noto-mono"
     for pkg in $FONT_PACKAGES; do
         if ! $RUN apt-get install -y "$pkg" 2>/dev/null; then
             echo "Warning: font package $pkg not available — skipping." >&2
