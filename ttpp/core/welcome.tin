@@ -27,7 +27,7 @@
 
 #nop _startup arms the readiness gate: a one-shot guard plus a fallback timer.
 #nop brain.lua emits `_lua_ready` once it has finished loading and is reading
-#nop stdin; whichever fires first — the signal or the fallback — runs
+#nop stdin — whichever fires first, the signal or the fallback, runs
 #nop _do_startup exactly once. The fallback only guards against a brain that
 #nop never signals (e.g. a load-time crash) so the client still connects
 #nop rather than hanging. See docs/session-lifecycle.md.
