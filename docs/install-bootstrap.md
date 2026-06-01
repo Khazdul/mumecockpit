@@ -97,9 +97,13 @@ Fully unattended beyond the initial UAC prompt:
        reused Ubuntu install. See
        [ADR 0106](decisions/0106-windows-installer-hardening.md) for the
        full rationale,
-     - installs the `foot` terminal and a small set of monospace fonts
+     - installs the `foot` terminal and a set of monospace fonts
        (`fonts-dejavu`, `fonts-cascadia-code`, `fonts-jetbrains-mono`,
-       `fonts-hack`) inside WSL; missing apt names degrade gracefully,
+       `fonts-hack`, `fonts-firacode`, `fonts-ibm-plex`, `fonts-3270`,
+       `fonts-mononoki`, `fonts-agave`, `fonts-anonymous-pro`,
+       `fonts-fantasque-sans`, `fonts-go`, `fonts-hermit`,
+       `fonts-inconsolata`, `fonts-noto-mono`) inside WSL; missing apt
+       names degrade gracefully,
      - copies `install/examples/foot.ini` to `~/.config/foot/foot.ini` and
        seeds `initial-window-size-pixels` from the primary monitor
        resolution (~60% width × ~80% height) detected by `installer-core.ps1`
@@ -378,10 +382,16 @@ response to user font/size choices.
   ligatures — same visual register as Lucida Console / Menlo. This is
   the hard requirement.
 - **Provisioned alternatives.** `bootstrap-linux.sh` (WSL branch) also
-  installs `fonts-cascadia-code`, `fonts-jetbrains-mono`, and
-  `fonts-hack`. Any package name that doesn't resolve on the host
-  prints a warning and is skipped — the install does **not** fail. The
-  user gets whichever subset their Ubuntu version ships.
+  installs `fonts-cascadia-code`, `fonts-jetbrains-mono`,
+  `fonts-hack`, `fonts-firacode`, `fonts-ibm-plex`, `fonts-3270`,
+  `fonts-mononoki`, `fonts-agave`, `fonts-anonymous-pro`,
+  `fonts-fantasque-sans`, `fonts-go`, `fonts-hermit`,
+  `fonts-inconsolata`, and `fonts-noto-mono`. Each family is vetted for
+  box-drawing / block-element coverage before being added — that is the
+  selection criterion, since the UI relies on those glyphs. Any package
+  name that doesn't resolve on the host prints a warning and is skipped —
+  the install does **not** fail. The user gets whichever subset their
+  Ubuntu version ships.
 - **Default size.** `15`, matching the macOS/Linux Alacritty preset.
 
 Users who want to change family or size today can edit the `font=` line

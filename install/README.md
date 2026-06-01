@@ -45,10 +45,13 @@ same cockpit; only the bootstrap surface differs.
 
 - Ubuntu (inside WSL2) with the cockpit dependencies
 - The MUME Cockpit repo at `/root/MUME` inside Ubuntu
-- The `foot` terminal and a small set of monospace fonts
+- The `foot` terminal and a set of monospace fonts
   (`fonts-dejavu`, `fonts-cascadia-code`, `fonts-jetbrains-mono`,
-  `fonts-hack`) inside WSL — any font package your Ubuntu version
-  does not ship is skipped silently
+  `fonts-hack`, `fonts-firacode`, `fonts-ibm-plex`, `fonts-3270`,
+  `fonts-mononoki`, `fonts-agave`, `fonts-anonymous-pro`,
+  `fonts-fantasque-sans`, `fonts-go`, `fonts-hermit`,
+  `fonts-inconsolata`, `fonts-noto-mono`) inside WSL — any font package
+  your Ubuntu version does not ship is skipped silently
 - A managed `foot.ini` at `~/.config/foot/foot.ini` inside WSL
 - A **MUME Cockpit** Start Menu entry (surfaced from WSLg via
   `/usr/share/applications/mume-cockpit.desktop`, with its icon at
