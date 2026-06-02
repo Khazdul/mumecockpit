@@ -1360,7 +1360,7 @@ Enter / click semantics (per `panes_grid.apply_cell_toggle`):
 - On the headers toggle row — flips `show_pane_dividers` in `_conf`.
   The cockpit's tmux border-status setup reads the key at next start;
   nothing live happens at the launcher.
-- On `Back` — saves and pops (same as ESC).
+- On `Back` — saves and pops to the `options_panes` hub (same as ESC).
 
 The headers toggle and `Back` use the **`<< label >>` menu-row
 grammar** (`menu_chrome.menu_row`, gold *arrows* on the cursor row),
