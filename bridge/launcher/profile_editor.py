@@ -173,9 +173,24 @@ _EDITOR_DETAIL_W      = 35      # Detail panel width
 # Number of buttons in the kind row — derived for layout math.
 _EDITOR_KIND_COUNT    = len(_PROFILE_EDITOR_TABS)
 
-# Cap on visible rows for the Commands / New-text detail body field.
-# Bodies longer than this scroll within the field via an inline scrollbar.
-_EDITOR_BODY_CAP_ROWS = 10
+# Detail-panel chrome surrounding the lite-mode Commands / New-text body box,
+# counted in rows. The body box's visible-row budget is `_editor_body_h()`
+# minus this chrome (see `_editor_body_budget`), so the box fills the space the
+# panel actually has rather than stopping at a fixed ceiling. Bodies longer
+# than the budget scroll within the field via an inline scrollbar.
+#
+# Shared trailing block reserved by every kind, unconditionally so the layout
+# is height-stable whether or not a validation error shows: error/blank row +
+# blank + "─── Hint ───" + 2 hint lines + trailing blank.
+_EDITOR_DETAIL_TRAILING_ROWS = 6
+# Text-bodied kinds (alias/action/substitute): Pattern label+box (4) + Body
+# label (1) + body top/bottom borders (2) + trailing block.
+_EDITOR_TEXT_BODY_CHROME  = 4 + 1 + 2 + _EDITOR_DETAIL_TRAILING_ROWS
+# Macro: Key label (1) + Key cell (1) + blank (1) + Body label (1) + body
+# top/bottom borders (2) + trailing block.
+_EDITOR_MACRO_BODY_CHROME = 1 + 1 + 1 + 1 + 2 + _EDITOR_DETAIL_TRAILING_ROWS
+# Smallest usable body box, even on very short terminals.
+_EDITOR_BODY_MIN_ROWS = 3
 
 # Per-kind detail-panel field labels — `(pattern_label, body_label)`. Used by
 # both the detail panel (renamed `Body` slot) and the list panel header.
@@ -1922,13 +1937,31 @@ class ProfileEditor:
         return entry.body.split("\n") if entry.body else [""]
     
     
+    def _editor_body_budget(self):
+        """Visible-row budget for the lite-mode Commands / New-text body box.
+
+        Derived from `_editor_body_h()` minus the rows the rest of the active
+        kind's detail chain consumes (`_EDITOR_TEXT_BODY_CHROME` /
+        `_EDITOR_MACRO_BODY_CHROME`), so the box fills the panel's available
+        height instead of stopping at a fixed ceiling. Floored at
+        `_EDITOR_BODY_MIN_ROWS` so the box stays usable on very short
+        terminals. The chrome reserves the trailing hint block
+        unconditionally, so the budget — and the overall layout — is
+        height-stable whether or not a validation error shows."""
+        if self._profile_editor_active_kind() == "macro":
+            chrome = _EDITOR_MACRO_BODY_CHROME
+        else:
+            chrome = _EDITOR_TEXT_BODY_CHROME
+        return max(_EDITOR_BODY_MIN_ROWS, self._editor_body_h() - chrome)
+
+
     def _editor_body_wheel(self, delta):
         """Mouse-wheel scroll on the lite-mode Body field. No-op when the
-        body fits inside the 10-row cap; otherwise adjusts
+        body fits inside the visible budget; otherwise adjusts
         `self._editor_body_scroll` by `delta` lines, clamped. The body cursor
         stays put — the next cursor-moving keystroke pulls the viewport
         back via `self._editor_body_viewport`."""
-        cap = _EDITOR_BODY_CAP_ROWS
+        cap = self._editor_body_budget()
         line_count = len(self._editor_body_lines())
         if line_count <= cap:
             return
@@ -1941,12 +1974,12 @@ class ProfileEditor:
     
     
     def _editor_body_viewport(self, line_count):
-        """Clamp `self._editor_body_scroll` so the cursor stays inside the 10-row
+        """Clamp `self._editor_body_scroll` so the cursor stays inside the
         Commands viewport, then return `(scroll, visible_count, overflow)`.
-    
-        `overflow` is True when `line_count` exceeds the cap — used to decide
+
+        `overflow` is True when `line_count` exceeds the budget — used to decide
         whether the body box needs an inline scrollbar column."""
-        cap = _EDITOR_BODY_CAP_ROWS
+        cap = self._editor_body_budget()
         if line_count <= cap:
             self._editor_body_scroll = 0
             return 0, line_count, False
@@ -1964,7 +1997,7 @@ class ProfileEditor:
         overflows the cap. Mirrors the entry-list scrollbar glyphs: bright
         block thumb + dim track. Click handler is page-step (matching the
         Scrollbar widget contract)."""
-        cap = _EDITOR_BODY_CAP_ROWS
+        cap = self._editor_body_budget()
         top, thumb_h = _editor_sb_thumb_geom_generic(total, visible, cap, scroll)
         if top <= visible_row < top + thumb_h:
             style, glyph = "bold fg:#ffffff", "█"
@@ -2009,8 +2042,8 @@ class ProfileEditor:
     def _editor_build_body_box(self, entry, body_focused, body_lbl, body_border,
                                body_focus_h):
         """Build the label + bordered Commands / New-text box for the body
-        field. Visible content is capped at `_EDITOR_BODY_CAP_ROWS`; bodies
-        longer than the cap render with an inline scrollbar in the right
+        field. Visible content is sized to `_editor_body_budget()`; bodies
+        longer than the budget render with an inline scrollbar in the right
         edge of the box and the viewport tracks the cursor.
     
         Returns the list of detail rows for the field (label + top border +
@@ -2070,7 +2103,7 @@ class ProfileEditor:
     
         `scrollbar_cell`, when not None, is a `(style, glyph[, handler])`
         fragment that replaces the rightmost inner cell — used by the body
-        field when its content overflows the 10-row visible cap. Effective
+        field when its content overflows the visible-row budget. Effective
         content width drops by one in that case.
     
         Returns a list of `(style, text[, handler])` fragments summing to
@@ -4916,7 +4949,7 @@ class ProfileEditor:
         target = self._autoscroll_target
         if target is None:
             return False
-        cap = _EDITOR_BODY_CAP_ROWS
+        cap = self._editor_body_budget()
         line_count = len(self._editor_body_lines())
         if line_count <= cap:
             return False

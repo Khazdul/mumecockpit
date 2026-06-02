@@ -3883,7 +3883,7 @@ class TestEditorWheelScroll(unittest.TestCase):
 
     def test_body_wheel_clamps_at_bottom(self):
         self._setup_body(20)
-        mx = 20 - profile_editor._EDITOR_BODY_CAP_ROWS    # 10
+        mx = 20 - _ed._editor_body_budget()
         _ed._editor_body_scroll = mx - 1
         _ed._editor_body_wheel(3)
         self.assertEqual(_ed._editor_body_scroll, mx)
@@ -3891,7 +3891,10 @@ class TestEditorWheelScroll(unittest.TestCase):
         self.assertEqual(_ed._editor_body_scroll, mx)
 
     def test_body_wheel_noop_when_no_overflow(self):
-        self._setup_body(5)
+        # A body that exactly fills the visible budget does not overflow,
+        # so the wheel is a no-op.
+        self._setup_body(20)
+        self._setup_body(_ed._editor_body_budget())
         _ed._editor_body_wheel(3)
         self.assertEqual(_ed._editor_body_scroll, 0)
 
@@ -4126,12 +4129,13 @@ class TestEditorScrollbarAutoScroll(unittest.TestCase):
         _ed._editor_body_col     = 0
 
     def test_body_step_pages_toward_target_and_self_terminates(self):
-        # cap=10 → page-step is 10 lines. Hold the bottom track row;
-        # each tick pages by cap until the thumb covers it.
+        # Page-step is one body budget of lines. Hold the bottom track row;
+        # each tick pages by the budget until the thumb covers it.
         self._setup_body(50)
-        cap = profile_editor._EDITOR_BODY_CAP_ROWS
+        cap = _ed._editor_body_budget()
+        target = cap - 1
         _ed._autoscroll_arm(
-            _ed._editor_body_autoscroll_step, cap - 1)
+            _ed._editor_body_autoscroll_step, target)
         _ed._autoscroll_tick()
         self.assertEqual(_ed._editor_body_scroll, cap)
         for _ in range(20):
@@ -4139,14 +4143,21 @@ class TestEditorScrollbarAutoScroll(unittest.TestCase):
                 break
             _ed._autoscroll_tick()
         self.assertFalse(_ed._autoscroll_armed())
-        self.assertEqual(_ed._editor_body_scroll, 50 - cap)
+        # Paged by whole budgets, and self-terminated because the thumb now
+        # covers the held target row.
+        self.assertEqual(_ed._editor_body_scroll % cap, 0)
+        top, thumb_h = profile_editor._editor_sb_thumb_geom_generic(
+            50, cap, cap, _ed._editor_body_scroll)
+        self.assertTrue(top <= target < top + thumb_h)
 
     def test_body_step_noop_when_no_overflow(self):
-        # 5 lines fits inside the cap → step_fn returns False on first tick.
-        self._setup_body(5)
+        # A body that exactly fills the budget does not overflow → step_fn
+        # returns False on the first tick.
+        self._setup_body(50)
+        cap = _ed._editor_body_budget()
+        self._setup_body(cap)
         _ed._autoscroll_arm(
-            _ed._editor_body_autoscroll_step,
-            profile_editor._EDITOR_BODY_CAP_ROWS - 1)
+            _ed._editor_body_autoscroll_step, cap - 1)
         _ed._autoscroll_tick()
         self.assertEqual(_ed._editor_body_scroll, 0)
         self.assertFalse(_ed._autoscroll_armed())
@@ -4157,7 +4168,7 @@ class TestEditorScrollbarAutoScroll(unittest.TestCase):
         _ed._editor_body_col  = 2
         _ed._autoscroll_arm(
             _ed._editor_body_autoscroll_step,
-            profile_editor._EDITOR_BODY_CAP_ROWS - 1)
+            _ed._editor_body_budget() - 1)
         _ed._autoscroll_tick()
         _ed._autoscroll_tick()
         self.assertEqual(_ed._editor_body_line, 4)
