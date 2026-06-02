@@ -61,12 +61,34 @@ enter) which the input pane can bind individually.
 
 ## Startup hygiene
 
-Before DECKPAM and any prompt_toolkit setup, `main()` flushes the stdin
-input queue (`termios.tcflush(..., TCIFLUSH)`) and writes `\r\x1b[2K` to
-clear the row. This avoids sticky echo artifacts from keystrokes typed
-during the brief window between pty creation (cooked mode, kernel echo
-on) and prompt_toolkit installing raw mode — without it, early characters
-remain visible to the left of the `> ` prefix.
+The pane's pty starts in cooked mode with ECHO on; prompt_toolkit only
+installs raw mode once `app.run_async()` runs. The window between pty
+creation and that point is dominated by `setup_mouse_binding()`'s
+synchronous `tmux bind-key` subprocess calls — long enough for a keystroke
+to land. Without defense, a key typed in that window was echoed by the
+kernel at column 0, leaving a stray character to the left of the `> ` prefix
+(e.g. `a> `), and could also be read by prompt_toolkit as the first buffer
+character — prepended to the first command.
+
+`main()` (in `bridge/panes/input_pane.py`) defends in two parts:
+
+1. **Clear ECHO first.** The very first action in `main()` — before
+   `setup_mouse_binding()`, the DECKPAM write, and all object construction —
+   clears the `ECHO` lflag on stdin via `termios.tcgetattr` /
+   `termios.tcsetattr(TCSANOW)`. With echo off, no keystroke during the
+   subprocess window is painted to the row. The saved attributes are
+   restored on exit (atexit) so the terminal is never left in `-echo` if
+   the process exits back to a shell.
+2. **Flush + erase last.** Immediately before `app.run_async()`,
+   `termios.tcflush(..., TCIFLUSH)` drops any bytes queued in stdin during
+   interpreter/import startup and the echo-off window, and `\r\x1b[2K`
+   clears any glyph echoed before step 1 could run.
+
+Both positions are load-bearing, not incidental. The ECHO clear must be the
+**first** action in `main()` (any subprocess before it reopens the echo
+window), and **nothing that spawns a subprocess may run between the
+flush/erase and `app.run_async()`** (a subprocess there would let fresh
+keystrokes re-queue after the drain).
 
 ## Key forwarding policy
 
