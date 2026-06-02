@@ -7,7 +7,10 @@
 # Indicator: "↓ N newer messages" in its own Window below the list, only when
 #   _scroll_offset > 0 — prevents list wrapping from clipping it.
 # Polls bridge/runtime/comm.state every 250 ms via mtime comparison.
-# Filters are owned here: read/write bridge/runtime/comm_filters.conf directly.
+# Filters are read/written here (bridge/runtime/comm_filters.conf), but no
+# longer exclusively: the same poll loop re-reads comm_filters.conf and
+# comm_prefs.conf on mtime change, so external edits (in-game popup, launcher)
+# apply to the live pane within one tick.
 
 try:
     from prompt_toolkit import Application
@@ -44,6 +47,15 @@ COMM_FILTERS_CONF = os.environ.get(
     os.path.join(os.environ["HOME"], "MUME", "bridge", "runtime", "comm_filters.conf"),
 )
 COMM_FILTERS_TMP  = COMM_FILTERS_CONF + ".tmp"
+# comm_prefs.conf — cross-package contract with bridge/launcher/comm_channels.py.
+# Single key: `show_header=true|false`. Missing file or key → default True.
+# Restated here rather than imported: the launcher is the writer, this pane the
+# reader, and the conf file is the only coupling between them (mirrors how
+# comm_filters.conf is shared).
+COMM_PREFS_CONF   = os.environ.get(
+    "COMM_PREFS_CONF",
+    os.path.join(os.environ["HOME"], "MUME", "bridge", "runtime", "comm_prefs.conf"),
+)
 CONNECTION_STATE_PATH = os.path.join(
     os.environ["HOME"], "MUME", "bridge", "runtime", "connection.state"
 )
@@ -134,13 +146,20 @@ _filters        = {}        # sparse map: missing key = enabled (True)
 _solo_channel   = None      # name of currently soloed channel, or None
 _solo_snapshot  = None      # dict copy of _filters at solo entry, or None
 _run_active     = False
+_show_header    = True      # comm_prefs.conf show_header; live-reloaded
+_filters_mtime  = None      # mtime of comm_filters.conf at last read
+_prefs_mtime    = None      # mtime of comm_prefs.conf at last read
 
 # ---------------------------------------------------------------------------
 # Filter persistence
 # ---------------------------------------------------------------------------
 
 def _load_filters():
-    """Read comm_filters.conf into _filters at startup. Missing file is fine."""
+    """Read comm_filters.conf into _filters (clears first). Missing file is fine.
+    Clearing here means startup and the live re-read path share one clean-load
+    behaviour — a key dropped from the file on an external edit is dropped here
+    too, reverting that channel to its enabled default."""
+    _filters.clear()
     try:
         with open(COMM_FILTERS_CONF, "r") as fh:
             for line in fh:
@@ -154,13 +173,38 @@ def _load_filters():
         pass
 
 
+def _load_prefs():
+    """Read show_header from comm_prefs.conf into _show_header. Missing file or
+    key → keep default True. Mirrors comm_channels.read_show_header()."""
+    global _show_header
+    _show_header = True
+    try:
+        with open(COMM_PREFS_CONF, "r") as fh:
+            for line in fh:
+                line = line.strip()
+                if "=" not in line:
+                    continue
+                key, _, val = line.partition("=")
+                if key.strip() == "show_header" and val.strip() in ("true", "false"):
+                    _show_header = (val.strip() == "true")
+    except OSError:
+        pass
+
+
 def _save_filters():
-    """Atomic write of _filters to comm_filters.conf. Sparse: only explicit keys."""
+    """Atomic write of _filters to comm_filters.conf. Sparse: only explicit keys.
+    Records the new file mtime so the poll loop does not re-process the pane's
+    own write (which would needlessly reload and drop any active solo)."""
+    global _filters_mtime
     try:
         with open(COMM_FILTERS_TMP, "w") as fh:
             for name, val in _filters.items():
                 fh.write(f"{name}={'true' if val else 'false'}\n")
         os.replace(COMM_FILTERS_TMP, COMM_FILTERS_CONF)
+        try:
+            _filters_mtime = os.stat(COMM_FILTERS_CONF).st_mtime
+        except OSError:
+            pass
     except OSError:
         pass
 
@@ -740,7 +784,8 @@ def _list_text():
 
     rows        = _term_rows()
     cols        = max(1, _term_cols())
-    list_height = max(1, rows - 1 - (1 if _scroll_offset > 0 else 0))
+    list_height = max(1, rows - (1 if _show_header else 0)
+                            - (1 if _scroll_offset > 0 else 0))
     with_time   = (_scroll_offset > 0)
     anchor_idx  = total - 1 - _scroll_offset
 
@@ -806,7 +851,8 @@ class ListControl(FormattedTextControl):
                     channels    = _state.get("channels") or []
                     rows        = _term_rows()
                     cols        = max(1, _term_cols())
-                    list_height = max(1, rows - 1 - (1 if _scroll_offset > 0 else 0))
+                    list_height = max(1, rows - (1 if _show_header else 0)
+                                            - (1 if _scroll_offset > 0 else 0))
                     # Wrap-aware max_offset: walk forward to find the oldest
                     # entry that pins at the top when fully scrolled up.
                     # with_time=True: the scrolled view always carries timestamps.
@@ -848,6 +894,7 @@ def _quit(event):
 
 async def _poll_state(app):
     global _state, _last_mtime, _scroll_offset, _prev_filtered, _run_active
+    global _filters_mtime, _prefs_mtime, _solo_channel, _solo_snapshot
 
     while True:
         try:
@@ -887,6 +934,31 @@ async def _poll_state(app):
             _run_active = new_run_active
             app.invalidate()
 
+        # Live re-read of filters/prefs on external edits (in-game popup,
+        # launcher). Self-writes are suppressed because _save_filters() stamps
+        # _filters_mtime with the post-write mtime.
+        try:
+            f_mtime = os.stat(COMM_FILTERS_CONF).st_mtime
+        except OSError:
+            f_mtime = None
+        if f_mtime != _filters_mtime:
+            _filters_mtime = f_mtime
+            _load_filters()
+            # An external filter edit invalidates the runtime-only solo
+            # snapshot — same rule as a manual left-click while soloed.
+            _solo_channel = None
+            _solo_snapshot = None
+            app.invalidate()
+
+        try:
+            p_mtime = os.stat(COMM_PREFS_CONF).st_mtime
+        except OSError:
+            p_mtime = None
+        if p_mtime != _prefs_mtime:
+            _prefs_mtime = p_mtime
+            _load_prefs()
+            app.invalidate()
+
         await asyncio.sleep(POLL_MS)
 
 
@@ -914,12 +986,25 @@ def main():
     sys.stdout.flush()
     atexit.register(_restore_cursor)
 
+    global _filters_mtime, _prefs_mtime
     _load_filters()
+    _load_prefs()
+    try:
+        _filters_mtime = os.stat(COMM_FILTERS_CONF).st_mtime
+    except OSError:
+        _filters_mtime = None
+    try:
+        _prefs_mtime = os.stat(COMM_PREFS_CONF).st_mtime
+    except OSError:
+        _prefs_mtime = None
 
-    header_window = Window(
-        content=FormattedTextControl(text=_header_text, focusable=False),
-        height=1,
-        dont_extend_height=True,
+    header_window = ConditionalContainer(
+        content=Window(
+            content=FormattedTextControl(text=_header_text, focusable=False),
+            height=1,
+            dont_extend_height=True,
+        ),
+        filter=Condition(lambda: _show_header),
     )
 
     list_window = Window(

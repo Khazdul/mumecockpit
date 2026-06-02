@@ -189,15 +189,45 @@ suppresses its messages.
 
 ## Filter persistence
 
-Filter state lives in `bridge/runtime/comm_filters.conf` (gitignored), owned entirely by
-`comm_pane.py`. Lua does not read or write this file.
+Filter state lives in `bridge/runtime/comm_filters.conf` (gitignored). Lua does
+not read or write this file; tt++ is never involved. `comm_pane.py` reads and
+writes it, but is no longer the sole writer — the in-game popup and launcher
+(`bridge/launcher/comm_channels.py`) also write it, and the pane picks up those
+edits live (see **Live re-read** below).
 
 Format: one `name=true|false` line per explicitly-set channel. Missing key means
 enabled (sparse-map semantics, default-on for new channels).
 
-`comm_pane.py` loads the file at startup via `_load_filters()`. On every toggle,
-`_save_filters()` writes atomically (tmp + rename). No tt++ involvement — toggling
-a filter is entirely silent; nothing appears in the game pane.
+`comm_pane.py` loads the file at startup via `_load_filters()` (which clears
+`_filters` first, so startup and the live re-read share one clean-load path). On
+every toggle, `_save_filters()` writes atomically (tmp + rename) and stamps
+`_filters_mtime` with the post-write mtime so the poll loop does not re-process
+the pane's own write. No tt++ involvement — toggling a filter is entirely
+silent; nothing appears in the game pane.
+
+### Header preference
+
+`bridge/runtime/comm_prefs.conf` (gitignored) carries a single key,
+`show_header=true|false`, default `True` when the file or key is absent. It is
+the cross-package contract with `bridge/launcher/comm_channels.py` (the writer);
+`comm_pane.py` reads it via `_load_prefs()`. When `False`, `header_window` (a
+`ConditionalContainer` keyed off `_show_header`) disappears and the list
+reclaims the row — the height math in `_list_text` makes the header term
+conditional so no blank row is left.
+
+### Live re-read
+
+The 250 ms poll loop (`_poll_state`) additionally `os.stat`s both conf files and
+compares against `_filters_mtime` / `_prefs_mtime`:
+
+- **filters mtime changed** → `_load_filters()`, drop any active solo
+  (`_solo_channel = _solo_snapshot = None`, since an external edit invalidates
+  the runtime-only solo snapshot — the same rule as a manual left-click while
+  soloed), `app.invalidate()`.
+- **prefs mtime changed** → `_load_prefs()`, `app.invalidate()`.
+
+No new thread, file watcher, or tt++/Lua involvement — all folded into the one
+existing poll. A toggle made in the in-game popup applies within one tick.
 
 See [docs/decisions/0010-comm-filter-persistence.md](decisions/0010-comm-filter-persistence.md).
 
@@ -273,12 +303,13 @@ mouse_support=True)`.
 
 ### Layout
 
-`HSplit([header_window, list_window, indicator_container])`. Header height
-fixed at 1. List fills remaining rows. `indicator_container` is a
-`ConditionalContainer` keyed off `_scroll_offset > 0` — it occupies 1 row
-below the list only when there are hidden newer messages, and disappears
-completely otherwise. Because the indicator lives in its own `Window`, it is
-never clipped by list content.
+`HSplit([header_window, list_window, indicator_container])`. `header_window` is
+a `ConditionalContainer` keyed off `_show_header` (from `comm_prefs.conf`):
+height fixed at 1 when shown, gone when hidden so the list reclaims the row.
+List fills remaining rows. `indicator_container` is a `ConditionalContainer`
+keyed off `_scroll_offset > 0` — it occupies 1 row below the list only when
+there are hidden newer messages, and disappears completely otherwise. Because
+the indicator lives in its own `Window`, it is never clipped by list content.
 
 ### Header
 
@@ -580,23 +611,27 @@ signals no proper name to keep. `"you"` → `"You"`.
 ### Dev fixture
 
 `bridge/dev/comm.state.fixture` is a static JSON file covering all ten channels
-in self and other form. Two env vars override the live paths:
+in self and other form. Three env vars override the live paths:
 
 | Variable           | Default                              | Purpose                         |
 |--------------------|--------------------------------------|---------------------------------|
 | `COMM_STATE_PATH`  | `bridge/runtime/comm.state`                  | State file the pane polls       |
 | `COMM_FILTERS_CONF`| `bridge/runtime/comm_filters.conf`           | Filter persistence file         |
+| `COMM_PREFS_CONF`  | `bridge/runtime/comm_prefs.conf`             | `show_header` preference file   |
 
 Usage:
 
 ```sh
 COMM_STATE_PATH=bridge/dev/comm.state.fixture \
 COMM_FILTERS_CONF=/tmp/comm_filters.fixture.conf \
+COMM_PREFS_CONF=/tmp/comm_prefs.fixture.conf \
 python3 bridge/panes/comm_pane.py
 ```
 
-Point `COMM_FILTERS_CONF` at `/tmp` so toggling in fixture mode does not touch the
-real config. See `bridge/dev/README.md` for edge cases covered by the fixture.
+Point `COMM_FILTERS_CONF` and `COMM_PREFS_CONF` at `/tmp` so toggling filters or
+header visibility in fixture mode does not touch the real config. Editing either
+file while the pane runs exercises the live re-read path. See
+`bridge/dev/README.md` for edge cases covered by the fixture.
 
 ## Layout integration
 
