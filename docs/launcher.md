@@ -71,7 +71,7 @@ subframe.
 |---------|--------|
 | Session detect | `tmux has-session -t mume` + `list-clients` re-probed on every render → top item is "Enter MUME", "Resume MUME", or "Mirror MUME (attached elsewhere)" |
 | Profile page | Sortable table of `ttpp/profiles/*.tin` (Name + Selected columns) paired with a centred Options widget — Select, New, Edit, Rename, Delete, Export, Back. See the [Profile sub-menu](#profile-sub-menu) section below. `default` cannot be renamed or deleted. "Create blank" copies from `bridge/launcher/templates/blank_profile.tin` (single source of truth — see ADR 0042). The active profile is written to `startup.conf` and consumed by `ttpp/core/config.tin` at tt++ startup. |
-| Options page | Navigation hub: **Connection**, **Terminal** (managed-foot deployment only), **Panes**, **Readability**, **Scripts**, **Spotlights**, blank row, **Back**. **Panes** is itself a hub over the per-pane layout pages (**General**, **Timers**). See the [Options sub-menu](#options-sub-menu) section below for each child frame. Most Options changes persist to `bridge/runtime/startup.conf` on Back / ESC; the Terminal child writes its own foot.ini, and the Timers layout child writes `bridge/runtime/timers_layout.conf` — neither is a `startup.conf` consumer. |
+| Options page | Navigation hub: **Connection**, **Terminal** (managed-foot deployment only), **Panes**, **Readability**, **Scripts**, **Spotlights**, blank row, **Back**. **Panes** is itself a hub over the per-pane layout pages (**General**, **Timers**, **Communication**). See the [Options sub-menu](#options-sub-menu) section below for each child frame. Most Options changes persist to `bridge/runtime/startup.conf` on Back / ESC; the Terminal child writes its own foot.ini, the Timers layout child writes `bridge/runtime/timers_layout.conf`, and the Communication child writes `bridge/runtime/comm_filters.conf` + `comm_prefs.conf` — none is a `startup.conf` consumer. |
 | Scripts page | Opened from Options → Scripts. Two-column `[ list \| detail ]` manager of `lua/scripts/<name>.lua`; toggles enabled state via `bridge/runtime/scripts.conf` (deferred write on Back/ESC). See [`options_scripts` frame](#options_scripts-frame) below. |
 | Spotlights | Cross-character reel of deaths, level-ups, pvp-kills, and achievements aggregated from every character's sealed runs. Opens `log_view` in spotlight mode; empty-state frame when nothing has been captured yet. Plays to the end and parks on the last spotlight (no roll into credits). See the [Spotlights sub-menu](#spotlights-sub-menu) section and ADR 0077. |
 | Credits | Scrolling end-credits chronicle generated from the same aggregated event set as Spotlights, respecting the Options → Spotlights toggles. Sibling of Spotlights; opens the [`credits` frame](#credits-frame) directly (no `.log` loading), or `credits_empty` when `total_count == 0`. The only route to the credits frame. |
@@ -1306,6 +1306,7 @@ Navigation hub pushed by activating "Options" on the main frame. Children:
   Its rows:
   - **General** → `options_panes_general` — per-pane enable/disable + colour selection.
   - **Timers** → `options_timers` — per-group colour, column count, and visibility for the timers pane (writes `timers_layout.conf`).
+  - **Communication** → `options_panes_communication` — per-channel on/off list + a `[X] Show channel header` toggle (writes `comm_filters.conf` and `comm_prefs.conf`).
 - **Readability** → `readability` — opens the two-column Readability
   module manager documented under [`readability` frame](#readability-frame).
   ESC saves any pending toggles to `readability_enabled` in
@@ -1325,12 +1326,13 @@ and pops back to `main`.
 Thin navigation hub modelled on the `options` frame: a `<< label >>`
 menu titled `─── Panes ───` listing **General** (pushes
 `options_panes_general`), **Timers** (calls `_load_timers_layout` then
-pushes `options_timers`), a blank row, and **Back** (pops to `options`).
-It owns its own selection state (`_sel_options_panes` /
+pushes `options_timers`), **Communication** (calls `_load_comm_channels`
+then pushes `options_panes_communication`), a blank row, and **Back**
+(pops to `options`). It owns its own selection state (`_sel_options_panes` /
 `_hover_options_panes`) and `_in_frame("options_panes")` keybindings.
 It is purely structural — no persistence, no grid logic — and exists so
-future per-pane layout pages (Status / Communication / Group) can slot
-in as additional rows. ESC pops to `options`.
+future per-pane layout pages (Status / Group) can slot in as additional
+rows. ESC pops to `options`.
 
 ### `options_panes_general` frame
 
@@ -1452,6 +1454,80 @@ painted across every cell of a disabled grid row — label, brackets,
 and swatch all share it so the row reads as unmistakably off. The
 cursor cell's brackets escape the dim treatment so a disabled row
 stays navigable.
+
+### `options_panes_communication` frame
+
+Single frame for the Panes → Communication submenu, opened from the Panes
+hub's `Communication` row. Renders a **vertical channel on/off list** —
+one row per comm channel (the ten `CHANNEL_ORDER` entries: Narrates /
+Tells / Says / Yells / Prayers / Emotes / Whispers / Questions / Songs /
+Socials), each row `[X]███ <Label>` / `[ ]███ <Label>` — a 3-cell
+checkbox, a 3-cell swatch painted in the channel colour (greyed when off),
+and the label. Below the list sit a blank row, a `[X] Show channel header`
+toggle, a blank row, and `Back`. The frame uses the `menu_chrome`
+`title_block` / `footer_block` helpers (`blank_above=2`) and the shared
+`comm_channels` module — see the [Communication channel list
+model](#communication-channel-list-model) section below.
+
+Enter / click semantics:
+
+- On a channel row — flips that channel in the in-memory sparse filter map
+  (`comm_channels.toggle_channel`). Missing key = enabled, so the first
+  toggle writes an explicit `false`.
+- On the `[X] Show channel header` row — flips the in-memory
+  `_comm_show_header` flag.
+- On `Back` — saves and pops to the `options_panes` hub (same as ESC).
+
+The header toggle and `Back` use the **`<< label >>` menu-row grammar**
+(gold *arrows* on the cursor row); the channel rows use the
+**swatch-cell grammar** (gold *foreground* on the cursor row's `[ ]` /
+`[X]` glyphs).
+
+Persistence is **deferred**: row toggles mutate `_comm_filters` /
+`_comm_show_header`; `_save_comm_channels` flushes both conf files
+(`comm_filters.conf`, `comm_prefs.conf`) on Back / ESC. As with the
+General frame this is the persistence asymmetry vs. the popup, whose
+equivalent frame writes immediately. There is no live re-read in the comm
+pane yet (Phase 2); changes land on the next pane start.
+
+**Cursor / navigation.** Twelve navigable rows: the ten channel rows, the
+header-toggle row (`_COMM_HEADER_ROW`), and the `Back` row
+(`_COMM_BACK_ROW`). `↑` / `↓` move between them (clamped, no wrap); there
+are no columns. Mouse hover on any selectable target moves the cursor to
+it. Footer: `↑↓ Move · Enter Toggle · ESC Back`.
+
+### Communication channel list model
+
+Source: `bridge/launcher/comm_channels.py` — a pure (no prompt_toolkit
+import, no global state) module shared between the launcher and the popup.
+It **restates** `CHANNEL_ORDER`, the per-channel colour hex values
+(`CHANNEL_COLORS`), and the `CHANNEL_DISPLAY` label overrides from
+`bridge/panes/comm_pane.py` — the `bridge/launcher` and `bridge/panes`
+packages share no import path (see [ADR 0126](decisions/0126-timers-layout-menu.md)).
+Display label is the `CHANNEL_DISPLAY` override, else `name.title()` (no
+server-caption fallback — the launcher has no live `comm.state`). Entries:
+
+- `comm_channels_fragments(rows, term_cols, cursor, row_handler=None)` —
+  fragments for the channel list. `rows` is a list of
+  `(name, label, enabled)`; `cursor` is the focused row index or `None`.
+  Cell-colour precedence: cursor row `[ ]` / `[X]` → `C_CURSOR_CELL` (gold
+  fg); else enabled `[X]` → `C_ACTIVE`, disabled `[ ]` → `C_PANE_OFF`. The
+  swatch paints `bg:hex fg:hex` when enabled, `C_PANE_OFF` when off; the
+  label is `C_ITEM` enabled / `C_PANE_OFF` off. `row_handler` (when given)
+  makes the row fragments 3-tuples carrying the mouse handler.
+- `read_filters` / `write_filters` — the sparse `comm_filters.conf`
+  contract, byte-identical to `comm_pane.py` (`name=true|false`, missing
+  key = enabled, atomic tmp + rename, only explicit keys).
+- `read_show_header` / `write_show_header` — the single-key
+  `comm_prefs.conf` (`show_header=true|false`, default `true`).
+- `toggle_channel(filters, name)` / `toggle_header(show_header)` — pure
+  toggle helpers; `channel_rows(filters)` builds the render rows;
+  `list_width()` gives the centring width.
+
+Both conf files resolve under `bridge/runtime/`, the same way the other
+launcher-side conf consumers resolve the runtime dir. Tests live in
+`bridge/launcher/tests/test_comm_channels.py` and run without
+prompt_toolkit installed.
 
 ### Timers layout submenu
 

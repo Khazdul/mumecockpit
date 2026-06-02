@@ -82,6 +82,7 @@ from menu_chrome import (  # noqa: E402
     button_fragment, footer_block, menu_row, title_block, title_block_height,
 )
 from panes_grid import apply_cell_toggle, panes_grid_fragments  # noqa: E402
+import comm_channels  # noqa: E402
 from timers_layout_grid import (  # noqa: E402
     TIMERS_LAYOUT_TYPES, TIMERS_LAYOUT_LABELS, TIMERS_LAYOUT_DEFAULTS,
     TIMERS_HEADERS_DEFAULT, TIMERS_COMPACT_DEFAULT,
@@ -300,6 +301,13 @@ _options_panes_general_col        = 0
 # `_timers_layout` and flush on the exit path.
 _options_timers_row       = 0
 _options_timers_col       = 0
+# Options — Panes → Communication submenu (per-channel on/off list). Twelve
+# navigable rows: 0..9 channel rows, row 10 is the [X] Show channel header
+# toggle, row 11 is Back. Deferred edits live in `_comm_filters` (sparse map)
+# and `_comm_show_header`; both flush to their conf files on the exit path.
+_options_panes_comm_row   = 0
+_comm_filters             = {}
+_comm_show_header         = True
 # Options — Connection submenu (MMapper / Direct / Custom / Back)
 _sel_options_connection   = 0
 _hover_options_connection = -1
@@ -512,6 +520,7 @@ _profile_delete_window           = None
 _options_window                  = None
 _options_panes_window            = None
 _options_panes_general_window            = None
+_options_panes_communication_window      = None
 _options_timers_window           = None
 _options_connection_window       = None
 _options_connection_custom_window = None
@@ -909,6 +918,25 @@ def _save_timers_layout():
 
 
 # ---------------------------------------------------------------------------
+# Communication-channel filters + header pref (Options → Panes → Communication)
+# ---------------------------------------------------------------------------
+# Deferred-write model, mirroring the timers submenu: edits mutate the
+# in-memory `_comm_filters` (sparse map) and `_comm_show_header`, and
+# `_save_comm_channels` flushes both conf files on the exit path (Back / ESC).
+# The cockpit is not running while the launcher is up, so there is no live
+# consumer to notify. Read/write/render logic lives in comm_channels.
+def _load_comm_channels():
+    global _comm_filters, _comm_show_header
+    _comm_filters     = comm_channels.read_filters()
+    _comm_show_header = comm_channels.read_show_header()
+
+
+def _save_comm_channels():
+    comm_channels.write_filters(_comm_filters)
+    comm_channels.write_show_header(_comm_show_header)
+
+
+# ---------------------------------------------------------------------------
 # Version / cache
 # ---------------------------------------------------------------------------
 def _read_version_file():
@@ -1100,6 +1128,7 @@ def _focus_current_frame():
             "options":                    _options_window,
             "options_panes":              _options_panes_window,
             "options_panes_general":      _options_panes_general_window,
+            "options_panes_communication": _options_panes_communication_window,
             "options_timers":             _options_timers_window,
             "options_connection":         _options_connection_window,
             "options_connection_custom":  _options_connection_custom_window,
@@ -2609,9 +2638,10 @@ def _options_text():
 # pane × colour grid) and Timers (the timers-layout grid), with a Back row.
 # Future per-pane pages (Status / Communication / Group) slot in here.
 _OPTIONS_PANES_ROWS = [
-    ("general", "General"),
-    ("timers",  "Timers"),
-    ("back",    "Back"),
+    ("general",       "General"),
+    ("timers",        "Timers"),
+    ("communication", "Communication"),
+    ("back",          "Back"),
 ]
 
 
@@ -2625,6 +2655,7 @@ def _activate_options_panes(idx):
     global _sel_options_panes
     global _options_panes_general_row, _options_panes_general_col
     global _options_timers_row, _options_timers_col
+    global _options_panes_comm_row
     if idx < 0 or idx >= len(_OPTIONS_PANES_ROWS):
         return
     _sel_options_panes = idx
@@ -2638,6 +2669,10 @@ def _activate_options_panes(idx):
         _options_timers_col = 0
         _load_timers_layout()
         _push_frame("options_timers")
+    elif action == "communication":
+        _options_panes_comm_row = 0
+        _load_comm_channels()
+        _push_frame("options_panes_communication")
     elif action == "back":
         _pop_frame()
 
@@ -2884,6 +2919,145 @@ def _options_panes_general_text():
     # rows of bottom chrome (blank · headers · blank · Back).
     content_rows = title_block_height(2) + 1 + _PANES_GRID_ROWS + 4
     footer = "↑↓←→ Move · Enter Toggle · ESC Back"
+    frags.extend(footer_block(
+        footer, cols, rows_h, content_rows, mouse_handler=clear_hover,
+    ))
+
+    return frags
+
+
+# ---------------------------------------------------------------------------
+# Options — Panes → Communication submenu (per-channel on/off list)
+# ---------------------------------------------------------------------------
+# A vertical binary list — one row per comm channel, each with its colour
+# swatch and a [X]/[ ] reflecting comm_filters.conf (sparse; missing key =
+# enabled). Below the list: a blank, a [X] Show channel header toggle (writes
+# comm_prefs.conf), a blank, and Back. ↑/↓ moves between rows; Enter/Space
+# toggles the focused channel or the header flag; Back/ESC writes both conf
+# files and pops. All writes are deferred — _save_comm_channels fires on the
+# exit path. Render / toggle / persistence all go through comm_channels.
+
+_COMM_CHANNEL_ROWS = len(comm_channels.CHANNEL_ORDER)   # 10
+_COMM_HEADER_ROW   = _COMM_CHANNEL_ROWS                 # 10
+_COMM_BACK_ROW     = _COMM_CHANNEL_ROWS + 1             # 11
+_COMM_LAST_ROW     = _COMM_BACK_ROW
+
+
+def _set_comm_cursor(row):
+    """Update the communication-list cursor; invalidate on change."""
+    global _options_panes_comm_row
+    if row != _options_panes_comm_row:
+        _options_panes_comm_row = row
+        if _app:
+            _app.invalidate()
+
+
+def _options_panes_communication_back():
+    _save_comm_channels()
+    _pop_frame()
+
+
+def _toggle_comm_channel(row):
+    """Flip the channel at list row `row` in the in-memory sparse map."""
+    name = comm_channels.CHANNEL_ORDER[row]
+    comm_channels.toggle_channel(_comm_filters, name)
+    if _app:
+        _app.invalidate()
+
+
+def _toggle_comm_header():
+    global _comm_show_header
+    _comm_show_header = comm_channels.toggle_header(_comm_show_header)
+    if _app:
+        _app.invalidate()
+
+
+def _options_panes_communication_clear_hover(ev):
+    """MOUSE_MOVE handler for the comm-frame chrome. Like the panes frame,
+    the keyboard cursor and the mouse share `_options_panes_comm_row`, so the
+    row / header / Back handlers overwrite it on hover and this stays a no-op
+    — it exists only so the chrome rows can carry a handler (the invariant)."""
+    return
+
+
+def _options_panes_communication_text():
+    cols   = _term_cols()
+    rows_h = _term_rows()
+    clear_hover = _options_panes_communication_clear_hover
+
+    rows = comm_channels.channel_rows(_comm_filters)
+    cur_row = _options_panes_comm_row
+    list_cursor = cur_row if cur_row < _COMM_CHANNEL_ROWS else None
+
+    header_label = f"[{'X' if _comm_show_header else ' '}] Show channel header"
+    back_label   = "Back"
+
+    frags = []
+    frags.extend(title_block(
+        "─── Communication ───", cols, blank_above=2, mouse_handler=clear_hover,
+    ))
+
+    def _make_row_handler(ri):
+        def _h(ev):
+            if ev.event_type == MouseEventType.MOUSE_MOVE:
+                _set_comm_cursor(ri)
+                return
+            if ev.event_type == MouseEventType.MOUSE_DOWN:
+                _set_comm_cursor(ri)
+                _toggle_comm_channel(ri)
+        return _h
+
+    frags.extend(comm_channels.comm_channels_fragments(
+        rows, cols, list_cursor, row_handler=_make_row_handler,
+    ))
+
+    # Blank row between the channel list and the header toggle.
+    frags.append(("", "\n", clear_hover))
+
+    # Show channel header — << label >> menu-row grammar, centred per row.
+    state_h = "selected" if cur_row == _COMM_HEADER_ROW else "inactive"
+
+    def _header_handler(ev):
+        if ev.event_type == MouseEventType.MOUSE_MOVE:
+            _set_comm_cursor(_COMM_HEADER_ROW)
+            return
+        if ev.event_type == MouseEventType.MOUSE_DOWN:
+            _set_comm_cursor(_COMM_HEADER_ROW)
+            _toggle_comm_header()
+
+    h_row_w     = len(header_label) + 6
+    h_left_pad  = max(0, (cols - h_row_w) // 2)
+    h_right_pad = max(0, cols - h_left_pad - h_row_w)
+    frags.append(("", " " * h_left_pad, clear_hover))
+    frags.extend(menu_row(header_label, state_h, mouse_handler=_header_handler))
+    frags.append(("", " " * h_right_pad, clear_hover))
+    frags.append(("", "\n", clear_hover))
+
+    # Blank row between the header toggle and Back.
+    frags.append(("", "\n", clear_hover))
+
+    # Back — plain << label >> row, centred per row.
+    state_b = "selected" if cur_row == _COMM_BACK_ROW else "inactive"
+
+    def _back_handler(ev):
+        if ev.event_type == MouseEventType.MOUSE_MOVE:
+            _set_comm_cursor(_COMM_BACK_ROW)
+            return
+        if ev.event_type == MouseEventType.MOUSE_DOWN:
+            _options_panes_communication_back()
+
+    b_row_w     = len(back_label) + 6
+    b_left_pad  = max(0, (cols - b_row_w) // 2)
+    b_right_pad = max(0, cols - b_left_pad - b_row_w)
+    frags.append(("", " " * b_left_pad, clear_hover))
+    frags.extend(menu_row(back_label, state_b, mouse_handler=_back_handler))
+    frags.append(("", " " * b_right_pad, clear_hover))
+    frags.append(("", "\n", clear_hover))
+
+    # Content rows above the footer = title block + 10 channel rows + 4 rows
+    # of bottom chrome (blank · header · blank · Back).
+    content_rows = title_block_height(2) + _COMM_CHANNEL_ROWS + 4
+    footer = "↑↓ Move · Enter Toggle · ESC Back"
     frags.extend(footer_block(
         footer, cols, rows_h, content_rows, mouse_handler=clear_hover,
     ))
@@ -9657,6 +9831,37 @@ def _kb_optp_escape(event):
     _options_panes_general_back()
 
 
+# Options — Panes → Communication submenu (per-channel on/off list). Twelve
+# navigable rows: 0..9 channels, row 10 the header toggle, row 11 Back.
+@kb.add("up", filter=_in_frame("options_panes_communication"))
+def _kb_optc_up(event):
+    if _options_panes_comm_row > 0:
+        _set_comm_cursor(_options_panes_comm_row - 1)
+
+
+@kb.add("down", filter=_in_frame("options_panes_communication"))
+def _kb_optc_down(event):
+    if _options_panes_comm_row < _COMM_LAST_ROW:
+        _set_comm_cursor(_options_panes_comm_row + 1)
+
+
+@kb.add("enter", filter=_in_frame("options_panes_communication"))
+@kb.add(" ",     filter=_in_frame("options_panes_communication"))
+def _kb_optc_select(event):
+    r = _options_panes_comm_row
+    if r < _COMM_CHANNEL_ROWS:
+        _toggle_comm_channel(r)
+    elif r == _COMM_HEADER_ROW:
+        _toggle_comm_header()
+    elif r == _COMM_BACK_ROW:
+        _options_panes_communication_back()
+
+
+@kb.add("escape", filter=_in_frame("options_panes_communication"), eager=True)
+def _kb_optc_escape(event):
+    _options_panes_communication_back()
+
+
 # Options — Timers layout submenu (colour grid + col steppers). Six group
 # rows + Back; ←/→ moves between the colour columns and the two steppers,
 # Enter toggles a colour / nudges the column count / activates Back, ESC = Back.
@@ -10569,6 +10774,7 @@ def main():
     global _profile_create_name_window, _profile_create_choose_window
     global _profile_create_copy_window, _profile_delete_window
     global _options_window, _options_panes_window, _options_panes_general_window
+    global _options_panes_communication_window
     global _options_timers_window
     global _options_connection_window, _options_connection_custom_window
     global _options_spotlights_window
@@ -10645,6 +10851,7 @@ def main():
     _options_window,                    options_frame                  = _build_simple(_options_text)
     _options_panes_window,              options_panes_frame            = _build_simple(_options_panes_text)
     _options_panes_general_window,      options_panes_general_frame    = _build_simple(_options_panes_general_text)
+    _options_panes_communication_window, options_panes_communication_frame = _build_simple(_options_panes_communication_text)
     _options_timers_window,             options_timers_frame           = _build_simple(_options_timers_text)
     _options_connection_window,         options_connection_frame       = _build_simple(_options_connection_text)
     _options_connection_custom_window,  options_connection_custom_frame = _build_simple(_options_connection_custom_text)
@@ -10805,6 +11012,7 @@ def main():
         "options":                    options_frame,
         "options_panes":              options_panes_frame,
         "options_panes_general":      options_panes_general_frame,
+        "options_panes_communication": options_panes_communication_frame,
         "options_timers":             options_timers_frame,
         "options_connection":         options_connection_frame,
         "options_connection_custom":  options_connection_custom_frame,

@@ -36,6 +36,7 @@ from menu_chrome import (
     footer_block, menu_row, title_block, title_block_height,
 )
 from panes_grid import apply_cell_toggle, panes_grid_fragments
+import comm_channels
 from timers_layout_grid import (
     TIMERS_LAYOUT_TYPES, TIMERS_LAYOUT_LABELS, TIMERS_LAYOUT_DEFAULTS,
     TIMERS_HEADERS_DEFAULT, TIMERS_COMPACT_DEFAULT,
@@ -127,6 +128,12 @@ _panes_general_col        = 0
 # cols 0..N-1 (N = len(TIMERS_COLOR_ORDER)); ◄ at col N; ► at col N+1.
 _timers_row       = 0
 _timers_col       = 0
+# Panes → Communication submenu (per-channel on/off list). Twelve navigable
+# rows: 0..9 channel rows, row 10 the [X] Show channel header toggle, row 11
+# Back. Cursor-only (no hover). Persistence is immediate: each toggle reads,
+# flips, and writes the relevant conf via comm_channels; the render re-reads
+# every frame. Logic lives in comm_channels — none duplicated here.
+_panes_comm_row   = 0
 # Scripts (read-only popup view) — frozen snapshot of scripts.cache,
 # loaded on every push of the frame. The cursor browses the list and
 # updates the detail panel; PageUp/PageDown scrolls the detail. No
@@ -156,6 +163,7 @@ _main_window         = None     # set in main(); referenced for focus
 _options_window      = None     # set in main(); referenced for focus
 _panes_window        = None     # set in main(); referenced for focus
 _panes_general_window        = None     # set in main(); referenced for focus
+_panes_communication_window  = None     # set in main(); referenced for focus
 _timers_window       = None     # set in main(); referenced for focus
 _scripts_window      = None     # set in main(); referenced for focus
 _readability_window  = None     # set in main(); referenced for focus
@@ -341,6 +349,7 @@ def _focus_current_frame():
             "options":               _options_window,
             "panes":                 _panes_window,
             "panes_general":         _panes_general_window,
+            "panes_communication":   _panes_communication_window,
             "timers":                _timers_window,
             "scripts":               _scripts_window,
             "readability":           _readability_window,
@@ -756,10 +765,11 @@ def _options_text():
 # Future per-pane pages (Status / Communication / Group) slot in here.
 # ---------------------------------------------------------------------------
 _OPTIONS_PANES_ROWS = [
-    ("general", "General"),
-    ("timers",  "Timers"),
-    ("sep",     ""),
-    ("back",    "Back"),
+    ("general",       "General"),
+    ("timers",        "Timers"),
+    ("communication", "Communication"),
+    ("sep",           ""),
+    ("back",          "Back"),
 ]
 
 
@@ -775,6 +785,7 @@ def _enter_panes_frame():
 
 def _panes_activate(row_idx):
     global _panes_general_row, _panes_general_col, _timers_row, _timers_col
+    global _panes_comm_row
     if not (0 <= row_idx < len(_OPTIONS_PANES_ROWS)):
         return
     action, _label = _OPTIONS_PANES_ROWS[row_idx]
@@ -786,6 +797,9 @@ def _panes_activate(row_idx):
         _timers_row = 0
         _timers_col = 0
         _push_frame("timers")
+    elif action == "communication":
+        _panes_comm_row = 0
+        _push_frame("panes_communication")
     elif action == "back":
         _pop_frame()
 
@@ -3605,6 +3619,37 @@ def _panes_escape(event):
     _pop_frame()
 
 
+# Panes → Communication frame (per-channel on/off list). Twelve navigable
+# rows: 0..9 channels, row 10 the header toggle, row 11 Back.
+@kb.add("up", filter=_in_frame("panes_communication"))
+def _panes_comm_up(event):
+    if _panes_comm_row > 0:
+        _set_comm_cursor(_panes_comm_row - 1)
+
+
+@kb.add("down", filter=_in_frame("panes_communication"))
+def _panes_comm_down(event):
+    if _panes_comm_row < _COMM_LAST_ROW:
+        _set_comm_cursor(_panes_comm_row + 1)
+
+
+@kb.add("enter", filter=_in_frame("panes_communication"))
+@kb.add(" ",     filter=_in_frame("panes_communication"))
+def _panes_comm_select(event):
+    r = _panes_comm_row
+    if r < _COMM_CHANNEL_ROWS:
+        _toggle_comm_channel(r)
+    elif r == _COMM_HEADER_ROW:
+        _toggle_comm_header()
+    elif r == _COMM_BACK_ROW:
+        _pop_frame()
+
+
+@kb.add("escape", filter=_in_frame("panes_communication"), eager=True)
+def _panes_comm_escape(event):
+    _pop_frame()
+
+
 # Timers-layout frame (group × colour grid + per-row column stepper).
 # Seven navigable rows; ←/→ moves the column only on grid rows, persisting
 # across grid rows. Colour cols 0..N-1; ◄ at N; ► at N+1.
@@ -3982,6 +4027,139 @@ def _build_panes_general_container():
     return _panes_general_window
 
 
+# ---------------------------------------------------------------------------
+# Panes → Communication frame (Options → Panes → Communication): channel list.
+# ---------------------------------------------------------------------------
+# One row per comm channel, each with its colour swatch and a [X]/[ ]
+# reflecting comm_filters.conf (sparse; missing key = enabled). Below the
+# list hang a blank, a [X] Show channel header toggle (writes comm_prefs.conf),
+# a blank, and Back. Cursor-only frame (no separate hover index).
+#
+# Persistence is immediate: each toggle reads the relevant conf, flips, and
+# writes it back via comm_channels, and the render re-reads every frame — so
+# the popup never clobbers a concurrent comm-pane header click. There is no
+# live re-read in the comm pane yet (Phase 2); changes land on the next pane
+# start. Render / toggle / persistence all go through comm_channels.
+_COMM_CHANNEL_ROWS = len(comm_channels.CHANNEL_ORDER)   # 10
+_COMM_HEADER_ROW   = _COMM_CHANNEL_ROWS                 # 10
+_COMM_BACK_ROW     = _COMM_CHANNEL_ROWS + 1             # 11
+_COMM_LAST_ROW     = _COMM_BACK_ROW
+
+
+def _set_comm_cursor(row):
+    """Update the popup communication-list cursor; invalidate on change."""
+    global _panes_comm_row
+    if row != _panes_comm_row:
+        _panes_comm_row = row
+        if _app:
+            _app.invalidate()
+
+
+def _toggle_comm_channel(row):
+    """Flip the channel at list row `row`: read, flip, write comm_filters.conf."""
+    name = comm_channels.CHANNEL_ORDER[row]
+    filters = comm_channels.read_filters()
+    comm_channels.toggle_channel(filters, name)
+    comm_channels.write_filters(filters)
+    if _app:
+        _app.invalidate()
+
+
+def _toggle_comm_header():
+    """Flip show_header and persist comm_prefs.conf immediately."""
+    comm_channels.write_show_header(
+        comm_channels.toggle_header(comm_channels.read_show_header()),
+    )
+    if _app:
+        _app.invalidate()
+
+
+def _panes_communication_text():
+    cols   = _term_cols()
+    rows_h = _term_rows()
+
+    # Live state: re-read both conf files every render so external edits show.
+    rows         = comm_channels.channel_rows(comm_channels.read_filters())
+    show_header  = comm_channels.read_show_header()
+
+    cur_row = _panes_comm_row
+    list_cursor = cur_row if cur_row < _COMM_CHANNEL_ROWS else None
+
+    header_label = f"[{'X' if show_header else ' '}] Show channel header"
+    back_label   = "Back"
+
+    frags = []
+    frags.extend(title_block("─── Communication ───", cols, blank_above=1))
+
+    def _make_row_handler(ri):
+        def _h(ev):
+            if ev.event_type == MouseEventType.MOUSE_MOVE:
+                _set_comm_cursor(ri)
+                return
+            if ev.event_type == MouseEventType.MOUSE_DOWN:
+                _set_comm_cursor(ri)
+                _toggle_comm_channel(ri)
+        return _h
+
+    frags.extend(comm_channels.comm_channels_fragments(
+        rows, cols, list_cursor, row_handler=_make_row_handler,
+    ))
+
+    frags.append(("", "\n"))
+
+    # Show channel header — single << label >> toggle, centred per row.
+    state_h = "selected" if cur_row == _COMM_HEADER_ROW else "inactive"
+
+    def _header_handler(ev):
+        if ev.event_type == MouseEventType.MOUSE_MOVE:
+            _set_comm_cursor(_COMM_HEADER_ROW)
+            return
+        if ev.event_type == MouseEventType.MOUSE_DOWN:
+            _set_comm_cursor(_COMM_HEADER_ROW)
+            _toggle_comm_header()
+
+    pad_h = max(0, (cols - (len(header_label) + 6)) // 2)
+    frags.append(("", " " * pad_h))
+    frags.extend(menu_row(header_label, state_h, mouse_handler=_header_handler))
+    frags.append(("", "\n"))
+
+    frags.append(("", "\n"))
+
+    # Back — plain << label >> row, centred per row.
+    state_b = "selected" if cur_row == _COMM_BACK_ROW else "inactive"
+
+    def _back_handler(ev):
+        if ev.event_type == MouseEventType.MOUSE_MOVE:
+            _set_comm_cursor(_COMM_BACK_ROW)
+            return
+        if ev.event_type == MouseEventType.MOUSE_DOWN:
+            _pop_frame()
+
+    pad_b = max(0, (cols - (len(back_label) + 6)) // 2)
+    frags.append(("", " " * pad_b))
+    frags.extend(menu_row(back_label, state_b, mouse_handler=_back_handler))
+    frags.append(("", "\n"))
+
+    # title block (3 rows for popup) + 10 channel rows + blank + header
+    # + blank + Back (4 rows).
+    content_rows = title_block_height(1) + _COMM_CHANNEL_ROWS + 4
+    footer = "↑↓ Move · Enter Toggle · ESC Back"
+    frags.extend(footer_block(footer, cols, rows_h, content_rows))
+
+    return frags
+
+
+def _build_panes_communication_container():
+    global _panes_communication_window
+    _panes_communication_window = Window(
+        content=FormattedTextControl(text=_panes_communication_text,
+                                     focusable=True),
+        wrap_lines=False,
+        always_hide_cursor=True,
+    )
+    return _panes_communication_window
+
+
 def _timers_text():
     cols   = _term_cols()
     rows_h = _term_rows()
@@ -4249,6 +4427,7 @@ def main():
         "options":                       _build_options_container(),
         "panes":                         _build_panes_container(),
         "panes_general":                 _build_panes_general_container(),
+        "panes_communication":           _build_panes_communication_container(),
         "timers":                        _build_timers_container(),
         "scripts":                       _build_scripts_container(),
         "readability":                   _build_readability_container(),

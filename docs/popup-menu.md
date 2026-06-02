@@ -319,10 +319,12 @@ Mirrors the launcher's hover-clear contract.
 on the `options` grouping (`<< label >>` menu rows, its own
 `_sel_panes` / `_hover_panes` state, title `─── Panes ───`). Rows:
 **General** (pushes `panes_general`), **Timers** (pushes `timers`, the
-[Timers layout submenu](#timers-layout-submenu)), a blank row, and
+[Timers layout submenu](#timers-layout-submenu)), **Communication**
+(pushes `panes_communication`, the
+[Communication submenu](#communication-submenu)), a blank row, and
 **Back** (pops to `options`). It is purely structural — no persistence,
-no grid logic — so future per-pane layout pages (Status / Communication
-/ Group) slot in as extra rows. ESC pops to `options`.
+no grid logic — so future per-pane layout pages (Status / Group) slot in
+as extra rows. ESC pops to `options`.
 
 ## Panes → General submenu
 
@@ -405,6 +407,37 @@ popup, launcher Options, and `cp -X` aliases — are equivalent and write to
 `startup.conf`. Colour selections do **not** have `cp -X` equivalents
 today — they are reachable from the launcher Options page and the
 popup's Panes → General submenu only.
+
+## Communication submenu
+
+`Options → Panes → Communication`. The channel-list render and the conf
+read/write logic live in `bridge/launcher/comm_channels.py` (shared with
+the launcher — see the [Communication channel list
+model](launcher.md#communication-channel-list-model) section in
+`docs/launcher.md`).
+
+The `panes_communication` frame renders a **vertical channel on/off
+list** — one row per comm channel (the ten `CHANNEL_ORDER` entries), each
+`[X]███ <Label>` / `[ ]███ <Label>` with the swatch painted in the
+channel colour (greyed when off). Below the list sit a blank row, a
+`[X] Show channel header` toggle, a blank row, and `Back`. The frame uses
+`menu_chrome.title_block` / `footer_block` (`blank_above=1` for the popup)
+and the `<< label >>` gold-arrow grammar for the header toggle and `Back`.
+It is a cursor-only frame (no separate mouse-hover state).
+
+Enter / click toggles the focused channel or the header flag; `Back` /
+ESC pops to the `panes` hub. **Persistence is immediate**: each toggle
+reads the relevant conf, flips, and writes it back via `comm_channels`,
+and the render re-reads `comm_filters.conf` / `comm_prefs.conf` every
+frame — so the popup never clobbers a concurrent comm-pane header click.
+(This matches the popup's General/Timers immediate-write idiom and is the
+asymmetry vs. the launcher's deferred save.) There is no live re-read in
+the comm pane yet (Phase 2); changes land on the next pane start.
+
+**Cursor / navigation.** Twelve navigable rows: the ten channel rows
+(`_COMM_CHANNEL_ROWS`), the header-toggle row (`_COMM_HEADER_ROW`), and
+`Back` (`_COMM_BACK_ROW`). `↑` / `↓` move between them (clamped, no wrap);
+there are no columns. Footer: `↑↓ Move · Enter Toggle · ESC Back`.
 
 ## Timers layout submenu
 
