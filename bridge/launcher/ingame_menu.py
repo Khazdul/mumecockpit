@@ -111,13 +111,17 @@ _current_frame    = "main"
 _frame_stack      = []          # navigation stack: [(frame, ...) for ancestor frames]
 _sel_main         = 0
 _sel_options      = 0           # cursor within the popup Options grouping (Panes / Scripts / Back)
-# Panes submenu (colour grid). Eight navigable rows:
+# Panes hub (thin index: General / Timers / Back). Mirrors the `options`
+# grouping; per-pane layout pages hang under it.
+_sel_panes        = 0
+_hover_panes      = -1
+# Panes → General submenu (colour grid). Eight navigable rows:
 #   0..5 — pane rows × 7 colour columns (←/→ moves the column; the column
 #          persists across grid rows).
 #   6    — Display pane headers toggle.
 #   7    — Back.
-_panes_row        = 0
-_panes_col        = 0
+_panes_general_row        = 0
+_panes_general_col        = 0
 # Timers-layout submenu (group × colour grid + per-row column stepper).
 # Seven navigable rows: 0..5 — group rows; 6 — Back. Colour cells are
 # cols 0..N-1 (N = len(TIMERS_COLOR_ORDER)); ◄ at col N; ► at col N+1.
@@ -151,6 +155,7 @@ _app                 = None
 _main_window         = None     # set in main(); referenced for focus
 _options_window      = None     # set in main(); referenced for focus
 _panes_window        = None     # set in main(); referenced for focus
+_panes_general_window        = None     # set in main(); referenced for focus
 _timers_window       = None     # set in main(); referenced for focus
 _scripts_window      = None     # set in main(); referenced for focus
 _readability_window  = None     # set in main(); referenced for focus
@@ -335,6 +340,7 @@ def _focus_current_frame():
             "main":                  _main_window,
             "options":               _options_window,
             "panes":                 _panes_window,
+            "panes_general":         _panes_general_window,
             "timers":                _timers_window,
             "scripts":               _scripts_window,
             "readability":           _readability_window,
@@ -376,13 +382,16 @@ def _pop_frame():
 # ---------------------------------------------------------------------------
 def _set_hover(frame, idx):
     """Update hover index for the named frame; invalidate if changed."""
-    global _hover_main, _hover_options
+    global _hover_main, _hover_options, _hover_panes
     changed = False
     if frame == "main" and _hover_main != idx:
         _hover_main = idx
         changed = True
     elif frame == "options" and _hover_options != idx:
         _hover_options = idx
+        changed = True
+    elif frame == "panes" and _hover_panes != idx:
+        _hover_panes = idx
         changed = True
     if changed and _app:
         _app.invalidate()
@@ -655,7 +664,6 @@ def _main_text():
 # ---------------------------------------------------------------------------
 _OPTIONS_ROWS = [
     ("panes",       "Panes"),
-    ("timers",      "Timers layout"),
     ("readability", "Readability"),
     ("scripts",     "Scripts"),
     ("sep",         ""),
@@ -668,18 +676,11 @@ def _options_selectable_indices():
 
 
 def _options_activate(row_idx):
-    global _panes_row, _panes_col, _timers_row, _timers_col
     if not (0 <= row_idx < len(_OPTIONS_ROWS)):
         return
     action, _label = _OPTIONS_ROWS[row_idx]
     if action == "panes":
-        _panes_row = 0
-        _panes_col = 0
-        _push_frame("panes")
-    elif action == "timers":
-        _timers_row = 0
-        _timers_col = 0
-        _push_frame("timers")
+        _enter_panes_frame()
     elif action == "readability":
         _enter_readability_frame()
     elif action == "scripts":
@@ -749,7 +750,123 @@ def _options_text():
 
 
 # ---------------------------------------------------------------------------
-# Panes submenu (Options → Panes): pane × colour grid (single frame).
+# Panes hub (Options → Panes): thin index over the per-pane layout pages.
+# Mirrors the Options grouping — a `<< label >>` menu listing General (the
+# pane × colour grid) and Timers (the timers-layout grid), with a Back row.
+# Future per-pane pages (Status / Communication / Group) slot in here.
+# ---------------------------------------------------------------------------
+_OPTIONS_PANES_ROWS = [
+    ("general", "General"),
+    ("timers",  "Timers"),
+    ("sep",     ""),
+    ("back",    "Back"),
+]
+
+
+def _panes_selectable_indices():
+    return [i for i, (k, _) in enumerate(_OPTIONS_PANES_ROWS) if k != "sep"]
+
+
+def _enter_panes_frame():
+    global _sel_panes
+    _sel_panes = 0
+    _push_frame("panes")
+
+
+def _panes_activate(row_idx):
+    global _panes_general_row, _panes_general_col, _timers_row, _timers_col
+    if not (0 <= row_idx < len(_OPTIONS_PANES_ROWS)):
+        return
+    action, _label = _OPTIONS_PANES_ROWS[row_idx]
+    if action == "general":
+        _panes_general_row = 0
+        _panes_general_col = 0
+        _push_frame("panes_general")
+    elif action == "timers":
+        _timers_row = 0
+        _timers_col = 0
+        _push_frame("timers")
+    elif action == "back":
+        _pop_frame()
+
+
+def _panes_clear_hover(ev):
+    if ev.event_type == MouseEventType.MOUSE_MOVE:
+        _set_hover("panes", -1)
+
+
+def _panes_text():
+    cols   = _term_cols()
+    rows_h = _term_rows()
+    title  = "─── Panes ───"
+    footer = "↑↓ Navigate · Enter Select · ESC Back"
+    clear_hover = _panes_clear_hover
+
+    sel_indices = _panes_selectable_indices()
+    sel = _sel_panes
+    if sel >= len(sel_indices):
+        sel = len(sel_indices) - 1
+    sel_row = sel_indices[sel] if sel_indices else -1
+
+    frags = []
+    frags.extend(title_block(
+        title, cols, blank_above=1, mouse_handler=clear_hover,
+    ))
+
+    body_rows = 0
+    for i, (kind, label) in enumerate(_OPTIONS_PANES_ROWS):
+        if kind == "sep":
+            frags.append(("", "\n", clear_hover))
+            body_rows += 1
+            continue
+
+        is_active = (i == sel_row)
+        is_hover  = (i == _hover_panes)
+        state     = _menu_row_state(is_active, is_hover)
+
+        def _make_handler(row_idx=i, sel_pos=sel_indices.index(i) if i in sel_indices else 0):
+            def _handler(ev):
+                if ev.event_type == MouseEventType.MOUSE_MOVE:
+                    _set_hover("panes", row_idx)
+                    return
+                if ev.event_type != MouseEventType.MOUSE_DOWN:
+                    return
+                global _sel_panes
+                _sel_panes = sel_pos
+                _panes_activate(row_idx)
+                if _app:
+                    _app.invalidate()
+            return _handler
+
+        h         = _make_handler()
+        row_w     = len(label) + 6
+        left_pad  = max(0, (cols - row_w) // 2)
+        right_pad = max(0, cols - left_pad - row_w)
+        frags.append(("", " " * left_pad, clear_hover))
+        frags.extend(menu_row(label, state, mouse_handler=h))
+        frags.append(("", " " * right_pad, clear_hover))
+        frags.append(("", "\n", clear_hover))
+        body_rows += 1
+
+    content_rows = title_block_height(1) + body_rows
+    frags.extend(footer_block(
+        footer, cols, rows_h, content_rows, mouse_handler=clear_hover,
+    ))
+    return frags
+
+
+def _build_panes_container():
+    global _panes_window
+    _panes_window = Window(
+        content=FormattedTextControl(text=_panes_text, focusable=True),
+        wrap_lines=False,
+        always_hide_cursor=True,
+    )
+    return _panes_window
+
+
+# ---------------------------------------------------------------------------
+# Panes → General submenu (Options → Panes → General): pane × colour grid.
 # ---------------------------------------------------------------------------
 # Six pane rows × seven colour columns: each (pane, colour) cell is either
 # checked or unchecked. A row with no checked cell is off; exactly one
@@ -784,13 +901,13 @@ _TIMERS_LAST_COL     = len(TIMERS_COLOR_ORDER) + 1 # colour cols + ◄ + ►
 
 def _set_panes_cursor(row, col=None):
     """Update the popup panes cursor; invalidate on change."""
-    global _panes_row, _panes_col
+    global _panes_general_row, _panes_general_col
     changed = False
-    if row != _panes_row:
-        _panes_row = row
+    if row != _panes_general_row:
+        _panes_general_row = row
         changed = True
-    if col is not None and col != _panes_col:
-        _panes_col = col
+    if col is not None and col != _panes_general_col:
+        _panes_general_col = col
         changed = True
     if changed and _app:
         _app.invalidate()
@@ -1019,7 +1136,7 @@ def _toggle_timers_compact():
         _app.invalidate()
 
 
-def _panes_text():
+def _panes_general_text():
     cols   = _term_cols()
     rows_h = _term_rows()
 
@@ -1036,8 +1153,8 @@ def _panes_text():
             colour_index = 0
         grid_rows.append((label, enabled, colour_index))
 
-    cur_row = _panes_row
-    cur_col = _panes_col
+    cur_row = _panes_general_row
+    cur_col = _panes_general_col
     grid_cursor = (cur_row, cur_col) if cur_row < _PANES_GRID_ROWS else None
 
     headers_on    = (_tmux_border_status() != "off")
@@ -3413,45 +3530,77 @@ def _opt_escape(event):
     _pop_frame()
 
 
-# Panes frame (colour grid). Eight navigable rows; ←/→ moves the column
-# only on grid rows, persisting across grid rows.
+# Panes hub (thin index: General / Timers / Back).
 @kb.add("up", filter=_in_frame("panes"))
-def _panes_up(event):
-    if _panes_row > 0:
-        _set_panes_cursor(_panes_row - 1)
+def _panes_hub_up(event):
+    global _sel_panes
+    n = len(_panes_selectable_indices())
+    if n:
+        _sel_panes = (_sel_panes - 1) % n
 
 
 @kb.add("down", filter=_in_frame("panes"))
-def _panes_down(event):
-    if _panes_row < _PANES_LAST_ROW:
-        _set_panes_cursor(_panes_row + 1)
-
-
-@kb.add("left", filter=_in_frame("panes"))
-def _panes_left(event):
-    if _panes_row < _PANES_GRID_ROWS and _panes_col > 0:
-        _set_panes_cursor(_panes_row, _panes_col - 1)
-
-
-@kb.add("right", filter=_in_frame("panes"))
-def _panes_right(event):
-    if _panes_row < _PANES_GRID_ROWS and _panes_col < _PANES_LAST_COL:
-        _set_panes_cursor(_panes_row, _panes_col + 1)
+def _panes_hub_down(event):
+    global _sel_panes
+    n = len(_panes_selectable_indices())
+    if n:
+        _sel_panes = (_sel_panes + 1) % n
 
 
 @kb.add("enter", filter=_in_frame("panes"))
 @kb.add(" ",     filter=_in_frame("panes"))
+def _panes_hub_select(event):
+    sel_indices = _panes_selectable_indices()
+    if not sel_indices:
+        return
+    idx = _sel_panes if _sel_panes < len(sel_indices) else len(sel_indices) - 1
+    _panes_activate(sel_indices[idx])
+
+
+@kb.add("escape", filter=_in_frame("panes"), eager=True)
+def _panes_hub_escape(event):
+    _pop_frame()
+
+
+# Panes → General frame (colour grid). Eight navigable rows; ←/→ moves the
+# column only on grid rows, persisting across grid rows.
+@kb.add("up", filter=_in_frame("panes_general"))
+def _panes_up(event):
+    if _panes_general_row > 0:
+        _set_panes_cursor(_panes_general_row - 1)
+
+
+@kb.add("down", filter=_in_frame("panes_general"))
+def _panes_down(event):
+    if _panes_general_row < _PANES_LAST_ROW:
+        _set_panes_cursor(_panes_general_row + 1)
+
+
+@kb.add("left", filter=_in_frame("panes_general"))
+def _panes_left(event):
+    if _panes_general_row < _PANES_GRID_ROWS and _panes_general_col > 0:
+        _set_panes_cursor(_panes_general_row, _panes_general_col - 1)
+
+
+@kb.add("right", filter=_in_frame("panes_general"))
+def _panes_right(event):
+    if _panes_general_row < _PANES_GRID_ROWS and _panes_general_col < _PANES_LAST_COL:
+        _set_panes_cursor(_panes_general_row, _panes_general_col + 1)
+
+
+@kb.add("enter", filter=_in_frame("panes_general"))
+@kb.add(" ",     filter=_in_frame("panes_general"))
 def _panes_select(event):
-    r = _panes_row
+    r = _panes_general_row
     if r < _PANES_GRID_ROWS:
-        _apply_panes_grid_toggle(r, _panes_col)
+        _apply_panes_grid_toggle(r, _panes_general_col)
     elif r == _PANES_HEADERS_ROW:
         _toggle_pane_headers()
     elif r == _PANES_BACK_ROW:
         _pop_frame()
 
 
-@kb.add("escape", filter=_in_frame("panes"), eager=True)
+@kb.add("escape", filter=_in_frame("panes_general"), eager=True)
 def _panes_escape(event):
     _pop_frame()
 
@@ -3820,17 +3969,17 @@ def _build_options_container():
     return _options_window
 
 
-def _build_panes_container():
-    global _panes_window
+def _build_panes_general_container():
+    global _panes_general_window
     # Single FormattedTextControl Window — the grid frame emits the title
     # block, grid, controls and footer as one fragment list and footer_block
     # pads the trailing rows so the footer lands at the bottom of the popup.
-    _panes_window = Window(
-        content=FormattedTextControl(text=_panes_text, focusable=True),
+    _panes_general_window = Window(
+        content=FormattedTextControl(text=_panes_general_text, focusable=True),
         wrap_lines=False,
         always_hide_cursor=True,
     )
-    return _panes_window
+    return _panes_general_window
 
 
 def _timers_text():
@@ -4099,6 +4248,7 @@ def main():
         "main":                          _build_main_container(),
         "options":                       _build_options_container(),
         "panes":                         _build_panes_container(),
+        "panes_general":                 _build_panes_general_container(),
         "timers":                        _build_timers_container(),
         "scripts":                       _build_scripts_container(),
         "readability":                   _build_readability_container(),

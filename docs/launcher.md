@@ -49,7 +49,7 @@ The UI is a frame stack: a single `DynamicContainer` swaps between `main`,
 `profile`, `profile_rename`, `profile_create_name`, `profile_create_choose`,
 `profile_create_copy_picker`, `profile_delete_confirm`, `profile_editor`,
 `profile_editor_macro_keybind`, `options`,
-`options_panes`, `options_connection`,
+`options_panes`, `options_panes_general`, `options_connection`,
 `options_connection_custom`, `options_spotlights`,
 `options_terminal`, `terminal_font_picker`, `scripts`, `readability`, `about`,
 `history`, `history_detail`, `history_rate`, `history_delete_confirm`,
@@ -60,15 +60,18 @@ and `update_result` containers, pushed and popped via
 frame owns its own `KeyBindings` filter (`_in_frame(name)`) so
 navigation, scroll, and ESC behave per-frame. The popup architecture
 (ADR 0062) is the reference; see `bridge/launcher/ingame_menu.py` for
-the same patterns. The Panes submenu is a single `options_panes`
-frame backed by the shared `panes_grid` module (ADR 0086); there is
-no longer a per-pane subframe.
+the same patterns. **Panes** is a thin navigation hub (`options_panes`)
+over the per-pane layout pages — its **General** row opens the pane ×
+colour grid (`options_panes_general`, backed by the shared `panes_grid`
+module, ADR 0086) and its **Timers** row opens the timers-layout grid
+(`options_timers`). The grid is a single frame; there is no per-pane
+subframe.
 
 | Feature | Detail |
 |---------|--------|
 | Session detect | `tmux has-session -t mume` + `list-clients` re-probed on every render → top item is "Enter MUME", "Resume MUME", or "Mirror MUME (attached elsewhere)" |
 | Profile page | Sortable table of `ttpp/profiles/*.tin` (Name + Selected columns) paired with a centred Options widget — Select, New, Edit, Rename, Delete, Export, Back. See the [Profile sub-menu](#profile-sub-menu) section below. `default` cannot be renamed or deleted. "Create blank" copies from `bridge/launcher/templates/blank_profile.tin` (single source of truth — see ADR 0042). The active profile is written to `startup.conf` and consumed by `ttpp/core/config.tin` at tt++ startup. |
-| Options page | Navigation hub: **Connection**, **Terminal** (managed-foot deployment only), **Panes**, **Timers layout**, **Readability**, **Scripts**, **Spotlights**, blank row, **Back**. See the [Options sub-menu](#options-sub-menu) section below for each child frame. Most Options changes persist to `bridge/runtime/startup.conf` on Back / ESC; the Terminal child writes its own foot.ini, and the Timers layout child writes `bridge/runtime/timers_layout.conf` — neither is a `startup.conf` consumer. |
+| Options page | Navigation hub: **Connection**, **Terminal** (managed-foot deployment only), **Panes**, **Readability**, **Scripts**, **Spotlights**, blank row, **Back**. **Panes** is itself a hub over the per-pane layout pages (**General**, **Timers**). See the [Options sub-menu](#options-sub-menu) section below for each child frame. Most Options changes persist to `bridge/runtime/startup.conf` on Back / ESC; the Terminal child writes its own foot.ini, and the Timers layout child writes `bridge/runtime/timers_layout.conf` — neither is a `startup.conf` consumer. |
 | Scripts page | Opened from Options → Scripts. Two-column `[ list \| detail ]` manager of `lua/scripts/<name>.lua`; toggles enabled state via `bridge/runtime/scripts.conf` (deferred write on Back/ESC). See [`options_scripts` frame](#options_scripts-frame) below. |
 | Spotlights | Cross-character reel of deaths, level-ups, pvp-kills, and achievements aggregated from every character's sealed runs. Opens `log_view` in spotlight mode; empty-state frame when nothing has been captured yet. Plays to the end and parks on the last spotlight (no roll into credits). See the [Spotlights sub-menu](#spotlights-sub-menu) section and ADR 0077. |
 | Credits | Scrolling end-credits chronicle generated from the same aggregated event set as Spotlights, respecting the Options → Spotlights toggles. Sibling of Spotlights; opens the [`credits` frame](#credits-frame) directly (no `.log` loading), or `credits_empty` when `total_count == 0`. The only route to the credits frame. |
@@ -1299,8 +1302,10 @@ Navigation hub pushed by activating "Options" on the main frame. Children:
   any other value (or unset) keeps it hidden — fail-closed. See
   [ADR 0104](decisions/0104-windows-deployment-foot-wslg.md) and
   [ADR 0107](decisions/0107-terminal-settings-managed-keys.md).
-- **Panes** → `options_panes` — per-pane enable/disable + colour selection.
-- **Timers layout** → `options_timers` — per-group colour, column count, and visibility for the timers pane (writes `timers_layout.conf`).
+- **Panes** → `options_panes` — thin hub over the per-pane layout pages.
+  Its rows:
+  - **General** → `options_panes_general` — per-pane enable/disable + colour selection.
+  - **Timers** → `options_timers` — per-group colour, column count, and visibility for the timers pane (writes `timers_layout.conf`).
 - **Readability** → `readability` — opens the two-column Readability
   module manager documented under [`readability` frame](#readability-frame).
   ESC saves any pending toggles to `readability_enabled` in
@@ -1315,9 +1320,21 @@ Navigation hub pushed by activating "Options" on the main frame. Children:
 ESC inside `options` saves any pending edits to `bridge/runtime/startup.conf`
 and pops back to `main`.
 
-### `options_panes` frame
+### `options_panes` frame (Panes hub)
 
-Single frame for the Panes submenu. Renders a **pane × colour grid**
+Thin navigation hub modelled on the `options` frame: a `<< label >>`
+menu titled `─── Panes ───` listing **General** (pushes
+`options_panes_general`), **Timers** (calls `_load_timers_layout` then
+pushes `options_timers`), a blank row, and **Back** (pops to `options`).
+It owns its own selection state (`_sel_options_panes` /
+`_hover_options_panes`) and `_in_frame("options_panes")` keybindings.
+It is purely structural — no persistence, no grid logic — and exists so
+future per-pane layout pages (Status / Communication / Group) can slot
+in as additional rows. ESC pops to `options`.
+
+### `options_panes_general` frame
+
+Single frame for the Panes → General submenu. Renders a **pane × colour grid**
 where rows are the six right-column panes (Character / Buffs / Group /
 Communication / UI / Developer) and columns are the seven palette
 entries (None / Red / Green / Blue / Grey / Orange / Purple). The first
@@ -1439,7 +1456,8 @@ stays navigable.
 ### Timers layout submenu
 
 Single frame (`options_timers`) for the Timers-layout submenu, opened
-from the Options menu's `Timers layout` row (directly below `Panes`).
+from the Panes hub's `Timers` row (`Options → Panes → Timers`). ESC pops
+back to the `options_panes` hub.
 Renders a **group × colour grid** where rows are the six timer groups
 (Spells / Buffs / Debuffs / Stored / Blinds / Charmies) and columns are
 the nine palette entries (Blue / Green / Red / Magenta / Cyan / Violet /
@@ -1798,7 +1816,7 @@ Per-kind toggles for the [Spotlights reel](#spotlights-sub-menu). Four
 `menu_chrome.menu_row` so the leading `[X]` / `[ ]` glyph carries the
 persistent on / active state and the cursor row's gold `<<` / `>>`
 arrows carry the transient selection — identical grammar to the
-`Display pane headers` toggle in `options_panes`. All five rows share
+`Display pane headers` toggle in `options_panes_general`. All five rows share
 one centred block, left-aligned on the widest label so the `[X]` /
 `[ ]` glyphs and `Back` stack vertically. Enter / Space / click flips
 the row; ESC or `Back` saves and pops back to `options`.
@@ -3093,7 +3111,7 @@ All frames render through `prompt_toolkit` controls. Layout building blocks:
 - **Centered frames** — `main`, `profile_rename`, the profile-create
   sub-frames, `profile_delete_confirm`,
   `profile_editor_macro_keybind`, `options`,
-  `options_panes`, `options_connection`,
+  `options_panes`, `options_panes_general`, `options_connection`,
   `options_connection_custom`, `options_terminal`,
   `terminal_font_picker`, `history_detail`,
   `history_rate`, `history_delete_confirm`, `update_running`,
@@ -3221,7 +3239,7 @@ stuck hover instead of leaving the previous row highlighted. See the
 Every frame in the launcher's startup-menu surface uses these helpers
 for its title row, footer anchoring, and selectable-row styling —
 `main`, the full Options chain (`options`, `options_panes`,
-`options_connection`, `options_connection_custom`,
+`options_panes_general`, `options_connection`, `options_connection_custom`,
 `options_spotlights`), `scripts`, `about`,
 `spotlights_empty`, `credits_empty`, and the `update_result` modal
 dialog. The
@@ -3267,7 +3285,7 @@ state:
   gold-or-nothing: no unfocused carry-over.
 - **Gold-arrow `<< label >>` menu rows** (`menu_row`) — every vertical
   menu list in the launcher's startup-menu surface (`main`,
-  `options`, the headers-toggle / `Back` rows of `options_panes`,
+  `options`, the headers-toggle / `Back` rows of `options_panes_general`,
   `options_connection`, `options_spotlights`, the `[X] Display headers`
   / `[X] Compact layout` toggles + `Back` of `options_timers`, the
   `<< [X] name >>` module rows + `Back` of `options_scripts` /
@@ -3293,9 +3311,9 @@ rule.
   is ragged-centred. Because the prefix and suffix are the same
   width (3 cells) in every state, the label sits at the same column
   within the row in inactive / hover / selected — it does not shift
-  when a row is selected. Applied throughout `main` and `options`,
-  and to the `Back` row of `options_panes`, `options_spotlights`,
-  and `options_connection`.
+  when a row is selected. Applied throughout `main`, `options`, and the
+  `options_panes` hub (all rows), and to the `Back` row of
+  `options_panes_general`, `options_spotlights`, and `options_connection`.
 - **Glyph-block left-alignment** — rows whose leading `[ ]` / `( )`
   glyph must stack vertically with sibling rows. Every row in the
   block left-aligns on a shared column inside a single centred
@@ -3304,7 +3322,7 @@ rule.
   rows; the caller prepends the same left margin to every row so
   the glyphs stack at one column. Two variants both keep the glyphs
   stacked: `options_connection` / `options_spotlights` /
-  `options_panes` do **not** pad the label, computing the per-row
+  `options_panes_general` do **not** pad the label, computing the per-row
   right pad from each row's actual width to fill out to the right edge
   (and carrying the clear-hover handler), so the trailing `>>` arrows
   stay ragged; `options_timers` (the two toggles) and the
@@ -3313,7 +3331,7 @@ rule.
   are equal width and the trailing `>>` arrows align too. Applied to
   the `(•) / ( )` mode rows of `options_connection`, the `[X] / [ ]`
   toggle rows of `options_spotlights`, the `[X] / [ ]` headers-toggle
-  row of `options_panes`, the two `[X] / [ ]` toggles of
+  row of `options_panes_general`, the two `[X] / [ ]` toggles of
   `options_timers`, and the `<< [X] name >>` module rows of
   `options_scripts` / `options_readability`. `Back` is not part of
   these blocks — it is always per-row centred, even when it sits below
@@ -3322,7 +3340,7 @@ rule.
 In both rules, the row geometry re-centres on every render so a
 resize is immediate, and the `<< >>` arrows hug the label with one
 space of breathing room — no trailing pad before the closing arrow.
-The `options_panes` frame is the one place where two centred zones
+The `options_panes_general` frame is the one place where two centred zones
 coexist on the same page: the colour grid sits in its own centred
 block above, and the headers-toggle row sits in a (degenerate,
 single-row) glyph block below, with `Back` per-row centred beneath.
@@ -3402,9 +3420,9 @@ blank-separator row inside the frame, and to the per-row centring
 left / right padding around each `menu_row` call. Without this
 invariant, MOUSE_MOVE above the first row or below the last row never
 fires a handler, the previous row's hover sticks, and the highlight
-trails the actual pointer position. The `options_panes` frame is the
+trails the actual pointer position. The `options_panes_general` frame is the
 exception: its keyboard cursor and mouse hover share the same
-`_options_panes_row` (there is no separate hover index), so its
+`_options_panes_general_row` (there is no separate hover index), so its
 clear-hover handler is a deliberate no-op that exists only to keep
 the invariant well-formed.
 

@@ -280,15 +280,19 @@ _profile_editor_instance = None
 # Options — top-level (Panes / Game text-layout / Connection / Back)
 _sel_options              = 0
 _hover_options            = -1
-# Options — Panes submenu (pane × colour grid). Eight navigable rows:
+# Options — Panes hub (thin index: General / Timers / Back). Mirrors the
+# `options` frame; per-pane layout pages hang under it.
+_sel_options_panes        = 0
+_hover_options_panes      = -1
+# Options — Panes → General submenu (pane × colour grid). Eight navigable rows:
 #   0..5 — pane rows (Character / Timers / Group / Comm / UI / Developer).
 #   6    — Display pane headers toggle.
 #   7    — Back.
-# _options_panes_col is the persistent column (0..6) for grid rows; it is
+# _options_panes_general_col is the persistent column (0..6) for grid rows; it is
 # preserved while the cursor sits on the headers / Back rows so returning
 # to a grid row re-enters the same column.
-_options_panes_row        = 0
-_options_panes_col        = 0
+_options_panes_general_row        = 0
+_options_panes_general_col        = 0
 # Options — Timers layout submenu (timer-group × colour grid + col stepper).
 # Eight navigable rows: 0..5 grid rows (spell/buff/debuff/stored/blind/charm),
 # row 6 is the [X] Display headers toggle, row 7 is Back. `_options_timers_col`
@@ -507,6 +511,7 @@ _profile_create_copy_window      = None
 _profile_delete_window           = None
 _options_window                  = None
 _options_panes_window            = None
+_options_panes_general_window            = None
 _options_timers_window           = None
 _options_connection_window       = None
 _options_connection_custom_window = None
@@ -1094,6 +1099,7 @@ def _focus_current_frame():
             "profile_rename":             _profile_rename_window,
             "options":                    _options_window,
             "options_panes":              _options_panes_window,
+            "options_panes_general":      _options_panes_general_window,
             "options_timers":             _options_timers_window,
             "options_connection":         _options_connection_window,
             "options_connection_custom":  _options_connection_custom_window,
@@ -1208,6 +1214,7 @@ def _pad_centre(text, cols=None):
 def _set_hover(frame, idx):
     """Set hover index for the named frame; invalidate if changed."""
     global _hover_main, _hover_options, _hover_copy
+    global _hover_options_panes
     global _hover_options_connection
     global _hover_options_spotlights
     global _options_terminal_hover, _terminal_font_picker_hover
@@ -1216,6 +1223,8 @@ def _set_hover(frame, idx):
         _hover_main = idx; changed = True
     elif frame == "options" and _hover_options != idx:
         _hover_options = idx; changed = True
+    elif frame == "options_panes" and _hover_options_panes != idx:
+        _hover_options_panes = idx; changed = True
     elif frame == "options_connection" and _hover_options_connection != idx:
         _hover_options_connection = idx; changed = True
     elif frame == "options_spotlights" and _hover_options_spotlights != idx:
@@ -2491,7 +2500,6 @@ def _build_options_rows():
         rows.append(("terminal", "Terminal"))
     rows.extend([
         ("panes",       "Panes"),
-        ("timers",      "Timers layout"),
         ("readability", "Readability"),
         ("scripts",     "Scripts"),
         ("spotlights",  "Spotlights"),
@@ -2512,21 +2520,12 @@ def _enter_options_frame():
 def _activate_option(idx):
     global _sel_options, _sel_options_connection
     global _sel_options_spotlights
-    global _options_panes_row, _options_panes_col
-    global _options_timers_row, _options_timers_col
     if idx < 0 or idx >= len(_OPTIONS_ROWS):
         return
     _sel_options = idx
     action, _label = _OPTIONS_ROWS[idx]
     if action == "panes":
-        _options_panes_row = 0
-        _options_panes_col = 0
-        _push_frame("options_panes")
-    elif action == "timers":
-        _options_timers_row = 0
-        _options_timers_col = 0
-        _load_timers_layout()
-        _push_frame("options_timers")
+        _enter_options_panes_frame()
     elif action == "readability":
         _enter_readability_frame()
     elif action == "scripts":
@@ -2604,7 +2603,104 @@ def _options_text():
 
 
 # ---------------------------------------------------------------------------
-# Options — Panes submenu (pane × colour grid)
+# Options — Panes hub (thin index over the per-pane layout pages)
+# ---------------------------------------------------------------------------
+# Mirrors the `options` frame: a `<< label >>` menu listing General (the
+# pane × colour grid) and Timers (the timers-layout grid), with a Back row.
+# Future per-pane pages (Status / Communication / Group) slot in here.
+_OPTIONS_PANES_ROWS = [
+    ("general", "General"),
+    ("timers",  "Timers"),
+    ("back",    "Back"),
+]
+
+
+def _enter_options_panes_frame():
+    global _sel_options_panes
+    _sel_options_panes = 0
+    _push_frame("options_panes")
+
+
+def _activate_options_panes(idx):
+    global _sel_options_panes
+    global _options_panes_general_row, _options_panes_general_col
+    global _options_timers_row, _options_timers_col
+    if idx < 0 or idx >= len(_OPTIONS_PANES_ROWS):
+        return
+    _sel_options_panes = idx
+    action, _label = _OPTIONS_PANES_ROWS[idx]
+    if action == "general":
+        _options_panes_general_row = 0
+        _options_panes_general_col = 0
+        _push_frame("options_panes_general")
+    elif action == "timers":
+        _options_timers_row = 0
+        _options_timers_col = 0
+        _load_timers_layout()
+        _push_frame("options_timers")
+    elif action == "back":
+        _pop_frame()
+
+
+def _options_panes_clear_hover(ev):
+    if ev.event_type == MouseEventType.MOUSE_MOVE:
+        _set_hover("options_panes", -1)
+
+
+def _options_panes_text():
+    cols   = _term_cols()
+    rows_h = _term_rows()
+    title  = "─── Panes ───"
+    footer = "↑↓ Navigate · Enter Select · ESC Back"
+    clear_hover = _options_panes_clear_hover
+
+    frags = []
+    frags.extend(title_block(
+        title, cols, blank_above=2, mouse_handler=clear_hover,
+    ))
+
+    back_idx = len(_OPTIONS_PANES_ROWS) - 1
+    blank_rows = 0
+
+    for i, (action, label) in enumerate(_OPTIONS_PANES_ROWS):
+        if i == back_idx:
+            frags.append(("", "\n", clear_hover))   # blank before Back
+            blank_rows += 1
+
+        is_active = (i == _sel_options_panes)
+        is_hover  = (i == _hover_options_panes)
+        state     = _menu_row_state(is_active, is_hover)
+
+        def _make_handler(row=i):
+            def _h(ev):
+                if ev.event_type == MouseEventType.MOUSE_MOVE:
+                    _set_hover("options_panes", row)
+                    return
+                if ev.event_type == MouseEventType.MOUSE_DOWN:
+                    _activate_options_panes(row)
+            return _h
+
+        h = _make_handler()
+        row_w     = len(label) + 6
+        left_pad  = max(0, (cols - row_w) // 2)
+        right_pad = max(0, cols - left_pad - row_w)
+        frags.append(("", " " * left_pad, clear_hover))
+        frags.extend(menu_row(
+            label, state,
+            mouse_handler=h,
+        ))
+        frags.append(("", " " * right_pad, clear_hover))
+        frags.append(("", "\n", clear_hover))
+
+    content_rows = title_block_height(2) + len(_OPTIONS_PANES_ROWS) + blank_rows
+    frags.extend(footer_block(
+        footer, cols, rows_h, content_rows, mouse_handler=clear_hover,
+    ))
+    return frags
+
+
+# ---------------------------------------------------------------------------
+# Options — Panes → General submenu (pane × colour grid)
 # ---------------------------------------------------------------------------
 # One frame replaces the previous Panes index + six per-pane subframes.
 # Rows of the grid are panes, columns are the seven colours. A pane row
@@ -2629,19 +2725,19 @@ _PANES_LAST_COL    = len(PANE_COLOR_ORDER) - 1     # 6
 
 def _set_panes_cursor(row, col=None):
     """Update the panes-grid cursor; invalidate on change."""
-    global _options_panes_row, _options_panes_col
+    global _options_panes_general_row, _options_panes_general_col
     changed = False
-    if row != _options_panes_row:
-        _options_panes_row = row
+    if row != _options_panes_general_row:
+        _options_panes_general_row = row
         changed = True
-    if col is not None and col != _options_panes_col:
-        _options_panes_col = col
+    if col is not None and col != _options_panes_general_col:
+        _options_panes_general_col = col
         changed = True
     if changed and _app:
         _app.invalidate()
 
 
-def _options_panes_back():
+def _options_panes_general_back():
     _save_conf()
     _pop_frame()
 
@@ -2670,13 +2766,13 @@ def _toggle_pane_headers():
         _app.invalidate()
 
 
-def _options_panes_clear_hover(ev):
+def _options_panes_general_clear_hover(ev):
     """MOUSE_MOVE handler for the panes-frame chrome. Sets the cursor row
     to the no-hover sentinel (_PANES_LAST_ROW + 1) so chrome events drop
     the hover; the keyboard cursor stays where it was via the persisted
-    `_options_panes_row` (only changed by `_set_panes_cursor` calls)."""
+    `_options_panes_general_row` (only changed by `_set_panes_cursor` calls)."""
     # Panes frame is unique: the keyboard cursor and the mouse hover
-    # share `_options_panes_row`. Clearing hover here would also move
+    # share `_options_panes_general_row`. Clearing hover here would also move
     # the cursor, so we deliberately do nothing — the headers / Back
     # rows' own MOUSE_MOVE handlers already overwrite the cursor when
     # the mouse moves onto them, and the grid cells do the same. The
@@ -2686,10 +2782,10 @@ def _options_panes_clear_hover(ev):
     return
 
 
-def _options_panes_text():
+def _options_panes_general_text():
     cols   = _term_cols()
     rows_h = _term_rows()
-    clear_hover = _options_panes_clear_hover
+    clear_hover = _options_panes_general_clear_hover
 
     # Grid rows from _conf. Empty / unknown colour names fall back to
     # Black (column 0) per the grid model.
@@ -2703,8 +2799,8 @@ def _options_panes_text():
             colour_index = 0
         grid_rows.append((label, enabled, colour_index))
 
-    cur_row = _options_panes_row
-    cur_col = _options_panes_col
+    cur_row = _options_panes_general_row
+    cur_col = _options_panes_general_col
     grid_cursor = (cur_row, cur_col) if cur_row < _PANES_GRID_ROWS else None
 
     headers_on    = (_conf.get("show_pane_dividers") == "1")
@@ -2771,7 +2867,7 @@ def _options_panes_text():
             _set_panes_cursor(_PANES_BACK_ROW)
             return
         if ev.event_type == MouseEventType.MOUSE_DOWN:
-            _options_panes_back()
+            _options_panes_general_back()
 
     back_row_w     = len(back_label) + 6
     back_left_pad  = max(0, (cols - back_row_w) // 2)
@@ -9489,48 +9585,76 @@ def _kb_opt_escape(event):
     _pop_frame()
 
 
-# Options — Panes submenu (colour grid). Eight navigable rows; ←/→ moves
-# the column only on grid rows, and the column persists across grid rows.
+# Options — Panes hub (thin index: General / Timers / Back).
 @kb.add("up", filter=_in_frame("options_panes"))
-def _kb_optp_up(event):
-    if _options_panes_row > 0:
-        _set_panes_cursor(_options_panes_row - 1)
+def _kb_optpanes_up(event):
+    global _sel_options_panes
+    n = len(_OPTIONS_PANES_ROWS)
+    if n:
+        _sel_options_panes = (_sel_options_panes - 1) % n
 
 
 @kb.add("down", filter=_in_frame("options_panes"))
-def _kb_optp_down(event):
-    if _options_panes_row < _PANES_LAST_ROW:
-        _set_panes_cursor(_options_panes_row + 1)
-
-
-@kb.add("left", filter=_in_frame("options_panes"))
-def _kb_optp_left(event):
-    if _options_panes_row < _PANES_GRID_ROWS and _options_panes_col > 0:
-        _set_panes_cursor(_options_panes_row, _options_panes_col - 1)
-
-
-@kb.add("right", filter=_in_frame("options_panes"))
-def _kb_optp_right(event):
-    if (_options_panes_row < _PANES_GRID_ROWS
-            and _options_panes_col < _PANES_LAST_COL):
-        _set_panes_cursor(_options_panes_row, _options_panes_col + 1)
+def _kb_optpanes_down(event):
+    global _sel_options_panes
+    n = len(_OPTIONS_PANES_ROWS)
+    if n:
+        _sel_options_panes = (_sel_options_panes + 1) % n
 
 
 @kb.add("enter", filter=_in_frame("options_panes"))
 @kb.add(" ",     filter=_in_frame("options_panes"))
-def _kb_optp_select(event):
-    r = _options_panes_row
-    if r < _PANES_GRID_ROWS:
-        _apply_panes_grid_toggle(r, _options_panes_col)
-    elif r == _PANES_HEADERS_ROW:
-        _toggle_pane_headers()
-    elif r == _PANES_BACK_ROW:
-        _options_panes_back()
+def _kb_optpanes_select(event):
+    _activate_options_panes(_sel_options_panes)
 
 
 @kb.add("escape", filter=_in_frame("options_panes"), eager=True)
+def _kb_optpanes_escape(event):
+    _pop_frame()
+
+
+# Options — Panes → General submenu (colour grid). Eight navigable rows; ←/→
+# moves the column only on grid rows, and the column persists across grid rows.
+@kb.add("up", filter=_in_frame("options_panes_general"))
+def _kb_optp_up(event):
+    if _options_panes_general_row > 0:
+        _set_panes_cursor(_options_panes_general_row - 1)
+
+
+@kb.add("down", filter=_in_frame("options_panes_general"))
+def _kb_optp_down(event):
+    if _options_panes_general_row < _PANES_LAST_ROW:
+        _set_panes_cursor(_options_panes_general_row + 1)
+
+
+@kb.add("left", filter=_in_frame("options_panes_general"))
+def _kb_optp_left(event):
+    if _options_panes_general_row < _PANES_GRID_ROWS and _options_panes_general_col > 0:
+        _set_panes_cursor(_options_panes_general_row, _options_panes_general_col - 1)
+
+
+@kb.add("right", filter=_in_frame("options_panes_general"))
+def _kb_optp_right(event):
+    if (_options_panes_general_row < _PANES_GRID_ROWS
+            and _options_panes_general_col < _PANES_LAST_COL):
+        _set_panes_cursor(_options_panes_general_row, _options_panes_general_col + 1)
+
+
+@kb.add("enter", filter=_in_frame("options_panes_general"))
+@kb.add(" ",     filter=_in_frame("options_panes_general"))
+def _kb_optp_select(event):
+    r = _options_panes_general_row
+    if r < _PANES_GRID_ROWS:
+        _apply_panes_grid_toggle(r, _options_panes_general_col)
+    elif r == _PANES_HEADERS_ROW:
+        _toggle_pane_headers()
+    elif r == _PANES_BACK_ROW:
+        _options_panes_general_back()
+
+
+@kb.add("escape", filter=_in_frame("options_panes_general"), eager=True)
 def _kb_optp_escape(event):
-    _options_panes_back()
+    _options_panes_general_back()
 
 
 # Options — Timers layout submenu (colour grid + col steppers). Six group
@@ -10444,7 +10568,7 @@ def main():
     global _profile_table_window, _profile_options_window, _profile_rename_window
     global _profile_create_name_window, _profile_create_choose_window
     global _profile_create_copy_window, _profile_delete_window
-    global _options_window, _options_panes_window
+    global _options_window, _options_panes_window, _options_panes_general_window
     global _options_timers_window
     global _options_connection_window, _options_connection_custom_window
     global _options_spotlights_window
@@ -10520,6 +10644,7 @@ def main():
         if _profile_editor_instance is not None else Window())
     _options_window,                    options_frame                  = _build_simple(_options_text)
     _options_panes_window,              options_panes_frame            = _build_simple(_options_panes_text)
+    _options_panes_general_window,      options_panes_general_frame    = _build_simple(_options_panes_general_text)
     _options_timers_window,             options_timers_frame           = _build_simple(_options_timers_text)
     _options_connection_window,         options_connection_frame       = _build_simple(_options_connection_text)
     _options_connection_custom_window,  options_connection_custom_frame = _build_simple(_options_connection_custom_text)
@@ -10679,6 +10804,7 @@ def main():
         "profile_editor_macro_keybind": peditor_keybind_frame,
         "options":                    options_frame,
         "options_panes":              options_panes_frame,
+        "options_panes_general":      options_panes_general_frame,
         "options_timers":             options_timers_frame,
         "options_connection":         options_connection_frame,
         "options_connection_custom":  options_connection_custom_frame,

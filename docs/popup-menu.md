@@ -19,13 +19,15 @@ border paints in section cyan (matching the `C_SECTION` chrome tone)
 on the ESC-opened popup and the disconnect-auto-opened popup alike.
 
 The UI is a frame stack: a single `DynamicContainer` swaps between
-`main`, `options`, `panes`, `readability`, `scripts`, `statistics`,
-`rate_session`, `exit_confirm`, `profile_editor`,
+`main`, `options`, `panes`, `panes_general`, `readability`, `scripts`,
+`statistics`, `timers`, `rate_session`, `exit_confirm`, `profile_editor`,
 `profile_editor_macro_keybind`, and `profile_apply_confirm` containers,
 pushed and popped via `_push_frame` / `_pop_frame`. Each frame owns its
 own `KeyBindings` filter so navigation, scroll, and ESC behave
-per-frame. The Panes submenu is a single `panes` frame backed by the
-shared `panes_grid` module (ADR 0086); there is no per-pane subframe.
+per-frame. **Panes** is a thin hub (`panes`) over the per-pane layout
+pages; its **General** row opens a single `panes_general` grid frame
+backed by the shared `panes_grid` module (ADR 0086) — there is no
+per-pane subframe.
 The profile editor frames use `DynamicContainer` lambdas keyed off the
 live `_profile_editor_instance`, and the editor's own key bindings are
 merged via `DynamicKeyBindings` — matching the launcher's wiring
@@ -49,12 +51,14 @@ before the disconnect step — see "Auto-open on disconnect" below.
 ## Input
 
 - **ESC** — on the main frame, dismisses the popup. On any submenu
-  (`options`, `panes`, `readability`, `scripts`, `statistics`,
-  `rate_session`, `exit_confirm`), pops one frame back toward `main`.
-  The frame stack is honoured: ESC inside `panes` or `scripts` returns
-  to `options`; ESC inside `readability` routes through save-and-pop
-  (writes conf + fires reload if dirty, then pops two frames to main);
-  ESC inside `options` returns to `main`. ESC bindings use `eager=True`
+  (`options`, `panes`, `panes_general`, `timers`, `readability`,
+  `scripts`, `statistics`, `rate_session`, `exit_confirm`), pops one
+  frame back toward `main`. The frame stack is honoured: ESC inside
+  `panes` or `scripts` returns to `options`; ESC inside `panes_general`
+  or `timers` returns to the `panes` hub; ESC inside `readability`
+  routes through save-and-pop (writes conf + fires reload if dirty,
+  then pops two frames to main); ESC inside `options` returns to
+  `main`. ESC bindings use `eager=True`
   to bypass
   prompt_toolkit's key-disambiguation timeout; `app.ttimeoutlen` /
   `app.timeoutlen` are also lowered to 50 ms so bare ESC feels instant.
@@ -234,32 +238,34 @@ Between **Statistics** (when present) and **Exit session** sit
 **Profile** and **Options**. Profile opens the shared `ProfileEditor`
 (ADR 0109) — see the [Profile frame](#profile-frame) section below.
 Options pushes a thin index frame whose sole purpose is to group
-**Panes**, **Timers layout**, and **Scripts** under one slot, so the
+**Panes**, **Readability**, and **Scripts** under one slot, so the
 main menu stays short.
 
 ```
 --- Options ---
                    (blank row)
 Panes
-Timers layout
 Readability
 Scripts
                    (blank row)
 Back
 ```
 
-`Options → Panes` reaches the Panes submenu described below; `Options →
-Timers layout` reaches the Timers-layout submenu (see [Timers layout
-submenu](#timers-layout-submenu) below); `Options → Readability`
-reaches the interactive Readability frame (see
-[Readability submenu](#readability-submenu) below); `Options → Scripts`
-reaches the Scripts frame (unchanged from previous versions). ESC
-inside `options` pops back to `main`; ESC inside `panes`, `timers`, or
-`scripts` pops back to `options`; ESC inside `readability` routes
-through save-and-pop (see below). Source of truth is `_OPTIONS_ROWS` in
+`Options → Panes` reaches the **Panes hub** (`panes`), itself a thin
+index over the per-pane layout pages — **General** (`panes_general`,
+the pane × colour grid described below) and **Timers** (`timers`, the
+Timers-layout submenu, see [Timers layout submenu](#timers-layout-submenu)
+below). `Options → Readability` reaches the interactive Readability
+frame (see [Readability submenu](#readability-submenu) below); `Options
+→ Scripts` reaches the Scripts frame (unchanged from previous versions).
+ESC inside `options` pops back to `main`; ESC inside `panes` pops back
+to `options`; ESC inside `panes_general` or `timers` pops back to the
+`panes` hub; ESC inside `scripts` pops back to `options`; ESC inside
+`readability` routes through save-and-pop (see below). Source of truth
+is `_OPTIONS_ROWS` (and `_OPTIONS_PANES_ROWS` for the hub) in
 `ingame_menu.py`.
 
-Frame titles in `options` and `panes` emit a blank row between the
+Frame titles in `options`, `panes`, and `panes_general` emit a blank row between the
 centred title and the first content row, matching the launcher's
 title spacing.
 
@@ -307,15 +313,26 @@ top, below the bottom, between rows, or to the side. Selectable rows
 own their own MOUSE_MOVE handler that sets hover to that row instead.
 Mirrors the launcher's hover-clear contract.
 
-## Panes submenu
+## Panes hub
 
-`Options → Panes`. Source of truth is `_PANE_TARGETS` in
+`Options → Panes` pushes the `panes` hub — a thin index frame modelled
+on the `options` grouping (`<< label >>` menu rows, its own
+`_sel_panes` / `_hover_panes` state, title `─── Panes ───`). Rows:
+**General** (pushes `panes_general`), **Timers** (pushes `timers`, the
+[Timers layout submenu](#timers-layout-submenu)), a blank row, and
+**Back** (pops to `options`). It is purely structural — no persistence,
+no grid logic — so future per-pane layout pages (Status / Communication
+/ Group) slot in as extra rows. ESC pops to `options`.
+
+## Panes → General submenu
+
+`Options → Panes → General`. Source of truth is `_PANE_TARGETS` in
 `ingame_menu.py`; the grid render and toggle logic live in
 `bridge/launcher/panes_grid.py` (shared with the launcher — see the
 [Panes colour grid model](launcher.md#panes-colour-grid-model) section
 in `docs/launcher.md` and ADR 0086).
 
-The `panes` frame renders a **pane × colour grid**: rows are the six
+The `panes_general` frame renders a **pane × colour grid**: rows are the six
 right-column panes (Character / Buffs / Group / Communication / UI /
 Developer), columns are the seven palette entries (Black / Red /
 Green / Blue / Grey / Orange / Purple). Each cell renders as `[X]███`
@@ -350,7 +367,7 @@ Click / Enter semantics (`panes_grid.apply_cell_toggle`):
   `_pane_bg_for` reads the same key).
 - On the headers toggle row — `toggle_pane.sh headers --persist`
   (live tmux border status + `show_pane_dividers` in `startup.conf`).
-- On `Back` — pops back to `options`.
+- On `Back` — pops back to the `panes` hub.
 
 This is the persistence asymmetry vs. the launcher: the popup writes
 each cell click immediately and live-applies to tmux, while the
@@ -387,14 +404,15 @@ around `bridge/layout/toggle_pane.sh`, each passing `--persist`. All toggle path
 popup, launcher Options, and `cp -X` aliases — are equivalent and write to
 `startup.conf`. Colour selections do **not** have `cp -X` equivalents
 today — they are reachable from the launcher Options page and the
-popup's Panes submenu only.
+popup's Panes → General submenu only.
 
 ## Timers layout submenu
 
-`Options → Timers layout`. The grid render and stepper logic live in
+`Options → Panes → Timers`. The grid render and stepper logic live in
 `bridge/launcher/timers_layout_grid.py` (shared with the launcher — see
 the [Timers-layout grid model](launcher.md#timers-layout-grid-model)
-section in `docs/launcher.md` and ADR 0126).
+section in `docs/launcher.md` and ADR 0126). ESC pops back to the
+`panes` hub.
 
 The `timers` frame renders a **group × colour grid**: rows are the six
 timer groups (Spells / Buffs / Debuffs / Stored / Blinds / Charmies),
@@ -438,9 +456,9 @@ Click / Enter semantics:
   key in place, **independent** of headers (checked = compact, no blank
   lines between groups; unchecked = one blank row between consecutive
   groups). The running pane re-renders within ~100 ms.
-- On `Back` — pops back to `options`.
+- On `Back` — pops back to the `panes` hub.
 
-**No tmux interaction.** Unlike the Panes submenu, nothing is driven
+**No tmux interaction.** Unlike the Panes → General submenu, nothing is driven
 through `toggle_pane.sh` or `select-pane`: the running timers pane polls
 `timers_layout.conf` (~100 ms) and re-renders, so each edit applies
 live with no restart. Both surfaces write the same keys; the launcher
@@ -950,7 +968,8 @@ one contract for mouse routing to work:
 
 1. **Each frame builder constructs at least one focusable `Window` and
    stores it at module level.** Today: `_main_window`, `_options_window`,
-   `_panes_window`, `_scripts_window`, `_readability_window`,
+   `_panes_window`, `_panes_general_window`, `_timers_window`,
+   `_scripts_window`, `_readability_window`,
    `_profile_apply_confirm_window`, `_statistics_window`,
    `_exit_confirm_window`, `_rate_session_window`.
    The
