@@ -77,6 +77,7 @@ M.affects = {
     ["shroud"] = {
         type         = "spell",
         duration     = 1600,
+        damage_droppable = true,
         initString_1 = "^You are surrounded by a misty shroud.$",
         initString_2 = "^Your misty shroud is renewed.$",
         dropString_1 = "^You feel more exposed.$",
