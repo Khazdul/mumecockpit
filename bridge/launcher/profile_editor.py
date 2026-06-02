@@ -1973,9 +1973,36 @@ class ProfileEditor:
                 self._host.app.invalidate()
     
     
+    def _editor_body_scroll_cursor_into_view(self):
+        """Pull the Commands viewport so the cursor's line is visible. Called
+        from every Body cursor-mutating action (keystrokes, arrow nav, content
+        clicks, shift-selection moves, insert/Backspace/Delete). Mirrors
+        `_editor_buffer_scroll_cursor_into_view` for the editor-mode buffer.
+
+        Per ADR 0083 the render path (`_editor_body_viewport`) no longer
+        scrolls to the cursor; the viewport sits wherever the most recent
+        cursor-mutating action (or wheel) put it."""
+        cap = self._editor_body_budget()
+        line_count = len(self._editor_body_lines())
+        if line_count <= cap:
+            self._editor_body_scroll = 0
+            return
+        cur = max(0, min(line_count - 1, self._editor_body_line))
+        if cur < self._editor_body_scroll:
+            self._editor_body_scroll = cur
+        elif cur >= self._editor_body_scroll + cap:
+            self._editor_body_scroll = cur - cap + 1
+        self._editor_body_scroll = max(0, min(line_count - cap, self._editor_body_scroll))
+
+
     def _editor_body_viewport(self, line_count):
-        """Clamp `self._editor_body_scroll` so the cursor stays inside the
-        Commands viewport, then return `(scroll, visible_count, overflow)`.
+        """Return `(scroll, visible_count, overflow)` for the Commands viewport.
+
+        Per ADR 0083 the render path must not scroll to the cursor — that
+        re-clamp would fight wheel scrolling every frame. The cursor-into-view
+        clamp lives in `_editor_body_scroll_cursor_into_view`, called from
+        cursor-mutating actions. Here `_editor_body_scroll` is authoritative
+        and is only clamped to bounds.
 
         `overflow` is True when `line_count` exceeds the budget — used to decide
         whether the body box needs an inline scrollbar column."""
@@ -1983,11 +2010,6 @@ class ProfileEditor:
         if line_count <= cap:
             self._editor_body_scroll = 0
             return 0, line_count, False
-        cur = max(0, min(line_count - 1, self._editor_body_line))
-        if cur < self._editor_body_scroll:
-            self._editor_body_scroll = cur
-        elif cur >= self._editor_body_scroll + cap:
-            self._editor_body_scroll = cur - cap + 1
         self._editor_body_scroll = max(0, min(line_count - cap, self._editor_body_scroll))
         return self._editor_body_scroll, cap, True
     
@@ -2264,6 +2286,7 @@ class ProfileEditor:
                     self._editor_body_col  = max(0, min(len(lines[line]),
                                                    target_col))
                     self._editor_clear_body_selection()
+                self._editor_body_scroll_cursor_into_view()
             if self._host.app:
                 self._host.app.invalidate()
             return None
@@ -3837,6 +3860,7 @@ class ProfileEditor:
         if sel_text:
             self._clipboard_write(sel_text)
             self._editor_body_delete_selection()
+            self._editor_body_scroll_cursor_into_view()
             return
         lines = self._editor_body_lines()
         if not lines:
@@ -3856,6 +3880,7 @@ class ProfileEditor:
                 self._editor_body_line = len(new_lines) - 1
         self._editor_body_col = 0
         self._editor_body_set_lines(new_lines)
+        self._editor_body_scroll_cursor_into_view()
     
     
     def _editor_body_paste(self):
@@ -3898,8 +3923,9 @@ class ProfileEditor:
         self._editor_body_set_lines(lines)
         self._editor_body_line = new_line
         self._editor_body_col  = new_col
-    
-    
+        self._editor_body_scroll_cursor_into_view()
+
+
     def _editor_buffer_content_width(self, cols):
         """Width of the visible text-buffer region in editor mode. Equals the
         terminal width minus the line-number column and the right-edge
@@ -4144,11 +4170,17 @@ class ProfileEditor:
             self._editor_list_sb.scroll_to(self._editor_list_scroll)
     
         # Clamp cursor and scroll defensively (tab switches, deletions, etc.).
+        # Per ADR 0083 the render path must not scroll the viewport to the
+        # cursor — that re-clamp would fight wheel scrolling every frame.
+        # Cursor-into-view happens only on cursor-mutating actions; here we
+        # clamp `_editor_list_scroll` to bounds only and treat it as
+        # authoritative.
         if self._editor_list_cursor < 0:
             self._editor_list_cursor = 0
         elif self._editor_list_cursor >= total:
             self._editor_list_cursor = total - 1
-        self._profile_editor_scroll_into_view()
+        max_scroll = max(0, total - visible)
+        self._editor_list_scroll = max(0, min(max_scroll, self._editor_list_scroll))
     
         # Detail panel content (length == body_h). Sentinel cursor → no
         # entry; `self._editor_detail_lines` produces the centred "press Enter"
@@ -5350,8 +5382,9 @@ class ProfileEditor:
                 else:
                     self._editor_clear_body_selection()
                     self._editor_body_move_right()
-        
-        
+                    self._editor_body_scroll_cursor_into_view()
+
+
         @kb.add("left", filter=_in_pe_lite())
         def _kb_peditor_left(event):
             """Stepwise Left within the lite mode. Each detail-panel zone, when
@@ -5404,8 +5437,9 @@ class ProfileEditor:
                     return
                 self._editor_clear_body_selection()
                 self._editor_body_move_left()
-        
-        
+                self._editor_body_scroll_cursor_into_view()
+
+
         @kb.add("up", filter=_in_pe_lite())
         def _kb_peditor_up(event):
             if self._editor_focus == 0:
@@ -5433,8 +5467,10 @@ class ProfileEditor:
             self._editor_clear_body_selection()
             if not self._editor_body_move_line(-1):
                 self._profile_editor_set_focus(2, field=0)
-        
-        
+            else:
+                self._editor_body_scroll_cursor_into_view()
+
+
         @kb.add("down", filter=_in_pe_lite())
         def _kb_peditor_down(event):
             if self._editor_focus == 0:
@@ -5456,8 +5492,9 @@ class ProfileEditor:
                 return
             self._editor_clear_body_selection()
             self._editor_body_move_line(1)
-        
-        
+            self._editor_body_scroll_cursor_into_view()
+
+
         # Shift-arrow selection. Each handler arms the anchor (if not already
         # set) and reuses the regular movement primitive. The selection cell-
         # range is computed at render time from (anchor, cursor).
@@ -5473,8 +5510,9 @@ class ProfileEditor:
             else:
                 self._editor_body_set_anchor_if_none()
                 self._editor_body_move_right()
-        
-        
+                self._editor_body_scroll_cursor_into_view()
+
+
         @kb.add("s-left", filter=_in_pe_lite())
         def _kb_peditor_s_left(event):
             if self._editor_focus != 2:
@@ -5487,8 +5525,9 @@ class ProfileEditor:
             else:
                 self._editor_body_set_anchor_if_none()
                 self._editor_body_move_left()
-        
-        
+                self._editor_body_scroll_cursor_into_view()
+
+
         @kb.add("s-up", filter=_in_pe_lite())
         def _kb_peditor_s_up(event):
             if self._editor_focus != 2:
@@ -5498,8 +5537,9 @@ class ProfileEditor:
                 return   # Pattern is single-line — s-up is a no-op
             self._editor_body_set_anchor_if_none()
             self._editor_body_move_line(-1)
-        
-        
+            self._editor_body_scroll_cursor_into_view()
+
+
         @kb.add("s-down", filter=_in_pe_lite())
         def _kb_peditor_s_down(event):
             if self._editor_focus != 2:
@@ -5509,8 +5549,9 @@ class ProfileEditor:
                 return
             self._editor_body_set_anchor_if_none()
             self._editor_body_move_line(1)
-        
-        
+            self._editor_body_scroll_cursor_into_view()
+
+
         @kb.add("s-home", filter=_in_pe_lite())
         def _kb_peditor_s_home(event):
             if self._editor_focus != 2:
@@ -5523,8 +5564,9 @@ class ProfileEditor:
             else:
                 self._editor_body_set_anchor_if_none()
                 self._editor_body_move_home()
-        
-        
+                self._editor_body_scroll_cursor_into_view()
+
+
         @kb.add("s-end", filter=_in_pe_lite())
         def _kb_peditor_s_end(event):
             if self._editor_focus != 2:
@@ -5537,8 +5579,9 @@ class ProfileEditor:
             else:
                 self._editor_body_set_anchor_if_none()
                 self._editor_body_move_end()
-        
-        
+                self._editor_body_scroll_cursor_into_view()
+
+
         @kb.add("pageup", filter=_in_pe_lite())
         def _kb_peditor_pgup(event):
             if self._editor_focus == 1:
@@ -5565,8 +5608,9 @@ class ProfileEditor:
                 else:
                     self._editor_clear_body_selection()
                     self._editor_body_move_home()
-        
-        
+                    self._editor_body_scroll_cursor_into_view()
+
+
         @kb.add("end", filter=_in_pe_lite())
         def _kb_peditor_end(event):
             if self._editor_focus == 1:
@@ -5582,8 +5626,9 @@ class ProfileEditor:
                 else:
                     self._editor_clear_body_selection()
                     self._editor_body_move_end()
-        
-        
+                    self._editor_body_scroll_cursor_into_view()
+
+
         @kb.add("delete", filter=_in_pe_lite())
         def _kb_peditor_kdelete(event):
             """`Del` semantics depend on focus zone:
@@ -5604,8 +5649,9 @@ class ProfileEditor:
                     self._host.app.invalidate()
             else:
                 self._editor_body_forward_delete()
-        
-        
+                self._editor_body_scroll_cursor_into_view()
+
+
         @kb.add("n", filter=_in_pe_lite())
         @kb.add("N", filter=_in_pe_lite())
         def _kb_peditor_n(event):
@@ -5653,6 +5699,7 @@ class ProfileEditor:
                     return
                 if self._editor_detail_field == 1:
                     self._editor_body_insert_newline()
+                    self._editor_body_scroll_cursor_into_view()
                 # Pattern: Enter is a no-op (use Tab / ↓ to advance).
 
 
@@ -5688,8 +5735,9 @@ class ProfileEditor:
                 return   # palette is selection-only
             else:
                 self._editor_body_backspace()
-        
-        
+                self._editor_body_scroll_cursor_into_view()
+
+
         @kb.add("<any>", filter=_in_pe_lite())
         def _kb_peditor_any(event):
             """Printable-char input on the detail panel. Pattern and Body
@@ -5711,6 +5759,7 @@ class ProfileEditor:
                     self._host.app.invalidate()
             elif self._editor_detail_field == 1:
                 self._editor_body_insert_char(data)
+                self._editor_body_scroll_cursor_into_view()
                 if self._host.app:
                     self._host.app.invalidate()
         
