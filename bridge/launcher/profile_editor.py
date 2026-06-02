@@ -1464,8 +1464,27 @@ class ProfileEditor:
         if self._host.app:
             self._host.app.invalidate()
         return True
-    
-    
+
+
+    def _editor_body_page(self, direction):
+        """PageUp / PageDown within Body — move the cursor by one viewport
+        (`_editor_body_budget()` lines) in `direction` (-1 up, +1 down),
+        clamping at the buffer edges. Reuses the single-line primitive so
+        column-preservation and the cursor-into-view pull both still apply.
+        No-op on the single-line Pattern field, the macro Key cell, and the
+        highlight palette."""
+        if self._editor_in_macro_key_focus() or self._editor_in_palette_focus():
+            return
+        if self._editor_detail_field == 0:
+            return   # Pattern is single-line — paging is a no-op
+        self._editor_clear_body_selection()
+        page = self._editor_body_budget()
+        for _ in range(page):
+            if not self._editor_body_move_line(direction):
+                break
+        self._editor_body_scroll_cursor_into_view()
+
+
     def _editor_set_pattern(self, text):
         """Update the current entry's pattern, re-sort the display view,
         and re-anchor the list cursor onto the same entry."""
@@ -5586,12 +5605,18 @@ class ProfileEditor:
         def _kb_peditor_pgup(event):
             if self._editor_focus == 1:
                 self._profile_editor_move_cursor(-self._editor_list_visible())
-        
-        
+                return
+            if self._editor_focus == 2:
+                self._editor_body_page(-1)
+
+
         @kb.add("pagedown", filter=_in_pe_lite())
         def _kb_peditor_pgdn(event):
             if self._editor_focus == 1:
                 self._profile_editor_move_cursor(self._editor_list_visible())
+                return
+            if self._editor_focus == 2:
+                self._editor_body_page(1)
         
         
         @kb.add("home", filter=_in_pe_lite())
