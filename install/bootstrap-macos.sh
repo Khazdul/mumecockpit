@@ -15,9 +15,12 @@ if [ "$(uname -s)" != "Darwin" ]; then
     exit 1
 fi
 
-if ! command -v brew >/dev/null 2>&1; then
-    echo "Error: Homebrew is not installed." >&2
-    echo "Install it first: https://brew.sh" >&2
+# Homebrew refuses to run as root, and the from-source builds must not run as
+# root either. Run the whole bootstrap as the normal user; brew elevates via
+# sudo only where it needs to.
+if [ "$(id -u)" -eq 0 ]; then
+    echo "Error: Do not run this script as root (no sudo)." >&2
+    echo "Run it as your normal user; you will be prompted for a password where needed." >&2
     exit 1
 fi
 
@@ -25,6 +28,41 @@ if ! curl -sSf https://github.com >/dev/null 2>&1; then
     echo "Error: Cannot reach github.com. Check your network connection." >&2
     exit 1
 fi
+
+# ---------------------------------------------------------------------------
+# Ensure Homebrew is installed and on PATH
+# ---------------------------------------------------------------------------
+# The official installer is interactive: it prompts for the sudo password and,
+# on a fresh machine, triggers the Xcode Command Line Tools GUI install. CLT
+# provides the compiler the tt++ from-source build needs, so we wait for it to
+# resolve before proceeding. Running from a terminal, interactive is fine.
+
+if [ "$(uname -m)" = "arm64" ]; then
+    BREW_PREFIX="/opt/homebrew"
+else
+    BREW_PREFIX="/usr/local"
+fi
+
+if ! command -v brew >/dev/null 2>&1 \
+    && [ ! -x /opt/homebrew/bin/brew ] \
+    && [ ! -x /usr/local/bin/brew ]; then
+    echo "Homebrew not found — installing it now."
+    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+    # The installer normally installs the Command Line Tools, but make sure the
+    # compiler is present before any from-source build runs.
+    if ! xcode-select -p >/dev/null 2>&1; then
+        echo "Triggering Xcode Command Line Tools install — complete the GUI prompt."
+        xcode-select --install 2>/dev/null || true
+        echo "Waiting for Command Line Tools to finish installing..."
+        until xcode-select -p >/dev/null 2>&1; do
+            sleep 5
+        done
+    fi
+fi
+
+# Put brew on PATH for the rest of this script.
+eval "$("$BREW_PREFIX/bin/brew" shellenv)"
 
 # ---------------------------------------------------------------------------
 # Install packages via Homebrew
@@ -37,6 +75,12 @@ fi
 # tintin is the formula name — no plus signs, unlike the Debian/Ubuntu package
 # name (tintin++). Do not "fix" this.
 brew install bash tmux lua@5.4 tintin git python3
+
+# Bundled terminal. kitty ships only as an .app cask (no formula); font-dejavu
+# provides DejaVu Sans Mono for the preset below. Casks are no-ops if already
+# present, so this is safe to re-run.
+brew install --cask kitty
+brew install --cask font-dejavu
 
 # ---------------------------------------------------------------------------
 # Install prompt_toolkit via pip
@@ -72,13 +116,26 @@ fi
 chmod +x "$HOME/MUME/start.sh"
 
 # ---------------------------------------------------------------------------
+# Install the kitty preset
+# ---------------------------------------------------------------------------
+# Mirrors the cockpit DOS palette. Never clobber a user's existing config:
+# back it up with a timestamp and tell them where it went.
+
+KITTY_CONFIG_DIR="$HOME/.config/kitty"
+KITTY_CONFIG="$KITTY_CONFIG_DIR/kitty.conf"
+mkdir -p "$KITTY_CONFIG_DIR"
+
+if [ -f "$KITTY_CONFIG" ]; then
+    backup="$KITTY_CONFIG.bak.$(date +%Y%m%d%H%M%S)"
+    mv "$KITTY_CONFIG" "$backup"
+    echo "Existing kitty.conf backed up to $backup"
+fi
+
+cp "$HOME/MUME/install/examples/kitty.conf" "$KITTY_CONFIG"
+
+# ---------------------------------------------------------------------------
 # Done
 # ---------------------------------------------------------------------------
 
 echo "Installation complete."
 echo "Run the cockpit with: cd ~/MUME && ./start.sh"
-
-if [ ! -f "$HOME/.config/alacritty/alacritty.toml" ]; then
-    echo "An example Alacritty config is available at ~/MUME/install/examples/alacritty.toml if you want to try it."
-    echo "The example uses DejaVu Sans Mono by default; for the macOS-canonical look change 'family' to 'Menlo' (see docs/install-bootstrap.md for the font table)."
-fi
