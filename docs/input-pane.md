@@ -85,6 +85,14 @@ Forwarded keys invoke `tmux send-keys -t mume:cockpit.0 <name>` with no
 `Enter` appended — a single keypress is delivered to tt++, which then
 consults its `#macro` table as if the key had been pressed directly.
 
+Both forwarded keys and the command-send path (`send()`, including the empty
+bare-newline) first call `_snap_game_pane_to_tail()`, a server-gated
+`tmux if-shell -F '#{pane_in_mode}' 'send-keys -X cancel'` on the game pane:
+if the pane is scrolled (in tmux copy-mode), exit the scroll so the keys reach
+tt++ at the live tail instead of landing in copy-mode (which would raise the
+`(goto line)` prompt). The `#{pane_in_mode}` gate makes it a no-op at the live
+tail, so there is no extra round-trip or flicker on the normal hot path.
+
 ## Command input behaviour
 
 The input pane implements line editing, command history, and a selection-

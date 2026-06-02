@@ -358,7 +358,20 @@ def _handle_bracketed_paste(event):
     buf.insert_text(text)
 
 
+def _snap_game_pane_to_tail():
+    """If the game pane is scrolled (in copy-mode), exit it so delivered input
+    reaches tt++ at the live tail instead of landing in copy-mode (which would
+    raise the "(goto line)" prompt). Server-side gate via #{pane_in_mode} → a
+    trivial no-op when not scrolled, so no extra round-trip or flicker at the
+    live tail."""
+    subprocess.run([
+        "tmux", "if-shell", "-F", "-t", TMUX_TARGET, "#{pane_in_mode}",
+        f"send-keys -t {TMUX_TARGET} -X cancel",
+    ])
+
+
 def send(line):
+    _snap_game_pane_to_tail()
     subprocess.run(["tmux", "send-keys", "-t", TMUX_TARGET, line, "Enter"])
 
 
@@ -390,11 +403,13 @@ ALT_FORWARDED_LETTERS = [
 for _pt_key, _tmux_key in FORWARDED_KEYS:
     @kb.add(_pt_key)
     def _fwd(event, tk=_tmux_key):
+        _snap_game_pane_to_tail()
         subprocess.run(["tmux", "send-keys", "-t", TMUX_TARGET, tk])
 
 for _letter in ALT_FORWARDED_LETTERS:
     @kb.add("escape", _letter)
     def _fwd_alt(event, lt=_letter):
+        _snap_game_pane_to_tail()
         subprocess.run(["tmux", "send-keys", "-t", TMUX_TARGET, f"M-{lt}"])
 
 # Numpad in DECKPAM (keypad application mode) sends SS3 sequences.
@@ -423,6 +438,7 @@ NUMPAD_FORWARDED_KEYS = [
 for _seq, _kp_key in NUMPAD_FORWARDED_KEYS:
     @kb.add(*_seq)
     def _fwd_kp(event, tk=_kp_key):
+        _snap_game_pane_to_tail()
         subprocess.run(["tmux", "send-keys", "-t", TMUX_TARGET, tk])
 
 

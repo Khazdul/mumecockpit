@@ -22,7 +22,7 @@ from unexpected clicks) are disabled or overridden.
 
 | Event | Action | Set in |
 |-------|--------|--------|
-| `Escape` | Open in-game popup (`ingame_menu.sh`) | `bridge/launcher/tmux_start.sh` |
+| `Escape` | If the game pane is in copy-mode, exit the scroll (`send-keys -X cancel`; `pane-mode-changed` then refocuses input); otherwise open the in-game popup (`ingame_menu.sh`) | `bridge/launcher/tmux_start.sh` |
 | `MouseDragEnd1Border` | Resize panes (`on_pane_resize.sh`), then sweep + refocus input (`focus_input.sh --sweep`) | `bridge/launcher/tmux_start.sh` |
 | `MouseUp1Pane` | Refocus input pane (`focus_input.sh`), gated on `pane_title != input` | `bridge/panes/input_pane.py` |
 | `MouseDragEnd1Pane` (copy-mode table) | Copy selection + refocus input (`focus_input.sh`) | `bridge/panes/input_pane.py` |
@@ -30,8 +30,8 @@ from unexpected clicks) are disabled or overridden.
 | `MouseDragEnd1Status` | Sweep + refocus input (`focus_input.sh --sweep`) | `bridge/launcher/tmux_start.sh` |
 | `MouseDragEnd1StatusLeft` | Sweep + refocus input (`focus_input.sh --sweep`) | `bridge/launcher/tmux_start.sh` |
 | `MouseDragEnd1StatusRight` | Sweep + refocus input (`focus_input.sh --sweep`) | `bridge/launcher/tmux_start.sh` |
-| `WheelUpPane` | Stock copy-mode entry; no-op in the cockpit status pane | `bridge/launcher/tmux_start.sh` |
-| `WheelDownPane` | Pass-through in copy-mode; no-op in the cockpit status pane | `bridge/launcher/tmux_start.sh` |
+| `WheelUpPane` | Stock copy-mode entry; no-op in the cockpit status pane; on the game pane (`MUME`) also refocuses the input pane | `bridge/launcher/tmux_start.sh` |
+| `WheelDownPane` | Pass-through in copy-mode; no-op in the cockpit status pane; on the game pane (`MUME`) also refocuses the input pane | `bridge/launcher/tmux_start.sh` |
 
 ## Active hooks
 
@@ -61,10 +61,18 @@ cockpit session. The pane no longer closes during normal use.
   clipboard via OSC 52 and cancels copy-mode; focus returns to the input pane.
 - **Double-click:** selects the word under the cursor and copies to system clipboard via tmux defaults. Focus does not return to the input pane after these — click anywhere or press a key in the input pane to refocus.
 - **Triple-click:** selects the full line and copies to system clipboard via tmux defaults. Focus does not return to the input pane after these — click anywhere or press a key in the input pane to refocus.
-- **Scroll wheel in game / comm / ui / dev:** enters copy-mode and scrolls scrollback
+- **Scroll wheel in the game pane (`MUME`):** enters copy-mode and scrolls scrollback
   (stock tmux behaviour, preserved). The `-e` flag exits copy-mode when scrolled back
   to the bottom. When copy-mode exits (by scrolling back to the bottom or any other
   path), the `pane-mode-changed` hook fires and returns focus to the input pane.
+  Additionally, the `MUME` branch of the wheel bindings refocuses the input pane on
+  every tick, so scrolling never steals focus to tt++ (typed letters keep landing in
+  the input buffer, not in copy-mode where they would raise the `(goto line)` prompt).
+  The copy-mode scroll position is preserved; only tmux focus returns to input.
+- **Scroll wheel in comm / timers / ui / dev:** handled internally by the
+  prompt_toolkit `ListControl` (ADR 0037) — never enters tmux copy-mode, so these
+  panes keep focus behaviour entirely to themselves and are not touched by the wheel
+  bindings.
 - **Scroll wheel in cockpit status pane:** no-op — the status pane has no meaningful
   scrollback, and letting the wheel enter copy-mode there is confusing.
 
@@ -97,6 +105,13 @@ Mouse wheel and keyboard scrollback are therefore interchangeable: scrolling up
 with the wheel and then pressing Page Up continues from the same position, and
 vice versa.
 
+While the game pane is scrolled, sending a command (Enter) or pressing any
+forwarded macro key (F1–F12, numpad, Alt+letter, Ctrl+letter) first snaps the
+game pane back to the live tail — `input_pane.py` issues a server-gated
+`if-shell -F '#{pane_in_mode}' 'send-keys -X cancel'` before delivering the
+keys, so the input reaches tt++ instead of landing in copy-mode (which would
+raise the `(goto line)` prompt). The gate makes this a no-op at the live tail.
+
 The input pane is intentionally excluded from the drag / double-click / triple-click
 overrides so that prompt_toolkit's own click and selection behaviour is not disturbed.
 
@@ -106,7 +121,8 @@ The prefix key is disabled (`prefix None`). All keyboard input is handled by:
 
 - **prompt_toolkit** (when the input pane has focus) — editing, history, key forwarding.
 - **tt++ `#macro` bindings** (in the game pane) — received as raw key events.
-- **tmux root binding:** `Escape` → in-game popup from any pane.
+- **tmux root binding:** `Escape` → exit a game-pane scroll if one is active, else
+  in-game popup from any pane (see the root-table binding above).
 
 No player key combination can accidentally trigger a tmux action.
 

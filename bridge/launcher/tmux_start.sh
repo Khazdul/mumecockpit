@@ -136,10 +136,17 @@ tmux bind-key -n MouseDragEnd1StatusRight "run-shell '$HOME/MUME/bridge/layout/f
 # Fast escape disambiguation so ESC feels instant.
 tmux set-option -s escape-time 10
 
-# ESC opens the in-game popup menu from any pane.
-tmux bind-key -T root Escape display-popup -E \
-    -w 80% -h 80% -x C -y C -S fg=#008787 \
-    "bash $HOME/MUME/bridge/launcher/ingame_menu.sh"
+# ESC is context-sensitive on the game pane (the only raw tt++ pane, whose
+# scrollback is tmux copy-mode):
+#   - game pane scrolled (in copy-mode) → exit the scroll. The existing
+#     pane-mode-changed hook fires on copy-mode exit and refocuses input, so
+#     no explicit refocus is added here (it would be a duplicate).
+#   - otherwise → open the in-game popup menu, unchanged.
+# Consequence: while scrolled, the first Escape exits the scroll and a second
+# Escape opens the popup.
+tmux bind-key -T root Escape if-shell -F -t mume:cockpit.0 '#{pane_in_mode}' \
+    "send-keys -t mume:cockpit.0 -X cancel" \
+    "display-popup -E -w 80% -h 80% -x C -y C -S fg=#008787 'bash $HOME/MUME/bridge/launcher/ingame_menu.sh'"
 
 # ---------------------------------------------------------------------------
 # Cockpit interaction lockdown — hide tmux from the player.
@@ -162,10 +169,19 @@ tmux set-option -s set-clipboard on
 # Confirmed stock WheelUpPane (tmux list-keys -T root | grep Wheel):
 #   if-shell -F "#{||:#{pane_in_mode},#{mouse_any_flag}}" { send-keys -M } { copy-mode -e }
 # WheelDownPane had no explicit root binding — complementary form used.
+#
+# For the game pane (pane_title == MUME) — the only raw tt++ pane, whose
+# scrollback is tmux copy-mode — run the stock wheel action and then refocus
+# the input pane, so wheel scroll never steals focus to tt++ (typed letters
+# would otherwise land in copy-mode and raise the "(goto line)" prompt). The
+# refocus runs on every tick: idempotent and harmless at the live tail. Every
+# other pane (status no-op, prompt_toolkit panes) keeps the stock behaviour
+# unchanged — they handle the wheel internally and never enter copy-mode.
 STOCK_WHEEL_UP='if-shell -F "#{||:#{pane_in_mode},#{mouse_any_flag}}" { send-keys -M } { copy-mode -e }'
 STOCK_WHEEL_DOWN='if-shell -F "#{||:#{pane_in_mode},#{mouse_any_flag}}" { send-keys -M } {}'
-tmux bind-key -n WheelUpPane   "if-shell -F '#{==:#{pane_title},status}' '' '$STOCK_WHEEL_UP'"
-tmux bind-key -n WheelDownPane "if-shell -F '#{==:#{pane_title},status}' '' '$STOCK_WHEEL_DOWN'"
+REFOCUS_IF_MUME="if-shell -F '#{==:#{pane_title},MUME}' 'run-shell $HOME/MUME/bridge/layout/focus_input.sh'"
+tmux bind-key -n WheelUpPane   "if-shell -F '#{==:#{pane_title},status}' '' { $STOCK_WHEEL_UP ; $REFOCUS_IF_MUME }"
+tmux bind-key -n WheelDownPane "if-shell -F '#{==:#{pane_title},status}' '' { $STOCK_WHEEL_DOWN ; $REFOCUS_IF_MUME }"
 
 # Refocus input pane when any other pane leaves copy-mode.
 # Covers wheel-down past bottom, drag-end, q, Escape, Enter — all paths.
