@@ -834,7 +834,14 @@ auto-scroll therefore move the viewport away from the cursor and
 the viewport stays where they placed it across subsequent renders
 until the user moves the cursor with the keyboard or clicks in
 the buffer (the next cursor move pulls the viewport back to the
-cursor, matching the convention in code editors).
+cursor, matching the convention in code editors). The same
+render-decoupling rule now holds uniformly across all three
+lite/editor scroll surfaces: the lite entry list via
+`_profile_editor_scroll_into_view` (called only from
+cursor-mutating list actions — move / jump / delete / create —
+never on render), and the lite Body field via
+`_editor_body_scroll_cursor_into_view` (with
+`_editor_body_viewport` clamping to bounds only on render).
 
 **Mouse-wheel scrolling.** Wheel ticks on the editor buffer route
 through `_editor_buffer_wheel`, which shifts `_editor_buffer_scroll`
@@ -1054,6 +1061,17 @@ zone to the left:
 `←` at non-zero positions moves within the zone (or extends the
 selection when Shift is held). Fall-through clears any active text
 selection.
+
+**PageUp / PageDown** (lite mode). Both keys page by one viewport,
+clamping at the ends:
+- Entry list (focus = list): pages the list cursor by
+  `_editor_list_visible()` rows.
+- Body / Commands field (focus = detail, Body field): pages the
+  Body cursor by `_editor_body_budget()` lines and does *not* fall
+  through to Pattern / kind-buttons at the edges (unlike plain
+  `↑` / `↓`).
+- No-op on the Pattern field, the macro Key cell, and the
+  highlight palette.
 
 **Existing per-zone arrow behaviour preserved otherwise** (palette
 zones, macro key cell, body cursor inside Commands, etc. — see
