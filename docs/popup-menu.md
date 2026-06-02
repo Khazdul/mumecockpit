@@ -431,8 +431,9 @@ reads the relevant conf, flips, and writes it back via `comm_channels`,
 and the render re-reads `comm_filters.conf` / `comm_prefs.conf` every
 frame — so the popup never clobbers a concurrent comm-pane header click.
 (This matches the popup's General/Timers immediate-write idiom and is the
-asymmetry vs. the launcher's deferred save.) There is no live re-read in
-the comm pane yet (Phase 2); changes land on the next pane start.
+asymmetry vs. the launcher's deferred save.) The running comm pane
+re-reads both conf files on its 250 ms poll, so each toggle applies
+within a tick (see [docs/comm-pane.md](comm-pane.md#live-re-read)).
 
 **Cursor / navigation.** Twelve navigable rows: the ten channel rows
 (`_COMM_CHANNEL_ROWS`), the header-toggle row (`_COMM_HEADER_ROW`), and

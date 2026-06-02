@@ -94,6 +94,10 @@ tracking, and UI feedback.
 │   │   ├── credits.py        # Scrolling credits chronicle content generator —
 │   │   │                     #   standalone Credits main-menu entry (ADR 0122, supersedes 0080)
 │   │   ├── run_retention.py  # 14-day retention sweep for run logs (ADR 0074)
+│   │   ├── comm_channels.py  # Shared comm-channel render + toggle + persistence for
+│   │   │                     #   Options → Panes → Communication (launcher + popup);
+│   │   │                     #   pure module, restates comm_pane.py's channel tables.
+│   │   │                     #   Sibling of panes_grid.py / timers_layout_grid.py
 │   │   ├── launch.sh         # Former Alacritty desktop-shortcut target (ADR 0028);
 │   │   │                     #   obsolete after the foot/WSLg switch — kept for
 │   │   │                     #   one release of grace, removable in the next pass.
@@ -145,6 +149,7 @@ tracking, and UI feedback.
 │   │   ├── group.state       # Group member vitals JSON written by group_state.lua
 │   │   ├── comm.state        # Comm history + channel projection
 │   │   ├── comm_filters.conf # Persisted channel filter overrides, sparse map
+│   │   ├── comm_prefs.conf   # Comm pane prefs (show_header); default-by-absence
 │   │   ├── connection.state  # Runtime state written by Lua on SESSION CONNECTED
 │   │   ├── version.cache     # Cached latest-release tag (6h TTL)
 │   │   ├── ping.cache        # Ping ring buffer: latest, quality, 60-sample history
@@ -481,6 +486,18 @@ prompt_toolkit surfaces — the launcher main page and the in-game
 popup's `main` frame; ADR 0100). The tt++ welcome screen deliberately
 does **not** share that module: it keeps its own hardcoded `#showme`
 lines and prints a static, starless wordmark only.
+
+The Panes hub now carries a **Communication** page in both the launcher
+and the in-game popup (Options → Panes → Communication): a per-channel
+on/off list plus a `Show channel header` toggle. Render, toggle, and
+persistence live in the shared `bridge/launcher/comm_channels.py` (a pure
+sibling of `panes_grid.py` / `timers_layout_grid.py`), which writes the
+sparse `comm_filters.conf` and the single-key `comm_prefs.conf`. The
+launcher batches both writes to Back / ESC; the popup writes each toggle
+immediately. The running comm pane re-reads both conf files live on its
+250 ms poll — so a menu edit (or a header click in the pane) applies
+within a tick, and the channel header itself is now hide-able via
+`show_header`. See [docs/comm-pane.md](docs/comm-pane.md).
 
 The Windows deployment runs on **foot under WSLg** and is fully
 shipped. `bridge/supervisor.sh` owns the foot lifecycle and loops on

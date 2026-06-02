@@ -81,7 +81,8 @@ append-only log data with no meaningful null state.
 ## comm.state schema
 
 JSON, atomic write (tmp + rename), gitignored. Filter state is **not** included
-— it is owned by `comm_pane.py` and stored separately in `comm_filters.conf`.
+— it lives separately in `comm_filters.conf` (see **Filter persistence** below;
+no longer owned by `comm_pane.py` alone — the launcher and popup write it too).
 The file also serves as a load-time cache: `comm_state.lua` reads it at startup
 to repopulate history and channels for cross-launch continuity.
 

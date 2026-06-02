@@ -1487,8 +1487,10 @@ Persistence is **deferred**: row toggles mutate `_comm_filters` /
 `_comm_show_header`; `_save_comm_channels` flushes both conf files
 (`comm_filters.conf`, `comm_prefs.conf`) on Back / ESC. As with the
 General frame this is the persistence asymmetry vs. the popup, whose
-equivalent frame writes immediately. There is no live re-read in the comm
-pane yet (Phase 2); changes land on the next pane start.
+equivalent frame writes immediately. A running comm pane re-reads both
+conf files live on its 250 ms poll, so a saved change applies within a
+tick — no restart required (see
+[docs/comm-pane.md](comm-pane.md#live-re-read)).
 
 **Cursor / navigation.** Twelve navigable rows: the ten channel rows, the
 header-toggle row (`_COMM_HEADER_ROW`), and the `Back` row
