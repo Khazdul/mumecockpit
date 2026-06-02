@@ -235,6 +235,14 @@ _sel_main        = 0
 _hover_main      = -1
 _last_main_label = None
 
+# Fresh start (recover from a wedged tmux session). The item is shown only
+# when a session exists and lands directly after the first (Resume/Mirror)
+# row, so its index is always 1 when present. Activating it once arms an
+# inline two-step confirm (the row relabels); a second Enter confirms.
+_FRESH_START_LABEL = "Fresh start"
+_FRESH_START_INDEX = 1
+_fresh_start_armed = False
+
 # Profile frame
 _profiles               = []
 _profile_table_cursor   = 0
@@ -982,6 +990,27 @@ def _attached_count():
         return 0
 
 
+def _kill_mume_session():
+    """Scoped kill of the mume session — NEVER kill-server.
+
+    kill-session is synchronous, so the session is gone once tmux returns;
+    the second attempt is a belt-and-braces guard so we never fall through
+    to a cold start that tmux_start.sh would treat as a re-attach no-op.
+    Returns True once the session is gone.
+    """
+    for _ in range(2):
+        try:
+            subprocess.run(
+                ["tmux", "kill-session", "-t", "mume"],
+                capture_output=True, timeout=2.0,
+            )
+        except (subprocess.SubprocessError, OSError):
+            pass
+        if not _has_session():
+            return True
+    return not _has_session()
+
+
 # ---------------------------------------------------------------------------
 # Quote
 # ---------------------------------------------------------------------------
@@ -1224,21 +1253,43 @@ def _menu_row_state(is_active, is_hover):
 # ---------------------------------------------------------------------------
 # Main frame
 # ---------------------------------------------------------------------------
+def _fresh_start_confirm_label(attached):
+    """Confirm-prompt label shown on the relabeled Fresh start row while the
+    inline two-step confirm is armed. Names the consequence; warns about
+    other-terminal attachment when a client is attached elsewhere."""
+    if attached > 0:
+        return ("Fresh start — close MUME (may be active in another terminal) "
+                "and drop the connection? Enter confirm · Esc cancel")
+    return ("Fresh start — close MUME and drop the connection? "
+            "Enter confirm · Esc cancel")
+
+
 def _rebuild_main_items(*, preserve_label=True):
-    global _main_items, _sel_main, _last_main_label
+    global _main_items, _sel_main, _last_main_label, _fresh_start_armed
     prev = (_main_items[_sel_main]
             if preserve_label and 0 <= _sel_main < len(_main_items)
             else _last_main_label)
     if _has_session():
-        first = "Resume MUME" if _attached_count() == 0 else "Mirror MUME (attached elsewhere)"
+        attached = _attached_count()
+        first = "Resume MUME" if attached == 0 else "Mirror MUME (attached elsewhere)"
     else:
         first = "Enter MUME"
+        # No session → nothing to recover from; drop any pending confirm.
+        _fresh_start_armed = False
     items = [first]
+    if _has_session():
+        items.append(_fresh_start_confirm_label(attached) if _fresh_start_armed
+                     else _FRESH_START_LABEL)
     if _update_available():
         items.append("Update")
     items.extend(["Profile", "Options", "History", "Spotlights", "Credits", "About", "Quit"])
     _main_items = items
-    if prev and prev in items:
+    if _fresh_start_armed:
+        # Pin the highlight to the (relabeled) confirm row so the second
+        # Enter lands on it regardless of label-string changes (e.g. the
+        # attached count flipping between renders).
+        _sel_main = _FRESH_START_INDEX
+    elif prev and prev in items:
         _sel_main = items.index(prev)
     else:
         _sel_main = min(_sel_main, len(items) - 1)
@@ -1255,27 +1306,80 @@ def _check_cache_change():
         _rebuild_main_items()
 
 
+def _cold_start_exec():
+    """Take the cold-start path: hand the launcher's known terminal
+    dimensions to tmux_start.sh so it can build the cockpit layout
+    pre-attach, then arm the deferred exec into it. Shared by the
+    no-session "Enter MUME" branch and the Fresh start rebuild so the two
+    cannot diverge. The caller is responsible for calling `_app.exit()`.
+    tmux_start.sh starts the ping monitor itself — do NOT spawn it here.
+    See docs/launcher.md "Initial layout build".
+    """
+    global _deferred_exec
+    try:
+        size = _app.output.get_size()
+        os.environ["LAUNCHER_COLS"] = str(size.columns)
+        os.environ["LAUNCHER_ROWS"] = str(size.rows)
+    except Exception:
+        pass
+    _deferred_exec = ("bash", ["bash", "bridge/launcher/tmux_start.sh"])
+
+
+def _fresh_start_cancel():
+    """Disarm a pending Fresh start confirm and restore the menu. No-op when
+    nothing is armed, so it is safe to call from navigation / ESC handlers."""
+    global _fresh_start_armed
+    if _fresh_start_armed:
+        _fresh_start_armed = False
+        _rebuild_main_items()
+
+
+def _fresh_start_confirm():
+    """Confirmed Fresh start: scoped kill of the wedged session, then take
+    the normal cold-start path to a freshly-built cockpit."""
+    global _fresh_start_armed
+    _fresh_start_armed = False
+    _kill_mume_session()
+    _cold_start_exec()
+    _app.exit()
+
+
 def _activate_main(idx):
-    global _sel_main, _deferred_exec
+    global _sel_main, _deferred_exec, _fresh_start_armed
     if idx < 0 or idx >= len(_main_items):
         return
-    _sel_main = idx
     label = _main_items[idx]
+
+    # Inline two-step Fresh start confirm. While armed, a second activation
+    # of the (relabeled) Fresh start row confirms; activating any other row
+    # cancels and proceeds with that row's normal action.
+    if _fresh_start_armed:
+        if idx == _FRESH_START_INDEX:
+            _fresh_start_confirm()
+            return
+        _fresh_start_armed = False
+        _rebuild_main_items()
+        if idx >= len(_main_items):
+            return
+        label = _main_items[idx]
+
+    _sel_main = idx
+
+    if label == _FRESH_START_LABEL:
+        # First activation: arm the confirm and relabel the row in place.
+        if not _has_session():
+            _rebuild_main_items()
+            return
+        _fresh_start_armed = True
+        _rebuild_main_items()
+        return
+
     if label in ("Enter MUME", "Resume MUME", "Mirror MUME (attached elsewhere)"):
         if _has_session():
             _spawn_ping_monitor()
             _deferred_exec = ("tmux", ["tmux", "attach", "-t", "mume"])
         else:
-            # Cold start: hand the launcher's known terminal dimensions to
-            # tmux_start.sh so it can build the cockpit layout pre-attach.
-            # See docs/launcher.md "Initial layout build".
-            try:
-                size = _app.output.get_size()
-                os.environ["LAUNCHER_COLS"] = str(size.columns)
-                os.environ["LAUNCHER_ROWS"] = str(size.rows)
-            except Exception:
-                pass
-            _deferred_exec = ("bash", ["bash", "bridge/launcher/tmux_start.sh"])
+            _cold_start_exec()
         _app.exit()
     elif label == "Update":
         _start_update()
@@ -9093,6 +9197,7 @@ def _kb_too_small_any(event):
 @kb.add("up", filter=_in_frame("main"))
 def _kb_main_up(event):
     global _sel_main, _last_main_label
+    _fresh_start_cancel()
     n = len(_main_items)
     if n:
         _sel_main = (_sel_main - 1) % n
@@ -9102,10 +9207,18 @@ def _kb_main_up(event):
 @kb.add("down", filter=_in_frame("main"))
 def _kb_main_down(event):
     global _sel_main, _last_main_label
+    _fresh_start_cancel()
     n = len(_main_items)
     if n:
         _sel_main = (_sel_main + 1) % n
         _last_main_label = _main_items[_sel_main]
+
+
+@kb.add("escape", filter=_in_frame("main"))
+def _kb_main_escape(event):
+    # ESC on the main frame is otherwise a no-op (intentionally unbound);
+    # here it only cancels a pending Fresh start confirm.
+    _fresh_start_cancel()
 
 
 @kb.add("enter", filter=_in_frame("main"))
