@@ -47,6 +47,7 @@ Active ADRs by area. Click through for context, alternatives, and consequences.
 
 - [ADR 0009](0009-comm-state-as-pane-contract.md) — comm.state as the stable pane contract — `bridge/comm.state` is the atomically-written Lua-to-renderer contract; the renderer polls it by mtime.
 - [ADR 0010](0010-comm-filter-persistence.md) — Sparse-map persistence for comm filters — `comm_filters.conf` stores only explicitly-toggled channels; a missing key means enabled, so new server channels appear automatically.
+- [ADR 0129](0129-comm-channel-menu-and-header-toggle.md) — Menu-driven comm channel filters and channel-header toggle — a Communication menu (launcher + popup, via `comm_channels.py`) adds further Python writers to `comm_filters.conf`; `comm_pane.py` re-reads it live on its 250 ms poll (bumping its own mtime after self-writes). The new show-channel-header preference lives in a separate `comm_prefs.conf` (default on), keeping 0010's channel-map schema clean. Menu-side channel tables are restated, not imported (no shared import path). (extends 0010, relates to 0126)
 - [ADR 0013](0013-comm-display-normalization.md) — Comm display normalization in the renderer — the renderer normalises talker prefixes, language suffixes, and NPC descriptors; raw GMCP data is preserved verbatim in the archive.
 - [ADR 0040](0040-comm-pane-owns-line-wrapping.md) — Comm pane owns line wrapping — the renderer word-wraps via `_wrap_fragments`; `_row_count` delegates to the same helper so scroll math is always exact.
 

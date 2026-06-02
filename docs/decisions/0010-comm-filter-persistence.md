@@ -61,3 +61,11 @@ not game state, and routing them through tt++ caused the alias text to echo in
 the game pane. `comm_pane.py` now reads and writes `comm_filters.conf` directly;
 Lua no longer references filters at all. The sparse-map persistence format is
 unchanged, so existing `comm_filters.conf` files remain valid.
+
+## 2026-06-03 note
+
+ADR 0129 extends this decision: a Communication menu (launcher + popup) adds
+further *Python* writers to `comm_filters.conf` and `comm_pane.py` now re-reads
+it live, while a new channel-header preference lives in a separate
+`comm_prefs.conf`. The sparse-map schema and ownership decided here are
+unchanged. See `0129-comm-channel-menu-and-header-toggle.md`.
