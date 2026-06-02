@@ -372,7 +372,15 @@ def _snap_game_pane_to_tail():
 
 def send(line):
     _snap_game_pane_to_tail()
-    subprocess.run(["tmux", "send-keys", "-t", TMUX_TARGET, line, "Enter"])
+    # User-typed text MUST be sent literally (-l). Without it, tmux
+    # interprets an argument that matches a key name (DC, Up, Tab,
+    # Enter, F1, ...) as that KEY instead of as text — e.g. typing
+    # "dc" sends the Delete key, not the command. `--` guards a line
+    # beginning with "-". The trailing Enter is a SEPARATE call and
+    # is intentionally NOT literal: it must register as the Enter key.
+    if line:
+        subprocess.run(["tmux", "send-keys", "-t", TMUX_TARGET, "-l", "--", line])
+    subprocess.run(["tmux", "send-keys", "-t", TMUX_TARGET, "Enter"])
 
 
 # Keys forwarded to tt++ so that #macro bindings fire from the input pane.
