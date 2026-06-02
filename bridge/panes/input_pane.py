@@ -597,15 +597,24 @@ async def _poll_clock(app):
 def main():
     global last_cmd
 
-    # Startup hygiene: keystrokes typed before prompt_toolkit installs raw
-    # mode are echoed by the kernel (cooked mode) and queued in stdin. Drain
-    # the queue and erase the row so the initial render starts clean.
+    # Close the cooked-mode echo window. Until prompt_toolkit installs raw mode
+    # inside app.run_async(), the tty stays in cooked mode with ECHO on. The gap
+    # is dominated by setup_mouse_binding()'s synchronous `tmux bind-key`
+    # subprocess calls; keys typed in that window are kernel-echoed (painting a
+    # stray glyph left of the prompt) and queued in stdin (prepended to the first
+    # command). Clearing ECHO as the very first action — before any subprocess —
+    # suppresses the echo; the tcflush just before app.run_async() drains the
+    # queued bytes. Restore on exit so we never leave the shell in -echo.
     try:
-        termios.tcflush(sys.stdin.fileno(), termios.TCIFLUSH)
+        _saved_termios = termios.tcgetattr(sys.stdin.fileno())
+        _noecho = list(_saved_termios)
+        _noecho[3] &= ~termios.ECHO
+        termios.tcsetattr(sys.stdin.fileno(), termios.TCSANOW, _noecho)
+        atexit.register(
+            termios.tcsetattr, sys.stdin.fileno(), termios.TCSANOW, _saved_termios
+        )
     except (termios.error, OSError):
         pass
-    sys.stdout.write('\r\x1b[2K')
-    sys.stdout.flush()
 
     setup_mouse_binding()
 
@@ -662,6 +671,17 @@ def main():
                     await t
                 except asyncio.CancelledError:
                     pass
+
+    # Drain any keystrokes queued during the cooked-mode window and erase the
+    # row so the initial render starts clean. Must be the last thing before
+    # prompt_toolkit takes the tty — nothing that spawns a subprocess may run
+    # between here and app.run_async().
+    try:
+        termios.tcflush(sys.stdin.fileno(), termios.TCIFLUSH)
+    except (termios.error, OSError):
+        pass
+    sys.stdout.write('\r\x1b[2K')
+    sys.stdout.flush()
 
     try:
         asyncio.run(_run())
