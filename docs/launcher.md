@@ -77,6 +77,46 @@ no longer a per-pane subframe.
 | Quit | Selecting Quit exits the launcher immediately to the shell. ESC on the main frame is a no-op (intentionally unbound). |
 | Persistence | Options saved to `bridge/runtime/startup.conf` on Back / ESC; profile selection saved immediately on Enter |
 
+### Fresh start (recover from a wedged session)
+
+**When it appears.** Only when a `mume` session already exists — i.e. when the
+first main-frame item is `Resume MUME` (or `Mirror MUME (attached elsewhere)`).
+Fresh start is inserted directly below that first item, at a fixed index of 1
+(`_FRESH_START_INDEX`). On a cold start (`Enter MUME`, no session) it is absent:
+there is nothing to recover from.
+
+**Why it exists.** A corrupted cockpit layout (panes swapped, the MUME/tt++
+pane gone) survives a restart, because the session stays alive and re-attach is
+a no-op — `build_initial_layout.sh`'s `PANE_COUNT > 1` guard short-circuits the
+rebuild. Before this item the only main-frame action on a live session was
+attach, so the player re-attached straight back into the broken layout with no
+in-menu way out (raw `tmux kill-session` / `wsl --shutdown` was the only
+escape). Fresh start is that escape, scoped and one keypress away. It is offered
+*alongside* Resume, not as a replacement — Resume stays the default first item
+for the ordinary "put me back in" case (terminal closed, SSH dropped, link still
+alive). See [ADR 0128](decisions/0128-fresh-start-session-recovery.md).
+
+**Inline two-step confirm.** Activating Fresh start does not kill anything on
+the first Enter — it *arms* the confirm and relabels the row in place to a
+consequence prompt: `Fresh start — close MUME and drop the connection? Enter
+confirm · Esc cancel` (or, when a client is attached elsewhere, `… close MUME
+(may be active in another terminal) and drop the connection? …`). While armed
+the highlight is pinned to that row, so a second Enter lands on it regardless of
+any label change. ESC, navigating away, or activating any other row disarms via
+`_fresh_start_cancel()`; when a different row is activated, that row's normal
+action then proceeds. The confirm lives entirely on the main frame — no
+frame-stack push.
+
+**On confirm.** `_kill_mume_session()` runs a scoped `tmux kill-session -t mume`
+(never `kill-server`; synchronous, with a belt-and-braces re-check), then
+`_cold_start_exec()` — the shared helper the `Enter MUME` branch also uses,
+which exports `LAUNCHER_COLS` / `LAUNCHER_ROWS` and arms the deferred `exec` into
+`tmux_start.sh`. The clean-slate guarantee itself comes from `tmux_start.sh`,
+which kills any old session and creates a fresh one (see "Initial layout
+build"); the launcher's explicit kill makes the action's intent unambiguous. The
+ping monitor is started by `tmux_start.sh` on this path — the launcher does
+**not** spawn it for Fresh start (only the attach/Resume branch does).
+
 ## Navigation grammar
 
 The convention every launcher frame follows, so new frames inherit it
