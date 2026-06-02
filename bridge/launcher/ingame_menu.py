@@ -2076,6 +2076,9 @@ class _PopupEditorHost:
     def term_rows(self):
         return _term_rows()
 
+    def title_blank_above(self):
+        return 1
+
     def push_overlay_frame(self):
         _push_frame("profile_editor_macro_keybind")
 

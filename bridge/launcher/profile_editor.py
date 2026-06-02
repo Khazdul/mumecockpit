@@ -72,6 +72,14 @@ class EditorHost:
     def term_rows(self) -> int:
         raise NotImplementedError
 
+    def title_blank_above(self) -> int:
+        """Leading blank rows above the editor's title row.
+
+        Surface-specific to match the host's own menu chrome: the
+        launcher uses two leading blanks, the in-game popup uses one
+        (ADR 0085)."""
+        raise NotImplementedError
+
     def push_overlay_frame(self):
         """Push the macro-keybind overlay frame onto the host's frame stack."""
         raise NotImplementedError
@@ -894,27 +902,35 @@ class ProfileEditor:
     def _editor_body_h(self):
         """Body row height — branches on `self._editor_mode`.
 
-        Lite mode budget reserves rows for the one leading blank, title
+        `nb` is the host-provided count of leading blank rows above the
+        title (`title_blank_above`): launcher 2, popup 1. The rest of the
+        chrome is fixed, so the per-mode overhead is `<fixed> + nb`.
+
+        Lite mode budget reserves rows for the leading blanks, title
         row, blank separator, and the horizontal kind-button row + its
         blank-line separator (the footer blank + hint live in the
         dedicated footer Window, with a flex_spacer absorbing the
         remaining slack between body and footer — see
-        `_build_profile_editor`). 12 rows of chrome total: 7 chrome
-        rows inside the body, 2 in the footer Window, 3 of spacer
-        slack. The detail panel's field chain (Pattern + Commands +
-        error + hint block) needs ~15 rows minimum.
+        `_build_profile_editor`). `11 + nb` rows of chrome total: the
+        body chrome, 2 in the footer Window, and the spacer slack. The
+        detail panel's field chain (Pattern + Commands + error + hint
+        block) needs ~15 rows minimum.
 
-        Editor mode has no kind-button row and no detail panel; only one
-        leading blank, the title row, one blank below the title, and
+        Editor mode has no kind-button row and no detail panel; only the
+        leading blanks, the title row, one blank below the title, and
         the buffer. The footer blank + hint live in the footer Window
-        (2 rows). Reserve 5 chrome rows total so the buffer + body chrome
-        + footer Window sum to the terminal height exactly (the
+        (2 rows). Reserve `4 + nb` chrome rows total so the buffer + body
+        chrome + footer Window sum to the terminal height exactly (the
         flex_spacer collapses to zero, preserving the editor-mode
-        anchoring). Sync with `self._profile_editor_text`'s leading blank —
-        change them together."""
+        anchoring). Sync with `self._profile_editor_text`'s leading blanks —
+        change them together.
+
+        (Sanity check: launcher nb=2 → 6 / 13, identical to the historic
+        two-blank layout; popup nb=1 → 5 / 12.)"""
+        nb = self._host.title_blank_above()
         if self._editor_mode == "editor":
-            return max(15, self._host.term_rows() - 5)
-        return max(15, self._host.term_rows() - 12)
+            return max(15, self._host.term_rows() - (4 + nb))
+        return max(15, self._host.term_rows() - (11 + nb))
     
     
     def _editor_list_visible(self):
@@ -4047,7 +4063,8 @@ class ProfileEditor:
             ...                                 ...
     
         Editor mode replaces steps 2-5 with the full-height text buffer.
-        Both modes emit one explicit leading blank row above the title row.
+        Both modes emit the host-provided number of leading blank rows
+        above the title row (`title_blank_above`: launcher 2, popup 1).
     
         The five 13-cell kind buttons sit in a horizontal row, BG-filled,
         centred on the terminal. The colour grammar (`C_BUTTON_*`) carries
@@ -4061,14 +4078,16 @@ class ProfileEditor:
         title  = f"─── Profile Editor: {name} ───"
     
         frags = []
-        # Both modes emit one leading blank row explicitly: the frame uses
+        # Both modes emit the host-provided number of leading blank rows
+        # explicitly (launcher 2, popup 1): the frame uses
         # `HSplit([body, flex_spacer, footer])` (no vertical centering), so
         # the body anchors to the top of the available space. Editor mode's
         # body fills the terminal exactly so there is no slack; lite mode's
         # spacer absorbs the slack between body and footer. The chrome
-        # budgets in `self._editor_body_h` count this blank — change them
+        # budgets in `self._editor_body_h` count these blanks — change them
         # together.
-        frags.append(("", "\n", self._editor_clear_outer_hover))
+        for _ in range(self._host.title_blank_above()):
+            frags.append(("", "\n", self._editor_clear_outer_hover))
         self._editor_append_title_row(frags, title, cols)
         frags.append(("", "\n", self._editor_clear_outer_hover))
     
