@@ -3985,11 +3985,13 @@ class TestEditorScrollbarAutoScroll(unittest.TestCase):
         h = _ed._editor_buffer_scrollbar_click_handler(
             vrow=23, sb_top=0, sb_thumb_h=3, total=200, viewport_h=24)
         h(_MouseEv(0, 0, MouseEventType.MOUSE_DOWN))
+        # Immediate step pages by the passed viewport_h (24); subsequent
+        # ticks page by editor-mode body_h (term_rows 30 - 5 = 25).
         self.assertEqual(_ed._editor_buffer_scroll, 24)
         _ed._autoscroll_tick()
-        self.assertEqual(_ed._editor_buffer_scroll, 48)
+        self.assertEqual(_ed._editor_buffer_scroll, 49)
         _ed._autoscroll_tick()
-        self.assertEqual(_ed._editor_buffer_scroll, 72)
+        self.assertEqual(_ed._editor_buffer_scroll, 74)
 
     def test_buffer_tick_self_terminates_at_target_without_mouseup(self):
         # Holding the bottom row pages until the thumb covers it, then
@@ -4003,8 +4005,9 @@ class TestEditorScrollbarAutoScroll(unittest.TestCase):
                 break
             _ed._autoscroll_tick()
         self.assertFalse(_ed._autoscroll_armed())
-        # body_h=24, total_visual=100 → max_scroll=76.
-        self.assertEqual(_ed._editor_buffer_scroll, 76)
+        # body_h=25 (term_rows 30 - 5), total_visual=100 → max_scroll=75;
+        # paging stops one short when the thumb covers the held row.
+        self.assertEqual(_ed._editor_buffer_scroll, 74)
 
     def test_buffer_tick_clamps_at_bottom_then_disarms(self):
         # Small buffer: one immediate step reaches max_scroll; the next

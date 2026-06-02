@@ -893,28 +893,28 @@ class ProfileEditor:
     
     def _editor_body_h(self):
         """Body row height — branches on `self._editor_mode`.
-    
-        Lite mode budget reserves rows for the two leading blanks, title
+
+        Lite mode budget reserves rows for the one leading blank, title
         row, blank separator, and the horizontal kind-button row + its
         blank-line separator (the footer blank + hint live in the
         dedicated footer Window, with a flex_spacer absorbing the
         remaining slack between body and footer — see
-        `_build_profile_editor`). 13 rows of chrome total: 8 chrome
+        `_build_profile_editor`). 12 rows of chrome total: 7 chrome
         rows inside the body, 2 in the footer Window, 3 of spacer
         slack. The detail panel's field chain (Pattern + Commands +
         error + hint block) needs ~15 rows minimum.
-    
-        Editor mode has no kind-button row and no detail panel; only two
-        leading blanks, the title row, one blank below the title, and
+
+        Editor mode has no kind-button row and no detail panel; only one
+        leading blank, the title row, one blank below the title, and
         the buffer. The footer blank + hint live in the footer Window
-        (2 rows). Reserve 6 chrome rows total so the buffer + body chrome
+        (2 rows). Reserve 5 chrome rows total so the buffer + body chrome
         + footer Window sum to the terminal height exactly (the
         flex_spacer collapses to zero, preserving the editor-mode
-        anchoring). Sync with `self._profile_editor_text`'s leading blanks —
+        anchoring). Sync with `self._profile_editor_text`'s leading blank —
         change them together."""
         if self._editor_mode == "editor":
-            return max(15, self._host.term_rows() - 6)
-        return max(15, self._host.term_rows() - 13)
+            return max(15, self._host.term_rows() - 5)
+        return max(15, self._host.term_rows() - 12)
     
     
     def _editor_list_visible(self):
@@ -4047,7 +4047,7 @@ class ProfileEditor:
             ...                                 ...
     
         Editor mode replaces steps 2-5 with the full-height text buffer.
-        Both modes emit two explicit leading blank rows above the title row.
+        Both modes emit one explicit leading blank row above the title row.
     
         The five 13-cell kind buttons sit in a horizontal row, BG-filled,
         centred on the terminal. The colour grammar (`C_BUTTON_*`) carries
@@ -4061,14 +4061,13 @@ class ProfileEditor:
         title  = f"─── Profile Editor: {name} ───"
     
         frags = []
-        # Both modes emit two leading blank rows explicitly: the frame uses
+        # Both modes emit one leading blank row explicitly: the frame uses
         # `HSplit([body, flex_spacer, footer])` (no vertical centering), so
         # the body anchors to the top of the available space. Editor mode's
         # body fills the terminal exactly so there is no slack; lite mode's
         # spacer absorbs the slack between body and footer. The chrome
-        # budgets in `self._editor_body_h` count these blanks — change them
+        # budgets in `self._editor_body_h` count this blank — change them
         # together.
-        frags.append(("", "\n", self._editor_clear_outer_hover))
         frags.append(("", "\n", self._editor_clear_outer_hover))
         self._editor_append_title_row(frags, title, cols)
         frags.append(("", "\n", self._editor_clear_outer_hover))
