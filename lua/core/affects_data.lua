@@ -209,8 +209,8 @@ M.affects = {
 
     ["shadow-link"] = {
         type         = "buff",
-        initString_1 = "^Your focus sharpens as you share an enslaved shadow$",
-        initString_2 = "^Your focus sharpens as you share a dreadful warg$",
+        initString_1 = "^Your focus sharpens as you share an enslaved shadow",
+        initString_2 = "^Your focus sharpens as you share a dreadful warg",
         dropString_1 = "^Your link to the wraith-world disappears.$",
     },
 
