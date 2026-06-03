@@ -43,6 +43,12 @@ rm -f bridge/runtime/.popup_open
 rm -f bridge/runtime/.user_reconnecting
 rm -f bridge/runtime/.layout_ready
 
+# Stamp this cockpit launch. The in-game popup gates exit-rating on this so
+# only a run that started during the current session can be rated; a stale
+# run from a prior session is never offered. Refreshed on every "Enter MUME"
+# (both menu and --no-menu paths funnel through here). Runtime file → gitignored.
+date +%s > bridge/runtime/.session_start
+
 # Regenerate bridge/runtime/core_aliases.list — the runtime snapshot of
 # names registered by ttpp/main.tin + ttpp/core/*.tin that the profile
 # editor's save path uses to strip shadowing aliases (ADR 0115 follow-up).

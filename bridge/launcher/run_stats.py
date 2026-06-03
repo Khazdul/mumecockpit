@@ -273,6 +273,38 @@ def load_current_run_stats(character: str) -> RunStats | None:
     return aggregate(character, chain)
 
 
+def most_recent_sealed_run() -> tuple[str, str] | None:
+    """(character, run_id) of the most recent sealed run across all characters.
+
+    Scans data/runs/*/ for sealed <run-id>.jsonl files (current.jsonl
+    excluded) and returns the pair with the lexicographically-greatest
+    run_id. run ids are "%Y-%m-%dT%H-%M-%S" timestamps, so lexicographic
+    order is chronological order. None when no sealed run exists. Pure;
+    tolerant of a missing data dir or unreadable character dirs."""
+    if not os.path.isdir(_DATA_RUNS_DIR):
+        return None
+    try:
+        entries = os.listdir(_DATA_RUNS_DIR)
+    except OSError:
+        return None
+    best: tuple[str, str] | None = None
+    for name in entries:
+        char_dir = os.path.join(_DATA_RUNS_DIR, name)
+        if not os.path.isdir(char_dir):
+            continue
+        try:
+            files = os.listdir(char_dir)
+        except OSError:
+            continue
+        for fn in files:
+            if not fn.endswith(".jsonl") or fn == "current.jsonl":
+                continue
+            run_id = fn[:-len(".jsonl")]
+            if best is None or run_id > best[1]:
+                best = (name, run_id)
+    return best
+
+
 def list_characters_with_runs() -> list[str]:
     """Character names with at least one sealed run JSONL, alphabetical."""
     if not os.path.isdir(_DATA_RUNS_DIR):

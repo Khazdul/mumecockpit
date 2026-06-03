@@ -58,6 +58,7 @@ RUNTIME_DIR           = os.path.join(BRIDGE_DIR, "runtime")
 DATA_RUNS_DIR         = os.path.join(PROJECT_DIR, "data", "runs")
 POPUP_SENTINEL        = os.path.join(RUNTIME_DIR, ".popup_open")
 RETURN_TO_MENU_SENT   = os.path.join(RUNTIME_DIR, ".return_to_menu")
+SESSION_START_PATH    = os.path.join(RUNTIME_DIR, ".session_start")
 CONNECTION_STATE_PATH = os.path.join(RUNTIME_DIR, "connection.state")
 PING_CACHE_PATH       = os.path.join(RUNTIME_DIR, "ping.cache")
 STARTUP_CONF_PATH     = os.path.join(RUNTIME_DIR, "startup.conf")
@@ -158,6 +159,7 @@ _readability_detail_scroll = 0
 _readability_hover         = None
 _readability_hover_back    = False
 _rate_session_rating = 0        # 0..5; reset on every push of the rate_session frame
+_exit_rateable       = False    # True when the exit_confirm frame shows the rating widget
 _app                 = None
 _main_window         = None     # set in main(); referenced for focus
 _options_window      = None     # set in main(); referenced for focus
@@ -439,22 +441,55 @@ def _pad_centre(text, cols=None):
 # ---------------------------------------------------------------------------
 # Main frame
 # ---------------------------------------------------------------------------
-def _active_run_chain():
-    """Resolve (character, chain) for the active run.
+def _session_start_ts():
+    """Epoch stamped by tmux_start.sh at cockpit launch, or None on a
+    missing / unreadable file. Gates exit-rating to runs that started
+    during the current session."""
+    try:
+        with open(SESSION_START_PATH) as fh:
+            return int(fh.read().strip())
+    except (OSError, ValueError):
+        return None
 
-    `chain` is the active run stitched with its stitchable predecessors
-    (run_stats.previous_run_chain, ADR 0056). Returns (None, []) when no
-    character is being tracked, and (character, []) when the character has
-    no active run. Shared by the exit_confirm prefill and commit so both
-    inspect the whole chain — not just the current sub-run, which would
-    miss a rating set on an earlier member of the same chain."""
+
+def _run_id_to_epoch(run_id):
+    """Parse a run id ("%Y-%m-%dT%H-%M-%S", local time) back to epoch
+    seconds, or None if it doesn't parse. Inverse of run_stats'
+    _run_id_from_ts, which formats with time.localtime."""
+    try:
+        return int(time.mktime(time.strptime(run_id, "%Y-%m-%dT%H-%M-%S")))
+    except (ValueError, OverflowError):
+        return None
+
+
+def _exit_anchor():
+    """Resolve (character, run_id) of the run that exit-rating should target,
+    or None when there is nothing to rate.
+
+    Connected: the active run (current.jsonl). Disconnected: the most recent
+    sealed run across all characters, but only when it started during THIS
+    cockpit session — gated by the launch timestamp in .session_start. A
+    missing timestamp, or only stale prior-session runs, yields None. The
+    bias is to false-negative: rating (and overwriting) an old run from a
+    previous session would be destructive, so we never offer it."""
     char = _statistics_character()
-    if char is None:
-        return None, []
-    cur = run_stats.current_run_id_for(char)
-    if cur is None:
-        return char, []
-    return char, run_stats.previous_run_chain(char, cur)
+    if char is not None:
+        rid = run_stats.current_run_id_for(char)
+        if rid is not None:
+            return char, rid                      # connected: the active run
+    res = run_stats.most_recent_sealed_run()
+    if res is None:
+        return None
+    char, rid = res
+    start = _session_start_ts()
+    if start is None:
+        return None
+    rid_ts = _run_id_to_epoch(rid)
+    if rid_ts is None:
+        return None
+    if rid_ts >= start:
+        return char, rid                          # sealed this session (post-quit)
+    return None                                   # only stale prior-session runs exist
 
 
 def _main_items():
@@ -483,7 +518,7 @@ def _main_selectable_indices():
 
 
 def _activate_main_item(action):
-    global _sel_options, _rate_session_rating
+    global _sel_options, _rate_session_rating, _exit_rateable
     if action == "continue":
         _app.exit()
     elif action == "reconnect":
@@ -503,12 +538,20 @@ def _activate_main_item(action):
             _push_frame("statistics")
             _start_stats_tick()
     elif action == "exit":
-        # Pre-fill the rating widget from the whole active chain: the rating
-        # of its most-recently-saved member, else 0. Reading the chain (not
-        # just the current sub-run) means a rating set on an earlier member
-        # of a continued session still pre-fills here.
-        char, chain = _active_run_chain()
-        _rate_session_rating = (run_meta.chain_rating(char, chain) if char else None) or 0
+        # Anchor exit-rating to this session's latest run (active when
+        # connected, else the just-sealed run gated by the launch
+        # timestamp). When there's an anchor, pre-fill the widget from its
+        # chain's existing rating (most-recently-saved member, else 0) and
+        # show the rating UI; otherwise render a plain exit confirmation so
+        # a stale prior-session run can never be shown or overwritten.
+        anchor = _exit_anchor()
+        _exit_rateable = anchor is not None
+        if anchor is not None:
+            char, rid = anchor
+            chain = run_stats.previous_run_chain(char, rid)
+            _rate_session_rating = run_meta.chain_rating(char, chain) or 0
+        else:
+            _rate_session_rating = 0
         _push_frame("exit_confirm")
 
 
@@ -2396,36 +2439,49 @@ def _append_star_row(frags, cols):
 
 
 def _exit_confirm_text():
-    """Combined exit confirmation + optional run rating. Top to bottom:
-    title, label, star row, the exit warning, footer."""
+    """Exit confirmation, with an optional run-rating widget.
+
+    When `_exit_rateable` (a run started this session), render the rating
+    label + star row above the terminate warning. Otherwise render a plain
+    confirmation — no label, no stars — so a stale prior-session run is
+    never shown or risked. Top to bottom: title, [label, star row], the
+    exit warning, footer."""
     cols   = _term_cols()
     rows_h = _term_rows()
     frags  = []
 
     frags.extend(title_block("─── Exit session ───", cols, blank_above=1))
 
-    # Blank spacer, then the centred opt-in label above the star row.
+    # Blank spacer below the title.
     frags.append(("", "\n"))
     spacer_above_rows = 1
-    label = "Rate & save this run (optional)"
-    frags.append(("", _pad_centre(label, cols)))
-    frags.append((C_HINT, label))
-    frags.append(("", "\n"))
-    label_rows = 1
 
-    _append_star_row(frags, cols)
-    star_rows = 1
+    label_rows = 0
+    star_rows  = 0
+    spacer_below_rows = 0
+    if _exit_rateable:
+        # Centred opt-in label above the star row, then the star row.
+        label = "Rate & save this run (optional)"
+        frags.append(("", _pad_centre(label, cols)))
+        frags.append((C_HINT, label))
+        frags.append(("", "\n"))
+        label_rows = 1
 
-    # Blank spacer, then the terminate-session warning.
-    frags.append(("", "\n"))
-    spacer_below_rows = 1
+        _append_star_row(frags, cols)
+        star_rows = 1
+
+        # Blank spacer between the widget and the warning.
+        frags.append(("", "\n"))
+        spacer_below_rows = 1
+
     warn = "Attention! This terminates the current session."
     frags.append(("", _pad_centre(warn, cols)))
     frags.append((C_ERR, warn))
     frags.append(("", "\n"))
     warn_rows = 1
 
-    footer = "0-5 Rate · ←→ Adjust · Y Exit · ESC Cancel"
+    footer = ("0-5 Rate · ←→ Adjust · Y Exit · ESC Cancel"
+              if _exit_rateable else "Y Exit · ESC Cancel")
     content_rows = (title_block_height(1) + spacer_above_rows
                     + label_rows + star_rows + spacer_below_rows + warn_rows)
     frags.extend(footer_block(footer, cols, rows_h, content_rows))
@@ -3886,8 +3942,12 @@ def _rs_escape(event):
     _pop_frame()
 
 
-# Exit-confirm frame — combined exit + optional rating. No `<any>`
-# catch-all cancel: 0..5 are now rating keys, so only ESC cancels.
+# Exit-confirm frame — exit + optional rating. The rating keys are gated on
+# `_exit_rateable`, so in plain mode (no run this session) 0..5 and ←→ are
+# inert. No `<any>` catch-all cancel: when rateable, 0..5 are rating keys, so
+# only ESC cancels.
+_ec_rateable = _in_frame("exit_confirm") & Condition(lambda: _exit_rateable)
+
 for _n in range(6):
     def _make_ec_digit(val=_n):
         def _h(event):
@@ -3896,11 +3956,11 @@ for _n in range(6):
             if _app:
                 _app.invalidate()
         return _h
-    kb.add(str(_n), filter=_in_frame("exit_confirm"))(_make_ec_digit())
+    kb.add(str(_n), filter=_ec_rateable)(_make_ec_digit())
 del _n
 
 
-@kb.add("left", filter=_in_frame("exit_confirm"))
+@kb.add("left", filter=_ec_rateable)
 def _ec_left(event):
     global _rate_session_rating
     _rate_session_rating = max(0, _rate_session_rating - 1)
@@ -3908,7 +3968,7 @@ def _ec_left(event):
         _app.invalidate()
 
 
-@kb.add("right", filter=_in_frame("exit_confirm"))
+@kb.add("right", filter=_ec_rateable)
 def _ec_right(event):
     global _rate_session_rating
     _rate_session_rating = min(5, _rate_session_rating + 1)
@@ -3919,19 +3979,23 @@ def _ec_right(event):
 @kb.add("y", filter=_in_frame("exit_confirm"))
 @kb.add("Y", filter=_in_frame("exit_confirm"))
 def _ec_confirm(event):
-    # Commit the rating to the whole chain (synchronous sidecar writes),
-    # then run the unchanged exit sequence. V is the widget value, already
-    # clamped 0..5. 0 means "inherit": it never downgrades a saved chain
-    # and never creates a save on an unsaved one.
-    V = _rate_session_rating
-    char, chain = _active_run_chain()
-    if char and chain:
+    # Commit the rating to this session's run chain (synchronous sidecar
+    # writes), then run the unchanged exit sequence. The anchor is re-resolved
+    # here so the commit targets exactly the run the widget was prefilled from.
+    # V is the widget value, already clamped 0..5. 0 means "inherit": it never
+    # downgrades a saved chain and never creates a new save on an unsaved one
+    # (so a plain, non-rateable exit writes nothing — anchor is None).
+    anchor = _exit_anchor()
+    if anchor is not None:
+        char, rid = anchor
+        chain    = run_stats.previous_run_chain(char, rid)
         existing = run_meta.chain_rating(char, chain)
+        V        = max(0, min(5, _rate_session_rating))
         if V > 0:
-            run_meta.save_run_chain(char, chain, V)
+            run_meta.save_run_chain(char, chain, V)        # override whole chain
         elif existing is not None:
-            run_meta.save_run_chain(char, chain, existing)
-        # else: unsaved chain exited at 0 — write nothing.
+            run_meta.save_run_chain(char, chain, existing)  # inherit; keep chain whole
+        # else: unsaved chain exited at 0 — never CREATE a 0-star save.
     _write_sentinel(RETURN_TO_MENU_SENT)
     _send_to_game("cp -e")
     event.app.exit()

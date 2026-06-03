@@ -295,11 +295,11 @@ slower rate is deliberate, because it runs as an overlay over a live
 game. Selectable menu rows render
 through `menu_chrome.menu_row`: gold `<< >>` on the cursor row, hover
 lightens the label (`C_HOVER`). The `exit_confirm` frame anchors its
-`0-5 Rate · ←→ Adjust · Y Exit · ESC Cancel` shortcut row via
-`menu_chrome.footer_block` — title row + opt-in label + star row +
-warning line stay top-anchored, the shortcut row sits on the popup's
-last row, and the title adopts `C_SECTION` to match the swept menu
-chrome. The (no-longer-reachable) `rate_session` frame anchors its own
+shortcut row (`0-5 Rate · ←→ Adjust · Y Exit · ESC Cancel` when rateable,
+`Y Exit · ESC Cancel` in plain mode) via `menu_chrome.footer_block` —
+title row + (opt-in label + star row, when rateable) + warning line stay
+top-anchored, the shortcut row sits on the popup's last row, and the title
+adopts `C_SECTION` to match the swept menu chrome. The (no-longer-reachable) `rate_session` frame anchors its own
 `0-5 Set · ←→ Adjust · Enter Save · ESC Cancel` shortcut row the same
 way, with title row + status header + star row top-anchored.
 
@@ -860,8 +860,25 @@ session. There is no standalone "Save run" main-menu row; run rating and
 save now happen here, at the moment the player knows whether the run was
 worth keeping (ADR 0119).
 
-The frame renders, top to bottom (no status header — Profile · Mode ·
-Link was removed):
+**Exit anchor + session gate.** Whether the frame shows the rating widget
+at all depends on `_exit_anchor()`, which resolves the run this session's
+rating should target, purely from disk:
+
+- **Connected** — the active run: `_statistics_character()` plus
+  `run_stats.current_run_id_for(char)` (`current.jsonl`). Unchanged
+  fast-path.
+- **Disconnected** — `run_stats.most_recent_sealed_run()` (the
+  lexicographically-greatest sealed `<run-id>.jsonl` across all
+  characters), but **only** when that run started during the current
+  cockpit session. The gate compares the run-id (a
+  `%Y-%m-%dT%H-%M-%S` local timestamp, parsed by `_run_id_to_epoch`)
+  against `bridge/runtime/.session_start`, the launch epoch stamped by
+  `tmux_start.sh` on every "Enter MUME". A missing timestamp, or only
+  stale prior-session runs, yields `None`. The bias is to false-negative:
+  rating an old run would overwrite it, so it is never offered.
+
+`_exit_rateable = (_exit_anchor() is not None)` decides the layout. When
+**rateable**, the frame renders, top to bottom (no status header):
 
 1. Title `─── Exit session ───` (`title_block` with `blank_above=1`).
 2. Blank spacer.
@@ -876,41 +893,49 @@ Link was removed):
 7. Footer `0-5 Rate · ←→ Adjust · Y Exit · ESC Cancel`, anchored to the
    popup's last row via `menu_chrome.footer_block`.
 
+When **not rateable** (no run started this session), the label (3) and
+star row (4) and their trailing spacer (5) are omitted entirely — a plain
+confirmation of title, warning, and footer `Y Exit · ESC Cancel`.
+
 **Pre-selected rating.** On push (`_activate_main_item` for the `exit`
-action), `_rate_session_rating` is initialised from
-`run_meta.chain_rating(char, chain)` (else `0`), where `chain` comes from
-`_active_run_chain()` — the active run stitched with its predecessors
-(ADR 0056). `chain_rating` returns the rating of the chain's
-most-recently-saved member (greatest `saved_ts`), so a rating set on an
-*earlier* sub-run of a continued session still pre-fills here; reading
-only the current sub-run would miss it. Re-entering the frame within the
-same chain therefore shows the prior rating rather than resetting to
-unrated.
+action), if there is an anchor `(char, rid)`, `_rate_session_rating` is
+initialised from `run_meta.chain_rating(char, chain)` (else `0`), where
+`chain = run_stats.previous_run_chain(char, rid)` — the anchored run
+stitched with its predecessors (ADR 0056). `chain_rating` returns the
+rating of the chain's most-recently-saved member (greatest `saved_ts`), so
+a rating set on an *earlier* sub-run of a continued session still
+pre-fills here; reading only the current sub-run would miss it. With no
+anchor the prefill is `0` and the rating UI is hidden.
 
 Key bindings (filter: `_in_frame("exit_confirm")`):
 
 | Key      | Action                                                    |
 |----------|-----------------------------------------------------------|
-| `0`..`5` | Set `_rate_session_rating` to that value                  |
-| `Left`   | `rating = max(0, rating - 1)`                             |
-| `Right`  | `rating = min(5, rating + 1)`                             |
+| `0`..`5` | Set `_rate_session_rating` (gated on `_exit_rateable`)    |
+| `Left`   | `rating = max(0, rating - 1)` (gated on `_exit_rateable`) |
+| `Right`  | `rating = min(5, rating + 1)` (gated on `_exit_rateable`) |
 | `Y`/`y`  | Commit: write the chain rating (or inherit at 0), then exit |
 | `ESC`    | Cancel the exit, pop back to main (eager)                 |
 
-Mouse: clicking star N (1-indexed) sets the rating to N. There is no
-`<any>` catch-all cancel — `0`..`5` are rating keys now, so only `ESC`
-cancels.
+The rating keys carry the combined filter
+`_in_frame("exit_confirm") & Condition(lambda: _exit_rateable)`, so in
+plain mode they are inert. Mouse: clicking star N (1-indexed) sets the
+rating to N. There is no `<any>` catch-all cancel — when rateable `0`..`5`
+are rating keys, so only `ESC` cancels.
 
-**Commit semantics (`Y`).** Let `V = _rate_session_rating` (the widget
-value, clamped `0..5`) and `existing = run_meta.chain_rating(char, chain)`
-for the chain from `_active_run_chain()`:
+**Commit semantics (`Y`).** The anchor is re-resolved at commit so the
+write targets exactly the run the widget was prefilled from. With
+`anchor = _exit_anchor()`, `chain = previous_run_chain(char, rid)`,
+`V = _rate_session_rating` (clamped `0..5`), and
+`existing = run_meta.chain_rating(char, chain)`:
 
+- `anchor is None` → write nothing (the plain, non-rateable exit).
 - `V > 0` → `run_meta.save_run_chain(char, chain, V)` — the whole chain,
-  including the current (still-`current.jsonl`) run, is saved at `V`.
+  including the current/just-sealed run, is saved at `V`.
 - `V == 0` and `existing is not None` → re-save the whole chain at
   `existing`. `0` means **inherit**: committing an untouched prefill keeps
-  the saved rating *and* writes the new sub-run's meta, so the chain stays
-  whole and nothing in it expires. It never downgrades a saved chain to 0.
+  the saved rating *and* writes the anchored run's meta, so the chain
+  stays whole and nothing in it expires. It never downgrades to 0.
 - `V == 0` and `existing is None` → write nothing. `0` never *creates* a
   save on an unsaved chain.
 
@@ -928,7 +953,7 @@ exclusive to the launcher history delete flow (ADR 0075).
 (still-`current.jsonl`) run, whose meta uses its computed run-id. The
 chain comes from `run_stats.previous_run_chain(character, current_run_id)`
 (the [ADR 0056](decisions/0056-previous-run-id-linking.md) definition,
-default `max_gap_seconds=3600`), resolved by `_active_run_chain()` for the
+default `max_gap_seconds=3600`), resolved from `_exit_anchor()` for the
 `exit_confirm` `Y` commit and by the legacy `_save_run_with_rating` helper
 for the (now-unreachable) `rate_session` Save action. Because the chain is
 written uniformly, `run_meta.chain_rating` can read any saved member back
