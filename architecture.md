@@ -165,6 +165,8 @@ tracking, and UI feedback.
 │   │   ├── .launcher_resume  # One-shot resume hint consumed by the fresh launcher
 │   │   │                     #   post foot-relaunch to land back on options_terminal
 │   │   │                     #   with the cursor restored (ADR 0105)
+│   │   ├── .session_start     # Cockpit-launch epoch stamped by tmux_start.sh; gates
+│   │   │                     #   exit-rating to runs started this session (gitignored)
 │   │   └── .update_preserve/ # Preserved user files during self-update
 │   ├── dev/                  # Developer fixtures (not runtime state)
 │   ├── smoke.sh              # Syntax-check runner (bash/lua/python + core file checks); run with bash bridge/smoke.sh

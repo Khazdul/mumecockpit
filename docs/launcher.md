@@ -24,7 +24,10 @@ checks for `bridge/runtime/.return_to_menu` (written by `ingame_menu.sh` just be
 firing `cp -e`) and, if present, `exec`s back into `bridge/launcher/launcher.sh`.
 No intermediate bash frame — no flash. `tmux_start.sh` also clears any stale
 sentinel at the top of each run so a crash cannot mis-route a subsequent cold
-start.
+start. On every launch it also writes the current epoch to
+`bridge/runtime/.session_start`, which the in-game popup's exit-rating session
+gate reads (see [docs/popup-menu.md](popup-menu.md) "Exit anchor + session
+gate" and the exit-rating ADR).
 
 **Fresh-install seeding.** `bridge/launcher/templates/startup.conf` is the
 shipped single source of truth for fresh-install defaults (ADR 0101). On the
