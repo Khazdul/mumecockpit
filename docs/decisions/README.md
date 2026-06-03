@@ -80,6 +80,7 @@ Active ADRs by area. Click through for context, alternatives, and consequences.
 - [ADR 0044](0044-runs-and-character-scoped-persistence.md) — Runs and character-scoped persistence — play sessions are "runs", all persistent state is per-character, and files live under `data/`. (supersedes 0011 in scope)
 - [ADR 0054](0054-remove-cp-r-full-reload.md) — Remove cp -r full system reload — the full-reload alias and its brain-startup rehydration are removed; restart-via-launcher is the only supported recovery path. (invalidates §"cp -r mid-run" of 0044)
 - [ADR 0056](0056-previous-run-id-linking.md) — previous_run_id links each run to its predecessor — `run_start` rows include the most recent sealed run-id for the same character, so consumers can stitch link-loss runs without a writer-side grace window.
+- [ADR 0130](0130-exit-rating-session-anchor.md) — Exit-rating anchors to the session's latest persisted run — `_exit_anchor()` uses the active run when connected and `run_stats.most_recent_sealed_run()` gated by `.session_start` when disconnected (false-negative bias); rating 0 inherits the chain's existing rating across the whole chain so a continued session survives the 14-day sweep, rather than no-opping. (supersedes 0119)
 
 ### Launcher & terminal UX
 

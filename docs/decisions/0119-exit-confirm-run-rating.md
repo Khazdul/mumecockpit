@@ -1,6 +1,6 @@
 # 0119 — Fold run rating/save into the exit confirmation
 
-**Status:** Accepted
+**Status:** Superseded by 0130
 **Date:** 2026-05-29
 
 ## Context

@@ -858,7 +858,8 @@ for the rationale.
 single touchpoint for both rating/saving the run and terminating the
 session. There is no standalone "Save run" main-menu row; run rating and
 save now happen here, at the moment the player knows whether the run was
-worth keeping (ADR 0119).
+worth keeping (originally ADR 0119; anchor and 0-semantics revised by
+ADR 0130).
 
 **Exit anchor + session gate.** Whether the frame shows the rating widget
 at all depends on `_exit_anchor()`, which resolves the run this session's
