@@ -878,9 +878,13 @@ Link was removed):
 
 **Pre-selected rating.** On push (`_activate_main_item` for the `exit`
 action), `_rate_session_rating` is initialised from
-`_save_session_state()`: the run's existing saved rating if it was
-already saved this session, else `0`. Re-entering the frame within the
-same run therefore shows the prior rating rather than resetting to
+`run_meta.chain_rating(char, chain)` (else `0`), where `chain` comes from
+`_active_run_chain()` — the active run stitched with its predecessors
+(ADR 0056). `chain_rating` returns the rating of the chain's
+most-recently-saved member (greatest `saved_ts`), so a rating set on an
+*earlier* sub-run of a continued session still pre-fills here; reading
+only the current sub-run would miss it. Re-entering the frame within the
+same chain therefore shows the prior rating rather than resetting to
 unrated.
 
 Key bindings (filter: `_in_frame("exit_confirm")`):
@@ -890,37 +894,47 @@ Key bindings (filter: `_in_frame("exit_confirm")`):
 | `0`..`5` | Set `_rate_session_rating` to that value                  |
 | `Left`   | `rating = max(0, rating - 1)`                             |
 | `Right`  | `rating = min(5, rating + 1)`                             |
-| `Y`/`y`  | Commit: save-if-rated, then exit                          |
+| `Y`/`y`  | Commit: write the chain rating (or inherit at 0), then exit |
 | `ESC`    | Cancel the exit, pop back to main (eager)                 |
 
 Mouse: clicking star N (1-indexed) sets the rating to N. There is no
 `<any>` catch-all cancel — `0`..`5` are rating keys now, so only `ESC`
 cancels.
 
-**Commit semantics (`Y`).** If `_rate_session_rating > 0`, the run is
-saved first via `_save_run_with_rating` (see [Chain save
-semantics](#chain-save-semantics)), synchronously, before the popup
-tears down. Then the exit sequence runs unchanged: write the
+**Commit semantics (`Y`).** Let `V = _rate_session_rating` (the widget
+value, clamped `0..5`) and `existing = run_meta.chain_rating(char, chain)`
+for the chain from `_active_run_chain()`:
+
+- `V > 0` → `run_meta.save_run_chain(char, chain, V)` — the whole chain,
+  including the current (still-`current.jsonl`) run, is saved at `V`.
+- `V == 0` and `existing is not None` → re-save the whole chain at
+  `existing`. `0` means **inherit**: committing an untouched prefill keeps
+  the saved rating *and* writes the new sub-run's meta, so the chain stays
+  whole and nothing in it expires. It never downgrades a saved chain to 0.
+- `V == 0` and `existing is None` → write nothing. `0` never *creates* a
+  save on an unsaved chain.
+
+All writes are synchronous (atomic sidecars) and complete before the
+popup tears down. Then the exit sequence runs unchanged: write the
 return-to-menu sentinel (`RETURN_TO_MENU_SENT`), `_send_to_game("cp -e")`,
-and `event.app.exit()`. If the rating is `0`, saving is skipped entirely
-— a no-op on the save side regardless of prior state. **Exit never
-un-saves a run:** `0` means "leave untouched", never "remove a prior
-saving". De-saving is exclusive to the launcher history delete flow
-(ADR 0075).
+and `event.app.exit()`. **Exit never un-saves a run:** `0` means
+"inherit / leave untouched", never "remove a prior saving". De-saving is
+exclusive to the launcher history delete flow (ADR 0075).
 
 ### Chain save semantics
 
-`_save_run_with_rating(rating)` walks the stitched run chain via
-`run_stats.previous_run_chain(character, current_run_id)` (the
-[ADR 0056](decisions/0056-previous-run-id-linking.md) definition,
-default `max_gap_seconds=3600`) and calls
-`run_meta.save_run_chain(character, chain, rating)`, which writes one
-atomic `<run-id>.meta.json` sidecar per run in the chain — including
-the current (still-`current.jsonl`) run, whose meta uses its computed
-run-id. Only the trigger changed (formerly the `rate_session` Save
-action, now the `exit_confirm` `Y` commit); the mechanism is unchanged.
-The chosen rating surfaces on the Statistics frame's header as an
-inline ` · <stars>` field at the end of the centred header line.
+`run_meta.save_run_chain(character, chain, rating)` writes one atomic
+`<run-id>.meta.json` sidecar per run in the chain — including the current
+(still-`current.jsonl`) run, whose meta uses its computed run-id. The
+chain comes from `run_stats.previous_run_chain(character, current_run_id)`
+(the [ADR 0056](decisions/0056-previous-run-id-linking.md) definition,
+default `max_gap_seconds=3600`), resolved by `_active_run_chain()` for the
+`exit_confirm` `Y` commit and by the legacy `_save_run_with_rating` helper
+for the (now-unreachable) `rate_session` Save action. Because the chain is
+written uniformly, `run_meta.chain_rating` can read any saved member back
+to recover the inherited rating. The chosen rating surfaces on the
+Statistics frame's header as an inline ` · <stars>` field at the end of
+the centred header line.
 
 The keyboard alias `cp -s` (profile save) is independent of this flow
 and unchanged: it still runs

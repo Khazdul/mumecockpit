@@ -439,25 +439,22 @@ def _pad_centre(text, cols=None):
 # ---------------------------------------------------------------------------
 # Main frame
 # ---------------------------------------------------------------------------
-def _save_session_state():
-    """Return (rating, character, run_id) when the active run is already
-    saved, else (None, character, run_id_or_None). character is None when
-    no active run is being tracked — i.e. the row should not appear."""
+def _active_run_chain():
+    """Resolve (character, chain) for the active run.
+
+    `chain` is the active run stitched with its stitchable predecessors
+    (run_stats.previous_run_chain, ADR 0056). Returns (None, []) when no
+    character is being tracked, and (character, []) when the character has
+    no active run. Shared by the exit_confirm prefill and commit so both
+    inspect the whole chain — not just the current sub-run, which would
+    miss a rating set on an earlier member of the same chain."""
     char = _statistics_character()
     if char is None:
-        return None, None, None
-    run_id = run_stats.current_run_id_for(char)
-    if run_id is None:
-        return None, char, None
-    if not run_meta.is_saved(char, run_id):
-        return None, char, run_id
-    meta   = run_meta.read_meta(char, run_id) or {}
-    rating = meta.get("rating", 0)
-    try:
-        rating = int(rating)
-    except (TypeError, ValueError):
-        rating = 0
-    return max(0, min(5, rating)), char, run_id
+        return None, []
+    cur = run_stats.current_run_id_for(char)
+    if cur is None:
+        return char, []
+    return char, run_stats.previous_run_chain(char, cur)
 
 
 def _main_items():
@@ -506,11 +503,12 @@ def _activate_main_item(action):
             _push_frame("statistics")
             _start_stats_tick()
     elif action == "exit":
-        # Pre-fill the rating widget from disk: the saved rating if this
-        # run was already saved this session, else 0. Mirrors how the old
-        # save_session action reset the rating before pushing rate_session.
-        rating, _, _ = _save_session_state()
-        _rate_session_rating = rating if rating is not None else 0
+        # Pre-fill the rating widget from the whole active chain: the rating
+        # of its most-recently-saved member, else 0. Reading the chain (not
+        # just the current sub-run) means a rating set on an earlier member
+        # of a continued session still pre-fills here.
+        char, chain = _active_run_chain()
+        _rate_session_rating = (run_meta.chain_rating(char, chain) if char else None) or 0
         _push_frame("exit_confirm")
 
 
@@ -3921,10 +3919,19 @@ def _ec_right(event):
 @kb.add("y", filter=_in_frame("exit_confirm"))
 @kb.add("Y", filter=_in_frame("exit_confirm"))
 def _ec_confirm(event):
-    # Save first (synchronous sidecar writes), then exit. A 0-star rating
-    # never saves — exit never un-saves a previously-saved run.
-    if _rate_session_rating > 0:
-        _save_run_with_rating(_rate_session_rating)
+    # Commit the rating to the whole chain (synchronous sidecar writes),
+    # then run the unchanged exit sequence. V is the widget value, already
+    # clamped 0..5. 0 means "inherit": it never downgrades a saved chain
+    # and never creates a save on an unsaved one.
+    V = _rate_session_rating
+    char, chain = _active_run_chain()
+    if char and chain:
+        existing = run_meta.chain_rating(char, chain)
+        if V > 0:
+            run_meta.save_run_chain(char, chain, V)
+        elif existing is not None:
+            run_meta.save_run_chain(char, chain, existing)
+        # else: unsaved chain exited at 0 — write nothing.
     _write_sentinel(RETURN_TO_MENU_SENT)
     _send_to_game("cp -e")
     event.app.exit()

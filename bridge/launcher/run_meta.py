@@ -42,6 +42,34 @@ def is_saved(character: str, run_id: str) -> bool:
     return data.get("saved") is True
 
 
+def chain_rating(character: str, run_ids: list[str]) -> int | None:
+    """Rating inherited by an exiting chain, or None if nothing is saved.
+
+    Scan `run_ids`; among runs whose meta has `saved == True`, return the
+    rating of the one with the greatest `saved_ts`. Chains are written
+    uniformly (save_run_chain stamps every member), so for current data
+    this equals any saved run's rating; max(saved_ts) just keeps it
+    override-correct if the chain ever diverges.
+    """
+    best_ts = None
+    best_rating = None
+    for run_id in run_ids:
+        data = read_meta(character, run_id)
+        if data is None or data.get("saved") is not True:
+            continue
+        try:
+            ts = int(data.get("saved_ts", 0))
+        except (TypeError, ValueError):
+            ts = 0
+        if best_ts is None or ts >= best_ts:
+            best_ts = ts
+            try:
+                best_rating = max(0, min(5, int(data.get("rating", 0))))
+            except (TypeError, ValueError):
+                best_rating = 0
+    return best_rating
+
+
 def save_run_chain(character: str, run_ids: list[str], rating: int) -> None:
     """Atomically write a `saved` meta file for every run in the chain.
 
