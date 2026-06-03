@@ -5,7 +5,7 @@
 -- @alias    kpick     Store key [n] from the last locate as <name> (no args: re-show list)
 -- @alias    keypick   Alias of kpick
 -- @alias    keys      List your stored port keys (with a Safe column)
--- @alias    skey      Designate <name> as the persistent safekey
+-- @alias    skey      Designate <name> as the persistent safekey (no args: show current)
 -- @alias    safekey   Alias of skey
 -- @alias    teleport  Cast teleport to keyname <name>
 -- @alias    portal    Cast portal to keyname <name>
@@ -28,7 +28,8 @@
 -- @help
 -- @help     The "safekey" is a persistent designation that always resolves to a
 -- @help     live key: the first key you store becomes it automatically, skey/
--- @help     safekey <name> retargets it, and it falls to the freshest remaining
+-- @help     safekey <name> retargets it (no argument shows the current safekey),
+-- @help     and it falls to the freshest remaining
 -- @help     key when the chosen one expires. Cast to it with psafe (portal),
 -- @help     tsafe (teleport, also Alt+s) or qtsafe (quiet teleport).
 -- @help
@@ -95,6 +96,11 @@ local pick     = {}
 local in_block = false
 local library  = {}
 local safekey  = nil
+
+-- Forward declaration: _ensure_safekey (defined below) emits a status line on an
+-- auto-switch, but _status lives in the rendering section further down. Declare
+-- it here so that reference resolves to this local, not a nil global.
+local _status
 
 -- ---------------------------------------------------------------------------
 -- Parse — Lua translation of the agreed regex. Same pattern matches self-locate
@@ -184,6 +190,7 @@ end
 local function _ensure_safekey()
     _prune_library()
     if not (safekey and library[safekey]) then   -- library is pruned: present ⇒ live
+        local old = safekey
         local best, best_exp = nil, -1
         for name, e in pairs(library) do
             if e.expires_at and e.expires_at > best_exp then
@@ -193,6 +200,9 @@ local function _ensure_safekey()
         if best ~= safekey then
             safekey = best
             _save_library()
+            if old and safekey then
+                _status("Safekey expired; switched to " .. safekey .. ".")
+            end
         end
     end
 end
@@ -296,8 +306,14 @@ local function _ses()
     return GAME_SESSION or "gts"
 end
 
-local function _status(msg)
+function _status(msg)   -- assigns the forward-declared local above
     tintin_show(_ses(), FRAME .. "## KEYS: " .. WHITE .. msg .. R)
+end
+
+-- Cast-action notice: a clean coloured line (no "## KEYS:" prefix) — soft body in
+-- the dim header colour, the keyname in the cyan Name colour.
+local function _notice(prefix, name)
+    tintin_show(_ses(), HEADER .. prefix .. NAME .. name .. HEADER .. ".." .. R)
 end
 
 -- ── box primitives (dynamic width — mirror mercenaries' border helpers) ──────
@@ -576,6 +592,15 @@ end
 -- skey/safekey <name>: designate a live key as the persistent safekey. An
 -- expired or unknown name is refused.
 function M.set_safekey(name)
+    if name == nil or name == "" then
+        _ensure_safekey()
+        if safekey then
+            _status("Current safekey: " .. safekey .. ".")
+        else
+            _status("No safekey set.")
+        end
+        return
+    end
     if _get(name) then
         safekey = name
         _save_library()
@@ -594,6 +619,8 @@ function M.use(spell, name)
         _status("Key " .. name .. " not in keylibrary.")
         return
     end
+    local NOTICE = { teleport = "Teleporting to ", portal = "Portalling to ", scry = "Scrying " }
+    _notice(NOTICE[spell], name)
     send("cast n '" .. spell .. "' " .. e.key)
 end
 
@@ -604,6 +631,7 @@ function M.watchr(name)
         _status("Key " .. name .. " not in keylibrary.")
         return
     end
+    _notice("Watching ", name)
     send("cast n 'watch room' " .. e.key .. " " .. name)
 end
 
@@ -617,6 +645,7 @@ function M.use_safe(prefix, spell)
         return
     end
     local e = library[safekey]   -- guaranteed live by _ensure_safekey
+    _notice("Teleporting to safe key: ", safekey)
     send("cast " .. prefix .. " '" .. spell .. "' " .. e.key)
 end
 
