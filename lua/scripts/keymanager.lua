@@ -1,9 +1,19 @@
 -- ============================================================
 --  keymanager
 -- ============================================================
--- @summary  Port-key library: capture locate-life results, store and list keys
--- @alias    kpick   Store key [n] from the last locate as <name> (no args: re-show list)
--- @alias    keys    List your stored port keys
+-- @summary  Port-key library: capture locate-life results, store, list and cast to keys
+-- @alias    kpick     Store key [n] from the last locate as <name> (no args: re-show list)
+-- @alias    keypick   Alias of kpick
+-- @alias    keys      List your stored port keys (with a Safe column)
+-- @alias    skey      Designate <name> as the persistent safekey
+-- @alias    safekey   Alias of skey
+-- @alias    teleport  Cast teleport to keyname <name>
+-- @alias    portal    Cast portal to keyname <name>
+-- @alias    scry      Cast scry to keyname <name>
+-- @alias    watchr    Cast watch room via keyname <name>
+-- @alias    psafe     Portal to the current safekey
+-- @alias    tsafe     Teleport to the current safekey (also Alt+s)
+-- @alias    qtsafe    Quietly (q) teleport to the current safekey
 -- @help     Cast locate-life normally — e.g. `cast 'locate life' troll`.
 -- @help     The raw result rows are gagged and reshown as a numbered,
 -- @help     reformatted pick list with a hint box. Then:
@@ -12,9 +22,18 @@
 -- @help       kpick             re-show the last pick list
 -- @help       keys              list your stored keys with time remaining
 -- @help
+-- @help     Cast to a stored key by name:
+-- @help       teleport <name> / portal <name> / scry <name> / watchr <name>
+-- @help     A named key that has expired fails — no auto-substitution.
+-- @help
+-- @help     The "safekey" is a persistent designation that always resolves to a
+-- @help     live key: the first key you store becomes it automatically, skey/
+-- @help     safekey <name> retargets it, and it falls to the freshest remaining
+-- @help     key when the chosen one expires. Cast to it with psafe (portal),
+-- @help     tsafe (teleport, also Alt+s) or qtsafe (quiet teleport).
+-- @help
 -- @help     Keys are per-character and survive reconnect; they expire 12 h
--- @help     after being picked. This pass captures and stores keys only —
--- @help     it does not feed them to teleport/portal yet.
+-- @help     after being picked.
 
 -- Self-contained Pattern-2 script (docs/scripts.md, docs/ipc.md). tt++ does the
 -- latency-light reflex — recognise & gag locate rows, fire the blank-line
@@ -47,7 +66,7 @@ local DIST   = "<F9FB0D0>"   -- soft blue  — distance / normal expiry
 local ROOM   = "<F8C8C82>"   -- muted      — room-type
 local KEY    = "<F6F6F6F>"   -- grey       — key, least important
 local HEADER = "<F888888>"   -- dim        — header labels and bottom hint
-local STORED = "<F8FBF8F>"   -- green      — stored marker (→ name)
+local STORED = "<F8FBF8F>"   -- green      — stored key/index and safekey mark
 local ORANGE = "<FD4A04E>"   -- orange     — expiry under 1 h
 local Z_A    = "<B161616>"   -- zebra band A (odd data rows)
 local Z_B    = "<B212121>"   -- zebra band B (even data rows)
@@ -69,9 +88,13 @@ scripts.keymanager = M
 -- in_block  true while a locate block is accumulating rows; the first row after
 --           a render starts a fresh block (resets pick)
 -- library   name → { key, room_type, stored_at, expires_at } — persisted
+-- safekey   keyname designated as the persistent "safe" key, or nil — persisted
+--           alongside the library and always re-resolved to a live key by
+--           _ensure_safekey
 local pick     = {}
 local in_block = false
 local library  = {}
+local safekey  = nil
 
 -- ---------------------------------------------------------------------------
 -- Parse — Lua translation of the agreed regex. Same pattern matches self-locate
@@ -89,9 +112,11 @@ local function _char_dir(name)
     return os.getenv("HOME") .. "/MUME/data/characters/" .. name .. "/"
 end
 
--- Atomic temp-file + os.rename write of `library`. An empty library is written
--- as {} (not deleted), so reconnect always finds a definitive file. dkjson
--- encodes an empty Lua table as [], so the empty case is special-cased.
+-- Atomic temp-file + os.rename write of the v2 library file:
+--   { "safekey": "<name|null>", "keys": { "<name>": {...}, ... } }
+-- `keys` is forced to encode as a JSON object even when empty (dkjson would
+-- otherwise emit [] for an empty Lua table), so reconnect always finds a
+-- definitive object; safekey is its JSON string, or null when unset.
 local function _save_library()
     local cname = state.char.name
     if not cname then return end
@@ -99,17 +124,19 @@ local function _save_library()
     os.execute("mkdir -p '" .. dir .. "'")
     local path = dir .. "portkeys.json"
     local tmp  = path .. ".tmp"
-    local encoded
+    local keys_encoded
     if next(library) == nil then
-        encoded = "{}"
+        keys_encoded = "{}"
     else
         local ok, enc = pcall(json.encode, library)
         if not ok then
             dbg("[KEYMANAGER] encode failed: " .. tostring(enc))
             return
         end
-        encoded = enc
+        keys_encoded = enc
     end
+    local safekey_encoded = safekey and json.encode(safekey) or "null"
+    local encoded = '{"safekey":' .. safekey_encoded .. ',"keys":' .. keys_encoded .. '}'
     local f = io.open(tmp, "w")
     if not f then
         dbg("[KEYMANAGER] open tmp failed: " .. tmp)
@@ -118,38 +145,6 @@ local function _save_library()
     f:write(encoded)
     f:close()
     os.rename(tmp, path)
-end
-
--- Reload the persisted library on login, dropping any whose 12 h elapsed during
--- downtime (lazy expiry — no timer). Always resets `library` to a clean slate
--- first so a character with no file starts empty.
-local function _load_library(cname)
-    library = {}
-    local path = _char_dir(cname) .. "portkeys.json"
-    local f = io.open(path, "r")
-    if not f then
-        dbg("[KEYMANAGER] restored 0 (0 expired)")
-        return
-    end
-    local content = f:read("*a")
-    f:close()
-    local ok, loaded = pcall(json.decode, content)
-    if not ok or type(loaded) ~= "table" then
-        dbg("[KEYMANAGER] load failed for " .. cname)
-        return
-    end
-    local now      = os.time()
-    local restored = 0
-    local expired  = 0
-    for name, e in pairs(loaded) do
-        if e.expires_at and e.expires_at <= now then
-            expired = expired + 1
-        else
-            library[name] = e
-            restored = restored + 1
-        end
-    end
-    dbg("[KEYMANAGER] restored " .. restored .. " (" .. expired .. " expired)")
 end
 
 -- Lazy prune: drop expired entries, persisting only if anything changed.
@@ -163,6 +158,93 @@ local function _prune_library()
         end
     end
     if changed then _save_library() end
+end
+
+-- Return library[name] only if present AND live. An expired entry is pruned (and
+-- the prune persisted) and nil returned. Named-key lookups go through here, so an
+-- expired named key fails cleanly — there is no auto-substitution (that is
+-- safekey-only).
+local function _get(name)
+    local e = library[name]
+    if not e then return nil end
+    if e.expires_at and e.expires_at <= os.time() then
+        library[name] = nil
+        _save_library()
+        return nil
+    end
+    return e
+end
+
+-- Ensure `safekey` names a live key whenever one exists: prune first, then if the
+-- designation is unset or no longer live, re-elect the FRESHEST live key (max
+-- expires_at), or nil when the library is empty. Re-election is silent and
+-- persisted only when the designation actually changes. This makes the first
+-- stored key the safekey automatically, keeps an explicit choice while it is
+-- live, and falls to the next freshest key when the chosen one expires.
+local function _ensure_safekey()
+    _prune_library()
+    if not (safekey and library[safekey]) then   -- library is pruned: present ⇒ live
+        local best, best_exp = nil, -1
+        for name, e in pairs(library) do
+            if e.expires_at and e.expires_at > best_exp then
+                best, best_exp = name, e.expires_at
+            end
+        end
+        if best ~= safekey then
+            safekey = best
+            _save_library()
+        end
+    end
+end
+
+-- Reload the persisted library on login, dropping any whose 12 h elapsed during
+-- downtime (lazy expiry — no timer). Always resets `library`/`safekey` to a clean
+-- slate first so a character with no file starts empty. The file is v2
+-- ({safekey, keys}); a legacy v1 file (the bare keys dict) is detected by the
+-- absence of a `keys` field, loaded as the keys dict with no safekey, and
+-- re-saved in v2 form.
+local function _load_library(cname)
+    library = {}
+    safekey = nil
+    local path = _char_dir(cname) .. "portkeys.json"
+    local f = io.open(path, "r")
+    if not f then
+        dbg("[KEYMANAGER] restored 0 (0 expired)")
+        return
+    end
+    local content = f:read("*a")
+    f:close()
+    local ok, loaded = pcall(json.decode, content)
+    if not ok or type(loaded) ~= "table" then
+        dbg("[KEYMANAGER] load failed for " .. cname)
+        return
+    end
+
+    local keys_dict, was_v1
+    if loaded.keys ~= nil then
+        keys_dict = loaded.keys
+        safekey   = loaded.safekey      -- JSON null decodes to nil
+        was_v1    = false
+    else
+        keys_dict = loaded              -- v1: decoded value IS the keys dict
+        was_v1    = true
+    end
+
+    local now      = os.time()
+    local restored = 0
+    local expired  = 0
+    for name, e in pairs(keys_dict) do
+        if e.expires_at and e.expires_at <= now then
+            expired = expired + 1
+        else
+            library[name] = e
+            restored = restored + 1
+        end
+    end
+    dbg("[KEYMANAGER] restored " .. restored .. " (" .. expired .. " expired)")
+
+    _ensure_safekey()
+    if was_v1 then _save_library() end  -- upgrade legacy file to v2 on disk
 end
 
 -- Return the stored name of a non-expired library entry whose key matches, or
@@ -268,11 +350,12 @@ local function _zebra_row(inner_w, bg, core)
 end
 
 -- Pick list — a bordered, zebra-striped panel. Columns, in order:
---   [idx]  Name  Distance  Room-type  Key   (→ <name> if already stored)
--- A row whose key matches a non-expired library entry shows a WHITE index and a
--- green "→ <name>" after the key (the only stored markers; the rest of the row
--- is not dimmed). The bottom border carries the kpick hint. Width is the widest
--- of every row (incl. the stored marker), the header, the title and the hint.
+--   [idx]  Name  Distance  Room-type  Key
+-- A row whose key matches a non-expired library entry is "stored": its index and
+-- its Key cell turn green, and the Key cell shows the stored KEYNAME instead of
+-- the raw key. An unstored row shows a dark index and the grey raw key. The
+-- bottom border carries the kpick hint. Width is the widest of every row, the
+-- header, the title and the hint.
 local function _render_picks()
     local ses = _ses()
     if #pick == 0 then
@@ -280,38 +363,42 @@ local function _render_picks()
         return
     end
 
-    -- Column widths from header labels and data.
+    -- Column widths from header labels and data. A stored row shows its keyname
+    -- in the Key column (not the raw key), so the Key width comes from whichever
+    -- string each row actually displays.
     local idx_w  = _vlen("#")
     local name_w = _vlen("Name")
     local dist_w = _vlen("Dist")
     local room_w = _vlen("Room-type")
     local key_w  = _vlen("Key")
+    local stored_of = {}
     for i, e in ipairs(pick) do
+        local stored = _lib_name_for_key(e.key)
+        stored_of[i] = stored
         idx_w  = math.max(idx_w,  _vlen("[" .. i .. "]"))
         name_w = math.max(name_w, _vlen(e.name))
         dist_w = math.max(dist_w, _vlen(e.distance))
         room_w = math.max(room_w, _vlen(e.room_type))
-        key_w  = math.max(key_w,  _vlen(e.key))
+        key_w  = math.max(key_w,  _vlen(stored or e.key))
     end
 
-    -- Coloured cores (the column run, no bg, no outer padding).
+    -- Coloured cores (the column run, no bg, no outer padding). A stored row gets
+    -- a green index and a green keyname in Key; an unstored row a dark index and
+    -- the grey raw key. No trailing marker.
     local cores = {}
     for i, e in ipairs(pick) do
         local idx    = "[" .. i .. "]"
-        local stored = _lib_name_for_key(e.key)
-        local idx_c  = stored and WHITE or DIM
-        local parts  = {
+        local stored = stored_of[i]
+        local idx_c  = stored and STORED or DIM
+        local keystr = stored or e.key
+        local key_c  = stored and STORED or KEY
+        cores[i] = table.concat({
             idx_c .. idx        .. string.rep(" ", idx_w  - _vlen(idx)         + GAP),
             NAME  .. e.name     .. string.rep(" ", name_w - _vlen(e.name)      + GAP),
             DIST  .. e.distance .. string.rep(" ", dist_w - _vlen(e.distance)  + GAP),
             ROOM  .. e.room_type.. string.rep(" ", room_w - _vlen(e.room_type) + GAP),
-            KEY   .. e.key,
-        }
-        if stored then
-            parts[#parts + 1] = string.rep(" ", key_w - _vlen(e.key) + GAP)
-                .. STORED .. "→ " .. stored
-        end
-        cores[i] = table.concat(parts)
+            key_c .. keystr,
+        })
     end
 
     -- Header core (dim), aligned to the same columns; no label over the marker.
@@ -411,6 +498,7 @@ function M.kpick(n, name)
         expires_at = now + EXPIRY,
     }
     _save_library()
+    _ensure_safekey()   -- first key into an empty library auto-becomes the safekey
 
     if existing then
         _status("Replaced " .. name .. ": " .. existing.key .. " → " .. e.key .. ".")
@@ -419,9 +507,10 @@ function M.kpick(n, name)
     end
 end
 
--- keys: list the library (expired entries pruned first), sorted by name.
+-- keys: list the library (expired entries pruned first), sorted by name. A Safe
+-- column marks the current safekey row with a green X.
 function M.keys()
-    _prune_library()
+    _ensure_safekey()
     local ses = _ses()
     if next(library) == nil then
         _status("Your key library is empty.")
@@ -454,17 +543,20 @@ function M.keys()
         .. "Name"      .. string.rep(" ", name_w - _vlen("Name")      + GAP)
         .. "Room-type" .. string.rep(" ", room_w - _vlen("Room-type") + GAP)
         .. "Key"       .. string.rep(" ", key_w  - _vlen("Key")       + GAP)
-        .. "Expires"
+        .. "Expires"   .. string.rep(" ", exp_w  - _vlen("Expires")   + GAP)
+        .. "Safe"
 
     local cores = {}
     for _, name in ipairs(names) do
         local e     = library[name]
         local exp   = exp_of[name]
         local exp_c = (e.expires_at - now < 3600) and ORANGE or DIST
+        local mark  = (name == safekey) and (STORED .. "X") or ""
         cores[#cores + 1] = NAME .. name           .. string.rep(" ", name_w - _vlen(name)         + GAP)
             .. ROOM .. e.room_type .. string.rep(" ", room_w - _vlen(e.room_type) + GAP)
             .. KEY  .. e.key       .. string.rep(" ", key_w  - _vlen(e.key)       + GAP)
-            .. exp_c .. exp
+            .. exp_c .. exp        .. string.rep(" ", exp_w  - _vlen(exp)         + GAP)
+            .. mark
     end
 
     local title = "  KEY LIBRARY  "
@@ -479,6 +571,53 @@ function M.keys()
         tintin_show(ses, _zebra_row(inner_w, (i % 2 == 1) and Z_A or Z_B, c))
     end
     tintin_show(ses, _bottom_border(inner_w))
+end
+
+-- skey/safekey <name>: designate a live key as the persistent safekey. An
+-- expired or unknown name is refused.
+function M.set_safekey(name)
+    if _get(name) then
+        safekey = name
+        _save_library()
+        _status("Safekey set to: " .. name .. ".")
+    else
+        _status("Key " .. name .. " not in keylibrary.")
+    end
+end
+
+-- teleport/portal/scry <name>: cast `spell` to the named key. The named key must
+-- be live — an expired key fails here with no auto-substitution (that is
+-- safekey-only).
+function M.use(spell, name)
+    local e = _get(name)
+    if not e then
+        _status("Key " .. name .. " not in keylibrary.")
+        return
+    end
+    send("cast n '" .. spell .. "' " .. e.key)
+end
+
+-- watchr <name>: cast watch room, passing both the raw key and the keyname.
+function M.watchr(name)
+    local e = _get(name)
+    if not e then
+        _status("Key " .. name .. " not in keylibrary.")
+        return
+    end
+    send("cast n 'watch room' " .. e.key .. " " .. name)
+end
+
+-- psafe/tsafe/qtsafe: cast `spell` (with cast prefix `prefix`) to the safekey.
+-- _ensure_safekey guarantees the safekey is live whenever the library is
+-- non-empty, so "No safekey set." only ever fires on an empty library.
+function M.use_safe(prefix, spell)
+    _ensure_safekey()
+    if not safekey then
+        _status("No safekey set.")
+        return
+    end
+    local e = library[safekey]   -- guaranteed live by _ensure_safekey
+    send("cast " .. prefix .. " '" .. spell .. "' " .. e.key)
 end
 
 -- ---------------------------------------------------------------------------
@@ -510,6 +649,11 @@ local function _register_triggers()
     -- `in_block`); for now it is gagged whenever it appears.
     session_cmd([[#unaction {^You feel very confused and can't concentrate any more.$}]])
     session_cmd([[#action {^You feel very confused and can't concentrate any more.$} {#line gag}]])
+
+    -- Alt+s → tsafe (teleport to the safekey). Re-armed with the triggers and
+    -- session-scoped into {core}. Alt+s is already forwarded by the input pane.
+    session_cmd([[#unmacro {\es}]])
+    session_cmd([[#macro {\es} {tsafe}]])
 end
 
 events.subscribe("run_started", _register_triggers)
@@ -523,6 +667,7 @@ events.subscribe("gmcp_char_name", function()
         _load_library(state.char.name)
     else
         library = {}
+        safekey = nil
     end
 end)
 
@@ -530,7 +675,17 @@ end)
 -- Aliases (registered at load, survive reconnect via game_cmd → {core})
 -- ---------------------------------------------------------------------------
 
-game_cmd([[#alias {kpick} {#lua {scripts.keymanager.kpick("%1", "%2")}}]])
-game_cmd([[#alias {keys}  {#lua {scripts.keymanager.keys()}}]])
+game_cmd([[#alias {kpick}    {#lua {scripts.keymanager.kpick("%1", "%2")}}]])
+game_cmd([[#alias {keypick}  {#lua {scripts.keymanager.kpick("%1", "%2")}}]])
+game_cmd([[#alias {keys}     {#lua {scripts.keymanager.keys()}}]])
+game_cmd([[#alias {skey}     {#lua {scripts.keymanager.set_safekey("%1")}}]])
+game_cmd([[#alias {safekey}  {#lua {scripts.keymanager.set_safekey("%1")}}]])
+game_cmd([[#alias {teleport} {#lua {scripts.keymanager.use("teleport", "%1")}}]])
+game_cmd([[#alias {portal}   {#lua {scripts.keymanager.use("portal", "%1")}}]])
+game_cmd([[#alias {scry}     {#lua {scripts.keymanager.use("scry", "%1")}}]])
+game_cmd([[#alias {watchr}   {#lua {scripts.keymanager.watchr("%1")}}]])
+game_cmd([[#alias {psafe}    {#lua {scripts.keymanager.use_safe("n", "portal")}}]])
+game_cmd([[#alias {tsafe}    {#lua {scripts.keymanager.use_safe("n", "teleport")}}]])
+game_cmd([[#alias {qtsafe}   {#lua {scripts.keymanager.use_safe("q", "teleport")}}]])
 
 dbg("[KEYMANAGER] loaded")
