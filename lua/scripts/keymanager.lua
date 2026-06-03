@@ -645,7 +645,11 @@ function M.use_safe(prefix, spell)
         return
     end
     local e = library[safekey]   -- guaranteed live by _ensure_safekey
-    _notice("Teleporting to safe key: ", safekey)
+    -- qtsafe (quiet cast, prefix "q") flags the quiet cast with a white "quickly".
+    local lead = (prefix == "q")
+        and ("Teleporting " .. WHITE .. "quickly" .. HEADER .. " to safe key: ")
+        or  "Teleporting to safe key: "
+    _notice(lead, safekey)
     send("cast " .. prefix .. " '" .. spell .. "' " .. e.key)
 end
 
