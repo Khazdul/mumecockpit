@@ -387,8 +387,9 @@ end
 -- per row is idempotent (a named #action replaces). The terminator gags the
 -- blank line, renders the buffer, then removes itself.
 local function _register_triggers()
-    session_cmd([[#unaction {  key: '%1'$}]])
-    session_cmd([[#action {  key: '%1'$} {#line gag;#lua {scripts.keymanager.row("%0")};#class {core} {open};#action {^$} {#line gag;#lua {scripts.keymanager.render()};#unaction {^$}};#class {core} {close}}]])
+    session_cmd([[#unaction {^%1  key: '%2'$}]])
+    session_cmd([[#action {^%1  key: '%2'$} {#line gag;#lua {scripts.keymanager.row("%0")};#class {core} {open};#action {^$} {#line gag;#lua {scripts.keymanager.render()};#unaction {^$}};#class {core} {close}}]])
+
 
     -- Interrupted-concentration line. Unconditional per design: locate is the
     -- common context. NB if this exact string proves to fire for other
