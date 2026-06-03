@@ -99,6 +99,16 @@ Triggers may be permanent or managed dynamically (registered on activation,
 unregistered on deactivation). Dynamic lifecycle keeps the action list clean
 and avoids stale triggers firing outside their intended context.
 
+**Forwarding a whole captured line — `%0` is the matched segment, not the line.**
+In a tt++ `#action`, `%0` is the portion of the line the *pattern* matched, not
+the entire line. To forward a complete line to Lua, anchor a leading wildcard so
+the match spans it: keymanager's row trigger
+`#action {^%1  key: '%2'$} {… #lua {scripts.keymanager.row("%0")} …}` matches
+from the start of the line, so `%0` carries the whole row for Lua to re-parse. A
+tail-only pattern (e.g. `{  key: '%1'$}`) would forward only that tail. Note too
+that text triggers match colour-**stripped** text, so `%0` and the captures
+arrive without ANSI codes.
+
 ## Lua → tt++
 
 Two mechanisms, depending on whether the command contains braces:

@@ -501,6 +501,20 @@ immediately. The running comm pane re-reads both conf files live on its
 within a tick, and the channel header itself is now hide-able via
 `show_header`. See [docs/comm-pane.md](docs/comm-pane.md).
 
+The **keymanager** port-key script is shipped: `locate life` capture +
+reformat into a numbered, zebra-striped pick panel, a per-character key
+library with 12 h lazy expiry (no timer — pruned on load/display/use), a
+safekey designation that always resolves to a live key (first-stored
+auto-elect, freshest re-election on expiry), and the
+`teleport` / `portal` / `scry` / `watchr` / `psafe` / `tsafe` / `qtsafe`
+cast aliases plus the Alt+s → `tsafe` macro. tt++ does the latency-light
+locate capture (arm-on-data row gag + self-removing blank-line
+terminator); Lua owns the buffer, library, safekey, and rendering. See
+[docs/keymanager.md](docs/keymanager.md),
+[ADR 0131](docs/decisions/0131-keymanager-locate-capture.md) (locate
+capture), and
+[ADR 0132](docs/decisions/0132-keymanager-safekey.md) (safekey).
+
 The Windows deployment runs on **foot under WSLg** and is fully
 shipped. `bridge/supervisor.sh` owns the foot lifecycle and loops on
 the `bridge/runtime/.relaunch_terminal` sentinel; `install/mume-cockpit.desktop`
@@ -552,6 +566,7 @@ mode.
 - [docs/charm.md](docs/charm.md) — Charm tracker: cast snoop + in-flight gate on the ambiguous follow line, the two success lines, the 99-min cap, persistence, and click-to-drop. Touched when changing charm tracking.
 - [docs/herblores.md](docs/herblores.md) — Herblore tracker: manually-added timed phase machines, the static catalog, `_derive` phase derivation, per-character persistence, and the buff/debuff pane fold. Touched when changing herblore tracking or the catalog.
 - [docs/blinds.md](docs/blinds.md) — Blinds tracker: 90 s fixed-duration landing and per-character persistence. The cast-attempt FIFO and shared failure handling live in [docs/spellcast.md](docs/spellcast.md). Touched when changing blind tracking.
+- [docs/keymanager.md](docs/keymanager.md) — Port-key library: locate capture, per-character key store, safekey, and the cast aliases. Touched when changing keymanager.
 - [docs/readability.md](docs/readability.md) — Readability modules: drop-in `.tin` loader, `.meta` format spec, startup.conf toggle, cold/hot reload lifecycle. Touched when adding a module, changing the loader contract, or modifying the `.meta` format.
 - [docs/runs.md](docs/runs.md) — Run log contract: file layout, event schema (run_start/level_up/run_end), lifecycle, schema versioning. Touched when changing run-log behaviour or adding new row types.
 - [docs/timers-pane.md](docs/timers-pane.md) — Timers pane: renderer, scroll, blink, layout integration. Touched when changing the timers pane renderer or the timers.state schema.
