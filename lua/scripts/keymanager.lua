@@ -5,6 +5,8 @@
 -- @alias    kpick     Store key [n] from the last locate as <name> (no args: re-show list)
 -- @alias    keypick   Alias of kpick
 -- @alias    keys      List your stored port keys (with a Safe column)
+-- @alias    kremove   Remove a stored key by name
+-- @alias    krename   Rename a stored key: krename <name> <newname>
 -- @alias    skey      Designate <name> as the persistent safekey (no args: show current)
 -- @alias    safekey   Alias of skey
 -- @alias    teleport  Cast teleport to keyname <name>
@@ -21,6 +23,8 @@
 -- @help       kpick <n> <name>  store pick #n's key under <name> (12 h expiry)
 -- @help       kpick             re-show the last pick list
 -- @help       keys              list your stored keys with time remaining
+-- @help       kremove <name>            remove a stored key by name
+-- @help       krename <name> <newname>  rename a stored key
 -- @help
 -- @help     Cast to a stored key by name:
 -- @help       teleport <name> / portal <name> / scry <name> / watchr <name>
@@ -610,6 +614,61 @@ function M.set_safekey(name)
     end
 end
 
+-- kremove <name>: delete a stored key by name. Uses raw presence (not _get) so it
+-- also clears an expired-but-not-yet-pruned entry. Removing the current safekey
+-- nulls the designation and re-elects the freshest remaining key via
+-- _ensure_safekey; the switch is reported from here (with "safekey switched", not
+-- "expired"), and _ensure_safekey stays silent because old is nil by then.
+function M.kremove(name)
+    if not library[name] then
+        _status("Key " .. name .. " not in keylibrary.")
+        return
+    end
+    local was_safe = (name == safekey)
+    library[name] = nil
+    if was_safe then
+        safekey = nil
+        _ensure_safekey()
+        _save_library()
+        if safekey then
+            _status("Removed " .. name .. "; safekey switched to " .. safekey .. ".")
+        else
+            _status("Removed " .. name .. ".")
+        end
+    else
+        _save_library()
+        _status("Removed " .. name .. ".")
+    end
+end
+
+-- krename <old> <new>: rename a stored key. Refuses a missing argument, an unknown
+-- <old>, a same-name no-op, or a clobber of an existing <new>. The safekey
+-- designation follows the rename (the key still exists under the new name, so no
+-- re-election is needed).
+function M.krename(old, new)
+    if old == nil or old == "" or new == nil or new == "" then
+        _status("usage: krename <keyname> <newname>.")
+        return
+    end
+    if not library[old] then
+        _status("Key " .. old .. " not in keylibrary.")
+        return
+    end
+    if old == new then
+        _status("Key is already named " .. old .. ".")
+        return
+    end
+    if library[new] then
+        _status("Key " .. new .. " already exists.")
+        return
+    end
+    library[new] = library[old]
+    library[old] = nil
+    if safekey == old then safekey = new end
+    _save_library()
+    _status("Renamed " .. old .. " → " .. new .. ".")
+end
+
 -- teleport/portal/scry <name>: cast `spell` to the named key. The named key must
 -- be live — an expired key fails here with no auto-substitution (that is
 -- safekey-only).
@@ -711,6 +770,8 @@ end)
 game_cmd([[#alias {kpick}    {#lua {scripts.keymanager.kpick("%1", "%2")}}]])
 game_cmd([[#alias {keypick}  {#lua {scripts.keymanager.kpick("%1", "%2")}}]])
 game_cmd([[#alias {keys}     {#lua {scripts.keymanager.keys()}}]])
+game_cmd([[#alias {kremove}  {#lua {scripts.keymanager.kremove("%1")}}]])
+game_cmd([[#alias {krename}  {#lua {scripts.keymanager.krename("%1", "%2")}}]])
 game_cmd([[#alias {skey}     {#lua {scripts.keymanager.set_safekey("%1")}}]])
 game_cmd([[#alias {safekey}  {#lua {scripts.keymanager.set_safekey("%1")}}]])
 game_cmd([[#alias {teleport} {#lua {scripts.keymanager.use("teleport", "%1")}}]])
