@@ -310,6 +310,7 @@ M.affects = {
         type         = "buff",
         duration     = 5700,
         initString_1 = "^You feel your Master's strength join your own.$",
+        initString_2 = "^You feel your Master's strength refreshed.$",
         dropString_1 = "^Your Master's strength leaves you.$",
     },
 
