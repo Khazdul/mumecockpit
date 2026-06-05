@@ -128,8 +128,8 @@ and whether that column is within the bar's fill:
 
 | Column position         | FG        | BG           |
 |-------------------------|-----------|--------------|
-| `local < bar_fill`      | `#777777` | that bar's BG|
-| `local >= bar_fill`     | `#777777` | terminal BG  |
+| `local < bar_fill`      | `#aaaaaa` | that bar's BG|
+| `local >= bar_fill`     | `#aaaaaa` | terminal BG  |
 
 The FG is intentionally uniform across both regions; only the BG distinguishes
 name characters on the fill from those past it. The earlier black-on-fill /

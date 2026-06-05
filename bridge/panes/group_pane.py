@@ -48,8 +48,8 @@ ORANGE_FG       = "#ff7020"
 RED_BG          = "#e02020"
 RED_FG          = "#e02020"
 
-C_NAME_ON_FILL  = "fg:#777777"   # name char that falls inside the fill region
-C_NAME_ON_EMPTY = "fg:#777777"   # name char that falls outside the fill region
+C_NAME_ON_FILL  = "fg:#aaaaaa"   # name char that falls inside the fill region
+C_NAME_ON_EMPTY = "fg:#aaaaaa"   # name char that falls outside the fill region
 C_INDICATOR     = "fg:#d4a04e italic"
 
 # ---------------------------------------------------------------------------
