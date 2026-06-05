@@ -107,9 +107,9 @@ Default colours:
 
 | Bar  | BG        |
 |------|-----------|
-| HP   | `#0FA838` |
-| Mana | `#0F38B0` |
-| MP   | `#8A7838` |
+| HP   | `#005A18` |
+| Mana | `#0000AA` |
+| MP   | `#5A3C1E` |
 
 ### Name overlay (full row)
 
@@ -128,8 +128,13 @@ and whether that column is within the bar's fill:
 
 | Column position         | FG        | BG           |
 |-------------------------|-----------|--------------|
-| `local < bar_fill`      | `#000000` | that bar's BG|
-| `local >= bar_fill`     | `#cccccc` | terminal BG  |
+| `local < bar_fill`      | `#777777` | that bar's BG|
+| `local >= bar_fill`     | `#777777` | terminal BG  |
+
+The FG is intentionally uniform across both regions; only the BG distinguishes
+name characters on the fill from those past it. The earlier black-on-fill /
+light-grey-on-empty cutout was abandoned because black lost contrast on the
+deeper default bar colours.
 
 When both `member.label` and `member.name` are `null` in the state file, no
 overlay is rendered (all columns follow plain-bar fill rules with spaces).
