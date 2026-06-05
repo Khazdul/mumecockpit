@@ -451,7 +451,7 @@ section in `docs/launcher.md` and ADR 0126). ESC pops back to the
 The `timers` frame renders a **group × colour grid**: rows are the six
 timer groups (Spells / Buffs / Debuffs / Stored / Blinds / Charmies),
 columns are the nine palette entries (Blue / Green / Red / Magenta /
-Cyan / Violet / Orange / Yellow / Brown), each row trailed by an inline
+Cyan / Violet / Orange / Yellow / Teal), each row trailed by an inline
 `◄ N ►` column stepper. Each colour cell renders as `[X]███` or `[ ]███`
 — a 3-cell checkbox and a 3-cell swatch. A dim, non-interactive header
 row sits above the six group rows — each colour name centred over its

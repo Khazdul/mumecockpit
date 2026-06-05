@@ -251,15 +251,15 @@ def pane_color_label(name):
 # Stored in timers_layout.conf as raw #rrggbb under timers_<type>_color; the
 # timers pane (bridge/panes/timers_pane.py) reads the hex directly.
 TIMERS_COLOR_ORDER = [
-    ("Blue",    "#1a3d99"),
-    ("Green",   "#1a991a"),
-    ("Red",     "#e62222"),
-    ("Magenta", "#991a99"),
-    ("Cyan",    "#1a9999"),
-    ("Violet",  "#4d1a99"),
-    ("Orange",  "#e07a1f"),
-    ("Yellow",  "#ffd11a"),
-    ("Brown",   "#6b4423"),
+    ("Blue",    "#66b2ff"),
+    ("Green",   "#00d900"),
+    ("Red",     "#d90000"),
+    ("Magenta", "#ff66ff"),
+    ("Cyan",    "#00cccc"),
+    ("Violet",  "#B388FF"),
+    ("Orange",  "#ff9933"),
+    ("Yellow",  "#e8c84d"),
+    ("Teal",    "#33cc99"),
 ]
 
 

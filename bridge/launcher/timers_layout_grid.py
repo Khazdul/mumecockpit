@@ -57,12 +57,12 @@ TIMERS_LAYOUT_LABELS = {
 
 # Defaults reproduce the timers pane's historic hardcoded grid exactly.
 TIMERS_LAYOUT_DEFAULTS = {
-    "spell":  {"enabled": True, "color": "#1a3d99", "cols": 4},
-    "buff":   {"enabled": True, "color": "#1a991a", "cols": 4},
-    "debuff": {"enabled": True, "color": "#e62222", "cols": 4},
-    "stored": {"enabled": True, "color": "#991a99", "cols": 4},
-    "blind":  {"enabled": True, "color": "#1a9999", "cols": 2},
-    "charm":  {"enabled": True, "color": "#4d1a99", "cols": 1},
+    "spell":  {"enabled": True, "color": "#66b2ff", "cols": 4},
+    "buff":   {"enabled": True, "color": "#00d900", "cols": 4},
+    "debuff": {"enabled": True, "color": "#d90000", "cols": 4},
+    "stored": {"enabled": True, "color": "#ff66ff", "cols": 4},
+    "blind":  {"enabled": True, "color": "#00cccc", "cols": 2},
+    "charm":  {"enabled": True, "color": "#B388FF", "cols": 1},
 }
 
 # Group header labels above each rendered timer group. This is a GLOBAL toggle,
