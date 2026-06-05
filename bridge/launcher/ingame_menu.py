@@ -2570,6 +2570,10 @@ _STAT_BLOCKS          = "▁▂▃▄▅▆▇█"
 # popup height (see _compute_kills_pvps_visible) with a 2-row minimum.
 _ALLIES_ACH_VISIBLE        = 3
 _KILLS_PVPS_MIN_VISIBLE    = 2
+# Glyph painted before a level-up row in the ACHIEVEMENTS table; the
+# achievement glyph stays "★". Both are single display cells so the table's
+# right edge does not move (alignment contract in docs/popup-menu.md).
+_LEVEL_UP_GLYPH            = "↑"
 # Fixed lines around the kills/pvps data rows in _statistics_text. Counted to
 # match the actual render output so the footer pins to the bottom of the popup.
 # Merging the KILLS/PvPs column-header row into the title row (-1) is offset
@@ -2606,8 +2610,9 @@ def _refresh_stats_scrollbars(visible):
     _pkills_sb.update(len(_stats_data.pkills), visible, height=visible)
     _allies_sb.update(len(_stats_data.allies), _ALLIES_ACH_VISIBLE,
                       height=_ALLIES_ACH_VISIBLE)
-    _achievements_sb.update(len(_stats_data.achievements), _ALLIES_ACH_VISIBLE,
-                            height=_ALLIES_ACH_VISIBLE)
+    _achievements_sb.update(
+        len(_stats_data.achievements) + len(_stats_data.level_ups),
+        _ALLIES_ACH_VISIBLE, height=_ALLIES_ACH_VISIBLE)
 
 
 def _load_statistics(character):
@@ -3405,7 +3410,10 @@ def _append_allies_achievements(frags, stats, cols):
     )
 
     ally_rows = list(stats.allies)
-    ach_rows  = [a[1] for a in stats.achievements]
+    ach_rows  = [
+        (_LEVEL_UP_GLYPH if kind == "level_up" else "★", label)
+        for _ts, kind, label in run_stats.achievement_rows(stats)
+    ]
 
     a_off  = _allies_sb.scroll_offset
     h_off  = _achievements_sb.scroll_offset
@@ -3435,10 +3443,10 @@ def _append_allies_achievements(frags, stats, cols):
             frags.append(("", " "))
         frags.append(("", gap))
         if i < len(h_view):
-            b = h_view[i]
+            glyph, b = h_view[i]
             if len(b) > h_inner_w:
                 b = b[:h_inner_w - 1] + "…"
-            frags.append((_S_STAR,  "★", h_focus))
+            frags.append((_S_STAR,  glyph, h_focus))
             frags.append((_S_VALUE, " " + b.ljust(h_inner_w), h_focus))
         else:
             frags.append((_S_VALUE, " " * right_w, h_focus))

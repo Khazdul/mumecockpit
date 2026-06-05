@@ -722,7 +722,12 @@ glyph prefix (`⚔` red, `♦` cyan, `★` gold) absorbed into the existing
 left padding of the name/message column: the visible name shifts right
 by 2 cells, but the N / XP columns and the right edges of all tables
 stay at their original positions. Title rows and the PvPs Total row
-have no glyph.
+have no glyph. The ACHIEVEMENTS table interleaves two kinds of row,
+sorted chronologically by `run_stats.achievement_rows`: achievements
+(`★`, "<name>") and level-ups (`↑`, "Reached level N", sourced from the
+`level_up` JSONL rows). Both glyphs are single display cells painted in
+the same `_S_STAR` gold, so the alignment contract is unchanged; the
+table's scrollbar scrolls the merged achievements + level-ups count.
 
 **KILLS/PvPs auto-fit.** `_compute_kills_pvps_visible()` reads the
 popup height at render time and subtracts `_STATS_FIXED_LINES` (the

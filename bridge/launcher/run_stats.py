@@ -54,6 +54,7 @@ class RunStats:
     tp_events: list[tuple[int, int]] = field(default_factory=list)
     allies: list[str] = field(default_factory=list)
     achievements: list[tuple[int, str]] = field(default_factory=list)
+    level_ups: list[tuple[int, int]] = field(default_factory=list)
     deaths: int = 0
     saved: bool = False
     rating: int | None = None
@@ -240,6 +241,21 @@ def aggregate(character: str, run_ids: list[str]) -> RunStats:
     return stats
 
 
+def achievement_rows(stats: RunStats) -> list[tuple[int, str, str]]:
+    """Merged ACHIEVEMENTS-section rows as (ts, kind, label), sorted by ts
+    ascending. `kind` is "achievement" or "level_up". Achievement labels are
+    the raw achievement name; level-up labels read "Reached level <N>" (same
+    phrasing as spotlights._label_level_up). The sort is stable, so an
+    achievement and a level-up sharing a ts keep their file order."""
+    rows: list[tuple[int, str, str]] = []
+    for ts, name in stats.achievements:
+        rows.append((ts, "achievement", name))
+    for ts, level in stats.level_ups:
+        rows.append((ts, "level_up", f"Reached level {level}"))
+    rows.sort(key=lambda r: r[0])
+    return rows
+
+
 _MARKER_EVENTS = ("pkill", "char_death", "achievement", "level_up")
 
 
@@ -415,7 +431,10 @@ def _apply_row(stats: RunStats, row: dict, allies: set[str]) -> None:
         stats.end_ts = ts
 
     if event == "level_up":
-        _bump_level(stats, row.get("level"))
+        level = row.get("level")
+        _bump_level(stats, level)
+        if isinstance(level, int) and not isinstance(level, bool):
+            stats.level_ups.append((ts, level))
     elif event == "kill":
         name = row.get("mob_name")
         delta = _as_int(row.get("xp_delta"))
