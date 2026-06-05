@@ -15,9 +15,12 @@ multiple scripts need to react to. The API (`events.subscribe`,
 `events.emit`, `events.unsubscribe`) is defined in `lua/brain.lua`
 alongside `gmcp.dispatch`, ensuring it is available before any core or
 script module loads. High-priority core triggers in
-`ttpp/core/mud_events.tin` (priority 3 per
-[ADR 0115](decisions/0115-core-priority-band.md)'s core band) capture
-MUD output and call `events.emit(name, ...)`. Scripts subscribe at start time and unsubscribe
+`ttpp/core/mud_events.tin` (in the core priority band per
+[ADR 0115](decisions/0115-core-priority-band.md)) capture
+MUD output and call `events.emit(name, ...)`. The file is not uniformly
+priority 3: the broad mob-death patterns sit at 4 and the specific
+pc-death patterns at 3 so the latter win the single-fire slot on
+overlapping `*Name*` R.I.P. lines (see the `mob_death`/`pc_death` notes). Scripts subscribe at start time and unsubscribe
 on abort — no changes to core files are needed when adding a new subscriber.
 
 The bus is the canonical solution to the trigger-ownership problem: two
@@ -209,6 +212,11 @@ article, e.g. `"an elven slave"`) and `kind` is `"living"` or `"undead"`.
 
 The `kind` argument is new; existing subscribers that only take `name` are
 unaffected — Lua ignores extra positional args.
+
+These four patterns are registered at priority 4 (not the core default of
+3) so they lose the single-fire slot to the more specific pc-death patterns
+on PvP `*Name*` R.I.P. lines ([ADR 0115](decisions/0115-core-priority-band.md);
+see [`pc_death`](#pc_death)).
 
 **Subscribers:** `lua/scripts/autostab.lua`, `lua/scripts/autobow.lua`
 (abort on kill), `lua/core/run_state.lua` (queues name for XP attribution),
@@ -682,6 +690,12 @@ string captured between the asterisks, including race-suffix (e.g.
 The asterisks (`*`) are literal characters in the MUME output that delimit PC
 names; they do not appear in mob R.I.P. lines. `%1` captures only the content
 between the asterisks.
+
+These three patterns are registered at priority 3 and win over the overlapping
+broad [`mob_death`](#mob_death) pattern (which the asterisk-wrapped line also
+matches) by the explicit priority gap — not by alphabetical ordering
+([ADR 0115](decisions/0115-core-priority-band.md)). tt++ fires only one
+`#action` per line, so without the gap the mob fallback would shadow this event.
 
 **Subscribers:** `lua/core/run_state.lua` — strips any trailing MUME label
 (e.g. `" (MIN)"`) from the payload, then splits the remainder into
