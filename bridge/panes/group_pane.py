@@ -37,19 +37,19 @@ POLL_MS = 0.1
 # ---------------------------------------------------------------------------
 # Colour constants (24-bit truecolor; swap values here to retheme)
 # ---------------------------------------------------------------------------
-HP_DEFAULT_BG   = "#0FA838"
-HP_DEFAULT_FG   = "#0FA838"
-MANA_DEFAULT_BG = "#0F38B0"
-MANA_DEFAULT_FG = "#0F38B0"
-MP_DEFAULT_BG   = "#8A7838"
-MP_DEFAULT_FG   = "#8A7838"
+HP_DEFAULT_BG   = "#005A18"
+HP_DEFAULT_FG   = "#005A18"
+MANA_DEFAULT_BG = "#0000AA"
+MANA_DEFAULT_FG = "#0000AA"
+MP_DEFAULT_BG   = "#5A3C1E"
+MP_DEFAULT_FG   = "#5A3C1E"
 ORANGE_BG       = "#ff7020"
 ORANGE_FG       = "#ff7020"
 RED_BG          = "#e02020"
 RED_FG          = "#e02020"
 
-C_NAME_ON_FILL  = "fg:#000000"   # name char that falls inside the fill region
-C_NAME_ON_EMPTY = "fg:#cccccc"   # name char that falls outside the fill region
+C_NAME_ON_FILL  = "fg:#ededed"   # name char that falls inside the fill region
+C_NAME_ON_EMPTY = "fg:#ededed"   # name char that falls outside the fill region
 C_INDICATOR     = "fg:#d4a04e italic"
 
 # ---------------------------------------------------------------------------
