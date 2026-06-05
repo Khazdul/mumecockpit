@@ -2523,7 +2523,11 @@ PvPs (sortable, `⚔` in `_S_PVP`), sparklines, and XP-linjal
 mirror the popup's visual conventions. Sort defaults, focus
 cycling (Tab / Shift+Tab across the four tables,
 `_history_detail_focused: int`), per-table scrollbars, and the
-data-row glyph palette are identical. The focused KILLS / PvPs /
+data-row glyph palette are identical. ACHIEVEMENTS interleaves
+achievements (`★`) and level-ups (`↑`) sorted chronologically via
+`run_stats.achievement_rows`, with the scrollbar covering the merged
+count — identical to the popup; see [docs/popup-menu.md](popup-menu.md)
+for the full description. The focused KILLS / PvPs /
 ALLIES / ACHIEVEMENTS title row paints en bloc in `C_CURSOR_CELL`
 (gold); unfocused titles stay `C_SECTION`.
 
