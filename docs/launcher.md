@@ -1560,7 +1560,7 @@ back to the `options_panes` hub.
 Renders a **group × colour grid** where rows are the six timer groups
 (Spells / Buffs / Debuffs / Stored / Blinds / Charmies) and columns are
 the nine palette entries (Blue / Green / Red / Magenta / Cyan / Violet /
-Orange / Yellow / Teal), followed by a trailing inline `◄ N ►` column
+Orange / Yellow / Brown), followed by a trailing inline `◄ N ►` column
 stepper per row. A dim, non-interactive header row sits above the six
 group rows — each colour name centred over its swatch (Magenta truncates
 to `Magent`) and a `Cols` label centred over the `◄ N ►` stepper. Below
