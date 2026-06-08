@@ -187,7 +187,7 @@ is the only removal path — so there is no overrun / no 2.5× safety net.
 - Cancelled on `char_reset` (only effective when GAME_SESSION is still set;
   the SESSION DISCONNECTED fallback finds GAME_SESSION nil, but the session
   dying clears its delays automatically).
-- Emits `blinds_changed` only on a prune cycle (the renderer's blink/drain
+- Emits `blinds_changed` only on a prune cycle (the renderer's drain
   is wall-clock-driven and does not need ticking events).
 
 ## Persistence
@@ -235,8 +235,8 @@ the game session's action list.
 `state.char.blinds` is serialised into `bridge/runtime/timers.state` as a
 top-level array `blinds`. The timers pane renders it as the fourth group
 (after Spells / Buffs / Debuffs / Stored) and immediately **before** the
-Charm group, using the standard timed-affect cell renderer (drain bar +
-expiring-blink) laid out **2 cells per row** so the wider mob names fit. See
+Charm group, using the standard timed-affect cell renderer (drain bar)
+laid out **2 cells per row** so the wider mob names fit. See
 [docs/timers-pane.md](timers-pane.md#blinds-two-up-layout) for the two-up layout
 and [docs/timers-pane.md](timers-pane.md#per-group-palette) for the cell
 appearance and the palette entry.

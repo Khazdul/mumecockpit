@@ -4,7 +4,7 @@ A `prompt_toolkit` full-screen application that renders `state.char.affects`,
 `state.char.stored_spells`, `state.char.blinds`, `state.char.charms`, and
 `state.char.herblores` as a colour-coded grid grouped by type (spells, buffs,
 debuffs, stored, blinds, charms; herblores fold into the buffs/debuffs groups),
-with bar-drain animation, blink alerts for expiring entries, and row-based
+with bar-drain animation, optional per-type countdown overlay, and row-based
 scroll. Each group's colour, per-group column count, and visibility are read
 from [`bridge/runtime/timers_layout.conf`](#layout-config-timers_layoutconf);
 with no config file present every value falls back to the historic hardcoded
@@ -139,6 +139,7 @@ type:
 timers_<type>_enabled = 0 | 1
 timers_<type>_color   = #rrggbb
 timers_<type>_cols    = <int>
+timers_<type>_clock   = 0 | 1     # per-type, default 0
 timers_headers        = 0 | 1     # global, not per-type (default 1)
 timers_compact        = 0 | 1     # global, not per-type (default 1)
 ```
@@ -165,19 +166,22 @@ The four combinations:
 
 Defaults (reproduce today's behaviour exactly):
 
-| type   | enabled | color     | cols |
-|--------|---------|-----------|------|
-| spell  | 1       | `#66b2ff` | 4    |
-| buff   | 1       | `#00d900` | 4    |
-| debuff | 1       | `#d90000` | 4    |
-| stored | 1       | `#ff66ff` | 4    |
-| blind  | 1       | `#00cccc` | 2    |
-| charm  | 1       | `#B388FF` | 1    |
+| type   | enabled | color     | cols | clock |
+|--------|---------|-----------|------|-------|
+| spell  | 1       | `#66b2ff` | 4    | 0     |
+| buff   | 1       | `#00d900` | 4    | 0     |
+| debuff | 1       | `#d90000` | 4    | 0     |
+| stored | 1       | `#ff66ff` | 4    | 0     |
+| blind  | 1       | `#00cccc` | 2    | 0     |
+| charm  | 1       | `#B388FF` | 1    | 0     |
 
 **Parse rules.** Per-type `cols` clamps on read: `charm` → `[1, 2]`; all others →
-`[1, 6]`; floor `1`. Unknown keys are ignored. An unparseable value (bad hex, a
-non-integer `cols`, an `enabled` that is not `0`/`1`) falls back to that key's
-default rather than failing the whole file.
+`[1, 6]`; floor `1`. Per-type `clock` parses `0`/`1` like `enabled` (absent /
+unparseable → `0`). Unknown keys are ignored. An unparseable value (bad hex, a
+non-integer `cols`, an `enabled` or `clock` that is not `0`/`1`) falls back to
+that key's default rather than failing the whole file. Note: `charm` carries the
+`clock` key in the defaults but the pane never reads it (Charmies show no
+countdown — they have their own count-up).
 
 **Live re-read.** The poll loop tracks `timers_layout.conf`'s mtime alongside
 `timers.state`'s; on change it re-reads and invalidates, so a colour / cols /
@@ -300,9 +304,56 @@ This single parameterised helper replaces the former 4-hardcoded path and the
 through it with its own `n`.
 
 Each cell occupies `cell_w` columns: `(cell_w - 1)` characters of
-`NAME.upper()[:cell_w-1].ljust(cell_w-1)` followed by the `▌` separator.
+`NAME.upper()[:cell_w-1].ljust(cell_w-1)` followed by the `▌` separator —
+**with two exceptions** (see [Right edge and corner](#right-edge-and-corner)):
+the rightmost-**column** timed clock cell drops the trailing separator and uses
+the full `cell_w` so the countdown reaches the cell's right edge, and the
+topmost-visible row's rightmost-column cell keeps a one-column trailing blank so
+the corner `+` Float floats over the blank rather than over the countdown.
 Empty slots on a partial last row are omitted — the row ends after the last
 populated cell's separator.
+
+### Countdown (Clock)
+
+When `timers_<type>_clock` is on, each **timed** cell of that type overlays a
+right-justified countdown on the existing drain bar; the name stays left.
+`_clock_content` composes the two over the cell's content columns via a Tier
+A/B/C width ladder:
+
+- **Tier A** — full name + a gap + the time (name and time both fit with a
+  separating space).
+- **Tier B** — clipped name + time flush, no gap (the time still fits but the
+  gap does not).
+- **Tier C** — name only, time dropped (the cell is too narrow for any time).
+
+The countdown characters inherit the same fill-aware styling as the name (black
+on the filled portion of the bar, depleted grey past the fill) — no new colour.
+
+**Format (`_countdown_str`).** Remaining `<= 90 s` → whole seconds (`"Ns"`:
+`3s`, `90s`). Remaining `> 90 s` → minutes rounded to the **nearest** minute,
+half up, via integer `(secs + 30) // 60` (`"Nm"`). Examples: `91s → 2m`,
+`130s → 2m`, `150s → 3m`. `"1m"` never appears (91 s is the first value above
+the 90 s seconds-band, and it already rounds to `2m`). Clamped at `0s`.
+
+Only timed cells show a countdown. Charm (its own count-up), indefinite
+affects, and untracked entries never do, even with their type's clock on.
+
+### Right edge and corner
+
+Two layout exceptions to the standard `(cell_w - 1)` chars + `▌` separator cell
+shape, both for clock cells reaching the pane's right edge:
+
+- **Rightmost column.** The rightmost-**column** timed clock cell uses the full
+  `cell_w` (no trailing separator) so the countdown reaches the cell's right
+  edge. A **lone** last cell that is **not** in the rightmost column keeps its
+  separator and right-aligns its countdown with the column above it.
+- **Corner reserve.** The topmost-visible row's rightmost-column cell sits under
+  the corner `+` Float (pinned at `top=0, right=0`; see "The corner control"
+  below). It keeps a one-column trailing
+  blank so the `+` floats over the blank, not over the countdown. The reserve is
+  **scroll-aware** — it follows whichever row is topmost, threaded as
+  `corner_row` through `_grid_text → _build_all_rows → _group_rows →
+  _cell_frags`.
 
 ### Blinds two-up layout
 
@@ -320,7 +371,7 @@ Each block occupies `cell_w` columns with the standard cell content —
 the timed-cell drain (`filled = int(pct * cell_w + 0.5)`), the Blinds palette
 (`#00cccc` fill / `#000000` fg / `#00cccc` separator), the depleted-grey
 (`#C0C0C0`, the status-pane value grey `status_pane.C_VALUE`, RGB 192,192,192),
-the expiring-blink rule, and the separator rule, all unchanged.
+and the separator rule, all unchanged.
 
 Narrowing the pane truncates the name from the right
 (`PACK HORSE` → `PACK HO` → `PA`). An odd blind count leaves a single block on
@@ -543,7 +594,6 @@ never seen via a real init/refresh string) renders as:
   clearly distinguishable from a tracked timed affect whose bar has
   drained).
 - **Separator:** unstyled space (same as the depleted-cell separator).
-- **Blink:** never.
 
 `expires_at` and `expected_duration` are both `null` for these entries and
 are ignored by the renderer; the `tracked` field is the sole gate. The
@@ -560,7 +610,6 @@ cells render differently from all other cells:
 - **Fill BG:** `#cccccc` (grey).
 - **Name FG:** `#000000` (black, legible on grey fill).
 - **Separator FG:** `#cccccc` (grey — blends with fill, invisible as separator).
-- **Blink:** never.
 
 The `tracked` field on the entry is the sole gate; `expires_at` and
 `expected_duration` are both `null` for untracked entries and are ignored by
@@ -590,25 +639,10 @@ visually on any background.
 ### Depleted name colour
 
 When `filled < cell_w` the name characters render as `fg:#C0C0C0` (the status
-pane's `C_VALUE` grey, RGB 192,192,192) on the terminal background, unless the
-cell is blinking — see below. This is deliberately lighter than the `#606060`
+pane's `C_VALUE` grey, RGB 192,192,192) on the terminal background. This is
+deliberately lighter than the `#606060`
 group-header / label grey so a drained bar's name stays clearly legible and
 distinct from the headers.
-
-## Blink
-
-An affect blinks when both conditions hold:
-
-- `filled == 0` — bar is fully drained.
-- `remaining <= 30` — fewer than 30 seconds until `expires_at`.
-
-Blink continues past the predicted expiry (`remaining` goes negative) until
-`affect_down` fires. Indefinite affects never blink.
-
-**Phase:** `int(time.time()) % 2 == 0` → visible (the depleted-name `fg:#C0C0C0`);
-`== 1` → hidden (unstyled space — invisible on any background). Both halves are equal
-length because the blink tick wakes just after each wall-clock second boundary
-(see Polling below).
 
 ## Scroll
 
@@ -669,10 +703,10 @@ updated by the existing 100 ms poll loop on each tick.
   checked on the same 100 ms loop. On change (or first read): re-run
   `_load_layout()` and `app.invalidate()`, so a colour / cols / enabled edit
   takes effect within ~100 ms. An absent file resolves to the defaults.
-- **Blink tick:** `asyncio` task that sleeps `1.0 - frac + 0.01` seconds,
-  waking just after the wall-clock second boundary. Calls `app.invalidate()`
-  each cycle so blink phase transitions are synchronised to wall-clock seconds
-  and both halves remain equal length.
+- **Second tick:** `asyncio` task that sleeps `1.0 - frac + 0.01` seconds,
+  waking just after each wall-clock second boundary. Calls `app.invalidate()`
+  every cycle so the drain bars **and** the countdowns advance at a uniform
+  1 Hz cadence synchronised to wall-clock seconds.
 
 ## Position
 

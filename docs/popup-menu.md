@@ -450,12 +450,14 @@ section in `docs/launcher.md` and ADR 0126). ESC pops back to the
 
 The `timers` frame renders a **group × colour grid**: rows are the six
 timer groups (Spells / Buffs / Debuffs / Stored / Blinds / Charmies),
-columns are the nine palette entries (Blue / Green / Red / Magenta /
-Cyan / Violet / Orange / Yellow / Teal), each row trailed by an inline
+columns are the eight palette entries (Blue / Green / Red / Magenta /
+Cyan / Violet / Orange / Yellow), each row trailed by a `Clock` checkbox
+column and an inline
 `◄ N ►` column stepper. Each colour cell renders as `[X]███` or `[ ]███`
 — a 3-cell checkbox and a 3-cell swatch. A dim, non-interactive header
 row sits above the six group rows — each colour name centred over its
-swatch (Magenta truncates to `Magent`) and a `Cols` label centred over
+swatch (Magenta truncates to `Magent`), a `Clock` label centred over the
+trailing checkbox column, and a `Cols` label centred over
 the `◄ N ►` stepper. Below the grid sit a blank row, a `[X] Display
 headers` toggle, a `[X] Compact layout` toggle, a blank row, and `Back` —
 the two toggles consecutive, mirroring the Panes `Display pane headers`
@@ -483,6 +485,9 @@ Click / Enter semantics:
   `_persist_conf_key` targeting `timers_layout.conf`).
 - On the `◄` / `►` stepper — decrements / increments `timers_<type>_cols`,
   clamped to `[1, max]` (max 2 for Charmies, 6 otherwise).
+- On the `Clock` checkbox — toggles the group's countdown overlay, writing
+  `timers_<type>_clock` in place via `_persist_timers_layout_key`. Charmies'
+  `Clock` cell is inert.
 - On the `[X] Display headers` toggle — flips the global `timers_headers`
   key in place (checked = a dim `Group:` label row above each rendered
   group; unchecked = no headers). The running pane re-renders within ~100 ms.
@@ -509,9 +514,9 @@ absent, the grid opens from `TIMERS_LAYOUT_DEFAULTS`.
 **Cursor / navigation.** Nine navigable rows: the six grid rows, the
 `Display headers` toggle (row 6), the `Compact layout` toggle (row 7), and
 the `Back` row (row 8). `↑` / `↓` move between them (clamped). `←` / `→`
-move the column only while the cursor is on a grid row, across the nine
-colour columns then the `◄` (col 9) and `►` (col 10) stepper cells; the
-column persists across grid rows. Footer: `↑↓←→ Move · Enter Toggle · ESC Back`.
+move the column only while the cursor is on a grid row, across the eight
+colour columns then `◄` (col 8), `►` (col 9), and the `Clock` cell (col 10);
+the column persists across grid rows. Footer: `↑↓←→ Move · Enter Toggle · ESC Back`.
 
 ## Readability submenu
 
