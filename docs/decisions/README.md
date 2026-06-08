@@ -25,6 +25,7 @@ Active ADRs by area. Click through for context, alternatives, and consequences.
 
 - [ADR 0037](0037-right-column-prompt-toolkit-convergence.md) — All right-column panes use prompt_toolkit — all four right-column panes (status, buffs, comm, ui) are prompt_toolkit apps with uniform overflow indicators. (supersedes 0033)
 - [ADR 0012](0012-unified-right-column-tui.md) (parked) — Unified right-column TUI — keep separate tmux panes and mitigate flicker at the renderer level rather than restructuring the right column.
+- [ADR 0133](0133-timers-countdown.md) — Timers-pane countdown (Clock) overlay; expiring-blink removed — a per-type opt-in (`timers_<type>_clock`) right-justifies a countdown over the existing drain bar in `timers_pane.py`; ≤90s whole seconds, >90s nearest-minute (half up), narrow-cell ladder, right-edge/corner handling. Pure presentation off the already-serialised data and the existing 1 Hz tick — no new redraw machinery, nothing on the tt++ hot path, no Lua. The final-30s blink (modelled on ADR 0033) is removed. (relates to 0126, 0033)
 
 ### Input pane
 

@@ -151,3 +151,25 @@ columns and every other part of the Decision above stand unchanged.
 
 Both `docs/launcher.md` (timers-layout submenu) and `docs/popup-menu.md` (timers
 submenu) describe the rendered header row.
+
+## Update (2026-06-08) — Clock column added; Teal swatch retired
+
+The grid gained a far-right per-type **Clock** checkbox column
+(`timers_<type>_clock`, default `0`) that toggles the countdown overlay in the
+pane (see [ADR 0133](0133-timers-countdown.md)). `timers_grid_fragments` gained a
+`clock_handler` and a `clock` field in the row tuple; the header row gained a
+`Clock` label. Cursor columns shifted accordingly: colour cells `0..7`, `◄` at
+col 8, `►` at col 9, **Clock at col 10**.
+
+To avoid widening the grid, the **Teal** swatch was retired from
+`TIMERS_COLOR_ORDER` (9 → 8 entries). A group whose stored colour is no longer in
+the palette (a pre-existing Teal pick) still renders via the pane's direct-hex
+read and is **not** silently rewritten by the menu — the menu only writes a colour
+key when the user picks a swatch.
+
+Charmies have no Clock toggle: their Clock cell is a dim, inert blank (they carry
+their own count-up, so a countdown overlay does not apply).
+
+The original Decision's "colour cells `0..8`, `◄` at col 9, `►` at col 10"
+(amended by the header-row update above only as to display) is superseded for
+cursor geometry by this update. Status remains **Accepted**.
