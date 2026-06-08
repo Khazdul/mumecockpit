@@ -251,7 +251,7 @@ def pane_color_label(name):
 # Ordered (name, hex) swatches for the launcher / popup "Timers layout" grid.
 # The first six entries are exactly the six group default colours (so every
 # type's default lands on a real swatch — spell→Blue, buff→Green, debuff→Red,
-# stored→Magenta, blind→Cyan, charm→Violet); the final three are additions at
+# stored→Magenta, blind→Cyan, charm→Violet); the final two are additions at
 # the same saturation / brightness for users who want to recolour a group.
 # Stored in timers_layout.conf as raw #rrggbb under timers_<type>_color; the
 # timers pane (bridge/panes/timers_pane.py) reads the hex directly.
@@ -264,7 +264,6 @@ TIMERS_COLOR_ORDER = [
     ("Violet",  "#B388FF"),
     ("Orange",  "#ff9933"),
     ("Yellow",  "#e8c84d"),
-    ("Teal",    "#33cc99"),
 ]
 
 

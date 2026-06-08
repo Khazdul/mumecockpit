@@ -888,6 +888,9 @@ def _parse_timers_layout(path):
                     cols = clamp_cols(typ, val)
                     if cols is not None:
                         layout[typ]["cols"] = cols
+                elif attr == "clock":
+                    if val in ("0", "1"):
+                        layout[typ]["clock"] = (val == "1")
     except OSError:
         return layout
     return layout
@@ -909,6 +912,10 @@ def _save_timers_layout():
                 fh.write("timers_%s_enabled=%s\n" % (typ, "1" if cur["enabled"] else "0"))
                 fh.write("timers_%s_color=%s\n" % (typ, cur["color"]))
                 fh.write("timers_%s_cols=%s\n" % (typ, cur["cols"]))
+                # Charmies have no Clock toggle, so the key is omitted for them.
+                if typ != "charm":
+                    fh.write("timers_%s_clock=%s\n"
+                             % (typ, "1" if cur.get("clock") else "0"))
             headers = _timers_layout.get("headers", TIMERS_HEADERS_DEFAULT)
             fh.write("timers_headers=%s\n" % ("1" if headers else "0"))
             compact = _timers_layout.get("compact", TIMERS_COMPACT_DEFAULT)
@@ -3073,28 +3080,32 @@ def _options_panes_communication_text():
 # ---------------------------------------------------------------------------
 # Mirrors the Panes submenu. Rows of the grid are timer groups (Spells /
 # Buffs / Debuffs / Stored / Blinds / Charmies). Columns 0..N-1 are the
-# nine colours; column N is the ◄ column-count decrement and N+1 the ►
-# increment. A row with zero checked colour cells is hidden; exactly one
+# eight colours; column N is the ◄ column-count decrement, N+1 the ►
+# increment, and N+2 the far-right Clock checkbox (per-type countdown
+# overlay). A row with zero checked colour cells is hidden; exactly one
 # checked cell is shown in that colour. apply_cell_toggle handles the
 # on/off/switch-colour logic; the cols stepper is clamped per group via
-# step_cols / max_cols_for. Rendering goes through timers_grid_fragments,
-# which emits a dim colour-name + "Cols" header row above the group rows.
+# step_cols / max_cols_for. Charmies have no Clock toggle — that cell is a
+# dim blank, inert on Enter/click. Rendering goes through
+# timers_grid_fragments, which emits a dim colour-name + "Cols" + "Clock"
+# header row above the group rows.
 #
 # Nine navigable rows: rows 0..5 are group rows (←/→ moves between the
-# colour columns and the two steppers; the column persists across grid
-# rows). Row 6 is the [X] Display headers toggle, row 7 the [X] Compact
-# layout toggle, row 8 is Back. ↑/↓ moves between all nine rows; ←/→ only on
-# grid rows. Enter activates: a colour cell toggles via the model above, the
-# steppers nudge the column count, the headers row flips timers_headers, the
-# compact row flips timers_compact, Back saves and pops. ESC = Back. All
-# writes are deferred — _save_timers_layout fires on the exit path.
+# colour columns, the two steppers, and the Clock cell; the column persists
+# across grid rows). Row 6 is the [X] Display headers toggle, row 7 the [X]
+# Compact layout toggle, row 8 is Back. ↑/↓ moves between all nine rows; ←/→
+# only on grid rows. Enter activates: a colour cell toggles via the model
+# above, the steppers nudge the column count, the Clock cell flips
+# timers_<type>_clock, the headers row flips timers_headers, the compact row
+# flips timers_compact, Back saves and pops. ESC = Back. All writes are
+# deferred — _save_timers_layout fires on the exit path.
 
 _TIMERS_GRID_ROWS    = len(TIMERS_LAYOUT_TYPES)     # 6
 _TIMERS_HEADERS_ROW  = _TIMERS_GRID_ROWS            # 6
 _TIMERS_COMPACT_ROW  = _TIMERS_GRID_ROWS + 1        # 7
 _TIMERS_BACK_ROW     = _TIMERS_GRID_ROWS + 2        # 8
 _TIMERS_LAST_ROW     = _TIMERS_BACK_ROW
-_TIMERS_LAST_COL     = len(TIMERS_COLOR_ORDER) + 1  # colour cols + ◄ + ►
+_TIMERS_LAST_COL     = len(TIMERS_COLOR_ORDER) + 2  # colour cols + ◄ + ► + Clock
 
 
 def _set_timers_cursor(row, col=None):
@@ -3140,6 +3151,18 @@ def _apply_timers_step(row, delta):
         _app.invalidate()
 
 
+def _apply_timers_clock_toggle(row):
+    """Flip a group's per-type countdown overlay; no-op for charm (no Clock
+    toggle). Persisted on the deferred exit path."""
+    typ = TIMERS_LAYOUT_TYPES[row]
+    if typ == "charm":
+        return
+    cur = _timers_layout[typ]
+    cur["clock"] = not cur.get("clock", False)
+    if _app:
+        _app.invalidate()
+
+
 def _toggle_timers_headers():
     """Flip the in-memory headers toggle; persisted on the deferred exit path."""
     cur = _timers_layout.get("headers", TIMERS_HEADERS_DEFAULT)
@@ -3168,7 +3191,8 @@ def _options_timers_text():
     rows_h = _term_rows()
     clear_hover = _options_timers_clear_hover
 
-    # Grid rows from the in-memory layout dict.
+    # Grid rows from the in-memory layout dict. Charmies have no Clock toggle,
+    # so their clock cell is rendered as a dim blank (clock=None).
     grid_rows = []
     for typ in TIMERS_LAYOUT_TYPES:
         cur = _timers_layout[typ]
@@ -3178,6 +3202,7 @@ def _options_timers_text():
             timers_color_index(cur["color"]),
             cur["cols"],
             max_cols_for(typ),
+            None if typ == "charm" else cur.get("clock", False),
         ))
 
     cur_row = _options_timers_row
@@ -3213,10 +3238,23 @@ def _options_timers_text():
                 _apply_timers_step(ri, delta)
         return _h
 
+    def _make_clock_handler(ri):
+        col = len(TIMERS_COLOR_ORDER) + 2
+
+        def _h(ev):
+            if ev.event_type == MouseEventType.MOUSE_MOVE:
+                _set_timers_cursor(ri, col)
+                return
+            if ev.event_type == MouseEventType.MOUSE_DOWN:
+                _set_timers_cursor(ri, col)
+                _apply_timers_clock_toggle(ri)
+        return _h
+
     frags.extend(timers_grid_fragments(
         grid_rows, cols, grid_cursor,
         cell_handler=_make_cell_handler,
         stepper_handler=_make_stepper_handler,
+        clock_handler=_make_clock_handler,
     ))
 
     # Blank row between grid and the headers toggle.
@@ -9928,6 +9966,8 @@ def _kb_optt_layout_select(event):
             _apply_timers_step(r, -1)
         elif _options_timers_col == n + 1:
             _apply_timers_step(r, 1)
+        elif _options_timers_col == n + 2:
+            _apply_timers_clock_toggle(r)
     elif r == _TIMERS_HEADERS_ROW:
         _toggle_timers_headers()
     elif r == _TIMERS_COMPACT_ROW:

@@ -951,7 +951,7 @@ _TIMERS_HEADERS_ROW  = _TIMERS_GRID_ROWS           # 6
 _TIMERS_COMPACT_ROW  = _TIMERS_GRID_ROWS + 1       # 7
 _TIMERS_BACK_ROW     = _TIMERS_GRID_ROWS + 2       # Back is the 9th row
 _TIMERS_LAST_ROW     = _TIMERS_BACK_ROW
-_TIMERS_LAST_COL     = len(TIMERS_COLOR_ORDER) + 1 # colour cols + ◄ + ►
+_TIMERS_LAST_COL     = len(TIMERS_COLOR_ORDER) + 2 # colour cols + ◄ + ► + Clock
 
 
 def _set_panes_cursor(row, col=None):
@@ -1074,9 +1074,9 @@ def _toggle_pane_headers():
 def _read_timers_layout():
     """Merge timers_layout.conf over the defaults into a per-type dict.
 
-    Returns {type: {"enabled": bool, "color": "#rrggbb", "cols": int}} so the
-    render path can re-probe live state every frame, matching the panes
-    submenu's per-render re-read."""
+    Returns {type: {"enabled": bool, "color": "#rrggbb", "cols": int,
+    "clock": bool}} so the render path can re-probe live state every frame,
+    matching the panes submenu's per-render re-read."""
     conf = _parse_keyval(TIMERS_LAYOUT_CONF_PATH)
     layout = {
         typ: dict(TIMERS_LAYOUT_DEFAULTS[typ]) for typ in TIMERS_LAYOUT_TYPES
@@ -1110,6 +1110,9 @@ def _read_timers_layout():
             n = clamp_cols(typ, val)
             if n is not None:
                 layout[typ]["cols"] = n
+        elif attr == "clock":
+            if val in ("0", "1"):
+                layout[typ]["clock"] = (val == "1")
     return layout
 
 
@@ -1169,6 +1172,20 @@ def _apply_timers_step(row, delta):
     cur = _read_timers_layout()[typ]
     new = step_cols(cur["cols"], max_cols_for(typ), delta)
     _persist_timers_layout_key(f"timers_{typ}_cols", str(new))
+    if _app:
+        _app.invalidate()
+
+
+def _apply_timers_clock_toggle(row):
+    """Flip a group's per-type countdown overlay and persist immediately;
+    no-op for charm (no Clock toggle). The running timers pane polls
+    timers_layout.conf (~100 ms) and re-renders, so the overlay shows / hides
+    live with no tmux interaction."""
+    typ = TIMERS_LAYOUT_TYPES[row]
+    if typ == "charm":
+        return
+    cur = _read_timers_layout()[typ]
+    _persist_timers_layout_key(f"timers_{typ}_clock", "0" if cur["clock"] else "1")
     if _app:
         _app.invalidate()
 
@@ -3786,6 +3803,8 @@ def _timers_select(event):
             _apply_timers_step(r, -1)
         elif _timers_col == n + 1:
             _apply_timers_step(r, +1)
+        elif _timers_col == n + 2:
+            _apply_timers_clock_toggle(r)
     elif r == _TIMERS_HEADERS_ROW:
         _toggle_timers_headers()
     elif r == _TIMERS_COMPACT_ROW:
@@ -4290,6 +4309,7 @@ def _timers_text():
             timers_color_index(cur["color"]),
             cur["cols"],
             max_cols_for(typ),
+            None if typ == "charm" else cur.get("clock", False),
         ))
 
     cur_row = _timers_row
@@ -4324,10 +4344,23 @@ def _timers_text():
                 _apply_timers_step(ri, delta)
         return _h
 
+    def _make_clock_handler(ri):
+        col = len(TIMERS_COLOR_ORDER) + 2
+
+        def _h(ev):
+            if ev.event_type == MouseEventType.MOUSE_MOVE:
+                _set_timers_cursor(ri, col)
+                return
+            if ev.event_type == MouseEventType.MOUSE_DOWN:
+                _set_timers_cursor(ri, col)
+                _apply_timers_clock_toggle(ri)
+        return _h
+
     frags.extend(timers_grid_fragments(
         grid_rows, cols, grid_cursor,
         cell_handler=_make_cell_handler,
         stepper_handler=_make_stepper_handler,
+        clock_handler=_make_clock_handler,
     ))
 
     frags.append(("", "\n"))
