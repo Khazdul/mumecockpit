@@ -2801,11 +2801,12 @@ renderer ticks at ~30 Hz but reads the fixed dict — the style strings
 are constant per launcher run. `spotlight_box_bg` guards `None` and
 falls back to `bg:#000000`.
 
-Row layout (7-row box + 1 external bar row):
+Row layout (7-row box + 1 external bar row), shown on the **first**
+spotlight at full pre-roll — `◄` absent (see the nav-row note), bar full:
 
 ```
 ┌────────────────────────────┐
-│         ◄ 1 of 3 ►         │
+│           1 of 3 ►         │
 │           BERIT            │
 │                            │
 │      Reached level 3       │
@@ -2813,6 +2814,11 @@ Row layout (7-row box + 1 external bar row):
 └────────────────────────────┘
     ▐████████████████████▌
 ```
+
+On the first spotlight the `◄` is absent (its 3-cell region is blank
+fill, so the counter stays centred); on the last spotlight the `►` is
+absent the same way. Every other spotlight shows both arrows. The bar is
+full when a spotlight begins and shrinks to nothing as its pre-roll ends.
 
 - Frame rows: top `┌─┐` and bottom `└─┘`, grey thin-line on the fill.
 - Row 2: nav row — `◄ <idx> of <total> ►`, centred. The counter is
@@ -3313,6 +3319,7 @@ shared with the in-game popup. Roles:
 | `C_SPOTLIGHT_ARROW`          | Spotlight info-box `◄` / `►` nav glyphs — muted gold `#c79a4a` |
 | `C_SPOTLIGHT_LABEL`          | Spotlight info-box event label — neutral readable grey `#bcbcbc` |
 | `C_SPOTLIGHT_BAR`            | Spotlight info-box countdown bar (caps + `█` fill) in the external row below the box — very dark grey `#333333` |
+| `spotlight_box_bg(terminal_bg)` | Helper — the `bg:<hex>` occlusion fill painted under every spotlight-box cell (each `C_SPOTLIGHT_*` fg is composed against it once at startup); `terminal_bg` is the OSC 11 detected hex or `terminal_bg_fallback`, falling back to `bg:#000000` when `None`. Replaces the old `spotlight_frame_style` |
 | `C_OK`              | Persistent "selected / active" marker (e.g. the profile-table ✓) — green, never gold. |
 | `C_CURSOR_CELL`     | Focused-cursor foreground on swatch / checkbox cells in palette zones — gold, applied to the `[ ]` glyphs only; the swatch keeps its own colour. Separate token from `C_ACCENT` so the two can diverge later. |
 | `C_BANNER_WORD`         | Main-page banner — `MUME` wordmark rows (bright teal). See `bridge/launcher/launcher_banner.py`. |
