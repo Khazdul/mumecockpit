@@ -338,11 +338,16 @@ def _total_rows(spells, buffs, debuffs, stored, blinds, charms):
 
 
 def _countdown_str(remaining):
-    """Remaining seconds as M:SS — seconds always two digits, minutes NOT
-    zero-padded and growing naturally past 99 (2:53, 10:25, 100:25). Clamped at
-    0:00 (never negative)."""
+    """Remaining seconds as seconds-or-minutes: <= 90s renders as whole seconds
+    ("3s", "50s", "90s", down to "0s"); > 90s renders as whole minutes rounded to
+    the NEAREST minute, half UP ("2m", "30m", "150m"). The integer (secs + 30) //
+    60 form matches the codebase's round-half-up convention (int(x + 0.5)) and
+    avoids round()'s banker's rounding (150s -> 3m, not 2m). "1m" never appears —
+    60-90s stay in seconds. Clamped at "0s" (never negative)."""
     secs = max(0, int(remaining))
-    return f"{secs // 60}:{secs % 60:02d}"
+    if secs <= 90:
+        return f"{secs}s"
+    return f"{(secs + 30) // 60}m"
 
 
 def _clock_content(name, countdown, content_w):
@@ -366,14 +371,16 @@ def _clock_content(name, countdown, content_w):
     return upper[:content_w].ljust(content_w)               # Tier C
 
 
-def _cell_frags(entry, cell_w, palette, clock=False):
+def _cell_frags(entry, cell_w, palette, clock=False, last=False):
     filled_style, sep_style = palette
     now               = time.time()
     expires_at        = entry.get("expires_at")
     expected_duration = entry.get("expected_duration")
     name              = entry.get("name", "")
-    content_w         = cell_w - 1
-    if clock and expires_at is not None and expected_duration is not None:
+    timed             = expires_at is not None and expected_duration is not None
+    edge              = clock and last and timed
+    content_w         = cell_w if edge else cell_w - 1
+    if clock and timed:
         label = _clock_content(name, _countdown_str(expires_at - now), content_w)
     else:
         label = name.upper()[:content_w].ljust(content_w)
@@ -385,27 +392,19 @@ def _cell_frags(entry, cell_w, palette, clock=False):
         pct       = max(0.0, min(1.0, remaining / expected_duration))
         filled    = int(pct * cell_w + 0.5)
 
-    blinking = False
-    if expected_duration is not None and expires_at is not None:
-        remaining = expires_at - now
-        blinking  = filled == 0 and remaining <= 30
-
-    visible = int(now) % 2 == 0
-
     frags = []
-    for i in range(cell_w - 1):
+    for i in range(content_w):
         ch = label[i]
         if i < filled:
             frags.append((filled_style, ch))
-        elif blinking and not visible:
-            frags.append(("", " "))
         else:
             frags.append((C_NAME_DEPLETED, ch))
 
-    if filled >= cell_w:
-        frags.append((sep_style, "▌"))
-    else:
-        frags.append(("", " "))
+    if not edge:
+        if filled >= cell_w:
+            frags.append((sep_style, "▌"))
+        else:
+            frags.append(("", " "))
 
     return frags
 
@@ -548,15 +547,16 @@ def _group_rows(items, typ, W, cols):
             if idx >= n:
                 break
             entry = items[idx]
+            is_last = col == cols - 1 or idx == n - 1
             if typ == "stored":
                 if entry.get("tracked"):
-                    row_frags.extend(_cell_frags(entry, widths[col], palette, clock))
+                    row_frags.extend(_cell_frags(entry, widths[col], palette, clock, last=is_last))
                 else:
                     row_frags.extend(_untracked_cell_frags(entry, widths[col]))
             elif entry.get("tracked") is False:
                 row_frags.extend(_untracked_affect_cell_frags(entry, widths[col]))
             else:
-                row_frags.extend(_cell_frags(entry, widths[col], palette, clock))
+                row_frags.extend(_cell_frags(entry, widths[col], palette, clock, last=is_last))
         rows.append(row_frags)
     return rows
 
@@ -934,7 +934,8 @@ async def _poll_state(app):
 
 
 async def _tick(app):
-    """Invalidate just after each wall-clock second boundary so blink halves stay equal."""
+    """Invalidate just after each wall-clock second boundary, keeping the drain
+    bars and countdowns on a uniform wall-clock cadence."""
     while True:
         now = time.time()
         await asyncio.sleep(1.0 - (now - int(now)) + 0.01)
