@@ -5510,32 +5510,50 @@ def _about_text():
         _about_sb.update(total, viewport, height=viewport)
         _about_sb.scroll_to(_about_scroll)
 
+    overflow = _about_sb is not None and _about_sb.visible
+    if overflow:
+        # Inline per-row scrollbar (scripts_view pattern): thumb position
+        # derived from `_about_scroll`, glyphs matching the Scripts /
+        # Readability bars. One cell per body row, in the column
+        # immediately right of the centred text column.
+        sb_top, sb_thumb_h = scripts_view._thumb_geom(
+            total, viewport, viewport, _about_scroll)
+
     frags = []
-    frags.extend(_about_title_fragments(cols))
+    frags.extend(_with_about_wheel(_about_title_fragments(cols)))
 
     sliced = _about_lines[_about_scroll:_about_scroll + viewport]
     for i in range(viewport):
-        if i < len(sliced):
-            line = sliced[i]
-            if not line:
-                pass
-            elif line[:1].isspace():
-                frags.append(("", p))
-                frags.append((C_ACCENT, line))
+        line = sliced[i] if i < len(sliced) else ""
+        if not line:
+            style, text = "", ""
+        elif line[:1].isspace():
+            style, text = C_ACCENT, line
+        else:
+            stripped = line.lstrip()
+            if stripped and stripped[0].isalpha() and stripped == stripped.upper():
+                style = C_TITLE
             else:
-                stripped = line.lstrip()
-                if stripped and stripped[0].isalpha() and stripped == stripped.upper():
-                    style = C_TITLE
-                else:
-                    style = C_BODY
-                frags.append(("", p))
-                frags.append((style, line))
+                style = C_BODY
+            text = line
+        # Left pad + text + right fill to `width` so the body cell is
+        # wheel-aware edge to edge (no dead zone) and the bar lands in
+        # the column immediately right of the text column.
+        frags.append(("", p, _about_wheel))
+        if text:
+            frags.append((style, text, _about_wheel))
+        fill = max(0, width - len(text))
+        if fill:
+            frags.append(("", " " * fill, _about_wheel))
+        if overflow:
+            frags.append(scripts_view._sb_cell(
+                i, sb_top, sb_thumb_h, _about_sb_handler))
         frags.append(("", "\n"))
 
-    overflow = _about_sb is not None and _about_sb.visible
     footer = "↑↓ Scroll · ESC Back" if overflow else "ESC Back"
     content_rows = title_block_height(2) + viewport
-    frags.extend(footer_block(footer, cols, rows_h, content_rows))
+    frags.extend(footer_block(
+        footer, cols, rows_h, content_rows, mouse_handler=_about_wheel))
     return frags
 
 
@@ -5548,6 +5566,48 @@ def _scroll_about(delta):
         _about_scroll = new_val
         if _app:
             _app.invalidate()
+
+
+def _about_wheel(ev):
+    """Wheel handler shared by the About body cells, scrollbar cells, and
+    title/footer chrome — 3 rows per notch, clamped by `_scroll_about`.
+    Non-wheel events fall through (the body and chrome have no click
+    action). See ADR 0114 for the 3-rows-per-notch detail-panel model."""
+    if ev.event_type == MouseEventType.SCROLL_UP:
+        _scroll_about(-3)
+        return None
+    if ev.event_type == MouseEventType.SCROLL_DOWN:
+        _scroll_about(3)
+        return None
+    return NotImplemented
+
+
+def _about_sb_handler(body_row):
+    """Mouse handler factory for an About scrollbar cell. Wheel scrolls
+    the body ±3 rows; MOUSE_DOWN on the track above/below the thumb
+    page-steps one viewport toward the click (the thumb itself is a
+    no-op — see `Scrollbar.handle_click`)."""
+    def _h(ev):
+        if ev.event_type == MouseEventType.SCROLL_UP:
+            _scroll_about(-3)
+            return None
+        if ev.event_type == MouseEventType.SCROLL_DOWN:
+            _scroll_about(3)
+            return None
+        if ev.event_type != MouseEventType.MOUSE_DOWN:
+            return NotImplemented
+        if _about_sb is not None and _about_sb.visible:
+            before = _about_sb.scroll_offset
+            _about_sb.handle_click(body_row)
+            _scroll_about(_about_sb.scroll_offset - before)
+        return None
+    return _h
+
+
+def _with_about_wheel(frags):
+    """Attach `_about_wheel` to every (2-tuple) chrome fragment so wheel
+    notches over the title/footer scroll the body too — no dead zones."""
+    return [(f[0], f[1], _about_wheel) for f in frags]
 
 
 # ---------------------------------------------------------------------------
