@@ -1311,9 +1311,10 @@ def _enter_scripts_frame():
 
 def _scripts_visible_rows():
     """Visible body rows = popup rows minus the title block (3 for the
-    popup's `blank_above=1`) and the single footer row anchored at the
-    bottom by `footer_block`."""
-    return max(1, _term_rows() - title_block_height(1) - 1)
+    popup's `blank_above=1`), the two-row read-only note block (subtitle
+    + the blank row beneath it), and the single footer row anchored at
+    the bottom by `footer_block`."""
+    return max(1, _term_rows() - title_block_height(1) - 2 - 1)
 
 
 def _scripts_list_rows():
@@ -1645,6 +1646,17 @@ def _scripts_text():
         "─── Scripts ───", cols, blank_above=1, mouse_handler=clear,
     ))
 
+    # Read-only note — two fixed content rows (a dark-gold subtitle plus
+    # one blank below it) between the title and the body, centred in
+    # `cols` the same way the title is. Signals that the popup is a
+    # documentation browser, not a toggle panel; the launcher's
+    # interactive Scripts page omits it.
+    subtitle = "Read-only · enable scripts from the Startup menu"
+    frags.append(("", _pad_centre(subtitle, cols), clear))
+    frags.append((C_NOTE, subtitle, clear))
+    frags.append(("", "\n", clear))
+    frags.append(("", "\n", clear))
+
     list_w = (scripts_view.list_panel_width(_scripts_catalog)
               if _scripts_catalog else scripts_view.MIN_LIST_W)
     extra_left = [
@@ -1689,7 +1701,8 @@ def _scripts_text():
         footer = "↑↓ Move · PgUp/PgDn Scroll · ESC Back"
     else:
         footer = "ESC Back"
-    content_rows = title_block_height(1) + body_h
+    # title block + the read-only note block (subtitle + blank) + the body.
+    content_rows = title_block_height(1) + 2 + body_h
     frags.extend(footer_block(
         footer, cols, rows_h, content_rows, mouse_handler=clear,
     ))

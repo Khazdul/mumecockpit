@@ -11,7 +11,7 @@ __all__ = [
     "C_BUTTON", "C_BUTTON_HOVER", "C_BUTTON_DISABLED",
     "C_BUTTON_INACTIVE", "C_BUTTON_ACTIVE_UNFOCUSED",
     "C_BUTTON_ACTIVE_FOCUSED",
-    "C_OK", "C_CURSOR_CELL", "C_PANE_OFF",
+    "C_OK", "C_CURSOR_CELL", "C_PANE_OFF", "C_NOTE",
     "C_BANNER_WORD", "C_BANNER_WORD_DIM",
     "C_BANNER_STAR_DIM", "C_BANNER_STAR_MID", "C_BANNER_STAR_BRIGHT",
     "C_LOG_PLAYER_INPUT", "C_LOG_CURSOR",
@@ -97,6 +97,11 @@ C_BUTTON_ACTIVE_FOCUSED   = "fg:#000000 bg:#ffaf00"
 #     profile-table ✓ and similar always-on indicators; never gold.
 C_OK          = "bold fg:#7ac46f"
 C_CURSOR_CELL = "bold fg:#ffaf00"
+
+# Advisory / read-only note lines (e.g. the popup Scripts view's read-only
+# subtitle). Muted dark gold — clearly gold but darker than the C_CURSOR_CELL
+# arrows so it reads as a note without competing with the cursor.
+C_NOTE        = "fg:#b8923c"
 
 # Panes-grid dim colour. Painted on every cell (label, checkbox, swatch) of
 # a disabled pane row so the row reads as unmistakably "off" against the

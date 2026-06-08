@@ -409,9 +409,10 @@ def render_body(scripts, cursor_idx, list_scroll, detail_scroll,
                         otherwise — matches the panes-grid /
                         profile-editor colour grammar).
       mode           — "interactive" (launcher) or "readonly" (popup).
-                        The renderer treats both modes identically;
-                        the mode flag is reserved for future read-only
-                        affordances.
+                        Swaps only the list-row leading marker:
+                        `[X]`/`[ ]` checkbox vs ` ● `/` ○ ` status dot
+                        (both 3 cells; see `_list_cell_frag`). Layout is
+                        otherwise identical across modes.
       row_handler    — `f(list_row_idx) -> mouse_handler` attached to
                         every fragment on a list row. None → 2-tuples.
       sb_handler     — `f(body_row) -> mouse_handler` for the list
@@ -584,7 +585,21 @@ def _list_cell_frag(scripts, n, list_row, cursor_idx, focus, mode,
     markers menu_row adds). `focus` no longer splits the cursor colour —
     these frames always pass `focus="list"`; the cursor row is always
     the gold-arrow `selected` state. Disabled rows stay dim
-    (`C_PANE_OFF`)."""
+    (`C_PANE_OFF`).
+
+    `mode` swaps the 3-cell leading marker: `interactive` (launcher)
+    shows the `[X]`/`[ ]` checkbox; `readonly` (popup) shows a centred
+    status dot (` ● ` enabled / ` ○ ` disabled) so the view reads as a
+    documentation browser rather than a toggle panel. Both markers are
+    exactly 3 cells, so `list_panel_width`'s geometry is identical.
+
+    In `readonly`, the enabled `●` is lifted out of the menu_row body
+    into its own fragment painted `C_OK` (green) — matching the detail
+    panel's `● Enabled` — so the dot stays green on every enabled row,
+    cursor row included, independent of the row's state colour. The
+    name keeps the menu_row grammar (`C_ACTIVE` on the cursor row,
+    `C_ITEM`/`C_PANE_OFF` otherwise); the disabled hollow `○` is
+    untouched and keeps inheriting the row's state colour."""
     if not (0 <= list_row < n):
         return [("", " " * list_w)]
 
@@ -593,7 +608,10 @@ def _list_cell_frag(scripts, n, list_row, cursor_idx, focus, mode,
     is_hover  = (hover_row is not None
                  and hover_row == list_row
                  and not is_cursor)
-    ck = "[X]" if script.enabled else "[ ]"
+    if mode == "readonly":
+        ck = " ● " if script.enabled else " ○ "
+    else:
+        ck = "[X]" if script.enabled else "[ ]"
     label = f"{ck} {script.name}".ljust(max(0, list_w - 6))
 
     if is_cursor:
@@ -606,8 +624,26 @@ def _list_cell_frag(scripts, n, list_row, cursor_idx, focus, mode,
         state, inactive_style = "inactive", C_PANE_OFF
 
     h = row_handler(list_row) if row_handler is not None else None
-    return menu_row(label, state, mouse_handler=h,
-                    inactive_style=inactive_style)
+    row = menu_row(label, state, mouse_handler=h,
+                   inactive_style=inactive_style)
+
+    # Readonly + enabled: recolour the leading 3-cell marker slot to
+    # C_OK (green), splitting it off the menu_row body so the `●` is
+    # green on every enabled row — the cursor row included — while the
+    # name keeps the body's state colour. menu_row returns
+    # `[prefix, body, suffix]`; `body[1]` is the composed marker+name
+    # label, and any mouse handler rides as the fragment's 3rd element.
+    if mode == "readonly" and script.enabled:
+        prefix, body, suffix = row
+        tail = body[2:]  # mouse handler, if present
+        marker, rest = body[1][:3], body[1][3:]
+        row = [
+            prefix,
+            (C_OK, marker, *tail),
+            (body[0], rest, *tail),
+            suffix,
+        ]
+    return row
 
 
 def _sb_cell(body_row, sb_top, sb_thumb_h, sb_handler):

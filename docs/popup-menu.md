@@ -604,8 +604,8 @@ catalog verbatim. `scripts.cache` is written by the brain's two-tier
 loader once at startup with every script in `lua/scripts/` — both
 enabled and disabled — including each script's `@summary`, `@alias`,
 and `@help` metadata. Disabled scripts therefore appear in the popup's
-list with `[ ]` and dimmed styling, and clicking a disabled row updates
-the detail panel just like an enabled row. A mid-session addition to
+list with a dim hollow ` ○ ` status dot, and clicking a disabled
+row updates the detail panel just like an enabled row. A mid-session addition to
 `lua/scripts/` is intentionally **not** shown — the popup must agree
 with the brain's loaded set, which only changes on the next cockpit
 start. See [docs/scripts.md](scripts.md) and [ADR 0093](decisions/0093-script-metadata-headers-and-opt-in-loading.md)
@@ -615,11 +615,26 @@ for the cache format and the loader's design.
 state. An enabled script's aliases, triggers, and event subscriptions
 have no universal teardown contract, so toggling mid-session would
 leave phantom registrations; the launcher's Scripts page (reached via
-the Exit-to-main-menu path) is the intended toggle workflow. The
-footer omits the Toggle key — `↑↓ Move · PgUp/PgDn Scroll · ESC Back` —
-and the absence is the read-only signal. Clicks on script rows are
-select-only; they move the browse cursor without flipping the
-checkbox.
+the Exit-to-main-menu path) is the intended toggle workflow. Three
+cues make the read-only contract legible without a tooltip: the
+list-row marker is a status dot rather than a checkbox (` ● ` enabled
+/ ` ○ ` disabled, occupying the same 3-cell slot as the launcher's
+`[X]`/`[ ]` so the column geometry is identical). The enabled `●` is
+painted green (`C_OK`, matching the detail panel's `● Enabled`) on
+every enabled row — the cursor row included — by lifting the glyph out
+of the `menu_row` body into its own fragment, so the name still follows
+the menu_row state grammar (`C_ACTIVE` on the cursor, `C_ITEM`
+otherwise); the disabled hollow `○` keeps inheriting the row's state
+colour (dim `C_PANE_OFF`). Second cue: a centred dark-gold (`C_NOTE`)
+subtitle *"Read-only · enable scripts from the Startup menu"*, followed
+by one blank row, sits between the `─── Scripts ───` title and the list.
+Third: the footer omits the Toggle key — `↑↓ Move · PgUp/PgDn Scroll ·
+ESC Back`. The note block is two fixed content rows (subtitle + blank),
+accounted for on both sides of the layout maths
+(`_scripts_visible_rows` loses two rows, `content_rows` gains two) so
+the footer stays pinned to the popup's last row. Clicks on script rows
+are select-only; they move the browse cursor without flipping the
+enabled state.
 
 **Left column — Back inline.** The body layout matches the
 launcher's Scripts page: script rows, then a blank spacer, then an
