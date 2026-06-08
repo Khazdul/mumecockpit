@@ -371,14 +371,17 @@ def _clock_content(name, countdown, content_w):
     return upper[:content_w].ljust(content_w)               # Tier C
 
 
-def _cell_frags(entry, cell_w, palette, clock=False, last=False):
+def _cell_frags(entry, cell_w, palette, clock=False, last=False, corner=False):
     filled_style, sep_style = palette
     now               = time.time()
     expires_at        = entry.get("expires_at")
     expected_duration = entry.get("expected_duration")
     name              = entry.get("name", "")
     timed             = expires_at is not None and expected_duration is not None
-    edge              = clock and last and timed
+    # A corner timed clock cell keeps its separator column (edge False) but
+    # reserves it as a blank below, so the right-justified countdown ends one
+    # column in and the top-right + Float floats over the blank, not the glyph.
+    edge              = clock and last and timed and not corner
     content_w         = cell_w if edge else cell_w - 1
     if clock and timed:
         label = _clock_content(name, _countdown_str(expires_at - now), content_w)
@@ -401,7 +404,9 @@ def _cell_frags(entry, cell_w, palette, clock=False, last=False):
             frags.append((C_NAME_DEPLETED, ch))
 
     if not edge:
-        if filled >= cell_w:
+        if corner and clock and timed:
+            frags.append(("", " "))                  # blank reserved under the + Float
+        elif filled >= cell_w:
             frags.append((sep_style, "▌"))
         else:
             frags.append(("", " "))
@@ -515,13 +520,19 @@ def _charm_cell_frags(entry, cell_w, name_fg):
     return frags
 
 
-def _group_rows(items, typ, W, cols):
+def _group_rows(items, typ, W, cols, corner_local_row=None):
     """Render one group's items into a list of row fragment-lists. The cell
     style depends on the group: charms have no bar (name · mins · ×); stored
     splits tracked vs untracked-grey; spell/buff/debuff/blind use the themed
     bar, with an affect whose tracked is False rendered as the no-bar grey
     variant (blinds never carry tracked, so they always take the bar). cols is
-    the effective column count from _rendered_groups (the cap min item count)."""
+    the effective column count from _rendered_groups (the cap min item count).
+
+    corner_local_row (when not None) is the group-local content row index that
+    sits at the very top of the visible pane under the corner + Float; its
+    rightmost-column timed clock cell reserves a trailing blank so the + floats
+    over the blank instead of over the final countdown glyph (see _cell_frags
+    corner=). Only the grid-group branch honours it; charm cells ignore it."""
     widths = _cell_widths(W, cols)
     n      = len(items)
     rows   = []
@@ -547,21 +558,25 @@ def _group_rows(items, typ, W, cols):
             if idx >= n:
                 break
             entry = items[idx]
-            is_last = col == cols - 1 or idx == n - 1
+            at_edge   = (col == cols - 1)
+            is_corner = (corner_local_row is not None
+                         and row == corner_local_row and col == cols - 1)
             if typ == "stored":
                 if entry.get("tracked"):
-                    row_frags.extend(_cell_frags(entry, widths[col], palette, clock, last=is_last))
+                    row_frags.extend(_cell_frags(entry, widths[col], palette, clock,
+                                                 last=at_edge, corner=is_corner))
                 else:
                     row_frags.extend(_untracked_cell_frags(entry, widths[col]))
             elif entry.get("tracked") is False:
                 row_frags.extend(_untracked_affect_cell_frags(entry, widths[col]))
             else:
-                row_frags.extend(_cell_frags(entry, widths[col], palette, clock, last=is_last))
+                row_frags.extend(_cell_frags(entry, widths[col], palette, clock,
+                                             last=at_edge, corner=is_corner))
         rows.append(row_frags)
     return rows
 
 
-def _build_all_rows():
+def _build_all_rows(corner_row=None):
     """Return every grid row as a list of fragment-lists (one per row).
 
     Column counts, colours, and per-group visibility come from _layout. A group
@@ -572,7 +587,15 @@ def _build_all_rows():
     single dim "Group:" label row; (3) the group's content rows. The two global
     toggles are independent — headers governs the label row, compact governs the
     blank separator. Header and blank placement are derived from the same
-    _rendered_groups list _total_rows counts, keeping the two in lockstep."""
+    _rendered_groups list _total_rows counts, keeping the two in lockstep.
+
+    corner_row (when not None) is the global all_rows index of the row sitting at
+    the top of the visible pane under the corner + Float. We find the one rendered
+    group whose CONTENT rows span that index and hand it the group-local offset so
+    its rightmost-column timed clock cell reserves a blank under the + (see
+    _group_rows / _cell_frags). Header and blank rows are not built through
+    _group_rows, so a corner_row landing on one yields no corner cell — correct,
+    there is nothing to obscure there."""
     spells, buffs, debuffs, stored, blinds, charms = _split_groups()
     W = max(4, _term_cols())
 
@@ -584,7 +607,12 @@ def _build_all_rows():
         if _headers:
             label = f"{_GROUP_LABELS[typ]}:"[:W]   # left-aligned at col 0
             all_rows.append([(C_GROUP_HEADER_FG, label)])   # non-interactive
-        all_rows.extend(_group_rows(items, typ, W, cols))
+        first_content = len(all_rows)                        # global index of this group's first content row
+        n_content     = math.ceil(len(items) / cols)
+        corner_local  = None
+        if corner_row is not None and first_content <= corner_row < first_content + n_content:
+            corner_local = corner_row - first_content
+        all_rows.extend(_group_rows(items, typ, W, cols, corner_local_row=corner_local))
 
     return all_rows
 
@@ -759,8 +787,10 @@ def _grid_text():
 
     H        = max(1, _term_rows())
     W        = max(4, _term_cols())
-    all_rows = _build_all_rows()
-    total    = len(all_rows)
+    # Clamp the scroll offset FIRST (against _current_total_rows(), which equals
+    # len(_build_all_rows()) in grid mode), so the corner_row we hand the build
+    # is the already-clamped index of the row at the top of the visible pane.
+    total    = _current_total_rows()
 
     if total == 0:
         # Run active but no rows: the corner Float still shows the + over a blank pane.
@@ -769,6 +799,10 @@ def _grid_text():
     list_height    = H - (1 if (_scroll_offset > 0 or total > H) else 0)
     max_offset     = max(0, total - list_height)
     _scroll_offset = max(0, min(_scroll_offset, max_offset))
+
+    corner_row = _scroll_offset if _corner_visible() else None
+    all_rows   = _build_all_rows(corner_row=corner_row)
+
     start_idx      = _scroll_offset
     end_idx        = min(total, start_idx + list_height)
     visible        = all_rows[start_idx:end_idx]
