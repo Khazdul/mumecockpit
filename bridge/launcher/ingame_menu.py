@@ -1635,7 +1635,10 @@ def _scripts_text():
     renderer with the same in-column Back / extras layout as the
     launcher, minus toggling and mouse-wheel (the popup is read-only
     and tmux popup mode does not forward wheel events anyway). The
-    footer omits the Toggle key — its absence is the read-only signal."""
+    read-only contract is signalled by three cues: the status-dot list
+    marker (instead of `[X]`/`[ ]`), the dark-gold read-only note below
+    the title, and the footer omitting the Toggle key — see
+    docs/popup-menu.md "Read-only by design"."""
     cols   = _term_cols()
     rows_h = _term_rows()
     body_h = _scripts_visible_rows()

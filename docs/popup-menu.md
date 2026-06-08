@@ -594,9 +594,13 @@ shared "No readability modules found" message; the cursor lands on Back
 Two-column `[ list | detail ]` browser of the brain's currently-loaded
 script catalog. Layout is rendered through the shared
 `bridge/launcher/scripts_view.py` module (precedent: `panes_grid`, ADR
-0086) so the popup and the launcher's Scripts page paint pixel-for-pixel
-the same body region — only the title-block chrome differs (`blank_above=1`
-in the popup, `blank_above=2` in the launcher).
+0086) so the popup and the launcher's Scripts page share the same
+two-column geometry and column widths. The popup renders in `readonly`
+mode and deliberately diverges from the launcher's `interactive` page:
+status dots instead of `[X]`/`[ ]` checkboxes, a green enabled dot, and
+the read-only note — see **Read-only by design** below. The title-block
+chrome also differs (`blank_above=1` in the popup, `blank_above=2` in
+the launcher).
 
 **Source — `scripts.cache`, frozen at brain startup.** The popup reads
 `bridge/runtime/scripts.cache` once on every frame push and renders that

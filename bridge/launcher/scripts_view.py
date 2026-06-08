@@ -2,8 +2,8 @@
 #
 # Pure module: no prompt_toolkit import, no global state. Imported by both
 # launcher.py (Options → Scripts) and ingame_menu.py (popup Options →
-# Scripts) so the [ list | detail ] layout stays identical across the two
-# surfaces. Precedent: panes_grid.py (ADR 0086).
+# Scripts) so the [ list | detail ] two-column geometry and column widths
+# stay identical across the two surfaces. Precedent: panes_grid.py (ADR 0086).
 #
 # Responsibilities:
 #   - Parse the @-tagged metadata header at the top of a lua/scripts/<name>.lua
@@ -16,10 +16,14 @@
 #     overflowing).
 #
 # The renderer is parameterised by mode — `interactive` (launcher:
-# script rows are toggleable) vs `readonly` (popup: same layout,
-# no toggling). Both modes support hover and mouse handlers; the
-# popup's read-only contract is enforced by its mouse handlers
-# (clicks move the cursor without toggling), not by the renderer.
+# script rows are toggleable) vs `readonly` (popup: no toggling). The
+# two share the two-column geometry but the renderer itself diverges by
+# mode: readonly swaps the 3-cell list marker to a status dot and paints
+# the enabled dot C_OK (green). So the read-only affordance is carried by
+# both the renderer (marker glyph + colour) and the popup's select-only
+# mouse handlers (clicks move the cursor without toggling). Both modes
+# support hover and mouse handlers. See _list_cell_frag for the marker
+# detail.
 
 import os
 import re
