@@ -8871,22 +8871,27 @@ def _log_spotlight_header_text(cols):
     return _log_header_assemble(left_frags, "ESC Back · ←→ Prev/next", cols)
 
 
-# Floating spotlight info box. A 30×8 dark framed rectangle: top/bottom
+# Floating spotlight info box. A 30×7 dark framed rectangle: top/bottom
 # rows are a thin-line frame (`┌─┐ └─┘` in grey on the terminal-bg fill),
-# 6 interior rows of `interior_width = _SPOTLIGHT_BOX_W - 2 = 28` cells
+# 5 interior rows of `interior_width = _SPOTLIGHT_BOX_W - 2 = 28` cells
 # flanked by `│` side glyphs — the same visual family as the playback
 # control box. Pinned top=2; its right offset clears just the 2-col
 # playhead strip plus a small margin so the box sits beside the strip.
 # Sparse markers may briefly float near it at an event row — acceptable,
-# since the marker layer is transparent between events.
+# since the marker layer is transparent between events. The countdown bar
+# is rendered as one extra row directly *below* the frame (outside it), so
+# the overlay Window is `_SPOTLIGHT_BOX_H + 1` rows tall (see _OVERLAY_H).
 _SPOTLIGHT_BOX_W      = 30
-_SPOTLIGHT_BOX_H      = 8
+_SPOTLIGHT_BOX_H      = 7
 _SPOTLIGHT_BOX_MARGIN = 2
 _SPOTLIGHT_BOX_RIGHT  = _LOG_STRIP_W + _SPOTLIGHT_BOX_MARGIN
-# Countdown bar: the █ fill spans at most this many cells at full pre-roll,
-# flanked by the two constant ▐ ▌ caps. Shrinks symmetrically toward the
-# centre as the gap counts down, vanishing entirely at zero.
-_SPOTLIGHT_BAR_MAX_FILL = 20
+# Total overlay height: the 7-row box plus the one external bar row beneath
+# it. The Float/Window read this so the bar row isn't clipped.
+_SPOTLIGHT_OVERLAY_H  = _SPOTLIGHT_BOX_H + 1
+# Countdown bar: the █ fill steps in pairs (one removed from each side per
+# tick) so the bar shrinks symmetrically. At full pre-roll the fill is
+# `2 * _SPOTLIGHT_BAR_MAX_HALF` cells, flanked by the two constant ▐ ▌ caps.
+_SPOTLIGHT_BAR_MAX_HALF = 10
 
 
 def _log_spotlight_overlay_visible():
@@ -8906,23 +8911,26 @@ def _log_spotlight_overlay_visible():
 def _log_spotlight_overlay_text():
     """Build the spotlight info box (top-right floating overlay).
 
-    30×8 dark framed rectangle: top/bottom rows are the `┌─┐`/`└─┘`
-    thin-line frame in grey on the terminal-bg fill; 6 interior rows of
-    `interior_width` cells flanked by `│` side glyphs. Every cell carries
-    the terminal-bg background so the box fully occludes the log behind it.
+    30×7 dark framed rectangle plus one external bar row beneath it.
+    Top/bottom rows are the `┌─┐`/`└─┘` thin-line frame in grey on the
+    terminal-bg fill; 5 interior rows of `interior_width` cells flanked by
+    `│` side glyphs. Every cell carries the terminal-bg background so the
+    box fully occludes the log behind it.
 
       • Row 2: ◄ N of TOTAL ►   — centred nav row; ◄ / ► (gold) carry mouse
         handlers that seek to the adjacent spotlight (◄ at spotlight 1
         restarts current under the same 1.5 s rule as the keyboard path).
         ◄ is hidden on the first spotlight, ► on the last; the counter
         (grey) stays centred either way.
-      • Row 3: <CHAR>           — centred, soft cyan (the one accent).
+      • Row 3: <CHAR>           — centred, muted gold (the box's primary line).
       • Row 4: blank.
       • Row 5: event label l1   — centred, neutral grey.
       • Row 6: event label l2   — centred, grey; blank when label fits row 5.
-      • Row 7: countdown bar    — centred dim-teal bar that shrinks
-        symmetrically as the pre-roll counts down; gone at zero, blank
-        when no next event remains in this spotlight.
+
+    Below the bottom frame, a single full-width bar row (no border glyphs)
+    holds the very-dark-grey countdown bar, centred and contracting
+    symmetrically from both ends as the pre-roll counts down; it is gone
+    at zero and blank when no next event remains in this spotlight.
     """
     box_w = _SPOTLIGHT_BOX_W
     inner = box_w - 2
@@ -8940,14 +8948,12 @@ def _log_spotlight_overlay_text():
 
     styles = _spotlight_styles
     nav_frags = _log_spotlight_nav_row(spot_idx, reel.total_count, inner)
-    bar_frags = _log_spotlight_bar_row(spot, active, seconds_to_next, inner)
     interior_rows = [
         ("frags",  nav_frags),
         ("centre", ("name",  char)),
         ("blank",  None),
         ("centre", ("label", label_l1)),
         ("centre", ("label", label_l2)),
-        ("frags",  bar_frags),
     ]
 
     frame = styles["frame"]
@@ -8969,6 +8975,10 @@ def _log_spotlight_overlay_text():
         frags.append(("", "\n"))
     # Bottom frame row: └ + ─ × inner + ┘
     frags.append((frame, "└" + ("─" * inner) + "┘"))
+    # External countdown bar row, centred directly below the box (no frame),
+    # full box width so it occludes the log cleanly.
+    frags.append(("", "\n"))
+    frags.extend(_log_spotlight_bar_row(spot, active, seconds_to_next, box_w))
     return frags
 
 
@@ -9024,20 +9034,23 @@ def _log_spotlight_box_row(text, style_key, width):
     return frags
 
 
-def _log_spotlight_bar_row(spot, active, seconds_to_next, inner):
-    """Render the row-7 countdown bar. A centred `▐` + `█`×cells + `▌`
-    bar (caps + fill all dim teal) over a terminal-bg fill, where `cells`
-    tracks the fraction of the current event gap still pending. The two
-    caps are constant; only the █ count shrinks, so the bar contracts
-    symmetrically toward the centre and disappears at zero, reappearing
-    full when the next spotlight begins.
+def _log_spotlight_bar_row(spot, active, seconds_to_next, width):
+    """Render the external countdown bar row shown directly below the box.
+    Spans the full box `width`, painting terminal-bg on every cell so it
+    occludes the log; a centred `▐` + `█`×fill + `▌` bar (caps + fill very
+    dark grey) tracks the fraction of the current event gap still pending.
 
-    Collapses to a blank fill row when `seconds_to_next` is None (no
-    further event in this spotlight), when the gap span is non-positive,
-    or once the bar has fully drained (cells == 0)."""
+    The fill steps in PAIRS — `fill = 2 * half`, always even — so with an
+    even field width the left and right pad are equal and each tick removes
+    exactly one █ from each side: the bar contracts symmetrically and
+    disappears at zero, reappearing full when the next spotlight begins.
+
+    Renders a full-width blank fill row (still occluding, no bar) when
+    `seconds_to_next` is None (no further event in this spotlight), when
+    the gap span is non-positive, or once the bar has fully drained."""
     styles = _spotlight_styles
     fill = styles["fill"]
-    blank = [(fill, " " * inner)]
+    blank = [(fill, " " * width)]
     if seconds_to_next is None:
         return blank
     offsets = spot.event_offsets_us
@@ -9049,12 +9062,14 @@ def _log_spotlight_bar_row(spot, active, seconds_to_next, inner):
     if total_s <= 0:
         return blank
     fraction = max(0.0, min(1.0, seconds_to_next / total_s))
-    cells = round(fraction * _SPOTLIGHT_BAR_MAX_FILL)
-    if cells == 0:
+    half = round(fraction * _SPOTLIGHT_BAR_MAX_HALF)
+    if half <= 0:
         return blank
-    bar = ("▐" + ("█" * cells) + "▌")[:inner]
-    pad_l = (inner - len(bar)) // 2
-    pad_r = inner - len(bar) - pad_l
+    fill_cells = 2 * half                       # always even
+    bar = "▐" + ("█" * fill_cells) + "▌"        # width fill_cells + 2, even
+    pad_total = width - len(bar)                # even - even -> even
+    pad_l = pad_total // 2
+    pad_r = pad_total - pad_l                    # == pad_l
     frags = []
     if pad_l:
         frags.append((fill, " " * pad_l))
@@ -11119,7 +11134,7 @@ def main():
         content=FormattedTextControl(text=_log_spotlight_overlay_text,
                                      focusable=False),
         width=_SPOTLIGHT_BOX_W,
-        height=_SPOTLIGHT_BOX_H,
+        height=_SPOTLIGHT_OVERLAY_H,
         wrap_lines=False, always_hide_cursor=True,
     )
     _log_overlays_filter = Condition(lambda: _log_overlays_visible)
@@ -11135,13 +11150,14 @@ def main():
             # Top-right floating spotlight info box (spotlight mode only).
             # Pinned beside the 2-col playhead strip (top=2,
             # right=_SPOTLIGHT_BOX_RIGHT) so it clears the strip without a
-            # wide gap; framed in half-block glyphs with
-            # full-block █ corners on a bright banner-hue fill. Visibility
-            # is *not* gated by the auto-hide — only by the spotlight-mode
-            # predicate and a narrow-terminal fallback.
+            # wide gap; a dark thin-line ┌─┐│└┘ frame on the terminal-bg
+            # fill, with a centred countdown bar in a separate row beneath
+            # it. Visibility is *not* gated by the auto-hide — only by the
+            # spotlight-mode predicate and a narrow-terminal fallback.
+            # Height spans the box plus that external bar row.
             Float(
                 top=_SPOTLIGHT_BOX_MARGIN, right=_SPOTLIGHT_BOX_RIGHT,
-                width=_SPOTLIGHT_BOX_W, height=_SPOTLIGHT_BOX_H,
+                width=_SPOTLIGHT_BOX_W, height=_SPOTLIGHT_OVERLAY_H,
                 content=ConditionalContainer(content=log_spotlight_win,
                                              filter=_log_spotlight_overlay_filter),
             ),
