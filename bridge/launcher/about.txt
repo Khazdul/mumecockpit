@@ -6,6 +6,7 @@ input pane, and up to six side panes into one window. Starts in under
 a second, with opt-in updates from the launcher, and behaves the same
 on every machine.
 
+
 CONNECTION
 
   MMapper   Routes through MMapper (localhost:4242). Recommended.
@@ -48,6 +49,13 @@ feature is gone — no leftover state. A small set of example scripts
 ships with the client; writing your own is the intended use.
 
 
+PROFILE EDITOR
+
+Edit all your settings — aliases, actions, macros, highlights,
+substitutes — from a graphical, intuitive interface, reached from the
+launcher's Profile page. No knowledge of tt++ syntax required.
+
+
 PANES
 
 Beyond the main game window, the cockpit shows up to six side panes,
@@ -73,6 +81,15 @@ re-send. Shift+Home, Shift+End, and Ctrl+A all select the full
 buffer in one move, so the next keystroke clears it.
 
 
+READABILITY
+
+Drop-in modules recolour, reformat, or gag MUD output to make it
+easier to read at speed — tinting glowing or hidden objects, quieting
+noisy lines, whatever you switch on. Toggle them per character from
+Options → Readability; each module previews its before and after, so
+you see what it does before committing.
+
+
 RUNS AND STATISTICS
 
 Every login starts a run. The cockpit writes a structured event
@@ -87,7 +104,10 @@ Pick a session from the launcher's History page to re-open the same
 view on any past run. Worth keeping? Press Save run and give it a
 0–5 star rating; saved runs survive the 14-day retention sweep that
 prunes everything else. Then watch it back in the built-in log
-player: play, pause, scrub, click any line to jump.
+player: play, pause, scrub, click any line to jump. The launcher's
+Spotlights reel runs through the same player, replaying your best
+moments — kills, deaths, level-ups, achievements — gathered across
+every character you've played.
 
 
 COCKPIT COMMANDS
@@ -144,6 +164,7 @@ Free to play. No subscription. Just connect.
 
   Website   mume.org
   Discord   discord.gg/XkZN55am9a
+
 
 PROJECT
 
