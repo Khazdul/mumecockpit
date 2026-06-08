@@ -2608,7 +2608,9 @@ def _refresh_stats_scrollbars(visible):
     _stats_kills_pvps_visible = visible
     _kills_sb.update(len(_stats_data.kills),  visible, height=visible)
     _pkills_sb.update(len(_stats_data.pkills), visible, height=visible)
-    _allies_sb.update(len(_stats_data.allies), _ALLIES_ACH_VISIBLE,
+    # Allies render two-per-row: the scrollbar measures display rows of
+    # pairs, so total = ceil(len/2) and visible stays at the fixed 3 rows.
+    _allies_sb.update((len(_stats_data.allies) + 1) // 2, _ALLIES_ACH_VISIBLE,
                       height=_ALLIES_ACH_VISIBLE)
     _achievements_sb.update(
         len(_stats_data.achievements) + len(_stats_data.level_ups),
@@ -3417,7 +3419,6 @@ def _append_allies_achievements(frags, stats, cols):
 
     a_off  = _allies_sb.scroll_offset
     h_off  = _achievements_sb.scroll_offset
-    a_view = ally_rows[a_off:a_off + _ALLIES_ACH_VISIBLE]
     h_view = ach_rows[h_off:h_off + _ALLIES_ACH_VISIBLE]
 
     a_sb_cells = _scrollbar_row_cells(_allies_sb,       2)
@@ -3425,16 +3426,31 @@ def _append_allies_achievements(frags, stats, cols):
 
     # ♦ / ★ glyphs + space are absorbed into the name column's left padding so
     # the right edges of both tables stay put.
-    a_inner_w = max(1, left_w  - 2)
-    h_inner_w = max(1, right_w - 2)
+    # Allies render two-per-row: split the left column into two equal
+    # sub-columns separated by a 2-cell gap. Each sub-column renders one ally
+    # exactly like the old single cell ("♦" + space + name), and the leftover
+    # width (when left_w is odd) pads the right edge so it stays put.
+    sub_inner  = max(1, (left_w - 2) // 2 - 2)
+    sub_w      = sub_inner + 2
+    left_extra = max(0, left_w - (2 * sub_w + 2))
+    h_inner_w  = max(1, right_w - 2)
     for i in range(_ALLIES_ACH_VISIBLE):
         frags.append(("", pad))
-        if i < len(a_view):
-            a = a_view[i]
-            if len(a) > a_inner_w:
-                a = a[:a_inner_w - 1] + "…"
-            frags.append((_S_ALLY,  "♦", a_focus))
-            frags.append((_S_VALUE, " " + a.ljust(a_inner_w), a_focus))
+        base = (a_off + i) * 2
+        if base < len(ally_rows):
+            for sub, idx in ((0, base), (1, base + 1)):
+                if sub == 1:
+                    frags.append((_S_VALUE, "  ", a_focus))
+                if idx < len(ally_rows):
+                    a = ally_rows[idx]
+                    if len(a) > sub_inner:
+                        a = a[:sub_inner - 1] + "…"
+                    frags.append((_S_ALLY,  "♦", a_focus))
+                    frags.append((_S_VALUE, " " + a.ljust(sub_inner), a_focus))
+                else:
+                    frags.append((_S_VALUE, " " * sub_w, a_focus))
+            if left_extra:
+                frags.append((_S_VALUE, " " * left_extra, a_focus))
         else:
             frags.append((_S_VALUE, " " * left_w, a_focus))
         if i < len(a_sb_cells):

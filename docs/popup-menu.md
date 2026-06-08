@@ -721,7 +721,21 @@ each table. PvPs / ALLIES / ACHIEVEMENTS data rows carry a semantic
 glyph prefix (`⚔` red, `♦` cyan, `★` gold) absorbed into the existing
 left padding of the name/message column: the visible name shifts right
 by 2 cells, but the N / XP columns and the right edges of all tables
-stay at their original positions. Title rows and the PvPs Total row
+stay at their original positions.
+
+**ALLIES two-per-row.** ALLIES packs two allies per display row across
+the 3 fixed rows (up to 6 visible). The left column splits into two
+equal sub-columns separated by a 2-cell gap; each sub-column renders
+one ally exactly like a single cell (`♦` + space + name ljust to the
+sub-column inner width `(left_w - 2) // 2 - 2`, `…`-truncated on
+overflow). Fill is row-major over the alphabetical list: display row
+`i` holds allies `base+0` (left) and `base+1` (right) where
+`base = (scroll_offset + i) * 2`. A missing right ally renders as blank
+padding sized to the sub-column, and any odd-width leftover pads the
+right edge, so the scrollbar cell and the ACHIEVEMENTS column stay put.
+The ALLIES scrollbar measures display rows of pairs: `total =
+ceil(len/2)`, `visible = 3`, offset in pair-rows, wheel = 1 pair-row
+per notch. ACHIEVEMENTS stays one entry per row. Title rows and the PvPs Total row
 have no glyph. The ACHIEVEMENTS table interleaves two kinds of row,
 sorted chronologically by `run_stats.achievement_rows`: achievements
 (`★`, "<name>") and level-ups (`↑`, "Reached level N", sourced from the

@@ -2527,7 +2527,10 @@ data-row glyph palette are identical. ACHIEVEMENTS interleaves
 achievements (`★`) and level-ups (`↑`) sorted chronologically via
 `run_stats.achievement_rows`, with the scrollbar covering the merged
 count — identical to the popup; see [docs/popup-menu.md](popup-menu.md)
-for the full description. The focused KILLS / PvPs /
+for the full description. ALLIES packs two allies per display row
+(row-major over the alphabetical list, `♦` per sub-column), and its
+scrollbar measures pair-rows (`total = ceil(len/2)`, `visible = 3`) —
+identical to the popup. The focused KILLS / PvPs /
 ALLIES / ACHIEVEMENTS title row paints en bloc in `C_CURSOR_CELL`
 (gold); unfocused titles stay `C_SECTION`.
 
