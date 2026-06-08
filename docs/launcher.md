@@ -2764,78 +2764,89 @@ spotlight's countdown and the freed left-side budget makes room for
 the keyboard hint on the right). The right-aligned hint is
 `ESC Back · ←→ Prev/next`.
 
-**Floating info box (top-right).** A 30×8 framed rectangle pinned to
+**Floating info box (top-right).** A 30×8 dark framed rectangle pinned to
 `top=2, right=_SPOTLIGHT_BOX_RIGHT` (`= _LOG_STRIP_W + 2 = 4`) so it
 clears the 2-col playhead strip without a wide gap; a 2-cell top
 margin. Sparse event markers may briefly float near it at an event
 row — acceptable, since the marker layer is transparent between
-events. The frame is the half-block
-outline `█▀▄▌▐` rendered in
-the effective host terminal background colour (OSC 11 detected hex,
-or `terminal_bg_fallback` from `startup.conf` when detection fails —
-default `#000000`) on the bright cyan BG: top row `█` + `▀` ×
-`interior_width` + `█`, bottom row `█` + `▄` × `interior_width` + `█`,
-side columns `▌` (left) and `▐` (right) on each of the 6 interior
-rows. Painting the outer edge in the effective terminal background
-blends the half-blocks and `█` corners into the surrounding canvas.
-Interior width is `_SPOTLIGHT_BOX_W - 2 = 28`. Palette:
+events. The frame is a thin-line outline `┌─┐ │ └─┘` in grey
+(`#585858`), the same visual family as the playback control box: top
+row `┌` + `─` × `interior_width` + `┐`, bottom row `└` + `─` ×
+`interior_width` + `┘`, `│` side columns on each of the 6 interior
+rows. Every cell — frame glyphs, text, pad, bar, blank rows — carries
+the effective host terminal background (OSC 11 detected hex, or
+`terminal_bg_fallback` from `startup.conf` when detection fails —
+default `#000000`) so the box fully occludes the scrolling log behind
+it; no transparent interior cells. Interior width is
+`_SPOTLIGHT_BOX_W - 2 = 28`. Palette (foreground roles; the bg is
+composed at runtime by `palette.spotlight_box_bg(_terminal_bg)`):
 
-- `C_SPOTLIGHT_BOX_BG` — bright banner-hue fill (same hue as `C_TITLE`)
-  painted under every cell of the box.
-- `palette.spotlight_frame_style(_terminal_bg)` — outer-edge style for
-  the `█▀▄▌▐` glyphs: `fg:<terminal_bg> bg:#00d7d7`. `_terminal_bg` is
-  detected-or-fallback (so always a hex literal at runtime); the
-  helper still guards `None` and falls back to the
-  `C_SPOTLIGHT_FRAME` default (`fg:#000000 bg:#00d7d7`). Pre-computed
-  once at launcher startup and cached in module-level
-  `_spotlight_frame_style` (the renderer ticks at ~30 Hz; the style
-  string is fixed per launcher run).
-- `C_SPOTLIGHT_TEXT_PRIMARY` — near-black, on the BG. Used for the
-  nav row, the character name, and the event label.
-- `C_SPOTLIGHT_TEXT_SECONDARY` — muted grey, on the BG. Lighter than
-  primary, visibly subordinate. Used for the countdown.
+- `C_SPOTLIGHT_BOX_FRAME` (`fg:#585858`) — thin-line `┌─┐│└┘` glyphs;
+  identical to the control box's `C_LOG_BOX_FRAME`.
+- `C_SPOTLIGHT_NAME` (`bold fg:#6fc8c8`) — character name; soft cyan,
+  the one accent allowed to pop.
+- `C_SPOTLIGHT_COUNT` (`fg:#8a8a8a`) — the `N of M` counter; quiet grey.
+- `C_SPOTLIGHT_ARROW` (`fg:#c79a4a`) — the `◄` / `►` nav glyphs; muted gold.
+- `C_SPOTLIGHT_LABEL` (`fg:#bcbcbc`) — event label; neutral readable grey.
+- `C_SPOTLIGHT_BAR` (`fg:#46a0a0`) — countdown bar caps + fill; dim teal.
+
+Each role is composed once at launcher startup against the resolved
+`_terminal_bg` (e.g. `f"{C_SPOTLIGHT_NAME} {spotlight_box_bg(_terminal_bg)}"`)
+into a `_spotlight_styles` dict (keys `frame` / `name` / `count` /
+`arrow` / `label` / `bar`, plus `fill` for blank and pad cells). The
+renderer ticks at ~30 Hz but reads the fixed dict — the style strings
+are constant per launcher run. `spotlight_box_bg` guards `None` and
+falls back to `bg:#000000`.
 
 Row layout (8 rows: 2 frame + 6 interior):
 
 ```
-█▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀█
-▌         ◄ 1 of 3 ►         ▐
-▌           BERIT            ▐
-▌                            ▐
-▌      Reached level 3       ▐
-▌                            ▐
-▌       In 8 seconds..       ▐
-█▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█
+┌────────────────────────────┐
+│         ◄ 1 of 3 ►         │
+│           BERIT            │
+│                            │
+│      Reached level 3       │
+│                            │
+│   ▐████████████████████▌   │
+└────────────────────────────┘
 ```
 
-- Frame rows: top and bottom — black `█▀▄` outline on the BG.
-- Row 2: nav row — `◄ <idx> of <total> ►`, centred,
-  `C_SPOTLIGHT_TEXT_PRIMARY`. Built as separate fragments by
-  `_log_spotlight_nav_row` so `◄` and `►` each carry a mouse handler
-  over a 3-cell click region (` ◄ ` / ` ► `); the index text in
-  between is inert. Click semantics mirror the `←` and `→` keys:
-  `◄` calls `_log_spotlight_seek_relative(-1)` (restart-vs-previous
-  follows the 1.5 s rule); `►` calls `_log_spotlight_seek_relative(1)`.
-  The `►` glyph renders on every spotlight, including the last, where
-  its handler is a no-op (the seek refuses to advance past the final
-  entry). There is no `CREDITS` label or special last-spotlight casing —
-  the credits chronicle is reachable only via the main-menu Credits
-  entry.
+- Frame rows: top `┌─┐` and bottom `└─┘`, grey thin-line on the fill.
+- Row 2: nav row — `◄ <idx> of <total> ►`, centred. The counter is
+  `C_SPOTLIGHT_COUNT` (grey), the arrows `C_SPOTLIGHT_ARROW` (gold).
+  Built as separate fragments by `_log_spotlight_nav_row` so `◄` and
+  `►` each carry a mouse handler over a 3-cell click region (` ◄ ` /
+  ` ► `); the index text in between is inert. Click semantics mirror
+  the `←` and `→` keys: `◄` calls `_log_spotlight_seek_relative(-1)`
+  (restart-vs-previous follows the 1.5 s rule); `►` calls
+  `_log_spotlight_seek_relative(1)`. `◄` is hidden on the first
+  spotlight and `►` on the last (rendered as plain fill spaces with no
+  glyph and no handler); the hidden side keeps its 3-cell region so the
+  counter stays centred either way. There is no `CREDITS` label — the
+  credits chronicle is reachable only via the main-menu Credits entry.
 - Row 3: `<CHAR>` — uppercased character name, centred,
-  `C_SPOTLIGHT_TEXT_PRIMARY`. (The date used to live here; it's been
-  dropped — the top header still carries it.)
+  `C_SPOTLIGHT_NAME`. (The date used to live here; it's been dropped —
+  the top header still carries it.)
 - Row 4: blank.
 - Row 5: event label (or its first wrapped line), centred,
-  `C_SPOTLIGHT_TEXT_PRIMARY`.
+  `C_SPOTLIGHT_LABEL`.
 - Row 6: blank when the event label fits on row 5; the wrapped
-  continuation of the event label when it doesn't (centred, primary
-  text). Wrapping uses `textwrap.wrap(..., break_long_words=False,
-  break_on_hyphens=False)` so words stay intact. Labels that wrap to
-  three or more lines have their second line ellipsised (`…`) — rare
-  for the event-label phrases we surface.
-- Row 7: countdown — `In <N> seconds..` while counting down (two
-  trailing periods), `C_SPOTLIGHT_TEXT_SECONDARY`, centred. Collapses
-  to a blank row when no next event remains in this spotlight.
+  continuation of the event label when it doesn't (centred,
+  `C_SPOTLIGHT_LABEL`). Wrapping uses `textwrap.wrap(...,
+  break_long_words=False, break_on_hyphens=False)` so words stay
+  intact. Labels that wrap to three or more lines have their second
+  line ellipsised (`…`) — rare for the event-label phrases we surface.
+- Row 7: countdown bar — a centred `▐` + `█`×cells + `▌` bar
+  (`C_SPOTLIGHT_BAR`, dim teal) whose `█` fill tracks the fraction of
+  the current event gap still pending. The fraction is computed in the
+  renderer (`_log_spotlight_bar_row`) from `seconds_to_next` over the
+  full gap span (`event_offsets_us[active+1] - anchor`), mapped to at
+  most `_SPOTLIGHT_BAR_MAX_FILL = 20` fill cells. The two caps are
+  constant; only the `█` count shrinks, so the bar contracts
+  symmetrically toward the centre and disappears at zero, reappearing
+  full when the next spotlight begins. Collapses to a blank row when no
+  next event remains in this spotlight (`seconds_to_next is None`) or
+  once the bar has fully drained.
 
 The "SPOTLIGHT N" line is not rendered inside the box — that
 information lives in the top header (the in-box nav row uses the
@@ -3291,10 +3302,12 @@ shared with the in-game popup. Roles:
 | `C_LOG_STRIP_MARKER` | log_view strip playhead — gold half-block (= `C_ACCENT` hue), bg set per side at render; also the box play/pause control |
 | `C_LOG_EVENT_MARK`  | log_view strip event letters + `►` — dark grey, a hair above the unplayed block for legibility |
 | `C_LOG_BOX_FRAME` / `C_LOG_BOX_FG` / `C_LOG_BOX_DIM` / `C_LOG_BOX_BTN_HOVER` | log_view control box — frame glyphs / labels / time field / hovered-button lift; box paints its cells in `_terminal_bg` (no panel tint) |
-| `C_SPOTLIGHT_BOX_BG`         | Spotlight info-box fill — bright banner hue (same as `C_TITLE`) painted under every cell of the floating overlay |
-| `C_SPOTLIGHT_FRAME`          | Spotlight info-box outline glyphs default — black on the box bg. Live renderer uses `spotlight_frame_style(_terminal_bg)` instead so the outer edge blends into the effective host terminal background (detected via OSC 11, else `terminal_bg_fallback`); this constant is the guarded fallback if `_terminal_bg` is ever `None` |
-| `C_SPOTLIGHT_TEXT_PRIMARY`   | Spotlight info-box primary text — near-black on box bg (character name, event label) |
-| `C_SPOTLIGHT_TEXT_SECONDARY` | Spotlight info-box secondary text — muted grey on box bg (countdown), visibly subordinate |
+| `C_SPOTLIGHT_BOX_FRAME`      | Spotlight info-box thin-line `┌─┐│└┘` frame — grey `#585858`, same as the control box's `C_LOG_BOX_FRAME`. Composed at startup with `spotlight_box_bg(_terminal_bg)` so every cell occludes the log behind it |
+| `C_SPOTLIGHT_NAME`           | Spotlight info-box character name — soft cyan `bold fg:#6fc8c8`, the one accent allowed to pop |
+| `C_SPOTLIGHT_COUNT`          | Spotlight info-box `N of M` counter — quiet metadata grey `#8a8a8a` |
+| `C_SPOTLIGHT_ARROW`          | Spotlight info-box `◄` / `►` nav glyphs — muted gold `#c79a4a` |
+| `C_SPOTLIGHT_LABEL`          | Spotlight info-box event label — neutral readable grey `#bcbcbc` |
+| `C_SPOTLIGHT_BAR`            | Spotlight info-box countdown bar (caps + `█` fill) — dim teal `#46a0a0` |
 | `C_OK`              | Persistent "selected / active" marker (e.g. the profile-table ✓) — green, never gold. |
 | `C_CURSOR_CELL`     | Focused-cursor foreground on swatch / checkbox cells in palette zones — gold, applied to the `[ ]` glyphs only; the swatch keeps its own colour. Separate token from `C_ACCENT` so the two can diverge later. |
 | `C_BANNER_WORD`         | Main-page banner — `MUME` wordmark rows (bright teal). See `bridge/launcher/launcher_banner.py`. |

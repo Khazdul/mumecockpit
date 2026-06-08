@@ -18,8 +18,9 @@ __all__ = [
     "C_LOG_STRIP_PLAYED", "C_LOG_STRIP_REMAINING", "C_LOG_STRIP_MARKER",
     "C_LOG_EVENT_MARK",
     "C_LOG_BOX_FRAME", "C_LOG_BOX_FG", "C_LOG_BOX_DIM", "C_LOG_BOX_BTN_HOVER",
-    "C_SPOTLIGHT_BOX_BG", "C_SPOTLIGHT_FRAME", "spotlight_frame_style",
-    "C_SPOTLIGHT_TEXT_PRIMARY", "C_SPOTLIGHT_TEXT_SECONDARY",
+    "C_SPOTLIGHT_BOX_FRAME", "C_SPOTLIGHT_NAME", "C_SPOTLIGHT_COUNT",
+    "C_SPOTLIGHT_ARROW", "C_SPOTLIGHT_LABEL", "C_SPOTLIGHT_BAR",
+    "spotlight_box_bg",
     "_S_VALUE", "_S_LABEL", "_S_GAINED", "_S_LOSS", "_S_TP_BAR",
     "_S_TRACK", "_S_MARKER", "_S_THUMB", "_S_TOTAL", "_S_ARROW",
     "_S_HINT", "_S_PVP", "_S_ALLY", "_S_STAR",
@@ -174,32 +175,36 @@ C_LOG_BOX_FG          = "fg:#9a9a9a"   # box labels (Rewind / Play)
 C_LOG_BOX_DIM         = "fg:#6f6f6f"   # box time field
 C_LOG_BOX_BTN_HOVER   = "bold fg:#dde4e0 bg:#242a27"  # hovered button, subtle lift on a dark canvas
 
-# Spotlight info box (log_view spotlight-mode floating overlay). Bright
-# banner-hue fill anchored on C_TITLE (#00d7d7) so the box pops as a
-# title card against the dark log. Four roles:
-#   • C_SPOTLIGHT_BOX_BG         — bright banner-hue fill under every cell.
-#   • C_SPOTLIGHT_FRAME          — black on the BG for the half-block
-#                                  ▀▄▌▐ + corner █ outline glyphs.
-#   • C_SPOTLIGHT_TEXT_PRIMARY   — near-black body text (char name, label).
-#   • C_SPOTLIGHT_TEXT_SECONDARY — muted grey (countdown). Lighter than
-#                                  primary, but visibly subordinate on
-#                                  the bright BG.
-C_SPOTLIGHT_BOX_BG         = "bg:#00d7d7"
-C_SPOTLIGHT_FRAME          = "fg:#000000 bg:#00d7d7"
-C_SPOTLIGHT_TEXT_PRIMARY   = "fg:#000000 bg:#00d7d7"
-C_SPOTLIGHT_TEXT_SECONDARY = "fg:#606060 bg:#00d7d7"
+# Spotlight info box (log_view spotlight-mode floating overlay). A dark,
+# thin-line framed box matching the playback control box (same #585858
+# frame, same terminal-bg cell fill) — discreet chrome rather than a
+# bright title card. Foreground roles only; the occluding background is
+# composed at runtime against the resolved `_terminal_bg` via
+# spotlight_box_bg() so every box cell fully covers the scrolling log:
+#   • C_SPOTLIGHT_BOX_FRAME — thin-line ┌─┐│└┘ glyphs (= control box).
+#   • C_SPOTLIGHT_NAME      — character name; soft cyan, the one accent
+#                             allowed to pop.
+#   • C_SPOTLIGHT_COUNT     — "N of M" counter; quiet metadata grey.
+#   • C_SPOTLIGHT_ARROW     — ◄ ► nav glyphs; muted gold.
+#   • C_SPOTLIGHT_LABEL     — event label; neutral readable grey.
+#   • C_SPOTLIGHT_BAR       — countdown bar caps + fill; dim teal.
+C_SPOTLIGHT_BOX_FRAME = "fg:#585858"
+C_SPOTLIGHT_NAME      = "bold fg:#6fc8c8"
+C_SPOTLIGHT_COUNT     = "fg:#8a8a8a"
+C_SPOTLIGHT_ARROW     = "fg:#c79a4a"
+C_SPOTLIGHT_LABEL     = "fg:#bcbcbc"
+C_SPOTLIGHT_BAR       = "fg:#46a0a0"
 
 
-def spotlight_frame_style(terminal_bg):
-    """Spotlight info-box outline style. The `█▀▄▌▐` glyphs' foreground
-    is the outer edge of the box — half-block tops/bottoms and the full-
-    block corners. Painting that fg in the host terminal background blends
-    the outer edge into the surrounding canvas (the cyan fill is the
-    in-box face). `terminal_bg` is the detected `#rrggbb` or `None`; falls
-    back to `#000000` (the C_SPOTLIGHT_FRAME default) when detection is
-    unavailable. Companion to the pane_color_hex() palette helper."""
-    fg = terminal_bg or "#000000"
-    return f"fg:{fg} bg:#00d7d7"
+def spotlight_box_bg(terminal_bg):
+    """Spotlight info-box cell background — the occlusion fill painted
+    under every box cell (frame, text, pad, bar, blank rows) so the box
+    fully covers the scrolling log behind it. `terminal_bg` is the
+    detected `#rrggbb` or `None`; falls back to `#000000` when detection
+    is unavailable. Composed with each foreground role at launcher
+    startup. Companion to the pane_color_hex() palette helper."""
+    bg = terminal_bg or "#000000"
+    return f"bg:{bg}"
 
 # ---------------------------------------------------------------------------
 # Per-pane background palette

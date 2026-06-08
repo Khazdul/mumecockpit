@@ -54,8 +54,9 @@ from palette import (  # noqa: E402
     C_LOG_STRIP_PLAYED, C_LOG_STRIP_REMAINING, C_LOG_STRIP_MARKER,
     C_LOG_EVENT_MARK,
     C_LOG_BOX_FRAME, C_LOG_BOX_FG, C_LOG_BOX_DIM, C_LOG_BOX_BTN_HOVER,
-    C_SPOTLIGHT_BOX_BG, C_SPOTLIGHT_FRAME, spotlight_frame_style,
-    C_SPOTLIGHT_TEXT_PRIMARY, C_SPOTLIGHT_TEXT_SECONDARY,
+    C_SPOTLIGHT_BOX_FRAME, C_SPOTLIGHT_NAME, C_SPOTLIGHT_COUNT,
+    C_SPOTLIGHT_ARROW, C_SPOTLIGHT_LABEL, C_SPOTLIGHT_BAR,
+    spotlight_box_bg,
     _S_GAINED, _S_LOSS, _S_LABEL, _S_VALUE, _S_TP_BAR,
     _S_TRACK, _S_MARKER, _S_THUMB, _S_TOTAL, _S_ARROW,
     _S_HINT, _S_PVP, _S_ALLY, _S_STAR,
@@ -599,10 +600,31 @@ def _one_shot_migrations():
 # None when stdin isn't a tty or the terminal doesn't reply within the
 # bounded probe window; callers fall back to #000000.
 _terminal_bg = None
-# Pre-computed spotlight info-box outline style derived from _terminal_bg.
-# Re-set once at startup by _probe_and_persist_terminal_bg(); the spotlight
-# overlay renderer reads it on every tick.
-_spotlight_frame_style = C_SPOTLIGHT_FRAME
+
+
+def _spotlight_style_set(terminal_bg):
+    """Compose the spotlight info-box style dict for a resolved terminal
+    background. Every box cell (frame glyphs, text, pad, bar, blank rows)
+    carries the terminal-bg background so the box fully occludes the
+    scrolling log — no transparent interior cells. Keys: frame / name /
+    count / arrow / label / bar (foreground roles + bg) and fill (the
+    bare bg for blank and pad cells)."""
+    bg = spotlight_box_bg(terminal_bg)
+    return {
+        "frame": f"{C_SPOTLIGHT_BOX_FRAME} {bg}",
+        "name":  f"{C_SPOTLIGHT_NAME} {bg}",
+        "count": f"{C_SPOTLIGHT_COUNT} {bg}",
+        "arrow": f"{C_SPOTLIGHT_ARROW} {bg}",
+        "label": f"{C_SPOTLIGHT_LABEL} {bg}",
+        "bar":   f"{C_SPOTLIGHT_BAR} {bg}",
+        "fill":  bg,
+    }
+
+
+# Pre-computed spotlight info-box styles derived from _terminal_bg. Re-set
+# once at startup by _probe_and_persist_terminal_bg(); the spotlight overlay
+# renderer reads the dict on every tick.
+_spotlight_styles = _spotlight_style_set(None)
 
 _OSC11_REPLY_RE = re.compile(rb"rgb:([0-9a-fA-F]+)/([0-9a-fA-F]+)/([0-9a-fA-F]+)")
 
@@ -742,8 +764,8 @@ _HEX_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 
 def _probe_and_persist_terminal_bg():
     """One-shot wrapper: detect, stash on the module-level _terminal_bg,
-    pre-compute the spotlight frame style and editor focused current-line
-    band derived from it, and write the value to layout.conf. Called once
+    pre-compute the spotlight info-box styles and editor focused current-
+    line band derived from it, and write the value to layout.conf. Called once
     from main() before the prompt_toolkit Application starts.
 
     When OSC 11 detection fails (e.g. WSL2 + Alacritty, which routes
@@ -752,7 +774,7 @@ def _probe_and_persist_terminal_bg():
     `#000000` to match the bundled Alacritty background. Detection wins
     when it succeeds, so a user who alternates between a detecting and
     a non-detecting terminal stays correct on both."""
-    global _terminal_bg, _spotlight_frame_style
+    global _terminal_bg, _spotlight_styles
     detected = _detect_terminal_bg()
     fallback = _conf.get("terminal_bg_fallback", "#000000")
     if not _HEX_COLOR_RE.match(fallback or ""):
@@ -769,7 +791,7 @@ def _probe_and_persist_terminal_bg():
             fh.write(msg)
     except OSError:
         pass
-    _spotlight_frame_style = spotlight_frame_style(_terminal_bg)
+    _spotlight_styles = _spotlight_style_set(_terminal_bg)
     _write_terminal_bg_to_layout_conf(_terminal_bg)
 
 
@@ -8849,17 +8871,22 @@ def _log_spotlight_header_text(cols):
     return _log_header_assemble(left_frags, "ESC Back · ←→ Prev/next", cols)
 
 
-# Floating spotlight info box. A 30×8 framed rectangle: top/bottom rows
-# are the half-block frame (`█▀▄▌▐` in black on the cyan BG), 6 interior
-# rows of `interior_width = _SPOTLIGHT_BOX_W - 2 = 28` cells flanked by
-# `▌` / `▐` side glyphs. Pinned top=2; its right offset clears just the
-# 2-col playhead strip plus a small margin so the box sits beside the
-# strip. Sparse markers may briefly float near it at an event row —
-# acceptable, since the marker layer is transparent between events.
+# Floating spotlight info box. A 30×8 dark framed rectangle: top/bottom
+# rows are a thin-line frame (`┌─┐ └─┘` in grey on the terminal-bg fill),
+# 6 interior rows of `interior_width = _SPOTLIGHT_BOX_W - 2 = 28` cells
+# flanked by `│` side glyphs — the same visual family as the playback
+# control box. Pinned top=2; its right offset clears just the 2-col
+# playhead strip plus a small margin so the box sits beside the strip.
+# Sparse markers may briefly float near it at an event row — acceptable,
+# since the marker layer is transparent between events.
 _SPOTLIGHT_BOX_W      = 30
 _SPOTLIGHT_BOX_H      = 8
 _SPOTLIGHT_BOX_MARGIN = 2
 _SPOTLIGHT_BOX_RIGHT  = _LOG_STRIP_W + _SPOTLIGHT_BOX_MARGIN
+# Countdown bar: the █ fill spans at most this many cells at full pre-roll,
+# flanked by the two constant ▐ ▌ caps. Shrinks symmetrically toward the
+# centre as the gap counts down, vanishing entirely at zero.
+_SPOTLIGHT_BAR_MAX_FILL = 20
 
 
 def _log_spotlight_overlay_visible():
@@ -8879,20 +8906,23 @@ def _log_spotlight_overlay_visible():
 def _log_spotlight_overlay_text():
     """Build the spotlight info box (top-right floating overlay).
 
-    30×8 framed rectangle: top/bottom rows are the `█▀▄▌▐` outline in
-    black on the cyan BG; 6 interior rows of `interior_width` cells
-    flanked by `▌`/`▐` side glyphs.
+    30×8 dark framed rectangle: top/bottom rows are the `┌─┐`/`└─┘`
+    thin-line frame in grey on the terminal-bg fill; 6 interior rows of
+    `interior_width` cells flanked by `│` side glyphs. Every cell carries
+    the terminal-bg background so the box fully occludes the log behind it.
 
-      • Row 2: ◄ N of TOTAL ►   — centred nav row; ◄ / ► carry mouse
+      • Row 2: ◄ N of TOTAL ►   — centred nav row; ◄ / ► (gold) carry mouse
         handlers that seek to the adjacent spotlight (◄ at spotlight 1
-        restarts current under the same 1.5 s rule as the keyboard
-        path; ► at the last spotlight jumps straight into credits).
-      • Row 3: <CHAR>           — centred, primary text.
+        restarts current under the same 1.5 s rule as the keyboard path).
+        ◄ is hidden on the first spotlight, ► on the last; the counter
+        (grey) stays centred either way.
+      • Row 3: <CHAR>           — centred, soft cyan (the one accent).
       • Row 4: blank.
-      • Row 5: event label l1   — centred, primary text.
-      • Row 6: event label l2   — centred, primary; blank when label fits row 5.
-      • Row 7: In <N> seconds.. — centred, secondary text. Collapses to
-        a blank row when no next event remains in this spotlight.
+      • Row 5: event label l1   — centred, neutral grey.
+      • Row 6: event label l2   — centred, grey; blank when label fits row 5.
+      • Row 7: countdown bar    — centred dim-teal bar that shrinks
+        symmetrically as the pre-roll counts down; gone at zero, blank
+        when no next event remains in this spotlight.
     """
     box_w = _SPOTLIGHT_BOX_W
     inner = box_w - 2
@@ -8905,47 +8935,40 @@ def _log_spotlight_overlay_text():
     char  = spot.character.upper()
     label = " · ".join(ev.label for ev in spot.events)
 
-    _, seconds_to_next = reel.event_progress(spot, offset_within)
-    if seconds_to_next is None:
-        countdown = ""
-    else:
-        # Round up so "0 seconds" doesn't sit for almost a full second.
-        s = (int(seconds_to_next) if seconds_to_next == int(seconds_to_next)
-             else int(seconds_to_next) + 1)
-        if s <= 0:
-            countdown = "In 0 seconds.."
-        elif s == 1:
-            countdown = "In 1 second.."
-        else:
-            countdown = f"In {s} seconds.."
-
+    active, seconds_to_next = reel.event_progress(spot, offset_within)
     label_l1, label_l2 = _log_spotlight_wrap_label(label, inner)
 
+    styles = _spotlight_styles
     nav_frags = _log_spotlight_nav_row(spot_idx, reel.total_count, inner)
+    bar_frags = _log_spotlight_bar_row(spot, active, seconds_to_next, inner)
     interior_rows = [
-        ("nav",              nav_frags),
-        ("centre",           char),
-        ("blank",            ""),
-        ("centre",           label_l1),
-        ("centre",           label_l2),
-        ("centre_secondary", countdown),
+        ("frags",  nav_frags),
+        ("centre", ("name",  char)),
+        ("blank",  None),
+        ("centre", ("label", label_l1)),
+        ("centre", ("label", label_l2)),
+        ("frags",  bar_frags),
     ]
 
-    frame = _spotlight_frame_style
+    frame = styles["frame"]
+    fill  = styles["fill"]
     frags = []
-    # Top frame row: █ + ▀ × inner + █
-    frags.append((frame, "█" + ("▀" * inner) + "█"))
+    # Top frame row: ┌ + ─ × inner + ┐
+    frags.append((frame, "┌" + ("─" * inner) + "┐"))
     frags.append(("", "\n"))
-    for kind, payload in interior_rows:
-        frags.append((frame, "▌"))
-        if kind == "nav":
-            frags.extend(payload)
+    for kind, data in interior_rows:
+        frags.append((frame, "│"))
+        if kind == "frags":
+            frags.extend(data)
+        elif kind == "blank":
+            frags.append((fill, " " * inner))
         else:
-            frags.extend(_log_spotlight_box_row(payload, kind, inner))
-        frags.append((frame, "▐"))
+            style_key, text = data
+            frags.extend(_log_spotlight_box_row(text, style_key, inner))
+        frags.append((frame, "│"))
         frags.append(("", "\n"))
-    # Bottom frame row: █ + ▄ × inner + █
-    frags.append((frame, "█" + ("▄" * inner) + "█"))
+    # Bottom frame row: └ + ─ × inner + ┘
+    frags.append((frame, "└" + ("─" * inner) + "┘"))
     return frags
 
 
@@ -8980,48 +9003,86 @@ def _log_spotlight_wrap_label(label, width):
     return (lines[0], line2)
 
 
-def _log_spotlight_box_row(text, kind, width):
-    """Render a single row of the box. Always emits exactly `width`
-    cells, BG-painted.
-
-    `kind` selects alignment and style:
-      • "centre"           — primary text, centred.
-      • "centre_secondary" — secondary text, centred.
-      • "blank"            — pure BG fill.
-    """
-    if kind == "blank" or not text:
-        return [(C_SPOTLIGHT_BOX_BG, " " * width)]
+def _log_spotlight_box_row(text, style_key, width):
+    """Render a single centred interior row. Always emits exactly `width`
+    cells, all carrying the terminal-bg fill. `style_key` names the
+    foreground role for the text ("name" / "label"); pad cells use
+    "fill". Empty text collapses to a pure fill row."""
+    styles = _spotlight_styles
+    fill = styles["fill"]
+    if not text:
+        return [(fill, " " * width)]
     t = text[:width]
     pad_l = (width - len(t)) // 2
     pad_r = width - len(t) - pad_l
-    style = (C_SPOTLIGHT_TEXT_SECONDARY if kind == "centre_secondary"
-             else C_SPOTLIGHT_TEXT_PRIMARY)
     frags = []
     if pad_l:
-        frags.append((C_SPOTLIGHT_BOX_BG, " " * pad_l))
-    frags.append((style, t))
+        frags.append((fill, " " * pad_l))
+    frags.append((styles[style_key], t))
     if pad_r:
-        frags.append((C_SPOTLIGHT_BOX_BG, " " * pad_r))
+        frags.append((fill, " " * pad_r))
+    return frags
+
+
+def _log_spotlight_bar_row(spot, active, seconds_to_next, inner):
+    """Render the row-7 countdown bar. A centred `▐` + `█`×cells + `▌`
+    bar (caps + fill all dim teal) over a terminal-bg fill, where `cells`
+    tracks the fraction of the current event gap still pending. The two
+    caps are constant; only the █ count shrinks, so the bar contracts
+    symmetrically toward the centre and disappears at zero, reappearing
+    full when the next spotlight begins.
+
+    Collapses to a blank fill row when `seconds_to_next` is None (no
+    further event in this spotlight), when the gap span is non-positive,
+    or once the bar has fully drained (cells == 0)."""
+    styles = _spotlight_styles
+    fill = styles["fill"]
+    blank = [(fill, " " * inner)]
+    if seconds_to_next is None:
+        return blank
+    offsets = spot.event_offsets_us
+    anchor_us = offsets[active] if active >= 0 else 0
+    if active + 1 >= len(offsets):
+        return blank
+    next_us = offsets[active + 1]
+    total_s = (next_us - anchor_us) / 1_000_000.0
+    if total_s <= 0:
+        return blank
+    fraction = max(0.0, min(1.0, seconds_to_next / total_s))
+    cells = round(fraction * _SPOTLIGHT_BAR_MAX_FILL)
+    if cells == 0:
+        return blank
+    bar = ("▐" + ("█" * cells) + "▌")[:inner]
+    pad_l = (inner - len(bar)) // 2
+    pad_r = inner - len(bar) - pad_l
+    frags = []
+    if pad_l:
+        frags.append((fill, " " * pad_l))
+    frags.append((styles["bar"], bar))
+    if pad_r:
+        frags.append((fill, " " * pad_r))
     return frags
 
 
 def _log_spotlight_nav_row(spot_idx, total, inner):
     """Render the clickable nav row at the top of the spotlight info box:
-    `◄ <idx> of <total> ►`, centred, with each arrow carrying its own
-    mouse handler. The arrows are padded with single spaces (e.g. ` ◄ `)
-    so the click target is 3 cells wide rather than a single glyph.
+    `◄ <idx> of <total> ►`, centred. The counter is quiet grey; the gold
+    arrows are padded with single spaces (e.g. ` ◄ `) so the click target
+    is 3 cells wide rather than a single glyph.
 
-    The `►` glyph is rendered on every spotlight, including the last,
-    where its click handler is a no-op (the seek refuses to advance past
-    the final entry)."""
+    `◄` is hidden on the first spotlight (no glyph, no handler) and `►`
+    on the last; the hidden side still occupies its 3-cell region as
+    plain fill so the counter stays centred in every case."""
+    styles = _spotlight_styles
+    fill = styles["fill"]
     if total <= 0:
-        return [(C_SPOTLIGHT_BOX_BG, " " * inner)]
+        return [(fill, " " * inner)]
     idx_text     = f"{spot_idx + 1} of {total}"
     left_arrow   = " ◄ "
     right_chunk  = " ► "
     used = len(left_arrow) + len(idx_text) + len(right_chunk)
     if used > inner:
-        return [(C_SPOTLIGHT_BOX_BG, " " * inner)]
+        return [(fill, " " * inner)]
     pad_total = inner - used
     pad_l = pad_total // 2
     pad_r = pad_total - pad_l
@@ -9036,12 +9097,20 @@ def _log_spotlight_nav_row(spot_idx, total, inner):
 
     frags = []
     if pad_l:
-        frags.append((C_SPOTLIGHT_BOX_BG, " " * pad_l))
-    frags.append((C_SPOTLIGHT_TEXT_PRIMARY, left_arrow, _prev_click))
-    frags.append((C_SPOTLIGHT_TEXT_PRIMARY, idx_text))
-    frags.append((C_SPOTLIGHT_TEXT_PRIMARY, right_chunk, _next_click))
+        frags.append((fill, " " * pad_l))
+    # Left region: arrow on all but the first spotlight; else blank fill.
+    if spot_idx == 0:
+        frags.append((fill, " " * len(left_arrow)))
+    else:
+        frags.append((styles["arrow"], left_arrow, _prev_click))
+    frags.append((styles["count"], idx_text))
+    # Right region: arrow on all but the last spotlight; else blank fill.
+    if spot_idx >= total - 1:
+        frags.append((fill, " " * len(right_chunk)))
+    else:
+        frags.append((styles["arrow"], right_chunk, _next_click))
     if pad_r:
-        frags.append((C_SPOTLIGHT_BOX_BG, " " * pad_r))
+        frags.append((fill, " " * pad_r))
     return frags
 
 
@@ -9050,16 +9119,18 @@ def _log_spotlight_empty_box(box_w, inner):
     before a spotlight is selectable. Paints an empty framed box so the
     Float doesn't collapse mid-frame; should never be seen by the user
     under normal flow."""
-    frame = _spotlight_frame_style
+    styles = _spotlight_styles
+    frame = styles["frame"]
+    fill = styles["fill"]
     frags = []
-    frags.append((frame, "█" + ("▀" * inner) + "█"))
+    frags.append((frame, "┌" + ("─" * inner) + "┐"))
     frags.append(("", "\n"))
     for i in range(_SPOTLIGHT_BOX_H - 2):
-        frags.append((frame, "▌"))
-        frags.append((C_SPOTLIGHT_BOX_BG, " " * inner))
-        frags.append((frame, "▐"))
+        frags.append((frame, "│"))
+        frags.append((fill, " " * inner))
+        frags.append((frame, "│"))
         frags.append(("", "\n"))
-    frags.append((frame, "█" + ("▄" * inner) + "█"))
+    frags.append((frame, "└" + ("─" * inner) + "┘"))
     return frags
 
 
