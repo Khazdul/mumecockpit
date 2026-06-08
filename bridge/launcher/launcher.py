@@ -5536,18 +5536,22 @@ def _about_text():
             else:
                 style = C_BODY
             text = line
-        # Left pad + text + right fill to `width` so the body cell is
-        # wheel-aware edge to edge (no dead zone) and the bar lands in
-        # the column immediately right of the text column.
+        # Left pad + text + fill spanning the full window width so the
+        # body cell is wheel-aware edge to edge (no dead zone) and the
+        # bar lands in the window's rightmost column.
         frags.append(("", p, _about_wheel))
         if text:
             frags.append((style, text, _about_wheel))
-        fill = max(0, width - len(text))
-        if fill:
-            frags.append(("", " " * fill, _about_wheel))
         if overflow:
+            gap = max(0, cols - pad - len(text) - 1)
+            if gap:
+                frags.append(("", " " * gap, _about_wheel))
             frags.append(scripts_view._sb_cell(
                 i, sb_top, sb_thumb_h, _about_sb_handler))
+        else:
+            fill = max(0, width - len(text))
+            if fill:
+                frags.append(("", " " * fill, _about_wheel))
         frags.append(("", "\n"))
 
     footer = "↑↓ Scroll · ESC Back" if overflow else "ESC Back"
