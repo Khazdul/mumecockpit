@@ -94,17 +94,20 @@ C_NAME_DEPLETED = "fg:#C0C0C0"   # status-pane C_VALUE grey (192,192,192); disti
 C_NAME_UNTRACKED_AFFECT = "fg:#3a3a3a"
 
 # Layout config (bridge/runtime/timers_layout.conf). Each type carries an
-# enabled flag, a #rrggbb colour, and a per-group column count. The defaults
-# below reproduce the historic hardcoded grid exactly, so an absent config file
-# (or any missing key) leaves the pane visually unchanged.
+# enabled flag, a #rrggbb colour, a per-group column count, and a per-group
+# clock flag (overlay a right-justified M:SS countdown on each timed cell's
+# drain bar). The defaults below reproduce the historic hardcoded grid exactly
+# (clock off everywhere), so an absent config file (or any missing key) leaves
+# the pane visually unchanged. Charm carries clock for uniformity but never
+# reads it — charms are excluded from the countdown overlay.
 _LAYOUT_TYPES    = ("spell", "buff", "debuff", "stored", "blind", "charm")
 _LAYOUT_DEFAULTS = {
-    "spell":  {"enabled": True, "color": "#66b2ff", "cols": 4},
-    "buff":   {"enabled": True, "color": "#00d900", "cols": 4},
-    "debuff": {"enabled": True, "color": "#d90000", "cols": 4},
-    "stored": {"enabled": True, "color": "#ff66ff", "cols": 4},
-    "blind":  {"enabled": True, "color": "#00cccc", "cols": 2},
-    "charm":  {"enabled": True, "color": "#B388FF", "cols": 1},
+    "spell":  {"enabled": True, "color": "#66b2ff", "cols": 4, "clock": False},
+    "buff":   {"enabled": True, "color": "#00d900", "cols": 4, "clock": False},
+    "debuff": {"enabled": True, "color": "#d90000", "cols": 4, "clock": False},
+    "stored": {"enabled": True, "color": "#ff66ff", "cols": 4, "clock": False},
+    "blind":  {"enabled": True, "color": "#00cccc", "cols": 2, "clock": False},
+    "charm":  {"enabled": True, "color": "#B388FF", "cols": 1, "clock": False},
 }
 # Group header labels above each rendered group. GLOBAL toggle (not per-type):
 # True (default) renders a dim "Group:" label row above each rendered (enabled
@@ -153,7 +156,7 @@ def _load_layout():
     """Resolve the layout dict from _LAYOUT_DEFAULTS overridden by
     timers_layout.conf (key=value, one per line; same trivial format as
     startup.conf). Unknown keys are ignored; an unparseable value falls back to
-    that key's default. Keys: timers_<type>_{enabled,color,cols} plus the
+    that key's default. Keys: timers_<type>_{enabled,color,cols,clock} plus the
     global timers_headers and timers_compact. Returns (layout, headers,
     compact); absent or unparseable globals resolve to TIMERS_HEADERS_DEFAULT /
     TIMERS_COMPACT_DEFAULT."""
@@ -202,6 +205,9 @@ def _load_layout():
             n = _clamp_cols(typ, val)
             if n is not None:
                 layout[typ]["cols"] = n
+        elif attr == "clock":
+            if val in ("0", "1"):
+                layout[typ]["clock"] = (val == "1")
     return layout, headers, compact
 
 
@@ -331,13 +337,46 @@ def _total_rows(spells, buffs, debuffs, stored, blinds, charms):
     return body + headers_extra + blanks_extra
 
 
-def _cell_frags(entry, cell_w, palette):
+def _countdown_str(remaining):
+    """Remaining seconds as M:SS — seconds always two digits, minutes NOT
+    zero-padded and growing naturally past 99 (2:53, 10:25, 100:25). Clamped at
+    0:00 (never negative)."""
+    secs = max(0, int(remaining))
+    return f"{secs // 60}:{secs % 60:02d}"
+
+
+def _clock_content(name, countdown, content_w):
+    """Compose a timed cell's content (the content_w columns before the ▌
+    separator) from the uppercased name and the countdown via the width ladder.
+    Lt = len(countdown). Always returns exactly content_w chars.
+
+    - Tier A — content_w >= len(name) + 1 + Lt: full name, then the countdown
+      right-justified (>=1 space gap).           "ARMOUR     10:25"
+    - Tier B — content_w >= 3 + Lt: name truncated from the right to
+      content_w - Lt chars (>=3), countdown flush-right, no gap.   "ARM10:25"
+    - Tier C — content_w < 3 + Lt: drop the countdown; name truncated from the
+      right to content_w, left-justified (today's behaviour).    "ARMOU"/"ARM"
+    """
+    upper = name.upper()
+    lt    = len(countdown)
+    if content_w >= len(upper) + 1 + lt:
+        return upper.ljust(content_w - lt) + countdown      # Tier A
+    if content_w >= 3 + lt:
+        return upper[: content_w - lt] + countdown          # Tier B
+    return upper[:content_w].ljust(content_w)               # Tier C
+
+
+def _cell_frags(entry, cell_w, palette, clock=False):
     filled_style, sep_style = palette
     now               = time.time()
     expires_at        = entry.get("expires_at")
     expected_duration = entry.get("expected_duration")
     name              = entry.get("name", "")
-    label             = name.upper()[: cell_w - 1].ljust(cell_w - 1)
+    content_w         = cell_w - 1
+    if clock and expires_at is not None and expected_duration is not None:
+        label = _clock_content(name, _countdown_str(expires_at - now), content_w)
+    else:
+        label = name.upper()[:content_w].ljust(content_w)
 
     if expected_duration is None or expires_at is None:
         filled = cell_w
@@ -501,6 +540,7 @@ def _group_rows(items, typ, W, cols):
         return rows
 
     palette = _palette(typ)
+    clock   = _layout[typ]["clock"]
     for row in range(math.ceil(n / cols)):
         row_frags = []
         for col in range(cols):
@@ -510,13 +550,13 @@ def _group_rows(items, typ, W, cols):
             entry = items[idx]
             if typ == "stored":
                 if entry.get("tracked"):
-                    row_frags.extend(_cell_frags(entry, widths[col], palette))
+                    row_frags.extend(_cell_frags(entry, widths[col], palette, clock))
                 else:
                     row_frags.extend(_untracked_cell_frags(entry, widths[col]))
             elif entry.get("tracked") is False:
                 row_frags.extend(_untracked_affect_cell_frags(entry, widths[col]))
             else:
-                row_frags.extend(_cell_frags(entry, widths[col], palette))
+                row_frags.extend(_cell_frags(entry, widths[col], palette, clock))
         rows.append(row_frags)
     return rows
 
