@@ -554,14 +554,17 @@ def render_body(modules, cursor_idx, list_scroll, detail_scroll,
             ("", " " * pad), detail_handler, body_row,
         ))
 
-        # ----- Detail scrollbar cell -----
+        # ----- Right pad + detail scrollbar cell -----
+        # When the bar is visible, it moves to the very last SB_W columns of
+        # the row, so right_pad blanks come first; nothing to the left moves
+        # (right_pad + SB_W is the same cell count either way). When there is
+        # no bar, right_pad is emitted as-is.
+        if right_pad > 0:
+            frags.append(("", " " * right_pad))
         if detail_sb_visible:
             frags.append(_sb_cell(
                 body_row, det_sb_top, det_sb_thumb_h, detail_sb_handler,
             ))
-
-        if right_pad > 0:
-            frags.append(("", " " * right_pad))
         frags.append(("", "\n"))
 
     return frags
