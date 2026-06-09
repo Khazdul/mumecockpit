@@ -125,6 +125,16 @@ tmux set-option -g  default-terminal   "tmux-256color"
 tmux set-option -as terminal-overrides ",*:RGB"
 tmux set-option -as terminal-features  ",*:RGB"
 
+# Synchronized output (DEC private mode 2026) advertising.
+# With this, tmux wraps each client redraw in DECSET 2026 begin/end
+# markers when the client terminal supports synchronized updates, so the
+# terminal paints the redraw atomically — no half-painted frames during
+# output bursts. Terminals without 2026 support ignore the sequences, so
+# the "*:sync" wildcard is safe. Needed explicitly for Alacritty, whose
+# terminfo does not advertise the Sync capability; foot advertises it
+# natively but the explicit line keeps behaviour uniform across terminals.
+tmux set-option -as terminal-features  ",*:sync"
+
 tmux set-option -t mume pane-border-format \
   "#{?#{==:#{pane_title},status},#[fg=colour235] Character #[default],#{?#{==:#{pane_title},timers},#[fg=colour235] Timers #[default],#{?#{==:#{pane_title},group},#[fg=colour235] Group #[default],#{?#{==:#{pane_title},comm},#[fg=colour235] Communication #[default],#{?#{==:#{pane_title},ui},#[fg=colour235] UI #[default],#{?#{==:#{pane_title},dev},#[fg=colour235] Dev #[default],}}}}}}"
 
