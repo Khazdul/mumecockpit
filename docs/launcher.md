@@ -3054,9 +3054,15 @@ case.
 `ts_us`, `direction` (`"in"`/`"out"`), `text` (raw body, prefix
 and `> ` stripped, CR trimmed), `run_id`, and pre-parsed
 `fragments`. Inbound lines run through a 16-colour SGR parser
-(plus bold/underline); 256-colour and truecolour escapes are
-dropped so the affected run renders uncoloured rather than
-crashing the player. Outbound lines render as a single fragment
+(plus underline). Bold (SGR 1) brightens the foreground per
+terminal convention rather than being a pure font attribute: a
+base colour (30..37) renders as its bright variant (90..97), and
+bold with no explicit foreground renders bright white — with
+`bold` still applied as a font weight alongside the brightened
+colour. 256-colour and truecolour escapes are dropped so the
+affected run renders uncoloured rather than crashing the player.
+(The authoritative colour mapping lives in `log_player.py`'s
+`_SGRState`.) Outbound lines render as a single fragment
 in `C_LOG_PLAYER_INPUT` (no `>` prefix in the rendered output).
 Events are merged into one list sorted by `ts_us` — within-file
 order is preserved, the cross-file sort defends against clock
