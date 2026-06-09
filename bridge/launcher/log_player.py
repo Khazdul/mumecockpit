@@ -33,7 +33,11 @@ _DATA_RUNS_DIR = os.path.join(_PROJECT_DIR, "data", "runs")
 
 
 # ---------------------------------------------------------------------------
-# ANSI SGR parser — 16-colour + bright, plus bold/underline.
+# ANSI SGR parser — 16-colour + bright, plus bold/underline. Bold brightens
+# the foreground (terminal convention) rather than being an orthogonal font
+# attribute: a bold base colour (30..37) resolves to its bright variant, and
+# bold with no explicit fg renders bright white. "bold" is still emitted as a
+# font weight alongside the brightened colour.
 # Unknown codes (256-colour, truecolour, italic, etc.) are silently
 # dropped per spec: the affected text renders uncoloured rather than
 # crashing the player.
@@ -89,7 +93,8 @@ class _SGRState:
             elif c == 49:
                 self.bg = None
             elif c in _FG_BASE:
-                self.fg = _FG_BASE[c]
+                # Store the raw SGR code; style() resolves it against `bold`.
+                self.fg = c
             elif c in _BG_BASE:
                 self.bg = _BG_BASE[c]
             elif c == 38 and i + 1 < n:
@@ -110,14 +115,26 @@ class _SGRState:
             # Any other code is silently ignored.
             i += 1
 
+    def _effective_fg(self):
+        """Resolve the stored fg SGR code into a hex colour, applying bold-as-
+        brightness. Returns None when no foreground should be emitted."""
+        if self.fg is None:
+            # Bold with no explicit colour renders bright white (terminal
+            # convention); otherwise leave the default grey foreground.
+            return "#ffffff" if self.bold else None
+        if 30 <= self.fg <= 37 and self.bold:
+            return _FG_BASE[self.fg + 60]
+        return _FG_BASE[self.fg]
+
     def style(self):
         parts = []
         if self.bold:
             parts.append("bold")
         if self.underline:
             parts.append("underline")
-        if self.fg is not None:
-            parts.append(f"fg:{self.fg}")
+        fg = self._effective_fg()
+        if fg is not None:
+            parts.append(f"fg:{fg}")
         if self.bg is not None:
             parts.append(f"bg:{self.bg}")
         return " ".join(parts)
