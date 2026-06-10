@@ -43,5 +43,7 @@
 #nop {{ ---- movement: arrival (one sub: direction + portal) ---- }};
 #substitute {^%1 has arrived%2.$} {%1<F6E6E6E> has arrived<F3FB0A0>%2<F6E6E6E>.<088>}
 
-#nop {{ ---- exits line (one sub: dark label + dir-colour list) ---- }};
-#substitute {^Exits: {.*}$} {<F6E6E6E>Exits: <F3FB0A0>%1<088>}
+#nop {{ ---- exits line (two highlights: dark label + dir-colour list) ---- }};
+#nop {{ #highlight, not #substitute: substitute templates escape-interpret the re-inserted %1 capture, mangling backslashes in MUME climb exits (/name\ and \name/). #highlight colours the original bytes in place and never rebuilds from a template. }};
+#highlight {^Exits:} {<F6E6E6E>}
+#highlight {{^Exits: \K.*}} {<F3FB0A0>}
