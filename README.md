@@ -8,15 +8,16 @@ the game pane, an input pane, and up to six side panes into one window.
 
 <!-- HERO IMAGE: full cockpit, multiple right-column panes visible.
      Add as: <p align="center"><img src="..." alt="..." width="..."></p> -->
-<img width="384" height="216" alt="startup-screen" src="https://github.com/user-attachments/assets/6d7de098-c57f-49a1-ab87-42ebfe0cb625" />
-<img width="384" height="216" alt="play-screen" src="https://github.com/user-attachments/assets/61ee9b6b-1f5c-4092-b9d5-2e33008bf0b3" />
-<img width="384" height="216" alt="statistics" src="https://github.com/user-attachments/assets/c80e61e9-43d2-4f7d-94e8-104d3e8a5152" />
-<img width="384" height="216" alt="panes" src="https://github.com/user-attachments/assets/cda195bd-1bf9-4d3e-9ba0-6c52bf65ce68" />
-<img width="384" height="216" alt="history-screen" src="https://github.com/user-attachments/assets/14f022da-acfc-4a15-ba6d-cc744232ba87" />
-<img width="384" height="216" alt="LITE-editor" src="https://github.com/user-attachments/assets/e7bdf87d-ae88-4954-92e4-8a0a51ae732e" />
-<img width="384" height="216" alt="editor-screen" src="https://github.com/user-attachments/assets/605caf8a-0640-4995-9524-9afab5ada85b" />
-<img width="384" height="216" alt="scripts-screen" src="https://github.com/user-attachments/assets/2b4a5606-7e24-4886-8a11-1621e39fa1fb" />
-<img width="384" height="216" alt="log-player" src="https://github.com/user-attachments/assets/b9349f20-f085-45c9-82ed-fbf38e2dc68f" />
+<img width="384" height="216" alt="20260611 startup" src="https://github.com/user-attachments/assets/0563756c-0265-4213-b1be-52840a6fee43" />
+<img width="384" height="216" alt="20260611 gameplay with mmapper" src="https://github.com/user-attachments/assets/911bb23b-300f-4f08-8666-9c765b8893bb" />
+<img width="384" height="216" alt="20260611 profile lite" src="https://github.com/user-attachments/assets/e91a2778-a0ba-44ef-804d-cc73bfd7afc7" />
+<img width="384" height="216" alt="20260611 profile lite" src="https://github.com/user-attachments/assets/8dedeebe-8b76-4499-8ce6-33c131de3d78" />
+<img width="384" height="216" alt="20260611 panes" src="https://github.com/user-attachments/assets/65f29300-b2a4-4317-809d-31d9b40423f0" />
+<img width="384" height="216" alt="20260611 timers" src="https://github.com/user-attachments/assets/657f8603-f974-45aa-925e-712601e4176d" />
+<img width="384" height="216" alt="20260611 coms" src="https://github.com/user-attachments/assets/9cced84f-c76e-4d78-a6e6-175f56c420f6" />
+<img width="384" height="216" alt="20260611 readability2" src="https://github.com/user-attachments/assets/c32cac98-6b3c-434a-ae15-1710666455b5" />
+<img width="384" height="216" alt="20260611 History" src="https://github.com/user-attachments/assets/c6be14a2-33ea-4fe7-86db-a513084299f4" />
+<img width="384" height="216" alt="20260611 spotlights" src="https://github.com/user-attachments/assets/a6228912-ce98-4cab-ab2a-da3ff3c723e6" />
 
 ## Install
 
