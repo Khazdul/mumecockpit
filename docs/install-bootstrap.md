@@ -67,23 +67,30 @@ Windows older than build 22621 is not supported. See the Scope section above.
 
 Implemented in `install/cockpit-installer.bat` + `install/installer-core.ps1`.
 
-Requires WSL2 to already be enabled (`VirtualMachinePlatform` and
-`Microsoft-Windows-Subsystem-Linux` features active). If either is disabled,
-the installer exits with instructions to run `wsl --install` in an admin
-PowerShell, reboot, then re-run.
+The only checked prerequisite is the `VirtualMachinePlatform` optional
+feature — the real WSL2 requirement. It is usually already enabled on
+Win 11 22H2+; disabled is uncommon but possible. The
+`Microsoft-Windows-Subsystem-Linux` optional feature is deliberately **not**
+checked: the Store version of WSL (the default since `wsl --install` went
+GA) intentionally leaves that feature Disabled, so requiring it produced
+false "WSL2 not enabled" loops on healthy machines. If `VirtualMachinePlatform`
+is disabled, the installer exits with instructions to run `wsl --install` in
+an admin PowerShell, reboot, then re-run.
 
 Fully unattended beyond the initial UAC prompt:
 
-1. Pre-flight: Windows build ≥ 22621, admin rights, WSL features enabled,
-   internet reachable.
+1. Pre-flight: Windows build ≥ 22621, admin rights, `VirtualMachinePlatform`
+   enabled, internet reachable.
 2. `wsl --install -d Ubuntu --no-launch` — installs Ubuntu silently, does
    **not** trigger the first-run OOBE dialog. Existing `Ubuntu` or `Ubuntu*`
    installs are detected and reused.
 3. Write `%UserProfile%\.wslconfig` with `networkingMode=mirrored`. Existing
    `.wslconfig` files are never overwritten — the user is told to add the
    line manually if their file lacks it.
-4. `wsl --shutdown` so the `.wslconfig` change takes effect (skipped if the
-   file was already correct).
+4. `wsl --shutdown` so the `.wslconfig` change takes effect — runs only when
+   the installer itself wrote `.wslconfig`. Skipped both when the file already
+   contained `networkingMode=mirrored` and when an existing file with
+   different contents was left untouched (the manual-edit warning path).
 5. `wsl -d Ubuntu -u root -- bash -c "curl … bootstrap-linux.sh | bash"` —
    runs the Linux bootstrap as root. Running as root inside WSL is fine
    here: the cockpit has no multi-user logic and no sudo paths. The OOBE
