@@ -6,27 +6,25 @@ at the latency floor; a Lua brain runs above it for state, timers, and
 anything that benefits from a real programming language; tmux composes
 the game pane, an input pane, and up to six side panes into one window.
 
-<!-- HERO IMAGE: full cockpit, multiple right-column panes visible.
-     Add as: <p align="center"><img src="..." alt="..." width="..."></p> -->
-<img width="384" height="216" alt="20260611 startup" src="https://github.com/user-attachments/assets/0563756c-0265-4213-b1be-52840a6fee43" />
 <img width="384" height="216" alt="20260611 gameplay with mmapper" src="https://github.com/user-attachments/assets/911bb23b-300f-4f08-8666-9c765b8893bb" />
-<img width="384" height="216" alt="20260611 profile lite" src="https://github.com/user-attachments/assets/8dedeebe-8b76-4499-8ce6-33c131de3d78" />
-<img width="384" height="216" alt="20260611 panes" src="https://github.com/user-attachments/assets/65f29300-b2a4-4317-809d-31d9b40423f0" />
-<img width="384" height="216" alt="20260611 timers" src="https://github.com/user-attachments/assets/657f8603-f974-45aa-925e-712601e4176d" />
-<img width="384" height="216" alt="20260611 coms" src="https://github.com/user-attachments/assets/9cced84f-c76e-4d78-a6e6-175f56c420f6" />
-<img width="384" height="216" alt="20260611 readability2" src="https://github.com/user-attachments/assets/c32cac98-6b3c-434a-ae15-1710666455b5" />
-<img width="384" height="216" alt="20260611 scripts_keymanager" src="https://github.com/user-attachments/assets/021da6bc-b1a0-401e-8d87-27a3bff6542f" />
-<img width="384" height="216" alt="20260611 History" src="https://github.com/user-attachments/assets/c6be14a2-33ea-4fe7-86db-a513084299f4" />
-<img width="384" height="216" alt="20260611 spotlights" src="https://github.com/user-attachments/assets/a6228912-ce98-4cab-ab2a-da3ff3c723e6" />
 
 ## Install
 
 ### Windows 11 22H2+
 
 Download the installer zip from the [Releases page][releases], extract,
-and double-click `cockpit-installer.bat`. Roughly 5 minutes on a fresh
-machine. WSL2 must already be enabled — if it isn't, run `wsl --install`
-in an admin PowerShell, reboot, and re-run the installer.
+and double-click `cockpit-installer.bat`. The installer handles
+everything — WSL2, Ubuntu, dependencies, fonts, and a Start Menu
+entry. Roughly 5 minutes on a fresh machine.
+
+Windows will show a SmartScreen warning ("Windows protected your PC")
+because the installer is unsigned — click "More info", then "Run
+anyway". Both files in the zip are plain text and can be opened in
+Notepad before you run anything.
+
+In the rare case the installer reports that WSL2 is not enabled, run
+`wsl --install` in an admin PowerShell, reboot, and re-run the
+installer.
 
 ### macOS
 
@@ -58,8 +56,8 @@ Background collectors populate `state.char`, `state.comm`, `state.world`,
   session XP/TP deltas with an XP-progress ruler that tracks the
   current level.
 - **Timers** — colour-coded grid of active spells, buffs, debuffs,
-  and stored spells. Per-character observed durations are learned
-  over time; expiring entries blink.
+  stored spells, blindness, and charmed followers. Per-character
+  observed durations are learned over time; expiring entries blink.
 - **Group** — vitals for group members and labelled NPCs (e.g. hired
   mercenaries) with bar fills, threshold colours, and an overflow
   indicator when the party doesn't fit.
@@ -74,7 +72,7 @@ Plus a dedicated **input pane** on its own line at the bottom —
 repeat-last-on-empty-Enter, full-buffer select with one keystroke,
 no auto-clear after send, mouse-click anywhere returns focus.
 
-<!-- IMAGE: in-game Statistics frame or the log player with scrubber -->
+<img width="384" height="216" alt="20260611 panes" src="https://github.com/user-attachments/assets/65f29300-b2a4-4317-809d-31d9b40423f0" />
 
 **Runs and statistics** — Every login starts a run. The cockpit
 writes a per-run JSONL event stream (`run_start`, `kill`, `pkill`,
@@ -88,13 +86,25 @@ sessions with play / pause, scrubber, click-to-jump, and a cursor
 in pause mode. Saved runs survive a 14-day retention sweep;
 everything else is pruned automatically.
 
-<!-- IMAGE: the ESC popup overlay -->
+<!-- paste img pair, same line: statistics + log-player -->
+<img width="384" height="216" alt="20260611 stats" src="https://github.com/user-attachments/assets/5ca9e133-4e4f-4174-9bc4-3b6c899eb0d4" />
+<img width="384" height="216" alt="20260611 spotlights" src="https://github.com/user-attachments/assets/17f69bb2-b0b6-4266-a38f-2efae23f63da" />
+
 
 **In-game ESC popup** — Press ESC anywhere in the cockpit for a
 fast overlay: Continue / Reconnect, Save run with a 0–5 star
 rating, Statistics on the active run, Options (pane visibility,
 pane background colour, scripts), and Exit. Auto-opens on
 disconnect.
+
+<!-- paste img: image 10 (ESC popup?) -->
+
+**Readability** — drop-in modules that recolour, reformat, or gag
+MUD output to make it easier to read at speed — tinting glowing or
+hidden objects, quieting noisy lines, whatever you switch on.
+Toggle them per character from Options → Readability in the
+launcher or the ESC popup; each module previews its before and
+after, so you see what it does before committing.
 
 **Scripting** — Drop a self-contained `.lua` file in `lua/scripts/`,
 declare its metadata in an `@`-tagged header at the top of the file,
@@ -106,7 +116,7 @@ is gone — no leftover state. Always-on GMCP collectors live in
 `lua/core/`; per-profile triggers, aliases, macros, and highlights
 live in `.tin` files under `ttpp/profiles/`.
 
-<!-- IMAGE: launcher main menu or the Panes colour grid -->
+<img width="384" height="216" alt="20260611 scripts_keymanager" src="https://github.com/user-attachments/assets/021da6bc-b1a0-401e-8d87-27a3bff6542f" />
 
 **Launcher** — pre-tmux startup menu with profile picker
 (create / copy / delete), per-pane options including background
@@ -115,7 +125,8 @@ browser for archived sessions, a Spotlights reel that replays
 highlights — kills, deaths, level-ups, achievements — across every
 character, and a self-update flow that tracks GitHub release tags.
 
-<!-- IMAGE: profile editor in Editor mode, syntax highlighting visible -->
+<img width="384" height="216" alt="20260611 startup" src="https://github.com/user-attachments/assets/0563756c-0265-4213-b1be-52840a6fee43" />
+<img width="384" height="216" alt="20260611 History" src="https://github.com/user-attachments/assets/c6be14a2-33ea-4fe7-86db-a513084299f4" />
 
 **Profile editor** — a two-mode editor for tt++ profiles, reached from the
 launcher's Profile page. *Lite mode* is a form-based GUI for aliases,
@@ -126,6 +137,8 @@ tt++ syntax highlighting, brace auto-close and matching, undo/redo,
 word/line selection, and an in-app clipboard. Both modes edit the same
 profile; round-trip preserves unknown tt++ commands and entry priorities
 verbatim.
+
+<img width="384" height="216" alt="20260611 profile lite" src="https://github.com/user-attachments/assets/8dedeebe-8b76-4499-8ce6-33c131de3d78" />
 
 **MMapper** integration via WSL2 mirrored networking on Windows,
 or plain `localhost` on macOS / Linux. [MMapper][mmapper] is a
@@ -145,9 +158,9 @@ routes through it.
 
 ## Status
 
-Early but stable. The cockpit is in active development for a single
-player's daily use. See "Current Work" in
-[`architecture.md`](architecture.md).
+Under active development — stable in daily use, but early adopters
+should expect rough edges. See "Current Work" in
+[`architecture.md`](architecture.md) for what's moving.
 
 Bug reports and feature requests welcome on
 [GitHub Issues](https://github.com/Khazdul/mumecockpit/issues).
