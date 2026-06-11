@@ -117,6 +117,7 @@ is gone — no leftover state. Always-on GMCP collectors live in
 live in `.tin` files under `ttpp/profiles/`.
 
 <img width="384" height="216" alt="20260611 scripts_keymanager" src="https://github.com/user-attachments/assets/021da6bc-b1a0-401e-8d87-27a3bff6542f" />
+<img width="384" height="216" alt="20260611 readability_startup" src="https://github.com/user-attachments/assets/e7ecbcf7-dee1-4a54-873f-246b3caf9cf3" />
 
 **Launcher** — pre-tmux startup menu with profile picker
 (create / copy / delete), per-pane options including background
@@ -139,6 +140,7 @@ profile; round-trip preserves unknown tt++ commands and entry priorities
 verbatim.
 
 <img width="384" height="216" alt="20260611 profile lite" src="https://github.com/user-attachments/assets/8dedeebe-8b76-4499-8ce6-33c131de3d78" />
+<img width="384" height="216" alt="20260611 profile editor" src="https://github.com/user-attachments/assets/d6bde621-5a6e-4744-b4b8-b77f4edc5bd0" />
 
 **MMapper** integration via WSL2 mirrored networking on Windows,
 or plain `localhost` on macOS / Linux. [MMapper][mmapper] is a
