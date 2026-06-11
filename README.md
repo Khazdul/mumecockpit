@@ -8,7 +8,7 @@ the game pane, an input pane, and up to six side panes into one window.
 
 <!-- HERO IMAGE: full cockpit, multiple right-column panes visible.
      Add as: <p align="center"><img src="..." alt="..." width="..."></p> -->
-<img width="3840" height="2160" alt="startup-screen" src="https://github.com/user-attachments/assets/6d7de098-c57f-49a1-ab87-42ebfe0cb625" />
+<img width="480" height="270" alt="startup-screen" src="https://github.com/user-attachments/assets/6d7de098-c57f-49a1-ab87-42ebfe0cb625" />
 <img width="3840" height="2160" alt="play-screen" src="https://github.com/user-attachments/assets/61ee9b6b-1f5c-4092-b9d5-2e33008bf0b3" />
 <img width="3840" height="2160" alt="statistics" src="https://github.com/user-attachments/assets/c80e61e9-43d2-4f7d-94e8-104d3e8a5152" />
 <img width="3840" height="2152" alt="panes" src="https://github.com/user-attachments/assets/cda195bd-1bf9-4d3e-9ba0-6c52bf65ce68" />
