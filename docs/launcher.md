@@ -3146,16 +3146,23 @@ backdrop and on a tinted one they blend instead of pasting a panel.
   track: a grey ramp — `C_LOG_STRIP_PLAYED` (light) above the
   playhead, `C_LOG_STRIP_REMAINING` (dark) below — with a
   sub-row-precise gold half-block playhead (`C_LOG_STRIP_MARKER`, bg
-  set to the played/unplayed side it borders) on the exact seam.
-  Every cell is painted (window-level `_terminal_bg` style) so the
-  strip fully occludes server text under it.
+  set to the played/unplayed side it borders) on the exact seam. The
+  integer screen row is computed by
+  `_log_offset_to_row(off_us, total_us, rows)` using the half-row
+  formula `half = round(f * (rows*2 - 1)); row = half // 2` (where
+  `f = off_us / total_us`, clamped 0–1); the strip then adds sub-row
+  precision on that boundary row via the half-block — upper when `half`
+  is even, lower otherwise. Every cell is painted (window-level
+  `_terminal_bg` style) so the strip fully occludes server text under
+  it.
 - **Floating event-marker layer** (`_log_marker_text`, control class
   `_LogMarkerControl`) — a `transparent=True` full-height Float of
   `_LOG_MARK_W = 5` cols pinned just left of the strip
   (`right=_LOG_STRIP_W`). Between events every cell is left unwritten,
-  so the log shows through to the strip. At an event's row (same
-  time-offset → screen-row mapping as the playhead) a stacked
-  `C_LOG_EVENT_MARK` glyph group floats **right-aligned** against the
+  so the log shows through to the strip. At an event's row — computed
+  by the same `_log_offset_to_row` helper the playhead uses, so a
+  marker and the playhead land on the same row for the same offset — a
+  stacked `C_LOG_EVENT_MARK` glyph group floats **right-aligned** against the
   strip (`WindowAlign.RIGHT` on the bare, un-padded string), with
   `_terminal_bg` painted behind just the marker's own glyph cells so
   it stays legible atop busy log lines. Markers read from the
@@ -3166,7 +3173,11 @@ backdrop and on a tinted one they blend instead of pasting a panel.
   cells keep the log underneath. Mouse activity here re-arms the
   overlay auto-hide but does not seek — the 2-col strip owns
   click/drag-to-seek. Gated by the same `_log_overlays_visible`
-  filter as the strip.
+  filter as the strip. Routing both renderers through the one
+  `_log_offset_to_row` helper is what guarantees marker ↔ playhead row
+  alignment — it replaces an earlier whole-row marker formula that
+  drifted from the playhead toward the end of long runs, and is the
+  implementation of ADR 0121's "same mapping as the playhead" promise.
 - **Floating control box** (`_log_box_text`) — pinned 8 cols in from
   the right edge, 1 row up from the bottom (clear of the strip). A
   framed 2-row panel in safe glyphs `┌ ─ ┐ │ └ ┘` (`C_LOG_BOX_FRAME`):
