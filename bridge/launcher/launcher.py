@@ -9403,6 +9403,17 @@ def _log_strip_handler(ev):
 
 
 # --- Right-edge vertical strip ---------------------------------------------
+def _log_offset_to_row(off_us, total_us, rows):
+    """Map a playback offset (us) to a whole screen row (0-based) using the
+    strip playhead's half-row formula, so the marker layer and the playhead
+    land on the same row for the same offset. Returns a row in [0, rows-1]."""
+    if total_us <= 0 or rows <= 1:
+        return 0
+    f = max(0.0, min(1.0, off_us / total_us))
+    half = round(f * (rows * 2 - 1))
+    return half // 2
+
+
 def _log_strip_text():
     """Build the right-edge vertical playback strip: a 2-col playhead track,
     full terminal height. The top is run start (offset 0), the bottom is the
@@ -9433,7 +9444,7 @@ def _log_strip_text():
     # boundary row `r` carries a gold half-block sitting on the exact
     # played/unplayed seam (upper half when `half` is even).
     half  = round(f * (rows * 2 - 1))
-    r     = half // 2
+    r     = _log_offset_to_row(cur, total, rows)
     upper = (half % 2 == 0)
 
     played_bg    = C_LOG_STRIP_PLAYED.replace("fg:", "bg:")
@@ -9492,7 +9503,7 @@ def _log_marker_text():
     by_row = {}
     if total > 0:
         for letter, off in pb.event_markers():
-            mr = round(off / total * (rows - 1))
+            mr = _log_offset_to_row(off, total, rows)
             if 0 <= mr < rows:
                 by_row.setdefault(mr, set()).add(letter)
 
