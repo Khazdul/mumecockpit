@@ -183,21 +183,22 @@ C_LOG_BOX_BTN_HOVER   = "bold fg:#dde4e0 bg:#242a27"  # hovered button, subtle l
 # composed at runtime against the resolved `_terminal_bg` via
 # spotlight_box_bg() so every box cell fully covers the scrolling log:
 #   • C_SPOTLIGHT_BOX_FRAME — thin-line ┌─┐│└┘ glyphs (= control box).
-#   • C_SPOTLIGHT_NAME      — character name; muted gold (= arrows), bold so
-#                             it still reads as the box's primary line.
+#   • C_SPOTLIGHT_NAME      — character name; light grey, bold — a readable
+#                             context anchor, subordinate to the gold label.
 #   • C_SPOTLIGHT_TYPE      — event-type line (PvP kill / Death / …); quiet
 #                             metadata grey (= count), below the name.
 #   • C_SPOTLIGHT_COUNT     — "N of M" counter; quiet metadata grey.
 #   • C_SPOTLIGHT_ARROW     — ◄ ► nav glyphs; muted gold.
-#   • C_SPOTLIGHT_LABEL     — event label; neutral readable grey.
+#   • C_SPOTLIGHT_LABEL     — event label; the box's primary line — muted gold
+#                             (= arrows), bold.
 #   • C_SPOTLIGHT_BAR       — countdown bar caps + fill; very dark grey, in
 #                             the external row below the box.
 C_SPOTLIGHT_BOX_FRAME = "fg:#585858"
-C_SPOTLIGHT_NAME      = "bold fg:#c79a4a"
+C_SPOTLIGHT_NAME      = "bold fg:#bcbcbc"
 C_SPOTLIGHT_TYPE      = "fg:#8a8a8a"   # event-type line; muted grey (= count)
 C_SPOTLIGHT_COUNT     = "fg:#8a8a8a"
 C_SPOTLIGHT_ARROW     = "fg:#c79a4a"
-C_SPOTLIGHT_LABEL     = "fg:#bcbcbc"
+C_SPOTLIGHT_LABEL     = "bold fg:#c79a4a"
 C_SPOTLIGHT_BAR       = "fg:#333333"
 
 

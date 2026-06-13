@@ -2785,15 +2785,15 @@ is composed at runtime by `palette.spotlight_box_bg(_terminal_bg)`):
 
 - `C_SPOTLIGHT_BOX_FRAME` (`fg:#585858`) — thin-line `┌─┐│└┘` glyphs;
   identical to the control box's `C_LOG_BOX_FRAME`.
-- `C_SPOTLIGHT_NAME` (`bold fg:#c79a4a`) — character name; muted gold
-  (same hue as the arrows), bold so it still reads as the box's primary
-  line.
+- `C_SPOTLIGHT_NAME` (`bold fg:#bcbcbc`) — character name; light grey,
+  bold — a readable context anchor, subordinate to the gold label.
 - `C_SPOTLIGHT_TYPE` (`fg:#8a8a8a`) — event-type line (`PvP kill` /
   `Death` / `Level up` / `Achievement`); quiet metadata grey (same as
   the counter), sitting between the name and the breathing blank.
 - `C_SPOTLIGHT_COUNT` (`fg:#8a8a8a`) — the `N of M` counter; quiet grey.
 - `C_SPOTLIGHT_ARROW` (`fg:#c79a4a`) — the `◄` / `►` nav glyphs; muted gold.
-- `C_SPOTLIGHT_LABEL` (`fg:#bcbcbc`) — event label; neutral readable grey.
+- `C_SPOTLIGHT_LABEL` (`bold fg:#c79a4a`) — event label; the box's primary
+  line — muted gold (same hue as the arrows), bold.
 - `C_SPOTLIGHT_BAR` (`fg:#333333`) — countdown bar caps + fill; very dark grey.
 
 Each role is composed once at launcher startup against the resolved
@@ -3331,11 +3331,11 @@ shared with the in-game popup. Roles:
 | `C_LOG_EVENT_MARK`  | log_view strip event letters + `►` — dark grey, a hair above the unplayed block for legibility |
 | `C_LOG_BOX_FRAME` / `C_LOG_BOX_FG` / `C_LOG_BOX_DIM` / `C_LOG_BOX_BTN_HOVER` | log_view control box — frame glyphs / labels / time field / hovered-button lift; box paints its cells in `_terminal_bg` (no panel tint) |
 | `C_SPOTLIGHT_BOX_FRAME`      | Spotlight info-box thin-line `┌─┐│└┘` frame — grey `#585858`, same as the control box's `C_LOG_BOX_FRAME`. Composed at startup with `spotlight_box_bg(_terminal_bg)` so every cell occludes the log behind it |
-| `C_SPOTLIGHT_NAME`           | Spotlight info-box character name — muted gold `bold fg:#c79a4a` (same hue as the arrows), bold so it still reads as the box's primary line |
+| `C_SPOTLIGHT_NAME`           | Spotlight info-box character name — light grey `bold fg:#bcbcbc`, bold; a readable context anchor, subordinate to the gold event label |
 | `C_SPOTLIGHT_TYPE`           | Spotlight info-box event-type line (`PvP kill` / `Death` / `Level up` / `Achievement`) — quiet metadata grey `#8a8a8a` (same as the counter) |
 | `C_SPOTLIGHT_COUNT`          | Spotlight info-box `N of M` counter — quiet metadata grey `#8a8a8a` |
 | `C_SPOTLIGHT_ARROW`          | Spotlight info-box `◄` / `►` nav glyphs — muted gold `#c79a4a` |
-| `C_SPOTLIGHT_LABEL`          | Spotlight info-box event label — neutral readable grey `#bcbcbc` |
+| `C_SPOTLIGHT_LABEL`          | Spotlight info-box event label — the box's primary line, muted gold `bold fg:#c79a4a` (same hue as the arrows), bold |
 | `C_SPOTLIGHT_BAR`            | Spotlight info-box countdown bar (caps + `█` fill) in the external row below the box — very dark grey `#333333` |
 | `spotlight_box_bg(terminal_bg)` | Helper — the `bg:<hex>` occlusion fill painted under every spotlight-box cell (each `C_SPOTLIGHT_*` fg is composed against it once at startup); `terminal_bg` is the OSC 11 detected hex or `terminal_bg_fallback`, falling back to `bg:#000000` when `None`. Replaces the old `spotlight_frame_style` |
 | `C_OK`              | Persistent "selected / active" marker (e.g. the profile-table ✓) — green, never gold. |
