@@ -446,8 +446,13 @@ def _apply_row(stats: RunStats, row: dict, allies: set[str]) -> None:
         stats.kill_events.append((ts, delta))
     elif event == "pkill":
         name = row.get("name")
+        race = row.get("race")
         delta = _as_int(row.get("xp_delta"))
         if isinstance(name, str):
+            # Aggregate on the full R.I.P. name so "Moraxus" + "the Orc"
+            # group as "Moraxus the Orc" rather than collapsing on first word.
+            if isinstance(race, str) and race:
+                name = name + " " + race
             agg = stats.pkills.setdefault(name, PKillAgg())
             agg.count += 1
             agg.total_xp += delta

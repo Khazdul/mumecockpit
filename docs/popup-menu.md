@@ -745,7 +745,12 @@ each table. PvPs / ALLIES / ACHIEVEMENTS data rows carry a semantic
 glyph prefix (`⚔` red, `♦` cyan, `★` gold) absorbed into the existing
 left padding of the name/message column: the visible name shifts right
 by 2 cells, but the N / XP columns and the right edges of all tables
-stay at their original positions.
+stay at their original positions. PvP target names are additionally
+wrapped in literal asterisks (`*Moraxus the Orc*`, `*an orc*`) — the two
+asterisk cells come out of the name column width, so a long name
+truncates with the ellipsis inside the asterisks (`*Melker the black nu…*`).
+The Total row is not wrapped. The same wrapping applies in the launcher's
+history_detail Statistics frame (ADR 0073 surface parity).
 
 **ALLIES two-per-row.** ALLIES packs two allies per display row across
 the 3 fixed rows (up to 6 visible). The left column splits into two

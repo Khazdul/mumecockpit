@@ -7435,8 +7435,12 @@ def _hd_append_kills_pvps(frags, stats, cols, data_height):
         frags.append(("", gap))
         if i < len(p_view):
             name, agg = p_view[i]
-            if len(name) > pk_inner_name:
-                name = name[:pk_inner_name - 1] + "…"
+            # PvP target names wrap in literal asterisks; the two asterisk
+            # cells come out of the name column, so truncate before wrapping.
+            star_w = max(1, pk_inner_name - 2)
+            if len(name) > star_w:
+                name = name[:star_w - 1] + "…"
+            name = "*" + name + "*"
             n_str_pk  = str(agg.count)
             xp_str_pk = str(agg.total_xp)
             p_rest    = (

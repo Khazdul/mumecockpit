@@ -698,19 +698,23 @@ matches) by the explicit priority gap — not by alphabetical ordering
 `#action` per line, so without the gap the mob fallback would shadow this event.
 
 **Subscribers:** `lua/core/run_state.lua` — strips any trailing MUME label
-(e.g. `" (MIN)"`) from the payload, then splits the remainder into
-`name` (first word) and `race` (rest, or `""` if single word); appends
-`{name, race}` to `M.pending_pkills`; calls `schedule_fold()` to debounce
-XP attribution. The strip happens before the split so the label never
-lands in `race`.
+(e.g. `" (MIN)"`) from the payload, then splits the remainder on `" the "`
+into `name` (substring before) and `race` (`"the "` + substring after).
+If there is no `" the "`, the whole string is `name` and `race` is `""`.
+This keeps real PC names (`Moraxus the Orc` → `Moraxus` / `the Orc`) split
+correctly while leaving article-form targets (`an orc`, `a dreadful orc`)
+intact instead of truncating to their first word. Appends `{name, race}`
+to `M.pending_pkills`; calls `schedule_fold()` to debounce XP attribution.
+The strip happens before the split so the label never lands in `race`.
 
 ### `pkill_attributed`
 
 Emitted by `lua/core/run_state.lua`'s `_fold()` once per attributed PC kill,
 immediately after the `script_ui("PKILL", ...)` announce. Payload:
 `{name = "<pc name>", race = "<race suffix>", xp = <integer>}` where `name`
-is the first word of the R.I.P. string (after any trailing MUME label is
-stripped by `run_state`), `race` is the remainder (may be `""`), and `xp` is
+is the R.I.P. string up to `" the "` (after any trailing MUME label is
+stripped by `run_state`), `race` is the `"the "`-prefixed remainder (may be
+`""` when the string has no `" the "`), and `xp` is
 the even-split XP attributed to this kill (may be `0` for empty-Vitals
 folds). For mixed folds (mob kills + PC kills within the 500ms
 window), XP is split evenly across all entries; the last entry processed
