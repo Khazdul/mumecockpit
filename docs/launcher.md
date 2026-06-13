@@ -2787,9 +2787,9 @@ is composed at runtime by `palette.spotlight_box_bg(_terminal_bg)`):
   identical to the control box's `C_LOG_BOX_FRAME`.
 - `C_SPOTLIGHT_NAME` (`fg:#8a8a8a`) — the `<CHAR>:` segment of the merged
   name+type row; plain grey, no bold — context for the gold type word.
-- `C_SPOTLIGHT_TYPE` (`bold fg:#c79a4a`) — the type word (`PvP kill` /
-  `Death` / `Level up` / `Achievement`) of the merged row; gold + bold
-  (same hue as the arrows), carrying the box accent.
+- `C_SPOTLIGHT_TYPE` (`fg:#8a8a8a`) — the type word (`PvP kill` /
+  `Death` / `Level up` / `Achievement`) of the merged row; plain grey
+  (same as the name) so the `<CHAR>: <type>` row reads as one unit.
 - `C_SPOTLIGHT_COUNT` (`fg:#6f6f6f`) — the `N of M` counter; darker grey
   (same as `C_LOG_BOX_DIM`), receding behind the gold arrows it sits between.
 - `C_SPOTLIGHT_ARROW` (`fg:#c79a4a`) — the `◄` / `►` nav glyphs; muted gold.
@@ -2841,7 +2841,8 @@ full when a spotlight begins and shrinks to nothing as its pre-roll ends.
 - Row 3: `<CHAR>: <type>` — merged name+type row, centred as one unit
   by `_log_spotlight_name_type_row`. The `<CHAR>:` segment (uppercased
   character name) is `C_SPOTLIGHT_NAME` (grey); the ` <type>` segment is
-  `C_SPOTLIGHT_TYPE` (gold + bold). The type word is derived from the
+  `C_SPOTLIGHT_TYPE` (grey, same tone) so the row reads as one grey unit.
+  The type word is derived from the
   first event's kind via `_SPOTLIGHT_TYPE_LABELS` (`pkill` → `PvP kill`,
   `death` → `Death`, `level_up` → `Level up`, `achievement` →
   `Achievement`); one event per spotlight (ADR 0077), so the first
@@ -3334,7 +3335,7 @@ shared with the in-game popup. Roles:
 | `C_LOG_BOX_FRAME` / `C_LOG_BOX_FG` / `C_LOG_BOX_DIM` / `C_LOG_BOX_BTN_HOVER` | log_view control box — frame glyphs / labels / time field / hovered-button lift; box paints its cells in `_terminal_bg` (no panel tint) |
 | `C_SPOTLIGHT_BOX_FRAME`      | Spotlight info-box thin-line `┌─┐│└┘` frame — grey `#585858`, same as the control box's `C_LOG_BOX_FRAME`. Composed at startup with `spotlight_box_bg(_terminal_bg)` so every cell occludes the log behind it |
 | `C_SPOTLIGHT_NAME`           | `<CHAR>:` segment of the merged name+type row — plain grey `fg:#8a8a8a`, no bold; context for the gold type word |
-| `C_SPOTLIGHT_TYPE`           | Type-word segment of the merged row (`PvP kill` / `Death` / `Level up` / `Achievement`) — gold + bold `bold fg:#c79a4a` (same hue as the arrows), carries the box accent |
+| `C_SPOTLIGHT_TYPE`           | Type-word segment of the merged row (`PvP kill` / `Death` / `Level up` / `Achievement`) — plain grey `fg:#8a8a8a` (same as the name) so the row reads as one grey unit |
 | `C_SPOTLIGHT_COUNT`          | Spotlight info-box `N of M` counter — darker grey `#6f6f6f` (same as `C_LOG_BOX_DIM`), recedes behind the gold arrows |
 | `C_SPOTLIGHT_ARROW`          | Spotlight info-box `◄` / `►` nav glyphs — muted gold `#c79a4a` |
 | `C_SPOTLIGHT_LABEL`          | Spotlight info-box event label — the box's primary line, soft white + bold `bold fg:#dde4e0`, strongest contrast |

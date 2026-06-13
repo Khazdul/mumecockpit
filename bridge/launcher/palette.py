@@ -186,7 +186,7 @@ C_LOG_BOX_BTN_HOVER   = "bold fg:#dde4e0 bg:#242a27"  # hovered button, subtle l
 #   • C_SPOTLIGHT_NAME      — "<CHAR>:" segment of the merged name+type row;
 #                             plain grey, no bold — context for the gold type.
 #   • C_SPOTLIGHT_TYPE      — type segment (PvP kill / Death / …) of the merged
-#                             row; gold + bold (= arrows) — carries the accent.
+#                             row; plain grey (= name) so the row reads as one.
 #   • C_SPOTLIGHT_COUNT     — "N of M" counter; darker grey, recedes behind
 #                             the gold arrows it sits between.
 #   • C_SPOTLIGHT_ARROW     — ◄ ► nav glyphs; muted gold.
@@ -196,7 +196,7 @@ C_LOG_BOX_BTN_HOVER   = "bold fg:#dde4e0 bg:#242a27"  # hovered button, subtle l
 #                             the external row below the box.
 C_SPOTLIGHT_BOX_FRAME = "fg:#585858"
 C_SPOTLIGHT_NAME      = "fg:#8a8a8a"        # "<CHAR>:" segment; plain grey, no bold
-C_SPOTLIGHT_TYPE      = "bold fg:#c79a4a"   # type segment; gold + bold (= arrows)
+C_SPOTLIGHT_TYPE      = "fg:#8a8a8a"        # type segment; plain grey (= name)
 C_SPOTLIGHT_COUNT     = "fg:#6f6f6f"        # "N of M" counter; darker grey (= C_LOG_BOX_DIM)
 C_SPOTLIGHT_ARROW     = "fg:#c79a4a"
 C_SPOTLIGHT_LABEL     = "bold fg:#dde4e0"   # event label; primary line, soft white + bold
