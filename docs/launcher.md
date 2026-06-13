@@ -2764,9 +2764,9 @@ spotlight's countdown and the freed left-side budget makes room for
 the keyboard hint on the right). The right-aligned hint is
 `ESC Back · ←→ Prev/next`.
 
-**Floating info box (top-right).** A 30×8 dark framed rectangle with a
+**Floating info box (top-right).** A 30×7 dark framed rectangle with a
 single external countdown-bar row directly beneath it (overlay height
-`_SPOTLIGHT_OVERLAY_H = _SPOTLIGHT_BOX_H + 1 = 9`). Pinned to
+`_SPOTLIGHT_OVERLAY_H = _SPOTLIGHT_BOX_H + 1 = 8`). Pinned to
 `top=2, right=_SPOTLIGHT_BOX_RIGHT` (`= _LOG_STRIP_W + 2 = 4`) so it
 clears the 2-col playhead strip without a wide gap; a 2-cell top
 margin. Sparse event markers may briefly float near it at an event
@@ -2774,7 +2774,7 @@ row — acceptable, since the marker layer is transparent between
 events. The frame is a thin-line outline `┌─┐ │ └─┘` in grey
 (`#585858`), the same visual family as the playback control box: top
 row `┌` + `─` × `interior_width` + `┐`, bottom row `└` + `─` ×
-`interior_width` + `┘`, `│` side columns on each of the 6 interior
+`interior_width` + `┘`, `│` side columns on each of the 5 interior
 rows. Every cell — frame glyphs, text, pad, the bar row, blank rows —
 carries the effective host terminal background (OSC 11 detected hex, or
 `terminal_bg_fallback` from `startup.conf` when detection fails —
@@ -2785,17 +2785,16 @@ is composed at runtime by `palette.spotlight_box_bg(_terminal_bg)`):
 
 - `C_SPOTLIGHT_BOX_FRAME` (`fg:#585858`) — thin-line `┌─┐│└┘` glyphs;
   identical to the control box's `C_LOG_BOX_FRAME`.
-- `C_SPOTLIGHT_NAME` (`fg:#8a8a8a`) — character name; plain grey, no
-  bold — pure context, subordinate to the type line and label.
-- `C_SPOTLIGHT_TYPE` (`bold fg:#c79a4a`) — event-type line (`PvP kill` /
-  `Death` / `Level up` / `Achievement`); gold + bold (same hue as the
-  arrows), carrying the box accent. Sits between the name and the
-  breathing blank.
+- `C_SPOTLIGHT_NAME` (`fg:#8a8a8a`) — the `<CHAR>:` segment of the merged
+  name+type row; plain grey, no bold — context for the gold type word.
+- `C_SPOTLIGHT_TYPE` (`bold fg:#c79a4a`) — the type word (`PvP kill` /
+  `Death` / `Level up` / `Achievement`) of the merged row; gold + bold
+  (same hue as the arrows), carrying the box accent.
 - `C_SPOTLIGHT_COUNT` (`fg:#6f6f6f`) — the `N of M` counter; darker grey
   (same as `C_LOG_BOX_DIM`), receding behind the gold arrows it sits between.
 - `C_SPOTLIGHT_ARROW` (`fg:#c79a4a`) — the `◄` / `►` nav glyphs; muted gold.
-- `C_SPOTLIGHT_LABEL` (`bold fg:#ffffff`) — event label; the box's primary
-  line — white + bold, strongest contrast.
+- `C_SPOTLIGHT_LABEL` (`bold fg:#dde4e0`) — event label; the box's primary
+  line — soft white + bold, strongest contrast.
 - `C_SPOTLIGHT_BAR` (`fg:#333333`) — countdown bar caps + fill; very dark grey.
 
 Each role is composed once at launcher startup against the resolved
@@ -2807,14 +2806,13 @@ renderer ticks at ~30 Hz but reads the fixed dict — the style strings
 are constant per launcher run. `spotlight_box_bg` guards `None` and
 falls back to `bg:#000000`.
 
-Row layout (8-row box + 1 external bar row), shown on the **first**
+Row layout (7-row box + 1 external bar row), shown on the **first**
 spotlight at full pre-roll — `◄` absent (see the nav-row note), bar full:
 
 ```
 ┌────────────────────────────┐
 │           1 of 3 ►         │
-│           BERIT            │
-│          Level up          │
+│      BERIT: Level up       │
 │                            │
 │      Reached level 3       │
 │                            │
@@ -2840,19 +2838,21 @@ full when a spotlight begins and shrinks to nothing as its pre-roll ends.
   glyph and no handler); the hidden side keeps its 3-cell region so the
   counter stays centred either way. There is no `CREDITS` label — the
   credits chronicle is reachable only via the main-menu Credits entry.
-- Row 3: `<CHAR>` — uppercased character name, centred,
-  `C_SPOTLIGHT_NAME`. (The date used to live here; it's been dropped —
-  the top header still carries it.)
-- Row 4: `<type>` — event-type line, centred, `C_SPOTLIGHT_TYPE`
-  (gold + bold). Derived from the first event's kind via
-  `_SPOTLIGHT_TYPE_LABELS` (`pkill` → `PvP kill`, `death` → `Death`,
-  `level_up` → `Level up`, `achievement` → `Achievement`); one event
-  per spotlight (ADR 0077), so the first event's kind is authoritative.
-  An unknown/empty kind renders a blank row (collapses cleanly).
-- Row 5: blank.
-- Row 6: event label (or its first wrapped line), centred,
+- Row 3: `<CHAR>: <type>` — merged name+type row, centred as one unit
+  by `_log_spotlight_name_type_row`. The `<CHAR>:` segment (uppercased
+  character name) is `C_SPOTLIGHT_NAME` (grey); the ` <type>` segment is
+  `C_SPOTLIGHT_TYPE` (gold + bold). The type word is derived from the
+  first event's kind via `_SPOTLIGHT_TYPE_LABELS` (`pkill` → `PvP kill`,
+  `death` → `Death`, `level_up` → `Level up`, `achievement` →
+  `Achievement`); one event per spotlight (ADR 0077), so the first
+  event's kind is authoritative. An unknown/empty kind collapses to the
+  bare name with no trailing `: `. The composed string is truncated as a
+  whole to the interior width if it overflows. (The date used to live on
+  this row; it's been dropped — the top header still carries it.)
+- Row 4: blank.
+- Row 5: event label (or its first wrapped line), centred,
   `C_SPOTLIGHT_LABEL`.
-- Row 7: blank when the event label fits on row 6; the wrapped
+- Row 6: blank when the event label fits on row 5; the wrapped
   continuation of the event label when it doesn't (centred,
   `C_SPOTLIGHT_LABEL`). Wrapping uses `textwrap.wrap(...,
   break_long_words=False, break_on_hyphens=False)` so words stay
@@ -3333,11 +3333,11 @@ shared with the in-game popup. Roles:
 | `C_LOG_EVENT_MARK`  | log_view strip event letters + `►` — dark grey, a hair above the unplayed block for legibility |
 | `C_LOG_BOX_FRAME` / `C_LOG_BOX_FG` / `C_LOG_BOX_DIM` / `C_LOG_BOX_BTN_HOVER` | log_view control box — frame glyphs / labels / time field / hovered-button lift; box paints its cells in `_terminal_bg` (no panel tint) |
 | `C_SPOTLIGHT_BOX_FRAME`      | Spotlight info-box thin-line `┌─┐│└┘` frame — grey `#585858`, same as the control box's `C_LOG_BOX_FRAME`. Composed at startup with `spotlight_box_bg(_terminal_bg)` so every cell occludes the log behind it |
-| `C_SPOTLIGHT_NAME`           | Spotlight info-box character name — plain grey `fg:#8a8a8a`, no bold; pure context, subordinate to the type line and label |
-| `C_SPOTLIGHT_TYPE`           | Spotlight info-box event-type line (`PvP kill` / `Death` / `Level up` / `Achievement`) — gold + bold `bold fg:#c79a4a` (same hue as the arrows), carries the box accent |
+| `C_SPOTLIGHT_NAME`           | `<CHAR>:` segment of the merged name+type row — plain grey `fg:#8a8a8a`, no bold; context for the gold type word |
+| `C_SPOTLIGHT_TYPE`           | Type-word segment of the merged row (`PvP kill` / `Death` / `Level up` / `Achievement`) — gold + bold `bold fg:#c79a4a` (same hue as the arrows), carries the box accent |
 | `C_SPOTLIGHT_COUNT`          | Spotlight info-box `N of M` counter — darker grey `#6f6f6f` (same as `C_LOG_BOX_DIM`), recedes behind the gold arrows |
 | `C_SPOTLIGHT_ARROW`          | Spotlight info-box `◄` / `►` nav glyphs — muted gold `#c79a4a` |
-| `C_SPOTLIGHT_LABEL`          | Spotlight info-box event label — the box's primary line, white + bold `bold fg:#ffffff`, strongest contrast |
+| `C_SPOTLIGHT_LABEL`          | Spotlight info-box event label — the box's primary line, soft white + bold `bold fg:#dde4e0`, strongest contrast |
 | `C_SPOTLIGHT_BAR`            | Spotlight info-box countdown bar (caps + `█` fill) in the external row below the box — very dark grey `#333333` |
 | `spotlight_box_bg(terminal_bg)` | Helper — the `bg:<hex>` occlusion fill painted under every spotlight-box cell (each `C_SPOTLIGHT_*` fg is composed against it once at startup); `terminal_bg` is the OSC 11 detected hex or `terminal_bg_fallback`, falling back to `bg:#000000` when `None`. Replaces the old `spotlight_frame_style` |
 | `C_OK`              | Persistent "selected / active" marker (e.g. the profile-table ✓) — green, never gold. |

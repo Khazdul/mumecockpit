@@ -183,23 +183,23 @@ C_LOG_BOX_BTN_HOVER   = "bold fg:#dde4e0 bg:#242a27"  # hovered button, subtle l
 # composed at runtime against the resolved `_terminal_bg` via
 # spotlight_box_bg() so every box cell fully covers the scrolling log:
 #   • C_SPOTLIGHT_BOX_FRAME — thin-line ┌─┐│└┘ glyphs (= control box).
-#   • C_SPOTLIGHT_NAME      — character name; plain grey, no bold — pure
-#                             context, subordinate to the type line and label.
-#   • C_SPOTLIGHT_TYPE      — event-type line (PvP kill / Death / …); gold +
-#                             bold (= arrows) — carries the box accent.
+#   • C_SPOTLIGHT_NAME      — "<CHAR>:" segment of the merged name+type row;
+#                             plain grey, no bold — context for the gold type.
+#   • C_SPOTLIGHT_TYPE      — type segment (PvP kill / Death / …) of the merged
+#                             row; gold + bold (= arrows) — carries the accent.
 #   • C_SPOTLIGHT_COUNT     — "N of M" counter; darker grey, recedes behind
 #                             the gold arrows it sits between.
 #   • C_SPOTLIGHT_ARROW     — ◄ ► nav glyphs; muted gold.
-#   • C_SPOTLIGHT_LABEL     — event label; the box's primary line — white +
+#   • C_SPOTLIGHT_LABEL     — event label; the box's primary line — soft white +
 #                             bold, strongest contrast.
 #   • C_SPOTLIGHT_BAR       — countdown bar caps + fill; very dark grey, in
 #                             the external row below the box.
 C_SPOTLIGHT_BOX_FRAME = "fg:#585858"
-C_SPOTLIGHT_NAME      = "fg:#8a8a8a"        # character name; plain grey, no bold
-C_SPOTLIGHT_TYPE      = "bold fg:#c79a4a"   # event-type line; gold + bold (= arrows)
+C_SPOTLIGHT_NAME      = "fg:#8a8a8a"        # "<CHAR>:" segment; plain grey, no bold
+C_SPOTLIGHT_TYPE      = "bold fg:#c79a4a"   # type segment; gold + bold (= arrows)
 C_SPOTLIGHT_COUNT     = "fg:#6f6f6f"        # "N of M" counter; darker grey (= C_LOG_BOX_DIM)
 C_SPOTLIGHT_ARROW     = "fg:#c79a4a"
-C_SPOTLIGHT_LABEL     = "bold fg:#ffffff"   # event label; the box's primary line, white + bold
+C_SPOTLIGHT_LABEL     = "bold fg:#dde4e0"   # event label; primary line, soft white + bold
 C_SPOTLIGHT_BAR       = "fg:#333333"
 
 

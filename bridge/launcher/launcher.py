@@ -8888,18 +8888,18 @@ def _log_spotlight_header_text(cols):
 # is rendered as one extra row directly *below* the frame (outside it), so
 # the overlay Window is `_SPOTLIGHT_BOX_H + 1` rows tall (see _OVERLAY_H).
 _SPOTLIGHT_BOX_W      = 30
-_SPOTLIGHT_BOX_H      = 8
+_SPOTLIGHT_BOX_H      = 7
 _SPOTLIGHT_BOX_MARGIN = 2
 _SPOTLIGHT_BOX_RIGHT  = _LOG_STRIP_W + _SPOTLIGHT_BOX_MARGIN
-# Total overlay height: the 8-row box plus the one external bar row beneath
+# Total overlay height: the 7-row box plus the one external bar row beneath
 # it. The Float/Window read this so the bar row isn't clipped.
 _SPOTLIGHT_OVERLAY_H  = _SPOTLIGHT_BOX_H + 1
 
-# Spotlight event-type line (box row 4): maps the first event's kind to a
-# short display string rendered in C_SPOTLIGHT_TYPE between the character
-# name and the event label. One event per spotlight (ADR 0077), so the
-# first event's kind is authoritative. Unknown/empty kinds render a blank
-# row (collapses via _log_spotlight_box_row's empty-text branch).
+# Spotlight event-type word: maps the first event's kind to a short display
+# string rendered in C_SPOTLIGHT_TYPE (gold) after the grey "<CHAR>:" on the
+# merged name+type row (box row 3). One event per spotlight (ADR 0077), so
+# the first event's kind is authoritative. Unknown/empty kinds collapse to
+# the bare name with no trailing ": ".
 _SPOTLIGHT_TYPE_LABELS = {
     "pkill":       "PvP kill",
     "death":       "Death",
@@ -8929,9 +8929,9 @@ def _log_spotlight_overlay_visible():
 def _log_spotlight_overlay_text():
     """Build the spotlight info box (top-right floating overlay).
 
-    30×8 dark framed rectangle plus one external bar row beneath it.
+    30×7 dark framed rectangle plus one external bar row beneath it.
     Top/bottom rows are the `┌─┐`/`└─┘` thin-line frame in grey on the
-    terminal-bg fill; 6 interior rows of `interior_width` cells flanked by
+    terminal-bg fill; 5 interior rows of `interior_width` cells flanked by
     `│` side glyphs. Every cell carries the terminal-bg background so the
     box fully occludes the log behind it.
 
@@ -8940,11 +8940,13 @@ def _log_spotlight_overlay_text():
         restarts current under the same 1.5 s rule as the keyboard path).
         ◄ is hidden on the first spotlight, ► on the last; the counter
         (grey) stays centred either way.
-      • Row 3: <CHAR>           — centred, muted gold (the box's primary line).
-      • Row 4: <type>           — centred event-type line, muted grey.
-      • Row 5: blank.
-      • Row 6: event label l1   — centred, neutral grey.
-      • Row 7: event label l2   — centred, grey; blank when label fits row 6.
+      • Row 3: <CHAR>: <type>   — centred merged row; "<CHAR>:" grey,
+        " <type>" gold + bold. Collapses to the bare name when the kind
+        is unknown/empty.
+      • Row 4: blank.
+      • Row 5: event label l1   — centred, soft white + bold (primary line).
+      • Row 6: event label l2   — centred, soft white + bold; blank when
+        the label fits row 5.
 
     Below the bottom frame, a single full-width bar row (no border glyphs)
     holds the very-dark-grey countdown bar, centred and contracting
@@ -8962,7 +8964,7 @@ def _log_spotlight_overlay_text():
     char  = spot.character.upper()
     label = " · ".join(ev.label for ev in spot.events)
     # One event per spotlight (ADR 0077) — the first event's kind drives the
-    # type line. Unknown/empty kinds render a blank row.
+    # type word. Unknown/empty kinds collapse to the bare name.
     type_text = _SPOTLIGHT_TYPE_LABELS.get(spot.events[0].kind, "") if spot.events else ""
 
     active, seconds_to_next = reel.event_progress(spot, offset_within)
@@ -8970,10 +8972,10 @@ def _log_spotlight_overlay_text():
 
     styles = _spotlight_styles
     nav_frags = _log_spotlight_nav_row(spot_idx, reel.total_count, inner)
+    name_type_frags = _log_spotlight_name_type_row(char, type_text, inner)
     interior_rows = [
         ("frags",  nav_frags),
-        ("centre", ("name",  char)),
-        ("centre", ("type",  type_text)),
+        ("frags",  name_type_frags),
         ("blank",  None),
         ("centre", ("label", label_l1)),
         ("centre", ("label", label_l2)),
@@ -9052,6 +9054,44 @@ def _log_spotlight_box_row(text, style_key, width):
     if pad_l:
         frags.append((fill, " " * pad_l))
     frags.append((styles[style_key], t))
+    if pad_r:
+        frags.append((fill, " " * pad_r))
+    return frags
+
+
+def _log_spotlight_name_type_row(char, type_text, width):
+    """Render the merged name+type row (box row 3): `<CHAR>: <type>`,
+    centred as a single unit. The `<CHAR>:` segment paints the grey "name"
+    role; the ` <type>` segment paints the gold-bold "type" role. The whole
+    string is centred against `width` (left/right pad in "fill"), truncating
+    the composed string to `width` if it overflows.
+
+    When `type_text` is empty (unknown/missing kind) the row collapses to
+    the bare character name with no trailing ": " — delegated to
+    `_log_spotlight_box_row` so the centring/fill matches the simple rows."""
+    if not type_text:
+        return _log_spotlight_box_row(char, "name", width)
+    styles = _spotlight_styles
+    fill = styles["fill"]
+    name_seg = f"{char}:"
+    type_seg = f" {type_text}"
+    full = name_seg + type_seg
+    if len(full) > width:
+        # Truncate the row as a whole; re-derive the per-segment split so
+        # both fragments stay within the clipped string.
+        full = full[:width]
+        name_seg = full[:len(name_seg)]
+        type_seg = full[len(name_seg):]
+    pad_total = width - len(full)
+    pad_l = pad_total // 2
+    pad_r = pad_total - pad_l
+    frags = []
+    if pad_l:
+        frags.append((fill, " " * pad_l))
+    if name_seg:
+        frags.append((styles["name"], name_seg))
+    if type_seg:
+        frags.append((styles["type"], type_seg))
     if pad_r:
         frags.append((fill, " " * pad_r))
     return frags
