@@ -108,7 +108,11 @@ def _label_pkill(row: dict) -> tuple[str, dict]:
         target = f"{name} {race}"
     else:
         target = name or "an unknown foe"
-    return f"PvP kill: {target}", {"name": name, "race": race}
+    # The spotlight box's type line carries "PvP kill" (see launcher
+    # _SPOTLIGHT_TYPE_LABELS), so the label is just the target, wrapped in
+    # literal asterisks. The `extra` dict is unchanged — credits templates
+    # read it, not this label.
+    return f"*{target}*", {"name": name, "race": race}
 
 
 def _label_achievement(row: dict) -> tuple[str, dict]:

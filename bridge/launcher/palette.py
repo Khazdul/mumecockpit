@@ -18,7 +18,8 @@ __all__ = [
     "C_LOG_STRIP_PLAYED", "C_LOG_STRIP_REMAINING", "C_LOG_STRIP_MARKER",
     "C_LOG_EVENT_MARK",
     "C_LOG_BOX_FRAME", "C_LOG_BOX_FG", "C_LOG_BOX_DIM", "C_LOG_BOX_BTN_HOVER",
-    "C_SPOTLIGHT_BOX_FRAME", "C_SPOTLIGHT_NAME", "C_SPOTLIGHT_COUNT",
+    "C_SPOTLIGHT_BOX_FRAME", "C_SPOTLIGHT_NAME", "C_SPOTLIGHT_TYPE",
+    "C_SPOTLIGHT_COUNT",
     "C_SPOTLIGHT_ARROW", "C_SPOTLIGHT_LABEL", "C_SPOTLIGHT_BAR",
     "spotlight_box_bg",
     "_S_VALUE", "_S_LABEL", "_S_GAINED", "_S_LOSS", "_S_TP_BAR",
@@ -184,6 +185,8 @@ C_LOG_BOX_BTN_HOVER   = "bold fg:#dde4e0 bg:#242a27"  # hovered button, subtle l
 #   • C_SPOTLIGHT_BOX_FRAME — thin-line ┌─┐│└┘ glyphs (= control box).
 #   • C_SPOTLIGHT_NAME      — character name; muted gold (= arrows), bold so
 #                             it still reads as the box's primary line.
+#   • C_SPOTLIGHT_TYPE      — event-type line (PvP kill / Death / …); quiet
+#                             metadata grey (= count), below the name.
 #   • C_SPOTLIGHT_COUNT     — "N of M" counter; quiet metadata grey.
 #   • C_SPOTLIGHT_ARROW     — ◄ ► nav glyphs; muted gold.
 #   • C_SPOTLIGHT_LABEL     — event label; neutral readable grey.
@@ -191,6 +194,7 @@ C_LOG_BOX_BTN_HOVER   = "bold fg:#dde4e0 bg:#242a27"  # hovered button, subtle l
 #                             the external row below the box.
 C_SPOTLIGHT_BOX_FRAME = "fg:#585858"
 C_SPOTLIGHT_NAME      = "bold fg:#c79a4a"
+C_SPOTLIGHT_TYPE      = "fg:#8a8a8a"   # event-type line; muted grey (= count)
 C_SPOTLIGHT_COUNT     = "fg:#8a8a8a"
 C_SPOTLIGHT_ARROW     = "fg:#c79a4a"
 C_SPOTLIGHT_LABEL     = "fg:#bcbcbc"

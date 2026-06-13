@@ -54,7 +54,8 @@ from palette import (  # noqa: E402
     C_LOG_STRIP_PLAYED, C_LOG_STRIP_REMAINING, C_LOG_STRIP_MARKER,
     C_LOG_EVENT_MARK,
     C_LOG_BOX_FRAME, C_LOG_BOX_FG, C_LOG_BOX_DIM, C_LOG_BOX_BTN_HOVER,
-    C_SPOTLIGHT_BOX_FRAME, C_SPOTLIGHT_NAME, C_SPOTLIGHT_COUNT,
+    C_SPOTLIGHT_BOX_FRAME, C_SPOTLIGHT_NAME, C_SPOTLIGHT_TYPE,
+    C_SPOTLIGHT_COUNT,
     C_SPOTLIGHT_ARROW, C_SPOTLIGHT_LABEL, C_SPOTLIGHT_BAR,
     spotlight_box_bg,
     _S_GAINED, _S_LOSS, _S_LABEL, _S_VALUE, _S_TP_BAR,
@@ -607,12 +608,13 @@ def _spotlight_style_set(terminal_bg):
     background. Every box cell (frame glyphs, text, pad, bar, blank rows)
     carries the terminal-bg background so the box fully occludes the
     scrolling log — no transparent interior cells. Keys: frame / name /
-    count / arrow / label / bar (foreground roles + bg) and fill (the
-    bare bg for blank and pad cells)."""
+    type / count / arrow / label / bar (foreground roles + bg) and fill
+    (the bare bg for blank and pad cells)."""
     bg = spotlight_box_bg(terminal_bg)
     return {
         "frame": f"{C_SPOTLIGHT_BOX_FRAME} {bg}",
         "name":  f"{C_SPOTLIGHT_NAME} {bg}",
+        "type":  f"{C_SPOTLIGHT_TYPE} {bg}",
         "count": f"{C_SPOTLIGHT_COUNT} {bg}",
         "arrow": f"{C_SPOTLIGHT_ARROW} {bg}",
         "label": f"{C_SPOTLIGHT_LABEL} {bg}",
@@ -8886,12 +8888,24 @@ def _log_spotlight_header_text(cols):
 # is rendered as one extra row directly *below* the frame (outside it), so
 # the overlay Window is `_SPOTLIGHT_BOX_H + 1` rows tall (see _OVERLAY_H).
 _SPOTLIGHT_BOX_W      = 30
-_SPOTLIGHT_BOX_H      = 7
+_SPOTLIGHT_BOX_H      = 8
 _SPOTLIGHT_BOX_MARGIN = 2
 _SPOTLIGHT_BOX_RIGHT  = _LOG_STRIP_W + _SPOTLIGHT_BOX_MARGIN
-# Total overlay height: the 7-row box plus the one external bar row beneath
+# Total overlay height: the 8-row box plus the one external bar row beneath
 # it. The Float/Window read this so the bar row isn't clipped.
 _SPOTLIGHT_OVERLAY_H  = _SPOTLIGHT_BOX_H + 1
+
+# Spotlight event-type line (box row 4): maps the first event's kind to a
+# short display string rendered in C_SPOTLIGHT_TYPE between the character
+# name and the event label. One event per spotlight (ADR 0077), so the
+# first event's kind is authoritative. Unknown/empty kinds render a blank
+# row (collapses via _log_spotlight_box_row's empty-text branch).
+_SPOTLIGHT_TYPE_LABELS = {
+    "pkill":       "PvP kill",
+    "death":       "Death",
+    "level_up":    "Level up",
+    "achievement": "Achievement",
+}
 # Countdown bar: the █ fill steps in pairs (one removed from each side per
 # tick) so the bar shrinks symmetrically. At full pre-roll the fill is
 # `2 * _SPOTLIGHT_BAR_MAX_HALF` cells, flanked by the two constant ▐ ▌ caps.
@@ -8915,9 +8929,9 @@ def _log_spotlight_overlay_visible():
 def _log_spotlight_overlay_text():
     """Build the spotlight info box (top-right floating overlay).
 
-    30×7 dark framed rectangle plus one external bar row beneath it.
+    30×8 dark framed rectangle plus one external bar row beneath it.
     Top/bottom rows are the `┌─┐`/`└─┘` thin-line frame in grey on the
-    terminal-bg fill; 5 interior rows of `interior_width` cells flanked by
+    terminal-bg fill; 6 interior rows of `interior_width` cells flanked by
     `│` side glyphs. Every cell carries the terminal-bg background so the
     box fully occludes the log behind it.
 
@@ -8927,9 +8941,10 @@ def _log_spotlight_overlay_text():
         ◄ is hidden on the first spotlight, ► on the last; the counter
         (grey) stays centred either way.
       • Row 3: <CHAR>           — centred, muted gold (the box's primary line).
-      • Row 4: blank.
-      • Row 5: event label l1   — centred, neutral grey.
-      • Row 6: event label l2   — centred, grey; blank when label fits row 5.
+      • Row 4: <type>           — centred event-type line, muted grey.
+      • Row 5: blank.
+      • Row 6: event label l1   — centred, neutral grey.
+      • Row 7: event label l2   — centred, grey; blank when label fits row 6.
 
     Below the bottom frame, a single full-width bar row (no border glyphs)
     holds the very-dark-grey countdown bar, centred and contracting
@@ -8946,6 +8961,9 @@ def _log_spotlight_overlay_text():
 
     char  = spot.character.upper()
     label = " · ".join(ev.label for ev in spot.events)
+    # One event per spotlight (ADR 0077) — the first event's kind drives the
+    # type line. Unknown/empty kinds render a blank row.
+    type_text = _SPOTLIGHT_TYPE_LABELS.get(spot.events[0].kind, "") if spot.events else ""
 
     active, seconds_to_next = reel.event_progress(spot, offset_within)
     label_l1, label_l2 = _log_spotlight_wrap_label(label, inner)
@@ -8955,6 +8973,7 @@ def _log_spotlight_overlay_text():
     interior_rows = [
         ("frags",  nav_frags),
         ("centre", ("name",  char)),
+        ("centre", ("type",  type_text)),
         ("blank",  None),
         ("centre", ("label", label_l1)),
         ("centre", ("label", label_l2)),
@@ -9020,8 +9039,8 @@ def _log_spotlight_wrap_label(label, width):
 def _log_spotlight_box_row(text, style_key, width):
     """Render a single centred interior row. Always emits exactly `width`
     cells, all carrying the terminal-bg fill. `style_key` names the
-    foreground role for the text ("name" / "label"); pad cells use
-    "fill". Empty text collapses to a pure fill row."""
+    foreground role for the text ("name" / "type" / "label"); pad cells
+    use "fill". Empty text collapses to a pure fill row."""
     styles = _spotlight_styles
     fill = styles["fill"]
     if not text:

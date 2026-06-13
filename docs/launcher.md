@@ -2764,9 +2764,9 @@ spotlight's countdown and the freed left-side budget makes room for
 the keyboard hint on the right). The right-aligned hint is
 `ESC Back · ←→ Prev/next`.
 
-**Floating info box (top-right).** A 30×7 dark framed rectangle with a
+**Floating info box (top-right).** A 30×8 dark framed rectangle with a
 single external countdown-bar row directly beneath it (overlay height
-`_SPOTLIGHT_OVERLAY_H = _SPOTLIGHT_BOX_H + 1 = 8`). Pinned to
+`_SPOTLIGHT_OVERLAY_H = _SPOTLIGHT_BOX_H + 1 = 9`). Pinned to
 `top=2, right=_SPOTLIGHT_BOX_RIGHT` (`= _LOG_STRIP_W + 2 = 4`) so it
 clears the 2-col playhead strip without a wide gap; a 2-cell top
 margin. Sparse event markers may briefly float near it at an event
@@ -2774,7 +2774,7 @@ row — acceptable, since the marker layer is transparent between
 events. The frame is a thin-line outline `┌─┐ │ └─┘` in grey
 (`#585858`), the same visual family as the playback control box: top
 row `┌` + `─` × `interior_width` + `┐`, bottom row `└` + `─` ×
-`interior_width` + `┘`, `│` side columns on each of the 5 interior
+`interior_width` + `┘`, `│` side columns on each of the 6 interior
 rows. Every cell — frame glyphs, text, pad, the bar row, blank rows —
 carries the effective host terminal background (OSC 11 detected hex, or
 `terminal_bg_fallback` from `startup.conf` when detection fails —
@@ -2788,6 +2788,9 @@ is composed at runtime by `palette.spotlight_box_bg(_terminal_bg)`):
 - `C_SPOTLIGHT_NAME` (`bold fg:#c79a4a`) — character name; muted gold
   (same hue as the arrows), bold so it still reads as the box's primary
   line.
+- `C_SPOTLIGHT_TYPE` (`fg:#8a8a8a`) — event-type line (`PvP kill` /
+  `Death` / `Level up` / `Achievement`); quiet metadata grey (same as
+  the counter), sitting between the name and the breathing blank.
 - `C_SPOTLIGHT_COUNT` (`fg:#8a8a8a`) — the `N of M` counter; quiet grey.
 - `C_SPOTLIGHT_ARROW` (`fg:#c79a4a`) — the `◄` / `►` nav glyphs; muted gold.
 - `C_SPOTLIGHT_LABEL` (`fg:#bcbcbc`) — event label; neutral readable grey.
@@ -2795,19 +2798,21 @@ is composed at runtime by `palette.spotlight_box_bg(_terminal_bg)`):
 
 Each role is composed once at launcher startup against the resolved
 `_terminal_bg` (e.g. `f"{C_SPOTLIGHT_NAME} {spotlight_box_bg(_terminal_bg)}"`)
-into a `_spotlight_styles` dict (keys `frame` / `name` / `count` /
-`arrow` / `label` / `bar`, plus `fill` for blank and pad cells). The
+into a `_spotlight_styles` dict (keys `frame` / `name` / `type` /
+`count` / `arrow` / `label` / `bar`, plus `fill` for blank and pad
+cells). The
 renderer ticks at ~30 Hz but reads the fixed dict — the style strings
 are constant per launcher run. `spotlight_box_bg` guards `None` and
 falls back to `bg:#000000`.
 
-Row layout (7-row box + 1 external bar row), shown on the **first**
+Row layout (8-row box + 1 external bar row), shown on the **first**
 spotlight at full pre-roll — `◄` absent (see the nav-row note), bar full:
 
 ```
 ┌────────────────────────────┐
 │           1 of 3 ►         │
 │           BERIT            │
+│          Level up          │
 │                            │
 │      Reached level 3       │
 │                            │
@@ -2836,10 +2841,16 @@ full when a spotlight begins and shrinks to nothing as its pre-roll ends.
 - Row 3: `<CHAR>` — uppercased character name, centred,
   `C_SPOTLIGHT_NAME`. (The date used to live here; it's been dropped —
   the top header still carries it.)
-- Row 4: blank.
-- Row 5: event label (or its first wrapped line), centred,
+- Row 4: `<type>` — event-type line, centred, `C_SPOTLIGHT_TYPE`
+  (muted grey). Derived from the first event's kind via
+  `_SPOTLIGHT_TYPE_LABELS` (`pkill` → `PvP kill`, `death` → `Death`,
+  `level_up` → `Level up`, `achievement` → `Achievement`); one event
+  per spotlight (ADR 0077), so the first event's kind is authoritative.
+  An unknown/empty kind renders a blank row (collapses cleanly).
+- Row 5: blank.
+- Row 6: event label (or its first wrapped line), centred,
   `C_SPOTLIGHT_LABEL`.
-- Row 6: blank when the event label fits on row 5; the wrapped
+- Row 7: blank when the event label fits on row 6; the wrapped
   continuation of the event label when it doesn't (centred,
   `C_SPOTLIGHT_LABEL`). Wrapping uses `textwrap.wrap(...,
   break_long_words=False, break_on_hyphens=False)` so words stay
@@ -3321,6 +3332,7 @@ shared with the in-game popup. Roles:
 | `C_LOG_BOX_FRAME` / `C_LOG_BOX_FG` / `C_LOG_BOX_DIM` / `C_LOG_BOX_BTN_HOVER` | log_view control box — frame glyphs / labels / time field / hovered-button lift; box paints its cells in `_terminal_bg` (no panel tint) |
 | `C_SPOTLIGHT_BOX_FRAME`      | Spotlight info-box thin-line `┌─┐│└┘` frame — grey `#585858`, same as the control box's `C_LOG_BOX_FRAME`. Composed at startup with `spotlight_box_bg(_terminal_bg)` so every cell occludes the log behind it |
 | `C_SPOTLIGHT_NAME`           | Spotlight info-box character name — muted gold `bold fg:#c79a4a` (same hue as the arrows), bold so it still reads as the box's primary line |
+| `C_SPOTLIGHT_TYPE`           | Spotlight info-box event-type line (`PvP kill` / `Death` / `Level up` / `Achievement`) — quiet metadata grey `#8a8a8a` (same as the counter) |
 | `C_SPOTLIGHT_COUNT`          | Spotlight info-box `N of M` counter — quiet metadata grey `#8a8a8a` |
 | `C_SPOTLIGHT_ARROW`          | Spotlight info-box `◄` / `►` nav glyphs — muted gold `#c79a4a` |
 | `C_SPOTLIGHT_LABEL`          | Spotlight info-box event label — neutral readable grey `#bcbcbc` |
