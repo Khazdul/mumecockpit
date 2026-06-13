@@ -8896,7 +8896,7 @@ _SPOTLIGHT_BOX_RIGHT  = _LOG_STRIP_W + _SPOTLIGHT_BOX_MARGIN
 _SPOTLIGHT_OVERLAY_H  = _SPOTLIGHT_BOX_H + 1
 
 # Spotlight event-type word: maps the first event's kind to a short display
-# string rendered in C_SPOTLIGHT_TYPE (gold) after the grey "<CHAR>:" on the
+# string rendered in C_SPOTLIGHT_TYPE (grey, same as the name) after the grey "<CHAR>:" on the
 # merged name+type row (box row 3). One event per spotlight (ADR 0077), so
 # the first event's kind is authoritative. Unknown/empty kinds collapse to
 # the bare name with no trailing ": ".
@@ -8940,8 +8940,8 @@ def _log_spotlight_overlay_text():
         restarts current under the same 1.5 s rule as the keyboard path).
         ◄ is hidden on the first spotlight, ► on the last; the counter
         (grey) stays centred either way.
-      • Row 3: <CHAR>: <type>   — centred merged row; "<CHAR>:" grey,
-        " <type>" gold + bold. Collapses to the bare name when the kind
+      • Row 3: <CHAR>: <type>   — centred merged row; "<CHAR>:" and
+        " <type>" both grey. Collapses to the bare name when the kind
         is unknown/empty.
       • Row 4: blank.
       • Row 5: event label l1   — centred, soft white + bold (primary line).
@@ -9062,7 +9062,7 @@ def _log_spotlight_box_row(text, style_key, width):
 def _log_spotlight_name_type_row(char, type_text, width):
     """Render the merged name+type row (box row 3): `<CHAR>: <type>`,
     centred as a single unit. The `<CHAR>:` segment paints the grey "name"
-    role; the ` <type>` segment paints the gold-bold "type" role. The whole
+    role; the ` <type>` segment paints the grey "type" role. The whole
     string is centred against `width` (left/right pad in "fill"), truncating
     the composed string to `width` if it overflows.
 

@@ -249,9 +249,9 @@ Schema version is unchanged at `1`; this event type is additive.
 
 Written once per attributed PC kill at fold time (~500ms debounce after the
 R.I.P. line). Analogous to `kill` but for player characters. The `name` field
-holds only the character's base name (first word); `race` holds the race-suffix
-as captured from the MUME R.I.P. line (e.g. `"the Orc"`). Unlike `kill`, there
-is no `mob_name` field — PCs are not mobs.
+holds the R.I.P. name up to (but excluding) `" the "`; `race` holds the
+`" the "`-prefixed suffix as captured from the MUME R.I.P. line (e.g.
+`"the Orc"`). Unlike `kill`, there is no `mob_name` field — PCs are not mobs.
 
 ```json
 {
@@ -266,8 +266,8 @@ is no `mob_name` field — PCs are not mobs.
 | Field | Type | Notes |
 |-------|------|-------|
 | `ts` | integer | `os.time()` at fold time, not exact death time |
-| `name` | string | First word of the R.I.P. name (character name, no race-suffix) |
-| `race` | string | Remainder of the R.I.P. name after the first word (e.g. `"the Orc"`); empty string `""` if only one word was captured. Any trailing MUME label (e.g. `" (MIN)"`) is stripped by `run_state` before the split, so it never leaks into `race` |
+| `name` | string | The R.I.P. name up to (but excluding) `" the "`, or the whole string when it contains no `" the "`. Keeps article-form targets intact (e.g. `"an orc"`, `"a dreadful orc"`) instead of truncating to the first word; real PC names split as `"Moraxus the Orc"` → name `"Moraxus"` |
+| `race` | string | The `" the "`-prefixed suffix (e.g. `"the Orc"`); empty string `""` when the name contains no `" the "`. Any trailing MUME label (e.g. `" (MIN)"`) is stripped by `run_state` before the split, so it never lands in `race` |
 | `xp_delta` | integer | XP attributed to this kill; `0` for empty-Vitals folds |
 
 For mixed folds (mob kills and PC kills within the same 500ms window), XP is

@@ -2786,7 +2786,7 @@ is composed at runtime by `palette.spotlight_box_bg(_terminal_bg)`):
 - `C_SPOTLIGHT_BOX_FRAME` (`fg:#585858`) — thin-line `┌─┐│└┘` glyphs;
   identical to the control box's `C_LOG_BOX_FRAME`.
 - `C_SPOTLIGHT_NAME` (`fg:#8a8a8a`) — the `<CHAR>:` segment of the merged
-  name+type row; plain grey, no bold — context for the gold type word.
+  name+type row; plain grey, no bold — same tone as the type word beside it.
 - `C_SPOTLIGHT_TYPE` (`fg:#8a8a8a`) — the type word (`PvP kill` /
   `Death` / `Level up` / `Achievement`) of the merged row; plain grey
   (same as the name) so the `<CHAR>: <type>` row reads as one unit.
@@ -3334,7 +3334,7 @@ shared with the in-game popup. Roles:
 | `C_LOG_EVENT_MARK`  | log_view strip event letters + `►` — dark grey, a hair above the unplayed block for legibility |
 | `C_LOG_BOX_FRAME` / `C_LOG_BOX_FG` / `C_LOG_BOX_DIM` / `C_LOG_BOX_BTN_HOVER` | log_view control box — frame glyphs / labels / time field / hovered-button lift; box paints its cells in `_terminal_bg` (no panel tint) |
 | `C_SPOTLIGHT_BOX_FRAME`      | Spotlight info-box thin-line `┌─┐│└┘` frame — grey `#585858`, same as the control box's `C_LOG_BOX_FRAME`. Composed at startup with `spotlight_box_bg(_terminal_bg)` so every cell occludes the log behind it |
-| `C_SPOTLIGHT_NAME`           | `<CHAR>:` segment of the merged name+type row — plain grey `fg:#8a8a8a`, no bold; context for the gold type word |
+| `C_SPOTLIGHT_NAME`           | `<CHAR>:` segment of the merged name+type row — plain grey `fg:#8a8a8a`, no bold; same tone as the type word beside it |
 | `C_SPOTLIGHT_TYPE`           | Type-word segment of the merged row (`PvP kill` / `Death` / `Level up` / `Achievement`) — plain grey `fg:#8a8a8a` (same as the name) so the row reads as one grey unit |
 | `C_SPOTLIGHT_COUNT`          | Spotlight info-box `N of M` counter — darker grey `#6f6f6f` (same as `C_LOG_BOX_DIM`), recedes behind the gold arrows |
 | `C_SPOTLIGHT_ARROW`          | Spotlight info-box `◄` / `►` nav glyphs — muted gold `#c79a4a` |
