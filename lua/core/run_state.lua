@@ -120,8 +120,15 @@ end)
 
 events.subscribe("pc_death", function(full)
     full = strip_label(full)
-    local name = full:match("^(%S+)")
-    local race = full:match("^%S+%s+(.*)$") or ""
+    -- Real PC names look like "<Name> the <Race>"; split there so target
+    -- names that begin with an article (e.g. "an orc") stay intact.
+    local name, race = full:match("^(.-) the (.*)$")
+    if name then
+        race = "the " .. race
+    else
+        name = full
+        race = ""
+    end
     table.insert(M.pending_pkills, { name = name, race = race })
     schedule_fold()
 end)
