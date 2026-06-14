@@ -466,6 +466,7 @@ _LOG_RAIL_W                 = _LOG_STRIP_W + _LOG_MARK_W   # 7
 _log_dragging_strip         = False    # True between MOUSE_DOWN on strip and release
 _log_strip_top              = 0        # absolute top row of the strip in the last render
 _log_strip_rows             = 0        # number of strip rows in the last render
+_log_marker_rows            = {}       # screen row -> earliest marker offset_us (last render)
 
 # log_view mode: "chain" plays a SessionSummary's stitched chain; "spotlight"
 # plays a SpotlightReel via SpotlightPlayback. The playback is set on
@@ -9235,7 +9236,7 @@ def _log_spotlight_seek_relative(delta_spotlights):
     if target_idx >= len(reel.spotlights):
         # Already at the last spotlight; a forward step has nowhere to go.
         return
-    _log_scrubber_seek(reel.spotlight_start_offsets_us[target_idx])
+    _log_seek_to_offset_us(reel.spotlight_start_offsets_us[target_idx])
 
 
 # --- Bottom controls -------------------------------------------------------
@@ -9258,14 +9259,21 @@ def _log_rewind_click():
         _app.invalidate()
 
 
-def _log_scrubber_seek(target_us):
-    """Seek to `target_us`, preserving the current mode."""
+def _log_seek_to_offset_us(off_us):
+    """Seek playback to an absolute playback offset (us), preserving the
+    current mode. Reproduces the strip's existing seek behaviour exactly:
+    in play mode re-anchor and keep playing; in pause mode set the paused
+    offset, snap the cursor to the event at that offset (with phantom-skip)
+    and keep it visible.
+
+    Shared by the right-edge strip (`_log_strip_seek_to_row`), the
+    floating event-marker layer, and the spotlight ←/→ seek."""
     global _log_play_anchor_offset_us, _log_play_anchor_wall
     global _log_paused_offset_us, _log_cursor_index, _log_last_playhead_index
     pb = _log_view_playback
     if pb is None or not pb.events:
         return
-    target = max(0, min(pb.total_duration_us, int(target_us)))
+    target = max(0, min(pb.total_duration_us, int(off_us)))
     if _log_mode == "play":
         _log_play_anchor_offset_us = target
         _log_play_anchor_wall      = time.monotonic()
@@ -9322,7 +9330,7 @@ def _log_strip_seek_to_row(row):
     else:
         f = (row - _log_strip_top) / (rows - 1)
         f = max(0.0, min(1.0, f))
-    _log_scrubber_seek(round(f * pb.total_duration_us))
+    _log_seek_to_offset_us(round(f * pb.total_duration_us))
 
 
 def _log_handle_drag_event(ev):
@@ -9469,14 +9477,44 @@ def _log_strip_text():
 
 class _LogMarkerControl(FormattedTextControl):
     """Mouse routing for the floating event-marker layer. The layer sits
-    transparently over the log's right edge; any mouse activity here re-arms
-    the overlay auto-hide and clears stale button hover, mirroring the log
-    content's behaviour. It does not itself seek — the 2-col strip beside it
-    owns click/drag-to-seek."""
+    transparently over the log's right edge as a full-height Float pinned at
+    row 0, so `ev.position.y` is the absolute screen row — the same space as
+    the rows stashed in `_log_marker_rows` at render time. A discrete click
+    (MOUSE_DOWN) on a row carrying a marker seeks to that event, preserving
+    the current mode; a click on an empty cell only reveals the chrome. Drag
+    is NOT handled here — continuous drag-to-seek stays exclusive to the
+    2-col strip beside it."""
     def mouse_handler(self, ev):
+        global _log_view_scroll
         if _log_view_playback is None:
             return NotImplemented
-        if ev.event_type == MouseEventType.MOUSE_MOVE:
+        t = ev.event_type
+        if t == MouseEventType.MOUSE_DOWN:
+            # A marker click is a discrete jump; it must not run mid-drag.
+            if _log_dragging_strip:
+                _log_end_drag()
+            off = _log_marker_rows.get(ev.position.y)
+            _log_set_overlay_hover(None)
+            _log_touch_overlays()
+            if off is None:
+                # Empty cell in the marker column: reveal chrome, no seek.
+                return None
+            _log_seek_to_offset_us(off)
+            if _log_mode == "pause":
+                # Bottom-anchor the event the helper just landed on, so the
+                # paused framing mirrors play mode (event at the bottom of
+                # the viewport, its run-up above).
+                _log_view_rebuild_if_needed()
+                idx = max(0, min(len(_log_view_event_rows) - 1,
+                                 _log_cursor_index))
+                start, end = _log_view_event_rows[idx]
+                _log_view_scroll = max(0, end - _log_view_visible_rows())
+                _log_clamp_scroll()
+            # Play mode bottom-anchors automatically in its renderer.
+            if _app:
+                _app.invalidate()
+            return None
+        if t == MouseEventType.MOUSE_MOVE:
             _log_set_overlay_hover(None)
         _log_touch_overlays()
         return None
@@ -9493,19 +9531,27 @@ def _log_marker_text():
     bare — no padding — and the window's RIGHT alignment lands it flush
     against the strip's left edge while leaving the cells to its left
     transparent."""
+    global _log_marker_rows
     pb = _log_view_playback
     rows = max(1, _term_rows())
+    # Reset the row→offset map every render so it never holds stale rows
+    # (resolution changes, mode switches, a different chain loaded).
+    _log_marker_rows = {}
     if pb is None or not pb.events:
         return []
     total = pb.total_duration_us
     # Group event markers by row; distinct kinds per row render in the
-    # fixed order A, D, K, L followed by one ►.
+    # fixed order A, D, K, L followed by one ►. Stash the earliest marker
+    # offset on each row so a click on that row can seek to it.
     by_row = {}
     if total > 0:
         for letter, off in pb.event_markers():
             mr = _log_offset_to_row(off, total, rows)
             if 0 <= mr < rows:
                 by_row.setdefault(mr, set()).add(letter)
+                prev = _log_marker_rows.get(mr)
+                if prev is None or off < prev:
+                    _log_marker_rows[mr] = off
 
     mark_style = f"{C_LOG_EVENT_MARK} bg:{_terminal_bg or '#000000'}"
     frags = []
