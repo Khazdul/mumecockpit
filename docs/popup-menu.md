@@ -337,45 +337,64 @@ in `docs/launcher.md` and ADR 0086).
 The `panes_general` frame renders a **pane × colour grid**: rows are the six
 right-column panes (Character / Buffs / Group / Communication / UI /
 Developer), columns are the seven palette entries (Black / Red /
-Green / Blue / Grey / Orange / Purple). Each cell renders as `[X]███`
+Green / Blue / Grey / Orange / Purple), plus a trailing per-pane
+**Border** column. Each colour cell renders as `[X]███`
 or `[ ]███` — a 3-cell checkbox and a 3-cell colour swatch. Below the
-grid sit a blank row, a `[X] Display pane headers` toggle, a blank
+grid sit a blank row, a **Corner style** cycle row, a blank
 row, and `Back`. The frame uses `menu_chrome.title_block` /
 `footer_block` (`blank_above=1` for the popup) and the
 `menu_chrome.menu_row` `<< label >>` gold-arrow grammar for the
-headers toggle and `Back` — the cursor row paints `<< … >>` arrows in
+Corner style row and `Back` — the cursor row paints `<< … >>` arrows in
 gold (`C_CURSOR_CELL`) over a bright label, every other row sits at
 rest with three-space margins and no background fill (ADR 0087's P5,
 extended). Each is centred on its own width (`len(label) + 6`); this
 is a cursor-only frame, so there is no separate mouse-hover state.
 
-Per row, **0 or 1 cells are checked**: zero checked means the pane is
+Per row, **0 or 1 colour cells are checked**: zero checked means the pane is
 off (and the row paints dim end-to-end via `C_PANE_OFF`); one checked
 means the pane is on with that colour. Pane open-state is re-probed
-from tmux on every render; the current colour for each row comes from
-`startup.conf`.
+from tmux on every render; the current colour and border state for each
+row come from `startup.conf`.
 
-Click / Enter semantics (`panes_grid.apply_cell_toggle`):
+**Border column.** A trailing per-pane `[X]` / `[ ]` checkbox hangs off
+the right edge of each grid row (centred under a `Border` header,
+cursor column 7 after the seven colour columns), modelled on the timers
+grid's Clock column. The Developer pane is never framed, so its Border
+cell paints a **dim, inert blank** even under the cursor.
 
-- On a grid cell — if the cell is the pane's currently-checked colour,
-  uncheck it (the pane closes); otherwise check it (the pane opens
-  with that colour, clearing any other checked cell in the row). The
-  delta drives `toggle_pane.sh <target> --persist` (when the pane's
-  open/closed state changes) and `tmux select-pane -t
-  mume:cockpit.<idx> -P bg=<hex|default>` (when the pane is — or has
-  just become — open). The colour name is also written to
-  `startup.conf` via the in-place `_persist_conf_key` helper so it
+Click / Enter semantics:
+
+- On a colour cell (`panes_grid.apply_cell_toggle`) — if the cell is the
+  pane's currently-checked colour, uncheck it (the pane closes);
+  otherwise check it (the pane opens with that colour, clearing any
+  other checked cell in the row). The delta drives `toggle_pane.sh
+  <target> --persist` (when the pane's open/closed state changes) and
+  `tmux select-pane -t mume:cockpit.<idx> -P bg=<hex|default>` (when the
+  pane is — or has just become — open). The colour name is also written
+  to `startup.conf` via the in-place `_persist_conf_key` helper so it
   survives the next cold start (the cockpit's `open_pane.sh`
   `_pane_bg_for` reads the same key).
-- On the headers toggle row — `toggle_pane.sh headers --persist`
-  (live tmux border status + `show_pane_dividers` in `startup.conf`).
+- On the Border cell — flips `border_<key>` in `startup.conf`
+  immediately (via `_persist_conf_key`), then **re-runs
+  `apply_desired_heights.sh`** so the changed in-pane frame reservation
+  resizes the right column live; the toggled pane picks up `border_<key>`
+  on its next poll and shows / hides its frame. Inert on the Developer
+  row (never framed).
+- On the Corner style row — cycles `frame_corners` Auto → Quadrant →
+  Block (wrapping), writes it to `startup.conf` immediately, then
+  **re-resolves `frame_corners_resolved`** via the phase-1 resolver
+  (`frame_corners.resolve_and_persist`). `pane_frame.corners()` reads
+  `frame_corners_resolved` live, so every framed pane re-renders its
+  corners within one poll tick — no restart. See
+  [docs/pane-frame.md](pane-frame.md).
 - On `Back` — pops back to the `panes` hub.
 
 This is the persistence asymmetry vs. the launcher: the popup writes
-each cell click immediately and live-applies to tmux, while the
-launcher Options batches writes to Back / ESC and defers the visible
-effect to the next cockpit start. Both surfaces write the same
-`startup.conf` keys.
+each cell click, Border toggle, and corner cycle immediately and
+live-applies to tmux, while the launcher Options batches writes to
+Back / ESC and defers the visible effect to the next cockpit start.
+Both surfaces write the same `startup.conf` keys (`show_<key>`,
+`pane_color_<key>`, `border_<key>`, `frame_corners`).
 
 Cell render rules per the shared model: cursor cell brackets paint
 gold (`C_CURSOR_CELL`); on an enabled row, checked brackets paint
@@ -390,22 +409,25 @@ disabled rows. The colour name → hex mapping lives in `PANE_COLORS`
 table and the `palette.py` ↔ `open_pane.sh` mirror convention.
 
 **Cursor / navigation.** Eight navigable rows: the six grid rows, the
-headers-toggle row, and the `Back` row. `↑` / `↓` move between them
-(clamped). `←` / `→` move the column only while the cursor is on a
-grid row, clamped 0..6; the column persists across grid rows and
-across visits to the headers / Back rows. Mouse hover on any
-selectable target moves the cursor there — there is no separate hover
-style on the grid. Footer: `↑↓←→ Move · Enter Toggle · ESC Back`.
+Corner style row (`_PANES_CORNERS_ROW`), and the `Back` row. `↑` / `↓`
+move between them (clamped). `←` / `→` move the column only while the
+cursor is on a grid row, clamped 0..7 (the seven colour columns plus
+the Border cell); the column persists across grid rows and across visits
+to the Corner / Back rows. Mouse hover on any selectable target moves
+the cursor there — there is no separate hover style on the grid.
+Footer: `↑↓←→ Move · Enter Toggle · ESC Back`.
 
 Connection mode (MMapper / Direct / Custom) and profile switch are
 deliberately **not** present in the popup — they require a restart and
 are launcher-only.
 
-`cp -u`, `cp -d`, `cp -m`, `cp -c`, `cp -t`, `cp -g`, and `cp -h` are thin wrappers
+`cp -u`, `cp -d`, `cp -m`, `cp -c`, `cp -t`, and `cp -g` are thin wrappers
 around `bridge/layout/toggle_pane.sh`, each passing `--persist`. All toggle paths —
 popup, launcher Options, and `cp -X` aliases — are equivalent and write to
-`startup.conf`. Colour selections do **not** have `cp -X` equivalents
-today — they are reachable from the launcher Options page and the
+`startup.conf`. (The old global `cp -h` border/header toggle is retired —
+in-pane borders are now per-pane, toggled from the Border column.) Colour
+selections, per-pane borders, and the corner style do **not** have `cp -X`
+equivalents today — they are reachable from the launcher Options page and the
 popup's Panes → General submenu only.
 
 ## Communication submenu
@@ -460,8 +482,8 @@ swatch (Magenta truncates to `Magent`), a `Clock` label centred over the
 trailing checkbox column, and a `Cols` label centred over
 the `◄ N ►` stepper. Below the grid sit a blank row, a `[X] Display
 headers` toggle, a `[X] Compact layout` toggle, a blank row, and `Back` —
-the two toggles consecutive, mirroring the Panes `Display pane headers`
-toggle. The frame uses `menu_chrome.title_block` /
+the two toggles consecutive, sharing the `[X]`-leading `menu_row`
+grammar. The frame uses `menu_chrome.title_block` /
 `footer_block` (`blank_above=1`) and the `menu_chrome.menu_row`
 `<< label >>` gold-arrow grammar for the two toggles and `Back`. The
 two toggle labels share one `label_col_w` (the wider composed `[X] …`
