@@ -13,6 +13,7 @@
 
 import asyncio
 import os
+import re
 import sys
 
 from prompt_toolkit.filters import Condition
@@ -32,7 +33,6 @@ LAYOUT_PATH  = os.path.join(_RUNTIME, "layout.conf")
 # Pane-colour name (as stored in startup.conf under pane_color_<key>) → the
 # border foreground hex for that tint. A shade or two lighter than the pane bg.
 PANE_BORDER_COLORS = {
-    "black":  "#2a2a2a",   # terminal default / no bg override
     "grey":   "#2a2a2a",   # #161616
     "red":    "#2e2222",   # #1a0e0e
     "green":  "#222e22",   # #0e1a0e
@@ -41,6 +41,23 @@ PANE_BORDER_COLORS = {
     "purple": "#2a2430",   # #16101c
 }
 _DEFAULT_BORDER = "#2a2a2a"
+
+# The terminal-default ("black"/None) pane has no bg override, so its border is
+# derived from the live terminal background (layout.conf terminal_bg, the same
+# source apply_border_style.sh uses) rather than a static grey — a touch lighter
+# than the terminal so it reads as a frame, not a fill. On a black terminal this
+# yields #141414, visibly darker than the grey pane's #2a2a2a.
+_TERMINAL_DEFAULT_NAMES = ("black",)
+
+
+def lighten(hexcolor, delta=0x14):
+    """Lighten a #rrggbb hex colour by adding ``delta`` to each channel, clamped
+    at 0xFF. Returns a #rrggbb string."""
+    h = hexcolor.lstrip("#")
+    r = min(0xFF, int(h[0:2], 16) + delta)
+    g = min(0xFF, int(h[2:4], 16) + delta)
+    b = min(0xFF, int(h[4:6], 16) + delta)
+    return "#%02x%02x%02x" % (r, g, b)
 
 # Header label per pane key. Lives on the frame's top border, not in content.
 LABELS = {
@@ -96,6 +113,7 @@ _pane_colors    = {}            # pane_key -> colour name (from startup.conf)
 _startup_mtime  = None
 _layout_mtime   = None
 _corners        = _CORNERS_BLOCK   # refreshed from layout.conf by start_poll
+_terminal_bg    = "#000000"        # from layout.conf; read once at import (set at startup)
 
 
 def _parse_conf(path):
@@ -164,8 +182,20 @@ def _reload_corners():
     return False
 
 
-# Resolve corners and the initial config at import.
+_HEX_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
+
+
+def _load_terminal_bg():
+    """Read terminal_bg from layout.conf (the OSC-11 / startup value, ADR 0099).
+    Falls back to #000000 when absent or not a #rrggbb literal. terminal_bg is
+    set once at startup, so this is read once at import — no polling needed."""
+    val = _parse_conf(LAYOUT_PATH).get("terminal_bg", "").strip()
+    return val if _HEX_RE.match(val) else "#000000"
+
+
+# Resolve corners, terminal_bg, and the initial config at import.
 _corners = _load_corners()
+_terminal_bg = _load_terminal_bg()
 _load_startup()
 
 
@@ -195,6 +225,9 @@ def border_style(pane_key):
     """prompt_toolkit style string ('fg:#xxxxxx') for the pane's border,
     derived from its pane colour. Cached."""
     name = _pane_colors.get(pane_key, "black")
+    if name in _TERMINAL_DEFAULT_NAMES:
+        # No bg override: derive the border from the live terminal background.
+        return "fg:" + lighten(_terminal_bg, 0x14)
     return "fg:" + PANE_BORDER_COLORS.get(name, _DEFAULT_BORDER)
 
 
