@@ -76,6 +76,9 @@ tracking, and UI feedback.
 │   │   │                     #   so the same editor can run inside the popup (ADR 0109)
 │   │   ├── foot_config.py    # Pure foot.ini reader/writer + fc-list monospace
 │   │   │                     #   font enumerator; backs Options → Terminal (ADR 0104)
+│   │   ├── frame_corners.py  # Quadrant-corner font-support resolver — auto-detects
+│   │   │                     #   whether the active font covers ▛▜▙▟ and persists
+│   │   │                     #   frame_corners_resolved to layout.conf (ADR 0136)
 │   │   ├── tmux_start.sh     # tmux session creation, hooks, keybinds
 │   │   ├── ingame_menu.sh    # In-game ESC popup menu
 │   │   ├── profile_io.py     # Parser / serializer for tt++ profile .tin files; backs
@@ -119,7 +122,10 @@ tracking, and UI feedback.
 │   │   ├── timers_pane.py     # Timers pane — affect grid (grouped, bar drain, blink)
 │   │   ├── group_pane.py     # Group pane — member HP/Mana/Moves bars with name overlay
 │   │   ├── status_pane.py    # Status pane — polls status.state
-│   │   └── ui_pane.py        # UI pane — tails logs/ui.log
+│   │   ├── ui_pane.py        # UI pane — tails logs/ui.log
+│   │   └── pane_frame.py     # Shared in-pane frame helper for the five right-column
+│   │                         #   panes — foreground-only border + header label, per-pane
+│   │                         #   border toggle, resolved corner glyphs (ADR 0136)
 │   ├── layout/               # Pane/layout state mutations
 │   │   ├── apply_layout.sh   # Re-applies saved layout after resize or pane toggle
 │   │   ├── apply_border_style.sh  # Single authority for tmux pane-border-style — paints
@@ -430,7 +436,6 @@ Unified window and system management via `cp` commands:
 | `cp -m`       | Toggle comm pane                |
 | `cp -u`       | Toggle UI pane                  |
 | `cp -d`       | Toggle dev pane                 |
-| `cp -h`       | Toggle pane title headers       |
 | `cp -s`       | Save profile to disk            |
 | `cp -e`       | Full shutdown                   |
 | `cp -<alias>` | Show help for installed script  |
@@ -543,6 +548,21 @@ the deployment shape, and
 the managed-keys foot.ini contract and the user-selectable window
 mode.
 
+The **in-pane pane frames** are shipped. Each of the five right-column
+panes (status, timers, group, comm, ui) now draws its own foreground-only
+border and header label, coloured from the pane's own colour and toggled
+per pane via a **Border** column in the Panes grid — replacing the single
+global borders toggle (and the retired `cp -h` alias); `dev` is never
+framed. The frame lives in `bridge/panes/pane_frame.py`, which derives
+which pane it owns from its own script filename (`status_pane.py` →
+`status`), so it needs no per-pane wiring — the same script-name key
+convention the renderers already follow. Quadrant corners `▛▜▙▟` are used
+where the active font covers them, else a full block; that coverage is
+resolved once at startup by `bridge/launcher/frame_corners.py` and
+persisted to `layout.conf`, mirroring the OSC-11 `terminal_bg` lifecycle.
+See [docs/pane-frame.md](docs/pane-frame.md) and
+[ADR 0136](docs/decisions/0136-in-pane-borders.md).
+
 ## See also
 
 - [docs/ui-messaging.md](docs/ui-messaging.md) — UI helpers, colour constants, and style rules. Touched when writing almost any script.
@@ -572,4 +592,5 @@ mode.
 - [docs/timers-pane.md](docs/timers-pane.md) — Timers pane: renderer, scroll, blink, layout integration. Touched when changing the timers pane renderer or the timers.state schema.
 - [docs/group-pane.md](docs/group-pane.md) — Group pane: renderer, state-file schema, bar fill, threshold colours, name overlay, overflow indicator. Touched when changing the group pane renderer or the group.state schema.
 - [docs/ui-pane.md](docs/ui-pane.md) — UI pane: renderer, scroll, log-tail mechanics. Touched when changing the UI pane.
+- [docs/pane-frame.md](docs/pane-frame.md) — Shared in-pane frame for the five right-column panes: `pane_frame.py` helper API, the per-pane `border_<key>` contract, and the `frame_corners` font-support resolution. Touched when changing the pane border, header labels, or corner detection.
 - [docs/install-bootstrap.md](docs/install-bootstrap.md) — Cross-platform install: macOS/Linux bootstrap scripts and the Windows foot/WSLg installer. Touched when changing installation or the bootstrap/installer scripts.
