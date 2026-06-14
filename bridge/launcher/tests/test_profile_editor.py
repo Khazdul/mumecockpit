@@ -1773,13 +1773,14 @@ class TestEditorModeToggle(unittest.TestCase):
             launcher.C_BUTTON_ACTIVE_UNFOCUSED,
         )
 
-    def test_button_hover_on_inactive_previews_unfocused(self):
+    def test_button_hover_on_inactive_paints_hover(self):
         self._setup()
-        # mode = lite — hover on EDITOR previews active-unfocused.
+        # mode = lite — hover on EDITOR paints C_HOVER (label brightening,
+        # no fill), distinct from the selected-unfocused grey.
         _ed._editor_toggle_hover = "editor"
         self.assertEqual(
             _ed._editor_toggle_button_style("editor"),
-            launcher.C_BUTTON_ACTIVE_UNFOCUSED,
+            launcher.C_HOVER,
         )
 
 

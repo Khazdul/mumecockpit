@@ -2955,14 +2955,16 @@ class ProfileEditor:
     def _editor_toggle_button_style(self, label_lower):
         """Three-state colour for a toggle block. `label_lower` is "lite" or
         "editor". Active = matches `self._editor_mode`. Zone focus = the toggle row
-        has keyboard focus. Hover on the inactive block previews active-
-        unfocused (matches the kind-button convention)."""
+        has keyboard focus. Hover on the inactive block paints C_HOVER (label
+        brightening, no fill), distinct from the selected-unfocused grey."""
         is_active = (label_lower == self._editor_mode)
         is_hover  = (self._editor_toggle_hover == label_lower and not is_active)
         if is_active and self._editor_toggle_focused:
             return C_BUTTON_ACTIVE_FOCUSED
-        if is_active or is_hover:
+        if is_active:
             return C_BUTTON_ACTIVE_UNFOCUSED
+        if is_hover:
+            return C_HOVER
         return C_BUTTON_INACTIVE
     
     
@@ -4058,7 +4060,8 @@ class ProfileEditor:
     def _editor_kind_button_style(self, idx):
         """Return the three-state colour token for the kind button at index
         `idx` (0..len(_PROFILE_EDITOR_TABS)-1). Hover on an inactive button
-        previews the active-unfocused state.
+        paints C_HOVER (label brightening, no fill), distinct from the
+        selected-unfocused grey.
     
         The kind-button row counts as focused only when `self._editor_focus == 0`
         AND the toggle row does not hold the keyboard claim — moving focus
@@ -4070,8 +4073,10 @@ class ProfileEditor:
         zone_focused = (self._editor_focus == 0 and not self._editor_toggle_focused)
         if is_active and zone_focused:
             return C_BUTTON_ACTIVE_FOCUSED
-        if is_active or is_hover:
+        if is_active:
             return C_BUTTON_ACTIVE_UNFOCUSED
+        if is_hover:
+            return C_HOVER
         return C_BUTTON_INACTIVE
     
     
