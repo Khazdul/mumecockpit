@@ -472,15 +472,15 @@ section in `docs/launcher.md` and ADR 0126). ESC pops back to the
 
 The `timers` frame renders a **group × colour grid**: rows are the six
 timer groups (Spells / Buffs / Debuffs / Stored / Blinds / Charmies),
-columns are the eight palette entries (Blue / Green / Red / Magenta /
-Cyan / Violet / Orange / Yellow), each row trailed by a `Clock` checkbox
-column and an inline
-`◄ N ►` column stepper. Each colour cell renders as `[X]███` or `[ ]███`
+columns are the seven palette entries (Blue / Green / Red / Magenta /
+Cyan / Violet / Orange), each row trailed by an inline `◄ N ►` column
+stepper, a `Clock` checkbox column, and a far-right `Bar` checkbox column.
+Each colour cell renders as `[X]███` or `[ ]███`
 — a 3-cell checkbox and a 3-cell swatch. A dim, non-interactive header
 row sits above the six group rows — each colour name centred over its
-swatch (Magenta truncates to `Magent`), a `Clock` label centred over the
-trailing checkbox column, and a `Cols` label centred over
-the `◄ N ►` stepper. Below the grid sit a blank row, a `[X] Display
+swatch (Magenta truncates to `Magent`), a `Cols` label centred over
+the `◄ N ►` stepper, a `Clock` label centred over the Clock column, and a
+`Bar` label centred over the Bar column. Below the grid sit a blank row, a `[X] Display
 headers` toggle, a `[X] Compact layout` toggle, a blank row, and `Back` —
 the two toggles consecutive, sharing the `[X]`-leading `menu_row`
 grammar. The frame uses `menu_chrome.title_block` /
@@ -510,6 +510,10 @@ Click / Enter semantics:
 - On the `Clock` checkbox — toggles the group's countdown overlay, writing
   `timers_<type>_clock` in place via `_persist_timers_layout_key`. Charmies'
   `Clock` cell is inert.
+- On the `Bar` checkbox — toggles the group's coloured drain bar (off renders
+  the group barless with its affect names in the selected colour's foreground),
+  writing `timers_<type>_bar` in place via `_persist_timers_layout_key`.
+  Defaults on. Charmies' `Bar` cell is inert.
 - On the `[X] Display headers` toggle — flips the global `timers_headers`
   key in place (checked = a dim `Group:` label row above each rendered
   group; unchecked = no headers). The running pane re-renders within ~100 ms.
@@ -536,9 +540,10 @@ absent, the grid opens from `TIMERS_LAYOUT_DEFAULTS`.
 **Cursor / navigation.** Nine navigable rows: the six grid rows, the
 `Display headers` toggle (row 6), the `Compact layout` toggle (row 7), and
 the `Back` row (row 8). `↑` / `↓` move between them (clamped). `←` / `→`
-move the column only while the cursor is on a grid row, across the eight
-colour columns then `◄` (col 8), `►` (col 9), and the `Clock` cell (col 10);
-the column persists across grid rows. Footer: `↑↓←→ Move · Enter Toggle · ESC Back`.
+move the column only while the cursor is on a grid row, across the seven
+colour columns then `◄` (col 7), `►` (col 8), the `Clock` cell (col 9), and the
+`Bar` cell (col 10); the column persists across grid rows. Footer:
+`↑↓←→ Move · Enter Toggle · ESC Back`.
 
 ## Readability submenu
 

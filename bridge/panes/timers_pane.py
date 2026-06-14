@@ -97,26 +97,23 @@ C_NAME_DEPLETED = "fg:#C0C0C0"   # status-pane C_VALUE grey (192,192,192); disti
 C_NAME_UNTRACKED_AFFECT = "fg:#3a3a3a"
 
 # Layout config (bridge/runtime/timers_layout.conf). Each type carries an
-# enabled flag, a #rrggbb colour, a per-group column count, and a per-group
-# clock flag (overlay a right-justified M:SS countdown on each timed cell's
-# drain bar). The defaults below reproduce the historic hardcoded grid exactly
-# (clock off everywhere), so an absent config file (or any missing key) leaves
-# the pane visually unchanged. Charm carries clock for uniformity but never
-# reads it — charms are excluded from the countdown overlay.
-# Stored token for a group whose colour column is "None" (no bar). Restated
-# here (the launcher's palette.TIMERS_NONE_COLOR) for the same cross-package
-# reason as _LAYOUT_DEFAULTS — bridge/panes shares no import path with
-# bridge/launcher. A group with this colour renders barless plain text.
-_NONE_COLOR      = "none"
-
+# enabled flag, a #rrggbb colour, a per-group column count, a per-group clock
+# flag (overlay a right-justified M:SS countdown on each timed cell's drain
+# bar), and a per-group bar flag (draw the coloured drain bar). The defaults
+# below reproduce the historic hardcoded grid exactly (clock off, bar on
+# everywhere), so an absent config file (or any missing key) leaves the pane
+# visually unchanged. With bar off a group renders barless — its affect names
+# painted in the selected colour's foreground, no fill. Charm carries clock and
+# bar for uniformity but reads neither — charms are excluded from the countdown
+# overlay and are always coloured-FG-no-bar.
 _LAYOUT_TYPES    = ("spell", "buff", "debuff", "stored", "blind", "charm")
 _LAYOUT_DEFAULTS = {
-    "spell":  {"enabled": True, "color": "#66b2ff", "cols": 4, "clock": False},
-    "buff":   {"enabled": True, "color": "#00d900", "cols": 4, "clock": False},
-    "debuff": {"enabled": True, "color": "#d90000", "cols": 4, "clock": False},
-    "stored": {"enabled": True, "color": "#ff66ff", "cols": 4, "clock": False},
-    "blind":  {"enabled": True, "color": "#00cccc", "cols": 2, "clock": False},
-    "charm":  {"enabled": True, "color": "#B388FF", "cols": 1, "clock": False},
+    "spell":  {"enabled": True, "color": "#66b2ff", "cols": 4, "clock": False, "bar": True},
+    "buff":   {"enabled": True, "color": "#00d900", "cols": 4, "clock": False, "bar": True},
+    "debuff": {"enabled": True, "color": "#d90000", "cols": 4, "clock": False, "bar": True},
+    "stored": {"enabled": True, "color": "#ff66ff", "cols": 4, "clock": False, "bar": True},
+    "blind":  {"enabled": True, "color": "#00cccc", "cols": 2, "clock": False, "bar": True},
+    "charm":  {"enabled": True, "color": "#B388FF", "cols": 1, "clock": False, "bar": True},
 }
 # Group header labels above each rendered group. GLOBAL toggle (not per-type):
 # True (default) renders a dim "Group:" label row above each rendered (enabled
@@ -165,8 +162,8 @@ def _load_layout():
     """Resolve the layout dict from _LAYOUT_DEFAULTS overridden by
     timers_layout.conf (key=value, one per line; same trivial format as
     startup.conf). Unknown keys are ignored; an unparseable value falls back to
-    that key's default. Keys: timers_<type>_{enabled,color,cols,clock} plus the
-    global timers_headers and timers_compact. Returns (layout, headers,
+    that key's default. Keys: timers_<type>_{enabled,color,cols,clock,bar} plus
+    the global timers_headers and timers_compact. Returns (layout, headers,
     compact); absent or unparseable globals resolve to TIMERS_HEADERS_DEFAULT /
     TIMERS_COMPACT_DEFAULT."""
     layout = {t: dict(v) for t, v in _LAYOUT_DEFAULTS.items()}
@@ -208,9 +205,7 @@ def _load_layout():
             if val in ("0", "1"):
                 layout[typ]["enabled"] = (val == "1")
         elif attr == "color":
-            if val.lower() == _NONE_COLOR:
-                layout[typ]["color"] = _NONE_COLOR
-            elif _COLOR_RE.match(val):
+            if _COLOR_RE.match(val):
                 layout[typ]["color"] = val
         elif attr == "cols":
             n = _clamp_cols(typ, val)
@@ -219,6 +214,9 @@ def _load_layout():
         elif attr == "clock":
             if val in ("0", "1"):
                 layout[typ]["clock"] = (val == "1")
+        elif attr == "bar":
+            if val in ("0", "1"):
+                layout[typ]["bar"] = (val == "1")
     return layout, headers, compact
 
 
@@ -426,13 +424,14 @@ def _cell_frags(entry, cell_w, palette, clock=False, last=False, corner=False):
     return frags
 
 
-def _barless_cell_frags(entry, cell_w, clock=False, last=False, corner=False):
-    """A timer cell with no coloured bar — for a group whose colour is the
-    None token. Layout mirrors _cell_frags (so the columns line up with barred
-    groups) but every glyph paints in the terminal-default foreground (style
-    ""): the uppercased affect name, plus a right-justified countdown when the
-    group's clock flag is on and the affect is timed. No bar fill, no separator
-    glyph, none of the charm chrome (no ×, no minute colour)."""
+def _barless_cell_frags(entry, cell_w, fg_style="", clock=False, last=False, corner=False):
+    """A timer cell with no coloured bar — for a group whose Bar toggle is off.
+    Layout mirrors _cell_frags (so the columns line up with barred groups) but
+    every glyph paints in fg_style (the group's selected colour as foreground,
+    e.g. "fg:#66b2ff"; "" falls back to the terminal default): the uppercased
+    affect name, plus a right-justified countdown when the group's clock flag is
+    on and the affect is timed. No bar fill, no separator glyph, none of the
+    charm chrome (no ×, no minute colour)."""
     now               = time.time()
     expires_at        = entry.get("expires_at")
     expected_duration = entry.get("expected_duration")
@@ -445,7 +444,7 @@ def _barless_cell_frags(entry, cell_w, clock=False, last=False, corner=False):
     else:
         label = name.upper()[:content_w].ljust(content_w)
 
-    frags = [("", label)]
+    frags = [(fg_style, label)]
     if not edge:
         frags.append(("", " "))     # blank separator (also the corner + reserve)
     return frags
@@ -586,12 +585,13 @@ def _group_rows(items, typ, W, cols, corner_local_row=None):
             rows.append(row_frags)
         return rows
 
-    # A group whose colour is the None token renders barless: plain
-    # terminal-default text, no bar, for every cell. Branch before _palette so
-    # the None token never reaches the hex paint path (no "bg:none").
-    barless = (_layout[typ]["color"] or "").lower() == _NONE_COLOR
-    palette = None if barless else _palette(typ)
-    clock   = _layout[typ]["clock"]
+    # A group with its Bar toggle off renders barless: no fill, every cell's
+    # name painted in the group's selected colour as foreground. Branch before
+    # _palette so the bg paint path is skipped for a barless group.
+    bar_on   = _layout[typ]["bar"]
+    fg_style = "fg:" + _layout[typ]["color"]
+    palette  = _palette(typ) if bar_on else None
+    clock    = _layout[typ]["clock"]
     for row in range(math.ceil(n / cols)):
         row_frags = []
         for col in range(cols):
@@ -602,9 +602,10 @@ def _group_rows(items, typ, W, cols, corner_local_row=None):
             at_edge   = (col == cols - 1)
             is_corner = (corner_local_row is not None
                          and row == corner_local_row and col == cols - 1)
-            if barless:
-                row_frags.extend(_barless_cell_frags(entry, widths[col], clock,
-                                                     last=at_edge, corner=is_corner))
+            if not bar_on:
+                row_frags.extend(_barless_cell_frags(entry, widths[col], fg_style,
+                                                     clock, last=at_edge,
+                                                     corner=is_corner))
             elif typ == "stored":
                 if entry.get("tracked"):
                     row_frags.extend(_cell_frags(entry, widths[col], palette, clock,

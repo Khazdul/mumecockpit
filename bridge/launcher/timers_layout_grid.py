@@ -57,16 +57,19 @@ TIMERS_LAYOUT_LABELS = {
 
 # Defaults reproduce the timers pane's historic hardcoded grid exactly. The
 # per-type `clock` flag (overlay a right-justified M:SS countdown on each timed
-# cell) defaults off everywhere; charm carries it for uniformity but never uses
-# it (no Clock toggle in the grid). Restated here (and in
-# bridge/panes/timers_pane.py) for the same cross-package reason — see ADR 0126.
+# cell) defaults off everywhere; the per-type `bar` flag (draw the coloured
+# drain bar) defaults on everywhere — bar off renders the group barless with
+# its names painted in the selected colour's foreground. Charm carries both for
+# uniformity but never uses them (no Clock / Bar toggle in the grid). Restated
+# here (and in bridge/panes/timers_pane.py) for the same cross-package reason —
+# see ADR 0126.
 TIMERS_LAYOUT_DEFAULTS = {
-    "spell":  {"enabled": True, "color": "#66b2ff", "cols": 4, "clock": False},
-    "buff":   {"enabled": True, "color": "#00d900", "cols": 4, "clock": False},
-    "debuff": {"enabled": True, "color": "#d90000", "cols": 4, "clock": False},
-    "stored": {"enabled": True, "color": "#ff66ff", "cols": 4, "clock": False},
-    "blind":  {"enabled": True, "color": "#00cccc", "cols": 2, "clock": False},
-    "charm":  {"enabled": True, "color": "#B388FF", "cols": 1, "clock": False},
+    "spell":  {"enabled": True, "color": "#66b2ff", "cols": 4, "clock": False, "bar": True},
+    "buff":   {"enabled": True, "color": "#00d900", "cols": 4, "clock": False, "bar": True},
+    "debuff": {"enabled": True, "color": "#d90000", "cols": 4, "clock": False, "bar": True},
+    "stored": {"enabled": True, "color": "#ff66ff", "cols": 4, "clock": False, "bar": True},
+    "blind":  {"enabled": True, "color": "#00cccc", "cols": 2, "clock": False, "bar": True},
+    "charm":  {"enabled": True, "color": "#B388FF", "cols": 1, "clock": False, "bar": True},
 }
 
 # Group header labels above each rendered timer group. This is a GLOBAL toggle,
@@ -111,9 +114,9 @@ def step_cols(cols, max_cols, delta):
 # ── Grid geometry ──────────────────────────────────────────────────────
 # A colour cell is `[X]███` / `[ ]███` — a 3-cell checkbox plus a 3-cell
 # swatch, identical to panes. The trailing stepper is `◄ N ►` (the digit is
-# display-only, not a cursor stop), followed by a far-right Clock checkbox.
-# Cursor columns per row: colour cols 0..N-1, then ◄ at N, ► at N+1, and the
-# Clock cell at N+2.
+# display-only, not a cursor stop), followed by a Clock checkbox and a far-
+# right Bar checkbox. Cursor columns per row: colour cols 0..N-1, then ◄ at N,
+# ► at N+1, the Clock cell at N+2, and the Bar cell at N+3.
 _CELL_W    = 6
 _COL_GAP   = 1
 _LABEL_GAP = 2
@@ -122,26 +125,25 @@ _STEP_GAP  = 2
 _STEP_W    = 5    # "◄ N ►" — single-digit N (cols never exceeds 6)
 _CLOCK_GAP = 2
 _CLOCK_W   = 5    # "Clock" header width; the `[X]` / `[ ]` cell is centred in it
+_BAR_GAP   = 2
+_BAR_W     = 5    # "Bar" header width; the `[X]` / `[ ]` cell is centred in it
 
 
 def grid_width():
-    """Total horizontal width of the grid (label + swatches + stepper + clock)."""
+    """Total horizontal width of the grid (label + swatches + stepper + clock +
+    bar)."""
     n = len(TIMERS_COLOR_ORDER)
     return (_LABEL_W + _LABEL_GAP + n * _CELL_W + (n - 1) * _COL_GAP
-            + _STEP_GAP + _STEP_W + _CLOCK_GAP + _CLOCK_W)
+            + _STEP_GAP + _STEP_W + _CLOCK_GAP + _CLOCK_W + _BAR_GAP + _BAR_W)
 
 
 def _enabled_swatch(colour_index):
     """Return ``(style, text)`` for an enabled-row swatch in the given column.
 
     Solid fill — fg and bg both painted with the swatch hex so the cell reads
-    as a flat colour block. The None column (TIMERS_COLOR_ORDER hex is None)
-    instead renders three plain spaces with no bg style, so it reads as
-    "no colour", mirroring the panes grid's terminal-default column. Selection
-    stays visible via the gold cursor brackets / [X]."""
+    as a flat colour block. Selection stays visible via the gold cursor
+    brackets / [X]."""
     hex_color = TIMERS_COLOR_ORDER[colour_index][1]
-    if hex_color is None:
-        return "", "   "
     return f"bg:{hex_color} fg:{hex_color}", "███"
 
 
@@ -156,43 +158,42 @@ def _centre_in(text, width):
 
 def timers_grid_fragments(rows, term_cols, cursor,
                           cell_handler=None, stepper_handler=None,
-                          clock_handler=None):
+                          clock_handler=None, bar_handler=None):
     """Fragments for a dim colour-name header row, then one row per group:
-    label, N colour swatches, an inline `◄ N ►` column stepper, and a
-    far-right Clock checkbox.
+    label, N colour swatches, an inline `◄ N ►` column stepper, a Clock
+    checkbox, and a far-right Bar checkbox.
 
     Args:
         rows: iterable of
-            ``(label, enabled, colour_index, cols, max_cols, clock,
-            inert_none)``.
+            ``(label, enabled, colour_index, cols, max_cols, clock, bar)``.
             ``colour_index`` is ignored when ``enabled`` is False. ``clock`` is
             a bool (rendered as an ``[X]`` / ``[ ]`` checkbox) or ``None`` for a
             group with no Clock toggle (e.g. Charmies — rendered as a dim blank,
-            never a checkbox, a no-op on Enter/click). ``inert_none`` is a bool:
-            when True the None column (col 0) renders as a dim inert blank
-            (``C_PANE_OFF``, no ``[X]``, no swatch) and carries no cell handler
-            — used for Charmies, which have no no-bar state. Identical treatment
-            to the ``clock=None`` Clock cell.
+            never a checkbox, a no-op on Enter/click). ``bar`` is the same: a
+            bool rendered as an ``[X]`` / ``[ ]`` checkbox, or ``None`` for a
+            group with no Bar toggle (Charmies — a dim inert blank).
         term_cols: terminal width — used to centre the grid.
         cursor: ``(row_idx, col_idx)`` of the focused cell, or ``None`` when
             the cursor sits outside the grid (e.g. on Back). Colour cells are
             cols ``0..N-1``; ``◄`` is col ``N``; ``►`` is col ``N+1``; the Clock
-            cell is col ``N+2``.
+            cell is col ``N+2``; the Bar cell is col ``N+3``.
         cell_handler: optional ``f(row_idx, col_idx) -> mouse_handler`` for a
             colour cell; its fragments become 3-tuples when provided.
         stepper_handler: optional ``f(row_idx, delta) -> mouse_handler`` where
             ``delta`` is ``-1`` (◄) or ``+1`` (►).
         clock_handler: optional ``f(row_idx) -> mouse_handler`` for the Clock
             checkbox; ignored for a row whose ``clock`` is ``None``.
+        bar_handler: optional ``f(row_idx) -> mouse_handler`` for the Bar
+            checkbox; ignored for a row whose ``bar`` is ``None``.
 
     Cell-colour precedence mirrors the panes grid: cursor cell → gold
     (``C_CURSOR_CELL``); else on an enabled row, checked ``[X]`` → ``C_ACTIVE``,
     unchecked ``[ ]`` → ``C_HINT``; on a disabled row everything paints
     ``C_PANE_OFF`` except the cursor cell which stays gold. The stepper arrows
     follow the same precedence; the digit is never a cursor stop and never
-    gold (``C_ITEM`` enabled, ``C_PANE_OFF`` disabled). The Clock checkbox
-    follows the swatch-cell grammar; a ``None`` clock paints a dim blank
-    (``C_PANE_OFF``) even under the cursor.
+    gold (``C_ITEM`` enabled, ``C_PANE_OFF`` disabled). The Clock and Bar
+    checkboxes follow the swatch-cell grammar; a ``None`` clock/bar paints a dim
+    blank (``C_PANE_OFF``) even under the cursor.
     """
     n_cols = len(TIMERS_COLOR_ORDER)
     total_w = grid_width()
@@ -201,11 +202,11 @@ def timers_grid_fragments(rows, term_cols, cursor,
     frags = []
 
     # Header row: blank where the labels live, then the colour name centred
-    # above each swatch, "Cols" centred above the ◄ N ► stepper, then "Clock"
-    # centred above the Clock checkbox column. Styled flat C_HINT (dim) like
-    # the panes grid; it carries no mouse handlers and is not a cursor stop —
-    # purely a leading rendered line, so the grid's (row_idx, col_idx) mapping
-    # is unchanged.
+    # above each swatch, "Cols" centred above the ◄ N ► stepper, "Clock"
+    # centred above the Clock checkbox column, then "Bar" above the Bar column.
+    # Styled flat C_HINT (dim) like the panes grid; it carries no mouse handlers
+    # and is not a cursor stop — purely a leading rendered line, so the grid's
+    # (row_idx, col_idx) mapping is unchanged.
     frags.append(("", pad))
     frags.append(("", " " * (_LABEL_W + _LABEL_GAP)))
     for ci, (name, _hex) in enumerate(TIMERS_COLOR_ORDER):
@@ -216,9 +217,11 @@ def timers_grid_fragments(rows, term_cols, cursor,
     frags.append((C_HINT, _centre_in("Cols", _STEP_W)))
     frags.append(("", " " * _CLOCK_GAP))
     frags.append((C_HINT, _centre_in("Clock", _CLOCK_W)))
+    frags.append(("", " " * _BAR_GAP))
+    frags.append((C_HINT, _centre_in("Bar", _BAR_W)))
     frags.append(("", "\n"))
 
-    for ri, (label, enabled, colour_index, cols, _max_cols, clock, inert_none) in enumerate(rows):
+    for ri, (label, enabled, colour_index, cols, _max_cols, clock, bar) in enumerate(rows):
         frags.append(("", pad))
         frags.append((C_ITEM if enabled else C_PANE_OFF,
                       label[:_LABEL_W].ljust(_LABEL_W)))
@@ -227,13 +230,6 @@ def timers_grid_fragments(rows, term_cols, cursor,
         for ci in range(n_cols):
             if ci > 0:
                 frags.append(("", " " * _COL_GAP))
-
-            # An inert None column (e.g. Charmies) paints a dim 6-cell blank
-            # the cursor may rest on but Enter/click ignore — never a [X], no
-            # swatch, no handler. Identical treatment to the clock=None cell.
-            if inert_none and ci == 0:
-                frags.append((C_PANE_OFF, "      "))
-                continue
 
             checked = bool(enabled) and colour_index == ci
             is_cursor = (cursor is not None and cursor == (ri, ci))
@@ -308,6 +304,29 @@ def timers_grid_fragments(rows, term_cols, cursor,
                 frags.append((clock_style, clock_box, clock_handler(ri)))
             else:
                 frags.append((clock_style, clock_box))
+
+        # Far-right Bar checkbox. Same grammar as the Clock cell: a row with
+        # bar=None (e.g. Charmies) paints a dim inert blank the cursor may rest
+        # on but Enter/click ignore; otherwise cursor → gold, else checked →
+        # C_ACTIVE / unchecked → C_HINT on an enabled row, C_PANE_OFF disabled.
+        frags.append(("", " " * _BAR_GAP))
+
+        bar_cursor = (cursor is not None and cursor == (ri, n_cols + 3))
+
+        if bar is None:
+            frags.append((C_PANE_OFF, _centre_in("", _BAR_W)))
+        else:
+            if bar_cursor:
+                bar_style = C_CURSOR_CELL
+            elif not enabled:
+                bar_style = C_PANE_OFF
+            else:
+                bar_style = C_ACTIVE if bar else C_HINT
+            bar_box = _centre_in("[X]" if bar else "[ ]", _BAR_W)
+            if bar_handler is not None:
+                frags.append((bar_style, bar_box, bar_handler(ri)))
+            else:
+                frags.append((bar_style, bar_box))
 
         frags.append(("", "\n"))
 

@@ -173,3 +173,39 @@ their own count-up, so a countdown overlay does not apply).
 The original Decision's "colour cells `0..8`, `◄` at col 9, `►` at col 10"
 (amended by the header-row update above only as to display) is superseded for
 cursor geometry by this update. Status remains **Accepted**.
+
+## Update (2026-06-15) — None column replaced by a per-group Bar toggle
+
+The short-lived index-0 **None** column (stored token `"none"`, hex Python
+`None`; a barless group rendered in terminal-default text) is removed. "No bar"
+is now a separate boolean, `timers_<type>_bar` (default `1`), toggled by a new
+far-right **Bar** checkbox column modelled exactly on the Clock column. With
+`bar=0` the group renders barless but with each affect name painted in the
+group's **selected colour as foreground** (not terminal default) — a strict
+improvement over the old None column, which lost the colour entirely.
+
+Consequences:
+
+- `TIMERS_COLOR_ORDER` reverts to **seven** real `(name, #rrggbb)` swatches
+  (Blue, Green, Red, Magenta, Cyan, Violet, Orange) — no `None` entry, Yellow
+  stays retired. `timers_color_hex` / `timers_color_index` are hex-only again
+  (out-of-range / unknown → index 0). `TIMERS_NONE_COLOR` is deleted.
+- `timers_grid_fragments` gains a `bar_handler` and a `bar` field in the row
+  tuple (the `inert_none` field is dropped); the swatch helper renders an
+  unconditional `bg:hex fg:hex` `███` block again (every colour cell has a real
+  hex). The header row gains a centred `Bar` label.
+- Cursor columns: colour cells `0..6`, `◄` at col 7, `►` at col 8, **Clock at
+  col 9, Bar at col 10**. `_TIMERS_LAST_COL` = `len(TIMERS_COLOR_ORDER) + 3`.
+- Grid width is unchanged (79): seven 6-wide colour cells (was eight) plus the
+  new `Bar` column (gap 2 + width 5) net to the same total.
+- Charmies have neither a Clock nor a Bar toggle: both cells are dim, inert
+  blanks. Col 0 is now Blue and selectable for Charmies (it sets the charm name
+  colour) — the old charm-col-0 guard is removed from both surfaces.
+- All three readers (`launcher._parse_timers_layout`, `pane._load_layout`,
+  `popup._read_timers_layout`) revert to hex-only `color` parsing and gain
+  `timers_<type>_bar` parsing (`0`/`1` → bool, default `1`). The launcher's
+  deferred save and the popup's in-place persist write `timers_<type>_bar` for
+  every non-charm type (omitted for charm, like the `clock` key).
+
+The value `"none"` no longer appears anywhere in the codebase. Status remains
+**Accepted**.

@@ -140,6 +140,7 @@ timers_<type>_enabled = 0 | 1
 timers_<type>_color   = #rrggbb
 timers_<type>_cols    = <int>
 timers_<type>_clock   = 0 | 1     # per-type, default 0
+timers_<type>_bar     = 0 | 1     # per-type, default 1
 timers_headers        = 0 | 1     # global, not per-type (default 1)
 timers_compact        = 0 | 1     # global, not per-type (default 1)
 ```
@@ -166,28 +167,38 @@ The four combinations:
 
 Defaults (reproduce today's behaviour exactly):
 
-| type   | enabled | color     | cols | clock |
-|--------|---------|-----------|------|-------|
-| spell  | 1       | `#66b2ff` | 4    | 0     |
-| buff   | 1       | `#00d900` | 4    | 0     |
-| debuff | 1       | `#d90000` | 4    | 0     |
-| stored | 1       | `#ff66ff` | 4    | 0     |
-| blind  | 1       | `#00cccc` | 2    | 0     |
-| charm  | 1       | `#B388FF` | 1    | 0     |
+| type   | enabled | color     | cols | clock | bar |
+|--------|---------|-----------|------|-------|-----|
+| spell  | 1       | `#66b2ff` | 4    | 0     | 1   |
+| buff   | 1       | `#00d900` | 4    | 0     | 1   |
+| debuff | 1       | `#d90000` | 4    | 0     | 1   |
+| stored | 1       | `#ff66ff` | 4    | 0     | 1   |
+| blind  | 1       | `#00cccc` | 2    | 0     | 1   |
+| charm  | 1       | `#B388FF` | 1    | 0     | 1   |
+
+`timers_<type>_bar` (default `1`) governs whether the group draws its coloured
+drain bar. With `bar=1` the group renders as it always has (a filled, draining
+colour bar). With `bar=0` the group renders **barless**: no fill, no `▌`
+separator, and each affect name painted in the group's selected colour as
+**foreground** (`fg:<color>`). The colour swatch still picks that foreground hue.
+Charm carries `bar` for uniformity but never reads it — Charmies are always
+coloured-FG-no-bar regardless.
 
 **Parse rules.** Per-type `cols` clamps on read: `charm` → `[1, 2]`; all others →
-`[1, 6]`; floor `1`. Per-type `clock` parses `0`/`1` like `enabled` (absent /
-unparseable → `0`). Unknown keys are ignored. An unparseable value (bad hex, a
-non-integer `cols`, an `enabled` or `clock` that is not `0`/`1`) falls back to
-that key's default rather than failing the whole file. Note: `charm` carries the
-`clock` key in the defaults but the pane never reads it (Charmies show no
-countdown — they have their own count-up).
+`[1, 6]`; floor `1`. Per-type `clock` and `bar` parse `0`/`1` like `enabled`
+(absent / unparseable → `0` for `clock`, `1` for `bar`). Unknown keys are
+ignored. An unparseable value (bad hex, a non-integer `cols`, an `enabled` /
+`clock` / `bar` that is not `0`/`1`) falls back to that key's default rather than
+failing the whole file. Note: `charm` carries the `clock` and `bar` keys in the
+defaults but the pane never reads them (Charmies show no countdown — they have
+their own count-up — and are always barless).
 
 **Live re-read.** The poll loop tracks `timers_layout.conf`'s mtime alongside
 `timers.state`'s; on change it re-reads and invalidates, so a colour / cols /
-enabled / headers / compact edit re-colours, re-lays-out, toggles headers or the
-blank separators, or hides the matching group within ~100 ms with no restart. An
-absent file is treated as defaults, no crash.
+enabled / clock / bar / headers / compact edit re-colours, re-lays-out, toggles
+the countdown or the bar, toggles headers or the blank separators, or hides the
+matching group within ~100 ms with no restart. An absent file is treated as
+defaults, no crash.
 
 **What the colour drives.** Each group's filled-cell style is `fg:#000000 bg:<hex>`
 and its separator is `fg:<hex>`. The charm group has no bar — its `color` themes

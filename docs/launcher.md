@@ -1599,12 +1599,13 @@ from the Panes hub's `Timers` row (`Options → Panes → Timers`). ESC pops
 back to the `options_panes` hub.
 Renders a **group × colour grid** where rows are the six timer groups
 (Spells / Buffs / Debuffs / Stored / Blinds / Charmies) and columns are
-the eight palette entries (Blue / Green / Red / Magenta / Cyan / Violet /
-Orange / Yellow), followed by a trailing `Clock` checkbox column and an inline
-`◄ N ►` column stepper per row. A dim, non-interactive header row sits above the
-six group rows — each colour name centred over its swatch (Magenta truncates
-to `Magent`), a `Clock` label centred over the trailing checkbox column, and a
-`Cols` label centred over the `◄ N ►` stepper. Below
+the seven palette entries (Blue / Green / Red / Magenta / Cyan / Violet /
+Orange), followed by an inline `◄ N ►` column stepper, a `Clock` checkbox
+column, and a far-right `Bar` checkbox column per row. A dim, non-interactive
+header row sits above the six group rows — each colour name centred over its
+swatch (Magenta truncates to `Magent`), a `Cols` label centred over the `◄ N ►`
+stepper, a `Clock` label centred over the Clock column, and a `Bar` label
+centred over the Bar column. Below
 the grid sit a blank row, a `[X] Display headers` toggle, a `[X] Compact layout`
 toggle, a blank row, and `Back` — the two toggles consecutive, both in the
 `<< label >>` menu-row grammar. The two toggle labels share one `label_col_w`
@@ -1633,6 +1634,10 @@ Enter / click semantics:
 - On the `Clock` checkbox — flips the group's `timers_<type>_clock`
   (countdown overlay on/off in the pane). Charmies' `Clock` cell is a dim
   blank, inert.
+- On the `Bar` checkbox — flips the group's `timers_<type>_bar` (draw the
+  coloured drain bar; off renders the group barless with its affect names
+  painted in the selected colour's foreground). Defaults on. Charmies' `Bar`
+  cell is a dim blank, inert.
 - On the `[X] Display headers` toggle — flips the global `timers_headers`
   key (checked = a dim `Group:` label row above each rendered group;
   unchecked = no headers). Same `[X]`-leading `menu_row` toggle grammar
@@ -1665,9 +1670,9 @@ reserved keys the per-type save loop skips). A separate parse/save pair
 toggle (`_TIMERS_COMPACT_ROW`, row 7), and the `Back` row
 (`_TIMERS_BACK_ROW`, row 8). `↑` / `↓` move between them (clamped, no
 wrap). `←` / `→` move the column **only while the cursor is on a grid
-row**, across the eight colour columns then `◄` (col 8), `►` (col 9), and
-the `Clock` cell (col 10); the column persists across grid rows. Footer:
-`↑↓←→ Move · Enter Toggle · ESC Back`.
+row**, across the seven colour columns then `◄` (col 7), `►` (col 8), the
+`Clock` cell (col 9), and the `Bar` cell (col 10); the column persists across
+grid rows. Footer: `↑↓←→ Move · Enter Toggle · ESC Back`.
 
 ### Timers-layout grid model
 
@@ -1678,19 +1683,22 @@ launcher and the popup, modelled on `panes_grid.py`. It re-exports
 0-or-1 model) and adds:
 
 - `timers_grid_fragments(rows, term_cols, cursor, cell_handler=None,
-  stepper_handler=None, clock_handler=None)` — a leading dim (`C_HINT`)
-  header row carrying each colour name centred over its swatch, a `Clock`
-  label over the trailing checkbox column, and a `Cols` label over the
-  stepper, then one row per group: label, eight colour swatches, the `Clock`
-  checkbox, then the inline `◄ N ►` stepper. The header carries no mouse
-  handlers, is never a cursor stop, and does not shift the `(row_idx,
-  col_idx)` mapping — it is purely a leading rendered line. `rows` is a list
-  of `(label, enabled, colour_index, cols, max_cols, clock)`. Cursor columns
-  are colour cells `0..7`, `◄` at 8, `►` at 9, and the `Clock` cell at 10.
-  Cell-colour precedence matches the panes grid; the stepper arrows follow it
-  too, while the digit is never a cursor stop and never gold. `cell_handler(ri,
-  ci)`, `stepper_handler(ri, delta)` (delta `-1` / `+1`), and
-  `clock_handler(ri)` supply mouse handlers when provided.
+  stepper_handler=None, clock_handler=None, bar_handler=None)` — a leading dim
+  (`C_HINT`) header row carrying each colour name centred over its swatch, a
+  `Cols` label over the stepper, a `Clock` label over the Clock column, and a
+  `Bar` label over the Bar column, then one row per group: label, seven colour
+  swatches, the inline `◄ N ►` stepper, the `Clock` checkbox, then the far-right
+  `Bar` checkbox. The header carries no mouse handlers, is never a cursor stop,
+  and does not shift the `(row_idx, col_idx)` mapping — it is purely a leading
+  rendered line. `rows` is a list of `(label, enabled, colour_index, cols,
+  max_cols, clock, bar)`. Cursor columns are colour cells `0..6`, `◄` at 7, `►`
+  at 8, the `Clock` cell at 9, and the `Bar` cell at 10. A `None` `clock` / `bar`
+  (Charmies) renders as a dim inert blank that the cursor may rest on but
+  Enter/click ignore. Cell-colour precedence matches the panes grid; the stepper
+  arrows follow it too, while the digit is never a cursor stop and never gold.
+  `cell_handler(ri, ci)`, `stepper_handler(ri, delta)` (delta `-1` / `+1`),
+  `clock_handler(ri)`, and `bar_handler(ri)` supply mouse handlers when
+  provided.
 - `clamp_cols(typ, raw)` / `step_cols(cols, max_cols, delta)` /
   `max_cols_for(typ)` — the column arithmetic and per-type clamp
   (charm 1–2, others 1–6).
@@ -1700,7 +1708,7 @@ launcher and the popup, modelled on `panes_grid.py`. It re-exports
   see ADR 0126). `grid_width()` reports the centring width (79).
 
 The colour palette (`TIMERS_COLOR_ORDER`, with `timers_color_hex` /
-`timers_color_index`) lives in `palette.py`; its first six entries are
+`timers_color_index`) lives in `palette.py`; its first six of seven entries are
 the six group default colours so each default lands on a real swatch.
 The grid model maps an empty or unknown `timers_<type>_color` to the
 first column (index 0). The file is optional — absent, all consumers
