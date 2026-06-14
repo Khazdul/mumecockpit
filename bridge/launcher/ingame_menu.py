@@ -1149,7 +1149,9 @@ def _read_timers_layout():
             layout[typ]["enabled"] = (val != "0")
         elif attr == "color":
             v = val.strip()
-            if len(v) == 7 and v.startswith("#"):
+            if v.lower() == TIMERS_NONE_COLOR:
+                layout[typ]["color"] = TIMERS_NONE_COLOR
+            elif len(v) == 7 and v.startswith("#"):
                 layout[typ]["color"] = v
         elif attr == "cols":
             n = clamp_cols(typ, val)

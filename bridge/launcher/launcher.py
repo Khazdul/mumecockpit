@@ -62,7 +62,7 @@ from palette import (  # noqa: E402
     _S_TRACK, _S_MARKER, _S_THUMB, _S_TOTAL, _S_ARROW,
     _S_HINT, _S_PVP, _S_ALLY, _S_STAR,
     PANE_COLOR_ORDER, pane_color_hex,
-    TIMERS_COLOR_ORDER, timers_color_hex, timers_color_index,
+    TIMERS_COLOR_ORDER, TIMERS_NONE_COLOR, timers_color_hex, timers_color_index,
     TTPP_COLOR_STYLES, TTPP_COLOR_NAMES,
     C_SYN_COMMAND, C_SYN_BRACE, C_SYN_DELIM, C_SYN_VAR, C_SYN_CODE,
     C_SYN_BRACE_MATCH,
@@ -950,7 +950,9 @@ def _parse_timers_layout(path):
                     if val in ("0", "1"):
                         layout[typ]["enabled"] = (val == "1")
                 elif attr == "color":
-                    if re.fullmatch(r"#[0-9a-fA-F]{6}", val):
+                    if val.lower() == TIMERS_NONE_COLOR:
+                        layout[typ]["color"] = TIMERS_NONE_COLOR
+                    elif re.fullmatch(r"#[0-9a-fA-F]{6}", val):
                         layout[typ]["color"] = val
                 elif attr == "cols":
                     cols = clamp_cols(typ, val)

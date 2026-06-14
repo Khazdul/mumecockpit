@@ -208,7 +208,9 @@ def _load_layout():
             if val in ("0", "1"):
                 layout[typ]["enabled"] = (val == "1")
         elif attr == "color":
-            if _COLOR_RE.match(val):
+            if val.lower() == _NONE_COLOR:
+                layout[typ]["color"] = _NONE_COLOR
+            elif _COLOR_RE.match(val):
                 layout[typ]["color"] = val
         elif attr == "cols":
             n = _clamp_cols(typ, val)
