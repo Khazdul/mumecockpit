@@ -224,6 +224,82 @@ def _parse_log_file(path: str, run_id: str, out_events: list):
             out_events.append(ev)
 
 
+def match_event_line_ts_us(log_events, kind, ts_seconds, ident):
+    """Return the ts_us of the .log line that is the actual event line for a
+    pkill / char_death marker near `ts_seconds`, or None when no line matches
+    (caller falls back to the whole-second offset). Only pkill and char_death
+    match; any other kind returns None.
+
+    log_events: list of LogEvent (each has .ts_us, .direction, .fragments),
+    assumed sorted ascending by ts_us.
+
+    Shared by both playback modes so chain (`_snap_marker_offset`) and
+    spotlight (`load_spotlight_log_events`) agree on what "the event line" is.
+    Spotlight normalises char_death to "death"; both spellings are accepted.
+
+    Matching contract:
+      - kind "pkill"                 -> inbound line whose PLAIN text
+                                        ("".join fragment texts) contains
+                                        "R.I.P."
+      - kind "char_death"/"death"    -> inbound line containing "You are dead"
+      - any other kind               -> None
+      - Window: inbound events (direction == "in") whose whole-second
+        floor is in [ts_seconds - 1, ts_seconds + 1]. Bisected by ts_us to
+        bound the slice; the ±1 s window scopes the match to the actual
+        event and avoids matching an unrelated R.I.P. earlier in the pre-roll.
+      - Tiebreak: (1) if `ident` is non-empty and some match's plain text
+        contains it, prefer that; (2) else the latest match with
+        ts_us <= ts_seconds * 1e6; (3) else nearest by ts_us.
+    """
+    if kind not in ("pkill", "char_death", "death"):
+        return None
+    if not log_events:
+        return None
+
+    needle = "R.I.P." if kind == "pkill" else "You are dead"
+    ts_us = ts_seconds * 1_000_000
+
+    # Bound the candidate window [ts_seconds - 1, ts_seconds + 1] by ts_us,
+    # then scan that slice.
+    ts_list = [ev.ts_us for ev in log_events]
+    lo = bisect.bisect_left(ts_list, (ts_seconds - 1) * 1_000_000)
+    hi = bisect.bisect_right(ts_list, (ts_seconds + 2) * 1_000_000 - 1)
+
+    matches = []  # indices into log_events
+    for i in range(lo, hi):
+        ev = log_events[i]
+        if ev.direction != "in":
+            continue
+        sec = ev.ts_us // 1_000_000
+        if sec < ts_seconds - 1 or sec > ts_seconds + 1:
+            continue
+        plain = "".join(t for _, t in ev.fragments)
+        if needle in plain:
+            matches.append(i)
+
+    if not matches:
+        return None
+
+    chosen = None
+    # 1. Prefer a matching line whose plain text contains the ident.
+    if ident:
+        for i in matches:
+            plain = "".join(t for _, t in log_events[i].fragments)
+            if ident in plain:
+                chosen = i
+                break
+    # 2. Else the latest matching line at or before the fold second.
+    if chosen is None:
+        at_or_before = [i for i in matches if log_events[i].ts_us <= ts_us]
+        if at_or_before:
+            chosen = at_or_before[-1]
+    # 3. Else the matching line nearest the fold second by ts_us.
+    if chosen is None:
+        chosen = min(matches, key=lambda i: abs(log_events[i].ts_us - ts_us))
+
+    return log_events[chosen].ts_us
+
+
 # Inter-event gaps longer than this collapse to 0 during playback — keeps
 # multi-day chain replays watchable while still respecting natural pacing.
 _PLAYBACK_GAP_CAP_US = 10_000_000
@@ -307,66 +383,20 @@ class LogPlayback:
 
     def _snap_marker_offset(self, kind: str, ts_seconds: int, ident: str) -> int:
         """Return a playback offset (us) for a marker. For pkill / char_death,
-        find the matching .log line near the fold second and return its
-        `playback_offset_us`. Otherwise (or if no line matches) fall back to
+        find the matching .log line near the fold second (via the shared
+        `match_event_line_ts_us` helper) and return its `playback_offset_us`.
+        Otherwise (or if no line matches) fall back to
         `offset_for_ts_us(ts_seconds * 1e6)`.
 
         The marker carries only the whole-second fold time, so snapping by
         time lands several bursty-combat lines off the real event line. The
-        precise line is in the .log (microsecond ts_us); we content-match it:
-            pkill      -> plain text contains "R.I.P."
-            char_death -> plain text contains "You are dead"
-        Matching uses each event's PLAIN text (ANSI stripped by joining the
-        fragment texts), not the raw `ev.text`."""
-        ts_us = ts_seconds * 1_000_000
-        if kind not in ("pkill", "char_death"):
-            return self.offset_for_ts_us(ts_us)
-        if not self.events:
-            return self.offset_for_ts_us(ts_us)
-
-        needle = "R.I.P." if kind == "pkill" else "You are dead"
-
-        # Bound the candidate window [ts_seconds - 1, ts_seconds + 1] by
-        # ts_us, then scan that slice. The R.I.P. line is expected at or
-        # before the fold second; the ±1 s slop covers second-flooring and
-        # the ~500 ms fold delay.
-        ts_list = [ev.ts_us for ev in self.events]
-        lo = bisect.bisect_left(ts_list, (ts_seconds - 1) * 1_000_000)
-        hi = bisect.bisect_right(ts_list, (ts_seconds + 2) * 1_000_000 - 1)
-
-        matches: list[int] = []  # indices into self.events
-        for i in range(lo, hi):
-            ev = self.events[i]
-            if ev.direction != "in":
-                continue
-            sec = ev.ts_us // 1_000_000
-            if sec < ts_seconds - 1 or sec > ts_seconds + 1:
-                continue
-            plain = "".join(t for _, t in ev.fragments)
-            if needle in plain:
-                matches.append(i)
-
-        if not matches:
-            return self.offset_for_ts_us(ts_us)
-
-        chosen: int | None = None
-        # 1. Prefer a matching line whose plain text contains the ident.
-        if ident:
-            for i in matches:
-                plain = "".join(t for _, t in self.events[i].fragments)
-                if ident in plain:
-                    chosen = i
-                    break
-        # 2. Else the latest matching line at or before the fold second.
-        if chosen is None:
-            at_or_before = [i for i in matches if self.events[i].ts_us <= ts_us]
-            if at_or_before:
-                chosen = at_or_before[-1]
-        # 3. Else the matching line nearest the fold second by ts_us.
-        if chosen is None:
-            chosen = min(matches, key=lambda i: abs(self.events[i].ts_us - ts_us))
-
-        return self.playback_offset_us[chosen]
+        precise line is in the .log (microsecond ts_us); the helper
+        content-matches it (pkill -> "R.I.P.", char_death -> "You are dead")
+        using each event's PLAIN text (ANSI stripped)."""
+        matched = match_event_line_ts_us(self.events, kind, ts_seconds, ident)
+        if matched is not None:
+            return self.offset_for_ts_us(matched)
+        return self.offset_for_ts_us(ts_seconds * 1_000_000)
 
     def set_marker_events(self, events: list) -> None:
         """Build the strip-marker list from `(kind, ts_seconds, ident)` tuples

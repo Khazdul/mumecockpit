@@ -396,9 +396,22 @@ def load_spotlight_log_events(spotlight: Spotlight, cache: dict) -> None:
     spotlight.window_end_us   = win_end
     spotlight.log_events = sliced
 
+    # Anchor each marker to the actual .log event line (R.I.P. / "You are
+    # dead") via the shared matcher, so spotlight K►/D► land on the event
+    # line exactly like chain mode. SpotlightPlayback lays each line at
+    # cursor + (ts_us - window_start_us), so `matched - win_start` makes
+    # the marker coincide with that line's playback offset.
+    # achievement / level_up have no .log text line: the matcher returns
+    # None and we keep the whole-second offset.
     offsets: list = []
     for ev in spotlight.events:
-        off = ev.ts * 1_000_000 - win_start
+        name = ev.extra.get("name", "") if ev.kind == "pkill" else ""
+        matched = log_player.match_event_line_ts_us(
+            sliced, ev.kind, ev.ts, name)
+        if matched is not None:
+            off = matched - win_start
+        else:
+            off = ev.ts * 1_000_000 - win_start
         if off < 0:
             off = 0
         offsets.append(off)
