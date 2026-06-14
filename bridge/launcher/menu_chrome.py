@@ -24,7 +24,7 @@ from palette import (
 
 _BUTTON_STYLES = {
     "inactive":           C_BUTTON_INACTIVE,
-    "hover":              C_BUTTON_ACTIVE_UNFOCUSED,
+    "hover":              C_HOVER,
     "selected_unfocused": C_BUTTON_ACTIVE_UNFOCUSED,
     "selected_focused":   C_BUTTON_ACTIVE_FOCUSED,
     "disabled":           C_BUTTON_DISABLED,

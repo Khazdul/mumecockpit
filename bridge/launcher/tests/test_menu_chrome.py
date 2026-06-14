@@ -141,7 +141,7 @@ class TestButtonFragment(unittest.TestCase):
         self.assertEqual(self._style("inactive"), C_BUTTON_INACTIVE)
 
     def test_hover_style(self):
-        self.assertEqual(self._style("hover"), C_BUTTON_ACTIVE_UNFOCUSED)
+        self.assertEqual(self._style("hover"), C_HOVER)
 
     def test_selected_unfocused_style(self):
         self.assertEqual(
