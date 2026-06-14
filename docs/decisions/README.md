@@ -20,12 +20,14 @@ Active ADRs by area. Click through for context, alternatives, and consequences.
 - [ADR 0029](0029-input-pane-full-width.md) — Input pane spans full window width — the input pane is a window-level vsplit sibling spanning the full width below the top container.
 - [ADR 0038](0038-drop-right-column-width-floor.md) — Drop right-column width floor — `ui_width` is the sole right-column width authority; no status-conditional floor, drag clamp, or auto-widen. (supersedes 0031)
 - [ADR 0036](0036-drag-end-sweep.md) — Drag-end sweeps stuck copy-mode panes — drag-end events sweep all panes out of copy-mode and return focus to the input pane.
+- [ADR 0137](0137-character-pane-height-reservation.md) — Character-pane height reservation — Phase 2 reserves the status pane its desired height before the other panes scale proportionally; identical geometry when everything fits, skipped if status was dropped. (amends 0071)
 
 ### Right-column rendering
 
 - [ADR 0037](0037-right-column-prompt-toolkit-convergence.md) — All right-column panes use prompt_toolkit — all four right-column panes (status, buffs, comm, ui) are prompt_toolkit apps with uniform overflow indicators. (supersedes 0033)
 - [ADR 0012](0012-unified-right-column-tui.md) (parked) — Unified right-column TUI — keep separate tmux panes and mitigate flicker at the renderer level rather than restructuring the right column.
 - [ADR 0133](0133-timers-countdown.md) — Timers-pane countdown (Clock) overlay; expiring-blink removed — a per-type opt-in (`timers_<type>_clock`) right-justifies a countdown over the existing drain bar in `timers_pane.py`; ≤90s whole seconds, >90s nearest-minute (half up), narrow-cell ladder, right-edge/corner handling. Pure presentation off the already-serialised data and the existing 1 Hz tick — no new redraw machinery, nothing on the tt++ hot path, no Lua. The final-30s blink (modelled on ADR 0033) is removed. (relates to 0126, 0033)
+- [ADR 0136](0136-in-pane-borders.md) — In-pane pane borders — each right-column pane draws its own half-block frame (`▀▄▌▐` edges, adaptive quadrant corners `▛▜▙▟` falling back to `█`) and header in-pane, replacing tmux `pane-border-status` (now permanently off); border colour = pane colour +0x14 (terminal-default derived from `terminal_bg`), corner support resolved at startup by `frame_corners.py` (fontconfig else fontTools), per-pane `border_<key>` via a Border column in the Panes grid. (relates to 0099, 0126, 0038, 0086, 0125)
 
 ### Input pane
 

@@ -1,6 +1,6 @@
 # 0071 — Per-pane desired heights with adaptive cold-start allocation
 
-**Status:** Accepted
+**Status:** Accepted — Phase 2 allocation amended by [ADR 0137](0137-character-pane-height-reservation.md) (2026-06-14): the status/character pane is reserved its desired height before the other panes scale proportionally. The body below is unchanged.
 **Date:** 2026-05-13
 
 ## Context

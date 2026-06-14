@@ -54,3 +54,18 @@ The rest of this ADR stands unchanged: the `Float` pinning at `top=0, right=0`,
 the add-view-as-mode decision, and the ASCII/Latin-1 single-cell glyph rule are
 unaffected. The "no underlying bar colour in the corner column" consequence still
 holds — the `Float` paints the default bg.
+
+## Update (2026-06-14) — corner offsets inside the in-pane frame
+
+With the in-pane pane frame ([ADR 0136](0136-in-pane-borders.md)), the timers
+pane gains a one-row top border and a one-column left/right edge when its border
+is on. The `+`/`×` corner `Float` is therefore re-pinned to `top=1, right=1`
+(inner top-right) **when the timers border is on**, so it sits inside the frame
+and aligns with a top charm row's drop `×`. `timers_pane.py` updates the `Float`'s
+`top`/`right` each tick from `pane_frame.frames_enabled("timers")`; `pane_frame`
+polls the border state and invalidates on change, so toggling the timers border
+in the popup repositions the `+` within a tick.
+
+When the timers border is **off**, the `Float` returns to `top=0, right=0` and the
+original Decision stands verbatim.
+
