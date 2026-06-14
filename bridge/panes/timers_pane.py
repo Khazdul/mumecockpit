@@ -231,6 +231,7 @@ _herblores        = []
 _herblore_catalog = []   # static catalog keys, for the add-view
 _last_mtime    = None
 _app           = None
+_corner_float  = None   # the +/× corner Float; repositioned inside the frame when the border is on
 _scroll_offset = 0   # 0 = top (first row at top of pane); N = N rows hidden above
 _run_active    = False
 _hover_charm_id = None   # charm id whose X the pointer is currently over (hover cue)
@@ -909,6 +910,15 @@ async def _poll_state(app):
     global _layout, _headers, _compact, _last_layout_mtime
 
     while True:
+        # Keep the corner +/× pinned inside the frame when the timers border is
+        # on, at the true corner when it is off. Idempotent each tick; pane_frame
+        # polls the border state and invalidates on a change, so toggling the
+        # timers border in the popup repositions the + within a tick.
+        if _corner_float is not None:
+            framed = pane_frame.frames_enabled("timers")
+            _corner_float.top   = 1 if framed else 0
+            _corner_float.right = 1 if framed else 0
+
         try:
             layout_mtime = os.stat(TIMERS_LAYOUT_PATH).st_mtime
         except OSError:
@@ -989,7 +999,7 @@ def _quit(event):
 
 
 def main():
-    global _app
+    global _app, _corner_float
 
     sys.stdout.write("\x1b[?25l")
     sys.stdout.flush()
@@ -1008,9 +1018,14 @@ def main():
         filter=Condition(lambda: _run_active and (_scroll_offset > 0 or _current_total_rows() > inner_height(_term_rows()))),
     )
 
+    # When the timers border is on, the inner top-right cell is at (1, 1); the
+    # frame's top-right corner glyph occupies (0, 0). Pin the Float to (1, 1) so
+    # the + / add-view × sit just inside the frame and stay aligned with the cell
+    # a top charm row's drop × occupies (the _corner_visible charm-yield logic).
+    _framed = pane_frame.frames_enabled("timers")
     corner_float = Float(
-        top=0,
-        right=0,
+        top=1 if _framed else 0,
+        right=1 if _framed else 0,
         content=ConditionalContainer(
             content=Window(
                 content=FormattedTextControl(_corner_text, focusable=False),
@@ -1022,6 +1037,7 @@ def main():
             filter=Condition(_corner_visible),
         ),
     )
+    _corner_float = corner_float
     inner_root = pane_frame.framed(
         HSplit([grid_window, indicator_container]), "timers")
     root = FloatContainer(
