@@ -305,18 +305,82 @@ class LogPlayback:
             return self.total_duration_us
         return off
 
+    def _snap_marker_offset(self, kind: str, ts_seconds: int, ident: str) -> int:
+        """Return a playback offset (us) for a marker. For pkill / char_death,
+        find the matching .log line near the fold second and return its
+        `playback_offset_us`. Otherwise (or if no line matches) fall back to
+        `offset_for_ts_us(ts_seconds * 1e6)`.
+
+        The marker carries only the whole-second fold time, so snapping by
+        time lands several bursty-combat lines off the real event line. The
+        precise line is in the .log (microsecond ts_us); we content-match it:
+            pkill      -> plain text contains "R.I.P."
+            char_death -> plain text contains "You are dead"
+        Matching uses each event's PLAIN text (ANSI stripped by joining the
+        fragment texts), not the raw `ev.text`."""
+        ts_us = ts_seconds * 1_000_000
+        if kind not in ("pkill", "char_death"):
+            return self.offset_for_ts_us(ts_us)
+        if not self.events:
+            return self.offset_for_ts_us(ts_us)
+
+        needle = "R.I.P." if kind == "pkill" else "You are dead"
+
+        # Bound the candidate window [ts_seconds - 1, ts_seconds + 1] by
+        # ts_us, then scan that slice. The R.I.P. line is expected at or
+        # before the fold second; the ±1 s slop covers second-flooring and
+        # the ~500 ms fold delay.
+        ts_list = [ev.ts_us for ev in self.events]
+        lo = bisect.bisect_left(ts_list, (ts_seconds - 1) * 1_000_000)
+        hi = bisect.bisect_right(ts_list, (ts_seconds + 2) * 1_000_000 - 1)
+
+        matches: list[int] = []  # indices into self.events
+        for i in range(lo, hi):
+            ev = self.events[i]
+            if ev.direction != "in":
+                continue
+            sec = ev.ts_us // 1_000_000
+            if sec < ts_seconds - 1 or sec > ts_seconds + 1:
+                continue
+            plain = "".join(t for _, t in ev.fragments)
+            if needle in plain:
+                matches.append(i)
+
+        if not matches:
+            return self.offset_for_ts_us(ts_us)
+
+        chosen: int | None = None
+        # 1. Prefer a matching line whose plain text contains the ident.
+        if ident:
+            for i in matches:
+                plain = "".join(t for _, t in self.events[i].fragments)
+                if ident in plain:
+                    chosen = i
+                    break
+        # 2. Else the latest matching line at or before the fold second.
+        if chosen is None:
+            at_or_before = [i for i in matches if self.events[i].ts_us <= ts_us]
+            if at_or_before:
+                chosen = at_or_before[-1]
+        # 3. Else the matching line nearest the fold second by ts_us.
+        if chosen is None:
+            chosen = min(matches, key=lambda i: abs(self.events[i].ts_us - ts_us))
+
+        return self.playback_offset_us[chosen]
+
     def set_marker_events(self, events: list) -> None:
-        """Build the strip-marker list from `(kind, ts_seconds)` tuples
+        """Build the strip-marker list from `(kind, ts_seconds, ident)` tuples
         (as produced by `run_stats.marker_events`). Each kind is mapped to
         a strip letter via `MARKER_KIND_TO_LETTER` (unknown kinds skipped)
-        and its wall-clock ts snapped to a playback offset via
-        `offset_for_ts_us`. Computed once and cached for `event_markers()`."""
+        and its wall-clock ts resolved to a playback offset via
+        `_snap_marker_offset` (content-match for pkill / char_death, else the
+        time-snap). Computed once and cached for `event_markers()`."""
         out: list = []
-        for kind, ts in events:
+        for kind, ts, ident in events:
             letter = MARKER_KIND_TO_LETTER.get(kind)
             if letter is None:
                 continue
-            off = self.offset_for_ts_us(int(ts) * 1_000_000)
+            off = self._snap_marker_offset(kind, int(ts), ident)
             out.append((letter, off))
         self._marker_offsets = out
 
