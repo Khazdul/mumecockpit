@@ -2625,8 +2625,14 @@ post-roll end is unaffected by the trim. The countdown duration the
 overlay displays is recomputed from the (possibly trimmed) window
 start. Spotlights whose 15 s window contains zero log lines are
 dropped by the caller. The function populates
-`spotlight.event_offsets_us` (each event's offset from
-`window_start_us`, clamped to `>= 0`) and is idempotent.
+`spotlight.event_offsets_us`: each event's offset is the matched
+`.log` event line's `ts_us` minus `window_start_us` (via the shared
+`match_event_line_ts_us` helper — the same content-match anchoring
+chain mode uses), falling back to the whole-second
+`ev.ts * 1e6 - window_start_us` when no line matches, clamped to
+`>= 0`. The function is idempotent. Because pkill/char_death now
+anchor to the real event line, the spotlight countdown bar drains at
+that line rather than at the fold second.
 
 **SpotlightPlayback.** A `LogPlayback`-compatible adapter over a list
 of loaded spotlights. Concatenates every spotlight's `log_events` into
@@ -3173,9 +3179,15 @@ backdrop and on a tinted one they blend instead of pasting a panel.
   stack as the distinct letters in fixed order `A D K L` followed by
   one `►` (`K►` … `ADKL►`). The window carries no background style, so
   prompt_toolkit's `_apply_style` no-ops and the leading transparent
-  cells keep the log underneath. Mouse activity here re-arms the
-  overlay auto-hide but does not seek — the 2-col strip owns
-  click/drag-to-seek. Gated by the same `_log_overlays_visible`
+  cells keep the log underneath. A discrete click on a marker row
+  seeks to that event via the shared `_log_seek_to_offset_us`,
+  preserving mode: in play it keeps playing, bottom-anchored; in pause
+  it stays paused, bottom-anchors the event's row range, and parks the
+  cursor on it. The clicked row resolves through the `_log_marker_rows`
+  map (screen row → earliest marker offset_us) built when the layer
+  renders. Clicks on empty marker-column rows still only re-arm the
+  overlay auto-hide. Drag-to-seek remains the strip's — markers are
+  discrete clicks, no drag. Gated by the same `_log_overlays_visible`
   filter as the strip. Routing both renderers through the one
   `_log_offset_to_row` helper is what guarantees marker ↔ playhead row
   alignment — it replaces an earlier whole-row marker formula that
@@ -3212,12 +3224,30 @@ spotlight's `spotlight_start_offsets_us`. `LogPlayback.event_markers()`
 (chain) returns the list cached by `set_marker_events()`, which
 `_enter_log_view` populates once on push from
 `run_stats.marker_events(character, run_ids)` — the dedicated four-kind
-reader over the chain's run-archive JSONL — mapping each event's
-epoch-second `ts` onto a playback offset via `offset_for_ts_us`
-(snap to the nearest `.log` line by `ts_us`, so markers land
-correctly across stitched runs regardless of gap clamping, at
-~1 s precision). RunStats was insufficient — it tracks a timestamp
-only for achievements — hence the separate reader.
+reader over the chain's run-archive JSONL. RunStats was insufficient
+— it tracks a timestamp only for achievements — hence the separate
+reader.
+
+Each marker carries only the whole-second fold time (`ts`), but for a
+kill or a death the precise event line already exists in the `.log` at
+microsecond `ts_us`. **pkill and char_death are anchored to that actual
+`.log` event line** — the "R.I.P." line for a kill, the "You are dead"
+line for a death — via the shared helper `match_event_line_ts_us`
+([`log_player.py`](../bridge/launcher/log_player.py)). The helper
+matches on the line's PLAIN text (ANSI stripped) within a ±1 s window,
+optionally disambiguated by the pkill name, and anchors the marker to
+that line's offset. On no match it falls back to the old
+`offset_for_ts_us` whole-second snap (nearest `.log` line by `ts_us`,
+so markers still land correctly across stitched runs regardless of gap
+clamping), so it is never worse than before. **achievement and level_up
+keep the whole-second snap** — they are GMCP-sourced with no reliable
+`.log` text line, so they always take the fallback path.
+
+This single helper is used by BOTH chain
+(`LogPlayback._snap_marker_offset`) and spotlight
+(`spotlights.load_spotlight_log_events`), so the two modes agree on
+what "the event line" is. (Spotlight normalises `char_death` to
+`death`; the helper accepts both spellings.)
 
 **Keyboard.**
 
@@ -3262,6 +3292,15 @@ controls flash back into view on any keypress in play mode.
   row maps exactly to `total_duration_us` so an end-of-session
   click/drag triggers `_log_auto_pause_at_end`. In play mode the
   same gesture both reveals the chrome (touch) and seeks.
+- **Marker click:** a discrete click on a marker in the floating
+  event-marker layer seeks to that event (mode-preserving) via
+  `_log_seek_to_offset_us` — the one seek path shared by the strip
+  seek (`_log_strip_seek_to_row`), the marker click, and the
+  spotlight `←`/`→` seek. Centering the clicked event was considered
+  and rejected: play-mode auto-scroll owns the scroll position
+  (bottom-anchor), so the marker click bottom-anchors in both modes
+  for a consistent feel. Drag stays exclusive to the strip; the
+  marker layer handles only discrete clicks.
 
 **Frame focus.** Per ADR 0066, `_log_view_window` is the primary
 focusable window and is dispatched by `_focus_current_frame()`
