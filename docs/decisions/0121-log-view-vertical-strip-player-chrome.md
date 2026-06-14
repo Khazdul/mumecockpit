@@ -3,6 +3,19 @@
 **Status:** Accepted
 **Date:** 2026-05-30
 
+**Revised 2026-06-14:** Two points are partially revised by ADR 0135:
+
+- (a) Point 6 (chain markers placed by snap-to-nearest-log-line, ~1 s
+  precision) is revised for pkill/char_death: they now content-match
+  their actual `.log` event line, with the time-snap as fallback;
+  achievement/level_up keep the snap.
+- (b) The floating event-marker layer is now click-to-seek (revising the
+  original "the 2-col strip owns click/drag-to-seek" / marker-layer-
+  does-not-seek stance): a discrete marker click seeks to that event via
+  the shared `_log_seek_to_offset_us`, mode-preserving and
+  bottom-anchored. Drag-to-seek remains the strip's. See
+  `docs/launcher.md`.
+
 ## Context
 
 The `log_view` player — shared by chain mode (history Run log) and
