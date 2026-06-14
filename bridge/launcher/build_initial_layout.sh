@@ -62,13 +62,16 @@ REQUESTED=()
 [ "$SHOW_DEV"    -eq 1 ] && REQUESTED+=(dev)
 
 # Phase 1 — survivor selection: drop lowest-priority panes until the
-# per-pane MIN_HEIGHT sum fits inside the right-column body budget
-# (rc_available_rows accounts for the top header, inter-pane borders,
-# and the input area).
+# per-pane effective minimum sum (MIN_HEIGHT + frame_extra) fits inside
+# the right-column budget (rc_available_rows accounts for inter-pane
+# borders and the input area). frame_extra depends on which framed panes
+# remain, so the sum is recomputed each iteration.
 while [ "${#REQUESTED[@]}" -gt 0 ]; do
     NN=${#REQUESTED[@]}
     MIN_SUM=0
-    for p in "${REQUESTED[@]}"; do MIN_SUM=$((MIN_SUM + MIN_HEIGHT[$p])); done
+    for p in "${REQUESTED[@]}"; do
+        MIN_SUM=$((MIN_SUM + MIN_HEIGHT[$p] + $(rc_frame_extra "$p")))
+    done
     AVAILABLE=$(rc_available_rows "$NN")
     [ "$MIN_SUM" -le "$AVAILABLE" ] && break
     dropped=""
@@ -100,16 +103,9 @@ done
 
 bash "$HOME/MUME/bridge/launcher/open_pane.sh" input --batch
 
-# pane-border-status must be set BEFORE apply_desired_heights so the
-# final resize pass operates against tmux's final divider state.
-# Setting it after causes a 1-row drift at the top pane when
-# SHOW_DIVIDERS=1 (tmux reserves the top header row by stealing from
-# whichever pane is topmost AFTER the resize already settled).
-if [ "$SHOW_DIVIDERS" -eq 1 ]; then
-    tmux set-option -t mume pane-border-status top
-else
-    tmux set-option -t mume pane-border-status off
-fi
+# tmux pane-border-status is permanently off — borders are now drawn
+# in-pane (next phase), reserved via rc_frame_extra. No tmux header row.
+tmux set-option -t mume pane-border-status off
 bash "$HOME/MUME/bridge/layout/apply_border_style.sh"
 
 # Phase 2 + final resize pass — pin each surviving pane to its desired

@@ -40,9 +40,23 @@ done < <(tmux list-panes -t mume:cockpit \
     -F '#{pane_index}	#{pane_title}' 2>/dev/null)
 
 # AVAILABLE is computed from window height minus right-column overhead
-# (top header, inter-pane borders, input area) — the same formula used
-# by build_initial_layout.sh so cold start and cp -reset-heights agree.
+# (inter-pane borders, input area) — the same formula used by
+# build_initial_layout.sh so cold start and cp -reset-heights agree.
+# In-pane border rows are reserved per framed pane (frame_extra) and
+# carved out of the content budget below, then added back to the pinned
+# tmux height so content height is preserved.
 AVAILABLE=$(rc_available_rows "${#REQUESTED[@]}")
+
+# Per-pane in-pane border reservation, and the content budget after
+# carving out every framed pane's reservation.
+declare -A FRAME_EXTRA
+FRAME_SUM=0
+for p in "${REQUESTED[@]}"; do
+    FRAME_EXTRA[$p]=$(rc_frame_extra "$p")
+    FRAME_SUM=$((FRAME_SUM + FRAME_EXTRA[$p]))
+done
+CONTENT_AVAILABLE=$((AVAILABLE - FRAME_SUM))
+[ "$CONTENT_AVAILABLE" -lt 0 ] && CONTENT_AVAILABLE=0
 
 # Resolve DESIRED, clamping below to MIN_HEIGHT so a stale/edited value
 # can never force a pane below its content floor.
@@ -58,12 +72,13 @@ for p in "${REQUESTED[@]}"; do
     DESIRED_SUM=$((DESIRED_SUM + v))
 done
 
-# Phase 2 — allocate between MIN and DESIRED.
+# Phase 2 — allocate content rows between MIN and DESIRED against the
+# content budget (border reservations excluded).
 declare -A ALLOC
-if [ "$DESIRED_SUM" -le "$AVAILABLE" ]; then
+if [ "$DESIRED_SUM" -le "$CONTENT_AVAILABLE" ]; then
     for p in "${REQUESTED[@]}"; do ALLOC[$p]=${DESIRED[$p]}; done
 else
-    NUM=$((AVAILABLE - MIN_SUM))
+    NUM=$((CONTENT_AVAILABLE - MIN_SUM))
     DEN=$((DESIRED_SUM - MIN_SUM))
     [ "$NUM" -lt 0 ] && NUM=0
     [ "$DEN" -le 0 ] && DEN=1
@@ -72,10 +87,10 @@ else
     done
 fi
 
-# Drop residual rows into the highest-priority surviving pane.
+# Drop residual content rows into the highest-priority surviving pane.
 SUM=0
 for p in "${REQUESTED[@]}"; do SUM=$((SUM + ALLOC[$p])); done
-RESIDUAL=$((AVAILABLE - SUM))
+RESIDUAL=$((CONTENT_AVAILABLE - SUM))
 if [ "$RESIDUAL" -ne 0 ]; then
     for p in "${PRIORITY_ORDER[@]}"; do
         if [ -n "${ALLOC[$p]+x}" ]; then
@@ -85,9 +100,12 @@ if [ "$RESIDUAL" -ne 0 ]; then
     done
 fi
 
-# Final resize pass — pin each pane to its allocation.
+# Final resize pass — pin each pane to its content allocation plus its
+# in-pane border reservation.
 for p in "${REQUESTED[@]}"; do
-    [ -n "${PIDX[$p]}" ] && tmux resize-pane -t "mume:cockpit.${PIDX[$p]}" -y "${ALLOC[$p]}"
+    [ -n "${PIDX[$p]}" ] \
+        && tmux resize-pane -t "mume:cockpit.${PIDX[$p]}" \
+               -y "$(( ALLOC[$p] + FRAME_EXTRA[$p] ))"
 done
 
 exit 0

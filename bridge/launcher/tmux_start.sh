@@ -135,6 +135,8 @@ tmux set-option -as terminal-features  ",*:RGB"
 # natively but the explicit line keeps behaviour uniform across terminals.
 tmux set-option -as terminal-features  ",*:sync"
 
+# Dead — borders are now drawn in-pane; pane-border-status is permanently
+# off (see build_initial_layout.sh), so this format string is never shown.
 tmux set-option -t mume pane-border-format \
   "#{?#{==:#{pane_title},status},#[fg=colour235] Character #[default],#{?#{==:#{pane_title},timers},#[fg=colour235] Timers #[default],#{?#{==:#{pane_title},group},#[fg=colour235] Group #[default],#{?#{==:#{pane_title},comm},#[fg=colour235] Communication #[default],#{?#{==:#{pane_title},ui},#[fg=colour235] UI #[default],#{?#{==:#{pane_title},dev},#[fg=colour235] Dev #[default],}}}}}}"
 

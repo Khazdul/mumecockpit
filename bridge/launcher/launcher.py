@@ -291,7 +291,7 @@ _sel_options_panes        = 0
 _hover_options_panes      = -1
 # Options — Panes → General submenu (pane × colour grid). Eight navigable rows:
 #   0..5 — pane rows (Character / Timers / Group / Comm / UI / Developer).
-#   6    — Display pane headers toggle.
+#   6    — Display pane borders toggle.
 #   7    — Back.
 # _options_panes_general_col is the persistent column (0..6) for grid rows; it is
 # preserved while the cursor sits on the headers / Back rows so returning
@@ -2850,7 +2850,7 @@ def _options_panes_text():
 #
 # Eight navigable rows: rows 0..5 are pane rows (←/→ moves between the
 # seven colour columns; the column persists across grid rows). Row 6 is
-# the [X] Display pane headers toggle; row 7 is Back. ↑/↓ moves between
+# the [X] Display pane borders toggle; row 7 is Back. ↑/↓ moves between
 # all eight rows. Enter activates: a grid cell toggles via the model
 # above, the headers row flips show_pane_dividers, Back saves and pops.
 # ESC = Back. All writes are deferred — _save_conf fires on the exit path.
@@ -2943,7 +2943,7 @@ def _options_panes_general_text():
     grid_cursor = (cur_row, cur_col) if cur_row < _PANES_GRID_ROWS else None
 
     headers_on    = (_conf.get("show_pane_dividers") == "1")
-    headers_label = f"[{'X' if headers_on else ' '}] Display pane headers"
+    headers_label = f"[{'X' if headers_on else ' '}] Display pane borders"
     back_label    = "Back"
     # Headers is a glyph row, so it gets the centred-block left
     # margin. Back is a plain `<< label >>` row and centres per row
@@ -2975,7 +2975,7 @@ def _options_panes_general_text():
     # Blank row between grid and the headers toggle.
     frags.append(("", "\n", clear_hover))
 
-    # Display pane headers — << label >> menu-row grammar.
+    # Display pane borders — << label >> menu-row grammar.
     state_h = "selected" if cur_row == _PANES_HEADERS_ROW else "inactive"
 
     def _headers_handler(ev):

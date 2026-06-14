@@ -14,18 +14,31 @@ cd "$HOME/MUME"
 source bridge/runtime/startup.conf 2>/dev/null || true
 source bridge/layout/right_column_budget.sh
 
-mapfile -t RC_INDICES < <(
+RC_INDICES=()
+RC_TITLES=()
+while read -r idx title; do
+    RC_INDICES+=("$idx")
+    RC_TITLES+=("$title")
+done < <(
     tmux list-panes -t mume:cockpit -F '#{pane_top} #{pane_index} #{pane_title}' 2>/dev/null \
     | awk '$3 ~ /^(status|timers|group|comm|ui|dev)$/' \
     | sort -n \
-    | awk '{print $2}'
+    | awk '{print $2, $3}'
 )
 N_RC=${#RC_INDICES[@]}
 [ "$N_RC" -lt 2 ] && exit 0
 
+# Carve in-pane border reservations out of the budget before splitting it
+# into equal content shares; add each pane's reservation back when pinning
+# so framed panes get an equal CONTENT share.
 AVAILABLE=$(rc_available_rows "$N_RC")
-SHARE=$(( AVAILABLE / N_RC ))
+FRAME_SUM=0
+for t in "${RC_TITLES[@]}"; do FRAME_SUM=$((FRAME_SUM + $(rc_frame_extra "$t"))); done
+CONTENT_AVAILABLE=$((AVAILABLE - FRAME_SUM))
+[ "$CONTENT_AVAILABLE" -lt 0 ] && CONTENT_AVAILABLE=0
+SHARE=$(( CONTENT_AVAILABLE / N_RC ))
 
 for ((i=0; i<N_RC-1; i++)); do
-    tmux resize-pane -t "mume:cockpit.${RC_INDICES[$i]}" -y "$SHARE"
+    tmux resize-pane -t "mume:cockpit.${RC_INDICES[$i]}" \
+        -y "$(( SHARE + $(rc_frame_extra "${RC_TITLES[$i]}") ))"
 done

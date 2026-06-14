@@ -120,7 +120,7 @@ _hover_panes      = -1
 # Panes → General submenu (colour grid). Eight navigable rows:
 #   0..5 — pane rows × 7 colour columns (←/→ moves the column; the column
 #          persists across grid rows).
-#   6    — Display pane headers toggle.
+#   6    — Display pane borders toggle.
 #   7    — Back.
 _panes_general_row        = 0
 _panes_general_col        = 0
@@ -299,20 +299,6 @@ def _tmux_pane_titles():
         return [ln for ln in r.stdout.splitlines() if ln]
     except (subprocess.SubprocessError, OSError):
         return []
-
-
-def _tmux_border_status():
-    try:
-        r = subprocess.run(
-            ["tmux", "show-option", "-t", TMUX_OPTROOT, "pane-border-status"],
-            capture_output=True, text=True, timeout=1.0,
-        )
-        parts = r.stdout.strip().split()
-        if len(parts) >= 2:
-            return parts[1]
-    except (subprocess.SubprocessError, OSError):
-        pass
-    return "off"
 
 
 def _send_to_game(cmd):
@@ -927,7 +913,7 @@ def _build_panes_container():
 # checked or unchecked. A row with no checked cell is off; exactly one
 # checked cell is on with that colour. apply_cell_toggle handles on/off /
 # switch-colour; rendering goes through panes_grid_fragments. Three extra
-# navigable rows hang below the grid: a blank, a [X] Display pane headers
+# navigable rows hang below the grid: a blank, a [X] Display pane borders
 # toggle, a blank, and Back.
 #
 # Persistence is immediate and live: clicking a cell writes the new state
@@ -1229,8 +1215,10 @@ def _panes_general_text():
     cur_col = _panes_general_col
     grid_cursor = (cur_row, cur_col) if cur_row < _PANES_GRID_ROWS else None
 
-    headers_on    = (_tmux_border_status() != "off")
-    headers_label = f"[{'X' if headers_on else ' '}] Display pane headers"
+    # tmux pane-border-status is permanently off; in-pane borders are
+    # driven by show_pane_dividers in startup.conf.
+    headers_on    = (conf.get("show_pane_dividers", "1") == "1")
+    headers_label = f"[{'X' if headers_on else ' '}] Display pane borders"
     back_label    = "Back"
 
     frags = []
@@ -1252,7 +1240,7 @@ def _panes_general_text():
 
     frags.append(("", "\n"))
 
-    # Display pane headers — single << label >> toggle, centred per row.
+    # Display pane borders — single << label >> toggle, centred per row.
     # Cursor row → gold-arrow `selected`; otherwise `inactive` (cursor-only
     # frame, no separate mouse-hover index).
     state_h = "selected" if cur_row == _PANES_HEADERS_ROW else "inactive"

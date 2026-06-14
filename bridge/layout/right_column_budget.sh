@@ -31,6 +31,28 @@ declare -A DEFAULT_DESIRED=(
 DROP_ORDER=(dev group timers comm status ui)
 PRIORITY_ORDER=(ui status comm timers group dev)
 
+# Panes that get an in-pane border (top + bottom). dev is a raw tail and is
+# never framed, so it never reserves border rows.
+declare -A IS_FRAMED=(
+    [status]=1
+    [timers]=1
+    [group]=1
+    [comm]=1
+    [ui]=1
+    [dev]=0
+)
+
+# Per-pane row overhead reserved for the in-pane border (top + bottom = 2)
+# when borders are enabled (show_pane_dividers=1) and the pane is framed.
+# Returns 0 otherwise. The border is drawn next phase; this only reserves
+# the rows so content height is preserved.
+rc_frame_extra() {
+    local p=$1
+    [ "${SHOW_DIVIDERS:-${show_pane_dividers:-1}}" -eq 1 ] \
+        && [ "${IS_FRAMED[$p]:-0}" -eq 1 ] && { echo 2; return; }
+    echo 0
+}
+
 # Deprecated: kept one release for the rc_max_panes / rc_fits_one_more
 # runtime-open gate in open_pane.sh, which is not changed in this PR.
 # Remove after open_pane.sh switches to MIN_HEIGHT-aware sizing.
@@ -47,23 +69,26 @@ rc_window_height() {
     tmux display-message -p -t mume:cockpit '#{window_height}' 2>/dev/null
 }
 
-# Compute content rows available for the right column.
-# Overhead accounting:
-#   - Top header row (when show_pane_dividers=1): 1 row
+# Compute rows available for the right column. Overhead accounting:
 #   - Inter-pane borders (always present): N - 1 rows
 #   - Input area (input row + divider above it): 2 rows
 #
-# Returns rows available for distribution across right-column pane
-# bodies, exclusive of any overhead.
+# tmux pane-border-status is permanently off, so there is no top header
+# row. In-pane borders consume rows WITHIN each framed pane and are
+# accounted for separately via rc_frame_extra (subtracted by consumers to
+# obtain the content budget; the per-pane reservation is added back when
+# pinning the final tmux height).
+#
+# Returns total rows available for distribution across right-column panes
+# (content + per-pane frame reservations), exclusive of inter-pane and
+# input overhead.
 rc_available_rows() {
     local n=$1
     [ -z "$n" ] || [ "$n" -lt 1 ] && { echo 0; return; }
     local rows
     rows=$(rc_window_height)
     [ -z "$rows" ] && { echo 0; return; }
-    local top_header=0
-    [ "${SHOW_DIVIDERS:-${show_pane_dividers:-1}}" -eq 1 ] && top_header=1
-    echo $(( rows - (n - 1) - top_header - 2 ))
+    echo $(( rows - (n - 1) - 2 ))
 }
 
 rc_max_panes() {

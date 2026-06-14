@@ -142,21 +142,22 @@ case "$TARGET" in
         ;;
 
     headers)
-        STATUS=$(tmux show-option -t mume pane-border-status 2>/dev/null | awk '{print $2}')
-        if [ "$STATUS" = "off" ]; then
-            tmux set-option -t mume pane-border-status top
+        # In-pane borders toggle (key name show_pane_dividers and cp -h
+        # kept for backward compat). tmux pane-border-status stays off;
+        # flip + persist show_pane_dividers and resize the right column
+        # live so framed panes reserve/release their border rows.
+        CUR=$(sed -n 's/^show_pane_dividers=//p' "$CONF" 2>/dev/null | tail -1)
+        [ -z "$CUR" ] && CUR=1
+        if [ "$CUR" = "1" ]; then
+            NEW=0
         else
-            tmux set-option -t mume pane-border-status off
+            NEW=1
         fi
-        bash "$SCRIPT_DIR/apply_border_style.sh"
-        if [ "$PERSIST" -eq 1 ]; then
-            NEW_STATUS=$(tmux show-option -t mume pane-border-status 2>/dev/null | awk '{print $2}')
-            if [ "$NEW_STATUS" = "off" ]; then
-                _persist_key "show_pane_dividers" "0"
-            else
-                _persist_key "show_pane_dividers" "1"
-            fi
-        fi
+        # Persist first so apply_desired_heights reads the new state, then
+        # resize. Always persist (no separate non-persist live path needed;
+        # the key is the single source of truth for the budget).
+        _persist_key "show_pane_dividers" "$NEW"
+        bash "$SCRIPT_DIR/apply_desired_heights.sh"
         ;;
 
     *)
