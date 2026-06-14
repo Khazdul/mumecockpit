@@ -1658,7 +1658,7 @@ Back / ESC. This is the persistence asymmetry vs. the popup — the
 popup's equivalent frame writes each changed key in place immediately,
 and the running timers pane picks it up within ~100 ms. Both surfaces
 write the same `timers_layout.conf` keys (`timers_<type>_enabled` /
-`_color` / `_cols` / `_clock`, plus the global `timers_headers` and `timers_compact`;
+`_color` / `_cols` / `_clock` / `_bar`, plus the global `timers_headers` and `timers_compact`;
 the in-memory `_timers_layout` dict carries `headers` and `compact` under
 reserved keys the per-type save loop skips). A separate parse/save pair
 (`_parse_timers_layout` / `_save_timers_layout`) mirrors the
