@@ -46,12 +46,15 @@ brew install bash tmux lua@5.4 tintin git python3
 # --break-system-packages. Try the clean install first and fall back if pip
 # refuses with the externally-managed-environment error.
 
+# fonttools is the launcher's quadrant-corner font-support backend on macOS,
+# where fc-list (fontconfig) is usually absent; a missing fonttools only
+# degrades the probe to "block", never breaks startup.
 install_python_deps() {
-    if python3 -m pip install --user prompt_toolkit pyperclip 2>/dev/null; then
+    if python3 -m pip install --user prompt_toolkit pyperclip fonttools 2>/dev/null; then
         return 0
     fi
     echo "Clean pip install declined (externally-managed-environment). Retrying with --break-system-packages..."
-    python3 -m pip install --user --break-system-packages prompt_toolkit pyperclip
+    python3 -m pip install --user --break-system-packages prompt_toolkit pyperclip fonttools
 }
 
 install_python_deps

@@ -71,6 +71,7 @@ import ttpp_syntax  # noqa: E402
 import launcher_banner  # noqa: E402
 import credits  # noqa: E402
 import foot_config  # noqa: E402
+import frame_corners  # noqa: E402
 import history_filter  # noqa: E402
 import log_player  # noqa: E402
 import macro_keys  # noqa: E402
@@ -191,6 +192,7 @@ _CONF_DEFAULTS_FALLBACK = {
     "spotlights_show_pvp":          "1",
     "spotlights_show_achievements": "1",
     "terminal_bg_fallback":         "#000000",
+    "frame_corners":                "auto",
     "readability_enabled":          "",
 }
 
@@ -798,6 +800,72 @@ def _probe_and_persist_terminal_bg():
     _write_terminal_bg_to_layout_conf(_terminal_bg)
 
 
+def _write_frame_corners_to_layout_conf(resolved):
+    """Persist `frame_corners_resolved=<quadrant|block>` into
+    bridge/runtime/layout.conf using the same in-place append-or-replace
+    pattern as terminal_bg. build_initial_layout.sh only seeds missing
+    keys, so this write survives layout-conf (re)creation."""
+    try:
+        os.makedirs(RUNTIME_DIR, exist_ok=True)
+    except OSError:
+        return
+    try:
+        with open(LAYOUT_CONF_PATH) as fh:
+            lines = fh.readlines()
+    except FileNotFoundError:
+        lines = []
+    except OSError:
+        return
+    new_line = f"frame_corners_resolved={resolved}\n"
+    replaced = False
+    out = []
+    for line in lines:
+        if line.startswith("frame_corners_resolved="):
+            if not replaced:
+                out.append(new_line)
+                replaced = True
+            continue
+        out.append(line)
+    if not replaced:
+        if out and not out[-1].endswith("\n"):
+            out[-1] = out[-1] + "\n"
+        out.append(new_line)
+    try:
+        with open(LAYOUT_CONF_PATH, "w") as fh:
+            fh.writelines(out)
+    except OSError:
+        pass
+
+
+def _resolve_and_persist_frame_corners():
+    """One-shot: resolve whether the active terminal font renders the
+    quadrant corner glyphs, write `frame_corners_resolved` to layout.conf,
+    and log the outcome to logs/debug.log. Mirrors the terminal-bg
+    lifecycle; called once from main() after _load_conf() (it reads the
+    `frame_corners` override from `_conf`). Never raises — a failure in
+    the resolver degrades to "block"."""
+    setting = _conf.get("frame_corners", "auto")
+    try:
+        resolved, info = frame_corners.resolve_frame_corners(setting)
+    except Exception:
+        resolved, info = "block", {
+            "terminal": "none", "font": "none",
+            "backend": "none", "covered": "unknown",
+        }
+    msg = (
+        f"frame-corners: terminal={info['terminal']} font={info['font']} "
+        f"backend={info['backend']} covered={info['covered']} -> {resolved}\n"
+    )
+    try:
+        log_path = os.path.join(PROJECT_DIR, "logs", "debug.log")
+        os.makedirs(os.path.dirname(log_path), exist_ok=True)
+        with open(log_path, "a") as fh:
+            fh.write(msg)
+    except OSError:
+        pass
+    _write_frame_corners_to_layout_conf(resolved)
+
+
 # ---------------------------------------------------------------------------
 # Config I/O
 # ---------------------------------------------------------------------------
@@ -850,6 +918,7 @@ def _save_conf():
                 "spotlights_show_deaths", "spotlights_show_levelups",
                 "spotlights_show_pvp", "spotlights_show_achievements",
                 "terminal_bg_fallback",
+                "frame_corners",
                 "readability_enabled",
             ):
                 fh.write(f"{key}={_conf.get(key, _CONF_DEFAULTS[key])}\n")
@@ -11142,6 +11211,10 @@ def main():
     # takes over. Bounded ~0.25 s; never wedges startup. Reads
     # `terminal_bg_fallback` from `_conf`, so must run after `_load_conf()`.
     _probe_and_persist_terminal_bg()
+    # Resolve whether the active terminal font renders the quadrant corner
+    # glyphs and persist the result for later pane rendering. Reads the
+    # `frame_corners` override from `_conf`, so must run after _load_conf().
+    _resolve_and_persist_frame_corners()
     try:
         run_retention.prune_expired_runs()
     except Exception:

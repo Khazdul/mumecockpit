@@ -68,7 +68,11 @@ REPO_DIR="$TARGET_HOME/MUME"
 # Install packages
 # ---------------------------------------------------------------------------
 
-PACKAGES="tmux lua5.4 python3 python3-prompt-toolkit python3-pyperclip git"
+# python3-fonttools is the fontTools fallback backend for the launcher's
+# quadrant-corner font-support probe (frame_corners.py); fontconfig's
+# fc-list is the preferred backend on Linux, so a missing fonttools only
+# degrades the probe to "block", never breaks startup.
+PACKAGES="tmux lua5.4 python3 python3-prompt-toolkit python3-pyperclip python3-fonttools git"
 
 if [ "$IS_WSL" -eq 1 ]; then
     # WSL deployment: foot under WSLg is the cockpit's managed terminal.
