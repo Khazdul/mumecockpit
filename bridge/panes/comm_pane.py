@@ -36,6 +36,9 @@ import signal
 import sys
 import time
 
+import pane_frame
+from pane_frame import inner_height, inner_width
+
 _SGR_RE = re.compile(r"\x1b\[[0-9;]*m")
 
 COMM_STATE_PATH   = os.environ.get(
@@ -736,7 +739,7 @@ def _header_text():
             ordered.append(n)
 
     caps        = [_display(n) for n in ordered]
-    cells, sep  = _header_layout(caps, max(1, _term_cols()))
+    cells, sep  = _header_layout(caps, max(1, inner_width(_term_cols())))
 
     for i, cell in enumerate(cells):
         name    = ordered[i]
@@ -782,8 +785,8 @@ def _list_text():
     # enforced by the mouse handler before offsets grow too large.
     _scroll_offset = max(0, min(_scroll_offset, total - 1))
 
-    rows        = _term_rows()
-    cols        = max(1, _term_cols())
+    rows        = inner_height(_term_rows())
+    cols        = max(1, inner_width(_term_cols()))
     list_height = max(1, rows - (1 if _show_header else 0)
                             - (1 if _scroll_offset > 0 else 0))
     with_time   = (_scroll_offset > 0)
@@ -849,8 +852,8 @@ class ListControl(FormattedTextControl):
                     filtered    = _get_filtered(_state)
                     total       = len(filtered)
                     channels    = _state.get("channels") or []
-                    rows        = _term_rows()
-                    cols        = max(1, _term_cols())
+                    rows        = inner_height(_term_rows())
+                    cols        = max(1, inner_width(_term_cols()))
                     list_height = max(1, rows - (1 if _show_header else 0)
                                             - (1 if _scroll_offset > 0 else 0))
                     # Wrap-aware max_offset: walk forward to find the oldest
@@ -1021,8 +1024,9 @@ def main():
         filter=Condition(lambda: _run_active and _scroll_offset > 0),
     )
 
-    root      = HSplit([header_window, list_window, indicator_container])
-    layout    = Layout(root)
+    inner_root = HSplit([header_window, list_window, indicator_container])
+    root       = pane_frame.framed(inner_root, "comm")
+    layout     = Layout(root)
 
     app = Application(
         layout=layout,
@@ -1043,15 +1047,18 @@ def main():
     signal.signal(signal.SIGINT,  signal.SIG_IGN)
 
     async def _run():
-        task = asyncio.ensure_future(_poll_state(app))
+        task       = asyncio.ensure_future(_poll_state(app))
+        frame_task = pane_frame.start_poll(app)
         try:
             await app.run_async()
         finally:
             task.cancel()
-            try:
-                await task
-            except asyncio.CancelledError:
-                pass
+            frame_task.cancel()
+            for t in (task, frame_task):
+                try:
+                    await t
+                except asyncio.CancelledError:
+                    pass
 
     asyncio.run(_run())
 

@@ -25,6 +25,9 @@ import shutil
 import signal
 import sys
 
+import pane_frame
+from pane_frame import inner_height, inner_width
+
 GROUP_STATE_PATH = os.environ.get(
     "GROUP_STATE_PATH",
     os.path.join(os.environ["HOME"], "MUME", "bridge", "runtime", "group.state"),
@@ -161,8 +164,8 @@ def _rows_text():
         return [("", "")]
     if not _members:
         return []
-    W     = max(3, shutil.get_terminal_size().columns)
-    H     = max(1, _term_rows())
+    W     = max(3, inner_width(shutil.get_terminal_size().columns))
+    H     = max(1, inner_height(_term_rows()))
     total = len(_members)
     # Reserve 1 row for the overflow indicator when it will be shown.
     list_height = H - 1 if total > H else H
@@ -179,7 +182,7 @@ def _indicator_text():
     if not _run_active:
         return [("", "")]
     total = len(_members)
-    H     = max(1, _term_rows())
+    H     = max(1, inner_height(_term_rows()))
     if total > H:
         hidden = total - (H - 1)
         return [(C_INDICATOR, f"↓ {hidden} more members")]
@@ -252,11 +255,12 @@ def main():
             height=1,
             dont_extend_height=True,
         ),
-        filter=Condition(lambda: _run_active and len(_members) > _term_rows()),
+        filter=Condition(lambda: _run_active and len(_members) > inner_height(_term_rows())),
     )
 
-    root   = HSplit([rows_window, indicator_container])
-    layout = Layout(root)
+    inner_root = HSplit([rows_window, indicator_container])
+    root       = pane_frame.framed(inner_root, "group")
+    layout     = Layout(root)
 
     app = Application(
         layout=layout,
@@ -276,15 +280,18 @@ def main():
     signal.signal(signal.SIGINT,  signal.SIG_IGN)
 
     async def _run():
-        poll_task = asyncio.ensure_future(_poll_state(app))
+        poll_task  = asyncio.ensure_future(_poll_state(app))
+        frame_task = pane_frame.start_poll(app)
         try:
             await app.run_async()
         finally:
             poll_task.cancel()
-            try:
-                await poll_task
-            except asyncio.CancelledError:
-                pass
+            frame_task.cancel()
+            for t in (poll_task, frame_task):
+                try:
+                    await t
+                except asyncio.CancelledError:
+                    pass
 
     asyncio.run(_run())
 

@@ -26,6 +26,9 @@ import re
 import signal
 import sys
 
+import pane_frame
+from pane_frame import inner_height, inner_width
+
 _SGR_RE = re.compile(r"\x1b\[[0-9;]*m")
 
 UI_LOG_PATH = os.path.join(os.environ["HOME"], "MUME", "logs", "ui.log")
@@ -76,8 +79,8 @@ def _list_text():
     total = len(_lines)
     _scroll_offset = max(0, min(_scroll_offset, total - 1))
 
-    rows        = _term_rows()
-    cols        = max(1, _term_cols())
+    rows        = inner_height(_term_rows())
+    cols        = max(1, inner_width(_term_cols()))
     list_height = max(1, rows - (1 if _scroll_offset > 0 else 0))
     anchor_idx  = total - 1 - _scroll_offset
 
@@ -128,8 +131,8 @@ class ListControl(FormattedTextControl):
             global _scroll_offset
             if mouse_event.event_type == MouseEventType.SCROLL_UP:
                 total       = len(_lines)
-                rows        = _term_rows()
-                cols        = max(1, _term_cols())
+                rows        = inner_height(_term_rows())
+                cols        = max(1, inner_width(_term_cols()))
                 list_height = max(1, rows - (1 if _scroll_offset > 0 else 0))
                 # Wrap-aware max_offset: walk forward from index 0 to find the
                 # oldest entry that pins at the top when fully scrolled up.
@@ -253,8 +256,9 @@ def main():
         filter=Condition(lambda: _scroll_offset > 0),
     )
 
-    root   = HSplit([list_window, indicator_container])
-    layout = Layout(root)
+    inner_root = HSplit([list_window, indicator_container])
+    root       = pane_frame.framed(inner_root, "ui")
+    layout     = Layout(root)
 
     app = Application(
         layout=layout,
@@ -274,15 +278,18 @@ def main():
     signal.signal(signal.SIGINT,  signal.SIG_IGN)
 
     async def _run():
-        task = asyncio.ensure_future(_poll_log(app))
+        task       = asyncio.ensure_future(_poll_log(app))
+        frame_task = pane_frame.start_poll(app)
         try:
             await app.run_async()
         finally:
             task.cancel()
-            try:
-                await task
-            except asyncio.CancelledError:
-                pass
+            frame_task.cancel()
+            for t in (task, frame_task):
+                try:
+                    await t
+                except asyncio.CancelledError:
+                    pass
 
     asyncio.run(_run())
 

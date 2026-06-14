@@ -39,6 +39,9 @@ import subprocess
 import sys
 import time
 
+import pane_frame
+from pane_frame import inner_height, inner_width
+
 TIMERS_STATE_PATH = os.environ.get(
     "TIMERS_STATE_PATH",
     os.path.join(os.environ["HOME"], "MUME", "bridge", "runtime", "timers.state"),
@@ -597,7 +600,7 @@ def _build_all_rows(corner_row=None):
     _group_rows, so a corner_row landing on one yields no corner cell — correct,
     there is nothing to obscure there."""
     spells, buffs, debuffs, stored, blinds, charms = _split_groups()
-    W = max(4, _term_cols())
+    W = max(4, inner_width(_term_cols()))
 
     all_rows = []
     for i, (items, typ, cols) in enumerate(_rendered_groups(
@@ -714,8 +717,8 @@ def _add_view_frags():
     by _scroll_offset exactly like _grid_text, so the overflow indicator works in
     this view too."""
     global _scroll_offset
-    H      = max(1, _term_rows())
-    W      = max(4, _term_cols())
+    H      = max(1, inner_height(_term_rows()))
+    W      = max(4, inner_width(_term_cols()))
     active = {e.get("key") for e in _herblores}
 
     all_rows = []
@@ -785,8 +788,8 @@ def _grid_text():
     if not _run_active:
         return [("", "")]
 
-    H        = max(1, _term_rows())
-    W        = max(4, _term_cols())
+    H        = max(1, inner_height(_term_rows()))
+    W        = max(4, inner_width(_term_cols()))
     # Clamp the scroll offset FIRST (against _current_total_rows(), which equals
     # len(_build_all_rows()) in grid mode), so the corner_row we hand the build
     # is the already-clamped index of the row at the top of the visible pane.
@@ -830,7 +833,7 @@ def _indicator_text():
     if not _run_active:
         return [("", "")]
 
-    H     = max(1, _term_rows())
+    H     = max(1, inner_height(_term_rows()))
     total = _current_total_rows()
 
     if _scroll_offset > 0:
@@ -878,7 +881,7 @@ class ListControl(FormattedTextControl):
                 _app.invalidate()
         if mouse_event.event_type == MouseEventType.SCROLL_DOWN:
             total          = _current_total_rows()
-            H              = max(1, _term_rows())
+            H              = max(1, inner_height(_term_rows()))
             list_height    = H - (1 if (_scroll_offset > 0 or total > H) else 0)
             max_offset     = max(0, total - list_height)
             _scroll_offset = min(_scroll_offset + 1, max_offset)
@@ -1002,7 +1005,7 @@ def main():
             height=1,
             dont_extend_height=True,
         ),
-        filter=Condition(lambda: _run_active and (_scroll_offset > 0 or _current_total_rows() > _term_rows())),
+        filter=Condition(lambda: _run_active and (_scroll_offset > 0 or _current_total_rows() > inner_height(_term_rows()))),
     )
 
     corner_float = Float(
@@ -1019,8 +1022,10 @@ def main():
             filter=Condition(_corner_visible),
         ),
     )
+    inner_root = pane_frame.framed(
+        HSplit([grid_window, indicator_container]), "timers")
     root = FloatContainer(
-        content=HSplit([grid_window, indicator_container]),
+        content=inner_root,
         floats=[corner_float],
     )
     layout = Layout(root)
@@ -1043,12 +1048,13 @@ def main():
     signal.signal(signal.SIGINT,  signal.SIG_IGN)
 
     async def _run():
-        poll_task = asyncio.ensure_future(_poll_state(app))
-        tick_task = asyncio.ensure_future(_tick(app))
+        poll_task  = asyncio.ensure_future(_poll_state(app))
+        tick_task  = asyncio.ensure_future(_tick(app))
+        frame_task = pane_frame.start_poll(app)
         try:
             await app.run_async()
         finally:
-            for task in (poll_task, tick_task):
+            for task in (poll_task, tick_task, frame_task):
                 task.cancel()
                 try:
                     await task
