@@ -28,7 +28,7 @@ import re
 import shutil
 import subprocess
 
-__all__ = ["CORNER_CODEPOINTS", "resolve_frame_corners"]
+__all__ = ["CORNER_CODEPOINTS", "resolve_frame_corners", "resolve_and_persist"]
 
 
 # The four quadrant corner glyphs the cockpit frame would draw.
@@ -357,3 +357,59 @@ def resolve_frame_corners(setting):
         return "block", info
     info["covered"] = "unknown"
     return "block", info
+
+
+# ---------------------------------------------------------------------------
+# Resolve + persist (shared by the launcher startup path and the popup's
+# live corner-style change)
+# ---------------------------------------------------------------------------
+def _write_resolved(layout_path, resolved):
+    """Append-or-replace `frame_corners_resolved=<resolved>` in layout.conf
+    in place. build_initial_layout.sh only seeds missing keys, so this write
+    survives layout-conf (re)creation. Never raises."""
+    try:
+        os.makedirs(os.path.dirname(layout_path), exist_ok=True)
+    except OSError:
+        pass
+    try:
+        with open(layout_path) as fh:
+            lines = fh.readlines()
+    except FileNotFoundError:
+        lines = []
+    except OSError:
+        return
+    new_line = f"frame_corners_resolved={resolved}\n"
+    replaced = False
+    out = []
+    for line in lines:
+        if line.startswith("frame_corners_resolved="):
+            if not replaced:
+                out.append(new_line)
+                replaced = True
+            continue
+        out.append(line)
+    if not replaced:
+        if out and not out[-1].endswith("\n"):
+            out[-1] = out[-1] + "\n"
+        out.append(new_line)
+    try:
+        with open(layout_path, "w") as fh:
+            fh.writelines(out)
+    except OSError:
+        pass
+
+
+def resolve_and_persist(setting, layout_path):
+    """Resolve `setting` (auto/quadrant/block) and persist the result to
+    `frame_corners_resolved` in layout.conf. Returns `(resolved, info)` —
+    the same pair as `resolve_frame_corners`, so callers can log the
+    outcome. Never raises: a failure in the resolver degrades to "block"."""
+    try:
+        resolved, info = resolve_frame_corners(setting)
+    except Exception:
+        resolved, info = "block", {
+            "terminal": "none", "font": "none",
+            "backend": "none", "covered": "unknown",
+        }
+    _write_resolved(layout_path, resolved)
+    return resolved, info

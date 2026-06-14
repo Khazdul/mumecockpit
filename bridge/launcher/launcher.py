@@ -84,7 +84,10 @@ import spotlights  # noqa: E402
 from menu_chrome import (  # noqa: E402
     button_fragment, footer_block, menu_row, title_block, title_block_height,
 )
-from panes_grid import apply_cell_toggle, panes_grid_fragments  # noqa: E402
+from panes_grid import (  # noqa: E402
+    apply_cell_toggle, frame_corner_label, next_frame_corner,
+    panes_grid_fragments,
+)
 import comm_channels  # noqa: E402
 from timers_layout_grid import (  # noqa: E402
     TIMERS_LAYOUT_TYPES, TIMERS_LAYOUT_LABELS, TIMERS_LAYOUT_DEFAULTS,
@@ -800,58 +803,16 @@ def _probe_and_persist_terminal_bg():
     _write_terminal_bg_to_layout_conf(_terminal_bg)
 
 
-def _write_frame_corners_to_layout_conf(resolved):
-    """Persist `frame_corners_resolved=<quadrant|block>` into
-    bridge/runtime/layout.conf using the same in-place append-or-replace
-    pattern as terminal_bg. build_initial_layout.sh only seeds missing
-    keys, so this write survives layout-conf (re)creation."""
-    try:
-        os.makedirs(RUNTIME_DIR, exist_ok=True)
-    except OSError:
-        return
-    try:
-        with open(LAYOUT_CONF_PATH) as fh:
-            lines = fh.readlines()
-    except FileNotFoundError:
-        lines = []
-    except OSError:
-        return
-    new_line = f"frame_corners_resolved={resolved}\n"
-    replaced = False
-    out = []
-    for line in lines:
-        if line.startswith("frame_corners_resolved="):
-            if not replaced:
-                out.append(new_line)
-                replaced = True
-            continue
-        out.append(line)
-    if not replaced:
-        if out and not out[-1].endswith("\n"):
-            out[-1] = out[-1] + "\n"
-        out.append(new_line)
-    try:
-        with open(LAYOUT_CONF_PATH, "w") as fh:
-            fh.writelines(out)
-    except OSError:
-        pass
-
-
 def _resolve_and_persist_frame_corners():
     """One-shot: resolve whether the active terminal font renders the
     quadrant corner glyphs, write `frame_corners_resolved` to layout.conf,
     and log the outcome to logs/debug.log. Mirrors the terminal-bg
     lifecycle; called once from main() after _load_conf() (it reads the
-    `frame_corners` override from `_conf`). Never raises — a failure in
-    the resolver degrades to "block"."""
+    `frame_corners` override from `_conf`). The resolve+persist itself lives
+    in frame_corners.resolve_and_persist so the popup can invoke it on a
+    live corner-style change; this wrapper adds only the startup logging."""
     setting = _conf.get("frame_corners", "auto")
-    try:
-        resolved, info = frame_corners.resolve_frame_corners(setting)
-    except Exception:
-        resolved, info = "block", {
-            "terminal": "none", "font": "none",
-            "backend": "none", "covered": "unknown",
-        }
+    resolved, info = frame_corners.resolve_and_persist(setting, LAYOUT_CONF_PATH)
     msg = (
         f"frame-corners: terminal={info['terminal']} font={info['font']} "
         f"backend={info['backend']} covered={info['covered']} -> {resolved}\n"
@@ -863,7 +824,6 @@ def _resolve_and_persist_frame_corners():
             fh.write(msg)
     except OSError:
         pass
-    _write_frame_corners_to_layout_conf(resolved)
 
 
 # ---------------------------------------------------------------------------
@@ -2848,16 +2808,20 @@ def _options_panes_text():
 # rendering goes through panes_grid_fragments. See ADR 0086 and
 # docs/launcher.md "Panes submenu".
 #
-# Eight navigable rows: rows 0..5 are pane rows (←/→ moves between the
+# Nine navigable rows: rows 0..5 are pane rows (←/→ moves between the
 # seven colour columns; the column persists across grid rows). Row 6 is
-# the [X] Display pane borders toggle; row 7 is Back. ↑/↓ moves between
-# all eight rows. Enter activates: a grid cell toggles via the model
-# above, the headers row flips show_pane_dividers, Back saves and pops.
-# ESC = Back. All writes are deferred — _save_conf fires on the exit path.
+# the [X] Display pane borders toggle; row 7 is the Corner style cycler
+# (←/→ and Enter advance Auto → Quadrant → Block, wrapping, ADR 0120);
+# row 8 is Back. ↑/↓ moves between all nine rows. Enter activates: a grid
+# cell toggles via the model above, the headers row flips
+# show_pane_dividers, the corner row cycles frame_corners, Back saves and
+# pops. ESC = Back. All writes are deferred — _save_conf fires on the exit
+# path (the phase-1 resolver re-resolves frame_corners_resolved at launch).
 
 _PANES_GRID_ROWS   = len(_PANE_OPTIONS)            # 6
 _PANES_HEADERS_ROW = _PANES_GRID_ROWS              # 6
-_PANES_BACK_ROW    = _PANES_GRID_ROWS + 1          # 7
+_PANES_CORNERS_ROW = _PANES_GRID_ROWS + 1          # 7
+_PANES_BACK_ROW    = _PANES_GRID_ROWS + 2          # 8
 _PANES_LAST_ROW    = _PANES_BACK_ROW
 _PANES_LAST_COL    = len(PANE_COLOR_ORDER) - 1     # 6
 
@@ -2901,6 +2865,17 @@ def _apply_panes_grid_toggle(row, col):
 def _toggle_pane_headers():
     key = "show_pane_dividers"
     _conf[key] = "0" if _conf.get(key) == "1" else "1"
+    if _app:
+        _app.invalidate()
+
+
+def _cycle_frame_corners(delta=1):
+    """Advance the frame_corners style (Auto → Quadrant → Block, wrapping)
+    in `_conf`. Deferred: the existing _save_conf on Back/ESC persists it,
+    and the phase-1 resolver re-resolves frame_corners_resolved at next
+    launch — so the launcher change takes effect on next cockpit start."""
+    cur = _conf.get("frame_corners", "auto")
+    _conf["frame_corners"] = next_frame_corner(cur, delta)
     if _app:
         _app.invalidate()
 
@@ -2994,7 +2969,29 @@ def _options_panes_general_text():
     frags.append(("", " " * headers_right_pad, clear_hover))
     frags.append(("", "\n", clear_hover))
 
-    # Blank row between headers and Back.
+    # Corner style — single cycle row directly under the borders toggle,
+    # stacked on the same left edge. ←/→ and Enter/Space advance the value
+    # (Auto → Quadrant → Block, wrapping). Deferred write via _save_conf.
+    corner_label = f"Corner style: {frame_corner_label(_conf.get('frame_corners', 'auto'))}"
+    state_c = "selected" if cur_row == _PANES_CORNERS_ROW else "inactive"
+
+    def _corner_handler(ev):
+        if ev.event_type == MouseEventType.MOUSE_MOVE:
+            _set_panes_cursor(_PANES_CORNERS_ROW)
+            return
+        if ev.event_type == MouseEventType.MOUSE_DOWN:
+            _set_panes_cursor(_PANES_CORNERS_ROW)
+            _cycle_frame_corners(1)
+
+    corner_right_pad = max(0, cols - left_pad - len(corner_label) - 6)
+    frags.append(("", " " * left_pad, clear_hover))
+    frags.extend(menu_row(
+        corner_label, state_c, mouse_handler=_corner_handler,
+    ))
+    frags.append(("", " " * corner_right_pad, clear_hover))
+    frags.append(("", "\n", clear_hover))
+
+    # Blank row between the corner cycler and Back.
     frags.append(("", "\n", clear_hover))
 
     # Back — plain << label >> row, centred per row (no leading glyph
@@ -3019,9 +3016,9 @@ def _options_panes_general_text():
     frags.append(("", "\n", clear_hover))
 
     # Footer block anchored to the final terminal row. Content rows
-    # above the footer = title block + header row + 6 pane rows + 4
-    # rows of bottom chrome (blank · headers · blank · Back).
-    content_rows = title_block_height(2) + 1 + _PANES_GRID_ROWS + 4
+    # above the footer = title block + header row + 6 pane rows + 5
+    # rows of bottom chrome (blank · headers · corner · blank · Back).
+    content_rows = title_block_height(2) + 1 + _PANES_GRID_ROWS + 5
     footer = "↑↓←→ Move · Enter Toggle · ESC Back"
     frags.extend(footer_block(
         footer, cols, rows_h, content_rows, mouse_handler=clear_hover,
@@ -10206,15 +10203,20 @@ def _kb_optp_down(event):
 
 @kb.add("left", filter=_in_frame("options_panes_general"))
 def _kb_optp_left(event):
-    if _options_panes_general_row < _PANES_GRID_ROWS and _options_panes_general_col > 0:
-        _set_panes_cursor(_options_panes_general_row, _options_panes_general_col - 1)
+    r = _options_panes_general_row
+    if r < _PANES_GRID_ROWS and _options_panes_general_col > 0:
+        _set_panes_cursor(r, _options_panes_general_col - 1)
+    elif r == _PANES_CORNERS_ROW:
+        _cycle_frame_corners(-1)
 
 
 @kb.add("right", filter=_in_frame("options_panes_general"))
 def _kb_optp_right(event):
-    if (_options_panes_general_row < _PANES_GRID_ROWS
-            and _options_panes_general_col < _PANES_LAST_COL):
-        _set_panes_cursor(_options_panes_general_row, _options_panes_general_col + 1)
+    r = _options_panes_general_row
+    if r < _PANES_GRID_ROWS and _options_panes_general_col < _PANES_LAST_COL:
+        _set_panes_cursor(r, _options_panes_general_col + 1)
+    elif r == _PANES_CORNERS_ROW:
+        _cycle_frame_corners(1)
 
 
 @kb.add("enter", filter=_in_frame("options_panes_general"))
@@ -10225,6 +10227,8 @@ def _kb_optp_select(event):
         _apply_panes_grid_toggle(r, _options_panes_general_col)
     elif r == _PANES_HEADERS_ROW:
         _toggle_pane_headers()
+    elif r == _PANES_CORNERS_ROW:
+        _cycle_frame_corners(1)
     elif r == _PANES_BACK_ROW:
         _options_panes_general_back()
 

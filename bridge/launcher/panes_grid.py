@@ -16,7 +16,41 @@ from palette import (
     pane_color_label,
 )
 
-__all__ = ["panes_grid_fragments", "apply_cell_toggle", "grid_width"]
+__all__ = [
+    "panes_grid_fragments", "apply_cell_toggle", "grid_width",
+    "FRAME_CORNER_VALUES", "frame_corner_label", "next_frame_corner",
+]
+
+# ---------------------------------------------------------------------------
+# Frame-corner style cycler (shared by launcher + popup, ADR 0073).
+# ---------------------------------------------------------------------------
+# The ordered set the "Corner style" row cycles through, the display label
+# for each, and a wrapping next-value helper. Kept here so both surfaces draw
+# their labels and advance their values from one source and can never drift.
+FRAME_CORNER_VALUES = ("auto", "quadrant", "block")
+
+_FRAME_CORNER_LABELS = {
+    "auto":     "Auto",
+    "quadrant": "Quadrant",
+    "block":    "Block",
+}
+
+
+def frame_corner_label(value):
+    """Display label ('Auto' / 'Quadrant' / 'Block') for a stored value.
+    An unknown / missing value falls back to the 'Auto' label."""
+    return _FRAME_CORNER_LABELS.get((value or "").strip().lower(), "Auto")
+
+
+def next_frame_corner(value, delta=1):
+    """The next value in FRAME_CORNER_VALUES, wrapping. ``delta`` is the
+    step (+1 advances, -1 goes back). An unknown / missing current value is
+    treated as the first entry ('auto')."""
+    try:
+        idx = FRAME_CORNER_VALUES.index((value or "").strip().lower())
+    except ValueError:
+        idx = 0
+    return FRAME_CORNER_VALUES[(idx + delta) % len(FRAME_CORNER_VALUES)]
 
 # Cell layout. A cell is `[X]███` or `[ ]███` — a 3-cell checkbox plus a
 # 3-cell colour swatch. Columns are separated by a single space and the row

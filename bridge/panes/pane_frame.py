@@ -67,7 +67,8 @@ _RIGHT_EDGE  = "▐"   # ▐ right half
 _frames_enabled = False
 _pane_colors    = {}            # pane_key -> colour name (from startup.conf)
 _startup_mtime  = None
-_corners        = _CORNERS_BLOCK   # resolved once at import
+_layout_mtime   = None
+_corners        = _CORNERS_BLOCK   # refreshed from layout.conf by start_poll
 
 
 def _parse_conf(path):
@@ -108,14 +109,25 @@ def _load_startup():
 
 
 def _load_corners():
-    """Resolve the corner glyph set ONCE from frame_corners_resolved in
+    """Resolve the corner glyph set from frame_corners_resolved in
     layout.conf. 'quadrant' → quadrant glyphs; anything else (block, missing,
-    invalid) → full blocks. Font changes require a relaunch, so this is not
-    polled."""
+    invalid) → full blocks. Polled by start_poll so a live corner-style change
+    (popup Panes → Corner style) re-renders without a relaunch."""
     conf = _parse_conf(LAYOUT_PATH)
     if conf.get("frame_corners_resolved", "").strip() == "quadrant":
         return _CORNERS_QUADRANT
     return _CORNERS_BLOCK
+
+
+def _reload_corners():
+    """Refresh the cached corner glyph set from layout.conf.
+    Returns True if it changed."""
+    global _corners
+    new = _load_corners()
+    if new != _corners:
+        _corners = new
+        return True
+    return False
 
 
 # Resolve corners and the initial config at import.
@@ -172,10 +184,12 @@ def framed(inner_container, pane_key):
 
     When frames_enabled() is False every border collapses (ConditionalContainer)
     and the layout reduces to inner_container at full size."""
-    tl, tr, bl, br = _corners
     label = LABELS.get(pane_key, "")
 
+    # Read corners() at render time (not once at build time) so a live
+    # corner-style change picked up by start_poll re-renders the glyphs.
     def _top_text():
+        tl, tr, _bl, _br = corners()
         w = _term_cols()
         # <TL> + "▀▀ " + label + " " + "▀"*fill + <TR> == exactly w columns.
         fill = w - 6 - len(label)
@@ -185,6 +199,7 @@ def framed(inner_container, pane_key):
         return [(border_style(pane_key), text[:w])]
 
     def _bottom_text():
+        _tl, _tr, bl, br = corners()
         w = _term_cols()
         mid = w - 2
         if mid < 0:
@@ -225,20 +240,36 @@ def framed(inner_container, pane_key):
 
 
 def start_poll(app, interval=0.25):
-    """Spawn an asyncio task that re-reads startup.conf on mtime change and
-    invalidates the app when frames_enabled / pane colours change. Corners are
-    not polled (font changes require a relaunch). Returns the task."""
+    """Spawn an asyncio task that re-reads startup.conf and layout.conf on
+    mtime change and invalidates the app when frames_enabled / pane colours
+    (startup.conf) or the resolved corner glyphs (layout.conf
+    frame_corners_resolved) change. The latter lets a live corner-style change
+    re-render the corners without a relaunch. Returns the task."""
     async def _poll():
-        global _startup_mtime
+        global _startup_mtime, _layout_mtime
         while True:
+            invalidate = False
+
             try:
-                mtime = os.stat(STARTUP_PATH).st_mtime
+                smtime = os.stat(STARTUP_PATH).st_mtime
             except OSError:
-                mtime = None
-            if mtime != _startup_mtime:
-                _startup_mtime = mtime
+                smtime = None
+            if smtime != _startup_mtime:
+                _startup_mtime = smtime
                 if _load_startup():
-                    app.invalidate()
+                    invalidate = True
+
+            try:
+                lmtime = os.stat(LAYOUT_PATH).st_mtime
+            except OSError:
+                lmtime = None
+            if lmtime != _layout_mtime:
+                _layout_mtime = lmtime
+                if _reload_corners():
+                    invalidate = True
+
+            if invalidate:
+                app.invalidate()
             await asyncio.sleep(interval)
 
     return asyncio.ensure_future(_poll())

@@ -35,7 +35,11 @@ import run_stats
 from menu_chrome import (
     footer_block, menu_row, title_block, title_block_height,
 )
-from panes_grid import apply_cell_toggle, panes_grid_fragments
+from panes_grid import (
+    apply_cell_toggle, frame_corner_label, next_frame_corner,
+    panes_grid_fragments,
+)
+import frame_corners
 import comm_channels
 from timers_layout_grid import (
     TIMERS_LAYOUT_TYPES, TIMERS_LAYOUT_LABELS, TIMERS_LAYOUT_DEFAULTS,
@@ -912,19 +916,22 @@ def _build_panes_container():
 # Six pane rows × seven colour columns: each (pane, colour) cell is either
 # checked or unchecked. A row with no checked cell is off; exactly one
 # checked cell is on with that colour. apply_cell_toggle handles on/off /
-# switch-colour; rendering goes through panes_grid_fragments. Three extra
+# switch-colour; rendering goes through panes_grid_fragments. Extra
 # navigable rows hang below the grid: a blank, a [X] Display pane borders
-# toggle, a blank, and Back.
+# toggle, a Corner style cycler, a blank, and Back.
 #
 # Persistence is immediate and live: clicking a cell writes the new state
 # to startup.conf in-place AND drives tmux directly. Opening / closing a
 # pane goes through toggle_pane.sh; recolouring an open pane goes through
 # tmux select-pane -P bg=…. Pane open-state is re-probed from tmux on
-# every render, matching the previous popup behaviour.
+# every render, matching the previous popup behaviour. The Corner style
+# cycler writes frame_corners and re-resolves frame_corners_resolved so the
+# framed panes re-render their corners live (no restart).
 
 _PANES_GRID_ROWS   = len(_PANE_TARGETS)            # 6
 _PANES_HEADERS_ROW = _PANES_GRID_ROWS              # 6
-_PANES_BACK_ROW    = _PANES_GRID_ROWS + 1          # 7
+_PANES_CORNERS_ROW = _PANES_GRID_ROWS + 1          # 7
+_PANES_BACK_ROW    = _PANES_GRID_ROWS + 2          # 8
 _PANES_LAST_ROW    = _PANES_BACK_ROW
 _PANES_LAST_COL    = len(PANE_COLOR_ORDER) - 1     # 6
 
@@ -1044,6 +1051,23 @@ def _apply_panes_grid_toggle(row, col):
 def _toggle_pane_headers():
     """Flip the pane-divider headers (live tmux + persisted)."""
     _toggle_pane("headers")
+    if _app:
+        _app.invalidate()
+
+
+def _cycle_frame_corners(delta=1):
+    """Advance the frame_corners style (Auto → Quadrant → Block, wrapping)
+    and apply it live. Writes frame_corners to startup.conf immediately,
+    then re-resolves frame_corners_resolved via the phase-1 resolver
+    (Auto re-detects the current font's coverage; Quadrant/Block are taken
+    verbatim). pane_frame.corners() reads frame_corners_resolved live, so
+    every framed pane re-renders its corners within one poll tick — no
+    restart."""
+    conf = _parse_keyval(STARTUP_CONF_PATH)
+    cur = conf.get("frame_corners", "auto")
+    new = next_frame_corner(cur, delta)
+    _persist_conf_key("frame_corners", new)
+    frame_corners.resolve_and_persist(new, LAYOUT_CONF_PATH)
     if _app:
         _app.invalidate()
 
@@ -1258,6 +1282,25 @@ def _panes_general_text():
     frags.extend(menu_row(headers_label, state_h, mouse_handler=_headers_handler))
     frags.append(("", "\n"))
 
+    # Corner style — single cycle row directly under the borders toggle.
+    # ←/→ and Enter/Space advance the value (Auto → Quadrant → Block,
+    # wrapping); the change applies live via _cycle_frame_corners.
+    corner_label = f"Corner style: {frame_corner_label(conf.get('frame_corners', 'auto'))}"
+    state_c = "selected" if cur_row == _PANES_CORNERS_ROW else "inactive"
+
+    def _corner_handler(ev):
+        if ev.event_type == MouseEventType.MOUSE_MOVE:
+            _set_panes_cursor(_PANES_CORNERS_ROW)
+            return
+        if ev.event_type == MouseEventType.MOUSE_DOWN:
+            _set_panes_cursor(_PANES_CORNERS_ROW)
+            _cycle_frame_corners(1)
+
+    pad_c = max(0, (cols - (len(corner_label) + 6)) // 2)
+    frags.append(("", " " * pad_c))
+    frags.extend(menu_row(corner_label, state_c, mouse_handler=_corner_handler))
+    frags.append(("", "\n"))
+
     frags.append(("", "\n"))
 
     # Back — plain << label >> row, centred per row.
@@ -1276,8 +1319,8 @@ def _panes_general_text():
     frags.append(("", "\n"))
 
     # title block (3 rows for popup) + grid header (1) + 6 pane rows
-    # + blank + headers + blank + Back (4 rows).
-    content_rows = title_block_height(1) + 1 + _PANES_GRID_ROWS + 4
+    # + blank + headers + corner + blank + Back (5 rows).
+    content_rows = title_block_height(1) + 1 + _PANES_GRID_ROWS + 5
     footer = "↑↓←→ Move · Enter Toggle · ESC Back"
     frags.extend(footer_block(footer, cols, rows_h, content_rows))
 
@@ -3698,14 +3741,20 @@ def _panes_down(event):
 
 @kb.add("left", filter=_in_frame("panes_general"))
 def _panes_left(event):
-    if _panes_general_row < _PANES_GRID_ROWS and _panes_general_col > 0:
-        _set_panes_cursor(_panes_general_row, _panes_general_col - 1)
+    r = _panes_general_row
+    if r < _PANES_GRID_ROWS and _panes_general_col > 0:
+        _set_panes_cursor(r, _panes_general_col - 1)
+    elif r == _PANES_CORNERS_ROW:
+        _cycle_frame_corners(-1)
 
 
 @kb.add("right", filter=_in_frame("panes_general"))
 def _panes_right(event):
-    if _panes_general_row < _PANES_GRID_ROWS and _panes_general_col < _PANES_LAST_COL:
-        _set_panes_cursor(_panes_general_row, _panes_general_col + 1)
+    r = _panes_general_row
+    if r < _PANES_GRID_ROWS and _panes_general_col < _PANES_LAST_COL:
+        _set_panes_cursor(r, _panes_general_col + 1)
+    elif r == _PANES_CORNERS_ROW:
+        _cycle_frame_corners(1)
 
 
 @kb.add("enter", filter=_in_frame("panes_general"))
@@ -3716,6 +3765,8 @@ def _panes_select(event):
         _apply_panes_grid_toggle(r, _panes_general_col)
     elif r == _PANES_HEADERS_ROW:
         _toggle_pane_headers()
+    elif r == _PANES_CORNERS_ROW:
+        _cycle_frame_corners(1)
     elif r == _PANES_BACK_ROW:
         _pop_frame()
 
