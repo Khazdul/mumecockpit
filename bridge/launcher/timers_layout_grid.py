@@ -131,11 +131,18 @@ def grid_width():
             + _STEP_GAP + _STEP_W + _CLOCK_GAP + _CLOCK_W)
 
 
-def _swatch_style(colour_index):
-    """Solid fill for an enabled colour cell — fg and bg both painted with
-    the swatch hex so the cell reads as a flat colour block."""
+def _enabled_swatch(colour_index):
+    """Return ``(style, text)`` for an enabled-row swatch in the given column.
+
+    Solid fill — fg and bg both painted with the swatch hex so the cell reads
+    as a flat colour block. The None column (TIMERS_COLOR_ORDER hex is None)
+    instead renders three plain spaces with no bg style, so it reads as
+    "no colour", mirroring the panes grid's terminal-default column. Selection
+    stays visible via the gold cursor brackets / [X]."""
     hex_color = TIMERS_COLOR_ORDER[colour_index][1]
-    return f"bg:{hex_color} fg:{hex_color}"
+    if hex_color is None:
+        return "", "   "
+    return f"bg:{hex_color} fg:{hex_color}", "███"
 
 
 def _centre_in(text, width):
@@ -156,11 +163,16 @@ def timers_grid_fragments(rows, term_cols, cursor,
 
     Args:
         rows: iterable of
-            ``(label, enabled, colour_index, cols, max_cols, clock)``.
+            ``(label, enabled, colour_index, cols, max_cols, clock,
+            inert_none)``.
             ``colour_index`` is ignored when ``enabled`` is False. ``clock`` is
             a bool (rendered as an ``[X]`` / ``[ ]`` checkbox) or ``None`` for a
             group with no Clock toggle (e.g. Charmies — rendered as a dim blank,
-            never a checkbox, a no-op on Enter/click).
+            never a checkbox, a no-op on Enter/click). ``inert_none`` is a bool:
+            when True the None column (col 0) renders as a dim inert blank
+            (``C_PANE_OFF``, no ``[X]``, no swatch) and carries no cell handler
+            — used for Charmies, which have no no-bar state. Identical treatment
+            to the ``clock=None`` Clock cell.
         term_cols: terminal width — used to centre the grid.
         cursor: ``(row_idx, col_idx)`` of the focused cell, or ``None`` when
             the cursor sits outside the grid (e.g. on Back). Colour cells are
@@ -206,7 +218,7 @@ def timers_grid_fragments(rows, term_cols, cursor,
     frags.append((C_HINT, _centre_in("Clock", _CLOCK_W)))
     frags.append(("", "\n"))
 
-    for ri, (label, enabled, colour_index, cols, _max_cols, clock) in enumerate(rows):
+    for ri, (label, enabled, colour_index, cols, _max_cols, clock, inert_none) in enumerate(rows):
         frags.append(("", pad))
         frags.append((C_ITEM if enabled else C_PANE_OFF,
                       label[:_LABEL_W].ljust(_LABEL_W)))
@@ -215,6 +227,13 @@ def timers_grid_fragments(rows, term_cols, cursor,
         for ci in range(n_cols):
             if ci > 0:
                 frags.append(("", " " * _COL_GAP))
+
+            # An inert None column (e.g. Charmies) paints a dim 6-cell blank
+            # the cursor may rest on but Enter/click ignore — never a [X], no
+            # swatch, no handler. Identical treatment to the clock=None cell.
+            if inert_none and ci == 0:
+                frags.append((C_PANE_OFF, "      "))
+                continue
 
             checked = bool(enabled) and colour_index == ci
             is_cursor = (cursor is not None and cursor == (ri, ci))
@@ -226,16 +245,19 @@ def timers_grid_fragments(rows, term_cols, cursor,
             else:
                 bracket_style = C_ACTIVE if checked else C_HINT
 
-            swatch_style = C_PANE_OFF if not enabled else _swatch_style(ci)
+            if not enabled:
+                swatch_style, swatch_text = C_PANE_OFF, "███"
+            else:
+                swatch_style, swatch_text = _enabled_swatch(ci)
             bracket = "[X]" if checked else "[ ]"
 
             if cell_handler is not None:
                 h = cell_handler(ri, ci)
                 frags.append((bracket_style, bracket, h))
-                frags.append((swatch_style, "███", h))
+                frags.append((swatch_style, swatch_text, h))
             else:
                 frags.append((bracket_style, bracket))
-                frags.append((swatch_style, "███"))
+                frags.append((swatch_style, swatch_text))
 
         # Inline column stepper: ◄ N ►.
         frags.append(("", " " * _STEP_GAP))

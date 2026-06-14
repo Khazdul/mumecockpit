@@ -1201,6 +1201,10 @@ def _set_timers_cursor(row, col=None):
 def _apply_timers_grid_toggle(row, col):
     """Apply a click on a colour cell: flip enabled / pick colour, persist."""
     typ = TIMERS_LAYOUT_TYPES[row]
+    # Charmies have no None column — col 0 is an inert blank. Guard the
+    # keyboard Enter path here, mirroring _apply_timers_clock_toggle's guard.
+    if typ == "charm" and col == 0:
+        return
     cur = _read_timers_layout()[typ]
     enabled = cur["enabled"]
     idx = timers_color_index(cur["color"])
@@ -4382,6 +4386,7 @@ def _timers_text():
             cur["cols"],
             max_cols_for(typ),
             None if typ == "charm" else cur.get("clock", False),
+            typ == "charm",
         ))
 
     cur_row = _timers_row

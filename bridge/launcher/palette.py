@@ -27,7 +27,8 @@ __all__ = [
     "_S_HINT", "_S_PVP", "_S_ALLY", "_S_STAR",
     "PANE_COLORS", "PANE_COLOR_ORDER", "pane_color_hex",
     "PANE_COLOR_LABELS", "pane_color_label",
-    "TIMERS_COLOR_ORDER", "timers_color_hex", "timers_color_index",
+    "TIMERS_COLOR_ORDER", "TIMERS_NONE_COLOR",
+    "timers_color_hex", "timers_color_index",
     "TTPP_COLOR_STYLES", "TTPP_COLOR_NAMES",
     "C_SYN_COMMAND", "C_SYN_BRACE", "C_SYN_DELIM", "C_SYN_VAR", "C_SYN_CODE",
     "C_SYN_BRACE_MATCH",
@@ -263,13 +264,19 @@ def pane_color_label(name):
 # Timers-pane group palette
 # ---------------------------------------------------------------------------
 # Ordered (name, hex) swatches for the launcher / popup "Timers layout" grid.
-# The first six entries are exactly the six group default colours (so every
-# type's default lands on a real swatch — spell→Blue, buff→Green, debuff→Red,
-# stored→Magenta, blind→Cyan, charm→Violet); the final two are additions at
-# the same saturation / brightness for users who want to recolour a group.
-# Stored in timers_layout.conf as raw #rrggbb under timers_<type>_color; the
-# timers pane (bridge/panes/timers_pane.py) reads the hex directly.
+# Index 0 is the "None" column — no coloured bar; the group renders as plain
+# terminal-default text (its hex is Python None, the TIMERS_NONE_COLOR token is
+# what gets stored). The remaining entries are exactly the six group default
+# colours (so every type's default lands on a real swatch — spell→Blue,
+# buff→Green, debuff→Red, stored→Magenta, blind→Cyan, charm→Violet) plus one
+# extra at the same saturation / brightness for users who want to recolour a
+# group. Stored in timers_layout.conf under timers_<type>_color: raw #rrggbb
+# for a colour, or the "none" token for the None column. The timers pane
+# (bridge/panes/timers_pane.py) reads the value directly.
+TIMERS_NONE_COLOR = "none"
+
 TIMERS_COLOR_ORDER = [
+    ("None",    None),
     ("Blue",    "#66b2ff"),
     ("Green",   "#00d900"),
     ("Red",     "#d90000"),
@@ -277,24 +284,31 @@ TIMERS_COLOR_ORDER = [
     ("Cyan",    "#00cccc"),
     ("Violet",  "#B388FF"),
     ("Orange",  "#ff9933"),
-    ("Yellow",  "#e8c84d"),
 ]
 
 
 def timers_color_hex(index):
-    """Resolve a Timers-grid colour index to its #rrggbb string. Out-of-range
-    indices clamp to the first entry (the grid's default column)."""
-    if 0 <= index < len(TIMERS_COLOR_ORDER):
+    """Resolve a Timers-grid colour index to its stored token: the
+    TIMERS_NONE_COLOR token ("none") for the index-0 None column, otherwise the
+    column's #rrggbb string. Out-of-range indices clamp to the None column
+    (index 0)."""
+    if 0 < index < len(TIMERS_COLOR_ORDER):
         return TIMERS_COLOR_ORDER[index][1]
-    return TIMERS_COLOR_ORDER[0][1]
+    return TIMERS_NONE_COLOR
 
 
 def timers_color_index(hex_str):
-    """Map a stored #rrggbb string back to its Timers-grid column index, case-
-    insensitively. Unknown / empty values fall back to index 0, mirroring the
-    panes grid's unknown-colour-to-first-column rule."""
+    """Map a stored timers colour token back to its Timers-grid column index,
+    case-insensitively. The "none" token (and unknown / empty values) fall back
+    to index 0 (the None column), mirroring the panes grid's unknown-colour-to-
+    first-column rule. The None column itself has no hex (its entry is Python
+    None), so it is skipped during the hex match."""
     want = (hex_str or "").lower()
+    if want == TIMERS_NONE_COLOR:
+        return 0
     for i, (_name, hx) in enumerate(TIMERS_COLOR_ORDER):
+        if hx is None:
+            continue
         if hx.lower() == want:
             return i
     return 0

@@ -103,6 +103,12 @@ C_NAME_UNTRACKED_AFFECT = "fg:#3a3a3a"
 # (clock off everywhere), so an absent config file (or any missing key) leaves
 # the pane visually unchanged. Charm carries clock for uniformity but never
 # reads it — charms are excluded from the countdown overlay.
+# Stored token for a group whose colour column is "None" (no bar). Restated
+# here (the launcher's palette.TIMERS_NONE_COLOR) for the same cross-package
+# reason as _LAYOUT_DEFAULTS — bridge/panes shares no import path with
+# bridge/launcher. A group with this colour renders barless plain text.
+_NONE_COLOR      = "none"
+
 _LAYOUT_TYPES    = ("spell", "buff", "debuff", "stored", "blind", "charm")
 _LAYOUT_DEFAULTS = {
     "spell":  {"enabled": True, "color": "#66b2ff", "cols": 4, "clock": False},
@@ -418,6 +424,31 @@ def _cell_frags(entry, cell_w, palette, clock=False, last=False, corner=False):
     return frags
 
 
+def _barless_cell_frags(entry, cell_w, clock=False, last=False, corner=False):
+    """A timer cell with no coloured bar — for a group whose colour is the
+    None token. Layout mirrors _cell_frags (so the columns line up with barred
+    groups) but every glyph paints in the terminal-default foreground (style
+    ""): the uppercased affect name, plus a right-justified countdown when the
+    group's clock flag is on and the affect is timed. No bar fill, no separator
+    glyph, none of the charm chrome (no ×, no minute colour)."""
+    now               = time.time()
+    expires_at        = entry.get("expires_at")
+    expected_duration = entry.get("expected_duration")
+    name              = entry.get("name", "")
+    timed             = expires_at is not None and expected_duration is not None
+    edge              = clock and last and timed and not corner
+    content_w         = cell_w if edge else cell_w - 1
+    if clock and timed:
+        label = _clock_content(name, _countdown_str(expires_at - now), content_w)
+    else:
+        label = name.upper()[:content_w].ljust(content_w)
+
+    frags = [("", label)]
+    if not edge:
+        frags.append(("", " "))     # blank separator (also the corner + reserve)
+    return frags
+
+
 def _untracked_cell_frags(entry, cell_w):
     name  = entry.get("name", "")
     label = name.upper()[:cell_w - 1].ljust(cell_w - 1)
@@ -553,7 +584,11 @@ def _group_rows(items, typ, W, cols, corner_local_row=None):
             rows.append(row_frags)
         return rows
 
-    palette = _palette(typ)
+    # A group whose colour is the None token renders barless: plain
+    # terminal-default text, no bar, for every cell. Branch before _palette so
+    # the None token never reaches the hex paint path (no "bg:none").
+    barless = (_layout[typ]["color"] or "").lower() == _NONE_COLOR
+    palette = None if barless else _palette(typ)
     clock   = _layout[typ]["clock"]
     for row in range(math.ceil(n / cols)):
         row_frags = []
@@ -565,7 +600,10 @@ def _group_rows(items, typ, W, cols, corner_local_row=None):
             at_edge   = (col == cols - 1)
             is_corner = (corner_local_row is not None
                          and row == corner_local_row and col == cols - 1)
-            if typ == "stored":
+            if barless:
+                row_frags.extend(_barless_cell_frags(entry, widths[col], clock,
+                                                     last=at_edge, corner=is_corner))
+            elif typ == "stored":
                 if entry.get("tracked"):
                     row_frags.extend(_cell_frags(entry, widths[col], palette, clock,
                                                  last=at_edge, corner=is_corner))

@@ -23,7 +23,9 @@ from timers_layout_grid import (  # noqa: E402
 from palette import (  # noqa: E402
     C_CURSOR_CELL,
     C_HINT,
+    C_PANE_OFF,
     TIMERS_COLOR_ORDER,
+    TIMERS_NONE_COLOR,
     timers_color_hex,
     timers_color_index,
 )
@@ -32,6 +34,11 @@ from palette import (  # noqa: E402
 def _plain(frags):
     """Concatenate fragment text, ignoring styles/handlers."""
     return "".join(f[1] for f in frags)
+
+
+def _styles_for_text(frags, text):
+    """Styles of every fragment whose text exactly matches `text`."""
+    return [f[0] for f in frags if len(f) >= 2 and f[1] == text]
 
 
 # ── apply_cell_toggle (re-exported from panes_grid) ────────────────────
@@ -74,15 +81,28 @@ def test_step_cols_clamps():
 
 # ── palette index/hex round trip ───────────────────────────────────────
 def test_timers_color_roundtrip():
+    # Index 0 is the None column: its hex entry is Python None, its stored
+    # token is "none".
+    assert timers_color_index(TIMERS_NONE_COLOR) == 0
+    assert timers_color_hex(0) == TIMERS_NONE_COLOR
+    # Colour columns (index >= 1) round-trip through their #rrggbb hex.
     for i, (_name, hx) in enumerate(TIMERS_COLOR_ORDER):
+        if hx is None:
+            continue
         assert timers_color_index(hx) == i
         assert timers_color_hex(i) == hx
 
 
+def test_timers_color_index_none_token():
+    # The "none" token (any case) resolves to the None column at index 0.
+    assert timers_color_index("none") == 0
+    assert timers_color_index("NONE") == 0
+
+
 def test_timers_color_index_case_insensitive():
-    # Charm's default is stored uppercase; it must resolve to Violet (idx 5).
-    assert timers_color_index("#B388FF") == 5
-    assert timers_color_index("#b388ff") == 5
+    # Charm's default is stored uppercase; it must resolve to Violet (idx 6).
+    assert timers_color_index("#B388FF") == 6
+    assert timers_color_index("#b388ff") == 6
 
 
 def test_timers_color_index_unknown_is_zero():
@@ -91,12 +111,18 @@ def test_timers_color_index_unknown_is_zero():
     assert timers_color_index(None) == 0
 
 
+def test_timers_color_hex_out_of_range_clamps_to_none():
+    assert timers_color_hex(-1) == TIMERS_NONE_COLOR
+    assert timers_color_hex(len(TIMERS_COLOR_ORDER)) == TIMERS_NONE_COLOR
+
+
 def test_defaults_land_on_palette_swatches():
-    # Every group default colour is a real swatch (the first six entries).
+    # Every group default colour is a real coloured swatch (never None).
     for typ in TIMERS_LAYOUT_TYPES:
         hx = TIMERS_LAYOUT_DEFAULTS[typ]["color"]
-        assert timers_color_index(hx) is not None
-        assert timers_color_hex(timers_color_index(hx)).lower() == hx.lower()
+        idx = timers_color_index(hx)
+        assert idx >= 1
+        assert timers_color_hex(idx).lower() == hx.lower()
 
 
 def test_global_toggle_defaults():
@@ -111,8 +137,8 @@ def test_grid_width_positive():
     assert grid_width() > 0
 
 
-def _row(label, enabled, idx, cols, maxc):
-    return (label, enabled, idx, cols, maxc)
+def _row(label, enabled, idx, cols, maxc, clock=False, inert_none=False):
+    return (label, enabled, idx, cols, maxc, clock, inert_none)
 
 
 def test_grid_fragments_row_count_with_header():
@@ -183,3 +209,62 @@ def test_grid_fragments_disabled_row_no_check():
     rows = [_row("Spells", False, 2, 4, 6)]
     text = _plain(timers_grid_fragments(rows, 100, None))
     assert "[X]" not in text
+
+
+# ── None column (mirrors the panes black/None column) ──────────────────
+def test_first_header_label_is_none():
+    # The first colour column is labelled "None", centred in its 6-cell
+    # column; no column is labelled "Yellow" any more.
+    rows = [_row("Spells", True, 1, 4, 6)]
+    frags = timers_grid_fragments(rows, 100, None)
+    assert list(_styles_for_text(frags, " None ")) == [C_HINT]
+    assert list(_styles_for_text(frags, "Yellow")) == []
+
+
+def test_none_column_enabled_swatch_is_no_fill():
+    # An enabled row's None column (col 0) swatch renders as three plain
+    # spaces with an empty style; coloured columns keep their bg:hex fill and
+    # no swatch ever paints bg:none.
+    rows = [_row("Spells", True, 1, 4, 6)]   # Blue (idx 1) selected
+    frags = timers_grid_fragments(rows, 100, None)
+    blanks = [f for f in frags if f[1] == "   " and f[0] == ""]
+    assert len(blanks) == 1
+    assert all("bg:none" not in (f[0] or "") for f in frags)
+    # The selected colour swatch still paints a flat bg:hex fg:hex block.
+    assert any(f[1] == "███" and "bg:#66b2ff" in (f[0] or "") for f in frags)
+
+
+def test_none_column_selectable_via_brackets():
+    # Selecting None for a non-charm group shows the [X] in col 0; the swatch
+    # itself stays blank (selection is carried by the brackets only).
+    rows = [_row("Spells", True, 0, 4, 6)]   # None (idx 0) selected
+    text = _plain(timers_grid_fragments(rows, 100, None))
+    assert "[X]" in text
+
+
+def test_charmies_none_cell_is_dim_inert_blank():
+    # A charm row carries inert_none=True: col 0 renders as a 6-cell dim
+    # blank (C_PANE_OFF), never a [X]/swatch, and no cell handler is wired
+    # for (charm_row, 0) — identical treatment to the clock=None cell.
+    captured = []
+
+    def make_handler(ri, ci):
+        captured.append((ri, ci))
+        return f"h-{ri}-{ci}"
+
+    rows = [_row("Charmies", True, 1, 1, 2, clock=None, inert_none=True)]
+    frags = timers_grid_fragments(rows, 100, None, cell_handler=make_handler)
+    # No handler was created for the inert None cell.
+    assert (0, 0) not in captured
+    # A 6-cell dim blank stands in for the None column.
+    assert any(f[0] == C_PANE_OFF and f[1] == "      " for f in frags)
+
+
+def test_charmies_none_cell_inert_under_cursor():
+    # Even with the cursor on (charm_row, 0), the inert None cell stays a dim
+    # blank — never gold, never a checkbox.
+    rows = [_row("Charmies", True, 1, 1, 2, clock=None, inert_none=True)]
+    frags = timers_grid_fragments(rows, 100, (0, 0))
+    assert any(f[0] == C_PANE_OFF and f[1] == "      " for f in frags)
+    # The cursor never paints the inert blank gold.
+    assert C_CURSOR_CELL not in _styles_for_text(frags, "      ")

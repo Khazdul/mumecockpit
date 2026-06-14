@@ -3247,6 +3247,10 @@ def _options_timers_back():
 def _apply_timers_grid_toggle(row, col):
     """Apply a click on colour cell (row, col): on/off or switch-colour."""
     typ = TIMERS_LAYOUT_TYPES[row]
+    # Charmies have no None column — col 0 is an inert blank. Guard the
+    # keyboard Enter path here, mirroring _apply_timers_clock_toggle's guard.
+    if typ == "charm" and col == 0:
+        return
     cur = _timers_layout[typ]
     enabled = cur["enabled"]
     idx = timers_color_index(cur["color"])
@@ -3309,7 +3313,8 @@ def _options_timers_text():
     clear_hover = _options_timers_clear_hover
 
     # Grid rows from the in-memory layout dict. Charmies have no Clock toggle,
-    # so their clock cell is rendered as a dim blank (clock=None).
+    # so their clock cell is rendered as a dim blank (clock=None); they also
+    # have no no-bar state, so their None column is an inert blank (inert_none).
     grid_rows = []
     for typ in TIMERS_LAYOUT_TYPES:
         cur = _timers_layout[typ]
@@ -3320,6 +3325,7 @@ def _options_timers_text():
             cur["cols"],
             max_cols_for(typ),
             None if typ == "charm" else cur.get("clock", False),
+            typ == "charm",
         ))
 
     cur_row = _options_timers_row
