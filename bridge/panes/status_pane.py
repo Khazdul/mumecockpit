@@ -26,6 +26,9 @@ import shutil
 import signal
 import sys
 
+import pane_frame
+from pane_frame import inner_height, inner_width
+
 STATE_PATH = os.path.join(os.environ["HOME"], "MUME", "bridge", "runtime", "status.state")
 CONNECTION_STATE_PATH = os.path.join(
     os.environ["HOME"], "MUME", "bridge", "runtime", "connection.state"
@@ -140,7 +143,7 @@ def _build_data_rows(c, W):
 
 def _build_frame(data):
     """Return list of ANSI strings, one per row (no \\e[K/\\e[J/\\e[H)."""
-    width = shutil.get_terminal_size().columns
+    width = inner_width(shutil.get_terminal_size().columns)
     c = data or {}
 
     name = c.get("character") or "—"
@@ -190,7 +193,7 @@ def _indicator_text():
     if not _run_active:
         return [("", "")]
     total = len(_build_frame(_last_data))
-    H     = _term_rows()
+    H     = inner_height(_term_rows())
     n     = total - (H - 1)
     return [(C_INDICATOR, f"↓ {n} more rows")]
 
@@ -254,11 +257,15 @@ def main():
             height=1,
             dont_extend_height=True,
         ),
-        filter=Condition(lambda: _run_active and len(_build_frame(_last_data)) > _term_rows()),
+        filter=Condition(
+            lambda: _run_active
+            and len(_build_frame(_last_data)) > inner_height(_term_rows())
+        ),
     )
 
-    root   = HSplit([rows_window, indicator_container])
-    layout = Layout(root)
+    inner_root = HSplit([rows_window, indicator_container])
+    root       = pane_frame.framed(inner_root, "status")
+    layout     = Layout(root)
 
     app = Application(
         layout=layout,
@@ -273,15 +280,18 @@ def main():
     signal.signal(signal.SIGINT,  signal.SIG_IGN)
 
     async def _run():
-        poll_task = asyncio.ensure_future(_poll_state(app))
+        poll_task  = asyncio.ensure_future(_poll_state(app))
+        frame_task = pane_frame.start_poll(app)
         try:
             await app.run_async()
         finally:
             poll_task.cancel()
-            try:
-                await poll_task
-            except asyncio.CancelledError:
-                pass
+            frame_task.cancel()
+            for t in (poll_task, frame_task):
+                try:
+                    await t
+                except asyncio.CancelledError:
+                    pass
 
     asyncio.run(_run())
 
