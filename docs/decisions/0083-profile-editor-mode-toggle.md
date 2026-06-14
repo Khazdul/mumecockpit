@@ -166,3 +166,13 @@ the same editor-mode render path:
   operation. Clipboard (Ctrl-C / X / V) is intentionally deferred;
   selection without clipboard still composes with type-to-replace
   and range-delete.
+
+## Amendment — 2026-06-14 (hover decoupled)
+
+The three-state grammar's hover sub-clause above — "Hover on an inactive
+button paints the active-unfocused state — a preview of how it would look if
+selected" — is superseded. Button hover now paints `C_HOVER` (foreground
+brightening, no fill), distinct from the grey selected-unfocused fill,
+because that fill is a persistent selection co-visible in the same column and
+an identical hover was indistinguishable from it. See ADR 0134. The rest of
+this ADR (the two-mode toggle and the active / selected fill grammar) stands.

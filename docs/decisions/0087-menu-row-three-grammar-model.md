@@ -238,3 +238,17 @@ convention" carries the two-variant wording.
 Profile / History button columns and the profile editor's kind-buttons
 / MENU-EDITOR toggle — and the panes/timers grid CELL rendering keeps
 its gold-foreground swatch grammar.
+
+## Amendment — 2026-06-14 (button hover + inline-grammar clarification)
+
+Two clarifications, neither inverting the three-grammar model:
+
+1. The closing note that `button_fragment` is "still correct for its zones —
+   the Profile / History button columns and the profile editor's kind-buttons
+   / MENU-EDITOR toggle" overstates its reach. The LITE kind-buttons row and
+   the LITE/EDITOR toggle replicate the filled-button grammar via inline
+   helpers in `profile_editor.py` (`_editor_kind_button_style`,
+   `_editor_toggle_button_style`) and build their own cell text; only the
+   Profile / History button columns call `button_fragment`.
+2. The filled-button hover state no longer previews the selected-unfocused
+   look — it paints `C_HOVER`. See ADR 0134.

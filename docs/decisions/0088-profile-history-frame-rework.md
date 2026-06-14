@@ -250,3 +250,12 @@ still applies live on pill move / click — descending no longer
 re-applies it. The reciprocal `↑` from table row 0 (and from the
 topmost options button) still returns to the filter row. See ADR
 0120 for the launcher-wide grammar.
+
+## Amendment — 2026-06-14 (button hover → C_HOVER)
+
+§3's "hover on a non-cursor enabled button → `hover` (previews the
+unfocused-selected look)" is superseded for the button columns: button hover
+now paints `C_HOVER` (foreground brightening, no fill), matching the
+table-row hover the same section already describes ("Hover stays `C_HOVER`").
+The two now agree. See ADR 0134. No layout or focus decision in this ADR
+changes.
