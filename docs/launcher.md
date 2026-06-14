@@ -166,8 +166,9 @@ Top-to-bottom (P4 layout — see ADR 0088):
      P4. State mapping per ADR 0085's button-cell grammar: cursor +
      button zone focused → `selected_focused` (gold bg); cursor +
      button zone unfocused → `selected_unfocused` (grey bg); hover
-     on a non-cursor enabled button → `hover` (previews the
-     unfocused-selected look); disabled → `disabled` (dim grey
+     on a non-cursor enabled button → `hover` (C_HOVER — foreground
+     brightening, no fill, distinct from the grey selection); disabled
+     → `disabled` (dim grey
      foreground with no background block, so disabled buttons read
      as inert space rather than dark slots); else `inactive`.
    - **Gap.** 2 cells between the button column and the table's
@@ -373,9 +374,10 @@ on/selected state in every case. The macro Key cell follows the same
 rule — amber when focused, default otherwise; it is a single-cell
 field, not a list cursor.
 
-Hover on an inactive button paints the active-unfocused state — a
-preview of how it would look if selected. Hover on chrome
-(gaps, padding, blank rows) clears all hover state.
+Hover on an inactive button paints C_HOVER (foreground brightening, no
+fill) — distinct from the grey selected-unfocused fill, so a hovered button
+never looks like a persistent selection. Hover on chrome (gaps, padding,
+blank rows) clears all hover state.
 
 Headers (`Pattern  Body`, `Pattern`, `Commands`, `─── Hint ───`)
 stay in muted grey (`C_HINT`) at **all** times — the cursor row and
@@ -456,7 +458,7 @@ never sacrificed.
   buffer's own Enter = newline is a separate zone and is unaffected).
   Mouse click on the inactive block flips; click on the
   active block is a no-op. Mouse hover on the inactive block
-  paints `C_BUTTON_ACTIVE_UNFOCUSED` (preview).
+  paints `C_HOVER` (foreground brightening, no fill).
 - Focus: `_editor_toggle_focused` is a separate flag — when True,
   no lite-mode editing zone responds to keys. `↑` on any
   kind-buttons row button falls through to the toggle (Phase 6.3);
@@ -2229,7 +2231,8 @@ Top-to-bottom (P4.1 layout — see ADR 0088 and its P4.1 amendment):
      grammar: cursor + button zone focused → `selected_focused`
      (gold bg); cursor + button zone unfocused → `selected_unfocused`
      (grey bg); hover on a non-cursor enabled button → `hover`
-     (previews the unfocused-selected look); disabled → `disabled`
+     (C_HOVER — foreground brightening, no fill, distinct from the grey
+     selection); disabled → `disabled`
      (dim grey foreground with no background block, so disabled
      buttons read as inert space rather than dark slots); else
      `inactive`.
@@ -3329,7 +3332,7 @@ shared with the in-game popup. Roles:
 | `C_TITLE`      | Page banner row text (section titles, About header), spotlight box hue |
 | `C_ACTIVE`     | Focused/selected row, emphasis in prompts         |
 | `C_ITEM`       | Inactive selectable menu rows                     |
-| `C_HOVER`      | Mouse-hovered row (between `C_ITEM` and `C_ACTIVE`) |
+| `C_HOVER`      | Mouse-hovered row or button (between `C_ITEM` and `C_ACTIVE`) |
 | `C_BODY`       | Body text — About prose, script summaries         |
 | `C_HINT`       | Footer nav hints, secondary prompt labels         |
 | `C_QUOTE`      | Italic quote text on the main menu                |
@@ -3395,7 +3398,7 @@ import prompt_toolkit — the caller appends the fragments into its own
 | `title_block_height(blank_above)` | Returns `blank_above + 2` — the visual-row count produced by `title_block`. |
 | `footer_block(footer_text, term_cols, term_rows, content_rows)` | `content_rows` is the row count above the footer (title block + body). Emits `max(0, term_rows - content_rows - 1)` blank rows then `footer_text` centred in `term_cols` styled `C_HINT`, so the footer lands on the final terminal row. When content fills or overflows the terminal the pad clamps to zero — never negative. |
 | `menu_row(label, state, mouse_handler=None, inactive_style=C_ITEM)` | Fragment list for one `<< label >>` selectable menu row: a fixed 3-cell prefix (`<< ` or `   `) + the raw `label` + a fixed 3-cell suffix (` >>` or `   `). Row width is `len(label) + 6` and symmetric, so the arrows hug the label (`<< Enter MUME >>`, never `<< Enter MUME      >>`) and the label never shifts horizontally between states. `state ∈ {"inactive", "hover", "selected"}`: `selected` → arrows in `C_CURSOR_CELL` (gold), label in `C_ACTIVE`; `hover` → blank arrows, label in `C_HOVER`; `inactive` → blank arrows, label in `inactive_style` (default `C_ITEM`; callers may override to dim a row, e.g. with `C_HINT`). Selection wins over hover. The caller is responsible for centring — see the Alignment convention below for the two cases. When `mouse_handler` is given, every fragment carries it as a 3-tuple. |
-| `button_fragment(label, width, state)` | A single `(style, text)` 2-tuple. `label` is centred in `width` cells (truncated when longer). `state ∈ {"inactive", "hover", "selected_unfocused", "selected_focused", "disabled"}` maps to: `C_BUTTON_INACTIVE` / `C_BUTTON_ACTIVE_UNFOCUSED` (hover deliberately previews the unfocused-selected look) / `C_BUTTON_ACTIVE_UNFOCUSED` / `C_BUTTON_ACTIVE_FOCUSED` / `C_BUTTON_DISABLED`. Used by the Profile / History button columns and the editor's LITE kind-buttons; vertical menu lists use `menu_row` instead. |
+| `button_fragment(label, width, state)` | A single `(style, text)` 2-tuple. `label` is centred in `width` cells (truncated when longer). `state ∈ {"inactive", "hover", "selected_unfocused", "selected_focused", "disabled"}` maps to: `C_BUTTON_INACTIVE` / `C_HOVER` (foreground brightening, no fill — distinct from the grey selected-unfocused fill) / `C_BUTTON_ACTIVE_UNFOCUSED` / `C_BUTTON_ACTIVE_FOCUSED` / `C_BUTTON_DISABLED`. Used by the Profile / History button columns only; the profile editor's LITE kind-buttons row and the LITE/EDITOR toggle replicate the same grammar via inline helpers in `profile_editor.py`. Vertical menu lists use `menu_row` instead. |
 
 `title_block` and `footer_block` both accept an optional `mouse_handler`
 keyword: when given, every emitted fragment is a 3-tuple carrying that
@@ -3438,10 +3441,14 @@ cell grammars; which one applies depends on the zone, not on the
 state:
 
 - **Gold-background filled buttons** (`button_fragment`) — the Profile
-  and History entry-list / button columns and the profile editor's
-  LITE kind-buttons. Cursor row → gold *background*
-  (`selected_focused`), unfocused-selected → grey
-  (`selected_unfocused`), hover previews the unfocused-selected look,
+  and History button columns *only*. The profile editor's LITE
+  kind-buttons row and the LITE/EDITOR toggle render the **same** grammar
+  via inline helpers in `profile_editor.py`
+  (`_editor_kind_button_style`, `_editor_toggle_button_style`) and build
+  their own cell text — *not* through `button_fragment`. Cursor row → gold
+  *background* (`selected_focused`), unfocused-selected → grey
+  (`selected_unfocused`), hover → `C_HOVER` (foreground brightening, no
+  fill — distinct from the grey selected-unfocused fill),
   other rows → `inactive` (foreground only, no background fill — the
   cell falls through to the host terminal background, so the row
   reads as flat against the launcher canvas rather than a stack of

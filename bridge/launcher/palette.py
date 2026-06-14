@@ -72,9 +72,11 @@ C_BUTTON_DISABLED = "fg:#585858"              # disabled — dim grey, no bg blo
 #   Active, owning zone unfocused  → C_BUTTON_ACTIVE_UNFOCUSED  (= C_SELECTED)
 #   Active, owning zone focused    → C_BUTTON_ACTIVE_FOCUSED    (amber bg)
 #
-# The hover state for inactive buttons reuses C_BUTTON_ACTIVE_UNFOCUSED so
-# the preview matches the unfocused-but-selected appearance — a single
-# motion of attention rather than two competing styles.
+# The hover state for inactive buttons paints C_HOVER (foreground
+# brightening, no fill) — NOT this token. The grey fill is reserved for a
+# persistent selection (active kind / active mode / edited list row);
+# reusing it for hover made a hovered button indistinguishable from a
+# co-visible selection. See ADR 0134.
 C_BUTTON_INACTIVE         = "fg:#bcbcbc"
 C_BUTTON_ACTIVE_UNFOCUSED = "fg:#000000 bg:#bcbcbc"
 C_BUTTON_ACTIVE_FOCUSED   = "fg:#000000 bg:#ffaf00"
