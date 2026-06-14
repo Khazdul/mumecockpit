@@ -348,7 +348,8 @@ shape, both for clock cells reaching the pane's right edge:
   edge. A **lone** last cell that is **not** in the rightmost column keeps its
   separator and right-aligns its countdown with the column above it.
 - **Corner reserve.** The topmost-visible row's rightmost-column cell sits under
-  the corner `+` Float (pinned at `top=0, right=0`; see "The corner control"
+  the corner `+` Float (pinned to the frame's inner top-right `top=1, right=1`
+  when the border is on, else `top=0, right=0`; see "The corner control"
   below). It keeps a one-column trailing
   blank so the `+` floats over the blank, not over the countdown. The reserve is
   **scroll-aware** — it follows whichever row is topmost, threaded as
@@ -422,9 +423,10 @@ charm-corner yield depends on the rightmost cell's × at `top=0,right=0`):
 - **Permanent** (`expires_at: null`), OR timed but `cell_w < 7` (rare degenerate):
   `name_w = max(0, cell_w - 2)`, then `name · " " · ×`. No time block — the name
   reclaims the 4 columns the time would have used, so there is no blank gap. In
-  practice `cell_w >= ~16` (charm caps at 2 cols; the right column is `>= 33`), so
-  a timed cell always takes the count-up branch and the `cell_w < 7` fallback is
-  effectively unreachable.
+  practice the right column is wide enough that `cell_w >= ~16` (charm caps at 2
+  cols), so a timed cell normally takes the count-up branch; the `cell_w < 7`
+  fallback only triggers at an extreme narrow width — the right column has no
+  width floor (ADR 0038), so it is rare rather than strictly unreachable.
 
 **Click-to-drop.** Clicking the × calls `_send_charm_drop(id)`, which invokes
 `_cp_charm_drop <id>` in the game/tt++ pane over the **same** `tmux send-keys`
@@ -484,8 +486,13 @@ only the charm row's drop × is red.
 
 ### The corner control (+ / ×)
 
-Both corner glyphs are owned by a single **position-pinned `Float`** at
-`top=0, right=0`, not by any row. The root is a `FloatContainer` wrapping the
+Both corner glyphs are owned by a single **position-pinned `Float`**, not by any
+row. The `Float` offsets to `top=1, right=1` — inside the frame, aligned with a
+top charm row's drop `×` — when the timers border is on, and to `top=0, right=0`
+when it is off; `pane_frame.frames_enabled("timers")` drives the choice,
+re-evaluated each tick so a live border toggle re-pins it without a relaunch. See
+the [ADR 0125 addendum](decisions/0125-buffs-pane-corner-control.md) on corner
+offsets inside the in-pane frame. The root is a `FloatContainer` wrapping the
 `HSplit([grid_window, indicator_container])` with one `corner_float`. Its content
 is a `ConditionalContainer(filter=Condition(_corner_visible))` wrapping a 1×1
 `Window` (`dont_extend_width`/`dont_extend_height`) whose `FormattedTextControl`
@@ -741,10 +748,16 @@ aligned `${show_timers:-1}` runtime guard in
 `bridge/launcher/build_initial_layout.sh`, so the timers pane will open on the
 next cockpit start.
 
-## Pane title and border
+## Pane frame
 
-Pane title: `timers`. The `pane-border-format` in `bridge/launcher/tmux_start.sh`
-maps this to the label ` Timers ` when headers are on.
+Pane title: `timers`. The pane carries an in-pane frame (a header row plus a
+half-block border) drawn by `pane_frame`, replacing the old tmux
+`pane-border-status` header. Content renders within `inner_width` /
+`inner_height` (`W-2` / `H-2` when the border is on, full size when off); the
+header label is `Timers`; the border is per-pane, toggled by `border_timers` in
+`startup.conf`. See [docs/pane-frame.md](pane-frame.md) for the frame shape,
+border colour, and the `border_<key>` contract. The corner `+`/`×` Float offsets
+inside the frame when the border is on — see "The corner control" below.
 
 ## Data layer
 

@@ -187,11 +187,15 @@ mid-session drag adjusts the height freely and the new value persists as
 the next `desired_group` via `on_pane_resize.sh`. `cp -reset-heights`
 restores the shipped default.
 
-## Pane title and border
+## Pane frame
 
-Pane title: `group`. The `pane-border-format` in
-`bridge/launcher/tmux_start.sh` maps this to the label ` Group ` when headers
-are on (`cp -h`).
+Pane title: `group`. The pane carries an in-pane frame (a header row plus a
+half-block border) drawn by `pane_frame`, replacing the old tmux
+`pane-border-status` header. Content renders within `inner_width` /
+`inner_height` (`W-2` / `H-2` when the border is on, full size when off); the
+header label is `Group`; the border is per-pane, toggled by `border_group` in
+`startup.conf`. See [docs/pane-frame.md](pane-frame.md) for the frame shape,
+border colour, and the `border_<key>` contract.
 
 ## Toggle
 

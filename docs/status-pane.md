@@ -188,12 +188,16 @@ Constants defined at the top of `bridge/panes/status_pane.py`:
 | `C_TOG_ON_LABEL`  | `\x1b[38;2;212;160;78m`     | Toggle label foreground — on state (RGB 212,160,78 — `#D4A04E` warm gold)        |
 
 
-## Identity
+## Pane frame
 
-The pane title is `status` (set via `select-pane -T`). The tmux
-`pane-border-format` in `bridge/launcher/tmux_start.sh` maps the `status` title to the
-label ` Character ` displayed in the top pane border. No header rows are
-rendered inside the pane content.
+The pane title is `status` (set via `select-pane -T`). The pane carries an
+in-pane frame (a header row plus a half-block border) drawn by `pane_frame`,
+replacing the old tmux `pane-border-status` header. Content renders within
+`inner_width` / `inner_height` (`W-2` / `H-2` when the border is on, full size
+when off); the header label is `Character`; the border is per-pane, toggled by
+`border_status` in `startup.conf`. See [docs/pane-frame.md](pane-frame.md) for
+the frame shape, border colour, and the `border_<key>` contract. No content
+header rows are rendered inside the pane.
 
 ## Field layout
 

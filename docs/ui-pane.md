@@ -121,10 +121,15 @@ Prefixes rendered in the pane:
 Dynamic values within messages are rendered in bold yellow (`#FFEE58`) via
 `ui_var()`.
 
-## Pane title and border
+## Pane frame
 
-Pane title: `ui`. The `pane-border-format` in `bridge/launcher/tmux_start.sh` maps
-this to the label ` UI ` when headers are on.
+Pane title: `ui`. The pane carries an in-pane frame (a header row plus a
+half-block border) drawn by `pane_frame`, replacing the old tmux
+`pane-border-status` header. Content renders within `inner_width` /
+`inner_height` (`W-2` / `H-2` when the border is on, full size when off); the
+header label is `UI`; the border is per-pane, toggled by `border_ui` in
+`startup.conf`. See [docs/pane-frame.md](pane-frame.md) for the frame shape,
+border colour, and the `border_<key>` contract.
 
 ## Toggle
 

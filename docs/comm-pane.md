@@ -634,6 +634,18 @@ header visibility in fixture mode does not touch the real config. Editing either
 file while the pane runs exercises the live re-read path. See
 `bridge/dev/README.md` for edge cases covered by the fixture.
 
+## Pane frame
+
+Pane title: `comm`. The pane carries an in-pane frame (a header row plus a
+half-block border) drawn by `pane_frame`, replacing the old tmux
+`pane-border-status` header. Content — including the channel-filter header
+described above — renders within `inner_width` / `inner_height` (`W-2` / `H-2`
+when the border is on, full size when off); the frame's header label is `Comm`
+(distinct from the in-content channel-filter row); the border is per-pane,
+toggled by `border_comm` in `startup.conf`. See
+[docs/pane-frame.md](pane-frame.md) for the frame shape, border colour, and the
+`border_<key>` contract.
+
 ## Layout integration
 
 ### Pane position
