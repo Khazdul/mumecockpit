@@ -33,15 +33,18 @@ def _parse_template(path):
 
 
 def _save_conf_keys():
-    # Pull the explicit key tuple out of launcher.py's _save_conf without
-    # importing the module (prompt_toolkit may be absent in this test env).
+    # Pull the unconditional key tuple out of launcher.py's _save_conf
+    # without importing the module (prompt_toolkit may be absent in this
+    # test env). The per-pane border_<key> and the retired show_pane_dividers
+    # fallback are written conditionally outside this tuple (never seeded into
+    # the fresh-install template), so they are deliberately excluded here.
     with open(LAUNCHER_PY) as fh:
         src = fh.read()
-    m = re.search(r"def _save_conf\(\):(.*?)\n\ndef ", src, flags=re.S)
-    assert m, "could not locate _save_conf in launcher.py"
+    m = re.search(r"for key in \((.*?)\):", src, flags=re.S)
+    assert m, "could not locate the _save_conf key tuple in launcher.py"
     body = m.group(1)
-    # Each entry is a bare double-quoted string inside the `for key in (...)`
-    # tuple. Pull every "key" — the same regex catches each one in order.
+    # Each entry is a bare double-quoted string inside the tuple. Pull every
+    # "key" — the same regex catches each one in order.
     return [s for s in re.findall(r'"([a-z][a-z_]+)"', body)]
 
 
@@ -64,7 +67,7 @@ class TestStartupConfTemplate(unittest.TestCase):
         self.assertEqual(self.tpl["show_dev"], "0")
         for key in (
             "show_status", "show_timers", "show_group",
-            "show_comm", "show_ui", "show_pane_dividers",
+            "show_comm", "show_ui",
         ):
             self.assertEqual(
                 self.tpl[key], "1",

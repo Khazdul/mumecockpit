@@ -54,17 +54,22 @@ def next_frame_corner(value, delta=1):
 
 # Cell layout. A cell is `[X]███` or `[ ]███` — a 3-cell checkbox plus a
 # 3-cell colour swatch. Columns are separated by a single space and the row
-# label sits in a fixed column to the left.
-_CELL_W    = 6
-_COL_GAP   = 1
-_LABEL_GAP = 2
-_LABEL_W   = 13   # widest pane label ("Communication")
+# label sits in a fixed column to the left. A trailing per-pane "Border"
+# checkbox hangs off the right edge, modelled on the timers grid's Clock
+# column (its `[X]` / `[ ]` is centred in the "Border" header width).
+_CELL_W     = 6
+_COL_GAP    = 1
+_LABEL_GAP  = 2
+_LABEL_W    = 13   # widest pane label ("Communication")
+_BORDER_GAP = 2
+_BORDER_W   = 6    # "Border" header width; the `[X]` / `[ ]` cell is centred in it
 
 
 def grid_width():
-    """Total horizontal width of the grid (label column + gap + cells)."""
+    """Total horizontal width of the grid (label + colour cells + Border)."""
     n = len(PANE_COLOR_ORDER)
-    return _LABEL_W + _LABEL_GAP + n * _CELL_W + (n - 1) * _COL_GAP
+    return (_LABEL_W + _LABEL_GAP + n * _CELL_W + (n - 1) * _COL_GAP
+            + _BORDER_GAP + _BORDER_W)
 
 
 def apply_cell_toggle(enabled, colour_index, col):
@@ -80,20 +85,27 @@ def apply_cell_toggle(enabled, colour_index, col):
     return (True, col)
 
 
-def panes_grid_fragments(rows, term_cols, cursor, cell_handler=None):
-    """Fragments for the colour-name header row plus one row per pane.
+def panes_grid_fragments(rows, term_cols, cursor,
+                         cell_handler=None, border_handler=None):
+    """Fragments for the colour-name + Border header row plus one row per pane.
 
     Args:
-        rows: iterable of ``(label, enabled, colour_index)`` tuples.
-            ``colour_index`` is ignored when ``enabled`` is False.
+        rows: iterable of
+            ``(label, enabled, colour_index, border_on, border_supported)``
+            tuples. ``colour_index`` is ignored when ``enabled`` is False.
+            ``border_on`` is the resolved on/off state of the pane's in-pane
+            frame; ``border_supported`` is False for a pane that is never
+            framed (dev), whose Border cell renders as a dim inert blank.
         term_cols: terminal width — used to centre the grid.
         cursor: ``(row_idx, col_idx)`` of the focused cell, or ``None``
-            when the cursor sits outside the grid (e.g. on the headers
-            toggle or Back).
+            when the cursor sits outside the grid (e.g. on Back). Colour
+            cells are cols ``0..N-1``; the Border checkbox is col ``N``.
         cell_handler: optional ``f(row_idx, col_idx) -> mouse_handler``.
-            When provided, each cell's bracket and swatch fragments are
-            emitted as 3-tuples carrying the returned handler. Otherwise
+            When provided, each colour cell's bracket and swatch fragments
+            are emitted as 3-tuples carrying the returned handler. Otherwise
             cell fragments are 2-tuples.
+        border_handler: optional ``f(row_idx) -> mouse_handler`` for the
+            Border checkbox; ignored on an unsupported (dev) row.
 
     Cell-colour precedence per the spec:
       - Cursor cell ``[ ]`` / ``[X]`` → ``C_CURSOR_CELL`` (gold fg).
@@ -103,7 +115,13 @@ def panes_grid_fragments(rows, term_cols, cursor, cell_handler=None):
         ``C_PANE_OFF``, except the cursor cell's brackets which stay gold.
       - Swatches paint their colour on enabled rows, ``C_PANE_OFF`` on
         disabled rows.
-      - The colour-name header row is ``C_HINT``.
+      - The colour-name + Border header row is ``C_HINT``.
+
+    The trailing Border checkbox follows the same grammar: cursor → gold;
+    else on an enabled + supported row, ``[X]`` → ``C_ACTIVE`` / ``[ ]`` →
+    ``C_HINT``; on a disabled row → ``C_PANE_OFF``. An unsupported row (dev)
+    paints a dim inert blank (``C_PANE_OFF``) even under the cursor, like the
+    timers grid's Charmies Clock cell.
     """
     n_cols = len(PANE_COLOR_ORDER)
     total_w = grid_width()
@@ -112,18 +130,20 @@ def panes_grid_fragments(rows, term_cols, cursor, cell_handler=None):
     frags = []
 
     # Header row: blank where the labels live, then colour names centred
-    # above each cell column.
+    # above each cell column, then "Border" centred above the Border cell.
     frags.append(("", pad))
     frags.append(("", " " * (_LABEL_W + _LABEL_GAP)))
     for ci, name in enumerate(PANE_COLOR_ORDER):
         if ci > 0:
             frags.append(("", " " * _COL_GAP))
         frags.append((C_HINT, _centre_in(pane_color_label(name), _CELL_W)))
+    frags.append(("", " " * _BORDER_GAP))
+    frags.append((C_HINT, _centre_in("Border", _BORDER_W)))
     frags.append(("", "\n"))
 
     # Pane rows.
     rows = list(rows)
-    for ri, (label, enabled, colour_index) in enumerate(rows):
+    for ri, (label, enabled, colour_index, border_on, border_supported) in enumerate(rows):
         frags.append(("", pad))
         frags.append((C_ITEM if enabled else C_PANE_OFF,
                       label[:_LABEL_W].ljust(_LABEL_W)))
@@ -156,6 +176,27 @@ def panes_grid_fragments(rows, term_cols, cursor, cell_handler=None):
             else:
                 frags.append((bracket_style, bracket))
                 frags.append((swatch_style, swatch_text))
+
+        # Trailing Border checkbox. An unsupported row (dev) paints a dim
+        # inert blank; otherwise the swatch-cell grammar with cursor → gold.
+        frags.append(("", " " * _BORDER_GAP))
+        border_cursor = (cursor is not None and cursor == (ri, n_cols))
+
+        if not border_supported:
+            frags.append((C_PANE_OFF, _centre_in("", _BORDER_W)))
+        else:
+            if border_cursor:
+                border_style = C_CURSOR_CELL
+            elif not enabled:
+                border_style = C_PANE_OFF
+            else:
+                border_style = C_ACTIVE if border_on else C_HINT
+            border_box = _centre_in("[X]" if border_on else "[ ]", _BORDER_W)
+            if border_handler is not None:
+                frags.append((border_style, border_box, border_handler(ri)))
+            else:
+                frags.append((border_style, border_box))
+
         frags.append(("", "\n"))
 
     return frags

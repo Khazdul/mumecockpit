@@ -84,7 +84,6 @@ function _register_cockpit_help(catalog)
         "   cp -t       toggle timers pane",
         "   cp -g       toggle group pane",
         "   cp -d       toggle dev pane",
-        "   cp -h       toggle headers",
         "   cp -s       save profile to disk",
         "   cp -e       full system shutdown",
         "",

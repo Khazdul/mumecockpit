@@ -13,6 +13,7 @@
 
 import asyncio
 import os
+import sys
 
 from prompt_toolkit.filters import Condition
 from prompt_toolkit.layout.containers import ConditionalContainer, HSplit, VSplit, Window
@@ -62,9 +63,35 @@ _RIGHT_EDGE  = "▐"   # ▐ right half
 
 
 # ---------------------------------------------------------------------------
+# Derived pane key
+# ---------------------------------------------------------------------------
+# The border state is per-pane (border_<key> in startup.conf), so each pane
+# process must know which key it owns. Derive it from the running script's
+# filename: status_pane.py → "status". A name that is not one of the framed
+# keys (e.g. dev, or an unexpected entry point) yields None, and the border
+# resolves to off — safe by default.
+def _derive_pane_key():
+    try:
+        name = os.path.basename(sys.argv[0])
+    except (IndexError, TypeError):
+        return None
+    suffix = "_pane.py"
+    if name.endswith(suffix):
+        key = name[: -len(suffix)]
+        if key in LABELS:
+            return key
+    return None
+
+
+_PANE_KEY = _derive_pane_key()
+
+# ---------------------------------------------------------------------------
 # Cache (refreshed by start_poll; no per-call file I/O)
 # ---------------------------------------------------------------------------
-_frames_enabled = False
+# Border-relevant startup.conf subset: border_<key> for each framed pane plus
+# the retired show_pane_dividers fallback. frames_enabled() resolves the
+# per-pane contract against this cache.
+_border_conf    = {}
 _pane_colors    = {}            # pane_key -> colour name (from startup.conf)
 _startup_mtime  = None
 _layout_mtime   = None
@@ -90,21 +117,28 @@ def _parse_conf(path):
 
 
 def _load_startup():
-    """Refresh _frames_enabled and _pane_colors from startup.conf.
-    Returns True if anything changed."""
-    global _frames_enabled, _pane_colors
+    """Refresh the border-relevant conf subset and _pane_colors from
+    startup.conf. Returns True if anything changed."""
+    global _border_conf, _pane_colors
     conf = _parse_conf(STARTUP_PATH)
 
-    enabled = conf.get("show_pane_dividers", "1").strip() == "1"
+    border = {}
+    for key in LABELS:
+        bkey = "border_" + key
+        if bkey in conf:
+            border[bkey] = conf[bkey].strip()
+    if "show_pane_dividers" in conf:
+        border["show_pane_dividers"] = conf["show_pane_dividers"].strip()
+
     colors = {}
     for key in LABELS:
         name = conf.get("pane_color_" + key)
         if name is not None:
             colors[key] = name.strip()
 
-    changed = (enabled != _frames_enabled) or (colors != _pane_colors)
-    _frames_enabled = enabled
-    _pane_colors    = colors
+    changed = (border != _border_conf) or (colors != _pane_colors)
+    _border_conf = border
+    _pane_colors = colors
     return changed
 
 
@@ -138,9 +172,23 @@ _load_startup()
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
-def frames_enabled():
-    """True when in-pane frames are on (show_pane_dividers=1). Cached."""
-    return _frames_enabled
+def frames_enabled(pane_key=None):
+    """True when the pane's in-pane frame is on, per the border-resolution
+    contract (restated independently, ADR 0126): border_<key>=1 → on; when
+    border_<key> is absent fall back to show_pane_dividers (the retired global
+    key); when that is also absent default to on. A pane_key that is not one
+    of the framed keys (dev / unknown, including the derived None) → off.
+    ``pane_key`` defaults to the derived key for this pane process. Cached."""
+    key = pane_key if pane_key is not None else _PANE_KEY
+    if key not in LABELS:
+        return False
+    v = _border_conf.get("border_" + key)
+    if v is not None:
+        return v == "1"
+    v = _border_conf.get("show_pane_dividers")
+    if v is not None:
+        return v == "1"
+    return True
 
 
 def border_style(pane_key):
@@ -156,13 +204,15 @@ def corners():
 
 
 def inner_width(full_w):
-    """Width available to pane content: full_w-2 when framed, else full_w."""
-    return full_w - 2 if _frames_enabled else full_w
+    """Width available to pane content: full_w-2 when framed, else full_w.
+    Resolves against this pane's derived key."""
+    return full_w - 2 if frames_enabled() else full_w
 
 
 def inner_height(full_h):
-    """Height available to pane content: full_h-2 when framed, else full_h."""
-    return full_h - 2 if _frames_enabled else full_h
+    """Height available to pane content: full_h-2 when framed, else full_h.
+    Resolves against this pane's derived key."""
+    return full_h - 2 if frames_enabled() else full_h
 
 
 def _term_cols():
@@ -227,7 +277,7 @@ def framed(inner_container, pane_key):
         style=lambda: border_style(pane_key),
     )
 
-    on = Condition(frames_enabled)
+    on = Condition(lambda: frames_enabled(pane_key))
     return HSplit([
         ConditionalContainer(top_border, filter=on),
         VSplit([

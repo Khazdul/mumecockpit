@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# bridge/layout/toggle_pane.sh — toggle ui/dev/comm/status panes and pane-border headers.
+# bridge/layout/toggle_pane.sh — toggle the right-column panes on/off.
 # Usage: toggle_pane.sh <target> [--persist]
-# Targets: ui, dev, comm, status, headers
-# Called by cp -u/-d/-m/-c/-h aliases in system.tin.
+# Targets: ui, dev, comm, status, timers, group
+# Called by cp -u/-d/-m/-c/-t/-g aliases in system.tin. Per-pane in-pane
+# borders are toggled from the Panes grid (border_<key>), not here.
 # With --persist, writes the new state to bridge/runtime/startup.conf (used by the in-game popup).
 
 set -u
@@ -139,25 +140,6 @@ case "$TARGET" in
                 _persist_key "show_dev" "0"
             fi
         fi
-        ;;
-
-    headers)
-        # In-pane borders toggle (key name show_pane_dividers and cp -h
-        # kept for backward compat). tmux pane-border-status stays off;
-        # flip + persist show_pane_dividers and resize the right column
-        # live so framed panes reserve/release their border rows.
-        CUR=$(sed -n 's/^show_pane_dividers=//p' "$CONF" 2>/dev/null | tail -1)
-        [ -z "$CUR" ] && CUR=1
-        if [ "$CUR" = "1" ]; then
-            NEW=0
-        else
-            NEW=1
-        fi
-        # Persist first so apply_desired_heights reads the new state, then
-        # resize. Always persist (no separate non-persist live path needed;
-        # the key is the single source of truth for the budget).
-        _persist_key "show_pane_dividers" "$NEW"
-        bash "$SCRIPT_DIR/apply_desired_heights.sh"
         ;;
 
     *)

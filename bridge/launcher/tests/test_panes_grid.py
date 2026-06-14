@@ -31,14 +31,15 @@ def _styles_for_text(frags, text):
 
 def _sample_rows():
     # Mix of enabled/disabled with different colour selections so each
-    # test can pick the row it needs.
+    # test can pick the row it needs. The trailing pair is
+    # (border_on, border_supported); only the Developer row is unsupported.
     return [
-        ("Character",     True,  0),   # row 0 — enabled, Black
-        ("Timers",         False, 0),   # row 1 — disabled
-        ("Group",         True,  3),   # row 2 — enabled, Blue (index 3)
-        ("Communication", False, 0),   # row 3 — disabled
-        ("UI",            True,  6),   # row 4 — enabled, Purple (index 6)
-        ("Developer",     False, 0),   # row 5 — disabled
+        ("Character",     True,  0, True,  True),   # row 0 — enabled, Black, border on
+        ("Timers",         False, 0, True,  True),   # row 1 — disabled, border on
+        ("Group",         True,  3, False, True),   # row 2 — enabled, Blue, border off
+        ("Communication", False, 0, True,  True),   # row 3 — disabled
+        ("UI",            True,  6, True,  True),   # row 4 — enabled, Purple, border on
+        ("Developer",     False, 0, False, False),  # row 5 — disabled, never framed
     ]
 
 
@@ -64,8 +65,8 @@ class TestApplyCellToggle(unittest.TestCase):
 class TestGridWidth(unittest.TestCase):
     def test_grid_width_matches_layout(self):
         # 13-cell label + 2 gap + 7 cells of 6 + 6 inter-column gaps of 1
-        # = 13 + 2 + 42 + 6 = 63.
-        self.assertEqual(panes_grid.grid_width(), 63)
+        # + 2 Border gap + 6 Border column = 13 + 2 + 42 + 6 + 2 + 6 = 71.
+        self.assertEqual(panes_grid.grid_width(), 71)
 
 
 class TestFragmentsCellColourPrecedence(unittest.TestCase):
@@ -224,6 +225,111 @@ class TestFragmentsCellColourPrecedence(unittest.TestCase):
             if len(f) == 3 and f[1] == "   " and f[2] == "h-0-0"
         ]
         self.assertEqual(len(row0_swatch), 1)
+
+
+class TestBorderColumn(unittest.TestCase):
+
+    def test_border_header_styled_c_hint(self):
+        frags = panes_grid.panes_grid_fragments(
+            _sample_rows(), term_cols=120, cursor=None,
+        )
+        # "Border" is exactly 6 chars wide so it renders without padding.
+        self.assertEqual(list(_styles_for_text(frags, "Border")), [C_HINT])
+
+    def test_enabled_on_border_bright_off_cursor(self):
+        # Row 0 (Character / enabled / border on) → bright C_ACTIVE [X].
+        frags = panes_grid.panes_grid_fragments(
+            _sample_rows(), term_cols=120, cursor=None,
+        )
+        style, text = _row_border(frags, row_idx=0)
+        self.assertEqual(text.strip(), "[X]")
+        self.assertEqual(style, C_ACTIVE)
+
+    def test_enabled_off_border_dim(self):
+        # Row 2 (Group / enabled / border off) → dim C_HINT [ ].
+        frags = panes_grid.panes_grid_fragments(
+            _sample_rows(), term_cols=120, cursor=None,
+        )
+        style, text = _row_border(frags, row_idx=2)
+        self.assertEqual(text.strip(), "[ ]")
+        self.assertEqual(style, C_HINT)
+
+    def test_disabled_row_border_dim(self):
+        # Row 1 (Timers / disabled / border on) → dim C_PANE_OFF, still a box.
+        frags = panes_grid.panes_grid_fragments(
+            _sample_rows(), term_cols=120, cursor=None,
+        )
+        style, text = _row_border(frags, row_idx=1)
+        self.assertEqual(text.strip(), "[X]")
+        self.assertEqual(style, C_PANE_OFF)
+
+    def test_unsupported_dev_border_is_dim_blank(self):
+        # Row 5 (Developer / unsupported) → dim blank, no checkbox glyphs.
+        frags = panes_grid.panes_grid_fragments(
+            _sample_rows(), term_cols=120, cursor=None,
+        )
+        style, text = _row_border(frags, row_idx=5)
+        self.assertEqual(text.strip(), "")
+        self.assertEqual(style, C_PANE_OFF)
+
+    def test_unsupported_dev_border_inert_under_cursor(self):
+        # The Border column is col 7 (== len(PANE_COLOR_ORDER)). Even under
+        # the cursor, the dev row's Border cell stays dim (never gold).
+        border_col = len(PANE_COLOR_ORDER)
+        frags = panes_grid.panes_grid_fragments(
+            _sample_rows(), term_cols=120, cursor=(5, border_col),
+        )
+        style, text = _row_border(frags, row_idx=5)
+        self.assertEqual(text.strip(), "")
+        self.assertEqual(style, C_PANE_OFF)
+
+    def test_cursor_on_border_cell_paints_gold(self):
+        border_col = len(PANE_COLOR_ORDER)
+        frags = panes_grid.panes_grid_fragments(
+            _sample_rows(), term_cols=120, cursor=(0, border_col),
+        )
+        style, _text = _row_border(frags, row_idx=0)
+        self.assertEqual(style, C_CURSOR_CELL)
+
+    def test_border_handler_attaches_three_tuple(self):
+        captured = []
+
+        def make_border_handler(row_idx):
+            captured.append(row_idx)
+            return f"b-{row_idx}"
+
+        frags = panes_grid.panes_grid_fragments(
+            _sample_rows(), term_cols=120, cursor=None,
+            border_handler=make_border_handler,
+        )
+        # Called once per supported row (5 of 6 — dev is unsupported).
+        self.assertEqual(sorted(captured), [0, 1, 2, 3, 4])
+        # Row 0's Border cell is a 3-tuple carrying the handler.
+        row0_border = [
+            f for f in frags
+            if len(f) == 3 and f[1].strip() == "[X]" and f[2] == "b-0"
+        ]
+        self.assertEqual(len(row0_border), 1)
+
+
+def _row_border(frags, row_idx):
+    """Return ``(style, text)`` of the trailing Border cell on the given row.
+
+    The Border cell is the last fragment before each pane row's terminating
+    newline. Lines are counted from the leading colour-name header (line 0),
+    so body row ``row_idx`` is line ``row_idx + 1``."""
+    line = 0
+    last = None
+    for f in frags:
+        text = f[1] if len(f) >= 2 else ""
+        if text == "\n":
+            if line == row_idx + 1:
+                return last
+            line += 1
+            last = None
+            continue
+        last = (f[0], text)
+    return last
 
 
 def _row_bracket_styles(frags, row_idx):

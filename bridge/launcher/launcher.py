@@ -182,7 +182,6 @@ _CONF_DEFAULTS_FALLBACK = {
     "show_comm":          "1",
     "show_ui":            "1",
     "show_dev":           "0",
-    "show_pane_dividers": "1",
     "pane_color_status":  "black",
     "pane_color_timers":   "red",
     "pane_color_group":   "green",
@@ -293,11 +292,12 @@ _hover_options            = -1
 _sel_options_panes        = 0
 _hover_options_panes      = -1
 # Options — Panes → General submenu (pane × colour grid). Eight navigable rows:
-#   0..5 — pane rows (Character / Timers / Group / Comm / UI / Developer).
-#   6    — Display pane borders toggle.
+#   0..5 — pane rows (Character / Timers / Group / Comm / UI / Developer),
+#          each with eight columns: seven colours (0..6) + a Border cell (7).
+#   6    — Corner style cycler.
 #   7    — Back.
-# _options_panes_general_col is the persistent column (0..6) for grid rows; it is
-# preserved while the cursor sits on the headers / Back rows so returning
+# _options_panes_general_col is the persistent column (0..7) for grid rows; it is
+# preserved while the cursor sits on the corner / Back rows so returning
 # to a grid row re-enters the same column.
 _options_panes_general_row        = 0
 _options_panes_general_col        = 0
@@ -871,7 +871,7 @@ def _save_conf():
             for key in (
                 "connection_mode", "connection_host", "connection_port",
                 "show_status", "show_timers", "show_group",
-                "show_comm", "show_ui", "show_dev", "show_pane_dividers",
+                "show_comm", "show_ui", "show_dev",
                 "pane_color_status", "pane_color_timers", "pane_color_group",
                 "pane_color_comm", "pane_color_ui", "pane_color_dev",
                 "profile",
@@ -882,6 +882,20 @@ def _save_conf():
                 "readability_enabled",
             ):
                 fh.write(f"{key}={_conf.get(key, _CONF_DEFAULTS[key])}\n")
+            # Per-pane border state. Written only when explicitly set so an
+            # untouched border stays absent (→ resolves via the contract:
+            # show_pane_dividers → default on). dev is never framed.
+            for target, _label, _show_key, _color_key in _PANE_OPTIONS:
+                if target == "dev":
+                    continue
+                bkey = "border_" + target
+                if bkey in _conf:
+                    fh.write(f"{bkey}={_conf[bkey]}\n")
+            # show_pane_dividers is retired from the UI but preserved as the
+            # fallback for users who still carry it (e.g. =0 → borders off
+            # until toggled individually). Never seeded fresh.
+            if "show_pane_dividers" in _conf:
+                fh.write(f"show_pane_dividers={_conf['show_pane_dividers']}\n")
     except OSError:
         pass
 
@@ -2808,22 +2822,23 @@ def _options_panes_text():
 # rendering goes through panes_grid_fragments. See ADR 0086 and
 # docs/launcher.md "Panes submenu".
 #
-# Nine navigable rows: rows 0..5 are pane rows (←/→ moves between the
-# seven colour columns; the column persists across grid rows). Row 6 is
-# the [X] Display pane borders toggle; row 7 is the Corner style cycler
-# (←/→ and Enter advance Auto → Quadrant → Block, wrapping, ADR 0120);
-# row 8 is Back. ↑/↓ moves between all nine rows. Enter activates: a grid
-# cell toggles via the model above, the headers row flips
-# show_pane_dividers, the corner row cycles frame_corners, Back saves and
-# pops. ESC = Back. All writes are deferred — _save_conf fires on the exit
-# path (the phase-1 resolver re-resolves frame_corners_resolved at launch).
+# Eight navigable rows: rows 0..5 are pane rows. Each grid row has eight
+# cursor columns — the seven colour columns (0..6) plus a trailing per-pane
+# Border checkbox at column 7; ←/→ moves across all of them and the column
+# persists across grid rows. Row 6 is the Corner style cycler (←/→ and Enter
+# advance Auto → Quadrant → Block, wrapping, ADR 0120); row 7 is Back. ↑/↓
+# moves between all eight rows. Enter activates: a colour cell toggles via the
+# model above, the Border cell flips border_<key>, the corner row cycles
+# frame_corners, Back saves and pops. ESC = Back. All writes are deferred —
+# _save_conf fires on the exit path (the phase-1 resolver re-resolves
+# frame_corners_resolved at launch).
 
 _PANES_GRID_ROWS   = len(_PANE_OPTIONS)            # 6
-_PANES_HEADERS_ROW = _PANES_GRID_ROWS              # 6
-_PANES_CORNERS_ROW = _PANES_GRID_ROWS + 1          # 7
-_PANES_BACK_ROW    = _PANES_GRID_ROWS + 2          # 8
+_PANES_BORDER_COL  = len(PANE_COLOR_ORDER)         # 7 — trailing Border cell
+_PANES_CORNERS_ROW = _PANES_GRID_ROWS              # 6
+_PANES_BACK_ROW    = _PANES_GRID_ROWS + 1          # 7
 _PANES_LAST_ROW    = _PANES_BACK_ROW
-_PANES_LAST_COL    = len(PANE_COLOR_ORDER) - 1     # 6
+_PANES_LAST_COL    = _PANES_BORDER_COL             # 7
 
 
 def _set_panes_cursor(row, col=None):
@@ -2862,9 +2877,33 @@ def _apply_panes_grid_toggle(row, col):
         _app.invalidate()
 
 
-def _toggle_pane_headers():
-    key = "show_pane_dividers"
-    _conf[key] = "0" if _conf.get(key) == "1" else "1"
+# IS_FRAMED is False only for dev — every other pane gets an in-pane border
+# (mirrors right_column_budget.sh; restated here, ADR 0126).
+def _pane_is_framed(target):
+    return target != "dev"
+
+
+def _border_resolved(target):
+    """Resolve a framed pane's in-pane border per the border-resolution
+    contract (restated independently, ADR 0126): border_<target>=1 → on; when
+    border_<target> is absent fall back to show_pane_dividers (the retired
+    global key); when that is also absent default to on. dev is never framed."""
+    v = _conf.get("border_" + target)
+    if v is not None:
+        return v == "1"
+    v = _conf.get("show_pane_dividers")
+    if v is not None:
+        return v == "1"
+    return True
+
+
+def _toggle_pane_border(row):
+    """Flip the focused pane's border_<key> in _conf (deferred; _save_conf
+    persists it on Back/ESC). Inert for dev — it is never framed."""
+    target = _PANE_OPTIONS[row][0]
+    if not _pane_is_framed(target):
+        return
+    _conf["border_" + target] = "0" if _border_resolved(target) else "1"
     if _app:
         _app.invalidate()
 
@@ -2902,31 +2941,25 @@ def _options_panes_general_text():
     clear_hover = _options_panes_general_clear_hover
 
     # Grid rows from _conf. Empty / unknown colour names fall back to
-    # Black (column 0) per the grid model.
+    # Black (column 0) per the grid model. The trailing pair is
+    # (border_resolved, is_framed); dev is the only unframed pane.
     grid_rows = []
-    for _target, label, show_key, color_key in _PANE_OPTIONS:
+    for target, label, show_key, color_key in _PANE_OPTIONS:
         enabled = (_conf.get(show_key) == "1")
         cur_color = _conf.get(color_key, "")
         try:
             colour_index = PANE_COLOR_ORDER.index(cur_color)
         except ValueError:
             colour_index = 0
-        grid_rows.append((label, enabled, colour_index))
+        is_framed = _pane_is_framed(target)
+        border_on = _border_resolved(target) if is_framed else False
+        grid_rows.append((label, enabled, colour_index, border_on, is_framed))
 
     cur_row = _options_panes_general_row
     cur_col = _options_panes_general_col
     grid_cursor = (cur_row, cur_col) if cur_row < _PANES_GRID_ROWS else None
 
-    headers_on    = (_conf.get("show_pane_dividers") == "1")
-    headers_label = f"[{'X' if headers_on else ' '}] Display pane borders"
     back_label    = "Back"
-    # Headers is a glyph row, so it gets the centred-block left
-    # margin. Back is a plain `<< label >>` row and centres per row
-    # (computed below). The block here is degenerate — one row — but
-    # the structure mirrors the multi-row glyph blocks elsewhere.
-    label_col_w   = len(headers_label)
-    block_w       = label_col_w + 6
-    left_pad      = max(0, (cols - block_w) // 2)
 
     frags = []
     frags.extend(title_block(
@@ -2943,35 +2976,27 @@ def _options_panes_general_text():
                 _apply_panes_grid_toggle(ri, ci)
         return _h
 
+    def _make_border_handler(ri):
+        def _h(ev):
+            if ev.event_type == MouseEventType.MOUSE_MOVE:
+                _set_panes_cursor(ri, _PANES_BORDER_COL)
+                return
+            if ev.event_type == MouseEventType.MOUSE_DOWN:
+                _set_panes_cursor(ri, _PANES_BORDER_COL)
+                _toggle_pane_border(ri)
+        return _h
+
     frags.extend(panes_grid_fragments(
-        grid_rows, cols, grid_cursor, cell_handler=_make_cell_handler,
+        grid_rows, cols, grid_cursor,
+        cell_handler=_make_cell_handler, border_handler=_make_border_handler,
     ))
 
-    # Blank row between grid and the headers toggle.
+    # Blank row between the grid and the corner cycler.
     frags.append(("", "\n", clear_hover))
 
-    # Display pane borders — << label >> menu-row grammar.
-    state_h = "selected" if cur_row == _PANES_HEADERS_ROW else "inactive"
-
-    def _headers_handler(ev):
-        if ev.event_type == MouseEventType.MOUSE_MOVE:
-            _set_panes_cursor(_PANES_HEADERS_ROW)
-            return
-        if ev.event_type == MouseEventType.MOUSE_DOWN:
-            _set_panes_cursor(_PANES_HEADERS_ROW)
-            _toggle_pane_headers()
-
-    headers_right_pad = max(0, cols - left_pad - len(headers_label) - 6)
-    frags.append(("", " " * left_pad, clear_hover))
-    frags.extend(menu_row(
-        headers_label, state_h, mouse_handler=_headers_handler,
-    ))
-    frags.append(("", " " * headers_right_pad, clear_hover))
-    frags.append(("", "\n", clear_hover))
-
-    # Corner style — single cycle row directly under the borders toggle,
-    # stacked on the same left edge. ←/→ and Enter/Space advance the value
-    # (Auto → Quadrant → Block, wrapping). Deferred write via _save_conf.
+    # Corner style — single cycle row, centred per row. ←/→ and Enter/Space
+    # advance the value (Auto → Quadrant → Block, wrapping). Deferred write
+    # via _save_conf.
     corner_label = f"Corner style: {frame_corner_label(_conf.get('frame_corners', 'auto'))}"
     state_c = "selected" if cur_row == _PANES_CORNERS_ROW else "inactive"
 
@@ -2983,8 +3008,10 @@ def _options_panes_general_text():
             _set_panes_cursor(_PANES_CORNERS_ROW)
             _cycle_frame_corners(1)
 
-    corner_right_pad = max(0, cols - left_pad - len(corner_label) - 6)
-    frags.append(("", " " * left_pad, clear_hover))
+    corner_row_w     = len(corner_label) + 6
+    corner_left_pad  = max(0, (cols - corner_row_w) // 2)
+    corner_right_pad = max(0, cols - corner_left_pad - corner_row_w)
+    frags.append(("", " " * corner_left_pad, clear_hover))
     frags.extend(menu_row(
         corner_label, state_c, mouse_handler=_corner_handler,
     ))
@@ -2994,8 +3021,7 @@ def _options_panes_general_text():
     # Blank row between the corner cycler and Back.
     frags.append(("", "\n", clear_hover))
 
-    # Back — plain << label >> row, centred per row (no leading glyph
-    # to stack with the headers toggle above).
+    # Back — plain << label >> row, centred per row.
     state_b = "selected" if cur_row == _PANES_BACK_ROW else "inactive"
 
     def _back_handler(ev):
@@ -3016,9 +3042,9 @@ def _options_panes_general_text():
     frags.append(("", "\n", clear_hover))
 
     # Footer block anchored to the final terminal row. Content rows
-    # above the footer = title block + header row + 6 pane rows + 5
-    # rows of bottom chrome (blank · headers · corner · blank · Back).
-    content_rows = title_block_height(2) + 1 + _PANES_GRID_ROWS + 5
+    # above the footer = title block + header row + 6 pane rows + 4
+    # rows of bottom chrome (blank · corner · blank · Back).
+    content_rows = title_block_height(2) + 1 + _PANES_GRID_ROWS + 4
     footer = "↑↓←→ Move · Enter Toggle · ESC Back"
     frags.extend(footer_block(
         footer, cols, rows_h, content_rows, mouse_handler=clear_hover,
@@ -10224,9 +10250,10 @@ def _kb_optp_right(event):
 def _kb_optp_select(event):
     r = _options_panes_general_row
     if r < _PANES_GRID_ROWS:
-        _apply_panes_grid_toggle(r, _options_panes_general_col)
-    elif r == _PANES_HEADERS_ROW:
-        _toggle_pane_headers()
+        if _options_panes_general_col < _PANES_BORDER_COL:
+            _apply_panes_grid_toggle(r, _options_panes_general_col)
+        else:
+            _toggle_pane_border(r)
     elif r == _PANES_CORNERS_ROW:
         _cycle_frame_corners(1)
     elif r == _PANES_BACK_ROW:

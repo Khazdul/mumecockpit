@@ -43,13 +43,21 @@ declare -A IS_FRAMED=(
 )
 
 # Per-pane row overhead reserved for the in-pane border (top + bottom = 2)
-# when borders are enabled (show_pane_dividers=1) and the pane is framed.
-# Returns 0 otherwise. The border is drawn next phase; this only reserves
-# the rows so content height is preserved.
+# when the pane is framed AND its border resolves ON. Returns 0 otherwise.
+# The border is drawn next phase; this only reserves the rows so content
+# height is preserved.
+#
+# Border resolution (restated independently, ADR 0126): border_<p>=1 → on;
+# when border_<p> is absent fall back to show_pane_dividers (the retired
+# global key); when that is also absent default to 1 (on). apply_desired_
+# heights.sh and build_initial_layout.sh both source startup.conf, so
+# border_<p> / show_pane_dividers are in scope here via indirect expansion.
 rc_frame_extra() {
     local p=$1
-    [ "${SHOW_DIVIDERS:-${show_pane_dividers:-1}}" -eq 1 ] \
-        && [ "${IS_FRAMED[$p]:-0}" -eq 1 ] && { echo 2; return; }
+    [ "${IS_FRAMED[$p]:-0}" -eq 1 ] || { echo 0; return; }
+    local bvar="border_${p}"
+    local b="${!bvar:-${show_pane_dividers:-1}}"
+    [ "$b" -eq 1 ] && { echo 2; return; }
     echo 0
 }
 

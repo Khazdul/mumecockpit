@@ -70,6 +70,7 @@ TIMERS_LAYOUT_CONF_PATH = os.path.join(RUNTIME_DIR, "timers_layout.conf")
 STATUS_STATE_PATH     = os.path.join(RUNTIME_DIR, "status.state")
 SCRIPTS_CACHE_PATH    = os.path.join(RUNTIME_DIR, "scripts.cache")
 TOGGLE_PANE_SCRIPT    = os.path.join(BRIDGE_DIR, "layout", "toggle_pane.sh")
+APPLY_HEIGHTS_SCRIPT  = os.path.join(BRIDGE_DIR, "layout", "apply_desired_heights.sh")
 
 READABILITY_MODULES_DIR = os.path.join(PROJECT_DIR, "ttpp", "readability", "modules")
 PROFILES_DIR           = os.path.join(PROJECT_DIR, "ttpp", "profiles")
@@ -122,9 +123,9 @@ _sel_options      = 0           # cursor within the popup Options grouping (Pane
 _sel_panes        = 0
 _hover_panes      = -1
 # Panes → General submenu (colour grid). Eight navigable rows:
-#   0..5 — pane rows × 7 colour columns (←/→ moves the column; the column
-#          persists across grid rows).
-#   6    — Display pane borders toggle.
+#   0..5 — pane rows; eight columns each: 7 colours (0..6) + a Border cell
+#          (7). ←/→ moves the column; the column persists across grid rows.
+#   6    — Corner style cycler.
 #   7    — Back.
 _panes_general_row        = 0
 _panes_general_col        = 0
@@ -916,24 +917,26 @@ def _build_panes_container():
 # Six pane rows × seven colour columns: each (pane, colour) cell is either
 # checked or unchecked. A row with no checked cell is off; exactly one
 # checked cell is on with that colour. apply_cell_toggle handles on/off /
-# switch-colour; rendering goes through panes_grid_fragments. Extra
-# navigable rows hang below the grid: a blank, a [X] Display pane borders
-# toggle, a Corner style cycler, a blank, and Back.
+# switch-colour; rendering goes through panes_grid_fragments. Each grid row
+# carries a trailing per-pane Border checkbox (col 7); extra navigable rows
+# hang below the grid: a blank, a Corner style cycler, a blank, and Back.
 #
 # Persistence is immediate and live: clicking a cell writes the new state
 # to startup.conf in-place AND drives tmux directly. Opening / closing a
 # pane goes through toggle_pane.sh; recolouring an open pane goes through
-# tmux select-pane -P bg=…. Pane open-state is re-probed from tmux on
-# every render, matching the previous popup behaviour. The Corner style
-# cycler writes frame_corners and re-resolves frame_corners_resolved so the
-# framed panes re-render their corners live (no restart).
+# tmux select-pane -P bg=…. Toggling a Border cell writes border_<key> and
+# re-runs apply_desired_heights.sh so the frame reservation resizes the right
+# column live; the pane shows / hides its own frame on its next poll. Pane
+# open-state is re-probed from tmux on every render, matching the previous
+# popup behaviour. The Corner style cycler writes frame_corners and re-resolves
+# frame_corners_resolved so the framed panes re-render their corners live.
 
 _PANES_GRID_ROWS   = len(_PANE_TARGETS)            # 6
-_PANES_HEADERS_ROW = _PANES_GRID_ROWS              # 6
-_PANES_CORNERS_ROW = _PANES_GRID_ROWS + 1          # 7
-_PANES_BACK_ROW    = _PANES_GRID_ROWS + 2          # 8
+_PANES_BORDER_COL  = len(PANE_COLOR_ORDER)         # 7 — trailing Border cell
+_PANES_CORNERS_ROW = _PANES_GRID_ROWS              # 6
+_PANES_BACK_ROW    = _PANES_GRID_ROWS + 1          # 7
 _PANES_LAST_ROW    = _PANES_BACK_ROW
-_PANES_LAST_COL    = len(PANE_COLOR_ORDER) - 1     # 6
+_PANES_LAST_COL    = _PANES_BORDER_COL             # 7
 
 # Timers-layout grid geometry. One row per group, then a [X] Display headers
 # toggle, a [X] Compact layout toggle, and a Back row. The column stepper
@@ -1048,9 +1051,41 @@ def _apply_panes_grid_toggle(row, col):
         _app.invalidate()
 
 
-def _toggle_pane_headers():
-    """Flip the pane-divider headers (live tmux + persisted)."""
-    _toggle_pane("headers")
+# IS_FRAMED is False only for dev — every other pane gets an in-pane border
+# (mirrors right_column_budget.sh; restated here, ADR 0126).
+def _pane_is_framed(target):
+    return target != "dev"
+
+
+def _resolve_border(conf, target):
+    """Resolve a framed pane's in-pane border per the border-resolution
+    contract (restated independently, ADR 0126): border_<target>=1 → on; when
+    border_<target> is absent fall back to show_pane_dividers (the retired
+    global key); when that is also absent default to on. dev is never framed."""
+    v = conf.get("border_" + target)
+    if v is not None:
+        return v == "1"
+    v = conf.get("show_pane_dividers")
+    if v is not None:
+        return v == "1"
+    return True
+
+
+def _toggle_pane_border(row):
+    """Flip the focused pane's border_<key> in startup.conf immediately, then
+    re-run apply_desired_heights.sh so the changed frame reservation resizes
+    the right column live. The toggled pane picks up border_<key> on its poll
+    and shows / hides its frame. Inert for dev — it is never framed."""
+    target = _PANE_TARGETS[row][0]
+    if not _pane_is_framed(target):
+        return
+    conf = _parse_keyval(STARTUP_CONF_PATH)
+    new = "0" if _resolve_border(conf, target) else "1"
+    _persist_conf_key("border_" + target, new)
+    try:
+        subprocess.run(["bash", APPLY_HEIGHTS_SCRIPT], timeout=5.0)
+    except (subprocess.SubprocessError, OSError):
+        pass
     if _app:
         _app.invalidate()
 
@@ -1222,7 +1257,9 @@ def _panes_general_text():
     cols   = _term_cols()
     rows_h = _term_rows()
 
-    # Live grid state: pane-open from tmux, current colour from startup.conf.
+    # Live grid state: pane-open from tmux, current colour + border from
+    # startup.conf. The trailing pair is (border_resolved, is_framed); dev is
+    # the only unframed pane.
     titles_set = set(_tmux_pane_titles())
     conf       = _parse_keyval(STARTUP_CONF_PATH)
     grid_rows = []
@@ -1233,16 +1270,14 @@ def _panes_general_text():
             colour_index = PANE_COLOR_ORDER.index(cur_color)
         except ValueError:
             colour_index = 0
-        grid_rows.append((label, enabled, colour_index))
+        is_framed = _pane_is_framed(target)
+        border_on = _resolve_border(conf, target) if is_framed else False
+        grid_rows.append((label, enabled, colour_index, border_on, is_framed))
 
     cur_row = _panes_general_row
     cur_col = _panes_general_col
     grid_cursor = (cur_row, cur_col) if cur_row < _PANES_GRID_ROWS else None
 
-    # tmux pane-border-status is permanently off; in-pane borders are
-    # driven by show_pane_dividers in startup.conf.
-    headers_on    = (conf.get("show_pane_dividers", "1") == "1")
-    headers_label = f"[{'X' if headers_on else ' '}] Display pane borders"
     back_label    = "Back"
 
     frags = []
@@ -1258,31 +1293,24 @@ def _panes_general_text():
                 _apply_panes_grid_toggle(ri, ci)
         return _h
 
+    def _make_border_handler(ri):
+        def _h(ev):
+            if ev.event_type == MouseEventType.MOUSE_MOVE:
+                _set_panes_cursor(ri, _PANES_BORDER_COL)
+                return
+            if ev.event_type == MouseEventType.MOUSE_DOWN:
+                _set_panes_cursor(ri, _PANES_BORDER_COL)
+                _toggle_pane_border(ri)
+        return _h
+
     frags.extend(panes_grid_fragments(
-        grid_rows, cols, grid_cursor, cell_handler=_make_cell_handler,
+        grid_rows, cols, grid_cursor,
+        cell_handler=_make_cell_handler, border_handler=_make_border_handler,
     ))
 
     frags.append(("", "\n"))
 
-    # Display pane borders — single << label >> toggle, centred per row.
-    # Cursor row → gold-arrow `selected`; otherwise `inactive` (cursor-only
-    # frame, no separate mouse-hover index).
-    state_h = "selected" if cur_row == _PANES_HEADERS_ROW else "inactive"
-
-    def _headers_handler(ev):
-        if ev.event_type == MouseEventType.MOUSE_MOVE:
-            _set_panes_cursor(_PANES_HEADERS_ROW)
-            return
-        if ev.event_type == MouseEventType.MOUSE_DOWN:
-            _set_panes_cursor(_PANES_HEADERS_ROW)
-            _toggle_pane_headers()
-
-    pad_h = max(0, (cols - (len(headers_label) + 6)) // 2)
-    frags.append(("", " " * pad_h))
-    frags.extend(menu_row(headers_label, state_h, mouse_handler=_headers_handler))
-    frags.append(("", "\n"))
-
-    # Corner style — single cycle row directly under the borders toggle.
+    # Corner style — single cycle row, centred per row.
     # ←/→ and Enter/Space advance the value (Auto → Quadrant → Block,
     # wrapping); the change applies live via _cycle_frame_corners.
     corner_label = f"Corner style: {frame_corner_label(conf.get('frame_corners', 'auto'))}"
@@ -1319,8 +1347,8 @@ def _panes_general_text():
     frags.append(("", "\n"))
 
     # title block (3 rows for popup) + grid header (1) + 6 pane rows
-    # + blank + headers + corner + blank + Back (5 rows).
-    content_rows = title_block_height(1) + 1 + _PANES_GRID_ROWS + 5
+    # + blank + corner + blank + Back (4 rows).
+    content_rows = title_block_height(1) + 1 + _PANES_GRID_ROWS + 4
     footer = "↑↓←→ Move · Enter Toggle · ESC Back"
     frags.extend(footer_block(footer, cols, rows_h, content_rows))
 
@@ -3762,9 +3790,10 @@ def _panes_right(event):
 def _panes_select(event):
     r = _panes_general_row
     if r < _PANES_GRID_ROWS:
-        _apply_panes_grid_toggle(r, _panes_general_col)
-    elif r == _PANES_HEADERS_ROW:
-        _toggle_pane_headers()
+        if _panes_general_col < _PANES_BORDER_COL:
+            _apply_panes_grid_toggle(r, _panes_general_col)
+        else:
+            _toggle_pane_border(r)
     elif r == _PANES_CORNERS_ROW:
         _cycle_frame_corners(1)
     elif r == _PANES_BACK_ROW:

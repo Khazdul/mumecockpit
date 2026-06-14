@@ -19,7 +19,8 @@ SHOW_STATUS="${show_status:-1}"
 SHOW_TIMERS="${show_timers:-1}"
 SHOW_GROUP="${show_group:-1}"
 SHOW_COMM="${show_comm:-1}"
-SHOW_DIVIDERS="${show_pane_dividers:-1}"
+# In-pane borders are now per-pane (border_<key>); rc_frame_extra resolves
+# them via indirect expansion from the sourced startup.conf. No global flag.
 
 LAYOUT_CONF="bridge/runtime/layout.conf"
 # launcher.py may have created layout.conf with only terminal_bg=
