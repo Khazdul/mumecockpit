@@ -167,7 +167,7 @@ def _build_frame(data):
     xp_new_bg = _bg(shades["dim"])     # XP bar background — session-gain segment
     tp_fg     = _fg(shades["dim"])     # TP bar ▀ fg — baseline segment
     tp_new_fg = _fg(shades["mid"])     # TP bar ▀ fg — session-gain segment
-    tog_off   = _fg(shades["track"])   # toggle off-state label — bar shade
+    tog_off   = _fg(shades["dim"])     # toggle off-state label — bar shade
 
     name = c.get("character") or "—"
     name = name.capitalize()
