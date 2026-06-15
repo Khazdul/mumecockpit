@@ -39,11 +39,11 @@ POLL_MS    = 0.05
 # Colour constants (24-bit truecolor ANSI — consumed by _build_frame)
 # ---------------------------------------------------------------------------
 # Everything chromatic is palette-derived per frame from pane_frame.pane_shades
-# (track/dim/mid/paneBg/vtext/label/glow), turned into SGR by _fg/_bg below, so
-# the pane retints with its colour (and with terminal_bg under "None"). Only the
-# structural resets and the (cross-pane) overflow amber are fixed here.
+# (track/dim/mid/box_on/paneBg/vtext/label/glow), turned into SGR by _fg/_bg
+# below, so the pane retints with its colour (and with terminal_bg under
+# "None"). Only the structural resets and the (cross-pane) overflow amber are
+# fixed here.
 C_RESET     = "\x1b[0m"
-C_NAME      = "\x1b[38;2;192;192;192m"   # row 1 text (fg only)
 C_BG_RST    = "\x1b[49m"                 # reset background only (keep fg)
 
 C_INDICATOR = "fg:#d4a04e italic"   # overflow indicator style (shared amber)
@@ -108,24 +108,24 @@ def _is_on(v):
 # ---------------------------------------------------------------------------
 # Toggle row — filled boxes
 # ---------------------------------------------------------------------------
-def _toggle_box(label, colW, on, mid, track, vtext):
-    """One filled toggle cell: label centered in colW, vtext label on both
-    states. On → lighter `mid` box; off → darker `track` box. The box shade
-    alone carries the on/off distinction — both are dark enough for light text,
-    so the foreground does not invert (glow is reserved for the active tick)."""
+def _toggle_box(label, colW, on, box_on, dim, panebg):
+    """One filled toggle cell: label centered in colW, dark `paneBg` label on
+    both states. On → lighter `box_on` box; off → darker `dim` box. Both carry
+    an inverted (dark-on-light) label so on reads clearly and off recedes; the
+    box shade carries the on/off distinction."""
     if colW <= 0:
         return ""
     t = label[:colW].center(colW)
-    return _bg(mid if on else track) + _fg(vtext) + t + C_RESET
+    return _bg(box_on if on else dim) + _fg(panebg) + t + C_RESET
 
 
-def _build_toggles_row(c, W, mid, track, vtext):
+def _build_toggles_row(c, W, box_on, dim, panebg):
     c1, c2, c3, c4 = _col_widths(W)
     cells = [
-        _toggle_box("SNEAK", c1, _is_on(c.get("sneak")), mid, track, vtext),
-        _toggle_box("RIDE",  c2, _is_on(c.get("ride")),  mid, track, vtext),
-        _toggle_box("CLIMB", c3, _is_on(c.get("climb")), mid, track, vtext),
-        _toggle_box("SWIM",  c4, _is_on(c.get("swim")),  mid, track, vtext),
+        _toggle_box("SNEAK", c1, _is_on(c.get("sneak")), box_on, dim, panebg),
+        _toggle_box("RIDE",  c2, _is_on(c.get("ride")),  box_on, dim, panebg),
+        _toggle_box("CLIMB", c3, _is_on(c.get("climb")), box_on, dim, panebg),
+        _toggle_box("SWIM",  c4, _is_on(c.get("swim")),  box_on, dim, panebg),
     ]
     return cells[0] + " " + cells[1] + " " + cells[2] + " " + cells[3]
 
@@ -150,12 +150,12 @@ def _bar_cell(value, colW, track, vtext):
     return _bg(track) + _fg(vtext) + value[:colW].center(colW) + C_RESET
 
 
-def _tick_ord(steps, value, colW, glow, track, panebg):
+def _tick_ord(steps, value, colW, glow, track):
     """Step-tick row for an ordinal stat. N ▀ ticks across the column at
     positions round(k*(colW-1)/(N-1)); collisions collapse to one ▀ (first 0,
     last colW-1 and the active index always survive). The tick matching the
-    current value glows; the rest are subtle `track`; gaps are spaces. The whole
-    cell sits on paneBg."""
+    current value glows; the rest are subtle `track`; gaps are spaces. The teeth
+    sit on the plain tmux pane background."""
     if colW <= 0:
         return ""
     N = len(steps)
@@ -169,7 +169,7 @@ def _tick_ord(steps, value, colW, glow, track, panebg):
     active_pos = positions[active] if active is not None else None
     tickset = set(positions)
     glow_e, track_e = _fg(glow), _fg(track)
-    out = _bg(panebg)
+    out = C_BG_RST
     for i in range(colW):
         if i in tickset:
             out += (glow_e if i == active_pos else track_e) + "▀"
@@ -178,10 +178,11 @@ def _tick_ord(steps, value, colW, glow, track, panebg):
     return out + C_RESET
 
 
-def _tick_wimpy(wimpy, maxhp, colW, glow, panebg):
+def _tick_wimpy(wimpy, maxhp, colW, glow):
     """Continuous wimpy caret: a single glow `^` at round(frac*(colW-1)),
     frac = wimpy / maxhp. Hidden entirely (all spaces) when wimpy is null or
-    maxhp is null/0. No inactive ticks. Cell sits on paneBg."""
+    maxhp is null/0. No inactive ticks. Caret sits on the plain tmux pane
+    background."""
     if colW <= 0:
         return ""
     caret = None
@@ -189,7 +190,7 @@ def _tick_wimpy(wimpy, maxhp, colW, glow, panebg):
         frac = max(0.0, min(1.0, wimpy / maxhp))
         caret = round(frac * (colW - 1))
     glow_e = _fg(glow)
-    out = _bg(panebg)
+    out = C_BG_RST
     for i in range(colW):
         out += (glow_e + "^") if i == caret else " "
     return out + C_RESET
@@ -211,20 +212,21 @@ def _build_frame(data):
     c = data or {}
 
     # Resolve the pane's shade ramp once per frame from the same pane-colour
-    # value the frame border uses. track = bar bg / XP baseline / toggle off-box;
-    # dim = XP session-gain bg / TP baseline; mid = TP session-gain / toggle
-    # on-box; glow = active step-tick; paneBg = dark text / tick background;
-    # label = level badge. Gauge labels reuse the frame's title colour
-    # (border_color) so they read at the same weight as "Character".
+    # value the frame border uses. track = bar bg / XP baseline; dim = XP
+    # session-gain bg / TP baseline / gauge labels / toggle off-box; mid = TP
+    # session-gain; box_on = toggle on-box; glow = active step-tick; paneBg =
+    # dark text / tick background / toggle box label; label = level badge /
+    # player name. Gauge labels use the very-dark `dim` shade — legible but
+    # receding under the frame title.
     shades    = pane_frame.pane_shades("status")
     track     = shades["track"]
     dim       = shades["dim"]
     mid       = shades["mid"]
+    box_on    = shades["box_on"]
     panebg    = shades["paneBg"]
     vtext     = shades["vtext"]
     label     = shades["label"]
     glow      = shades["glow"]
-    title     = pane_frame.border_color("status")   # gauge-label colour
     xp_bg     = _bg(track)   # XP bar background — baseline segment
     xp_new_bg = _bg(dim)     # XP bar background — session-gain segment
     tp_fg     = _fg(dim)     # TP bar ▀ fg — baseline segment
@@ -255,6 +257,7 @@ def _build_frame(data):
         lstart = width - len(ltext)
         display = padded[:lstart] + ltext
     level_fg = _fg(label)
+    name_fg  = _fg(label)   # name matches the level badge shade
 
     # Emit the row in segments split at every XP-background boundary and at the
     # level-overlay start, so background (xp_bg/xp_new_bg/none) and foreground
@@ -265,7 +268,7 @@ def _build_frame(data):
         if a >= b:
             continue
         seg_bg = xp_bg if a < fill_base else xp_new_bg if a < fill_total else C_BG_RST
-        seg_fg = level_fg if a >= lstart else C_NAME
+        seg_fg = level_fg if a >= lstart else name_fg
         row1 += seg_bg + seg_fg + display[a:b]
     row1 += C_RESET
 
@@ -278,7 +281,7 @@ def _build_frame(data):
             + tp_new_fg + "▀" * (tp_total - tp_basefill)
             + C_RESET   + " " * (width - tp_total))
 
-    toggles = _build_toggles_row(c, width, mid, track, vtext)
+    toggles = _build_toggles_row(c, width, box_on, dim, panebg)
 
     colL, colR = _two_cols(width)
     mood, alert, pos = c.get("mood"), c.get("alertness"), c.get("position")
@@ -289,18 +292,18 @@ def _build_frame(data):
         row1,
         row2,
         toggles,
-        _row(_label_cell("MOOD", colL, title),
-             _label_cell("ALERTNESS", colR, title)),
+        _row(_label_cell("MOOD", colL, dim),
+             _label_cell("ALERTNESS", colR, dim)),
         _row(_bar_cell(_ord_val(mood), colL, track, vtext),
              _bar_cell(_ord_val(alert), colR, track, vtext)),
-        _row(_tick_ord(MOOD_STEPS, mood, colL, glow, track, panebg),
-             _tick_ord(ALERT_STEPS, alert, colR, glow, track, panebg)),
-        _row(_label_cell("POSITION", colL, title),
-             _label_cell("WIMPY", colR, title)),
+        _row(_tick_ord(MOOD_STEPS, mood, colL, glow, track),
+             _tick_ord(ALERT_STEPS, alert, colR, glow, track)),
+        _row(_label_cell("POSITION", colL, dim),
+             _label_cell("WIMPY", colR, dim)),
         _row(_bar_cell(_ord_val(pos), colL, track, vtext),
              _bar_cell(wimpy_val, colR, track, vtext)),
-        _row(_tick_ord(POS_STEPS, pos, colL, glow, track, panebg),
-             _tick_wimpy(wimpy, maxhp, colR, glow, panebg)),
+        _row(_tick_ord(POS_STEPS, pos, colL, glow, track),
+             _tick_wimpy(wimpy, maxhp, colR, glow)),
     ]
 
 

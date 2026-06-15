@@ -176,7 +176,6 @@ Constants defined at the top of `bridge/panes/status_pane.py`:
 | Constant  | Escape                   | Role                                              |
 |-----------|--------------------------|---------------------------------------------------|
 | `C_RESET` | `\x1b[0m`                | Reset all                                         |
-| `C_NAME`  | `\x1b[38;2;192;192;192m` | Row 1 text foreground (name + padding spaces)     |
 | `C_XP_BG` | `\x1b[48;2;0;30;40m`    | XP bar background — baseline segment (RGB 0,30,40) |
 | `C_XP_NEW_BG` | `\x1b[48;2;92;15;91m`   | XP bar session-gain segment background (RGB 92,15,91 — `#5C0F5B`) |
 | `C_BG_RST`| `\x1b[49m`               | Reset background only, keep foreground            |
@@ -207,7 +206,8 @@ header rows are rendered inside the pane.
 
 - Full-width string: `state.char.name` (or `—` if null) centered in W columns
   (truncated to W if longer, space-padded otherwise).
-- Foreground: `C_NAME` (RGB 192,192,192) everywhere on the row.
+- Foreground: the palette-derived `label` shade everywhere on the row, so the
+  name matches the `L<level>` badge.
 - Three-segment background:
   - leftmost `floor(W × xp_progress_baseline)` columns: `C_XP_BG` (RGB 0,30,40)
     — XP already present at session start.
@@ -215,7 +215,7 @@ header rows are rendered inside the pane.
     `C_XP_NEW_BG` (RGB 92,15,91 — `#5C0F5B`) — XP gained this session.
   - remaining columns: terminal default (no background).
 - Boundary trick:
-  `<C_NAME><C_XP_BG><baseline><C_XP_NEW_BG><session-gain><C_BG_RST><unfilled><C_RESET>`.
+  `<name_fg><C_XP_BG><baseline><C_XP_NEW_BG><session-gain><C_BG_RST><unfilled><C_RESET>`.
   The background changes mid-line without touching the foreground; `C_BG_RST`
   resets only the background at the trailing edge.
 - See [Session-gain visualisation](#session-gain-visualisation) below for the
