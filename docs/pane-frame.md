@@ -236,7 +236,7 @@ file reads only, the same discipline as `foot_config.py`.
   the twice-stated border contract follow that rule.
 - [ADR 0086](decisions/0086-panes-grid.md) — the palette pane colours
   `pane_shades` mirrors its `(h, s)` against, and the Panes grid that sets them.
-- [ADR 0138](decisions/0138-status-stepped-gauges.md) — the status pane's
+- [ADR 0138](decisions/0138-character-pane-palette-gauges.md) — the status pane's
   palette-derived stepped gauges, the main consumer of the `pane_shades` ramp.
 - [docs/bridge-services.md](bridge-services.md) — the right-column height budget,
   including `rc_frame_extra`'s two-row reservation.

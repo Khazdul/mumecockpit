@@ -14,7 +14,7 @@ bar, and a step-tick row marking the discrete positions. Everything
 chromatic is derived per frame from the pane's palette shade ramp, so the
 board retints with the pane colour. Game time is shown in the input-pane
 clock strip, sourced from the same `status.state` payload. The gauge
-redesign is recorded in [ADR 0138](decisions/0138-status-stepped-gauges.md).
+redesign is recorded in [ADR 0138](decisions/0138-character-pane-palette-gauges.md).
 
 ## Architecture
 
