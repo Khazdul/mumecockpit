@@ -578,7 +578,7 @@ See [docs/pane-frame.md](docs/pane-frame.md) and
 - [docs/bridge-services.md](docs/bridge-services.md) — Ping monitor, version check, self-update, layout and config file formats. Touched when changing background services or persisted config.
 - [docs/release-process.md](docs/release-process.md) — Release runbook: version bump, tagging, GitHub release. Touched when changing the release process.
 - [docs/comm-pane.md](docs/comm-pane.md) — Communication pane: renderer, comm.state schema, filter persistence, scroll semantics, width-responsive header layout. Touched when changing the comm pane.
-- [docs/status-pane.md](docs/status-pane.md) — Character status pane: renderer, state-file schema, field layout, colour scheme, layout integration. Touched when changing the status pane.
+- [docs/status-pane.md](docs/status-pane.md) — Character status pane: renderer, state-file schema, field layout, the palette-derived shade ramp and stepped gauges, layout integration. Touched when changing the status pane.
 - [docs/clock.md](docs/clock.md) — Game clock: sync sources, state schema, persistence, seed handling, degradation rules. Touched when changing clock sync or consuming game time.
 - [docs/affects.md](docs/affects.md) — Affect tracker: data flow, state schemas, persistence, pattern-conversion rules, tick lifecycle. Touched when changing affect tracking or adding new affect entries.
 - [docs/stored-spells.md](docs/stored-spells.md) — Stored spells tracker: data flow, schemas, spell-name resolver, persistence, SENT OUTPUT snooping. Touched when changing stored-spell tracking or the spells data table.
@@ -592,5 +592,5 @@ See [docs/pane-frame.md](docs/pane-frame.md) and
 - [docs/timers-pane.md](docs/timers-pane.md) — Timers pane: renderer, scroll, blink, layout integration. Touched when changing the timers pane renderer or the timers.state schema.
 - [docs/group-pane.md](docs/group-pane.md) — Group pane: renderer, state-file schema, bar fill, threshold colours, name overlay, overflow indicator. Touched when changing the group pane renderer or the group.state schema.
 - [docs/ui-pane.md](docs/ui-pane.md) — UI pane: renderer, scroll, log-tail mechanics. Touched when changing the UI pane.
-- [docs/pane-frame.md](docs/pane-frame.md) — Shared in-pane frame for the five right-column panes: `pane_frame.py` helper API, the per-pane `border_<key>` contract, and the `frame_corners` font-support resolution. Touched when changing the pane border, header labels, or corner detection.
+- [docs/pane-frame.md](docs/pane-frame.md) — Shared in-pane frame for the five right-column panes: `pane_frame.py` helper API, the `pane_shades` ramp API, the per-pane `border_<key>` contract, and the `frame_corners` font-support resolution. Touched when changing the pane border, header labels, or corner detection.
 - [docs/install-bootstrap.md](docs/install-bootstrap.md) — Cross-platform install: macOS/Linux bootstrap scripts and the Windows foot/WSLg installer. Touched when changing installation or the bootstrap/installer scripts.
