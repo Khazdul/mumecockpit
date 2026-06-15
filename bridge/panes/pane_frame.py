@@ -308,7 +308,7 @@ def border_style(pane_key):
 
 
 def pane_shades(pane_key, term_bg=None):
-    """Five-shade ramp for a pane, derived by HSL from its configured pane
+    """Seven-shade ramp for a pane, derived by HSL from its configured pane
     colour's hue/saturation (PANE_SHADE_HS, restated — ADR 0126). One hue,
     walked down its lightness ramp. Keys:
 

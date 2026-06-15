@@ -78,6 +78,13 @@ layout reduces to `inner_container` at full size. The glyphs are foreground-only
 render time (it reads `corners()` each draw), so a live corner-style change picked
 up by `start_poll` re-renders without a relaunch.
 
+### `border_color(pane_key)`
+
+The hex colour (`#rrggbb`) used for the border line and header label. Shared by
+`border_style` but **exposed publicly** (not just internal) so a pane can tint
+in-content elements — e.g. gauge labels — to match its frame title. Resolution is
+the same as `border_style` below, minus the `fg:` prefix. Cached.
+
 ### `border_style(pane_key)`
 
 The `prompt_toolkit` style string (`fg:#rrggbb`) for the border, derived from the
@@ -96,6 +103,50 @@ pane's colour (`pane_color_<key>` in `startup.conf`):
 imported from `bridge/launcher/palette.py`: `bridge/panes` must not import
 `bridge/launcher` (ADR 0126). Keep `PANE_BORDER_COLORS` mirrored with
 `palette.PANE_COLORS`.
+
+### `pane_shades(pane_key, term_bg=None)`
+
+A seven-key shade ramp for a pane, used by content renderers (the status pane's
+gauges, bars, and toggle boxes — ADR 0138) to draw in-pane elements that track the
+pane's own colour family. The ramp is **a single hue** — the pane colour's `(h, s)`
+— walked **down an HSL lightness ramp**; only lightness (and a small per-key
+saturation trim) varies, so every shade reads as the same colour at a different
+depth. Returns a dict keyed by role:
+
+| Shade    | L  | Role                                                                            |
+|----------|----|--------------------------------------------------------------------------------|
+| `track`  | 15 | bar background / XP baseline bg / toggle off-box bg                             |
+| `dim`    | 27 | XP session-gain bg / TP-baseline fg / gauge labels                             |
+| `mid`    | 42 | TP session-gain fg                                                              |
+| `paneBg` | 8  | near-bg dark text / tick bg / toggle-box label (on and off)                     |
+| `vtext`  | 72 | gauge value text                                                                |
+| `label`  | 60 | level badge (name row) / player name                                           |
+| `glow`   | 64 | active highlight: active step-tick, wimpy caret, toggle on-box bg              |
+
+(The shade → role mapping lives in the `pane_shades` docstring; the status pane's
+own table in [docs/status-pane.md](status-pane.md) restates it with the same `L`
+values.)
+
+#### `(h, s)` source
+
+The hue/saturation come from `PANE_SHADE_HS`, **restated** in `pane_frame.py`
+rather than imported from `bridge/launcher` (ADR 0126) — the same discipline as
+`PANE_BORDER_COLORS` — and mirrored with the palette's pane colours so the ramp
+sits in the same colour family as the pane bg/border (ADR 0086). `pane_shades`
+walks that one `(h, s)` down the lightness ramp.
+
+For the **terminal-default** (`black` / `None`) pane — and any unknown colour —
+there is no palette entry, so `(h, s)` are taken from `term_bg` (the live terminal
+background, ADR 0099) via `_hex_to_hs`, and the ramp tracks a tinted terminal. A
+neutral / black background has saturation ≈ 0, so the ramp **collapses to greys**
+— the same neutral result as the chromatic-free case, including the ConPTY black
+fallback; a missing or garbled `term_bg` falls back to neutral too. `term_bg`
+defaults to the live terminal background. Cached pane-colour lookup; no file I/O.
+
+`_hsl_to_hex(h, s, l)` does the HSL → `#rrggbb` conversion the ramp is built from;
+`_hex_to_hs(hex)` is its partial inverse — it recovers `(hue, saturation)` from a
+`#rrggbb` literal (lightness discarded, since the ramp supplies its own) and
+returns `(0, 0)` for a non-`#rrggbb` value so a garbled bg collapses to neutral.
 
 ### `corners()`
 
@@ -181,11 +232,16 @@ file reads only, the same discipline as `foot_config.py`.
   source for the terminal-default border, and the persistence lifecycle mirrored
   by `frame_corners_resolved`.
 - [ADR 0126](decisions/0126-timers-layout-menu.md) — `bridge/panes` must not
-  import `bridge/launcher`; the restated colour/label tables and the twice-stated
-  border contract follow that rule.
+  import `bridge/launcher`; the restated colour/label tables, `PANE_SHADE_HS`, and
+  the twice-stated border contract follow that rule.
+- [ADR 0086](decisions/0086-panes-grid.md) — the palette pane colours
+  `pane_shades` mirrors its `(h, s)` against, and the Panes grid that sets them.
+- [ADR 0138](decisions/0138-status-stepped-gauges.md) — the status pane's
+  palette-derived stepped gauges, the main consumer of the `pane_shades` ramp.
 - [docs/bridge-services.md](bridge-services.md) — the right-column height budget,
   including `rc_frame_extra`'s two-row reservation.
-- Per-pane renderers: [docs/status-pane.md](status-pane.md),
+- Per-pane renderers: [docs/status-pane.md](status-pane.md) — the shade → role
+  table and the gauge/bar/toggle elements drawn from `pane_shades`;
   [docs/timers-pane.md](timers-pane.md), [docs/group-pane.md](group-pane.md),
   [docs/comm-pane.md](comm-pane.md), [docs/ui-pane.md](ui-pane.md).
 
