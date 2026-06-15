@@ -39,7 +39,7 @@ POLL_MS    = 0.05
 # Colour constants (24-bit truecolor ANSI — consumed by _build_frame)
 # ---------------------------------------------------------------------------
 # Everything chromatic is palette-derived per frame from pane_frame.pane_shades
-# (track/dim/mid/box_on/paneBg/vtext/label/glow), turned into SGR by _fg/_bg
+# (track/dim/mid/paneBg/vtext/label/glow), turned into SGR by _fg/_bg
 # below, so the pane retints with its colour (and with terminal_bg under
 # "None"). Only the structural resets and the (cross-pane) overflow amber are
 # fixed here.
@@ -108,24 +108,25 @@ def _is_on(v):
 # ---------------------------------------------------------------------------
 # Toggle row — filled boxes
 # ---------------------------------------------------------------------------
-def _toggle_box(label, colW, on, box_on, dim, panebg):
+def _toggle_box(label, colW, on, glow, track, panebg):
     """One filled toggle cell: label centered in colW, dark `paneBg` label on
-    both states. On → lighter `box_on` box; off → darker `dim` box. Both carry
-    an inverted (dark-on-light) label so on reads clearly and off recedes; the
-    box shade carries the on/off distinction."""
+    both states. On → bright `glow` box (the active step-tick shade); off →
+    darker `track` box (the value-bar shade). Both carry an inverted
+    (dark-on-light) label so on reads clearly and off recedes; the box shade
+    carries the on/off distinction."""
     if colW <= 0:
         return ""
     t = label[:colW].center(colW)
-    return _bg(box_on if on else dim) + _fg(panebg) + t + C_RESET
+    return _bg(glow if on else track) + _fg(panebg) + t + C_RESET
 
 
-def _build_toggles_row(c, W, box_on, dim, panebg):
+def _build_toggles_row(c, W, glow, track, panebg):
     c1, c2, c3, c4 = _col_widths(W)
     cells = [
-        _toggle_box("SNEAK", c1, _is_on(c.get("sneak")), box_on, dim, panebg),
-        _toggle_box("RIDE",  c2, _is_on(c.get("ride")),  box_on, dim, panebg),
-        _toggle_box("CLIMB", c3, _is_on(c.get("climb")), box_on, dim, panebg),
-        _toggle_box("SWIM",  c4, _is_on(c.get("swim")),  box_on, dim, panebg),
+        _toggle_box("SNEAK", c1, _is_on(c.get("sneak")), glow, track, panebg),
+        _toggle_box("RIDE",  c2, _is_on(c.get("ride")),  glow, track, panebg),
+        _toggle_box("CLIMB", c3, _is_on(c.get("climb")), glow, track, panebg),
+        _toggle_box("SWIM",  c4, _is_on(c.get("swim")),  glow, track, panebg),
     ]
     return cells[0] + " " + cells[1] + " " + cells[2] + " " + cells[3]
 
@@ -212,17 +213,16 @@ def _build_frame(data):
     c = data or {}
 
     # Resolve the pane's shade ramp once per frame from the same pane-colour
-    # value the frame border uses. track = bar bg / XP baseline; dim = XP
-    # session-gain bg / TP baseline / gauge labels / toggle off-box; mid = TP
-    # session-gain; box_on = toggle on-box; glow = active step-tick; paneBg =
-    # dark text / tick background / toggle box label; label = level badge /
-    # player name. Gauge labels use the very-dark `dim` shade — legible but
-    # receding under the frame title.
+    # value the frame border uses. track = bar bg / XP baseline / toggle
+    # off-box; dim = XP session-gain bg / TP baseline / gauge labels; mid = TP
+    # session-gain; glow = active step-tick / toggle on-box; paneBg = dark text
+    # / tick background / toggle box label; label = level badge / player name.
+    # Gauge labels use the very-dark `dim` shade — legible but receding under
+    # the frame title.
     shades    = pane_frame.pane_shades("status")
     track     = shades["track"]
     dim       = shades["dim"]
     mid       = shades["mid"]
-    box_on    = shades["box_on"]
     panebg    = shades["paneBg"]
     vtext     = shades["vtext"]
     label     = shades["label"]
@@ -281,7 +281,7 @@ def _build_frame(data):
             + tp_new_fg + "▀" * (tp_total - tp_basefill)
             + C_RESET   + " " * (width - tp_total))
 
-    toggles = _build_toggles_row(c, width, box_on, dim, panebg)
+    toggles = _build_toggles_row(c, width, glow, track, panebg)
 
     colL, colR = _two_cols(width)
     mood, alert, pos = c.get("mood"), c.get("alertness"), c.get("position")

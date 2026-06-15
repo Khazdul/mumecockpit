@@ -312,15 +312,14 @@ def pane_shades(pane_key, term_bg=None):
     colour's hue/saturation (PANE_SHADE_HS, restated — ADR 0126). One hue,
     walked down its lightness ramp. Keys:
 
-      track  L15 — bar background / XP baseline bg
-      dim    L27 — XP session-gain bg / TP baseline fg / gauge labels /
-                   toggle off-box bg
+      track  L15 — bar background / XP baseline bg / toggle off-box bg
+      dim    L27 — XP session-gain bg / TP baseline fg / gauge labels
       mid    L42 — TP session-gain fg
-      box_on L37 — toggle on-box bg
       paneBg L8  — near-bg dark text / tick bg / toggle box label (on and off)
       vtext  L72 — gauge value text
       label  L60 — level badge (on the name row) / player name
-      glow   L64 — active highlight: active step-tick, wimpy caret
+      glow   L64 — active highlight: active step-tick, wimpy caret,
+                   toggle on-box bg
 
     For the terminal-default ('black'/None) pane — and any unknown colour — the
     hue/saturation come from ``term_bg`` (the live terminal background, ADR 0099)
@@ -341,7 +340,6 @@ def pane_shades(pane_key, term_bg=None):
         "track":  _hsl_to_hex(h, max(s - 8,  0), 15),
         "dim":    _hsl_to_hex(h, s,              27),
         "mid":    _hsl_to_hex(h, s,              42),
-        "box_on": _hsl_to_hex(h, s,              37),
         "paneBg": _hsl_to_hex(h, s,              8),
         "vtext":  _hsl_to_hex(h, max(s - 30, 0), 72),
         "label":  _hsl_to_hex(h, max(s - 22, 0), 60),
