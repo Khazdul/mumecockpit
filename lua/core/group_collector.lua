@@ -82,6 +82,12 @@ state.group = {
     members = {},
 }
 
+-- Public, read-only view of the holding pen for unlabeled type:"npc" members.
+-- Safe as a plain alias because _excluded is mutated in place and never
+-- reassigned (reset() clears it in place). The renderer reads this only in
+-- group_npc_mode == "all"; run-log composition ignores it.
+state.group.unlabeled = _excluded
+
 function state.group.reset()
     for k in pairs(state.group.members) do
         state.group.members[k] = nil
@@ -225,6 +231,7 @@ gmcp.handlers["Group.Add"] = function(body)
     if where == "drop" then return end
     if where == "exclude" then
         _excluded[member.id] = member
+        events.emit("group_changed")
         return
     end
 
@@ -314,6 +321,7 @@ gmcp.handlers["Group.Remove"] = function(body)
         events.emit("group_changed")
     elseif _excluded[id] ~= nil then
         _excluded[id] = nil
+        events.emit("group_changed")
     end
 end
 

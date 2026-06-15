@@ -6,9 +6,9 @@
 # startup.conf keys that back them:
 #
 #   group_show_players — "1" (default) / "0"
-#   group_npc_mode     — "labeled" (default) / "off".  "all" is reserved for a
-#                        later step and is NOT yet a cycle stop; any unknown
-#                        value normalises to "labeled".
+#   group_npc_mode     — "labeled" (default) / "off" / "all".  "all" shows
+#                        unlabeled group-NPCs in addition to labeled ones; any
+#                        unknown value normalises to "labeled".
 #
 # Modelled on comm_channels.py / timers_layout_grid.py. The key NAMES are
 # deliberately restated in bridge/panes/group_pane.py (which must not import
@@ -41,10 +41,10 @@ GROUP_NPC_MODE_KEY     = "group_npc_mode"
 GROUP_SHOW_PLAYERS_DEFAULT = True
 GROUP_NPC_MODE_DEFAULT     = "labeled"
 
-# Cycle order for the NPC-visibility control. "all" (unlabeled group NPCs) is
-# reserved for a later step and deliberately omitted, so the control has two
-# stops today: Off ↔ Labeled.
-NPC_MODE_CYCLE = ["off", "labeled"]
+# Cycle order for the NPC-visibility control: Off → Labeled → All. "all" adds
+# unlabeled group-NPCs (charmies, pets, mounts, not-yet-labeled mercenaries)
+# to the pane alongside labeled NPCs.
+NPC_MODE_CYCLE = ["off", "labeled", "all"]
 
 NPC_MODE_LABELS = {
     "off":     "Off",
@@ -67,11 +67,15 @@ def parse_show_players(val):
 
 
 def normalize_npc_mode(val):
-    """Normalise a raw group_npc_mode value to a cycle stop. Only "off" maps
-    to Off; everything else (including "labeled", the reserved "all", and any
-    unknown value) maps to "labeled"."""
-    if val is not None and str(val).strip() == "off":
-        return "off"
+    """Normalise a raw group_npc_mode value to a cycle stop. "off" → Off,
+    "all" → All; everything else (including "labeled" and any unknown value)
+    maps to "labeled"."""
+    if val is not None:
+        s = str(val).strip()
+        if s == "off":
+            return "off"
+        if s == "all":
+            return "all"
     return "labeled"
 
 

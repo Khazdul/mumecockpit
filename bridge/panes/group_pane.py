@@ -44,8 +44,9 @@ POLL_MS = 0.1
 # Display-option keys (restated, not imported — bridge/panes shares no import
 # path with bridge/launcher; see ADR 0126 and bridge/launcher/group_options.py).
 #   group_show_players — "1" (default) / "0"
-#   group_npc_mode     — "labeled" (default) / "off"; any unknown value
-#                        (including the reserved "all") is treated as labeled.
+#   group_npc_mode     — "labeled" (default) / "off" / "all"; any unknown
+#                        value is treated as labeled. "all" additionally shows
+#                        unlabeled group-NPCs (the unlabeled_npcs list).
 # ---------------------------------------------------------------------------
 GROUP_SHOW_PLAYERS_KEY     = "group_show_players"
 GROUP_NPC_MODE_KEY         = "group_npc_mode"
@@ -74,6 +75,7 @@ C_INDICATOR     = "fg:#d4a04e italic"
 # Renderer state
 # ---------------------------------------------------------------------------
 _members      = []
+_unlabeled    = []
 _last_mtime   = None
 _app          = None
 _run_active   = False
@@ -100,7 +102,7 @@ def _read_display_options():
                 if key == GROUP_SHOW_PLAYERS_KEY:
                     show_players = (val != "0")
                 elif key == GROUP_NPC_MODE_KEY:
-                    npc_mode = "off" if val == "off" else "labeled"
+                    npc_mode = val if val in ("off", "labeled", "all") else "labeled"
     except OSError:
         pass
     _show_players = show_players
@@ -110,8 +112,10 @@ def _read_display_options():
 def _displayed_members():
     """Presentation-only filter over the raw member set:
       - allies (players) included iff group_show_players is on;
-      - NPCs included iff group_npc_mode is not "off";
+      - labeled NPCs included iff group_npc_mode is not "off";
+      - in group_npc_mode == "all", unlabeled group-NPCs are appended too;
       - any other / unknown type is kept (defensive parity with the collector).
+    The combined set is id-sorted so members and unlabeled NPCs interleave.
     """
     out = []
     for m in _members:
@@ -124,6 +128,9 @@ def _displayed_members():
                 out.append(m)
         else:
             out.append(m)
+    if _npc_mode == "all":
+        out.extend(_unlabeled)
+    out.sort(key=lambda m: m.get("id") if isinstance(m.get("id"), (int, float)) else float("inf"))
     return out
 
 
@@ -269,7 +276,7 @@ def _restore_cursor():
 
 
 async def _poll_state(app):
-    global _members, _last_mtime, _run_active, _conf_mtime
+    global _members, _unlabeled, _last_mtime, _run_active, _conf_mtime
 
     while True:
         try:
@@ -292,11 +299,13 @@ async def _poll_state(app):
                 try:
                     with open(GROUP_STATE_PATH, "r") as fh:
                         loaded = json.load(fh)
-                    _members = loaded.get("members", [])
+                    _members   = loaded.get("members", [])
+                    _unlabeled = loaded.get("unlabeled_npcs", [])
                 except Exception:
                     pass
             else:
-                _members = []
+                _members   = []
+                _unlabeled = []
             app.invalidate()
 
         new_run_active = os.path.exists(CONNECTION_STATE_PATH)

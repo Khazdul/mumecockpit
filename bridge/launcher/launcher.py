@@ -3216,7 +3216,7 @@ def _options_panes_communication_text():
 # ---------------------------------------------------------------------------
 # Options — Panes → Group submenu (display options)
 # ---------------------------------------------------------------------------
-# Two display controls — Players on/off and NPC visibility (Off / Labeled) —
+# Two display controls — Players on/off and NPC visibility (Off / Labeled / All) —
 # over a Back row. ↑/↓ moves between rows; ←/→ adjusts the NPC cycle; Enter
 # toggles the focused control; Back/ESC saves and pops. All writes are
 # deferred — edits mutate `_conf` (group_show_players / group_npc_mode) and
@@ -3253,7 +3253,7 @@ def _toggle_group_players():
 
 
 def _cycle_group_npc(delta=1):
-    """Advance group_npc_mode (Off ↔ Labeled) in the in-memory conf."""
+    """Advance group_npc_mode (Off → Labeled → All) in the in-memory conf."""
     new = group_options.next_npc_mode(
         _conf.get(group_options.GROUP_NPC_MODE_KEY), delta)
     _conf[group_options.GROUP_NPC_MODE_KEY] = new

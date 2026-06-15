@@ -4444,7 +4444,7 @@ def _build_panes_communication_container():
 # ---------------------------------------------------------------------------
 # Panes → Group frame (Options → Panes → Group): display options.
 # ---------------------------------------------------------------------------
-# Two display controls (Players on/off, NPC visibility Off/Labeled) over a
+# Two display controls (Players on/off, NPC visibility Off/Labeled/All) over a
 # Back row. Cursor-only frame (no separate hover index). Persistence is
 # immediate: each change reads startup.conf, edits the one key, and writes it
 # back via _persist_conf_key; the running group pane re-reads startup.conf on
@@ -4476,7 +4476,7 @@ def _toggle_group_players():
 
 
 def _cycle_group_npc(delta=1):
-    """Advance group_npc_mode (Off ↔ Labeled) and persist immediately."""
+    """Advance group_npc_mode (Off → Labeled → All) and persist immediately."""
     conf = _parse_keyval(STARTUP_CONF_PATH)
     new = group_options.next_npc_mode(
         conf.get(group_options.GROUP_NPC_MODE_KEY), delta)
