@@ -6,7 +6,7 @@
 
 # Per-pane content-row floor (excludes title row).
 declare -A MIN_HEIGHT=(
-    [status]=2
+    [status]=3
     [timers]=1
     [group]=1
     [comm]=1
@@ -18,7 +18,7 @@ declare -A MIN_HEIGHT=(
 # the seed for layout.conf desired_<pane> migration and as the reset target
 # for `cp -reset-heights`.
 declare -A DEFAULT_DESIRED=(
-    [status]=6
+    [status]=9
     [timers]=8
     [group]=6
     [comm]=10

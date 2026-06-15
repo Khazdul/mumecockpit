@@ -38,21 +38,21 @@ POLL_MS    = 0.05
 # ---------------------------------------------------------------------------
 # Colour constants (24-bit truecolor ANSI — consumed by _build_frame)
 # ---------------------------------------------------------------------------
+# Everything chromatic is palette-derived per frame from pane_frame.pane_shades
+# (track/dim/mid/paneBg/vtext/label/glow), turned into SGR by _fg/_bg below, so
+# the pane retints with its colour (and with terminal_bg under "None"). Only the
+# structural resets and the (cross-pane) overflow amber are fixed here.
 C_RESET     = "\x1b[0m"
 C_NAME      = "\x1b[38;2;192;192;192m"   # row 1 text (fg only)
 C_BG_RST    = "\x1b[49m"                 # reset background only (keep fg)
-# XP/TP bar segment colours are no longer static: the baseline/session-gain
-# shades are resolved per frame from the pane's palette colour via
-# pane_frame.pane_shades (track/dim/mid), then turned into SGR by _fg/_bg below.
-C_LABEL     = "\x1b[38;2;96;96;96m"      # data row label foreground (#606060 — unified with timers header)
-C_VALUE     = "\x1b[38;2;192;192;192m"   # data row value foreground
 
-# Toggle off-state label colour is palette-derived per frame (the bar's `track`
-# shade via pane_shades), so off-toggles retint with the pane colour. On-state
-# stays a fixed gold accent.
-C_TOG_ON_LABEL  = "\x1b[38;2;212;160;78m"  # #D4A04E — warm gold (matches overflow indicator)
+C_INDICATOR = "fg:#d4a04e italic"   # overflow indicator style (shared amber)
 
-C_INDICATOR = "fg:#d4a04e italic"   # overflow indicator style
+# Ordinal step orders. The lowercased state value is matched to its index;
+# an unknown/missing value leaves every tick inactive.
+MOOD_STEPS  = ["wimpy", "prudent", "normal", "brave", "aggressive", "berserk"]
+ALERT_STEPS = ["normal", "careful", "attentive", "vigilant", "paranoid"]
+POS_STEPS   = ["sleeping", "resting", "sitting", "standing"]
 
 
 def _fg(hexcolor):
@@ -83,7 +83,7 @@ def _term_rows():
 
 
 # ---------------------------------------------------------------------------
-# Data-row helpers
+# Column geometry
 # ---------------------------------------------------------------------------
 def _col_widths(W):
     base  = (W - 3) // 4
@@ -91,67 +91,119 @@ def _col_widths(W):
     return [base + (1 if i < extra else 0) for i in range(4)]
 
 
-def _trunc_label(full, w):
-    if len(full) <= w:
-        return full.ljust(w)
-    return (full[:-1][:max(w - 1, 0)] + ":").ljust(w)
-
-
-def _trunc_value(value, w):
-    s = (value or "").lower()
-    return s[:w].ljust(w)
-
-
-def _fmt_sess(n):
-    if n is None: return ""
-    if n < 1000:  return str(int(n))
-    return "{:.1f}k".format(n / 1000.0)
+def _two_cols(W):
+    """The gauge block's two column widths. col_left spans caps cells 1+2 (and
+    their spacer); col_right spans cells 3+4. The single inter-column spacer
+    lands at index c1+c2+1 — exactly the caps cell-2/cell-3 gap — so the gauge
+    columns sit directly under the RIDE/CLIMB toggle gap. col_left + 1 +
+    col_right == W."""
+    c1, c2, c3, c4 = _col_widths(W)
+    return c1 + c2 + 1, c3 + c4 + 1
 
 
 def _is_on(v):
     return v == "on"
 
 
-def _render_toggle(label, col_w, on, off_color):
-    label_eff = label[: max(col_w, 0)]
-    pad       = " " * max(col_w - len(label_eff), 0)
+# ---------------------------------------------------------------------------
+# Toggle row — filled boxes
+# ---------------------------------------------------------------------------
+def _toggle_box(label, colW, on, glow, dim, vtext, panebg):
+    """One filled toggle cell: label centered in colW. On → lit (glow bg, dark
+    paneBg label); off → dim bg, light vtext label. Foreground inverts so the
+    text reads against either fill."""
+    if colW <= 0:
+        return ""
+    t = label[:colW].center(colW)
     if on:
-        return C_TOG_ON_LABEL + label_eff + C_RESET + pad
-    return     off_color      + label_eff + C_RESET + pad
+        return _bg(glow) + _fg(panebg) + t + C_RESET
+    return _bg(dim) + _fg(vtext) + t + C_RESET
 
 
-def _build_toggles_row(c, W, off_color):
+def _build_toggles_row(c, W, glow, dim, vtext, panebg):
     c1, c2, c3, c4 = _col_widths(W)
     cells = [
-        _render_toggle("SNEAK", c1, _is_on(c.get("sneak")), off_color),
-        _render_toggle("RIDE",  c2, _is_on(c.get("ride")),  off_color),
-        _render_toggle("CLIMB", c3, _is_on(c.get("climb")), off_color),
-        _render_toggle("SWIM",  c4, _is_on(c.get("swim")),  off_color),
+        _toggle_box("SNEAK", c1, _is_on(c.get("sneak")), glow, dim, vtext, panebg),
+        _toggle_box("RIDE",  c2, _is_on(c.get("ride")),  glow, dim, vtext, panebg),
+        _toggle_box("CLIMB", c3, _is_on(c.get("climb")), glow, dim, vtext, panebg),
+        _toggle_box("SWIM",  c4, _is_on(c.get("swim")),  glow, dim, vtext, panebg),
     ]
     return cells[0] + " " + cells[1] + " " + cells[2] + " " + cells[3]
 
 
-def _build_data_rows(c, W):
-    c1, c2, c3, c4 = _col_widths(W)
+# ---------------------------------------------------------------------------
+# Gauge block — labels, value bars, step-ticks
+# ---------------------------------------------------------------------------
+def _label_cell(text, colW, label):
+    """Uppercase label centered in colW, no bar background."""
+    if colW <= 0:
+        return ""
+    return _fg(label) + text.upper()[:colW].center(colW) + C_RESET
 
-    def row(l1, v1, l2, v2):
-        return (
-            C_LABEL + _trunc_label(l1, c1) +
-            C_RESET + " " +
-            C_VALUE + _trunc_value(v1, c2) +
-            C_RESET + " " +
-            C_LABEL + _trunc_label(l2, c3) +
-            C_RESET + " " +
-            C_VALUE + _trunc_value(v2, c4) +
-            C_RESET
-        )
 
-    wimpy_val = str(int(c["wimpy"])) if c.get("wimpy") is not None else ""
+def _bar_cell(value, colW, track, vtext):
+    """The value centered on a full-width `track` bar (fg vtext). A null/empty
+    value renders as an empty track bar (no text)."""
+    if colW <= 0:
+        return ""
+    if value is None or value == "":
+        return _bg(track) + " " * colW + C_RESET
+    return _bg(track) + _fg(vtext) + value[:colW].center(colW) + C_RESET
 
-    return [
-        row("MOOD:",  c.get("mood"), "ALERTNESS:", c.get("alertness")),
-        row("WIMPY:", wimpy_val,     "POSITION:",  c.get("position")),
-    ]
+
+def _tick_ord(steps, value, colW, glow, track, panebg):
+    """Step-tick row for an ordinal stat. N ▀ ticks across the column at
+    positions round(k*(colW-1)/(N-1)); collisions collapse to one ▀ (first 0,
+    last colW-1 and the active index always survive). The tick matching the
+    current value glows; the rest are subtle `track`; gaps are spaces. The whole
+    cell sits on paneBg."""
+    if colW <= 0:
+        return ""
+    N = len(steps)
+    active = None
+    if isinstance(value, str):
+        try:
+            active = steps.index(value.lower())
+        except ValueError:
+            active = None
+    positions = [0 if N <= 1 else round(k * (colW - 1) / (N - 1)) for k in range(N)]
+    active_pos = positions[active] if active is not None else None
+    tickset = set(positions)
+    glow_e, track_e = _fg(glow), _fg(track)
+    out = _bg(panebg)
+    for i in range(colW):
+        if i in tickset:
+            out += (glow_e if i == active_pos else track_e) + "▀"
+        else:
+            out += " "
+    return out + C_RESET
+
+
+def _tick_wimpy(wimpy, maxhp, colW, glow, panebg):
+    """Continuous wimpy caret: a single glow `^` at round(frac*(colW-1)),
+    frac = wimpy / maxhp. Hidden entirely (all spaces) when wimpy is null or
+    maxhp is null/0. No inactive ticks. Cell sits on paneBg."""
+    if colW <= 0:
+        return ""
+    caret = None
+    if wimpy is not None and maxhp:
+        frac = max(0.0, min(1.0, wimpy / maxhp))
+        caret = round(frac * (colW - 1))
+    glow_e = _fg(glow)
+    out = _bg(panebg)
+    for i in range(colW):
+        out += (glow_e + "^") if i == caret else " "
+    return out + C_RESET
+
+
+def _ord_val(v):
+    """Lowercased ordinal value for a bar, or None when absent."""
+    return v.lower() if isinstance(v, str) and v else None
+
+
+def _row(left, right):
+    """Join two column cells with the single unstyled inter-column spacer."""
+    return left + " " + right
 
 
 def _build_frame(data):
@@ -161,13 +213,20 @@ def _build_frame(data):
 
     # Resolve the pane's shade ramp once per frame from the same pane-colour
     # value the frame border uses. track = bar bg / XP baseline; dim = XP
-    # session-gain bg and TP baseline fg; mid = TP session-gain fg.
+    # session-gain bg / TP baseline / toggle off-box; mid = TP session-gain;
+    # glow = active highlight; paneBg = dark inverting text / tick background.
     shades    = pane_frame.pane_shades("status")
-    xp_bg     = _bg(shades["track"])   # XP bar background — baseline segment
-    xp_new_bg = _bg(shades["dim"])     # XP bar background — session-gain segment
-    tp_fg     = _fg(shades["dim"])     # TP bar ▀ fg — baseline segment
-    tp_new_fg = _fg(shades["mid"])     # TP bar ▀ fg — session-gain segment
-    tog_off   = _fg(shades["dim"])     # toggle off-state label — bar shade
+    track     = shades["track"]
+    dim       = shades["dim"]
+    mid       = shades["mid"]
+    panebg    = shades["paneBg"]
+    vtext     = shades["vtext"]
+    label     = shades["label"]
+    glow      = shades["glow"]
+    xp_bg     = _bg(track)   # XP bar background — baseline segment
+    xp_new_bg = _bg(dim)     # XP bar background — session-gain segment
+    tp_fg     = _fg(dim)     # TP bar ▀ fg — baseline segment
+    tp_new_fg = _fg(mid)     # TP bar ▀ fg — session-gain segment
 
     name = c.get("character") or "—"
     name = name.capitalize()
@@ -194,8 +253,30 @@ def _build_frame(data):
             + tp_new_fg + "▀" * (tp_total - tp_basefill)
             + C_RESET   + " " * (width - tp_total))
 
-    blank = " " * width
-    return [row1, row2, _build_toggles_row(c, width, tog_off), blank] + _build_data_rows(c, width)
+    toggles = _build_toggles_row(c, width, glow, dim, vtext, panebg)
+
+    colL, colR = _two_cols(width)
+    mood, alert, pos = c.get("mood"), c.get("alertness"), c.get("position")
+    wimpy, maxhp     = c.get("wimpy"), c.get("maxhp")
+    wimpy_val = str(int(wimpy)) if wimpy is not None else None
+
+    return [
+        row1,
+        row2,
+        toggles,
+        _row(_label_cell("MOOD", colL, label),
+             _label_cell("ALERTNESS", colR, label)),
+        _row(_bar_cell(_ord_val(mood), colL, track, vtext),
+             _bar_cell(_ord_val(alert), colR, track, vtext)),
+        _row(_tick_ord(MOOD_STEPS, mood, colL, glow, track, panebg),
+             _tick_ord(ALERT_STEPS, alert, colR, glow, track, panebg)),
+        _row(_label_cell("POSITION", colL, label),
+             _label_cell("WIMPY", colR, label)),
+        _row(_bar_cell(_ord_val(pos), colL, track, vtext),
+             _bar_cell(wimpy_val, colR, track, vtext)),
+        _row(_tick_ord(POS_STEPS, pos, colL, glow, track, panebg),
+             _tick_wimpy(wimpy, maxhp, colR, glow, panebg)),
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -210,6 +291,19 @@ def _status_text():
             frags.append(("", "\n"))
         frags.extend(to_formatted_text(ANSI(row_ansi)))
     return frags
+
+
+def _level_header():
+    """Floating top-right frame header: ``L<level>`` in the pane's `label`
+    shade. Returns None (plain border) when the run is inactive or level is
+    null. Consumed by pane_frame.framed's right_header param."""
+    if not _run_active:
+        return None
+    c = _last_data or {}
+    level = c.get("level")
+    if level is None:
+        return None
+    return ("L" + str(level), pane_frame.pane_shades("status")["label"])
 
 
 def _indicator_text():
@@ -287,7 +381,7 @@ def main():
     )
 
     inner_root = HSplit([rows_window, indicator_container])
-    root       = pane_frame.framed(inner_root, "status")
+    root       = pane_frame.framed(inner_root, "status", right_header=_level_header)
     layout     = Layout(root)
 
     app = Application(
