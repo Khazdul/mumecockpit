@@ -1,6 +1,6 @@
 # 0095 — Promote / demote NPCs on label change
 
-**Status:** Accepted
+**Status:** Accepted; partially revised by [ADR 0140](0140-unlabeled-npcs-for-all-mode.md)
 **Date:** 2026-05-23
 
 ## Context
@@ -105,3 +105,15 @@ mercenaries — the hire / label / group sequence is the primary use
 case, and a label-after-group race that hides the mercenary
 indefinitely is a user-visible regression. The mercenary work made
 this no longer hypothetical.
+
+## 2026-06-16 note
+
+[ADR 0140](0140-unlabeled-npcs-for-all-mode.md) exposes the `_excluded`
+holding table read-only as `state.group.unlabeled` (serialised by
+`group_state.lua` as a separate `unlabeled_npcs` array, for the group pane's
+`all` display mode), and makes an excluded-only `Group.Remove` fire
+`group_changed`. So "deliberately not part of the `state.group` surface" and
+the silent-removal rule above describe this ADR's original pre-`all` design.
+The promote / demote membership logic is unchanged: `_excluded` is still a
+holding table, not a membership set, and no membership event fires for
+excluded-only changes.
