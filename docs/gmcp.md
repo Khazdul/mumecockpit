@@ -210,8 +210,13 @@ are silently excluded from `state.group.members`. Members where `type` is
 `group_collector.lua`.
 
 Labeling and unlabeling are handled live. An unlabeled NPC grouped via
-`Group.Add` is held in a private `_excluded` table inside
-`group_collector.lua` (not part of the `state.group` surface). When a later
+`Group.Add` is held in an `_excluded` table inside `group_collector.lua`,
+exposed read-only as `state.group.unlabeled` (a plain alias of the holding
+table — safe because `_excluded` is mutated in place and never reassigned).
+This is **not a membership set**: it is consumed only by `group_state.lua`
+(serialised as the `unlabeled_npcs` array) and read by the group pane in
+`group_npc_mode == "all"`; members-keyed consumers (run-log composition,
+membership-event subscribers) ignore it. When a later
 `Group.Update` carries a non-empty string `label` for that id, the NPC is
 promoted into `state.group.members` and a `group_member_added` event is
 emitted; if a subsequent update unlabels it (`label:0`, `null`, or `""`),
@@ -224,8 +229,9 @@ supersedes the v1 "needs a full Group.Set re-sync" limitation noted in
 
 `Group.Remove` delivers a bare JSON integer (not an object). The handler converts it via
 `tonumber(body)` before removing the entry from `state.group.members` (or, for an
-unlabeled NPC still being held, from `_excluded`). Removals for ids in `_excluded` only
-are silent — no events are emitted. Removals for ids in neither table are no-ops.
+unlabeled NPC still being held, from `_excluded`). A removal for an id in `_excluded`
+only fires `group_changed` (so the serialised `unlabeled_npcs` updates) but emits **no**
+membership event. Removals for ids in neither table are no-ops.
 
 `Group.Update` is incremental — a single packet carries either the numeric value for a vital
 (e.g. `{"id":2,"hp":200}`) or its band-string (`{"id":2,"hp-string":"fine"}`) but not always
@@ -233,7 +239,8 @@ both. See [ADR 0052](decisions/0052-group-vital-pair-freshness.md) for the fresh
 logic that keeps value and string consistent across partial updates.
 
 Downstream serialisation: `lua/core/group_state.lua` subscribes to `group_changed` and
-`char_reset` and writes `bridge/runtime/group.state` atomically.
+`char_reset` and writes `bridge/runtime/group.state` atomically, serialising both
+`state.group.members` (as `members`) and `state.group.unlabeled` (as `unlabeled_npcs`).
 
 ### Unsubscribed modules — one-liner per module
 

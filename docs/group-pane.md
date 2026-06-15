@@ -9,32 +9,46 @@ indicator when the pane is shorter than the member list.
 
 ```
 lua/core/group_collector.lua ──► state.group.members ──────────────────┐
+                              └──► state.group.unlabeled ───────────────┤
                                          │                              │
                              group_changed / char_reset events          │
                                          │                              ▼
                                          └───────────► lua/core/group_state.lua ──► bridge/runtime/group.state (JSON)
-                                                                                │
+                                                                                │   (members + unlabeled_npcs)
                                                                       mtime poll (100 ms)
                                                                                 │
                                                                                 ▼
                                                                     bridge/panes/group_pane.py
 ```
 
-`group_state.lua` serialises `state.group.members` to `bridge/runtime/group.state`
-on every `group_changed` or `char_reset` event, and once at load time.
-`group_pane.py` polls that file and renders the member list.
+`group_state.lua` serialises `state.group.members` (and `state.group.unlabeled`
+as a separate `unlabeled_npcs` array) to `bridge/runtime/group.state` on every
+`group_changed` or `char_reset` event, and once at load time. `group_pane.py`
+polls that file and renders the member list, appending the unlabeled NPCs only
+in `group_npc_mode == "all"`.
 
 ## State-file schema (`bridge/runtime/group.state`)
 
 Source of truth: [`lua/core/group_state.lua`](../lua/core/group_state.lua).
 
-The file is a JSON object:
+The file is a JSON object with two top-level arrays:
 
 ```json
-{"members": [ ... ]}
+{"members": [ ... ], "unlabeled_npcs": [ ... ]}
 ```
 
-Each member entry contains the raw vitals (`hp`, `maxhp`, `mana`, `maxmana`,
+`members` is the canonical renderable set (allies and labeled NPCs).
+`unlabeled_npcs` is the serialised projection of `state.group.unlabeled` —
+the unlabeled group-NPCs (charmies, pets, mounts, not-yet-labeled mercenaries)
+held off the membership set. Both arrays carry the **same per-member shape**
+(`id`, `type`, `name`, `label`, raw vitals, and `*_pct` / `*_known` fields)
+and are independently id-sorted, produced by the shared
+`serialize_member` / `serialize_set` in
+[`group_state.lua`](../lua/core/group_state.lua). The renderer appends
+`unlabeled_npcs` to the displayed set only in `group_npc_mode == "all"`
+(see [Display options](#display-options)).
+
+Each entry contains the raw vitals (`hp`, `maxhp`, `mana`, `maxmana`,
 `mp`, `maxmp`), their band-string equivalents (`hp_string`, `mana_string`,
 `mp_string`), and the pre-computed percentages used by the renderer. The
 table below is **non-exhaustive** — it lists the fields the renderer reads,
@@ -178,7 +192,7 @@ set. Two `startup.conf` keys drive it:
 | Key                  | Values                          | Default     | Effect |
 |----------------------|---------------------------------|-------------|--------|
 | `group_show_players` | `1` / `0`                       | `1`         | `0` hides allies (players) |
-| `group_npc_mode`     | `labeled` / `off` (`all` reserved) | `labeled` | `off` hides NPCs; any unknown value (including the reserved `all`) normalises to `labeled` |
+| `group_npc_mode`     | `labeled` / `off` / `all`       | `labeled`   | `off` hides NPCs; `all` additionally shows unlabeled group-NPCs; any unknown value normalises to `labeled` |
 
 **Live re-read.** The pane stat-s `startup.conf`'s mtime on its 100 ms poll
 (alongside the existing `connection.state` check); on change it calls
@@ -194,11 +208,19 @@ a tick — no restart.
 - `type == "npc"` — kept iff `group_npc_mode` is not `off`;
 - any other / unknown type — kept (defensive parity with the collector).
 
+In `group_npc_mode == "all"`, `_displayed_members()` additionally appends the
+unlabeled set (`_unlabeled`, loaded from the state file's `unlabeled_npcs`
+array) to the displayed members. The combined set is then id-sorted, so
+members and unlabeled NPCs interleave by `id`. Unlabeled NPCs render as the
+bare `name` (no `(LABEL)` overlay) — by definition they have no label.
+
 Membership stays canonical in the collector: `state.group.members` (and the
 serialised `members` list) is the full renderable set — the filter never
-changes it, only what this pane draws. See
-[ADR 0139](decisions/0139-group-pane-display-filter-renderer-side.md). All
-list slicing and the overflow count above run on the displayed set.
+changes it, only what this pane draws. The unlabeled set is a separate
+serialised list, never merged into `members`. See
+[ADR 0139](decisions/0139-group-pane-display-filter-renderer-side.md) and
+[ADR 0140](decisions/0140-unlabeled-npcs-for-all-mode.md). All list slicing
+and the overflow count above run on the displayed set.
 
 ## Inactive run
 

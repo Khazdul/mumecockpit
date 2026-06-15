@@ -188,8 +188,13 @@ Emitted by `lua/core/group_collector.lua` with no payload after every `Group.*` 
 handler completes, at the end of `state.group.reset()`, and by the
 `gmcp_char_vitals` subscriber whenever it cross-applied at least one `*-hits`
 band onto a group member (see the Char.Vitals buffer/opponent cross-apply in
-[docs/gmcp.md](gmcp.md#char)). No payload; subscribers should read
-`state.group.members` directly for the new state.
+[docs/gmcp.md](gmcp.md#char)). It also fires on unlabeled-set changes alone —
+an unlabeled (`_excluded`) NPC being added, removed, or updated in place —
+even when `state.group.members` is untouched, so the serialised
+`unlabeled_npcs` array stays fresh (see
+[ADR 0140](decisions/0140-unlabeled-npcs-for-all-mode.md)). No payload;
+subscribers should read `state.group.members` (and `state.group.unlabeled`)
+directly for the new state.
 
 **Subscribers:** `lua/core/group_state.lua` — calls `serialize()` to write
 `bridge/runtime/group.state` atomically. `lua/core/run_log.lua` — appends a

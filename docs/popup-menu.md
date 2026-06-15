@@ -477,9 +477,9 @@ then two centred `<< label >>` menu rows —
 
 - **`[X] Show players`** / **`[ ] Show players`** — a binary toggle backed
   by `group_show_players`.
-- **`NPC visibility: Off`** / **`NPC visibility: Labeled`** — a cycle with
-  two stops (`group_npc_mode`); `all` is reserved for a later step and is
-  not yet a cycle stop.
+- **`NPC visibility: Off`** / **`NPC visibility: Labeled`** /
+  **`NPC visibility: All`** — a three-stop cycle (`group_npc_mode`),
+  Off → Labeled → All; `all` additionally shows unlabeled group-NPCs.
 
 — then a blank row and **Back**. Both surfaces render Back themselves
 (matching the Communication frame). It is a cursor-only frame (no separate

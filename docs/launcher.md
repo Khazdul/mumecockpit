@@ -1330,7 +1330,7 @@ Navigation hub pushed by activating "Options" on the main frame. Children:
   - **General** → `options_panes_general` — per-pane enable/disable + colour selection + per-pane in-pane border (Border column) + a Corner style cycle row.
   - **Timers** → `options_timers` — per-group colour, column count, and visibility for the timers pane (writes `timers_layout.conf`).
   - **Communication** → `options_panes_communication` — per-channel on/off list + a `[X] Show channel header` toggle (writes `comm_filters.conf` and `comm_prefs.conf`).
-  - **Group** → `options_panes_group` — group-pane display options: a `[X] Show players` toggle and an `NPC visibility: Off / Labeled` cycle (writes `group_show_players` / `group_npc_mode` to `startup.conf`). See the [`options_panes_group` frame](#options_panes_group-frame) below.
+  - **Group** → `options_panes_group` — group-pane display options: a `[X] Show players` toggle and an `NPC visibility: Off / Labeled / All` cycle (writes `group_show_players` / `group_npc_mode` to `startup.conf`). See the [`options_panes_group` frame](#options_panes_group-frame) below.
 - **Readability** → `readability` — opens the two-column Readability
   module manager documented under [`readability` frame](#readability-frame).
   ESC saves any pending toggles to `readability_enabled` in
@@ -1731,8 +1731,9 @@ Renders the title `─── Group ───`, then two centred `<< label >>` me
 rows, a blank row, and `Back`:
 
 - **`[X] Show players`** — binary toggle backed by `group_show_players`.
-- **`NPC visibility: Off / Labeled`** — a two-stop cycle backed by
-  `group_npc_mode` (`all` is reserved and not yet a cycle stop).
+- **`NPC visibility: Off / Labeled / All`** — a three-stop cycle backed by
+  `group_npc_mode`, Off → Labeled → All (`all` additionally shows
+  unlabeled group-NPCs).
 
 The render, cycle, and value logic come from the shared `group_options`
 module — see the [Group options model](#group-options-model) section
@@ -1763,10 +1764,10 @@ the two display controls' render and value logic; the two `startup.conf`
 keys are the contract:
 
 - `group_show_players` — `1` (default) / `0`.
-- `group_npc_mode` — `labeled` (default) / `off`; `all` is reserved for a
-  later step and is **not** yet a cycle stop, so the control has two
-  stops today (`NPC_MODE_CYCLE = ["off", "labeled"]`). Any unknown value
-  normalises to `labeled`.
+- `group_npc_mode` — `labeled` (default) / `off` / `all`; `all` shows
+  unlabeled group-NPCs in addition to labeled ones. The control is a
+  three-stop cycle (`NPC_MODE_CYCLE = ["off", "labeled", "all"]`). Any
+  unknown value normalises to `labeled`.
 
 Entries: `group_options_fragments(...)` (the two centred `<< label >>`
 rows), `read_group_options(conf)` (→ `(show_players, npc_mode)` with
