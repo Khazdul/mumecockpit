@@ -108,25 +108,24 @@ def _is_on(v):
 # ---------------------------------------------------------------------------
 # Toggle row — filled boxes
 # ---------------------------------------------------------------------------
-def _toggle_box(label, colW, on, glow, dim, vtext, panebg):
-    """One filled toggle cell: label centered in colW. On → lit (glow bg, dark
-    paneBg label); off → dim bg, light vtext label. Foreground inverts so the
-    text reads against either fill."""
+def _toggle_box(label, colW, on, mid, track, vtext):
+    """One filled toggle cell: label centered in colW, vtext label on both
+    states. On → lighter `mid` box; off → darker `track` box. The box shade
+    alone carries the on/off distinction — both are dark enough for light text,
+    so the foreground does not invert (glow is reserved for the active tick)."""
     if colW <= 0:
         return ""
     t = label[:colW].center(colW)
-    if on:
-        return _bg(glow) + _fg(panebg) + t + C_RESET
-    return _bg(dim) + _fg(vtext) + t + C_RESET
+    return _bg(mid if on else track) + _fg(vtext) + t + C_RESET
 
 
-def _build_toggles_row(c, W, glow, dim, vtext, panebg):
+def _build_toggles_row(c, W, mid, track, vtext):
     c1, c2, c3, c4 = _col_widths(W)
     cells = [
-        _toggle_box("SNEAK", c1, _is_on(c.get("sneak")), glow, dim, vtext, panebg),
-        _toggle_box("RIDE",  c2, _is_on(c.get("ride")),  glow, dim, vtext, panebg),
-        _toggle_box("CLIMB", c3, _is_on(c.get("climb")), glow, dim, vtext, panebg),
-        _toggle_box("SWIM",  c4, _is_on(c.get("swim")),  glow, dim, vtext, panebg),
+        _toggle_box("SNEAK", c1, _is_on(c.get("sneak")), mid, track, vtext),
+        _toggle_box("RIDE",  c2, _is_on(c.get("ride")),  mid, track, vtext),
+        _toggle_box("CLIMB", c3, _is_on(c.get("climb")), mid, track, vtext),
+        _toggle_box("SWIM",  c4, _is_on(c.get("swim")),  mid, track, vtext),
     ]
     return cells[0] + " " + cells[1] + " " + cells[2] + " " + cells[3]
 
@@ -212,9 +211,11 @@ def _build_frame(data):
     c = data or {}
 
     # Resolve the pane's shade ramp once per frame from the same pane-colour
-    # value the frame border uses. track = bar bg / XP baseline; dim = XP
-    # session-gain bg / TP baseline / toggle off-box; mid = TP session-gain;
-    # glow = active highlight; paneBg = dark inverting text / tick background.
+    # value the frame border uses. track = bar bg / XP baseline / toggle off-box;
+    # dim = XP session-gain bg / TP baseline; mid = TP session-gain / toggle
+    # on-box; glow = active step-tick; paneBg = dark text / tick background;
+    # label = level badge. Gauge labels reuse the frame's title colour
+    # (border_color) so they read at the same weight as "Character".
     shades    = pane_frame.pane_shades("status")
     track     = shades["track"]
     dim       = shades["dim"]
@@ -223,6 +224,7 @@ def _build_frame(data):
     vtext     = shades["vtext"]
     label     = shades["label"]
     glow      = shades["glow"]
+    title     = pane_frame.border_color("status")   # gauge-label colour
     xp_bg     = _bg(track)   # XP bar background — baseline segment
     xp_new_bg = _bg(dim)     # XP bar background — session-gain segment
     tp_fg     = _fg(dim)     # TP bar ▀ fg — baseline segment
@@ -236,13 +238,36 @@ def _build_frame(data):
     xp_prog    = c.get("xp_progress")          or 0.0
     xp_base    = c.get("xp_progress_baseline") or 0.0
     fill_total = int(math.floor(width * xp_prog))
+    fill_total = max(0, min(fill_total, width))
     fill_base  = int(math.floor(width * xp_base))
     fill_base  = max(0, min(fill_base, fill_total))
-    row1 = (C_NAME
-            + xp_bg     + padded[:fill_base]
-            + xp_new_bg + padded[fill_base:fill_total]
-            + C_BG_RST  + padded[fill_total:]
-            + C_RESET)
+
+    # Overlay the level right-aligned into the name row's rightmost cells (just
+    # inside the top-right corner). The name stays centered; the XP background
+    # still shows behind the level cells, and the level keeps the `label` shade.
+    # Null level → nothing overlaid. (Char names are short, so a centered name
+    # won't reach these cells in practice; if it ever does, level wins them.)
+    level = c.get("level")
+    lstart = width
+    display = padded
+    if level is not None:
+        ltext = ("L" + str(level))[:width]
+        lstart = width - len(ltext)
+        display = padded[:lstart] + ltext
+    level_fg = _fg(label)
+
+    # Emit the row in segments split at every XP-background boundary and at the
+    # level-overlay start, so background (xp_bg/xp_new_bg/none) and foreground
+    # (name vs level) stay independent.
+    bounds = sorted({0, fill_base, fill_total, lstart, width})
+    row1 = ""
+    for a, b in zip(bounds, bounds[1:]):
+        if a >= b:
+            continue
+        seg_bg = xp_bg if a < fill_base else xp_new_bg if a < fill_total else C_BG_RST
+        seg_fg = level_fg if a >= lstart else C_NAME
+        row1 += seg_bg + seg_fg + display[a:b]
+    row1 += C_RESET
 
     tp_prog     = c.get("tp_progress")          or 0.0
     tp_base     = c.get("tp_progress_baseline") or 0.0
@@ -253,7 +278,7 @@ def _build_frame(data):
             + tp_new_fg + "▀" * (tp_total - tp_basefill)
             + C_RESET   + " " * (width - tp_total))
 
-    toggles = _build_toggles_row(c, width, glow, dim, vtext, panebg)
+    toggles = _build_toggles_row(c, width, mid, track, vtext)
 
     colL, colR = _two_cols(width)
     mood, alert, pos = c.get("mood"), c.get("alertness"), c.get("position")
@@ -264,14 +289,14 @@ def _build_frame(data):
         row1,
         row2,
         toggles,
-        _row(_label_cell("MOOD", colL, label),
-             _label_cell("ALERTNESS", colR, label)),
+        _row(_label_cell("MOOD", colL, title),
+             _label_cell("ALERTNESS", colR, title)),
         _row(_bar_cell(_ord_val(mood), colL, track, vtext),
              _bar_cell(_ord_val(alert), colR, track, vtext)),
         _row(_tick_ord(MOOD_STEPS, mood, colL, glow, track, panebg),
              _tick_ord(ALERT_STEPS, alert, colR, glow, track, panebg)),
-        _row(_label_cell("POSITION", colL, label),
-             _label_cell("WIMPY", colR, label)),
+        _row(_label_cell("POSITION", colL, title),
+             _label_cell("WIMPY", colR, title)),
         _row(_bar_cell(_ord_val(pos), colL, track, vtext),
              _bar_cell(wimpy_val, colR, track, vtext)),
         _row(_tick_ord(POS_STEPS, pos, colL, glow, track, panebg),
@@ -291,19 +316,6 @@ def _status_text():
             frags.append(("", "\n"))
         frags.extend(to_formatted_text(ANSI(row_ansi)))
     return frags
-
-
-def _level_header():
-    """Floating top-right frame header: ``L<level>`` in the pane's `label`
-    shade. Returns None (plain border) when the run is inactive or level is
-    null. Consumed by pane_frame.framed's right_header param."""
-    if not _run_active:
-        return None
-    c = _last_data or {}
-    level = c.get("level")
-    if level is None:
-        return None
-    return ("L" + str(level), pane_frame.pane_shades("status")["label"])
 
 
 def _indicator_text():
@@ -381,7 +393,7 @@ def main():
     )
 
     inner_root = HSplit([rows_window, indicator_container])
-    root       = pane_frame.framed(inner_root, "status", right_header=_level_header)
+    root       = pane_frame.framed(inner_root, "status")
     layout     = Layout(root)
 
     app = Application(

@@ -289,14 +289,22 @@ def frames_enabled(pane_key=None):
     return True
 
 
-def border_style(pane_key):
-    """prompt_toolkit style string ('fg:#xxxxxx') for the pane's border,
-    derived from its pane colour. Cached."""
+def border_color(pane_key):
+    """Hex colour ('#rrggbb') used for the pane's border line and header label,
+    derived from its pane colour. Shared by border_style and exposed so a pane
+    can tint in-content elements (e.g. gauge labels) to match its frame title.
+    Cached."""
     name = _pane_colors.get(pane_key, "black")
     if name in _TERMINAL_DEFAULT_NAMES:
         # No bg override: derive the border from the live terminal background.
-        return "fg:" + lighten(_terminal_bg, 0x14)
-    return "fg:" + PANE_BORDER_COLORS.get(name, _DEFAULT_BORDER)
+        return lighten(_terminal_bg, 0x14)
+    return PANE_BORDER_COLORS.get(name, _DEFAULT_BORDER)
+
+
+def border_style(pane_key):
+    """prompt_toolkit style string ('fg:#xxxxxx') for the pane's border,
+    derived from its pane colour. Cached."""
+    return "fg:" + border_color(pane_key)
 
 
 def pane_shades(pane_key, term_bg=None):
@@ -304,13 +312,13 @@ def pane_shades(pane_key, term_bg=None):
     colour's hue/saturation (PANE_SHADE_HS, restated — ADR 0126). One hue,
     walked down its lightness ramp. Keys:
 
-      track  L15 — bar background / XP baseline bg
-      dim    L27 — XP session-gain bg / TP baseline fg / toggle off-box bg
-      mid    L42 — TP session-gain fg
-      paneBg L8  — near-bg dark text (label on the lit toggle box; tick bg)
-      vtext  L72 — gauge value text / toggle off-box label
-      label  L60 — gauge labels / level header
-      glow   L70 — active highlight: lit toggle box, active step-tick, wimpy caret
+      track  L15 — bar background / XP baseline bg / toggle off-box bg
+      dim    L27 — XP session-gain bg / TP baseline fg
+      mid    L42 — TP session-gain fg / toggle on-box bg
+      paneBg L8  — near-bg dark text / tick bg
+      vtext  L72 — gauge value text / toggle box label (on and off)
+      label  L60 — level badge (on the name row)
+      glow   L70 — active highlight: active step-tick, wimpy caret
 
     For the terminal-default ('black'/None) pane — and any unknown colour — the
     hue/saturation come from ``term_bg`` (the live terminal background, ADR 0099)
@@ -369,19 +377,11 @@ def _term_lines():
         return 24
 
 
-def framed(inner_container, pane_key, right_header=None):
+def framed(inner_container, pane_key):
     """Wrap inner_container in the foreground-only border for pane_key.
 
     When frames_enabled() is False every border collapses (ConditionalContainer)
-    and the layout reduces to inner_container at full size.
-
-    ``right_header`` is an optional floating header pinned near the top-right
-    corner (e.g. a level badge). It is a callable evaluated at render time that
-    returns either ``None`` (nothing — plain border, the default behaviour) or a
-    ``(text, color_hex)`` tuple. The ▀ fill runs from after the title up to the
-    text; exactly one ▀ sits between the text and the top-right corner. The
-    caller supplies the colour; only this pane is affected (other panes pass
-    no header)."""
+    and the layout reduces to inner_container at full size."""
     label = LABELS.get(pane_key, "")
 
     # Read corners() at render time (not once at build time) so a live
@@ -390,19 +390,6 @@ def framed(inner_container, pane_key, right_header=None):
         tl, tr, _bl, _br = corners()
         w = _term_cols()
         bstyle = border_style(pane_key)
-
-        rh = right_header() if callable(right_header) else right_header
-        if rh:
-            rtext, rcolor = rh
-            # <TL>"▀▀ "<label>" " + "▀"*fill + <rtext> + "▀" + <TR> == w columns.
-            prefix = tl + _TOP_EDGE * 2 + " " + label + " "
-            fill = w - len(prefix) - len(rtext) - 2
-            if fill >= 0:
-                return [
-                    (bstyle, prefix + _TOP_EDGE * fill),
-                    ("fg:" + rcolor, rtext),
-                    (bstyle, _TOP_EDGE + tr),
-                ]
 
         # <TL> + "▀▀ " + label + " " + "▀"*fill + <TR> == exactly w columns.
         fill = w - 6 - len(label)
