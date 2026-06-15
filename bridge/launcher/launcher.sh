@@ -6,4 +6,14 @@
 
 cd "$(dirname "$0")/../.."
 
+# Seed the bundled khazdul profile from its template when absent. Runs on
+# every launcher entry — including update.sh's restart, which re-execs this
+# script (not start.sh) — so existing users receive it after updating.
+# Idempotent: never overwrites an existing copy, even an edited one.
+# Mirrors start.sh's blank_profile → default.tin seed (ADR 0042).
+if [ ! -f ttpp/profiles/khazdul.tin ] && [ -f bridge/launcher/templates/khazdul.tin ]; then
+    mkdir -p ttpp/profiles
+    cp bridge/launcher/templates/khazdul.tin ttpp/profiles/khazdul.tin
+fi
+
 exec python3 "$(dirname "$0")/launcher.py" "$@"
