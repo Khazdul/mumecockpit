@@ -305,10 +305,12 @@ def pane_shades(pane_key, term_bg=None):
     walked down its lightness ramp. Keys:
 
       track  L15 — bar background / XP baseline bg
-      dim    L27 — XP session-gain bg / TP baseline fg
+      dim    L27 — XP session-gain bg / TP baseline fg / toggle off-box bg
       mid    L42 — TP session-gain fg
-      vtext  L72 — gauge value text (for the upcoming gauge redesign)
-      label  L60 — gauge labels (for the upcoming gauge redesign)
+      paneBg L8  — near-bg dark text (label on the lit toggle box; tick bg)
+      vtext  L72 — gauge value text / toggle off-box label
+      label  L60 — gauge labels / level header
+      glow   L70 — active highlight: lit toggle box, active step-tick, wimpy caret
 
     For the terminal-default ('black'/None) pane — and any unknown colour — the
     hue/saturation come from ``term_bg`` (the live terminal background, ADR 0099)
@@ -326,11 +328,13 @@ def pane_shades(pane_key, term_bg=None):
     else:
         h, s = PANE_SHADE_HS[name]
     return {
-        "track": _hsl_to_hex(h, max(s - 8,  0), 15),
-        "dim":   _hsl_to_hex(h, s,              27),
-        "mid":   _hsl_to_hex(h, s,              42),
-        "vtext": _hsl_to_hex(h, max(s - 30, 0), 72),
-        "label": _hsl_to_hex(h, max(s - 22, 0), 60),
+        "track":  _hsl_to_hex(h, max(s - 8,  0), 15),
+        "dim":    _hsl_to_hex(h, s,              27),
+        "mid":    _hsl_to_hex(h, s,              42),
+        "paneBg": _hsl_to_hex(h, s,              8),
+        "vtext":  _hsl_to_hex(h, max(s - 30, 0), 72),
+        "label":  _hsl_to_hex(h, max(s - 22, 0), 60),
+        "glow":   _hsl_to_hex(h, max(s - 18, 0), 70),
     }
 
 
@@ -365,11 +369,19 @@ def _term_lines():
         return 24
 
 
-def framed(inner_container, pane_key):
+def framed(inner_container, pane_key, right_header=None):
     """Wrap inner_container in the foreground-only border for pane_key.
 
     When frames_enabled() is False every border collapses (ConditionalContainer)
-    and the layout reduces to inner_container at full size."""
+    and the layout reduces to inner_container at full size.
+
+    ``right_header`` is an optional floating header pinned near the top-right
+    corner (e.g. a level badge). It is a callable evaluated at render time that
+    returns either ``None`` (nothing — plain border, the default behaviour) or a
+    ``(text, color_hex)`` tuple. The ▀ fill runs from after the title up to the
+    text; exactly one ▀ sits between the text and the top-right corner. The
+    caller supplies the colour; only this pane is affected (other panes pass
+    no header)."""
     label = LABELS.get(pane_key, "")
 
     # Read corners() at render time (not once at build time) so a live
@@ -377,12 +389,27 @@ def framed(inner_container, pane_key):
     def _top_text():
         tl, tr, _bl, _br = corners()
         w = _term_cols()
+        bstyle = border_style(pane_key)
+
+        rh = right_header() if callable(right_header) else right_header
+        if rh:
+            rtext, rcolor = rh
+            # <TL>"▀▀ "<label>" " + "▀"*fill + <rtext> + "▀" + <TR> == w columns.
+            prefix = tl + _TOP_EDGE * 2 + " " + label + " "
+            fill = w - len(prefix) - len(rtext) - 2
+            if fill >= 0:
+                return [
+                    (bstyle, prefix + _TOP_EDGE * fill),
+                    ("fg:" + rcolor, rtext),
+                    (bstyle, _TOP_EDGE + tr),
+                ]
+
         # <TL> + "▀▀ " + label + " " + "▀"*fill + <TR> == exactly w columns.
         fill = w - 6 - len(label)
         if fill < 0:
             fill = 0
         text = tl + _TOP_EDGE * 2 + " " + label + " " + _TOP_EDGE * fill + tr
-        return [(border_style(pane_key), text[:w])]
+        return [(bstyle, text[:w])]
 
     def _bottom_text():
         _tl, _tr, bl, br = corners()
