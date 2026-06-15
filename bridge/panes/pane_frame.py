@@ -42,6 +42,19 @@ PANE_BORDER_COLORS = {
 }
 _DEFAULT_BORDER = "#2a2a2a"
 
+# Per-palette (hue, saturation) for the pane shade ramp (pane_shades). Restated
+# here, like PANE_BORDER_COLORS, rather than imported from bridge/launcher
+# (ADR 0126). The hue/saturation match the pane bg/border family (ADR 0086);
+# pane_shades walks the ramp by HSL lightness only, keeping a single hue.
+PANE_SHADE_HS = {
+    "red":    (2,   60),
+    "green":  (130, 42),
+    "blue":   (210, 58),
+    "grey":   (0,   0),
+    "orange": (28,  62),
+    "purple": (278, 46),
+}
+
 # The terminal-default ("black"/None) pane has no bg override, so its border is
 # derived from the live terminal background (layout.conf terminal_bg, the same
 # source apply_border_style.sh uses) rather than a static grey — a touch lighter
@@ -58,6 +71,35 @@ def lighten(hexcolor, delta=0x14):
     g = min(0xFF, int(h[2:4], 16) + delta)
     b = min(0xFF, int(h[4:6], 16) + delta)
     return "#%02x%02x%02x" % (r, g, b)
+
+
+def _hsl_to_hex(h, s, l):
+    """Convert HSL (h in degrees, s and l in percent 0-100) to a #rrggbb string.
+    Used by pane_shades to walk a single hue down its lightness ramp."""
+    h = (h % 360) / 360.0
+    s = max(0.0, min(100.0, s)) / 100.0
+    l = max(0.0, min(100.0, l)) / 100.0
+    if s == 0:
+        r = g = b = l
+    else:
+        def _channel(p, q, t):
+            t %= 1.0
+            if t < 1 / 6:
+                return p + (q - p) * 6 * t
+            if t < 1 / 2:
+                return q
+            if t < 2 / 3:
+                return p + (q - p) * (2 / 3 - t) * 6
+            return p
+
+        q = l * (1 + s) if l < 0.5 else l + s - l * s
+        p = 2 * l - q
+        r = _channel(p, q, h + 1 / 3)
+        g = _channel(p, q, h)
+        b = _channel(p, q, h - 1 / 3)
+    return "#%02x%02x%02x" % (
+        int(round(r * 255)), int(round(g * 255)), int(round(b * 255))
+    )
 
 # Header label per pane key. Lives on the frame's top border, not in content.
 LABELS = {
@@ -229,6 +271,36 @@ def border_style(pane_key):
         # No bg override: derive the border from the live terminal background.
         return "fg:" + lighten(_terminal_bg, 0x14)
     return "fg:" + PANE_BORDER_COLORS.get(name, _DEFAULT_BORDER)
+
+
+def pane_shades(pane_key, term_bg=None):
+    """Five-shade ramp for a pane, derived by HSL from its configured pane
+    colour's hue/saturation (PANE_SHADE_HS, restated — ADR 0126). One hue,
+    walked down its lightness ramp. Keys:
+
+      track  L15 — bar background / XP baseline bg
+      dim    L27 — XP session-gain bg / TP baseline fg
+      mid    L42 — TP session-gain fg
+      vtext  L72 — gauge value text (for the upcoming gauge redesign)
+      label  L60 — gauge labels (for the upcoming gauge redesign)
+
+    For the terminal-default ('black'/None) pane — and any unknown colour — the
+    ramp is neutral (h=0, s=0) so the bars read as untinted greys, matching the
+    neutral border. ``term_bg`` is accepted for the gauge step's paneBg (which
+    defaults to the live terminal background); the five shades here do not
+    depend on it. Cached pane-colour lookup; no file I/O."""
+    name = _pane_colors.get(pane_key, "black")
+    if name in _TERMINAL_DEFAULT_NAMES or name not in PANE_SHADE_HS:
+        h, s = 0, 0
+    else:
+        h, s = PANE_SHADE_HS[name]
+    return {
+        "track": _hsl_to_hex(h, max(s - 8,  0), 15),
+        "dim":   _hsl_to_hex(h, s,              27),
+        "mid":   _hsl_to_hex(h, s,              42),
+        "vtext": _hsl_to_hex(h, max(s - 30, 0), 72),
+        "label": _hsl_to_hex(h, max(s - 22, 0), 60),
+    }
 
 
 def corners():

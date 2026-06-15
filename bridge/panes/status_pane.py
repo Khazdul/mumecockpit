@@ -40,11 +40,10 @@ POLL_MS    = 0.05
 # ---------------------------------------------------------------------------
 C_RESET     = "\x1b[0m"
 C_NAME      = "\x1b[38;2;192;192;192m"   # row 1 text (fg only)
-C_XP_BG     = "\x1b[48;2;0;30;40m"       # XP bar background — baseline (pre-session) segment
-C_XP_NEW_BG = "\x1b[48;2;92;15;91m"      # #5C0F5B — session-gain XP segment
 C_BG_RST    = "\x1b[49m"                 # reset background only (keep fg)
-C_TP_FG     = "\x1b[38;2;0;40;50m"       # TP bar ▀ foreground — baseline (pre-session) segment
-C_TP_NEW_FG = "\x1b[38;2;61;10;60m"      # #3D0A3C — session-gain TP segment
+# XP/TP bar segment colours are no longer static: the baseline/session-gain
+# shades are resolved per frame from the pane's palette colour via
+# pane_frame.pane_shades (track/dim/mid), then turned into SGR by _fg/_bg below.
 C_LABEL     = "\x1b[38;2;96;96;96m"      # data row label foreground (#606060 — unified with timers header)
 C_VALUE     = "\x1b[38;2;192;192;192m"   # data row value foreground
 
@@ -52,6 +51,18 @@ C_TOG_OFF_LABEL = "\x1b[38;2;83;72;56m"    # #534838 — warm dark brown
 C_TOG_ON_LABEL  = "\x1b[38;2;212;160;78m"  # #D4A04E — warm gold (matches overflow indicator)
 
 C_INDICATOR = "fg:#d4a04e italic"   # overflow indicator style
+
+
+def _fg(hexcolor):
+    """SGR truecolor foreground escape for a #rrggbb string."""
+    h = hexcolor.lstrip("#")
+    return "\x1b[38;2;%d;%d;%dm" % (int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16))
+
+
+def _bg(hexcolor):
+    """SGR truecolor background escape for a #rrggbb string."""
+    h = hexcolor.lstrip("#")
+    return "\x1b[48;2;%d;%d;%dm" % (int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16))
 
 # ---------------------------------------------------------------------------
 # Renderer state
@@ -146,6 +157,15 @@ def _build_frame(data):
     width = inner_width(shutil.get_terminal_size().columns)
     c = data or {}
 
+    # Resolve the pane's shade ramp once per frame from the same pane-colour
+    # value the frame border uses. track = bar bg / XP baseline; dim = XP
+    # session-gain bg and TP baseline fg; mid = TP session-gain fg.
+    shades    = pane_frame.pane_shades("status")
+    xp_bg     = _bg(shades["track"])   # XP bar background — baseline segment
+    xp_new_bg = _bg(shades["dim"])     # XP bar background — session-gain segment
+    tp_fg     = _fg(shades["dim"])     # TP bar ▀ fg — baseline segment
+    tp_new_fg = _fg(shades["mid"])     # TP bar ▀ fg — session-gain segment
+
     name = c.get("character") or "—"
     name = name.capitalize()
     if len(name) > width:
@@ -157,9 +177,9 @@ def _build_frame(data):
     fill_base  = int(math.floor(width * xp_base))
     fill_base  = max(0, min(fill_base, fill_total))
     row1 = (C_NAME
-            + C_XP_BG     + padded[:fill_base]
-            + C_XP_NEW_BG + padded[fill_base:fill_total]
-            + C_BG_RST    + padded[fill_total:]
+            + xp_bg     + padded[:fill_base]
+            + xp_new_bg + padded[fill_base:fill_total]
+            + C_BG_RST  + padded[fill_total:]
             + C_RESET)
 
     tp_prog     = c.get("tp_progress")          or 0.0
@@ -167,9 +187,9 @@ def _build_frame(data):
     tp_total    = int(math.floor(width * tp_prog))
     tp_basefill = int(math.floor(width * tp_base))
     tp_basefill = max(0, min(tp_basefill, tp_total))
-    row2 = (C_TP_FG     + "▀" * tp_basefill
-            + C_TP_NEW_FG + "▀" * (tp_total - tp_basefill)
-            + C_RESET    + " " * (width - tp_total))
+    row2 = (tp_fg     + "▀" * tp_basefill
+            + tp_new_fg + "▀" * (tp_total - tp_basefill)
+            + C_RESET   + " " * (width - tp_total))
 
     blank = " " * width
     return [row1, row2, _build_toggles_row(c, width), blank] + _build_data_rows(c, width)
