@@ -36,11 +36,16 @@ The file is a JSON object:
 
 Each member entry contains the raw vitals (`hp`, `maxhp`, `mana`, `maxmana`,
 `mp`, `maxmp`), their band-string equivalents (`hp_string`, `mana_string`,
-`mp_string`), and the pre-computed percentages used by the renderer:
+`mp_string`), and the pre-computed percentages used by the renderer. The
+table below is **non-exhaustive** — it lists the fields the renderer reads,
+all already serialised by [`group_state.lua`](../lua/core/group_state.lua):
 
 | Field        | Type           | Meaning                                                  |
 |--------------|----------------|----------------------------------------------------------|
-| `label`      | `string\|null` | Player-facing name override (e.g. mercenary's given name); preferred by the renderer when non-null |
+| `id`         | `number`       | Transient GMCP presence handle; members are sorted ascending by it (ADR 0096) |
+| `type`       | `string`       | `"ally"` (player) or `"npc"`; the renderer keys on it both to choose the displayed subset and to gate the `(LABEL)` overlay |
+| `name`       | `string\|null` | Generic name (species string for NPCs, character name for allies); the overlay base |
+| `label`      | `string\|null` | NPC player-facing name (e.g. mercenary's given name); appended as `Name (LABEL)` for `type=="npc"` only — never for allies |
 | `hp_pct`     | `number\|null` | HP fraction in [0,1]; `null` if unresolvable             |
 | `hp_known`   | `bool`         | `true` = computed from value/maxv; `false` = band midpoint |
 | `mana_pct`   | `number\|null` | Mana fraction; `null` if unresolvable                    |
@@ -114,12 +119,21 @@ Default colours:
 ### Name overlay (full row)
 
 The member overlay text is left-aligned from column 0 across the row (`W`
-columns), truncated to `W` chars without an ellipsis. The overlay prefers
-`label` over `name` — labeled NPCs (key NPCs, hired mercenaries) display
-their player-facing label rather than the generic `name`:
+columns), truncated to `W` chars without an ellipsis. The overlay text is
+keyed on `type`:
+
+- `type == "npc"` with a non-empty string `label` → `Name (LABEL)`, so a
+  labeled NPC (key NPC, hired mercenary) shows both its generic species
+  `name` and its player-facing `label` (e.g. `citizen mercenary (Aragorn)`).
+- every other member — allies, and NPCs whose `label` is `null`, empty, or
+  not a string → the bare `name`. **Players are never labeled.**
 
 ```python
-overlay = member.get("label") or member.get("name") or ""
+name = member.get("name") or ""
+if member.get("type") == "npc":
+    label = member.get("label")
+    if isinstance(label, str) and label:
+        name = f"{name} ({label})"
 ```
 
 At narrow widths a long name visibly extends across HP / Mana / MP bar
@@ -136,22 +150,55 @@ name characters on the fill from those past it. The earlier black-on-fill /
 light-grey-on-empty cutout was abandoned because black lost contrast on the
 deeper default bar colours.
 
-When both `member.label` and `member.name` are `null` in the state file, no
-overlay is rendered (all columns follow plain-bar fill rules with spaces).
+When `member.name` is `null` or empty in the state file, no overlay is
+rendered (all columns follow plain-bar fill rules with spaces).
 
 ### Overflow indicator
 
-When the number of members exceeds the pane height `H`:
+When the number of **displayed** members (see [Display options](#display-options))
+exceeds the pane height `H`:
 
 ```
 ↓ N more members
 ```
 
 rendered in `fg:#d4a04e italic` in a 1-row `ConditionalContainer` below the
-member list. `N = total − (H − 1)`. The list shows the first `H − 1` members
-(anchor-top). No upward-scroll variant in this phase.
+member list. `N = total − (H − 1)`, where `total` is the count of the
+displayed set. Both the list slicing and this overflow count operate on the
+displayed set, not the raw `members`. The list shows the first `H − 1`
+displayed members (anchor-top). No upward-scroll variant in this phase.
 
-When members is empty the pane renders nothing (empty space).
+When the displayed set is empty the pane renders nothing (empty space).
+
+## Display options
+
+The renderer applies a user-controlled display filter over the raw member
+set. Two `startup.conf` keys drive it:
+
+| Key                  | Values                          | Default     | Effect |
+|----------------------|---------------------------------|-------------|--------|
+| `group_show_players` | `1` / `0`                       | `1`         | `0` hides allies (players) |
+| `group_npc_mode`     | `labeled` / `off` (`all` reserved) | `labeled` | `off` hides NPCs; any unknown value (including the reserved `all`) normalises to `labeled` |
+
+**Live re-read.** The pane stat-s `startup.conf`'s mtime on its 100 ms poll
+(alongside the existing `connection.state` check); on change it calls
+`_read_display_options()`, which re-parses the two keys and invalidates the
+app. A missing file or missing key falls through to the runtime defaults
+(players-on / NPC-labeled), so edits from either Options surface show within
+a tick — no restart.
+
+**Renderer-side subset.** The displayed set is computed by
+`_displayed_members()`, a presentation-only filter over `members`:
+
+- `type == "ally"` — kept iff `group_show_players` is on;
+- `type == "npc"` — kept iff `group_npc_mode` is not `off`;
+- any other / unknown type — kept (defensive parity with the collector).
+
+Membership stays canonical in the collector: `state.group.members` (and the
+serialised `members` list) is the full renderable set — the filter never
+changes it, only what this pane draws. See
+[ADR 0139](decisions/0139-group-pane-display-filter-renderer-side.md). All
+list slicing and the overflow count above run on the displayed set.
 
 ## Inactive run
 
@@ -215,6 +262,17 @@ this key will open the pane on the next cockpit start. This is no longer a
 per-pane exception: as of ADR 0101 every right-column pane defaults on
 except the developer pane, so the no-surprise-on-upgrade waiver is now
 applied uniformly.
+
+The two [Display options](#display-options) keys (`group_show_players`,
+`group_npc_mode`) live in the same `startup.conf`, written by the
+**Options → Panes → Group** page on both surfaces — the in-game popup
+persists each edit immediately and live (the running pane re-reads on its
+poll), while the launcher defers the write to Back / ESC and the effect to
+the next cockpit start. Both are seeded in
+`bridge/launcher/templates/startup.conf` (`group_show_players=1`,
+`group_npc_mode=labeled`); a missing key falls through to the runtime
+defaults. See [docs/popup-menu.md](popup-menu.md#group-submenu) and
+[docs/launcher.md](launcher.md#group-options-model).
 
 ---
 Back to [architecture.md](../architecture.md).

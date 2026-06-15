@@ -19,7 +19,8 @@ border paints in section cyan (matching the `C_SECTION` chrome tone)
 on the ESC-opened popup and the disconnect-auto-opened popup alike.
 
 The UI is a frame stack: a single `DynamicContainer` swaps between
-`main`, `options`, `panes`, `panes_general`, `readability`, `scripts`,
+`main`, `options`, `panes`, `panes_general`, `panes_group`, `readability`,
+`scripts`,
 `statistics`, `timers`, `rate_session`, `exit_confirm`, `profile_editor`,
 `profile_editor_macro_keybind`, and `profile_apply_confirm` containers,
 pushed and popped via `_push_frame` / `_pop_frame`. Each frame owns its
@@ -321,9 +322,10 @@ on the `options` grouping (`<< label >>` menu rows, its own
 **General** (pushes `panes_general`), **Timers** (pushes `timers`, the
 [Timers layout submenu](#timers-layout-submenu)), **Communication**
 (pushes `panes_communication`, the
-[Communication submenu](#communication-submenu)), a blank row, and
-**Back** (pops to `options`). It is purely structural — no persistence,
-no grid logic — so future per-pane layout pages (Status / Group) slot in
+[Communication submenu](#communication-submenu)), **Group**
+(pushes `panes_group`, the [Group submenu](#group-submenu)), a blank row,
+and **Back** (pops to `options`). It is purely structural — no persistence,
+no grid logic — so future per-pane layout pages (e.g. Status) slot in
 as extra rows. ESC pops to `options`.
 
 ## Panes → General submenu
@@ -461,6 +463,40 @@ within a tick (see [docs/comm-pane.md](comm-pane.md#live-re-read)).
 (`_COMM_CHANNEL_ROWS`), the header-toggle row (`_COMM_HEADER_ROW`), and
 `Back` (`_COMM_BACK_ROW`). `↑` / `↓` move between them (clamped, no wrap);
 there are no columns. Footer: `↑↓ Move · Enter Toggle · ESC Back`.
+
+## Group submenu
+
+`Options → Panes → Group`. The two controls' render, cycle, and value logic
+live in `bridge/launcher/group_options.py` (shared with the launcher — see
+the [Group options model](launcher.md#group-options-model) section in
+`docs/launcher.md`). The two `startup.conf` keys it edits drive the group
+pane's display filter — see [docs/group-pane.md](group-pane.md#display-options).
+
+The `panes_group` frame renders, top to bottom: the title `─── Group ───`,
+then two centred `<< label >>` menu rows —
+
+- **`[X] Show players`** / **`[ ] Show players`** — a binary toggle backed
+  by `group_show_players`.
+- **`NPC visibility: Off`** / **`NPC visibility: Labeled`** — a cycle with
+  two stops (`group_npc_mode`); `all` is reserved for a later step and is
+  not yet a cycle stop.
+
+— then a blank row and **Back**. Both surfaces render Back themselves
+(matching the Communication frame). It is a cursor-only frame (no separate
+mouse-hover state).
+
+Enter / Space toggles `Show players`, advances the NPC cycle, or activates
+Back; `←` / `→` adjusts the NPC cycle while the cursor is on its row; `Back`
+/ ESC pops to the `panes` hub. **Persistence is immediate**: each edit writes
+the relevant key in place via `_persist_conf_key`, and the running group pane
+re-reads `startup.conf` on its 100 ms poll, so each change applies live
+within a tick (the popup's General/Timers/Communication immediate-write idiom,
+the asymmetry vs. the launcher's deferred save).
+
+**Cursor / navigation.** Three navigable rows: the Players toggle
+(`_GROUP_PLAYERS_ROW`), the NPC cycle (`_GROUP_NPC_ROW`), and `Back`
+(`_GROUP_BACK_ROW`). `↑` / `↓` move between them (clamped). Footer:
+`↑↓ Move · ←→ Adjust · Enter Toggle · ESC Back`.
 
 ## Timers layout submenu
 

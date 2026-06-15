@@ -1330,6 +1330,7 @@ Navigation hub pushed by activating "Options" on the main frame. Children:
   - **General** → `options_panes_general` — per-pane enable/disable + colour selection + per-pane in-pane border (Border column) + a Corner style cycle row.
   - **Timers** → `options_timers` — per-group colour, column count, and visibility for the timers pane (writes `timers_layout.conf`).
   - **Communication** → `options_panes_communication` — per-channel on/off list + a `[X] Show channel header` toggle (writes `comm_filters.conf` and `comm_prefs.conf`).
+  - **Group** → `options_panes_group` — group-pane display options: a `[X] Show players` toggle and an `NPC visibility: Off / Labeled` cycle (writes `group_show_players` / `group_npc_mode` to `startup.conf`). See the [`options_panes_group` frame](#options_panes_group-frame) below.
 - **Readability** → `readability` — opens the two-column Readability
   module manager documented under [`readability` frame](#readability-frame).
   ESC saves any pending toggles to `readability_enabled` in
@@ -1350,11 +1351,12 @@ Thin navigation hub modelled on the `options` frame: a `<< label >>`
 menu titled `─── Panes ───` listing **General** (pushes
 `options_panes_general`), **Timers** (calls `_load_timers_layout` then
 pushes `options_timers`), **Communication** (calls `_load_comm_channels`
-then pushes `options_panes_communication`), a blank row, and **Back**
+then pushes `options_panes_communication`), **Group** (pushes
+`options_panes_group`), a blank row, and **Back**
 (pops to `options`). It owns its own selection state (`_sel_options_panes` /
 `_hover_options_panes`) and `_in_frame("options_panes")` keybindings.
 It is purely structural — no persistence, no grid logic — and exists so
-future per-pane layout pages (Status / Group) can slot in as additional
+future per-pane layout pages (e.g. Status) can slot in as additional
 rows. ESC pops to `options`.
 
 ### `options_panes_general` frame
@@ -1717,6 +1719,67 @@ grid with every group on, today's colours, and today's column counts.
 
 Tests live in `bridge/launcher/tests/test_timers_layout_grid.py` and
 run without prompt_toolkit installed.
+
+### `options_panes_group` frame
+
+Single frame (`options_panes_group`) for the Panes → Group submenu,
+opened from the Panes hub's `Group` row (`Options → Panes → Group`). ESC
+pops back to the `options_panes` hub. It sets the group pane's display
+filter — see [docs/group-pane.md](group-pane.md#display-options).
+
+Renders the title `─── Group ───`, then two centred `<< label >>` menu
+rows, a blank row, and `Back`:
+
+- **`[X] Show players`** — binary toggle backed by `group_show_players`.
+- **`NPC visibility: Off / Labeled`** — a two-stop cycle backed by
+  `group_npc_mode` (`all` is reserved and not yet a cycle stop).
+
+The render, cycle, and value logic come from the shared `group_options`
+module — see the [Group options model](#group-options-model) section
+below.
+
+Keyboard: `↑` / `↓` move between the three rows (clamped). `←` / `→`
+adjusts the NPC cycle while the cursor is on its row. `Enter` / `Space`
+toggles `Show players`, advances the NPC cycle, or activates `Back`. ESC
+/ `Back` pops to the hub.
+
+Persistence is **deferred**: each edit mutates the in-memory `_conf`
+dict (`group_show_players` / `group_npc_mode`); `_save_conf` flushes
+`startup.conf` on Back / ESC, and the effect lands at the **next cockpit
+start**. This is the persistence asymmetry vs. the popup, whose
+equivalent frame writes each key in place immediately and the running
+group pane re-reads it live within a tick.
+
+**Cursor / navigation.** Three navigable rows: the Players toggle
+(`_GROUP_PLAYERS_ROW`), the NPC cycle (`_GROUP_NPC_ROW`), and `Back`
+(`_GROUP_BACK_ROW`). Footer: `↑↓ Move · ←→ Adjust · Enter Toggle · ESC Back`.
+
+### Group options model
+
+Source: `bridge/launcher/group_options.py` — a pure (no prompt_toolkit
+import, no global state) module shared between the launcher and the
+popup, modelled on `comm_channels.py` / `timers_layout_grid.py`. It owns
+the two display controls' render and value logic; the two `startup.conf`
+keys are the contract:
+
+- `group_show_players` — `1` (default) / `0`.
+- `group_npc_mode` — `labeled` (default) / `off`; `all` is reserved for a
+  later step and is **not** yet a cycle stop, so the control has two
+  stops today (`NPC_MODE_CYCLE = ["off", "labeled"]`). Any unknown value
+  normalises to `labeled`.
+
+Entries: `group_options_fragments(...)` (the two centred `<< label >>`
+rows), `read_group_options(conf)` (→ `(show_players, npc_mode)` with
+missing-key fall-through to the defaults), `parse_show_players` /
+`normalize_npc_mode` / `next_npc_mode` / `npc_mode_label`, and the
+`PLAYERS_ROW` / `NPC_ROW` row indices shared by both surfaces' cursor
+state.
+
+The key **names** are deliberately **restated** in
+`bridge/panes/group_pane.py` (which reads the same keys to drive its
+display filter) rather than imported — the `bridge/launcher` and
+`bridge/panes` packages share no import path (see
+[ADR 0126](decisions/0126-timers-layout-menu.md)).
 
 ### `options_scripts` frame
 
