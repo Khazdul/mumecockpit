@@ -101,6 +101,32 @@ def _hsl_to_hex(h, s, l):
         int(round(r * 255)), int(round(g * 255)), int(round(b * 255))
     )
 
+
+def _hex_to_hs(hexcolor):
+    """Convert a #rrggbb string to its (hue degrees, saturation percent) pair —
+    the inputs pane_shades feeds back into _hsl_to_hex. Lightness is discarded
+    (the ramp supplies its own). Returns (0, 0) for a non-#rrggbb literal so a
+    missing/garbled value collapses to a neutral grey ramp."""
+    if not _HEX_RE.match(hexcolor or ""):
+        return (0, 0)
+    h = hexcolor.lstrip("#")
+    r = int(h[0:2], 16) / 255.0
+    g = int(h[2:4], 16) / 255.0
+    b = int(h[4:6], 16) / 255.0
+    mx, mn = max(r, g, b), min(r, g, b)
+    l = (mx + mn) / 2.0
+    if mx == mn:
+        return (0, 0)  # achromatic: hue undefined, saturation 0
+    d = mx - mn
+    s = d / (2.0 - mx - mn) if l > 0.5 else d / (mx + mn)
+    if mx == r:
+        hue = (g - b) / d + (6 if g < b else 0)
+    elif mx == g:
+        hue = (b - r) / d + 2
+    else:
+        hue = (r - g) / d + 4
+    return (hue * 60.0, s * 100.0)
+
 # Header label per pane key. Lives on the frame's top border, not in content.
 LABELS = {
     "status": "Character",
@@ -285,13 +311,18 @@ def pane_shades(pane_key, term_bg=None):
       label  L60 — gauge labels (for the upcoming gauge redesign)
 
     For the terminal-default ('black'/None) pane — and any unknown colour — the
-    ramp is neutral (h=0, s=0) so the bars read as untinted greys, matching the
-    neutral border. ``term_bg`` is accepted for the gauge step's paneBg (which
-    defaults to the live terminal background); the five shades here do not
-    depend on it. Cached pane-colour lookup; no file I/O."""
+    hue/saturation come from ``term_bg`` (the live terminal background, ADR 0099)
+    instead of the palette, so the bars track a tinted terminal. A neutral /
+    black terminal background has saturation ≈ 0, so the ramp collapses to the
+    same greys as the chromatic-free case (no regression, including the ConPTY
+    black fallback); a missing/garbled value falls back to neutral too.
+    ``term_bg`` defaults to the live terminal background. Cached pane-colour
+    lookup; no file I/O."""
+    if term_bg is None:
+        term_bg = _terminal_bg
     name = _pane_colors.get(pane_key, "black")
     if name in _TERMINAL_DEFAULT_NAMES or name not in PANE_SHADE_HS:
-        h, s = 0, 0
+        h, s = _hex_to_hs(term_bg)
     else:
         h, s = PANE_SHADE_HS[name]
     return {
