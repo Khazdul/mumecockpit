@@ -47,7 +47,9 @@ C_BG_RST    = "\x1b[49m"                 # reset background only (keep fg)
 C_LABEL     = "\x1b[38;2;96;96;96m"      # data row label foreground (#606060 — unified with timers header)
 C_VALUE     = "\x1b[38;2;192;192;192m"   # data row value foreground
 
-C_TOG_OFF_LABEL = "\x1b[38;2;83;72;56m"    # #534838 — warm dark brown
+# Toggle off-state label colour is palette-derived per frame (the bar's `track`
+# shade via pane_shades), so off-toggles retint with the pane colour. On-state
+# stays a fixed gold accent.
 C_TOG_ON_LABEL  = "\x1b[38;2;212;160;78m"  # #D4A04E — warm gold (matches overflow indicator)
 
 C_INDICATOR = "fg:#d4a04e italic"   # overflow indicator style
@@ -110,21 +112,21 @@ def _is_on(v):
     return v == "on"
 
 
-def _render_toggle(label, col_w, on):
+def _render_toggle(label, col_w, on, off_color):
     label_eff = label[: max(col_w, 0)]
     pad       = " " * max(col_w - len(label_eff), 0)
     if on:
-        return C_TOG_ON_LABEL  + label_eff + C_RESET + pad
-    return     C_TOG_OFF_LABEL + label_eff + C_RESET + pad
+        return C_TOG_ON_LABEL + label_eff + C_RESET + pad
+    return     off_color      + label_eff + C_RESET + pad
 
 
-def _build_toggles_row(c, W):
+def _build_toggles_row(c, W, off_color):
     c1, c2, c3, c4 = _col_widths(W)
     cells = [
-        _render_toggle("SNEAK", c1, _is_on(c.get("sneak"))),
-        _render_toggle("RIDE",  c2, _is_on(c.get("ride"))),
-        _render_toggle("CLIMB", c3, _is_on(c.get("climb"))),
-        _render_toggle("SWIM",  c4, _is_on(c.get("swim"))),
+        _render_toggle("SNEAK", c1, _is_on(c.get("sneak")), off_color),
+        _render_toggle("RIDE",  c2, _is_on(c.get("ride")),  off_color),
+        _render_toggle("CLIMB", c3, _is_on(c.get("climb")), off_color),
+        _render_toggle("SWIM",  c4, _is_on(c.get("swim")),  off_color),
     ]
     return cells[0] + " " + cells[1] + " " + cells[2] + " " + cells[3]
 
@@ -165,6 +167,7 @@ def _build_frame(data):
     xp_new_bg = _bg(shades["dim"])     # XP bar background — session-gain segment
     tp_fg     = _fg(shades["dim"])     # TP bar ▀ fg — baseline segment
     tp_new_fg = _fg(shades["mid"])     # TP bar ▀ fg — session-gain segment
+    tog_off   = _fg(shades["track"])   # toggle off-state label — bar shade
 
     name = c.get("character") or "—"
     name = name.capitalize()
@@ -192,7 +195,7 @@ def _build_frame(data):
             + C_RESET   + " " * (width - tp_total))
 
     blank = " " * width
-    return [row1, row2, _build_toggles_row(c, width), blank] + _build_data_rows(c, width)
+    return [row1, row2, _build_toggles_row(c, width, tog_off), blank] + _build_data_rows(c, width)
 
 
 # ---------------------------------------------------------------------------
