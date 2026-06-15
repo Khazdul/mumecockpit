@@ -1,6 +1,6 @@
 # 0094 — Track labeled NPCs in group membership
 
-**Status:** Accepted (v1 limitation superseded by [ADR 0095](0095-promote-demote-npcs-on-label-change.md))
+**Status:** Accepted (v1 limitation superseded by [ADR 0095](0095-promote-demote-npcs-on-label-change.md); display-filter note revised by [ADR 0139](0139-group-pane-display-filter-renderer-side.md))
 **Date:** 2026-05-22
 
 ## Context
@@ -85,3 +85,14 @@ late-labeling turns out to be common, the fix is to also include
 unlabeled NPCs in a shadow table (`state.group._pending_npcs`) and
 promote them into `members` when an update arrives carrying a non-null
 label — deferred until there is evidence the limitation matters.
+
+## 2026-06-16 note
+
+[ADR 0139](0139-group-pane-display-filter-renderer-side.md) adds a
+user-controlled display filter to the group pane (Show players / NPC
+visibility). The renderer now draws a subset of `state.group.members`, so
+"the pane does not filter" above describes this ADR's original
+no-preference design. The membership decision is unchanged:
+`state.group.members` is still the canonical set, the collector still owns
+the predicate, and no Lua / state-file change was made — the filtering is
+purely renderer-side.
