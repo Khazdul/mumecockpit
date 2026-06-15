@@ -48,6 +48,7 @@ local function serialize()
         race           = c.race,
         level          = c.xp and level_progress.level_from_xp(c.xp) or c.level,
         wimpy          = c.wimpy,
+        maxhp          = c.maxhp or json.null,
         xp             = c.xp,
         tp             = c.tp,
         xp_progress    = level_progress.compute_xp_progress(c.xp),
