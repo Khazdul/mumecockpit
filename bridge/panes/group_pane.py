@@ -35,7 +35,22 @@ GROUP_STATE_PATH = os.environ.get(
 CONNECTION_STATE_PATH = os.path.join(
     os.environ["HOME"], "MUME", "bridge", "runtime", "connection.state"
 )
+STARTUP_CONF_PATH = os.path.join(
+    os.environ["HOME"], "MUME", "bridge", "runtime", "startup.conf"
+)
 POLL_MS = 0.1
+
+# ---------------------------------------------------------------------------
+# Display-option keys (restated, not imported — bridge/panes shares no import
+# path with bridge/launcher; see ADR 0126 and bridge/launcher/group_options.py).
+#   group_show_players — "1" (default) / "0"
+#   group_npc_mode     — "labeled" (default) / "off"; any unknown value
+#                        (including the reserved "all") is treated as labeled.
+# ---------------------------------------------------------------------------
+GROUP_SHOW_PLAYERS_KEY     = "group_show_players"
+GROUP_NPC_MODE_KEY         = "group_npc_mode"
+GROUP_SHOW_PLAYERS_DEFAULT = True
+GROUP_NPC_MODE_DEFAULT     = "labeled"
 
 # ---------------------------------------------------------------------------
 # Colour constants (24-bit truecolor; swap values here to retheme)
@@ -58,10 +73,58 @@ C_INDICATOR     = "fg:#d4a04e italic"
 # ---------------------------------------------------------------------------
 # Renderer state
 # ---------------------------------------------------------------------------
-_members    = []
-_last_mtime = None
-_app        = None
-_run_active = False
+_members      = []
+_last_mtime   = None
+_app          = None
+_run_active   = False
+_show_players = GROUP_SHOW_PLAYERS_DEFAULT
+_npc_mode     = GROUP_NPC_MODE_DEFAULT
+_conf_mtime   = None
+
+
+def _read_display_options():
+    """Re-read the two display-option keys from startup.conf. Missing file or
+    keys fall through to the runtime defaults (players-on / NPC-labeled)."""
+    global _show_players, _npc_mode
+    show_players = GROUP_SHOW_PLAYERS_DEFAULT
+    npc_mode     = GROUP_NPC_MODE_DEFAULT
+    try:
+        with open(STARTUP_CONF_PATH) as fh:
+            for line in fh:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, _, val = line.partition("=")
+                key = key.strip()
+                val = val.strip()
+                if key == GROUP_SHOW_PLAYERS_KEY:
+                    show_players = (val != "0")
+                elif key == GROUP_NPC_MODE_KEY:
+                    npc_mode = "off" if val == "off" else "labeled"
+    except OSError:
+        pass
+    _show_players = show_players
+    _npc_mode     = npc_mode
+
+
+def _displayed_members():
+    """Presentation-only filter over the raw member set:
+      - allies (players) included iff group_show_players is on;
+      - NPCs included iff group_npc_mode is not "off";
+      - any other / unknown type is kept (defensive parity with the collector).
+    """
+    out = []
+    for m in _members:
+        t = m.get("type")
+        if t == "ally":
+            if _show_players:
+                out.append(m)
+        elif t == "npc":
+            if _npc_mode != "off":
+                out.append(m)
+        else:
+            out.append(m)
+    return out
 
 
 def _term_rows():
@@ -108,7 +171,13 @@ def _member_frags(member, W):
     hp_pct   = member.get("hp_pct")
     mana_pct = member.get("mana_pct")
     mp_pct   = member.get("mp_pct")
-    name     = member.get("label") or member.get("name") or ""
+    # Overlay text: labeled NPCs render as "Name (LABEL)"; players and any
+    # other type render as the bare name (no player labels).
+    name     = member.get("name") or ""
+    if member.get("type") == "npc":
+        label = member.get("label")
+        if isinstance(label, str) and label:
+            name = f"{name} ({label})"
 
     bar_hp_w, bar_mana_w, bar_mp_w = _bar_widths(W)
     bar_widths_list = [bar_hp_w, bar_mana_w, bar_mp_w]
@@ -162,16 +231,17 @@ def _member_frags(member, W):
 def _rows_text():
     if not _run_active:
         return [("", "")]
-    if not _members:
+    members = _displayed_members()
+    if not members:
         return []
     W     = max(3, inner_width(shutil.get_terminal_size().columns))
     H     = max(1, inner_height(_term_rows()))
-    total = len(_members)
+    total = len(members)
     # Reserve 1 row for the overflow indicator when it will be shown.
     list_height = H - 1 if total > H else H
 
     frags = []
-    for i, member in enumerate(_members[:list_height]):
+    for i, member in enumerate(members[:list_height]):
         if i > 0:
             frags.append(("", "\n"))
         frags.extend(_member_frags(member, W))
@@ -181,7 +251,7 @@ def _rows_text():
 def _indicator_text():
     if not _run_active:
         return [("", "")]
-    total = len(_members)
+    total = len(_displayed_members())
     H     = max(1, inner_height(_term_rows()))
     if total > H:
         hidden = total - (H - 1)
@@ -199,9 +269,18 @@ def _restore_cursor():
 
 
 async def _poll_state(app):
-    global _members, _last_mtime, _run_active
+    global _members, _last_mtime, _run_active, _conf_mtime
 
     while True:
+        try:
+            conf_mtime = os.stat(STARTUP_CONF_PATH).st_mtime
+        except OSError:
+            conf_mtime = None
+        if conf_mtime != _conf_mtime:
+            _conf_mtime = conf_mtime
+            _read_display_options()
+            app.invalidate()
+
         try:
             mtime = os.stat(GROUP_STATE_PATH).st_mtime
         except OSError:
@@ -255,7 +334,7 @@ def main():
             height=1,
             dont_extend_height=True,
         ),
-        filter=Condition(lambda: _run_active and len(_members) > inner_height(_term_rows())),
+        filter=Condition(lambda: _run_active and len(_displayed_members()) > inner_height(_term_rows())),
     )
 
     inner_root = HSplit([rows_window, indicator_container])

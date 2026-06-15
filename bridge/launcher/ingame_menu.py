@@ -41,6 +41,7 @@ from panes_grid import (
 )
 import frame_corners
 import comm_channels
+import group_options
 from timers_layout_grid import (
     TIMERS_LAYOUT_TYPES, TIMERS_LAYOUT_LABELS, TIMERS_LAYOUT_DEFAULTS,
     TIMERS_HEADERS_DEFAULT, TIMERS_COMPACT_DEFAULT,
@@ -141,6 +142,12 @@ _timers_col       = 0
 # flips, and writes the relevant conf via comm_channels; the render re-reads
 # every frame. Logic lives in comm_channels — none duplicated here.
 _panes_comm_row   = 0
+# Panes → Group submenu (display options). Three navigable rows: 0 Players
+# toggle, 1 NPC-visibility cycle, 2 Back. Cursor-only (no hover). Persistence
+# is immediate: each change reads, edits, and writes startup.conf in place via
+# _persist_conf_key; the running group pane re-reads on its poll tick. Render /
+# cycle / value logic live in group_options — none duplicated here.
+_panes_group_row  = 0
 # Scripts (read-only popup view) — frozen snapshot of scripts.cache,
 # loaded on every push of the frame. The cursor browses the list and
 # updates the detail panel; PageUp/PageDown scrolls the detail. No
@@ -172,6 +179,7 @@ _options_window      = None     # set in main(); referenced for focus
 _panes_window        = None     # set in main(); referenced for focus
 _panes_general_window        = None     # set in main(); referenced for focus
 _panes_communication_window  = None     # set in main(); referenced for focus
+_panes_group_window          = None     # set in main(); referenced for focus
 _timers_window       = None     # set in main(); referenced for focus
 _scripts_window      = None     # set in main(); referenced for focus
 _readability_window  = None     # set in main(); referenced for focus
@@ -344,6 +352,7 @@ def _focus_current_frame():
             "panes":                 _panes_window,
             "panes_general":         _panes_general_window,
             "panes_communication":   _panes_communication_window,
+            "panes_group":           _panes_group_window,
             "timers":                _timers_window,
             "scripts":               _scripts_window,
             "readability":           _readability_window,
@@ -801,6 +810,7 @@ _OPTIONS_PANES_ROWS = [
     ("general",       "General"),
     ("timers",        "Timers"),
     ("communication", "Communication"),
+    ("group",         "Group"),
     ("sep",           ""),
     ("back",          "Back"),
 ]
@@ -818,7 +828,7 @@ def _enter_panes_frame():
 
 def _panes_activate(row_idx):
     global _panes_general_row, _panes_general_col, _timers_row, _timers_col
-    global _panes_comm_row
+    global _panes_comm_row, _panes_group_row
     if not (0 <= row_idx < len(_OPTIONS_PANES_ROWS)):
         return
     action, _label = _OPTIONS_PANES_ROWS[row_idx]
@@ -833,6 +843,9 @@ def _panes_activate(row_idx):
     elif action == "communication":
         _panes_comm_row = 0
         _push_frame("panes_communication")
+    elif action == "group":
+        _panes_group_row = 0
+        _push_frame("panes_group")
     elif action == "back":
         _pop_frame()
 
@@ -3854,6 +3867,49 @@ def _panes_comm_escape(event):
     _pop_frame()
 
 
+# Panes → Group frame (display options). Three navigable rows: 0 Players
+# toggle, 1 NPC-visibility cycle, 2 Back. ←/→ adjusts the NPC cycle.
+@kb.add("up", filter=_in_frame("panes_group"))
+def _panes_group_up(event):
+    if _panes_group_row > 0:
+        _set_group_cursor(_panes_group_row - 1)
+
+
+@kb.add("down", filter=_in_frame("panes_group"))
+def _panes_group_down(event):
+    if _panes_group_row < _GROUP_LAST_ROW:
+        _set_group_cursor(_panes_group_row + 1)
+
+
+@kb.add("left", filter=_in_frame("panes_group"))
+def _panes_group_left(event):
+    if _panes_group_row == _GROUP_NPC_ROW:
+        _cycle_group_npc(-1)
+
+
+@kb.add("right", filter=_in_frame("panes_group"))
+def _panes_group_right(event):
+    if _panes_group_row == _GROUP_NPC_ROW:
+        _cycle_group_npc(1)
+
+
+@kb.add("enter", filter=_in_frame("panes_group"))
+@kb.add(" ",     filter=_in_frame("panes_group"))
+def _panes_group_select(event):
+    r = _panes_group_row
+    if r == _GROUP_PLAYERS_ROW:
+        _toggle_group_players()
+    elif r == _GROUP_NPC_ROW:
+        _cycle_group_npc(1)
+    elif r == _GROUP_BACK_ROW:
+        _pop_frame()
+
+
+@kb.add("escape", filter=_in_frame("panes_group"), eager=True)
+def _panes_group_escape(event):
+    _pop_frame()
+
+
 # Timers-layout frame (group × colour grid + per-row column stepper).
 # Seven navigable rows; ←/→ moves the column only on grid rows, persisting
 # across grid rows. Colour cols 0..N-1; ◄ at N; ► at N+1.
@@ -4385,6 +4441,121 @@ def _build_panes_communication_container():
     return _panes_communication_window
 
 
+# ---------------------------------------------------------------------------
+# Panes → Group frame (Options → Panes → Group): display options.
+# ---------------------------------------------------------------------------
+# Two display controls (Players on/off, NPC visibility Off/Labeled) over a
+# Back row. Cursor-only frame (no separate hover index). Persistence is
+# immediate: each change reads startup.conf, edits the one key, and writes it
+# back via _persist_conf_key; the running group pane re-reads startup.conf on
+# its poll tick and re-renders. Render / cycle / value logic go through
+# group_options. See docs/group-pane.md.
+_GROUP_PLAYERS_ROW = group_options.PLAYERS_ROW   # 0
+_GROUP_NPC_ROW     = group_options.NPC_ROW       # 1
+_GROUP_BACK_ROW    = 2
+_GROUP_LAST_ROW    = _GROUP_BACK_ROW
+
+
+def _set_group_cursor(row):
+    """Update the popup group-options cursor; invalidate on change."""
+    global _panes_group_row
+    if row != _panes_group_row:
+        _panes_group_row = row
+        if _app:
+            _app.invalidate()
+
+
+def _toggle_group_players():
+    """Flip group_show_players and persist startup.conf immediately."""
+    conf = _parse_keyval(STARTUP_CONF_PATH)
+    cur = group_options.parse_show_players(
+        conf.get(group_options.GROUP_SHOW_PLAYERS_KEY))
+    _persist_conf_key(group_options.GROUP_SHOW_PLAYERS_KEY, "0" if cur else "1")
+    if _app:
+        _app.invalidate()
+
+
+def _cycle_group_npc(delta=1):
+    """Advance group_npc_mode (Off ↔ Labeled) and persist immediately."""
+    conf = _parse_keyval(STARTUP_CONF_PATH)
+    new = group_options.next_npc_mode(
+        conf.get(group_options.GROUP_NPC_MODE_KEY), delta)
+    _persist_conf_key(group_options.GROUP_NPC_MODE_KEY, new)
+    if _app:
+        _app.invalidate()
+
+
+def _panes_group_text():
+    cols   = _term_cols()
+    rows_h = _term_rows()
+
+    # Live state: re-read startup.conf every render so external edits show.
+    conf = _parse_keyval(STARTUP_CONF_PATH)
+    show_players, npc_mode = group_options.read_group_options(conf)
+
+    cur_row    = _panes_group_row
+    opt_cursor = cur_row if cur_row < _GROUP_BACK_ROW else None
+
+    frags = []
+    frags.extend(title_block("─── Group ───", cols, blank_above=1))
+
+    def _players_handler(ev):
+        if ev.event_type == MouseEventType.MOUSE_MOVE:
+            _set_group_cursor(_GROUP_PLAYERS_ROW)
+            return
+        if ev.event_type == MouseEventType.MOUSE_DOWN:
+            _set_group_cursor(_GROUP_PLAYERS_ROW)
+            _toggle_group_players()
+
+    def _npc_handler(ev):
+        if ev.event_type == MouseEventType.MOUSE_MOVE:
+            _set_group_cursor(_GROUP_NPC_ROW)
+            return
+        if ev.event_type == MouseEventType.MOUSE_DOWN:
+            _set_group_cursor(_GROUP_NPC_ROW)
+            _cycle_group_npc(1)
+
+    frags.extend(group_options.group_options_fragments(
+        show_players, npc_mode, cols, opt_cursor,
+        players_handler=_players_handler, npc_handler=_npc_handler,
+    ))
+
+    frags.append(("", "\n"))
+
+    # Back — plain << label >> row, centred per row.
+    back_label = "Back"
+    state_b = "selected" if cur_row == _GROUP_BACK_ROW else "inactive"
+
+    def _back_handler(ev):
+        if ev.event_type == MouseEventType.MOUSE_MOVE:
+            _set_group_cursor(_GROUP_BACK_ROW)
+            return
+        if ev.event_type == MouseEventType.MOUSE_DOWN:
+            _pop_frame()
+
+    pad_b = max(0, (cols - (len(back_label) + 6)) // 2)
+    frags.append(("", " " * pad_b))
+    frags.extend(menu_row(back_label, state_b, mouse_handler=_back_handler))
+    frags.append(("", "\n"))
+
+    # title block (3 rows for popup) + 2 option rows + blank + Back (2 rows).
+    content_rows = title_block_height(1) + 2 + 2
+    footer = "↑↓ Move · ←→ Adjust · Enter Toggle · ESC Back"
+    frags.extend(footer_block(footer, cols, rows_h, content_rows))
+
+    return frags
+
+
+def _build_panes_group_container():
+    global _panes_group_window
+    _panes_group_window = Window(
+        content=FormattedTextControl(text=_panes_group_text, focusable=True),
+        wrap_lines=False,
+        always_hide_cursor=True,
+    )
+    return _panes_group_window
+
+
 def _timers_text():
     cols   = _term_cols()
     rows_h = _term_rows()
@@ -4681,6 +4852,7 @@ def main():
         "panes":                         _build_panes_container(),
         "panes_general":                 _build_panes_general_container(),
         "panes_communication":           _build_panes_communication_container(),
+        "panes_group":                   _build_panes_group_container(),
         "timers":                        _build_timers_container(),
         "scripts":                       _build_scripts_container(),
         "readability":                   _build_readability_container(),

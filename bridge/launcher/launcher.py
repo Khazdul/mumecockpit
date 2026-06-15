@@ -89,6 +89,7 @@ from panes_grid import (  # noqa: E402
     panes_grid_fragments,
 )
 import comm_channels  # noqa: E402
+import group_options  # noqa: E402
 from timers_layout_grid import (  # noqa: E402
     TIMERS_LAYOUT_TYPES, TIMERS_LAYOUT_LABELS, TIMERS_LAYOUT_DEFAULTS,
     TIMERS_HEADERS_DEFAULT, TIMERS_COMPACT_DEFAULT,
@@ -188,6 +189,8 @@ _CONF_DEFAULTS_FALLBACK = {
     "pane_color_comm":    "blue",
     "pane_color_ui":      "black",
     "pane_color_dev":     "grey",
+    "group_show_players": "1",
+    "group_npc_mode":     "labeled",
     "profile":            "default",
     "spotlights_show_deaths":       "1",
     "spotlights_show_levelups":     "1",
@@ -315,6 +318,11 @@ _options_timers_col       = 0
 _options_panes_comm_row   = 0
 _comm_filters             = {}
 _comm_show_header         = True
+# Options — Panes → Group submenu (display options). Three navigable rows:
+#   0 — Players toggle, 1 — NPC-visibility cycle, 2 — Back. Cursor-only.
+# Deferred edits mutate `_conf` directly (group_show_players / group_npc_mode);
+# _save_conf flushes on the exit path. Logic lives in group_options.
+_options_panes_group_row  = 0
 # Options — Connection submenu (MMapper / Direct / Custom / Back)
 _sel_options_connection   = 0
 _hover_options_connection = -1
@@ -529,6 +537,7 @@ _options_window                  = None
 _options_panes_window            = None
 _options_panes_general_window            = None
 _options_panes_communication_window      = None
+_options_panes_group_window              = None
 _options_timers_window           = None
 _options_connection_window       = None
 _options_connection_custom_window = None
@@ -874,6 +883,7 @@ def _save_conf():
                 "show_comm", "show_ui", "show_dev",
                 "pane_color_status", "pane_color_timers", "pane_color_group",
                 "pane_color_comm", "pane_color_ui", "pane_color_dev",
+                "group_show_players", "group_npc_mode",
                 "profile",
                 "spotlights_show_deaths", "spotlights_show_levelups",
                 "spotlights_show_pvp", "spotlights_show_achievements",
@@ -1210,6 +1220,7 @@ def _focus_current_frame():
             "options_panes":              _options_panes_window,
             "options_panes_general":      _options_panes_general_window,
             "options_panes_communication": _options_panes_communication_window,
+            "options_panes_group":        _options_panes_group_window,
             "options_timers":             _options_timers_window,
             "options_connection":         _options_connection_window,
             "options_connection_custom":  _options_connection_custom_window,
@@ -2725,6 +2736,7 @@ _OPTIONS_PANES_ROWS = [
     ("general",       "General"),
     ("timers",        "Timers"),
     ("communication", "Communication"),
+    ("group",         "Group"),
     ("back",          "Back"),
 ]
 
@@ -2739,7 +2751,7 @@ def _activate_options_panes(idx):
     global _sel_options_panes
     global _options_panes_general_row, _options_panes_general_col
     global _options_timers_row, _options_timers_col
-    global _options_panes_comm_row
+    global _options_panes_comm_row, _options_panes_group_row
     if idx < 0 or idx >= len(_OPTIONS_PANES_ROWS):
         return
     _sel_options_panes = idx
@@ -2757,6 +2769,9 @@ def _activate_options_panes(idx):
         _options_panes_comm_row = 0
         _load_comm_channels()
         _push_frame("options_panes_communication")
+    elif action == "group":
+        _options_panes_group_row = 0
+        _push_frame("options_panes_group")
     elif action == "back":
         _pop_frame()
 
@@ -3195,6 +3210,128 @@ def _options_panes_communication_text():
         footer, cols, rows_h, content_rows, mouse_handler=clear_hover,
     ))
 
+    return frags
+
+
+# ---------------------------------------------------------------------------
+# Options — Panes → Group submenu (display options)
+# ---------------------------------------------------------------------------
+# Two display controls — Players on/off and NPC visibility (Off / Labeled) —
+# over a Back row. ↑/↓ moves between rows; ←/→ adjusts the NPC cycle; Enter
+# toggles the focused control; Back/ESC saves and pops. All writes are
+# deferred — edits mutate `_conf` (group_show_players / group_npc_mode) and
+# _save_conf flushes on the exit path. Render / cycle / value logic go through
+# group_options.
+
+_GROUP_PLAYERS_ROW = group_options.PLAYERS_ROW   # 0
+_GROUP_NPC_ROW     = group_options.NPC_ROW       # 1
+_GROUP_BACK_ROW    = 2
+_GROUP_LAST_ROW    = _GROUP_BACK_ROW
+
+
+def _set_group_cursor(row):
+    """Update the group-options cursor; invalidate on change."""
+    global _options_panes_group_row
+    if row != _options_panes_group_row:
+        _options_panes_group_row = row
+        if _app:
+            _app.invalidate()
+
+
+def _options_panes_group_back():
+    _save_conf()
+    _pop_frame()
+
+
+def _toggle_group_players():
+    """Flip group_show_players in the in-memory conf (deferred write)."""
+    cur = group_options.parse_show_players(
+        _conf.get(group_options.GROUP_SHOW_PLAYERS_KEY))
+    _conf[group_options.GROUP_SHOW_PLAYERS_KEY] = "0" if cur else "1"
+    if _app:
+        _app.invalidate()
+
+
+def _cycle_group_npc(delta=1):
+    """Advance group_npc_mode (Off ↔ Labeled) in the in-memory conf."""
+    new = group_options.next_npc_mode(
+        _conf.get(group_options.GROUP_NPC_MODE_KEY), delta)
+    _conf[group_options.GROUP_NPC_MODE_KEY] = new
+    if _app:
+        _app.invalidate()
+
+
+def _options_panes_group_clear_hover(ev):
+    """MOUSE_MOVE handler for chrome rows. The cursor and mouse share
+    `_options_panes_group_row`, so the option / Back handlers overwrite it on
+    hover and this stays a no-op — it exists only so the chrome rows can carry
+    a handler (the hover-clear invariant)."""
+    return
+
+
+def _options_panes_group_text():
+    cols   = _term_cols()
+    rows_h = _term_rows()
+    clear_hover = _options_panes_group_clear_hover
+
+    show_players, npc_mode = group_options.read_group_options(_conf)
+    cur_row    = _options_panes_group_row
+    opt_cursor = cur_row if cur_row < _GROUP_BACK_ROW else None
+
+    frags = []
+    frags.extend(title_block(
+        "─── Group ───", cols, blank_above=2, mouse_handler=clear_hover,
+    ))
+
+    def _players_handler(ev):
+        if ev.event_type == MouseEventType.MOUSE_MOVE:
+            _set_group_cursor(_GROUP_PLAYERS_ROW)
+            return
+        if ev.event_type == MouseEventType.MOUSE_DOWN:
+            _set_group_cursor(_GROUP_PLAYERS_ROW)
+            _toggle_group_players()
+
+    def _npc_handler(ev):
+        if ev.event_type == MouseEventType.MOUSE_MOVE:
+            _set_group_cursor(_GROUP_NPC_ROW)
+            return
+        if ev.event_type == MouseEventType.MOUSE_DOWN:
+            _set_group_cursor(_GROUP_NPC_ROW)
+            _cycle_group_npc(1)
+
+    frags.extend(group_options.group_options_fragments(
+        show_players, npc_mode, cols, opt_cursor,
+        players_handler=_players_handler, npc_handler=_npc_handler,
+    ))
+
+    # Blank row between the option block and Back.
+    frags.append(("", "\n", clear_hover))
+
+    # Back — plain << label >> row, centred per row.
+    back_label = "Back"
+    state_b = "selected" if cur_row == _GROUP_BACK_ROW else "inactive"
+
+    def _back_handler(ev):
+        if ev.event_type == MouseEventType.MOUSE_MOVE:
+            _set_group_cursor(_GROUP_BACK_ROW)
+            return
+        if ev.event_type == MouseEventType.MOUSE_DOWN:
+            _options_panes_group_back()
+
+    b_row_w     = len(back_label) + 6
+    b_left_pad  = max(0, (cols - b_row_w) // 2)
+    b_right_pad = max(0, cols - b_left_pad - b_row_w)
+    frags.append(("", " " * b_left_pad, clear_hover))
+    frags.extend(menu_row(back_label, state_b, mouse_handler=_back_handler))
+    frags.append(("", " " * b_right_pad, clear_hover))
+    frags.append(("", "\n", clear_hover))
+
+    # title block + 2 option rows + blank + Back.
+    content_rows = title_block_height(2) + 2 + 2
+    footer = "↑↓ Move · ←→ Adjust · Enter Toggle · ESC Back"
+    frags.extend(footer_block(
+        footer, cols, rows_h, content_rows, mouse_handler=clear_hover,
+    ))
     return frags
 
 
@@ -10331,6 +10468,49 @@ def _kb_optc_escape(event):
     _options_panes_communication_back()
 
 
+# Options — Panes → Group submenu (display options). Three navigable rows:
+# 0 Players toggle, 1 NPC-visibility cycle, 2 Back. ←/→ adjusts the NPC cycle.
+@kb.add("up", filter=_in_frame("options_panes_group"))
+def _kb_optg_up(event):
+    if _options_panes_group_row > 0:
+        _set_group_cursor(_options_panes_group_row - 1)
+
+
+@kb.add("down", filter=_in_frame("options_panes_group"))
+def _kb_optg_down(event):
+    if _options_panes_group_row < _GROUP_LAST_ROW:
+        _set_group_cursor(_options_panes_group_row + 1)
+
+
+@kb.add("left", filter=_in_frame("options_panes_group"))
+def _kb_optg_left(event):
+    if _options_panes_group_row == _GROUP_NPC_ROW:
+        _cycle_group_npc(-1)
+
+
+@kb.add("right", filter=_in_frame("options_panes_group"))
+def _kb_optg_right(event):
+    if _options_panes_group_row == _GROUP_NPC_ROW:
+        _cycle_group_npc(1)
+
+
+@kb.add("enter", filter=_in_frame("options_panes_group"))
+@kb.add(" ",     filter=_in_frame("options_panes_group"))
+def _kb_optg_select(event):
+    r = _options_panes_group_row
+    if r == _GROUP_PLAYERS_ROW:
+        _toggle_group_players()
+    elif r == _GROUP_NPC_ROW:
+        _cycle_group_npc(1)
+    elif r == _GROUP_BACK_ROW:
+        _options_panes_group_back()
+
+
+@kb.add("escape", filter=_in_frame("options_panes_group"), eager=True)
+def _kb_optg_escape(event):
+    _options_panes_group_back()
+
+
 # Options — Timers layout submenu (colour grid + col steppers). Six group
 # rows + Back; ←/→ moves between the colour columns and the two steppers,
 # Enter toggles a colour / nudges the column count / activates Back, ESC = Back.
@@ -11248,6 +11428,7 @@ def main():
     global _profile_create_copy_window, _profile_delete_window
     global _options_window, _options_panes_window, _options_panes_general_window
     global _options_panes_communication_window
+    global _options_panes_group_window
     global _options_timers_window
     global _options_connection_window, _options_connection_custom_window
     global _options_spotlights_window
@@ -11329,6 +11510,7 @@ def main():
     _options_panes_window,              options_panes_frame            = _build_simple(_options_panes_text)
     _options_panes_general_window,      options_panes_general_frame    = _build_simple(_options_panes_general_text)
     _options_panes_communication_window, options_panes_communication_frame = _build_simple(_options_panes_communication_text)
+    _options_panes_group_window,        options_panes_group_frame      = _build_simple(_options_panes_group_text)
     _options_timers_window,             options_timers_frame           = _build_simple(_options_timers_text)
     _options_connection_window,         options_connection_frame       = _build_simple(_options_connection_text)
     _options_connection_custom_window,  options_connection_custom_frame = _build_simple(_options_connection_custom_text)
@@ -11491,6 +11673,7 @@ def main():
         "options_panes":              options_panes_frame,
         "options_panes_general":      options_panes_general_frame,
         "options_panes_communication": options_panes_communication_frame,
+        "options_panes_group":        options_panes_group_frame,
         "options_timers":             options_timers_frame,
         "options_connection":         options_connection_frame,
         "options_connection_custom":  options_connection_custom_frame,
