@@ -118,6 +118,8 @@ the cockpit sets every option explicitly, so this is intentional.) tmux allocate
 history lazily, so memory grows only with lines actually produced. This governs
 the player-visible copy-mode scrollback only; it does not touch tt++'s own
 `#buffer` (`buffer_size`), left at default and not surfaced (ADR 0025/0127).
+See [ADR 0141](decisions/0141-game-pane-scrollback-via-bootstrap-conf.md) for
+the bootstrap-conf mechanism and the verified pane-creation timing.
 
 While the game pane is scrolled, sending a command (Enter) or pressing any
 forwarded macro key (F1–F12, numpad, Alt+letter, Ctrl+letter) first snaps the
