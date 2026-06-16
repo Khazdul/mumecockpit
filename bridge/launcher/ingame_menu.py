@@ -1032,6 +1032,13 @@ def _retint_pane(target, color_name):
             timeout=1.0,
         )
     except (subprocess.SubprocessError, OSError):
+        return
+    # select-pane -P also makes the recoloured pane active; restore focus to
+    # input so the popup doesn't leave the cursor stuck in the right column.
+    focus_input = os.path.expanduser("~/MUME/bridge/layout/focus_input.sh")
+    try:
+        subprocess.run(["bash", focus_input], timeout=1.0)
+    except (subprocess.SubprocessError, OSError):
         pass
 
 
