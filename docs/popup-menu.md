@@ -375,7 +375,12 @@ Click / Enter semantics:
   pane is — or has just become — open). The colour name is also written
   to `startup.conf` via the in-place `_persist_conf_key` helper so it
   survives the next cold start (the cockpit's `open_pane.sh`
-  `_pane_bg_for` reads the same key).
+  `_pane_bg_for` reads the same key). Because `select-pane` also makes its
+  target the active pane, the live re-tint is paired with a focus restore —
+  `bridge/layout/focus_input.sh` re-selects the input pane immediately
+  afterwards (mirroring `open_pane.sh`, which pairs every `select-pane -P
+  bg` with the same restore), so dismissing the popup returns the cursor to
+  the input pane rather than leaving it on the recoloured pane.
 - On the Border cell — flips `border_<key>` in `startup.conf`
   immediately (via `_persist_conf_key`), then **re-runs
   `apply_desired_heights.sh`** so the changed in-pane frame reservation
