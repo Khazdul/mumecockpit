@@ -105,6 +105,20 @@ Mouse wheel and keyboard scrollback are therefore interchangeable: scrolling up
 with the wheel and then pressing Page Up continues from the same position, and
 vice versa.
 
+**Scrollback depth.** The session sets `history-limit 100000` (raised from the
+tmux default of 2000), so the game pane retains far more scrollback during long
+sessions. `history-limit` is read only at pane creation and is never resized on
+an existing pane, so the option must exist before `new-session` builds pane 0
+(the game pane). A plain `set-option -g` beforehand fails — no server exists yet
+— so `tmux_start.sh` feeds it via `tmux -f bridge/launcher/templates/tmux_bootstrap.conf
+new-session`, read as the server starts. Panes built later by
+`build_initial_layout.sh` inherit the limit from the resulting global option.
+(Passing `-f` suppresses tmux's default read of `~/.tmux.conf` for this server;
+the cockpit sets every option explicitly, so this is intentional.) tmux allocates
+history lazily, so memory grows only with lines actually produced. This governs
+the player-visible copy-mode scrollback only; it does not touch tt++'s own
+`#buffer` (`buffer_size`), left at default and not surfaced (ADR 0025/0127).
+
 While the game pane is scrolled, sending a command (Enter) or pressing any
 forwarded macro key (F1–F12, numpad, Alt+letter, Ctrl+letter) first snaps the
 game pane back to the live tail — `input_pane.py` issues a server-gated

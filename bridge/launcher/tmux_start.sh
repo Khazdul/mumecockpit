@@ -102,12 +102,27 @@ touch logs/debug.log logs/ui.log
 # ---------------------------------------------------------------------------
 tmux kill-session -t mume 2>/dev/null || true
 
+# Raise the tmux scrollback depth from the 2000-line default to 100000 so the
+# game pane can be scrolled back far during long sessions. This drives the
+# player-visible scrollback (tmux copy-mode, ADR 0025/0127) — NOT tt++'s own
+# #buffer (buffer_size), which is left at default and is not surfaced.
+# history-limit is locked at pane creation and is never resized on an existing
+# pane (tmux(1): "applies only to new windows"), so pane 0 (the game pane, born
+# from new-session) can only inherit the raised limit if the option exists
+# *before* new-session runs. A plain `set-option -g` before new-session fails —
+# no server exists yet — so we feed it via `-f tmux_bootstrap.conf`, read as the
+# server starts. Panes built later by build_initial_layout.sh inherit 100000 via
+# the resulting global option. NOTE: passing -f suppresses tmux's default read
+# of ~/.tmux.conf for this server; the cockpit sets every option explicitly and
+# hides tmux from the player, so this is intentional.
+TMUX_BOOTSTRAP_CONF="$HOME/MUME/bridge/launcher/templates/tmux_bootstrap.conf"
+
 if [ "$PRE_ATTACH_BUILD" -eq 1 ]; then
-    tmux new-session -d -x "$LAUNCHER_COLS" -y "$LAUNCHER_ROWS" \
+    tmux -f "$TMUX_BOOTSTRAP_CONF" new-session -d -x "$LAUNCHER_COLS" -y "$LAUNCHER_ROWS" \
         -s mume -n cockpit \
         "bash $HOME/MUME/bridge/launcher/wait_for_layout.sh"
 else
-    tmux new-session -d -s mume -n cockpit \
+    tmux -f "$TMUX_BOOTSTRAP_CONF" new-session -d -s mume -n cockpit \
         "bash $HOME/MUME/bridge/launcher/wait_for_layout.sh"
 fi
 tmux set-option -t mume status off
