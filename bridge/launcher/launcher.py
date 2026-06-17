@@ -199,6 +199,7 @@ _CONF_DEFAULTS_FALLBACK = {
     "terminal_bg_fallback":         "#000000",
     "frame_corners":                "auto",
     "readability_enabled":          "",
+    "input_autosuggest":            "0",
 }
 
 
@@ -890,6 +891,7 @@ def _save_conf():
                 "terminal_bg_fallback",
                 "frame_corners",
                 "readability_enabled",
+                "input_autosuggest",
             ):
                 fh.write(f"{key}={_conf.get(key, _CONF_DEFAULTS[key])}\n")
             # Per-pane border state. Written only when explicitly set so an
@@ -2627,6 +2629,9 @@ def _build_options_rows():
         ("readability", "Readability"),
         ("scripts",     "Scripts"),
         ("spotlights",  "Spotlights"),
+        # In-place [X]/[ ] toggle (does not push a sub-frame); flips
+        # input_autosuggest in _conf, persisted by _save_conf on Back / ESC.
+        ("autosuggest", "Input autosuggest"),
         ("back",        "Back"),
     ])
     return rows
@@ -2662,6 +2667,14 @@ def _activate_option(idx):
         _push_frame("options_connection")
     elif action == "terminal":
         _enter_options_terminal_frame()
+    elif action == "autosuggest":
+        # In-place toggle: flip the value and stay on the frame. Persisted
+        # via _save_conf on the Back / ESC exit path, like other toggles.
+        _conf["input_autosuggest"] = (
+            "0" if _conf.get("input_autosuggest") == "1" else "1"
+        )
+        if _app:
+            _app.invalidate()
     elif action == "back":
         _save_conf()
         _pop_frame()
@@ -2688,11 +2701,17 @@ def _options_text():
     blank_rows = 0
 
     # Plain `<< label >>` menu: centre each row independently
-    # (ragged-centred). Same per-row width as the main frame.
+    # (ragged-centred). Same per-row width as the main frame. The
+    # `autosuggest` row carries a leading [X] / [ ] glyph (3 cells wide
+    # in both states, so it never shifts) for its persistent on/off state.
     for i, (action, label) in enumerate(_OPTIONS_ROWS):
         if i == back_idx:
             frags.append(("", "\n", clear_hover))   # blank before Back
             blank_rows += 1
+
+        if action == "autosuggest":
+            box   = "[X]" if _conf.get("input_autosuggest") == "1" else "[ ]"
+            label = f"{box} {label}"
 
         is_active = (i == _sel_options)
         is_hover  = (i == _hover_options)

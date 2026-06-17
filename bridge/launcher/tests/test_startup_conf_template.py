@@ -63,6 +63,10 @@ class TestStartupConfTemplate(unittest.TestCase):
             f"only in _save_conf={save_keys - tpl_keys}",
         )
 
+    def test_input_autosuggest_defaults_off(self):
+        # Opt-in inline history autosuggestion ships OFF on a fresh install.
+        self.assertEqual(self.tpl["input_autosuggest"], "0")
+
     def test_show_dev_off_others_on(self):
         self.assertEqual(self.tpl["show_dev"], "0")
         for key in (

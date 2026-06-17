@@ -182,8 +182,18 @@ has no size cap.
 
 ### Inline history autosuggestion
 
-As the user types, the most recent history entry that starts with the
-current buffer text is shown greyed inline after the cursor (fish-style),
+**Opt-in, default off.** Gated by `input_autosuggest` in `startup.conf`
+(`1` → on, `0` / absent → off). The pane reads the key **once at startup**,
+directly from `bridge/runtime/startup.conf` (`_autosuggest_enabled()`) — not
+via `read_config.sh` or tt++ `#var`, so nothing touches the hot path. The
+toggle lives on the launcher Options frame (in-place `[X]` / `[ ]` row, see
+[launcher.md](launcher.md)); a change takes effect on the next cockpit start
+(no live re-apply into the running pane). When off, no `auto_suggest` is
+attached and `AppendAutoSuggestion` is omitted, so `buffer.suggestion` stays
+`None` and the Right/End accept branches below are inert.
+
+When on, as the user types, the most recent history entry that starts with
+the current buffer text is shown greyed inline after the cursor (fish-style),
 via prompt_toolkit's `AutoSuggestFromHistory`. It draws on the **same**
 in-memory `history` list described above — a thin `_LiveHistory` (a
 `History` subclass whose `get_strings()` returns the live list) is wired to

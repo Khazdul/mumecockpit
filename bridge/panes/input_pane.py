@@ -36,6 +36,7 @@ _PRINTABLE  = [c for c in string.printable if c.isprintable()]
 BRIDGE_DIR        = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RUNTIME_DIR       = os.path.join(BRIDGE_DIR, "runtime")
 STATUS_STATE_PATH = os.path.join(RUNTIME_DIR, "status.state")
+STARTUP_CONF_PATH = os.path.join(RUNTIME_DIR, "startup.conf")
 CLOCK_POLL_MS     = 0.25
 CLOCK_WIDTH       = 7   # 1 gutter + 5 time text + 1 icon
 PROMPT_TEXT       = "> "
@@ -89,6 +90,27 @@ class _LiveHistory(History):
 
     def get_strings(self):
         return list(history)
+
+
+def _autosuggest_enabled():
+    """Read `input_autosuggest` straight from bridge/runtime/startup.conf.
+
+    Deliberately self-contained: no read_config.sh, no tt++ #var, no IPC —
+    nothing on the hot path. Read once at startup; a change takes effect on
+    the next cockpit start. Absent file / absent key / any non-"1" value →
+    off (the default)."""
+    try:
+        with open(STARTUP_CONF_PATH) as fh:
+            for line in fh:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, _, val = line.partition("=")
+                if key.strip() == "input_autosuggest":
+                    return val.strip() == "1"
+    except OSError:
+        pass
+    return False
 
 
 def _set_buffer_text(buf, text, cursor_pos=None):
@@ -666,10 +688,17 @@ def main():
     sys.stdout.flush()
     atexit.register(_restore_keypad)
 
+    # Opt-in inline history autosuggestion, gated by startup.conf
+    # (default off). Read once here; no live re-read. When off, no
+    # auto_suggest is attached and the append-suggestion processor is
+    # omitted, so buf.suggestion stays None and the Right/End accept
+    # branches are inert.
+    autosuggest_on = _autosuggest_enabled()
+
     buf = Buffer(
         name="input",
         history=_LiveHistory(),
-        auto_suggest=AutoSuggestFromHistory(),
+        auto_suggest=AutoSuggestFromHistory() if autosuggest_on else None,
     )
     buf.on_text_changed += lambda _: _on_text_changed(buf)
 
@@ -679,12 +708,15 @@ def main():
         height=1,
     )
 
+    # Renders buffer.suggestion greyed (class:auto-suggestion) after the
+    # cursor. Not in BufferControl's default processor set, so add it only
+    # when autosuggest is enabled.
+    input_processors = [AppendAutoSuggestion()] if autosuggest_on else []
+
     input_window = Window(
         BufferControl(
             buffer=buf,
-            # Renders buffer.suggestion greyed (class:auto-suggestion) after the
-            # cursor. Not in BufferControl's default processor set, so add it.
-            input_processors=[AppendAutoSuggestion()],
+            input_processors=input_processors,
         ),
         height=1,
     )

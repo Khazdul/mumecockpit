@@ -74,7 +74,7 @@ subframe.
 |---------|--------|
 | Session detect | `tmux has-session -t mume` + `list-clients` re-probed on every render → top item is "Enter MUME", "Resume MUME", or "Mirror MUME (attached elsewhere)" |
 | Profile page | Sortable table of `ttpp/profiles/*.tin` (Name + Selected columns) paired with a centred Options widget — Select, New, Edit, Rename, Delete, Export, Back. See the [Profile sub-menu](#profile-sub-menu) section below. `default` cannot be renamed or deleted. "Create blank" copies from `bridge/launcher/templates/blank_profile.tin` (single source of truth — see ADR 0042). The active profile is written to `startup.conf` and consumed by `ttpp/core/config.tin` at tt++ startup. |
-| Options page | Navigation hub: **Connection**, **Terminal** (managed-foot deployment only), **Panes**, **Readability**, **Scripts**, **Spotlights**, blank row, **Back**. **Panes** is itself a hub over the per-pane layout pages (**General**, **Timers**, **Communication**). See the [Options sub-menu](#options-sub-menu) section below for each child frame. Most Options changes persist to `bridge/runtime/startup.conf` on Back / ESC; the Terminal child writes its own foot.ini, the Timers layout child writes `bridge/runtime/timers_layout.conf`, and the Communication child writes `bridge/runtime/comm_filters.conf` + `comm_prefs.conf` — none is a `startup.conf` consumer. |
+| Options page | Navigation hub: **Connection**, **Terminal** (managed-foot deployment only), **Panes**, **Readability**, **Scripts**, **Spotlights**, an in-place **Input autosuggest** `[X]`/`[ ]` toggle, blank row, **Back**. **Panes** is itself a hub over the per-pane layout pages (**General**, **Timers**, **Communication**). See the [Options sub-menu](#options-sub-menu) section below for each child frame. Most Options changes persist to `bridge/runtime/startup.conf` on Back / ESC; the Terminal child writes its own foot.ini, the Timers layout child writes `bridge/runtime/timers_layout.conf`, and the Communication child writes `bridge/runtime/comm_filters.conf` + `comm_prefs.conf` — none is a `startup.conf` consumer. |
 | Scripts page | Opened from Options → Scripts. Two-column `[ list \| detail ]` manager of `lua/scripts/<name>.lua`; toggles enabled state via `bridge/runtime/scripts.conf` (deferred write on Back/ESC). See [`options_scripts` frame](#options_scripts-frame) below. |
 | Spotlights | Cross-character reel of deaths, level-ups, pvp-kills, and achievements aggregated from every character's sealed runs. Opens `log_view` in spotlight mode; empty-state frame when nothing has been captured yet. Plays to the end and parks on the last spotlight (no roll into credits). See the [Spotlights sub-menu](#spotlights-sub-menu) section and ADR 0077. |
 | Credits | Scrolling end-credits chronicle generated from the same aggregated event set as Spotlights, respecting the Options → Spotlights toggles. Sibling of Spotlights; opens the [`credits` frame](#credits-frame) directly (no `.log` loading), or `credits_empty` when `total_count == 0`. The only route to the credits frame. |
@@ -1341,6 +1341,13 @@ Navigation hub pushed by activating "Options" on the main frame. Children:
   returns to `options`.
 - **Spotlights** → `options_spotlights` — per-kind toggles for the
   Spotlights reel (deaths, level-ups, PvP kills, achievements).
+- **Input autosuggest** — an in-place `[X]` / `[ ]` toggle row (does
+  **not** push a sub-frame). Flips `input_autosuggest` in `_conf` (`0`/`1`,
+  default `0`); the existing `_save_conf` on Back / ESC persists it. Gates
+  inline history autosuggestion in the input pane (read once at the pane's
+  startup — see [input-pane.md](input-pane.md)). This is the first in-place
+  toggle on the otherwise navigation-only Options index; Enter / Space flip
+  it and stay on the frame (`_app.invalidate()` re-renders the glyph).
 
 ESC inside `options` saves any pending edits to `bridge/runtime/startup.conf`
 and pops back to `main`.
