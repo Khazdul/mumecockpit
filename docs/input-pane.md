@@ -97,8 +97,9 @@ Keys are split into three disjoint categories:
 | Category   | Handled by         | Examples                                              |
 |------------|--------------------|-------------------------------------------------------|
 | Editing    | prompt_toolkit     | printable chars, Backspace, Ctrl+E/W, Alt+Backspace   |
-| Selection  | prompt_toolkit     | Shift+arrows, Ctrl+Shift+arrows (native selection)    |
+| Selection  | prompt_toolkit / input_pane.py | Shift+Left/Right, Ctrl+Shift+arrows (native); Shift+Home/End/Up/Down (cursor-relative, input_pane.py); Ctrl+A (whole buffer) |
 | History    | input_pane.py      | Up, Down                                              |
+| Completion | input_pane.py      | Tab (word-at-a-time suggestion accept, else forwards to tt++) |
 | Scrollback | input_pane.py      | PageUp, PageDown (drive tmux copy-mode in the game pane — same buffer as the mouse wheel) |
 | Clipboard  | input_pane.py      | Ctrl+C (copy), Ctrl+X (cut), Ctrl+V (paste)           |
 | Forwarded  | tt++ via send-keys | F1–F12, numpad (SS3), Alt+letter (subset), Ctrl+letter (subset) |
@@ -137,7 +138,8 @@ A buffer is in "recall state" when its entire text is selected. This
 happens after:
 - The post-Enter refill (Enter on a non-empty buffer)
 - Up/Down history navigation
-- Shift+Home, Shift+End, or Ctrl+A
+- Ctrl+A (Shift+Home/End/Up/Down select cursor-relative partial ranges,
+  not the whole buffer)
 
 Recall state uses prompt_toolkit's native `SelectionState` — no custom
 highlight processor. The visual appearance is whatever the terminal uses
@@ -147,12 +149,21 @@ When the buffer is selected:
 - **Typing any printable key** replaces the selection
 - **Backspace or Delete** deletes the selection
 - **Left, Right, Home, End** clear the selection and move the cursor
-- **Shift+arrows** adjust the selection boundary (prompt_toolkit default)
+- **Shift+Left / Shift+Right** adjust the selection boundary (prompt_toolkit default)
 - **Ctrl+C** copies the selected text to the system clipboard
 
-Shift+Home selects the whole buffer with the cursor at the start;
-Shift+End and Ctrl+A select the whole buffer with the cursor at the end.
-No-op on empty buffer.
+`Ctrl+A` selects the whole buffer (cursor at the end). No-op on empty buffer.
+
+`Shift+Home`/`Shift+Up` select from the cursor back to the **start**
+(cursor lands at the start, only the left part selected); `Shift+End`/
+`Shift+Down` select from the cursor to the **end** (cursor lands at the
+end, only the right part selected). Each press computes the selection
+fresh from the current cursor — there is no multi-step extension (use
+the native `Shift+Left`/`Shift+Right` for that). No-op on an empty
+buffer, or when the cursor is already at the bound being selected toward.
+When the cursor is at the far end, selecting to the other bound naturally
+yields a whole-buffer selection (e.g. cursor at end + `Shift+Home` →
+the whole buffer).
 
 ### History navigation
 
@@ -213,8 +224,21 @@ added to its `input_processors`; the grey is the default
   full suggestion into the buffer. It is NOT sent — Enter still sends.
   prompt_toolkit's default forward-char-or-accept binding is shadowed by
   this pane's own `right`/`end` handlers, so the accept is replicated there.
-- **Tab is not bound to accept** — Tab remains a forwarded macro key to tt++
-  (see Key forwarding policy / `FORWARDED_KEYS`).
+- **Tab accepts the suggestion one word at a time** (context-sensitive,
+  not a fixed forwarded key). When a suggestion is showing at end-of-line
+  with no selection, each Tab inserts the next word of the suggestion
+  (leading whitespace run + the following run of non-whitespace chars):
+  `kill ` → `kill orc` → `kill orc the` → `kill orc the great`, staying
+  in autocomplete for the remainder. The suggester recomputes the remaining
+  suggestion via the same sync path as the Right/End full-accept. Once the
+  suggestion is fully filled, further Tab is a no-op (a module-level
+  `_tab_completing` flag, cleared on the next user edit, suppresses
+  forwarding so Tab does not leak to tt++). When there is no active
+  suggestion and no just-exhausted completion (single-word buffer,
+  autosuggest off, etc.), **Tab forwards to tt++** as a macro key
+  (`tmux send-keys ... Tab`, after `_snap_game_pane_to_tail()`) — Tab is
+  no longer in `FORWARDED_KEYS`; the dedicated `tab` handler owns this
+  forward.
 - **No suggestion is shown in recall state** (whole-buffer selection after a
   send or Up/Down). This needs no custom suppression: every programmatic
   refill goes through the document setter, which fires `_text_changed()`

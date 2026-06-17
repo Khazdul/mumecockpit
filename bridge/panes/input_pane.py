@@ -71,6 +71,7 @@ pending_input = ""           # draft saved when Up first pressed from None-state
 _programmatic = False        # suppress on_text_changed during programmatic refills
 _draft_restored = False      # True after Down steps out of history to pending_input
 filter_prefix = None         # None = not filtered-browsing; str = locked prefix while filtered
+_tab_completing = False      # True after a Tab word-accept until the next user edit
 
 
 class _LiveHistory(History):
@@ -276,6 +277,41 @@ def _end(event):
     _drop_selection_to(buf, len(buf.text))
 
 
+@kb.add("tab")
+def _handle_tab(event):
+    global _tab_completing
+    buf = event.current_buffer
+    if (not _has_selection(buf)
+            and buf.document.is_cursor_at_the_end
+            and buf.suggestion and buf.suggestion.text):
+        # Suggestion acceptable — accept the NEXT WORD: leading whitespace
+        # run + the following run of non-whitespace chars.
+        sug = buf.suggestion.text
+        n = len(sug)
+        i = 0
+        while i < n and sug[i].isspace():
+            i += 1
+        word_start = i
+        while i < n and not sug[i].isspace():
+            i += 1
+        if word_start < n:
+            # Non-empty word remains. Insert first, THEN set the flag:
+            # insert_text fires the non-programmatic reset (clearing the
+            # flag), so the handler must re-set it afterwards. The suggester
+            # recomputes the remaining suggestion via the same sync path as
+            # the Right/End full-accept.
+            buf.insert_text(sug[:i])
+            _tab_completing = True
+        # Whitespace-only remainder → exhausted: no-op.
+        return
+    if _tab_completing:
+        # A completion was just exhausted with no edit since — no-op.
+        return
+    # Not mid-completion: forward Tab to tt++ as a macro key.
+    _snap_game_pane_to_tail()
+    subprocess.run(["tmux", "send-keys", "-t", TMUX_TARGET, "Tab"])
+
+
 @kb.add("up")
 def _handle_up(event):
     global history_index, pending_input, _draft_restored, filter_prefix
@@ -359,18 +395,47 @@ def _handle_down(event):
         _set_buffer_text(buf, pending_input)
 
 
+def _select_to_start(buf):
+    # cursor → start: selection [0, anchor], cursor at start.
+    if not buf.text:
+        return
+    anchor = buf.cursor_position
+    if anchor == 0:
+        return
+    buf.cursor_position = 0
+    buf.selection_state = SelectionState(anchor)
+
+
+def _select_to_end(buf):
+    # cursor → end: selection [anchor, n], cursor at end.
+    if not buf.text:
+        return
+    anchor = buf.cursor_position
+    n = len(buf.text)
+    if anchor == n:
+        return
+    buf.cursor_position = n
+    buf.selection_state = SelectionState(anchor)
+
+
 @kb.add("s-home")
 def _handle_shift_home(event):
-    buf = event.app.current_buffer
-    if buf.text:
-        _set_buffer_text_selected(buf, buf.text, cursor_at_start=True)
+    _select_to_start(event.app.current_buffer)
+
+
+@kb.add("s-up")
+def _handle_shift_up(event):
+    _select_to_start(event.app.current_buffer)
 
 
 @kb.add("s-end")
 def _handle_shift_end(event):
-    buf = event.app.current_buffer
-    if buf.text:
-        _set_buffer_text_selected(buf, buf.text)
+    _select_to_end(event.app.current_buffer)
+
+
+@kb.add("s-down")
+def _handle_shift_down(event):
+    _select_to_end(event.app.current_buffer)
 
 
 @kb.add("c-a")
@@ -508,7 +573,6 @@ FORWARDED_KEYS = [
     ("f1", "F1"), ("f2", "F2"), ("f3", "F3"), ("f4", "F4"),
     ("f5", "F5"), ("f6", "F6"), ("f7", "F7"), ("f8", "F8"),
     ("f9", "F9"), ("f10", "F10"), ("f11", "F11"), ("f12", "F12"),
-    ("tab", "Tab"),
 
     # Ctrl+letter (safe subset — excludes editing/history/terminal-reserved)
     ("c-g", "C-g"), ("c-l", "C-l"), ("c-o", "C-o"),
@@ -617,12 +681,14 @@ def _restore_keypad():
 
 def _on_text_changed(buf):
     global history_index, pending_input, _draft_restored, filter_prefix
+    global _tab_completing
     if _programmatic:
         return
     history_index = None
     pending_input = buf.text
     _draft_restored = False
     filter_prefix = None
+    _tab_completing = False
 
 
 # ---------------------------------------------------------------------------
