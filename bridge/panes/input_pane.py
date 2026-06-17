@@ -70,6 +70,7 @@ history_index = None         # None = at pending_input; else index into history
 pending_input = ""           # draft saved when Up first pressed from None-state
 _programmatic = False        # suppress on_text_changed during programmatic refills
 _draft_restored = False      # True after Down steps out of history to pending_input
+filter_prefix = None         # None = not filtered-browsing; str = locked prefix while filtered
 
 
 class _LiveHistory(History):
@@ -92,17 +93,19 @@ class _LiveHistory(History):
         return list(history)
 
 
-class _MinLenAutoSuggest(AutoSuggest):
-    """AutoSuggestFromHistory gated on a minimum buffer length: suppress any
-    suggestion until at least 2 characters are typed, then delegate to a plain
-    AutoSuggestFromHistory. Avoids the noise of a full-history match firing off
-    the very first keystroke."""
+class _AfterSpaceAutoSuggest(AutoSuggest):
+    """AutoSuggestFromHistory gated on the buffer containing a space: suppress
+    any suggestion until a space has been typed, then delegate to a plain
+    AutoSuggestFromHistory. A trailing space is sufficient — `kill ` suggests
+    the most recent `kill ...` entry. Because the prefix includes the space,
+    `kill ` matches `kill orc` but not `killer` — the space cleanly separates
+    verb-completion from same-prefix words."""
 
     def __init__(self):
         self._inner = AutoSuggestFromHistory()
 
     def get_suggestion(self, buffer, document):
-        if len(document.text) < 2:
+        if " " not in document.text:
             return None
         return self._inner.get_suggestion(buffer, document)
 
@@ -275,9 +278,28 @@ def _end(event):
 
 @kb.add("up")
 def _handle_up(event):
-    global history_index, pending_input, _draft_restored
+    global history_index, pending_input, _draft_restored, filter_prefix
     buf = event.app.current_buffer
     if not history:
+        return
+    if filter_prefix is not None:
+        # Already filtered-browsing: step to the next OLDER match.
+        for i in range(history_index - 1, -1, -1):
+            if history[i].startswith(filter_prefix):
+                history_index = i
+                _set_buffer_text_selected(buf, history[i])
+                return
+        return  # no older match — stay on the current oldest match
+    if buf.suggestion and buf.suggestion.text:
+        # A suggestion is active: attempt to ENTER filtered browse.
+        prefix = buf.text
+        matches = [i for i in range(len(history) - 1, -1, -1)
+                   if history[i].startswith(prefix)]
+        if len(matches) >= 2:
+            filter_prefix = prefix
+            history_index = matches[1]
+            _set_buffer_text_selected(buf, history[history_index])
+        # len < 2: suggestion is the only match — no-op, leave buffer as-is.
         return
     _draft_restored = False
     if _is_fully_selected(buf) and history_index is None:
@@ -294,8 +316,31 @@ def _handle_up(event):
 
 @kb.add("down")
 def _handle_down(event):
-    global history_index, pending_input, _draft_restored
+    global history_index, pending_input, _draft_restored, filter_prefix
     buf = event.app.current_buffer
+    if filter_prefix is not None:
+        # Filtered-browsing: step to the next NEWER match.
+        newer = None
+        for i in range(history_index + 1, len(history)):
+            if history[i].startswith(filter_prefix):
+                newer = i
+                break
+        most_recent = max(i for i in range(len(history))
+                          if history[i].startswith(filter_prefix))
+        if newer is not None and newer != most_recent:
+            history_index = newer
+            _set_buffer_text_selected(buf, history[newer])
+        else:
+            # Only the suggested most-recent match is newer (or nothing is) —
+            # return to the typed prefix and re-display its suggestion.
+            prefix_text = filter_prefix
+            filter_prefix = None
+            history_index = None
+            _draft_restored = False
+            _set_buffer_text(buf, prefix_text)
+            if buf.auto_suggest is not None:
+                buf.suggestion = buf.auto_suggest.get_suggestion(buf, buf.document)
+        return
     if _draft_restored:
         # Second Down after returning to draft — clear buffer.
         _draft_restored = False
@@ -358,7 +403,7 @@ def _handle_pagedown(event):
 
 @kb.add("enter")
 def _handle_enter(event):
-    global last_cmd, history_index, pending_input, _draft_restored
+    global last_cmd, history_index, pending_input, _draft_restored, filter_prefix
     buf = event.app.current_buffer
     text = buf.text
     if text:
@@ -370,6 +415,7 @@ def _handle_enter(event):
         history_index = None
         pending_input = ""
         _draft_restored = False
+        filter_prefix = None
         _set_buffer_text_selected(buf, last_cmd)
     else:
         # Empty Enter — bare newline to tt++ (MUME uses this to
@@ -570,12 +616,13 @@ def _restore_keypad():
 
 
 def _on_text_changed(buf):
-    global history_index, pending_input, _draft_restored
+    global history_index, pending_input, _draft_restored, filter_prefix
     if _programmatic:
         return
     history_index = None
     pending_input = buf.text
     _draft_restored = False
+    filter_prefix = None
 
 
 # ---------------------------------------------------------------------------
@@ -713,7 +760,7 @@ def main():
     buf = Buffer(
         name="input",
         history=_LiveHistory(),
-        auto_suggest=_MinLenAutoSuggest() if autosuggest_on else None,
+        auto_suggest=_AfterSpaceAutoSuggest() if autosuggest_on else None,
     )
     buf.on_text_changed += lambda _: _on_text_changed(buf)
 

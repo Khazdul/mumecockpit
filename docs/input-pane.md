@@ -195,10 +195,13 @@ attached and `AppendAutoSuggestion` is omitted, so `buffer.suggestion` stays
 When on, as the user types, the most recent history entry that starts with
 the current buffer text is shown greyed inline after the cursor (fish-style),
 via prompt_toolkit's `AutoSuggestFromHistory`. **No suggestion is shown until
-at least 2 characters are typed** — a thin `_MinLenAutoSuggest` wrapper gates
-on `len(document.text) < 2` and otherwise delegates to the inner
-`AutoSuggestFromHistory`, so a single keystroke never fires off the full
-history. It draws on the **same**
+a space has been typed** — a thin `_AfterSpaceAutoSuggest` wrapper returns
+`None` while `" " not in document.text` and otherwise delegates to the inner
+`AutoSuggestFromHistory`. A trailing space is sufficient: `kill ` (cursor
+after the space) immediately suggests the most recent `kill ...` entry.
+Because the prefix includes the space, `kill ` matches `kill orc` but **not**
+`killer` — the space cleanly separates verb-completion from same-prefix
+words (intended). It draws on the **same**
 in-memory `history` list described above — a thin `_LiveHistory` (a
 `History` subclass whose `get_strings()` returns the live list) is wired to
 the buffer so there is no second history store. `BufferControl` does not
@@ -221,6 +224,35 @@ added to its `input_processors`; the grey is the default
 - Backspace/Delete clear the current suggestion until the next inserted
   character (stock prompt_toolkit behaviour — the suggester is triggered only
   by `insert_text`).
+
+#### Prefix-filtered history navigation
+
+While a suggestion is active, Up/Down walk a **prefix-filtered slice** of
+history instead of the full list. A module-level `filter_prefix` tracks the
+state (`None` = not filtered; a `str` = the locked prefix while browsing). A
+"match" is any history entry that `.startswith(filter_prefix)`; the suggestion
+always represents the most-recent match, and the browsable slice is every
+match strictly **older** than that one (the suggested entry is never a landing
+target — it is already shown greyed).
+
+- **Up with a suggestion active** enters filtered browse: it locks
+  `filter_prefix` to the typed text and lands on the **second**-most-recent
+  match (skipping the suggested entry), whole-buffer selected. If the
+  suggestion is the only match, Up is a no-op.
+- **Up while filtered-browsing** steps to the next older match, clamped at the
+  oldest.
+- **Down while filtered-browsing** steps to the next newer match. Stepping
+  past the top of the browsable slice (the only thing newer being the
+  suggested most-recent match) **returns to the typed prefix** with its
+  suggestion re-displayed (cursor after the prefix, not selected).
+- **Any text edit** (typing/backspace) exits filtered browse
+  (`filter_prefix = None` in `_on_text_changed`); the next Up with no active
+  suggestion walks the full history as before.
+
+This whole mechanism is implicitly gated by `input_autosuggest`: with
+autosuggest off, `buffer.suggestion` is always `None`, the filtered branches
+never activate, and all history navigation behaves exactly as described under
+[History navigation](#history-navigation).
 
 ## Clipboard operations
 
