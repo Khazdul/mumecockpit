@@ -91,3 +91,22 @@ Rejected because:
   "Recall state = whole-buffer selection"; clipboard section added;
   forwarded Ctrl+letter list updated.
 - `pyperclip` must be installed alongside `prompt_toolkit`.
+
+## Amendment — 2026-06-17 (Shift+Home/End now cursor-relative)
+
+The Decision's grouping of Shift+Home/End with Ctrl+A as whole-buffer
+recall-entry (the `_set_buffer_text_selected` driver list) is superseded.
+Shift+Home / Shift+Up now select cursor→start, and Shift+End / Shift+Down
+select cursor→end — a partial selection from the current cursor position,
+recomputed on each press. There is no multi-step extension: extending a
+selection one character at a time stays on native Shift+Left / Shift+Right.
+Ctrl+A retains whole-buffer select, and recall state (whole-buffer selection)
+is now entered only by the post-Enter refill, history navigation, and Ctrl+A.
+
+Rationale: the select-all-on-Shift+Home behaviour was non-standard;
+cursor-relative selection matches conventional editors.
+
+See `docs/input-pane.md` ("Recall state = whole-buffer selection" section)
+for the current authority on Shift-selection semantics. The rest of this ADR
+— recall state modelled as native `SelectionState`, and the Ctrl+C / X / V
+clipboard bindings — stands.
