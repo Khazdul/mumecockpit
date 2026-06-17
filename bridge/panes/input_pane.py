@@ -1,11 +1,14 @@
 try:
     from prompt_toolkit import Application
+    from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
     from prompt_toolkit.buffer import Buffer
     from prompt_toolkit.document import Document
+    from prompt_toolkit.history import History
     from prompt_toolkit.key_binding import KeyBindings
     from prompt_toolkit.layout.containers import HSplit, VSplit, Window
     from prompt_toolkit.layout.controls import BufferControl, FormattedTextControl
     from prompt_toolkit.layout.layout import Layout
+    from prompt_toolkit.layout.processors import AppendAutoSuggestion
     from prompt_toolkit.keys import Keys
     from prompt_toolkit.output import ColorDepth
     from prompt_toolkit.selection import SelectionState
@@ -66,6 +69,26 @@ history_index = None         # None = at pending_input; else index into history
 pending_input = ""           # draft saved when Up first pressed from None-state
 _programmatic = False        # suppress on_text_changed during programmatic refills
 _draft_restored = False      # True after Down steps out of history to pending_input
+
+
+class _LiveHistory(History):
+    """prompt_toolkit History view over the pane's in-memory `history` list,
+    so AutoSuggestFromHistory draws on the SAME store the pane already keeps
+    (no second history). get_strings() returns the live list oldest-first;
+    AutoSuggestFromHistory reverses it, so the most recent matching entry wins.
+
+    Buffer-side history loading/navigation is deliberately inert: this pane
+    drives Up/Down itself (see _handle_up / _handle_down), so we yield nothing
+    from load_history_strings and never store_string here."""
+
+    def load_history_strings(self):
+        return []
+
+    def store_string(self, string):
+        pass
+
+    def get_strings(self):
+        return list(history)
 
 
 def _set_buffer_text(buf, text, cursor_pos=None):
@@ -189,6 +212,11 @@ def _right(event):
         _drop_selection_to(buf, b)
     elif buf.cursor_position < len(buf.text):
         buf.cursor_position += 1
+    elif buf.suggestion and buf.suggestion.text:
+        # At end-of-line with an inline history suggestion: accept it.
+        # (Our binding shadows prompt_toolkit's default forward-char-or-accept,
+        # so the accept is replicated here.)
+        buf.insert_text(buf.suggestion.text)
 
 
 @kb.add("home")
@@ -199,6 +227,12 @@ def _home(event):
 @kb.add("end")
 def _end(event):
     buf = event.current_buffer
+    if (not _has_selection(buf)
+            and buf.document.is_cursor_at_the_end
+            and buf.suggestion and buf.suggestion.text):
+        # Already at end-of-line with an inline history suggestion: accept it.
+        buf.insert_text(buf.suggestion.text)
+        return
     _drop_selection_to(buf, len(buf.text))
 
 
@@ -632,7 +666,11 @@ def main():
     sys.stdout.flush()
     atexit.register(_restore_keypad)
 
-    buf = Buffer(name="input")
+    buf = Buffer(
+        name="input",
+        history=_LiveHistory(),
+        auto_suggest=AutoSuggestFromHistory(),
+    )
     buf.on_text_changed += lambda _: _on_text_changed(buf)
 
     prompt_window = Window(
@@ -642,7 +680,12 @@ def main():
     )
 
     input_window = Window(
-        BufferControl(buffer=buf),
+        BufferControl(
+            buffer=buf,
+            # Renders buffer.suggestion greyed (class:auto-suggestion) after the
+            # cursor. Not in BufferControl's default processor set, so add it.
+            input_processors=[AppendAutoSuggestion()],
+        ),
         height=1,
     )
 

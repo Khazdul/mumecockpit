@@ -180,6 +180,34 @@ Any text change during browsing exits recall state and resets navigation
 History is in-memory only; it does not persist across restarts and
 has no size cap.
 
+### Inline history autosuggestion
+
+As the user types, the most recent history entry that starts with the
+current buffer text is shown greyed inline after the cursor (fish-style),
+via prompt_toolkit's `AutoSuggestFromHistory`. It draws on the **same**
+in-memory `history` list described above — a thin `_LiveHistory` (a
+`History` subclass whose `get_strings()` returns the live list) is wired to
+the buffer so there is no second history store. `BufferControl` does not
+include the suggestion renderer by default, so `AppendAutoSuggestion` is
+added to its `input_processors`; the grey is the default
+`class:auto-suggestion` style (`#666666`).
+
+- **Right** (at end-of-line) or **End** (cursor already at end) accepts the
+  full suggestion into the buffer. It is NOT sent — Enter still sends.
+  prompt_toolkit's default forward-char-or-accept binding is shadowed by
+  this pane's own `right`/`end` handlers, so the accept is replicated there.
+- **Tab is not bound to accept** — Tab remains a forwarded macro key to tt++
+  (see Key forwarding policy / `FORWARDED_KEYS`).
+- **No suggestion is shown in recall state** (whole-buffer selection after a
+  send or Up/Down). This needs no custom suppression: every programmatic
+  refill goes through the document setter, which fires `_text_changed()`
+  (clearing `buffer.suggestion`), and the suggester only re-runs on
+  `insert_text` — so a recall refill never produces a suggestion. The
+  suggestion reappears once the user types fresh text.
+- Backspace/Delete clear the current suggestion until the next inserted
+  character (stock prompt_toolkit behaviour — the suggester is triggered only
+  by `insert_text`).
+
 ## Clipboard operations
 
 | Key    | Action                                                               |
