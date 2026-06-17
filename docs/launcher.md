@@ -1342,7 +1342,9 @@ Navigation hub pushed by activating "Options" on the main frame. Children:
 - **Spotlights** → `options_spotlights` — per-kind toggles for the
   Spotlights reel (deaths, level-ups, PvP kills, achievements).
 - **Input autosuggest** — an in-place `[X]` / `[ ]` toggle row (does
-  **not** push a sub-frame). Flips `input_autosuggest` in `_conf` (`0`/`1`,
+  **not** push a sub-frame), separated from the rows above by a blank
+  line (counted in `blank_rows` like the Back-row blank, so footer
+  placement is unaffected). Flips `input_autosuggest` in `_conf` (`0`/`1`,
   default `0`); the existing `_save_conf` on Back / ESC persists it. Gates
   inline history autosuggestion in the input pane (read once at the pane's
   startup — see [input-pane.md](input-pane.md)). This is the first in-place

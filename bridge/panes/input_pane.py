@@ -1,6 +1,6 @@
 try:
     from prompt_toolkit import Application
-    from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
+    from prompt_toolkit.auto_suggest import AutoSuggest, AutoSuggestFromHistory
     from prompt_toolkit.buffer import Buffer
     from prompt_toolkit.document import Document
     from prompt_toolkit.history import History
@@ -90,6 +90,21 @@ class _LiveHistory(History):
 
     def get_strings(self):
         return list(history)
+
+
+class _MinLenAutoSuggest(AutoSuggest):
+    """AutoSuggestFromHistory gated on a minimum buffer length: suppress any
+    suggestion until at least 2 characters are typed, then delegate to a plain
+    AutoSuggestFromHistory. Avoids the noise of a full-history match firing off
+    the very first keystroke."""
+
+    def __init__(self):
+        self._inner = AutoSuggestFromHistory()
+
+    def get_suggestion(self, buffer, document):
+        if len(document.text) < 2:
+            return None
+        return self._inner.get_suggestion(buffer, document)
 
 
 def _autosuggest_enabled():
@@ -698,7 +713,7 @@ def main():
     buf = Buffer(
         name="input",
         history=_LiveHistory(),
-        auto_suggest=AutoSuggestFromHistory() if autosuggest_on else None,
+        auto_suggest=_MinLenAutoSuggest() if autosuggest_on else None,
     )
     buf.on_text_changed += lambda _: _on_text_changed(buf)
 

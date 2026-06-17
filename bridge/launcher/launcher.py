@@ -2710,6 +2710,8 @@ def _options_text():
             blank_rows += 1
 
         if action == "autosuggest":
+            frags.append(("", "\n", clear_hover))   # blank before autosuggest
+            blank_rows += 1
             box   = "[X]" if _conf.get("input_autosuggest") == "1" else "[ ]"
             label = f"{box} {label}"
 

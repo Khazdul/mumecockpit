@@ -194,7 +194,11 @@ attached and `AppendAutoSuggestion` is omitted, so `buffer.suggestion` stays
 
 When on, as the user types, the most recent history entry that starts with
 the current buffer text is shown greyed inline after the cursor (fish-style),
-via prompt_toolkit's `AutoSuggestFromHistory`. It draws on the **same**
+via prompt_toolkit's `AutoSuggestFromHistory`. **No suggestion is shown until
+at least 2 characters are typed** — a thin `_MinLenAutoSuggest` wrapper gates
+on `len(document.text) < 2` and otherwise delegates to the inner
+`AutoSuggestFromHistory`, so a single keystroke never fires off the full
+history. It draws on the **same**
 in-memory `history` list described above — a thin `_LiveHistory` (a
 `History` subclass whose `get_strings()` returns the live list) is wired to
 the buffer so there is no second history store. `BufferControl` does not
