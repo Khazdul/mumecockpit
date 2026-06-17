@@ -92,18 +92,17 @@ class _LiveHistory(History):
         return list(history)
 
 
-class _PostSpaceAutoSuggest(AutoSuggest):
-    """AutoSuggestFromHistory gated on a space in the buffer: suppress any
-    suggestion until the buffer contains a space, then delegate to a plain
-    AutoSuggestFromHistory. Only multi-word commands are completed from
-    history — the first word is typed without interference, and the noise of
-    a full-history match firing off a bare command verb is avoided."""
+class _MinLenAutoSuggest(AutoSuggest):
+    """AutoSuggestFromHistory gated on a minimum buffer length: suppress any
+    suggestion until at least 2 characters are typed, then delegate to a plain
+    AutoSuggestFromHistory. Avoids the noise of a full-history match firing off
+    the very first keystroke."""
 
     def __init__(self):
         self._inner = AutoSuggestFromHistory()
 
     def get_suggestion(self, buffer, document):
-        if " " not in document.text:
+        if len(document.text) < 2:
             return None
         return self._inner.get_suggestion(buffer, document)
 
@@ -714,7 +713,7 @@ def main():
     buf = Buffer(
         name="input",
         history=_LiveHistory(),
-        auto_suggest=_PostSpaceAutoSuggest() if autosuggest_on else None,
+        auto_suggest=_MinLenAutoSuggest() if autosuggest_on else None,
     )
     buf.on_text_changed += lambda _: _on_text_changed(buf)
 
