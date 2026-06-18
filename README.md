@@ -6,7 +6,7 @@ at the latency floor; a Lua brain runs above it for state, timers, and
 anything that benefits from a real programming language; tmux composes
 the game pane, an input pane, and up to six side panes into one window.
 
-<img width="384" height="216" alt="20260611 gameplay with mmapper" src="https://github.com/user-attachments/assets/911bb23b-300f-4f08-8666-9c765b8893bb" />
+<img width="384" height="216" alt="20260618 gameplay with mmapper" src="https://github.com/user-attachments/assets/f3886297-1c37-4efa-b814-4b589ca58607" />
 
 ## Install
 
@@ -72,7 +72,7 @@ Plus a dedicated **input pane** on its own line at the bottom —
 repeat-last-on-empty-Enter, full-buffer select with one keystroke,
 no auto-clear after send, mouse-click anywhere returns focus.
 
-<img width="384" height="216" alt="20260611 panes" src="https://github.com/user-attachments/assets/65f29300-b2a4-4317-809d-31d9b40423f0" />
+<img width="384" height="216" alt="20260618 panes" src="https://github.com/user-attachments/assets/cc3eea2b-9979-41e9-b155-d99b9d135997" />
 
 **Runs and statistics** — Every login starts a run. The cockpit
 writes a per-run JSONL event stream (`run_start`, `kill`, `pkill`,
@@ -139,8 +139,8 @@ word/line selection, and an in-app clipboard. Both modes edit the same
 profile; round-trip preserves unknown tt++ commands and entry priorities
 verbatim.
 
-<img width="384" height="216" alt="20260611 profile lite" src="https://github.com/user-attachments/assets/8dedeebe-8b76-4499-8ce6-33c131de3d78" />
-<img width="384" height="216" alt="20260611 profile editor" src="https://github.com/user-attachments/assets/d6bde621-5a6e-4744-b4b8-b77f4edc5bd0" />
+<img width="384" height="216" alt="20260618 profile lite" src="https://github.com/user-attachments/assets/2af82058-cc66-4f41-a44c-1ab6bf2b208b" />
+<img width="384" height="216" alt="20260618 profile editor" src="https://github.com/user-attachments/assets/00cd883b-50d6-40cc-a966-a63e7db43175" />
 
 **MMapper** integration via WSL2 mirrored networking on Windows,
 or plain `localhost` on macOS / Linux. [MMapper][mmapper] is a
