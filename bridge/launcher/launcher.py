@@ -62,6 +62,8 @@ from palette import (  # noqa: E402
     _S_TRACK, _S_MARKER, _S_THUMB, _S_TOTAL, _S_ARROW,
     _S_HINT, _S_PVP, _S_ALLY, _S_STAR,
     PANE_COLOR_ORDER, pane_color_hex,
+    TERMINAL_BG_ORDER, terminal_bg_hex,
+    TERMINAL_FG_ORDER, terminal_fg_hex,
     TIMERS_COLOR_ORDER, timers_color_hex, timers_color_index,
     TTPP_COLOR_STYLES, TTPP_COLOR_NAMES,
     C_SYN_COMMAND, C_SYN_BRACE, C_SYN_DELIM, C_SYN_VAR, C_SYN_CODE,
@@ -4038,19 +4040,37 @@ def _normalise_hex(value):
 
 
 def _background_cycle_entries(disk_hex):
-    """Return the ordered `[(hex, label), …]` cycle for Background.
+    """Return the ordered `[(hex, label), …]` cycle for Background color.
 
-    The seven palette entries (PANE_COLOR_ORDER), plus a leading entry
-    for the on-disk hex when it falls outside the palette — mirroring
-    the font picker's off-list-family handling so a hand-rolled
-    background survives a no-op Apply. The off-list entry is labelled
-    by its hex.
+    The terminal background palette (TERMINAL_BG_ORDER → terminal_bg_hex,
+    capitalised labels), plus a leading entry for the on-disk hex when it
+    falls outside the palette — mirroring the font picker's off-list-family
+    handling so a hand-rolled background survives a no-op Apply. The
+    off-list entry is labelled by its hex.
     """
     palette = []
-    for name in PANE_COLOR_ORDER:
-        hex_str = pane_color_hex(name)
-        hex_norm = _normalise_hex(hex_str) if hex_str else "000000"
-        palette.append((hex_norm, name))
+    for name in TERMINAL_BG_ORDER:
+        hex_norm = _normalise_hex(terminal_bg_hex(name)) or "000000"
+        palette.append((hex_norm, name.capitalize()))
+    palette_values = {v for v, _ in palette}
+    disk_norm = _normalise_hex(disk_hex)
+    if disk_norm and disk_norm not in palette_values:
+        return [(disk_norm, disk_norm)] + palette
+    return palette
+
+
+def _foreground_cycle_entries(disk_hex):
+    """Return the ordered `[(hex, label), …]` cycle for Font color.
+
+    Exact analogue of `_background_cycle_entries` over the foreground
+    palette (TERMINAL_FG_ORDER → terminal_fg_hex, capitalised labels),
+    with any off-palette on-disk value prepended so a hand-rolled
+    foreground survives a no-op Apply.
+    """
+    palette = []
+    for name in TERMINAL_FG_ORDER:
+        hex_norm = _normalise_hex(terminal_fg_hex(name)) or "000000"
+        palette.append((hex_norm, name.capitalize()))
     palette_values = {v for v, _ in palette}
     disk_norm = _normalise_hex(disk_hex)
     if disk_norm and disk_norm not in palette_values:
@@ -4125,8 +4145,17 @@ def _options_terminal_rows():
     def _bg_disp(v):
         return bg_label_map.get(v, v or "—")
     background_label = _delta(
-        "Background", _bg_disp(disk.background), _bg_disp(pend.background),
+        "Background color", _bg_disp(disk.background), _bg_disp(pend.background),
         pend.background != disk.background,
+    )
+
+    fg_entries = _foreground_cycle_entries(disk.foreground)
+    fg_label_map = dict(fg_entries)
+    def _fg_disp(v):
+        return fg_label_map.get(v, v or "—")
+    foreground_label = _delta(
+        "Font color", _fg_disp(disk.foreground), _fg_disp(pend.foreground),
+        pend.foreground != disk.foreground,
     )
 
     cursor_style_label = _delta(
@@ -4159,9 +4188,13 @@ def _options_terminal_rows():
         rows.append(("height", height_label))
     rows.extend([
         ("padding",      padding_label),
-        ("background",   background_label),
         ("cursor_style", cursor_style_label),
         ("cursor_blink", cursor_blink_label),
+        # Colour group — a blank spacer above (rendered inline in
+        # _options_terminal_text), then the two independent colour cycles,
+        # then the conditional preview box, then a blank before Apply.
+        ("font_color",   foreground_label),
+        ("background",   background_label),
         apply_row,
         ("back",         "Back"),
     ])
@@ -4182,6 +4215,7 @@ def _enter_options_terminal_frame(restore_cursor=None):
     # and the cycle lookup hits the palette entries even when foot.ini
     # uses lowercase.
     disk.background = _normalise_hex(disk.background) or "000000"
+    disk.foreground = _normalise_hex(disk.foreground) or "DCDCCC"
     _options_terminal_disk    = disk
     _options_terminal_pending = dataclasses.replace(disk)
     _options_terminal_hover   = -1
@@ -4293,6 +4327,20 @@ def _options_terminal_background_step(delta):
             _app.invalidate()
 
 
+def _options_terminal_foreground_step(delta):
+    """Cycle pending foreground hex through the foreground palette (plus
+    any leading off-list disk entry) by `delta`, wrapping. Exact analogue
+    of `_options_terminal_background_step`."""
+    global _options_terminal_pending
+    entries = _foreground_cycle_entries(_options_terminal_disk.foreground)
+    values = [v for v, _ in entries]
+    new = _cycle_pick(values, _options_terminal_pending.foreground, delta)
+    if new != _options_terminal_pending.foreground:
+        _options_terminal_pending.foreground = new
+        if _app:
+            _app.invalidate()
+
+
 def _options_terminal_cursor_style_step(delta):
     """Cycle pending cursor style through block / beam / underline."""
     global _options_terminal_pending
@@ -4366,6 +4414,7 @@ _OPTIONS_TERMINAL_ARROW_STEPPERS = {
     "width":        _options_terminal_width_step,
     "height":       _options_terminal_height_step,
     "padding":      _options_terminal_padding_step,
+    "font_color":   _options_terminal_foreground_step,
     "background":   _options_terminal_background_step,
     "cursor_style": _options_terminal_cursor_style_step,
     "cursor_blink": _options_terminal_cursor_blink_step,
@@ -4375,7 +4424,7 @@ _OPTIONS_TERMINAL_ARROW_STEPPERS = {
 # step (≡ →). The remaining arrow steppers are numeric (size/width/height/
 # padding) and stay ←/→ only — Enter/Space no-op on them.
 _OPTIONS_TERMINAL_CYCLERS = {
-    "window_mode", "background", "cursor_style", "cursor_blink",
+    "window_mode", "font_color", "background", "cursor_style", "cursor_blink",
 }
 
 
@@ -4550,6 +4599,84 @@ def _consume_launcher_resume():
     return (frame, cursor)
 
 
+# Live colour-preview box content. A small room description so the user
+# sees the chosen foreground body on the chosen background before Apply.
+# Line 0 (the room name) renders in foot's regular green via the *named*
+# `fg:ansigreen` form — identical to the game's `[32m` — because we only
+# ever set background/foreground here, never the ANSI palette, so the
+# preview cannot lie about what green will look like. The remaining lines
+# render in the pending foreground hex.
+_TERMINAL_PREVIEW_LINES = [
+    "Humid Cave",
+    "The remainders of a disgusting elf-stew cover the ground.",
+    "There are two straw pallets here.",
+    "A large stone fireplace with a roaring fire warms the room.",
+    "Exits: up.",
+]
+_TERMINAL_PREVIEW_PAD = 1   # interior horizontal padding inside the border
+
+
+def _options_terminal_preview_block(cols, mouse_handler):
+    """Live foreground/background preview box fragments.
+
+    Returns `(frags, row_count)`. Empty (`[], 0`) unless the pending
+    foreground or background differs from disk (normalised hex compare),
+    so the box appears exactly when there is a colour delta to preview.
+    It always renders BOTH current selections — changing only one colour
+    still shows the other's current value.
+
+    Every cell (border, text, interior padding, short-line fill) carries
+    the pending background so the box fully occludes the menu frame behind
+    it — the occlusion-fill approach of `spotlight_box_bg`. A discreet
+    single-line grey border (≈ C_HINT) keeps it reading as a box even when
+    the chosen background equals the host terminal background. The box is
+    sized to its widest line plus padding and centred horizontally.
+    """
+    disk = _options_terminal_disk
+    pend = _options_terminal_pending
+    if disk is None or pend is None:
+        return [], 0
+    fg_differs = _normalise_hex(pend.foreground) != _normalise_hex(disk.foreground)
+    bg_differs = _normalise_hex(pend.background) != _normalise_hex(disk.background)
+    if not (fg_differs or bg_differs):
+        return [], 0
+
+    bg_hex = "#" + (_normalise_hex(pend.background) or "000000")
+    fg_hex = "#" + (_normalise_hex(pend.foreground) or "000000")
+    cell_bg     = f"bg:{bg_hex}"
+    name_style  = f"fg:ansigreen {cell_bg}"
+    body_style  = f"fg:{fg_hex} {cell_bg}"
+    border_style = f"{C_HINT} {cell_bg}"   # C_HINT = "fg:#585858"
+
+    pad      = _TERMINAL_PREVIEW_PAD
+    inner_w  = max(len(line) for line in _TERMINAL_PREVIEW_LINES)
+    content_w = inner_w + 2 * pad           # interior between the │ borders
+    box_w    = content_w + 2                # + the two │ border columns
+    left_pad = max(0, (cols - box_w) // 2)
+    margin   = ("", " " * left_pad, mouse_handler)
+    nl       = ("", "\n", mouse_handler)
+
+    frags = []
+    # Top border.
+    frags.append(margin)
+    frags.append((border_style, "┌" + "─" * content_w + "┐", mouse_handler))
+    frags.append(nl)
+    # Content rows.
+    for idx, line in enumerate(_TERMINAL_PREVIEW_LINES):
+        style = name_style if idx == 0 else body_style
+        interior = " " * pad + line + " " * (inner_w - len(line)) + " " * pad
+        frags.append(margin)
+        frags.append((border_style, "│", mouse_handler))
+        frags.append((style, interior, mouse_handler))
+        frags.append((border_style, "│", mouse_handler))
+        frags.append(nl)
+    # Bottom border.
+    frags.append(margin)
+    frags.append((border_style, "└" + "─" * content_w + "┘", mouse_handler))
+    frags.append(nl)
+    return frags, len(_TERMINAL_PREVIEW_LINES) + 2
+
+
 def _options_terminal_text():
     cols   = _term_cols()
     rows_h = _term_rows()
@@ -4585,10 +4712,20 @@ def _options_terminal_text():
 
     body_rows = 0
     for i, (action, label) in enumerate(rows):
-        # Blank spacer before Back, matching the Panes / Scripts frames.
-        # Rendered inline rather than as a catalog entry so the row list
-        # stays navigable-only and ↑/↓ navigation is unaffected.
-        if action == "back":
+        # Inline spacers / preview, rendered between catalog rows rather
+        # than as catalog entries so the row list stays navigable-only and
+        # ↑/↓ navigation is unaffected:
+        #   • a blank row above the colour group (before Font color), and
+        #   • the conditional preview box + a blank row before Apply.
+        if action == "font_color":
+            frags.append(("", "\n", clear_hover))
+            body_rows += 1
+        if action in ("apply", "apply_disabled"):
+            preview_frags, preview_rows = _options_terminal_preview_block(
+                cols, clear_hover,
+            )
+            frags.extend(preview_frags)
+            body_rows += preview_rows
             frags.append(("", "\n", clear_hover))
             body_rows += 1
         is_cursor = (i == cur)

@@ -41,6 +41,7 @@ _MANAGED_KEYS = [
     ("",       "initial-window-mode"),
     ("",       "initial-window-size-pixels"),
     ("colors", "background"),
+    ("colors", "foreground"),
     ("cursor", "style"),
     ("cursor", "blink"),
 ]
@@ -57,6 +58,7 @@ _DEFAULTS = {
     ("",       "initial-window-mode"):        "windowed",
     ("",       "initial-window-size-pixels"): "1280x800",
     ("colors", "background"):                 "242424",
+    ("colors", "foreground"):                 "dcdccc",
     ("cursor", "style"):                      "block",
     ("cursor", "blink"):                      "no",
 }
@@ -75,6 +77,7 @@ class TerminalConfig:
     window_width:  int
     window_height: int
     background:    str   # hex RRGGBB, no leading '#'
+    foreground:    str   # hex RRGGBB, no leading '#'
     pad_x:         int
     pad_y:         int
     cursor_style:  str   # block | beam | underline
@@ -207,6 +210,7 @@ def _build_config(found):
         window_mode = _DEFAULTS[("", "initial-window-mode")]
 
     background = raw(("colors", "background")).strip().lstrip("#")
+    foreground = raw(("colors", "foreground")).strip().lstrip("#")
 
     cursor_style = raw(("cursor", "style")).strip().lower()
     if cursor_style not in ("block", "beam", "underline"):
@@ -221,6 +225,7 @@ def _build_config(found):
         window_width=win_w,
         window_height=win_h,
         background=background,
+        foreground=foreground,
         pad_x=pad_x,
         pad_y=pad_y,
         cursor_style=cursor_style,
@@ -298,6 +303,8 @@ def _format_line(managed_key, config):
                 f"{int(config.window_width)}x{int(config.window_height)}")
     if section == "colors" and key == "background":
         return f"background={config.background}"
+    if section == "colors" and key == "foreground":
+        return f"foreground={config.foreground}"
     if section == "cursor" and key == "style":
         return f"style={config.cursor_style}"
     if section == "cursor" and key == "blink":

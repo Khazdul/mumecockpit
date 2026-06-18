@@ -27,6 +27,8 @@ __all__ = [
     "_S_HINT", "_S_PVP", "_S_ALLY", "_S_STAR",
     "PANE_COLORS", "PANE_COLOR_ORDER", "pane_color_hex",
     "PANE_COLOR_LABELS", "pane_color_label",
+    "TERMINAL_BG_EXTRA", "TERMINAL_BG_ORDER", "terminal_bg_hex",
+    "TERMINAL_FG", "TERMINAL_FG_ORDER", "terminal_fg_hex",
     "TIMERS_COLOR_ORDER",
     "timers_color_hex", "timers_color_index",
     "TTPP_COLOR_STYLES", "TTPP_COLOR_NAMES",
@@ -258,6 +260,67 @@ def pane_color_label(name):
     """Display label for a pane-colour name. Falls back to the capitalised
     name for any colour without an explicit label override."""
     return PANE_COLOR_LABELS.get(name, name.capitalize())
+
+
+# ---------------------------------------------------------------------------
+# Terminal (foot.ini) colour palettes
+# ---------------------------------------------------------------------------
+# Background + foreground swatches for the launcher's Terminal Settings page.
+# Deliberately kept SEPARATE from PANE_COLORS: folding the terminal palette
+# into the pane palette would drag the pane-layer files (open_pane.sh,
+# pane_frame.py) into terminal-only changes and pollute the Panes grid with
+# extra columns. See ADR 0126. The first seven background names reuse the
+# pane tints (via terminal_bg_hex → pane_color_hex) so a user who matched
+# their terminal to a pane tint sees a shared label; the four extras are
+# terminal-only. Unlike a pane tint, a terminal background is always a
+# concrete colour, so the pane "black → None" sentinel resolves to #000000
+# here. Stored in foot.ini as raw hex; selected by name in the launcher.
+TERMINAL_BG_EXTRA = {
+    "teal":  "#002B36",
+    "sepia": "#2B1B12",
+    "slate": "#1C2128",
+    "paper": "#FFFFFF",
+}
+TERMINAL_BG_ORDER = [
+    "black", "red", "green", "blue", "grey", "orange", "purple",
+    "teal", "sepia", "slate", "paper",
+]
+
+
+def terminal_bg_hex(name):
+    """Resolve a terminal-background name to its `#rrggbb` string.
+
+    Extra (terminal-only) names come from TERMINAL_BG_EXTRA. The seven
+    pane-tint names resolve through pane_color_hex, with the `None`
+    sentinel (pane "black") mapped to `#000000` — a terminal background
+    is always concrete. Unknown names fall back to `#000000`."""
+    if name in TERMINAL_BG_EXTRA:
+        return TERMINAL_BG_EXTRA[name]
+    if name in PANE_COLORS:
+        return pane_color_hex(name) or "#000000"
+    return "#000000"
+
+
+# Named foreground (font) colours for the Terminal Settings page. A short
+# ramp from a sage tint down to ink — independent of the background choice
+# (no locked pairings). `silver` is #C0C0C0 to match the shipped DOS-palette
+# foreground (install/examples/foot.ini) so a clean install snaps onto the
+# Silver label rather than rendering as a raw hex.
+TERMINAL_FG = {
+    "sage":   "#778A8D",
+    "silver": "#C0C0C0",
+    "ash":    "#A0A0A0",
+    "stone":  "#808080",
+    "shadow": "#606060",
+    "ink":    "#000000",
+}
+TERMINAL_FG_ORDER = ["sage", "silver", "ash", "stone", "shadow", "ink"]
+
+
+def terminal_fg_hex(name):
+    """Resolve a terminal-foreground name to its `#rrggbb` string. Unknown
+    names fall back to `#000000`."""
+    return TERMINAL_FG.get(name, "#000000")
 
 
 # ---------------------------------------------------------------------------
