@@ -52,6 +52,13 @@ _clock_time_transition_at = None   # float (unix epoch) or None
 _clock_time_precision     = None   # "MINUTE"/"HOUR"/None
 _clock_status_mtime       = None
 
+# Inline-autosuggest enable flag. Initialised from startup.conf at startup and
+# re-read live on the _poll_clock background loop (mtime-gated), so the in-game
+# popup's Input-autosuggest toggle takes effect without a cockpit restart.
+# Checked on the render path by _AfterSpaceAutoSuggest.get_suggestion.
+_autosuggest_on           = False
+_startup_conf_mtime       = None
+
 def _is_wsl():
     try:
         with open("/proc/version") as fh:
@@ -106,6 +113,12 @@ class _AfterSpaceAutoSuggest(AutoSuggest):
         self._inner = AutoSuggestFromHistory()
 
     def get_suggestion(self, buffer, document):
+        # Module flag first: when autosuggest is off, never run the history
+        # scan. Returning None here (before the space check and the inner
+        # delegate) keeps AppendAutoSuggestion inert — buffer.suggestion
+        # stays None — even though both are unconditionally attached.
+        if not _autosuggest_on:
+            return None
         if " " not in document.text:
             return None
         return self._inner.get_suggestion(buffer, document)
@@ -115,9 +128,10 @@ def _autosuggest_enabled():
     """Read `input_autosuggest` straight from bridge/runtime/startup.conf.
 
     Deliberately self-contained: no read_config.sh, no tt++ #var, no IPC —
-    nothing on the hot path. Read once at startup; a change takes effect on
-    the next cockpit start. Absent file / absent key / any non-"1" value →
-    off (the default)."""
+    nothing on the hot path. Read at startup and re-read live on the
+    _poll_clock background loop (mtime-gated), so the in-game popup toggle
+    applies without a cockpit restart. Absent file / absent key / any
+    non-"1" value → off (the default)."""
     try:
         with open(STARTUP_CONF_PATH) as fh:
             for line in fh:
@@ -743,9 +757,27 @@ async def _clock_tick(app):
 async def _poll_clock(app):
     global _clock_time_period, _clock_time_transition_at, _clock_time_precision
     global _clock_status_mtime
+    global _autosuggest_on, _startup_conf_mtime
 
     while True:
         changed = False
+
+        # startup.conf — input_autosuggest live re-read. mtime-gated (as the
+        # status.state read below) so the file is only re-parsed when it
+        # actually changes. Only flips the flag and invalidates when the
+        # resolved boolean differs, so a flip via the in-game popup applies
+        # to the running pane within a poll tick.
+        try:
+            cmtime = os.stat(STARTUP_CONF_PATH).st_mtime
+        except OSError:
+            cmtime = None
+
+        if cmtime != _startup_conf_mtime:
+            _startup_conf_mtime = cmtime
+            new_autosuggest = _autosuggest_enabled()
+            if new_autosuggest != _autosuggest_on:
+                _autosuggest_on = new_autosuggest
+                app.invalidate()
 
         # status.state — time_period, time_transition_at, time_precision
         try:
@@ -787,7 +819,7 @@ async def _poll_clock(app):
 # ---------------------------------------------------------------------------
 
 def main():
-    global last_cmd
+    global last_cmd, _autosuggest_on, _startup_conf_mtime
 
     # Close the cooked-mode echo window. Until prompt_toolkit installs raw mode
     # inside app.run_async(), the tty stays in cooked mode with ECHO on. The gap
@@ -816,17 +848,24 @@ def main():
     sys.stdout.flush()
     atexit.register(_restore_keypad)
 
-    # Opt-in inline history autosuggestion, gated by startup.conf
-    # (default off). Read once here; no live re-read. When off, no
-    # auto_suggest is attached and the append-suggestion processor is
-    # omitted, so buf.suggestion stays None and the Right/End accept
-    # branches are inert.
-    autosuggest_on = _autosuggest_enabled()
+    # Opt-in inline history autosuggestion, gated by startup.conf (default
+    # off). The suggester and its renderer are attached UNCONDITIONALLY; the
+    # _autosuggest_on module flag — initialised here and re-read live on the
+    # _poll_clock loop — gates them at the render path (see
+    # _AfterSpaceAutoSuggest.get_suggestion). This lets the in-game popup
+    # toggle hot-swap autosuggest without a cockpit restart. When off,
+    # get_suggestion returns None first, so buf.suggestion stays None and the
+    # Right/End/Tab accept branches are inert.
+    try:
+        _startup_conf_mtime = os.stat(STARTUP_CONF_PATH).st_mtime
+    except OSError:
+        _startup_conf_mtime = None
+    _autosuggest_on = _autosuggest_enabled()
 
     buf = Buffer(
         name="input",
         history=_LiveHistory(),
-        auto_suggest=_AfterSpaceAutoSuggest() if autosuggest_on else None,
+        auto_suggest=_AfterSpaceAutoSuggest(),
     )
     buf.on_text_changed += lambda _: _on_text_changed(buf)
 
@@ -837,14 +876,13 @@ def main():
     )
 
     # Renders buffer.suggestion greyed (class:auto-suggestion) after the
-    # cursor. Not in BufferControl's default processor set, so add it only
-    # when autosuggest is enabled.
-    input_processors = [AppendAutoSuggestion()] if autosuggest_on else []
-
+    # cursor. Not in BufferControl's default processor set, so add it
+    # explicitly. Attached unconditionally — it stays inert while autosuggest
+    # is off because buf.suggestion is then always None (see get_suggestion).
     input_window = Window(
         BufferControl(
             buffer=buf,
-            input_processors=input_processors,
+            input_processors=[AppendAutoSuggestion()],
         ),
         height=1,
     )

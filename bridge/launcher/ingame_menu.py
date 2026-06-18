@@ -718,6 +718,13 @@ _OPTIONS_ROWS = [
     ("readability", "Readability"),
     ("scripts",     "Scripts"),
     ("sep",         ""),
+    # In-place [X]/[ ] toggle (does not push a sub-frame); flips
+    # input_autosuggest in startup.conf immediately. Unlike the launcher's
+    # row (next-start semantics), this is hot-swapped: the running input
+    # pane re-reads startup.conf on its background poll and picks the
+    # change up live. See docs/input-pane.md.
+    ("autosuggest", "Input autosuggest"),
+    ("sep",         ""),
     ("back",        "Back"),
 ]
 
@@ -736,6 +743,17 @@ def _options_activate(row_idx):
         _enter_readability_frame()
     elif action == "scripts":
         _enter_scripts_frame()
+    elif action == "autosuggest":
+        # In-place toggle: read input_autosuggest from startup.conf, flip,
+        # and write it straight back in place (preserving all other keys)
+        # via _persist_conf_key — not batched on ESC. The running input pane
+        # re-reads startup.conf on its background poll and applies the change
+        # live (no cockpit restart).
+        conf = _parse_keyval(STARTUP_CONF_PATH)
+        cur = conf.get("input_autosuggest") == "1"
+        _persist_conf_key("input_autosuggest", "0" if cur else "1")
+        if _app:
+            _app.invalidate()
     elif action == "back":
         _pop_frame()
 
@@ -758,12 +776,21 @@ def _options_text():
         title, cols, blank_above=1, mouse_handler=clear_hover,
     ))
 
+    conf = _parse_keyval(STARTUP_CONF_PATH)
+
     body_rows = 0
     for i, (kind, label) in enumerate(_OPTIONS_ROWS):
         if kind == "sep":
             frags.append(("", "\n", clear_hover))
             body_rows += 1
             continue
+
+        # The autosuggest row carries a leading [X] / [ ] glyph (3 cells wide
+        # in both states, so it never shifts) for its persistent on/off state,
+        # re-read from startup.conf every render so it reflects live changes.
+        if kind == "autosuggest":
+            box   = "[X]" if conf.get("input_autosuggest") == "1" else "[ ]"
+            label = f"{box} {label}"
 
         is_active = (i == sel_row)
         is_hover  = (i == _hover_options)
