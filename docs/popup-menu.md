@@ -239,8 +239,9 @@ Between **Statistics** (when present) and **Exit session** sit
 **Profile** and **Options**. Profile opens the shared `ProfileEditor`
 (ADR 0109) — see the [Profile frame](#profile-frame) section below.
 Options pushes a thin index frame whose sole purpose is to group
-**Panes**, **Readability**, and **Scripts** under one slot, so the
-main menu stays short.
+**Panes**, **Readability**, **Scripts**, and an in-place **Input
+autosuggest** `[X]` / `[ ]` toggle under one slot, so the main menu
+stays short.
 
 ```
 --- Options ---
@@ -248,9 +249,23 @@ main menu stays short.
 Panes
 Readability
 Scripts
+[X] Input autosuggest
                    (blank row)
 Back
 ```
+
+**Input autosuggest** is an in-place `[X]` / `[ ]` toggle row — the
+sibling of the launcher's row (both edit `input_autosuggest` in
+`startup.conf`; default `0`), but here **persistence is immediate**:
+Enter / Space flips the glyph and writes `input_autosuggest` to
+`startup.conf` in place via the single-key persist idiom
+(`_persist_conf_key`), not batched on Back / ESC. The running input pane
+re-reads the key live on its background poll (mtime-gated — see
+[input-pane.md](input-pane.md#inline-history-autosuggestion)), so the
+toggle applies within a tick. This matches the popup's
+Group / Communication / Timers immediate-write idiom and the live-apply
+asymmetry vs. the launcher (whose own autosuggest toggle is effectively
+next-start).
 
 `Options → Panes` reaches the **Panes hub** (`panes`), itself a thin
 index over the per-pane layout pages — **General** (`panes_general`,

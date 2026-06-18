@@ -194,18 +194,37 @@ has no size cap.
 ### Inline history autosuggestion
 
 **Opt-in, default off.** Gated by `input_autosuggest` in `startup.conf`
-(`1` → on, `0` / absent → off). The pane reads the key **once at startup**,
-directly from `bridge/runtime/startup.conf` (`_autosuggest_enabled()`) — not
-via `read_config.sh` or tt++ `#var`, so nothing touches the hot path. The
-toggle lives on the launcher Options frame (in-place `[X]` / `[ ]` row, see
-[launcher.md](launcher.md)); a change takes effect on the next cockpit start
-(no live re-apply into the running pane). When off, no `auto_suggest` is
-attached and `AppendAutoSuggestion` is omitted, so `buffer.suggestion` stays
-`None` and the Right/End accept branches below are inert.
+(`1` → on, `0` / absent → off). The pane reads the key at startup **and
+re-reads it live**, directly from `bridge/runtime/startup.conf`
+(`_autosuggest_enabled()`) — not via `read_config.sh` or tt++ `#var`, so
+nothing touches the hot path. The live re-read piggybacks on the existing
+`_poll_clock` background loop and is mtime-gated: each tick `stat`s
+`startup.conf`, re-parses only when the mtime changed, and flips the module
+flag + calls `invalidate()` only when the boolean itself changed. So a
+toggle from the in-game popup applies within a tick without a cockpit
+restart. The toggle is reachable from two places: the launcher Options
+frame and the in-game popup Options frame (both in-place `[X]` / `[ ]`
+rows). The **launcher** toggle is still effectively next-start — it runs
+pre-tmux, so the pane just reads the fresh value at its own startup; the
+**popup** toggle writes the key in place and the live re-read picks it up
+mid-session (see [popup-menu.md](popup-menu.md) and [launcher.md](launcher.md)).
 
-When on, as the user types, the most recent history entry that starts with
-the current buffer text is shown greyed inline after the cursor (fish-style),
-via prompt_toolkit's `AutoSuggestFromHistory`. **No suggestion is shown until
+`_AfterSpaceAutoSuggest` and `AppendAutoSuggestion` are **always** attached,
+on or off. The on/off state is a module flag checked first inside
+`get_suggestion`: when off it returns `None` before the space check and the
+history scan, so the processor stays inert and `buffer.suggestion` stays
+`None` (the Right/End accept branches below are inert). Flipping the flag on
+makes the very next edit start suggesting — nothing is reattached.
+
+When on, as the user types, the newest history entry that
+`startswith(text)` **and** `!= text` is shown greyed inline after the cursor
+(fish-style), via prompt_toolkit's `AutoSuggestFromHistory`. The `!= text`
+guard is the **empty-remainder skip**: a history entry exactly equal to the
+typed prefix has no remainder to grey, so it is skipped in favour of the
+next-newest longer completion of the same prefix. A bare-prefix send (e.g. a
+prior `cast `) therefore does not shadow longer, older completions of the
+same prefix — typing `cast ` suggests the most recent `cast <something>`
+rather than nothing. **No suggestion is shown until
 a space has been typed** — a thin `_AfterSpaceAutoSuggest` wrapper returns
 `None` while `" " not in document.text` and otherwise delegates to the inner
 `AutoSuggestFromHistory`. A trailing space is sufficient: `kill ` (cursor
@@ -239,12 +258,17 @@ added to its `input_processors`; the grey is the default
   (`tmux send-keys ... Tab`, after `_snap_game_pane_to_tail()`) — Tab is
   no longer in `FORWARDED_KEYS`; the dedicated `tab` handler owns this
   forward.
-- **No suggestion is shown in recall state** (whole-buffer selection after a
-  send or Up/Down). This needs no custom suppression: every programmatic
-  refill goes through the document setter, which fires `_text_changed()`
-  (clearing `buffer.suggestion`), and the suggester only re-runs on
-  `insert_text` — so a recall refill never produces a suggestion. The
-  suggestion reappears once the user types fresh text.
+- **No suggestion is shown in recall state** (whole-buffer selection). This
+  needs no custom suppression: every programmatic refill goes through the
+  document setter, which fires `_text_changed()` (clearing
+  `buffer.suggestion`), and the suggester only re-runs on `insert_text` — so
+  a recall refill never produces a suggestion. The suggestion reappears once
+  the user types fresh text. Recall state (whole-buffer selection) covers
+  **plain** history navigation (Up/Down over the full list) and the
+  post-Enter refill. **Filtered browse is not recall state** — it keeps the
+  prefix committed (no selection) and stays in autosuggest mode, showing the
+  matched remainder as the grey inline suggestion (see *Prefix-filtered
+  history navigation* below).
 - Backspace/Delete clear the current suggestion until the next inserted
   character (stock prompt_toolkit behaviour — the suggester is triggered only
   by `insert_text`).
@@ -252,23 +276,35 @@ added to its `input_processors`; the grey is the default
 #### Prefix-filtered history navigation
 
 While a suggestion is active, Up/Down walk a **prefix-filtered slice** of
-history instead of the full list. A module-level `filter_prefix` tracks the
-state (`None` = not filtered; a `str` = the locked prefix while browsing). A
-"match" is any history entry that `.startswith(filter_prefix)`; the suggestion
-always represents the most-recent match, and the browsable slice is every
-match strictly **older** than that one (the suggested entry is never a landing
-target — it is already shown greyed).
+history instead of the full list, and the browse **never drops out of
+autosuggest mode**. A module-level `filter_prefix` tracks the state (`None` =
+not filtered; a `str` = the locked prefix while browsing). Throughout a
+filtered browse the buffer text stays the locked `filter_prefix` (cursor
+after it, no selection) and the matched remainder is shown as the grey inline
+suggestion — the line is never replaced by the whole selected match. A
+"match" is any history entry that `.startswith(filter_prefix)` **and**
+`!= filter_prefix` (the empty-remainder skip applies here too). The
+grey suggestion always represents the most-recent match, and the browsable
+slice is every match strictly **older** than that one (the suggested entry is
+never a landing target — it is already shown greyed).
 
 - **Up with a suggestion active** enters filtered browse: it locks
   `filter_prefix` to the typed text and lands on the **second**-most-recent
-  match (skipping the suggested entry), whole-buffer selected. If the
-  suggestion is the only match, Up is a no-op.
-- **Up while filtered-browsing** steps to the next older match, clamped at the
-  oldest.
-- **Down while filtered-browsing** steps to the next newer match. Stepping
-  past the top of the browsable slice (the only thing newer being the
-  suggested most-recent match) **returns to the typed prefix** with its
-  suggestion re-displayed (cursor after the prefix, not selected).
+  match (skipping the suggested entry), shown greyed as the suggestion after
+  the committed prefix. If the suggestion is the only match, Up is a no-op.
+- **Up while filtered-browsing** steps to the next older match, shown greyed,
+  clamped at the oldest.
+- **Down while filtered-browsing** steps to the next newer match, shown
+  greyed. Stepping past the top of the browsable slice (the only thing newer
+  being the suggested most-recent match) **returns to the typed prefix** with
+  its default suggestion re-displayed (cursor after the prefix, not selected)
+  and exits filter mode.
+- **Enter during filtered browse** accepts the picked suggestion into the
+  line and sends it — a single keypress fires the browsed match, no separate
+  accept-then-Enter step.
+- **Right / End / Tab** during filtered browse still accept the browsed
+  remainder into the line as normal (Right/End full-accept, Tab word-at-a-
+  time), without sending.
 - **Any text edit** (typing/backspace) exits filtered browse
   (`filter_prefix = None` in `_on_text_changed`); the next Up with no active
   suggestion walks the full history as before.

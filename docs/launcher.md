@@ -1346,8 +1346,13 @@ Navigation hub pushed by activating "Options" on the main frame. Children:
   line (counted in `blank_rows` like the Back-row blank, so footer
   placement is unaffected). Flips `input_autosuggest` in `_conf` (`0`/`1`,
   default `0`); the existing `_save_conf` on Back / ESC persists it. Gates
-  inline history autosuggestion in the input pane (read once at the pane's
-  startup — see [input-pane.md](input-pane.md)). This is the first in-place
+  inline history autosuggestion in the input pane (read at startup and
+  re-read live — see [input-pane.md](input-pane.md)). The launcher's own
+  toggle is effectively next-start: it runs pre-tmux, so the value it
+  writes is read by the input pane at the pane's own startup — the launcher
+  cannot hot-swap a pane that does not exist yet. (The popup's sibling
+  toggle, by contrast, applies live into the running pane within a tick —
+  see [popup-menu.md](popup-menu.md).) This is the first in-place
   toggle on the otherwise navigation-only Options index; Enter / Space flip
   it and stay on the frame (`_app.invalidate()` re-renders the glyph).
 
