@@ -1,6 +1,6 @@
 try:
     from prompt_toolkit import Application
-    from prompt_toolkit.auto_suggest import AutoSuggest, AutoSuggestFromHistory
+    from prompt_toolkit.auto_suggest import AutoSuggest, AutoSuggestFromHistory, Suggestion
     from prompt_toolkit.buffer import Buffer
     from prompt_toolkit.document import Document
     from prompt_toolkit.history import History
@@ -333,11 +333,13 @@ def _handle_up(event):
     if not history:
         return
     if filter_prefix is not None:
-        # Already filtered-browsing: step to the next OLDER match.
+        # Already filtered-browsing: step to the next OLDER match. The buffer
+        # text stays the locked prefix; the matched remainder is shown as the
+        # grey inline suggestion, so browse never drops out of autosuggest mode.
         for i in range(history_index - 1, -1, -1):
-            if history[i].startswith(filter_prefix):
+            if history[i].startswith(filter_prefix) and history[i] != filter_prefix:
                 history_index = i
-                _set_buffer_text_selected(buf, history[i])
+                buf.suggestion = Suggestion(history[i][len(filter_prefix):])
                 return
         return  # no older match — stay on the current oldest match
     if buf.suggestion and buf.suggestion.text:
@@ -348,7 +350,9 @@ def _handle_up(event):
         if len(matches) >= 2:
             filter_prefix = prefix
             history_index = matches[1]
-            _set_buffer_text_selected(buf, history[history_index])
+            # Keep the prefix committed (cursor after it, no selection) and
+            # show the second-most-recent match's remainder greyed inline.
+            buf.suggestion = Suggestion(history[history_index][len(filter_prefix):])
         # len < 2: suggestion is the only match — no-op, leave buffer as-is.
         return
     _draft_restored = False
@@ -379,7 +383,8 @@ def _handle_down(event):
                           if history[i].startswith(filter_prefix))
         if newer is not None and newer != most_recent:
             history_index = newer
-            _set_buffer_text_selected(buf, history[newer])
+            # Stay in autosuggest mode: prefix committed, remainder greyed.
+            buf.suggestion = Suggestion(history[newer][len(filter_prefix):])
         else:
             # Only the suggested most-recent match is newer (or nothing is) —
             # return to the typed prefix and re-display its suggestion.
@@ -484,6 +489,11 @@ def _handle_pagedown(event):
 def _handle_enter(event):
     global last_cmd, history_index, pending_input, _draft_restored, filter_prefix
     buf = event.app.current_buffer
+    if filter_prefix is not None and buf.suggestion and buf.suggestion.text:
+        # Filtered-browsing: the picked match is prefix + greyed remainder.
+        # Complete the line first (insert_text exits filter mode via the
+        # text-change handler), then fall through to send the full command.
+        buf.insert_text(buf.suggestion.text)
     text = buf.text
     if text:
         send(text)
