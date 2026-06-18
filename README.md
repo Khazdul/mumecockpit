@@ -7,7 +7,7 @@ anything that benefits from a real programming language; tmux composes
 the game pane, an input pane, and up to six side panes into one window.
 
 <div align="center">
-<img width="806" height="352" alt="20260618 gameplay with mmapper" src="https://github.com/user-attachments/assets/f3886297-1c37-4efa-b814-4b589ca58607" />
+<img width="806" height="454"  alt="20260618 gameplay with mmapper" src="https://github.com/user-attachments/assets/f3886297-1c37-4efa-b814-4b589ca58607" />
 </div>
 
 ## Install
@@ -75,7 +75,7 @@ repeat-last-on-empty-Enter, full-buffer select with one keystroke,
 no auto-clear after send, mouse-click anywhere returns focus.
 
 <div align="center">
-<img width="806" height="352" alt="20260618 panes" src="https://github.com/user-attachments/assets/cc3eea2b-9979-41e9-b155-d99b9d135997" />
+<img width="806" height="454" alt="20260618 panes" src="https://github.com/user-attachments/assets/cc3eea2b-9979-41e9-b155-d99b9d135997" />
 </div>
 
 **Runs and statistics** — Every login starts a run. The cockpit
