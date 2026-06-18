@@ -279,7 +279,7 @@ TERMINAL_BG_EXTRA = {
     "teal":  "#002B36",
     "sepia": "#2B1B12",
     "slate": "#1C2128",
-    "paper": "#FFFFFF",
+    "paper": "#F4ECD8",
 }
 TERMINAL_BG_ORDER = [
     "black", "red", "green", "blue", "grey", "orange", "purple",
