@@ -2104,24 +2104,61 @@ values stack on one column:
    ← / → adjusts the pending padding by 2 px, clamped to `[0, 40]`.
    Asymmetric hand-edits on disk are collapsed by the next Apply
    (acceptable per ADR 0107).
-6. **Background** — fixed-value cycle through the launcher's hex
-   palette, with any off-palette on-disk value prepended so the user
-   never silently loses a custom colour. The label uses the palette
-   name when available, falling back to the raw hex. Enter / Space
-   advance the value one step (≡ →, wrapping).
-7. **Cursor style** — fixed-value cycle through
+6. **Cursor style** — fixed-value cycle through
    `block / beam / underline` via `_cycle_pick`. ← / → wraps; Enter /
    Space advance the value one step (≡ →, wrapping).
-8. **Cursor blink** — fixed-value cycle through `Off / On` (foot's
+7. **Cursor blink** — fixed-value cycle through `Off / On` (foot's
    `cursor.blink=no/yes`). Enter / Space advance the value one step
    (≡ →, wrapping).
-9. **Apply** — active only when `pending != disk`; with no delta it
-   renders in the dead-grey inactive `menu_row` state (no handler,
-   ↑/↓ keyboard navigation skips it, mirroring the inactive "Save
-   run" row in the in-game popup). Activating runs the Apply flow
-   described below.
-10. **Back** — discards pending edits and pops to `options`. ESC
+
+   *(blank spacer row — rendered inline before the colour group, not
+   a catalog entry.)*
+8. **Font color** — new row; fixed-value cycle through the terminal
+   foreground palette (`TERMINAL_FG_ORDER` via
+   `_foreground_cycle_entries`), with any off-palette on-disk value
+   prepended (labelled by its hex) so a hand-rolled foreground
+   survives a no-op Apply. The label uses the palette name when
+   available. ← / → wraps; Enter / Space advance one step (≡ →,
+   wrapping) — so it lives in `_OPTIONS_TERMINAL_CYCLERS`.
+9. **Background color** — the former **Background** row, moved out of
+   its old position above Cursor style into this colour group and
+   renamed. Fixed-value cycle through the terminal background palette
+   (`TERMINAL_BG_ORDER` via `_background_cycle_entries`) — *not*
+   `PANE_COLOR_ORDER` — with any off-palette on-disk value prepended
+   (labelled by its hex) so a custom colour is never silently lost.
+   The label uses the palette name when available. ← / → wraps;
+   Enter / Space advance one step (≡ →, wrapping); also in
+   `_OPTIONS_TERMINAL_CYCLERS`.
+
+   *(conditional preview box — see below — then a blank spacer row,
+   both rendered inline, not catalog entries.)*
+10. **Apply** — active only when `pending != disk`; with no delta it
+    renders in the dead-grey inactive `menu_row` state (no handler,
+    ↑/↓ keyboard navigation skips it, mirroring the inactive "Save
+    run" row in the in-game popup). Activating runs the Apply flow
+    described below.
+11. **Back** — discards pending edits and pops to `options`. ESC
     behaves the same.
+
+**Live colour preview box.** Rendered inline between the catalog rows
+(`_options_terminal_preview_block`), directly above the spacer before
+Apply — *not* a catalog entry, so ↑ / ↓ navigation is unaffected.
+Shown **only** when the pending foreground or background differs from
+disk (normalised hex compare), so it appears exactly when there is a
+colour delta to preview; it always renders **both** current
+selections, so changing one colour still shows the other's current
+value. The content is a five-line room description
+(`_TERMINAL_PREVIEW_LINES`): line 0 (the room name) renders in
+`fg:ansigreen` — identical to the game's `[32m`, because the cockpit
+only ever sets background / foreground here and never the ANSI
+palette, so the preview cannot misrepresent green — and the remaining
+four lines render in the pending foreground hex. Every cell (border,
+text, interior padding, short-line fill) carries the pending
+background as an occlusion fill (the `spotlight_box_bg` approach), so
+the box fully covers the menu frame behind it; a discreet single-line
+grey border (≈ `C_HINT`) keeps it reading as a box even when the
+chosen background equals the host terminal background. The box is
+sized to its widest line plus padding and centred horizontally.
 
 Every value-bearing row uses the `Label: <disk> → <pending>`
 delta notation when the pending value differs from disk, else plain
@@ -2167,7 +2204,7 @@ state), and the only module that touches the file:
 
 - `read_settings(path=None)` — parses the managed key set and returns
   a `TerminalConfig` (family, size, window_mode, window_width,
-  window_height, background, pad_x, pad_y, cursor_style,
+  window_height, background, foreground, pad_x, pad_y, cursor_style,
   cursor_blink). Missing file, missing section, or absent managed
   key all fall back to documented defaults; the function never
   raises.
@@ -2218,6 +2255,59 @@ saved cursor was on Apply (now dead-grey with no delta), so the
 cursor lands on Size rather than Back. When `_FOOT_MANAGED` is false,
 the resume-hint is ignored and discarded — native Linux, macOS, and
 manual WSL launches stay on `main`.
+
+### Terminal colour palette
+
+Source of truth: `TERMINAL_BG_ORDER` / `TERMINAL_BG_EXTRA` and
+`TERMINAL_FG` in `bridge/launcher/palette.py`. Deliberately **separate**
+from `PANE_COLORS` (see [ADR 0107](decisions/0107-terminal-settings-managed-keys.md)
+and the terminal-colour-palette ADR): folding terminal colours into the
+pane palette would pollute the Panes grid with non-pane columns and drag
+the pane-layer files into terminal-only changes (against ADR 0126's
+separation). The seven pane-tint names are *referenced*, not copied —
+`terminal_bg_hex(name)` resolves shared labels through `pane_color_hex`,
+with the pane `black → None` sentinel resolving to literal `#000000`
+(a terminal background is always concrete, unlike a pane tint where
+`None` means "no bg override"). The four extras (teal / sepia / slate /
+paper) are terminal-only. Stored in foot.ini as raw hex; selected by
+name in the launcher.
+
+Background — `TERMINAL_BG_ORDER` (the seven shared pane-tint names via
+`terminal_bg_hex` → `pane_color_hex`, then the four `TERMINAL_BG_EXTRA`
+names):
+
+| Name     | Hex       |
+|----------|-----------|
+| `black`  | `#000000` |
+| `red`    | `#1A0E0E` |
+| `green`  | `#0E1A0E` |
+| `blue`   | `#0E141C` |
+| `grey`   | `#161616` |
+| `orange` | `#1C140A` |
+| `purple` | `#16101C` |
+| `teal`   | `#002B36` |
+| `sepia`  | `#2B1B12` |
+| `slate`  | `#1C2128` |
+| `paper`  | `#F4ECD8` |
+
+Foreground — `TERMINAL_FG` / `TERMINAL_FG_ORDER`, a short ramp from a
+sage tint down to ink, chosen independently of the background (no locked
+pairings):
+
+| Name     | Hex       |
+|----------|-----------|
+| `sage`   | `#778A8D` |
+| `silver` | `#C0C0C0` |
+| `ash`    | `#A0A0A0` |
+| `stone`  | `#808080` |
+| `shadow` | `#606060` |
+| `ink`    | `#000000` |
+
+`paper` is a deliberate off-white, **not** pure `#FFFFFF` (pure white
+did not render correctly with chrome that assumes a dark background).
+`silver` is `#C0C0C0` to match the shipped DOS-palette foreground
+(`install/examples/foot.ini` → `foreground=C0C0C0`) so a clean install
+snaps onto the **Silver** label rather than rendering as a raw hex.
 
 ### `terminal_font_picker` frame
 
