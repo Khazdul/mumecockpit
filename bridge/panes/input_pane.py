@@ -1,6 +1,6 @@
 try:
     from prompt_toolkit import Application
-    from prompt_toolkit.auto_suggest import AutoSuggest, AutoSuggestFromHistory, Suggestion
+    from prompt_toolkit.auto_suggest import AutoSuggest, Suggestion
     from prompt_toolkit.buffer import Buffer
     from prompt_toolkit.document import Document
     from prompt_toolkit.history import History
@@ -109,19 +109,23 @@ class _AfterSpaceAutoSuggest(AutoSuggest):
     `kill ` matches `kill orc` but not `killer` — the space cleanly separates
     verb-completion from same-prefix words."""
 
-    def __init__(self):
-        self._inner = AutoSuggestFromHistory()
-
     def get_suggestion(self, buffer, document):
         # Module flag first: when autosuggest is off, never run the history
-        # scan. Returning None here (before the space check and the inner
-        # delegate) keeps AppendAutoSuggestion inert — buffer.suggestion
-        # stays None — even though both are unconditionally attached.
+        # scan. Returning None here (before the space check) keeps
+        # AppendAutoSuggestion inert — buffer.suggestion stays None — even
+        # though both are unconditionally attached.
         if not _autosuggest_on:
             return None
-        if " " not in document.text:
+        text = document.text
+        if " " not in text:
             return None
-        return self._inner.get_suggestion(buffer, document)
+        # Newest-first scan, skipping entries equal to the typed prefix
+        # (empty remainder): a bare-prefix send must not shadow longer,
+        # older completions of the same prefix.
+        for s in reversed(history):
+            if s.startswith(text) and s != text:
+                return Suggestion(s[len(text):])
+        return None
 
 
 def _autosuggest_enabled():
@@ -346,7 +350,7 @@ def _handle_up(event):
         # A suggestion is active: attempt to ENTER filtered browse.
         prefix = buf.text
         matches = [i for i in range(len(history) - 1, -1, -1)
-                   if history[i].startswith(prefix)]
+                   if history[i].startswith(prefix) and history[i] != prefix]
         if len(matches) >= 2:
             filter_prefix = prefix
             history_index = matches[1]
@@ -376,11 +380,12 @@ def _handle_down(event):
         # Filtered-browsing: step to the next NEWER match.
         newer = None
         for i in range(history_index + 1, len(history)):
-            if history[i].startswith(filter_prefix):
+            if history[i].startswith(filter_prefix) and history[i] != filter_prefix:
                 newer = i
                 break
         most_recent = max(i for i in range(len(history))
-                          if history[i].startswith(filter_prefix))
+                          if history[i].startswith(filter_prefix)
+                          and history[i] != filter_prefix)
         if newer is not None and newer != most_recent:
             history_index = newer
             # Stay in autosuggest mode: prefix committed, remainder greyed.
