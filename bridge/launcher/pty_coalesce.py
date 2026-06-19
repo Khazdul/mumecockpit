@@ -30,11 +30,15 @@ Tunables (env, read once at startup). Defaults are grounded in a measured
 ~1.7 ms span for a typical ~21-line burst: the debounce closes the batch just
 after the burst goes idle, the max-hold/cap failsafes bound worst-case hold.
 
-    MUME_COALESCE_MS      debounce (read-idle) in ms, default 2
+    MUME_COALESCE_MS      debounce (read-idle) in ms, default 1
     MUME_COALESCE_MAX_MS  max hold from oldest buffered byte, ms, default 12
     MUME_COALESCE_CAP     size cap in bytes, default 32768
-    MUME_COALESCE_SYNC    1 = wrap each batch in DEC 2026 markers (default),
-                          0 = write the batch as-is
+    MUME_COALESCE_SYNC    1 = wrap each batch in DEC 2026 markers,
+                          0 = write the batch as-is (default)
+
+DEC 2026 wrapping is opt-in: plain write()-batching already renders bursts
+atomically on the tested stack (foot 1.16 / tmux 3.4), so the markers add no
+benefit there and stay off unless explicitly enabled.
 
 STDLIB only; POSIX only (Linux + macOS) — no epoll-specific code, the event
 loop is the portable `selectors` module.
@@ -97,10 +101,10 @@ def main():
         return 2
     cmd = argv[1:]
 
-    debounce_s = _env_int("MUME_COALESCE_MS", 2) / 1000.0
+    debounce_s = _env_int("MUME_COALESCE_MS", 1) / 1000.0
     max_hold_s = _env_int("MUME_COALESCE_MAX_MS", 12) / 1000.0
     cap_bytes = _env_int("MUME_COALESCE_CAP", 32768)
-    sync = os.environ.get("MUME_COALESCE_SYNC", "1") != "0"
+    sync = os.environ.get("MUME_COALESCE_SYNC", "0") != "0"
 
     # Spawn the child on a NEW pty. In the child, stdin/stdout/stderr are the
     # pty slave and it is the controlling terminal; execvp inherits cwd + env.
