@@ -75,8 +75,11 @@ PANE_SHADE_HS = {
 # inline ramp exactly (dark terminals are unchanged); _RAMP_LIGHT is the
 # light-background variant — light fills with dark text so the gauges/bars/toggle
 # boxes blend on a light ("paper") terminal instead of reading as heavy dark
-# fills. The table is chosen by is_light_bg() in the terminal-default branch only
-# (named pane colours are always dark tints — see pane_shades).
+# fills. pane_shades chooses the table per call from the pane's OWN effective bg
+# (is_light_bg(effective_bg(...))): a dark effective bg — a named-dark colour, or
+# any pane on a dark terminal — takes _RAMP_DARK; a light effective bg takes
+# _RAMP_LIGHT, so a future light named colour gets the light ramp with no further
+# edits. It is never keyed on the terminal alone (see pane_shades).
 _RAMP_DARK = {
     "track":  (15, -8),
     "dim":    (27, 0),
@@ -488,8 +491,11 @@ def pane_shades(pane_key, term_bg=None):
     _RAMP_LIGHT. _RAMP_DARK reproduces the original inline ramp exactly (dark
     terminals unchanged); _RAMP_LIGHT is the light-background variant (light
     fills, dark text) so the gauges blend on a 'paper' terminal. The variant is
-    chosen by is_light_bg() in the terminal-default/unknown branch only — named
-    pane colours are always dark tints, so they always use the dark ramp."""
+    chosen per call from the pane's OWN effective bg —
+    is_light_bg(effective_bg(pane_key, term_bg)) — never the terminal alone: a
+    named dark colour resolves to its dark fill (dark ramp), a terminal-default
+    pane on a light terminal resolves light (light ramp), and a future light named
+    colour would take the light ramp with no further edits."""
     if term_bg is None:
         term_bg = _terminal_bg
     name = _pane_colors.get(pane_key, "black")

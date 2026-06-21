@@ -223,6 +223,22 @@ dark, not by assumption), and the terminal-default / unknown pane reads from the
 live terminal bg it sits on. A future light named colour would read light with no
 further edits. No file I/O — reads the cached `_pane_colors` and `_terminal_bg`.
 
+**Resolve per frame — never cache at module load.** A consumer of `pane_is_light`
+/ `effective_bg` (and anything derived from them) MUST re-resolve them **once per
+render**, not once at import. The pane colour is **live-mutable**: the popup's
+Panes grid rewrites `pane_color_<key>`, tmux re-applies the bg mid-session, and
+`start_poll` refreshes the cached `_pane_colors` and invalidates the app. Only the
+terminal bg is static. Caching the light/dark decision at module load would freeze
+the treatment at whatever colour was set when the pane launched, so a live colour
+change would not take effect until a pane restart. Every right-column content
+renderer therefore re-resolves the decision and the colours derived from it each
+frame — `comm` / `group` / `ui` in a `_resolve_colors()` / `_resolve_light()`
+called at the top of their text providers, `timers` and `status` inline per
+frame — flipping the treatment within one frame of a popup colour change. The
+sole exception is the input pane's clock, which gates on `is_light_bg()` (the
+static terminal bg; the input pane has no fill of its own) and so resolves once
+at module load.
+
 ### `dark_ink(bg=None, l=40, s_scale=0.85)`
 
 A faded ink **tinted toward a background colour** — for base text that should read

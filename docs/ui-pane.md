@@ -88,7 +88,7 @@ byte-for-byte unchanged. When true:
 - the achromatic bright-white base text (`\x1b[1;97m`, which `light_shift` can't
   help) is then literal-replaced with bold dark ink —
   `pane_frame.dark_ink(pane_frame.effective_bg("ui"))`, a faded, washed-out
-  colour **tinted toward the UI pane's own effective background** (so on "paper"
+  colour (default `l=40`) **tinted toward the UI pane's own effective background** (so on "paper"
   it reads as a soft warm ink that blends, not a flat near-black; on a neutral
   terminal a mid grey), resolved per render (`_LIGHT_INK`, set by
   `_resolve_light()`) and the leading `1;` kept for bold — run after the truecolor
