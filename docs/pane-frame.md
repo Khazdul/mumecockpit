@@ -152,6 +152,24 @@ gate: it returns `_hex_to_l(bg) > 58`, defaulting to the live terminal backgroun
 (`_terminal_bg`) when no colour is given. Reused by `pane_shades` and by the status
 pane's own light-mode branches.
 
+### `light_shift(hexcolor, l_ceiling=45, s_floor=55)`
+
+Pulls a `#rrggbb` colour toward a darker, more-saturated target so a colour meant
+to be painted as **foreground text on a light ("paper") background** stays legible
+instead of washing out. Used by content renderers that paint a configured group/
+palette hue directly on the canvas (the timers pane's barless names are the first
+consumer; reused by PR3/PR4). The move is **one-directional, never an overshoot**:
+
+- lightness is **capped** at `l_ceiling` (`min(l, l_ceiling)`);
+- saturation is **floored** at `s_floor` (`max(s, s_floor)`);
+
+so an already-dark or already-vivid colour is left where it is. **Achromatic**
+colours (saturation `< 10` — no hue to saturate) are returned **unchanged**; a
+caller that needs those re-themed supplies its own explicit override. A
+non-`#rrggbb` literal collapses to `(0, 0)` via `_hex_to_hs` and is likewise
+returned unchanged. Pure function — no config, no I/O. Callers gate it on
+`is_light_bg()` so dark terminals pass the colour through untouched.
+
 #### `(h, s)` source
 
 The hue/saturation come from `PANE_SHADE_HS`, **restated** in `pane_frame.py`

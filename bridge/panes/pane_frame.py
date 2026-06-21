@@ -177,6 +177,25 @@ def is_light_bg(hexcolor=None):
         hexcolor = _terminal_bg
     return _hex_to_l(hexcolor) > 58
 
+
+def light_shift(hexcolor, l_ceiling=45, s_floor=55):
+    """Pull a #rrggbb colour toward a darker, more-saturated target so it stays
+    legible on a LIGHT background — used by content renderers that paint coloured
+    text directly on a 'paper' terminal (where a bright fg washes out).
+
+    The move is one-directional, never an overshoot: lightness is capped at
+    ``l_ceiling`` (``min(l, l_ceiling)``) and saturation floored at ``s_floor``
+    (``max(s, s_floor)``), so an already-dark or already-vivid colour is left
+    where it is. Achromatic colours (saturation < 10 — no hue to saturate) are
+    returned UNCHANGED; a caller that needs those re-themed supplies its own
+    explicit override. A non-#rrggbb literal collapses to (0, 0) via _hex_to_hs
+    and so is also returned unchanged. Pure function — no config, no I/O."""
+    h, s = _hex_to_hs(hexcolor)
+    if s < 10:
+        return hexcolor
+    l = _hex_to_l(hexcolor)
+    return _hsl_to_hex(h, max(s, s_floor), min(l, l_ceiling))
+
 # Header label per pane key. Lives on the frame's top border, not in content.
 LABELS = {
     "status": "Character",

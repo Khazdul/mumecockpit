@@ -181,8 +181,12 @@ drain bar. With `bar=1` the group renders as it always has (a filled, draining
 colour bar). With `bar=0` the group renders **barless**: no fill, no `▌`
 separator, and each affect name painted in the group's selected colour as
 **foreground** (`fg:<color>`). The colour swatch still picks that foreground hue.
-Charm carries `bar` for uniformity but never reads it — Charmies are always
-coloured-FG-no-bar regardless.
+On a light ("paper") terminal a bright group hue painted as fg washes out, so the
+barless path darkens/saturates it through `pane_frame.light_shift` (gated on
+`pane_frame.is_light_bg()`); on a dark terminal the colour passes through
+unchanged. The **bar-mode** path (bg fill + black text) reads fine on any
+background and is untouched. Charm carries `bar` for uniformity but never reads
+it — Charmies are always coloured-FG-no-bar regardless.
 
 **Parse rules.** Per-type `cols` clamps on read: `charm` → `[1, 2]`; all others →
 `[1, 6]`; floor `1`. Per-type `clock` and `bar` parse `0`/`1` like `enabled`
@@ -221,11 +225,15 @@ Groups are rendered top-to-bottom (a group renders iff enabled and non-empty).
 Empty groups produce no rows. Two independent global toggles shape the layout
 (see [Layout config](#layout-config-timers_layoutconf)):
 
-- `timers_headers` — when on (the default), a single dim `Group:` label row
-  (`C_GROUP_HEADER_FG`, `fg:#606060`, fg only so it renders on the pane bg tint —
-  the same mid grey as the status pane's data-row labels, `status_pane.C_LABEL`;
-  keep the two in sync) is emitted immediately above each rendered group's
-  content, including the first.
+- `timers_headers` — when on (the default), a single dim `Group:` label row is
+  emitted immediately above each rendered group's content, including the first.
+  The label paints in the pane's **bg-derived `dim` shade**
+  (`pane_frame.pane_shades("timers")["dim"]`, fg only so it renders on the pane
+  bg tint), resolved per render in `_build_all_rows` — so the header recedes into
+  whatever background is live (a receding tint on dark terminals, a darker
+  bg-matched tint on a light "paper" terminal) rather than the old flat
+  `#606060`. This keeps it conceptually in sync with the status pane's data-row
+  labels, which also use the `dim` shade.
 - `timers_compact` — when off, a single blank row is emitted before each rendered
   group except the first (`n_rendered - 1` separators), so consecutive groups are
   visually separated. When on (the default), no blank rows.
@@ -658,9 +666,9 @@ visually on any background.
 
 When `filled < cell_w` the name characters render as `fg:#C0C0C0` (the status
 pane's `C_VALUE` grey, RGB 192,192,192) on the terminal background. This is
-deliberately lighter than the `#606060`
-group-header / label grey so a drained bar's name stays clearly legible and
-distinct from the headers.
+deliberately lighter than the group-header / label tint (the bg-derived `dim`
+shade) so a drained bar's name stays clearly legible and distinct from the
+headers.
 
 ## Scroll
 

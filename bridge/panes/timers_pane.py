@@ -83,11 +83,13 @@ C_HERB_NAME        = "fg:#999999"   # medium grey name
 C_HERB_NAME_HOVER  = "fg:#cccccc"   # name on hover
 
 C_CELL_FG       = "fg:#000000"
-# Group header label rows ("Spells:" etc). fg ONLY — no bg — so the label
-# renders directly on the tmux pane bg tint. Mid grey, unified with the char
-# (status) pane's data-row labels (status_pane.C_LABEL = #606060); keep the two
-# in sync. Legible on every PANE_COLORS tint (tightest against grey #161616).
-C_GROUP_HEADER_FG = "fg:#606060"
+# Group header label rows ("Spells:" etc) are no longer a fixed grey: they paint
+# in the pane's bg-derived "dim" shade (pane_frame.pane_shades("timers")["dim"]),
+# resolved per render in _build_all_rows, so the header recedes into whatever
+# background is live (a receding tint on dark terminals, a darker bg-matched
+# tint on a light "paper" terminal). This mirrors the status pane's data-row
+# labels, which also use the "dim" shade. fg ONLY — no bg — so it renders
+# directly on the tmux pane bg tint.
 C_INDICATOR     = "fg:#d4a04e italic"
 C_NAME_DEPLETED = "fg:#C0C0C0"   # status-pane C_VALUE grey (192,192,192); distinct from the #606060 headers
 # Untracked affect cells (reconciled from stat/info, no observed timing yet):
@@ -589,7 +591,14 @@ def _group_rows(items, typ, W, cols, corner_local_row=None):
     # name painted in the group's selected colour as foreground. Branch before
     # _palette so the bg paint path is skipped for a barless group.
     bar_on   = _layout[typ]["bar"]
-    fg_style = "fg:" + _layout[typ]["color"]
+    # Barless names paint the group colour directly on the pane bg. On a light
+    # ("paper") terminal a bright group hue washes out, so darken/saturate it via
+    # pane_frame.light_shift; on a dark terminal it is left as-is. The bar-mode
+    # path (bg fill + black text) reads fine on any bg and is untouched.
+    group_hex = _layout[typ]["color"]
+    if pane_frame.is_light_bg():
+        group_hex = pane_frame.light_shift(group_hex)
+    fg_style = "fg:" + group_hex
     palette  = _palette(typ) if bar_on else None
     clock    = _layout[typ]["clock"]
     for row in range(math.ceil(n / cols)):
@@ -644,6 +653,11 @@ def _build_all_rows(corner_row=None):
     spells, buffs, debuffs, stored, blinds, charms = _split_groups()
     W = max(4, inner_width(_term_cols()))
 
+    # Section headers use the pane's bg-derived "dim" shade (the same role the
+    # status pane paints its data-row labels with), so they recede into whatever
+    # background is live instead of a flat grey. Computed once per render.
+    header_style = "fg:" + pane_frame.pane_shades("timers")["dim"]
+
     all_rows = []
     for i, (items, typ, cols) in enumerate(_rendered_groups(
             spells, buffs, debuffs, stored, blinds, charms)):
@@ -651,7 +665,7 @@ def _build_all_rows(corner_row=None):
             all_rows.append([])                              # blank separator row
         if _headers:
             label = f"{_GROUP_LABELS[typ]}:"[:W]   # left-aligned at col 0
-            all_rows.append([(C_GROUP_HEADER_FG, label)])   # non-interactive
+            all_rows.append([(header_style, label)])        # non-interactive
         first_content = len(all_rows)                        # global index of this group's first content row
         n_content     = math.ceil(len(items) / cols)
         corner_local  = None
