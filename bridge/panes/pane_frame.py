@@ -105,11 +105,18 @@ _RAMP_LIGHT = {
 # ~55 = matches the bar's `dim` gold.
 BORDER_L_LIGHT = 80
 
+# Floor for the dark terminal-default border so a (near-)black terminal still
+# frames; any +0x14 lift already above this is kept unchanged.
+BORDER_MIN_L_DARK = 16
+
 # The terminal-default ("black"/None) pane has no bg override, so its border is
 # derived from the live terminal background (layout.conf terminal_bg, the same
 # source apply_border_style.sh uses) rather than a static grey — a touch lighter
-# than the terminal so it reads as a frame, not a fill. On a black terminal this
-# yields #141414, visibly darker than the grey pane's #2a2a2a.
+# than the terminal so it reads as a frame, not a fill. On a tinted / less-dark
+# terminal this keeps lighten(...,0x14) unchanged; a pure-black terminal would
+# yield #141414 (too low-contrast to read as a frame), so it is floored to
+# ~#292929 (L16) by BORDER_MIN_L_DARK — still visibly darker than the grey pane's
+# #2a2a2a.
 _TERMINAL_DEFAULT_NAMES = ("black",)
 
 
@@ -454,9 +461,17 @@ def border_color(pane_key):
         h, s = PANE_SHADE_HS[name] if name in PANE_SHADE_HS else _hex_to_hs(eff)
         return _hsl_to_hex(h, s, BORDER_L_LIGHT)
     # Dark terminal-default pane: no fill to lift, so derive the border from the
-    # live terminal background, lifted +0x14 (byte-for-byte unchanged).
+    # live terminal background, lifted +0x14. Floor the result at BORDER_MIN_L_DARK
+    # so a (near-)black terminal — where +0x14 yields ~#141414, too low-contrast to
+    # read as a frame — still frames; the floor keeps the bg's own (h, s), so a
+    # near-black bg gives a faint grey and a faintly-tinted near-black keeps its
+    # tint (ADR 0099). Any lift already above the floor is returned unchanged.
     if name in _TERMINAL_DEFAULT_NAMES:
-        return lighten(_terminal_bg, 0x14)
+        lifted = lighten(_terminal_bg, 0x14)
+        if _hex_to_l(lifted) < BORDER_MIN_L_DARK:
+            h, s = _hex_to_hs(_terminal_bg)
+            return _hsl_to_hex(h, s, BORDER_MIN_L_DARK)
+        return lifted
     # Dark named pane colour: its fixed border tint sits on its own dark fill.
     return PANE_BORDER_COLORS.get(name, _DEFAULT_BORDER)
 

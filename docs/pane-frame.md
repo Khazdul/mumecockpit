@@ -105,9 +105,13 @@ from the pane's own `effective_bg`:
 - otherwise the **terminal-default** pane (`black` / no `bg` override) has no fill
   to lift, so its border is derived from the live terminal background
   (`layout.conf` `terminal_bg`, the same source `apply_border_style.sh` uses —
-  ADR 0099), lifted `+0x14` (`lighten`): a black terminal yields `#141414`,
-  visibly darker than the grey pane's `#2a2a2a`; on a tinted dark terminal it
-  tracks that canvas;
+  ADR 0099), lifted `+0x14` (`lighten`), then **floored** at `BORDER_MIN_L_DARK`
+  (L16): a tinted or non-black dark terminal keeps `lighten(…, 0x14)` unchanged
+  (its lift already clears the floor) and tracks that canvas; only a pure-black
+  terminal — where `+0x14` yields `#141414`, too low-contrast to read as a frame —
+  is lifted to the floor, `~#292929`, still visibly darker than the grey pane's
+  `#2a2a2a`. The floor keeps the bg's own `(h, s)`, so a faintly-tinted near-black
+  keeps its tint. `BORDER_MIN_L_DARK` is a single knob;
 - otherwise a **named** pane colour maps through `PANE_BORDER_COLORS` — the pane
   fill lifted a shade or two (`lighten()`, +0x14 per channel) so the frame reads
   against the fill.
