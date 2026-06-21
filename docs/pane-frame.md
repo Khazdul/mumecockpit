@@ -223,20 +223,22 @@ dark, not by assumption), and the terminal-default / unknown pane reads from the
 live terminal bg it sits on. A future light named colour would read light with no
 further edits. No file I/O — reads the cached `_pane_colors` and `_terminal_bg`.
 
-### `dark_ink(bg=None, l=24, s_scale=0.85)`
+### `dark_ink(bg=None, l=40, s_scale=0.85)`
 
-A very dark ink **tinted toward a background colour** — for base text that should
-read as near-black on a light ("paper") terminal without the harshness of a flat
-near-black. Takes `bg`'s `(h, s)` (defaulting to the live terminal background
+A faded ink **tinted toward a background colour** — for base text that should read
+as a soft, washed-out bg-tinted shade on a light ("paper") terminal rather than a
+hard near-black. Takes `bg`'s `(h, s)` (defaulting to the live terminal background
 `_terminal_bg`, the same source `border_color` reads), scales saturation by
 `s_scale`, and pins lightness to `l`. A caller that wants the ink to tint toward a
 specific pane's bg passes that pane's `effective_bg(...)` (the UI pane does). On a
-warm "paper" canvas this yields a very dark warm ink that blends into the page; on
-a neutral / black background the hue is moot and saturation ≈ 0, so it collapses
-to a near-black grey. `l` and `s_scale` are tunable — raised from the original
-`(12, 0.6)` so the ink is a touch lighter and more bg-tinted. Returns a `#rrggbb`
-string. Pure function — no file I/O. Used by the UI pane's bright-white
-(`\x1b[1;97m`) base-text override — see [docs/ui-pane.md](ui-pane.md).
+warm "paper" canvas this yields a faded warm ink that blends into the page; on a
+neutral / black background the hue is moot and saturation ≈ 0, so it collapses to
+a mid grey. `l` and `s_scale` are tunable — `l` raised from the original `12` (via
+`24`) to `40` so the ink reads as a faded bg-tinted shade, not near-black. Returns
+a `#rrggbb` string. Pure function — no file I/O. Used by the UI pane's
+bright-white (`\x1b[1;97m`) base-text override — see [docs/ui-pane.md](ui-pane.md)
+— and shared by the input pane's light-terminal clock so the two track one shade
+(see [docs/input-pane.md](input-pane.md)).
 
 #### `(h, s)` source
 

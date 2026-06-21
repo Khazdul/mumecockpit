@@ -50,11 +50,12 @@ C_MOON_HEX = "#4a90e2"   # \x1b[38;2;74;144;226m
 
 # Clock time-text colour. The input pane sits on the terminal background with no
 # pane fill of its own, so on a light ("paper") terminal a near-white clock
-# washes out. There, render it in the same bg-tinted dark shade the char pane
-# uses for its L44 level badge (pane_shades "label": terminal-default → term_bg
-# hue walked down the light ramp). On a dark terminal keep the original
+# washes out. There, render it in the same washed-out bg-tinted shade the UI
+# pane uses for its base-text ink — pane_frame.dark_ink() (l=40): a faded,
+# terminal-bg-tinted ink. Sharing dark_ink() means the clock and the UI base
+# text track one shade and tune together. On a dark terminal keep the original
 # near-white. Resolved once at module load — the terminal bg is static.
-C_CLOCK_HEX = (pane_frame.pane_shades("input")["label"]
+C_CLOCK_HEX = (pane_frame.dark_ink()
                if pane_frame.is_light_bg() else "#ffffff")
 
 # Clock state — updated by _poll_clock asyncio task

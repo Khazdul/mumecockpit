@@ -239,20 +239,20 @@ def washout(hexcolor, l_target=70, s_scale=0.45):
     return _hsl_to_hex(h, max(0.0, min(100.0, s * s_scale)), l_target)
 
 
-def dark_ink(bg=None, l=24, s_scale=0.85):
-    """A very dark ink TINTED toward a background colour — for base text that
-    should read as near-black on a LIGHT ("paper") terminal without the harshness
-    of a flat near-black.
+def dark_ink(bg=None, l=40, s_scale=0.85):
+    """A faded ink TINTED toward a background colour — for base text that should
+    read as a soft, washed-out bg-tinted shade on a LIGHT ("paper") terminal
+    rather than a hard near-black.
 
     Takes ``bg``'s `(h, s)` (defaulting to the live terminal background
     `_terminal_bg`, the same source `border_color` reads), scales saturation by
     ``s_scale``, and pins lightness to ``l``. A caller that wants the ink to tint
     toward a specific pane's bg passes that pane's `effective_bg(...)`. So on a
-    warm "paper" canvas it yields a very dark WARM ink that blends into the page;
-    on a neutral / black background the hue is moot and saturation ≈ 0, so it
-    collapses to a near-black grey. ``l`` and ``s_scale`` are tunable (raised so
-    the ink is a touch lighter and more bg-tinted). Returns a #rrggbb string. Pure
-    function — no file I/O."""
+    warm "paper" canvas it yields a faded WARM ink that blends into the page; on a
+    neutral / black background the hue is moot and saturation ≈ 0, so it collapses
+    to a mid grey. ``l`` and ``s_scale`` are tunable (``l`` raised to 40 so the ink
+    reads as a faded bg-tinted shade, not near-black). Returns a #rrggbb string.
+    Pure function — no file I/O."""
     if bg is None:
         bg = _terminal_bg
     h, s = _hex_to_hs(bg)
