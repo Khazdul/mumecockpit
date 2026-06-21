@@ -507,10 +507,14 @@ Per-channel verb/label colors are in `CHANNEL_COLORS` (see top of file).
 **Light-background shift.** On a light ("paper") terminal the **content**
 colours — every `CHANNEL_COLORS` value plus `C_TALKER_YOU`, `C_TALKER_OTHER`,
 `C_MESSAGE_SELF`, `C_MESSAGE_OTHER` — wash out, so each is pulled darker and
-more-saturated through `pane_frame.light_shift` (gated once at load on
+more-saturated through `pane_frame.light_shift` (gated on
 `pane_frame.pane_is_light("comm")` — the comm pane's OWN background, so a dark
-named pane colour stays dark even on a light terminal; built in place via
-`_light_content_style`). On a dark bg the shift is a no-op and the pane is
+named pane colour stays dark even on a light terminal). The gate and the shifted
+copies are resolved **per render** by `_resolve_colors()` (called at the top of
+`_header_text` and `_list_text`) from the `_BASE_*` constants via
+`_light_content_style`, so a **live** pane-colour change (popup → tmux re-applies
+bg; `pane_frame.start_poll` refreshes the cached colours and invalidates) flips
+the treatment within a frame. On a dark bg the shift is a no-op and the pane is
 byte-for-byte unchanged. The
 muted/structural colours are left untouched on purpose: `C_TIME` and
 `C_LABEL_OFF` are meant to recede (the saturation floor would make them *more*

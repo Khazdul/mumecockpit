@@ -31,28 +31,40 @@ from pane_frame import inner_height, inner_width
 
 _SGR_RE = re.compile(r"\x1b\[[0-9;]*m")
 
-# Light-background render-time recolour. The bg is static, so resolve once.
-# On a "paper" terminal the baked-in ANSI colours in logs/ui.log (bright-white
-# base text + washed-out chromatic prefixes) read poorly; _recolor rewrites them
-# at the render choke point only — the on-disk log and the Lua emitters are never
-# touched, and dark terminals pass through byte-for-byte.
-_LIGHT = pane_frame.pane_is_light("ui")
+# Light-background render-time recolour, resolved PER RENDER (not at load) so a
+# live pane-colour change (popup → tmux re-applies bg; pane_frame.start_poll
+# refreshes the cached colours and invalidates) flips the treatment within a
+# frame. On a "paper" terminal the baked-in ANSI colours in logs/ui.log
+# (bright-white base text + washed-out chromatic prefixes) read poorly; _recolor
+# rewrites them at the render choke point only — the on-disk log and the Lua
+# emitters are never touched, and dark terminals pass through byte-for-byte.
+# `_resolve_light()` recomputes the two globals below; `_recolor` reads them.
+_LIGHT     = False
+_LIGHT_INK = "\x1b[1;97m"
 
 # Truecolor FOREGROUND introducer only (`38;2;R;G;B`); backgrounds (`48;2;…`) are
 # left alone. A leading `1;` (bold, as on the ui_var value) sits before the match
 # and is preserved.
 _TRUECOLOR_FG_RE = re.compile(r"38;2;(\d{1,3});(\d{1,3});(\d{1,3})")
 
-# Bold dark ink replacing the achromatic bright-white base text (`\x1b[1;97m`),
-# the one case light_shift can't help (no hue to saturate). Tinted toward the UI
-# pane's OWN effective background (pane_frame.dark_ink(effective_bg("ui"))) so on
-# "paper" it reads as a very dark WARM ink that blends instead of a flat
-# near-black; resolved once at module load (the effective bg is static). The
-# leading `1;` keeps the text bold.
-_DARK_INK   = pane_frame.dark_ink(pane_frame.effective_bg("ui"))
-_LIGHT_INK  = "\x1b[1;38;2;%d;%d;%dm" % (
-    int(_DARK_INK[1:3], 16), int(_DARK_INK[3:5], 16), int(_DARK_INK[5:7], 16)
-)
+
+def _resolve_light():
+    """Recompute the light/dark recolour state from the UI pane's OWN effective
+    bg, once per render (top of _list_text). The pane colour is live-mutable via
+    the popup, so this can't be cached at module load.
+
+    `_LIGHT_INK` is the bold dark ink that replaces the achromatic bright-white
+    base text (`\\x1b[1;97m`), the one case light_shift can't help (no hue to
+    saturate). It is tinted toward the pane's effective bg
+    (pane_frame.dark_ink(effective_bg("ui"))) so on "paper" it reads as a very
+    dark WARM ink that blends instead of a flat near-black; the leading `1;`
+    keeps the text bold."""
+    global _LIGHT, _LIGHT_INK
+    _LIGHT   = pane_frame.pane_is_light("ui")
+    dark_ink = pane_frame.dark_ink(pane_frame.effective_bg("ui"))
+    _LIGHT_INK = "\x1b[1;38;2;%d;%d;%dm" % (
+        int(dark_ink[1:3], 16), int(dark_ink[3:5], 16), int(dark_ink[5:7], 16)
+    )
 
 
 def _shift_truecolor(m):
@@ -117,6 +129,8 @@ def _restore_cursor():
 def _list_text():
     """Fragments for the scrollable log list (anchor-bottom)."""
     global _scroll_offset
+
+    _resolve_light()
 
     if not _lines:
         return []

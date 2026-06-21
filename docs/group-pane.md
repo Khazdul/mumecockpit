@@ -133,12 +133,16 @@ Default colours:
 **Light-terminal bar fills.** On a light ("paper") terminal the three deep
 default fills above read as heavy saturated blocks. When
 `pane_frame.pane_is_light("group")` is true the three `*_DEFAULT_BG` values are
-run through `pane_frame.washout()` once at load — hue kept, saturation scaled
-down, lightness raised — so they render as soft pastels (`#90d5a2` / `#9090d5` /
-`#c4b2a1`) that sit gently on the canvas. The threshold `RED_BG` / `ORANGE_BG`
-are **left vivid** so a low-vital bar still pops. On a dark terminal
-`pane_is_light` is false and all bar colours pass through byte-for-byte
-unchanged. See [docs/pane-frame.md](pane-frame.md#washouthexcolor-l_target70-s_scale045).
+run through `pane_frame.washout()` — hue kept, saturation scaled down, lightness
+raised — so they render as soft pastels (`#90d5a2` / `#9090d5` / `#c4b2a1`) that
+sit gently on the canvas. The threshold `RED_BG` / `ORANGE_BG` are **left vivid**
+so a low-vital bar still pops. On a dark terminal `pane_is_light` is false and all
+bar colours pass through byte-for-byte unchanged. The washout decision and the
+washed fills are resolved **per render** by `_resolve_colors()` (top of
+`_rows_text`, stored in `_bar_bgs` for `_member_frags`), so a **live** pane-colour
+change (popup → tmux re-applies bg; `pane_frame.start_poll` refreshes the cached
+colours and invalidates) flips the treatment within a frame.
+See [docs/pane-frame.md](pane-frame.md#washouthexcolor-l_target70-s_scale045).
 
 ### Name overlay (full row)
 
@@ -174,10 +178,12 @@ name characters on the fill from those past it. The earlier black-on-fill /
 light-grey-on-empty cutout was abandoned because black lost contrast on the
 deeper default bar colours.
 
-`C_NAME` is derived once at load from the group pane's shade ramp —
-`"fg:" + pane_frame.pane_shades("group")["vtext"]` — rather than a flat grey. The
-ramp's `vtext` role is light on a dark terminal and a dark, bg-tinted shade on a
-light terminal, so a single style gives both variants automatically: on a dark
+`C_NAME` is derived **per render** (in `_resolve_colors`, top of `_rows_text`)
+from the group pane's shade ramp —
+`"fg:" + pane_frame.pane_shades("group")["vtext"]` — rather than a flat grey, so a
+live pane-colour change re-resolves it within a frame. The ramp's `vtext` role is
+light on a dark terminal and a dark, bg-tinted shade on a light terminal, so a
+single style gives both variants automatically: on a dark
 terminal the name reads as the familiar light grey; on a "paper" terminal it
 reads as a dark shade tinted toward the canvas (legible on both the pastel-filled
 and empty regions) instead of a washed-out flat `#aaaaaa`.

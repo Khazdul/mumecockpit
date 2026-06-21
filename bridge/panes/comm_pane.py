@@ -39,14 +39,16 @@ import time
 import pane_frame
 from pane_frame import inner_height, inner_width
 
-# The pane's effective background is static for the session, so resolve the
-# light/dark gate once at load — derived from the comm pane's OWN bg (a named
-# pane colour reads from its dark fill; the terminal-default pane reads from the
-# terminal). On a light effective bg the content colours below are pulled
-# darker/more-saturated via pane_frame.light_shift so they stay legible instead
-# of washing out; on a dark bg everything passes through unchanged (the comm pane
-# is then byte-for-byte identical).
-_LIGHT = pane_frame.pane_is_light("comm")
+# The light/dark gate is resolved PER RENDER (not at load), derived from the comm
+# pane's OWN bg (a named pane colour reads from its dark fill; the terminal-default
+# pane reads from the terminal). Resolving per frame means a live pane-colour
+# change (popup → tmux re-applies bg; pane_frame.start_poll refreshes the cached
+# colours and invalidates) flips the treatment within a frame. On a light
+# effective bg the content colours are pulled darker/more-saturated via
+# pane_frame.light_shift so they stay legible instead of washing out; on a dark bg
+# everything passes through unchanged (the comm pane is then byte-for-byte
+# identical). See _resolve_colors.
+_LIGHT = False
 
 
 def _light_content_style(style):
@@ -137,13 +139,17 @@ CHANNEL_DISPLAY = {
 # ---------------------------------------------------------------------------
 
 C_TIME           = "fg:#687685"               # 104,118,133 — muted blue-grey
-C_TALKER_YOU     = "fg:#afd2d2"               # soft cyan — "you" as talker or destination
-C_TALKER_OTHER   = "fg:#c2a878"               # warm tan — contrasts with light-blue message
-C_MESSAGE_SELF   = "fg:#c3e6e9"               # 195,230,233
-C_MESSAGE_OTHER  = "fg:#91bec1"               # 145,190,193
 C_LABEL_OFF      = "fg:#3a3a3a"               # grey when filter off
 
-CHANNEL_COLORS = {
+# Base (unshifted) content colours. The render-time light-shifted copies live in
+# the like-named globals below, recomputed each frame by _resolve_colors from
+# these bases.
+_BASE_C_TALKER_YOU    = "fg:#afd2d2"          # soft cyan — "you" as talker or destination
+_BASE_C_TALKER_OTHER  = "fg:#c2a878"          # warm tan — contrasts with light-blue message
+_BASE_C_MESSAGE_SELF  = "fg:#c3e6e9"          # 195,230,233
+_BASE_C_MESSAGE_OTHER = "fg:#91bec1"          # 145,190,193
+
+_BASE_CHANNEL_COLORS = {
     "tales":     "fg:#949400",  # 148,148,0
     "tells":     "fg:#008000",  # 0,128,0
     "emotes":    "fg:#008000",
@@ -159,20 +165,35 @@ CHANNEL_COLORS = {
 C_VERB_UNKNOWN   = "fg:#78909c"               # neutral grey for unknown channels
 C_INDICATOR      = "fg:#d4a04e italic"        # amber, italic — system message
 
-# Light-background content shift, built once at load. Applies only to the
-# CONTENT colours — channel verb/label, talker names, message text — so they
-# stop washing out on a "paper" terminal. The muted/structural colours are left
-# untouched on purpose: C_TIME and C_LABEL_OFF are meant to recede (light_shift's
-# saturation floor would make them *more* prominent, fighting that intent), and
-# C_INDICATOR is the shared cross-pane overflow amber (shifting it here would
-# desync the other panes' indicators on a light terminal). On a dark terminal
-# every value below is returned unchanged.
-CHANNEL_COLORS   = {name: _light_content_style(style)
-                    for name, style in CHANNEL_COLORS.items()}
-C_TALKER_YOU     = _light_content_style(C_TALKER_YOU)
-C_TALKER_OTHER   = _light_content_style(C_TALKER_OTHER)
-C_MESSAGE_SELF   = _light_content_style(C_MESSAGE_SELF)
-C_MESSAGE_OTHER  = _light_content_style(C_MESSAGE_OTHER)
+# Render-time content colours, recomputed each frame by _resolve_colors. Applies
+# only to the CONTENT colours — channel verb/label, talker names, message text —
+# so they stop washing out on a "paper" terminal. The muted/structural colours
+# are left untouched on purpose: C_TIME and C_LABEL_OFF are meant to recede
+# (light_shift's saturation floor would make them *more* prominent, fighting that
+# intent), and C_INDICATOR is the shared cross-pane overflow amber (shifting it
+# would desync the other panes' indicators on a light terminal). On a dark
+# terminal every value is returned unchanged. Initialised to the base values so a
+# render before the first resolve still has valid styles.
+CHANNEL_COLORS   = dict(_BASE_CHANNEL_COLORS)
+C_TALKER_YOU     = _BASE_C_TALKER_YOU
+C_TALKER_OTHER   = _BASE_C_TALKER_OTHER
+C_MESSAGE_SELF   = _BASE_C_MESSAGE_SELF
+C_MESSAGE_OTHER  = _BASE_C_MESSAGE_OTHER
+
+
+def _resolve_colors():
+    """Recompute the light/dark gate and the light-shifted content colours from
+    their base values, once per render. The comm pane's effective bg is
+    live-mutable via the popup, so this can't be cached at module load."""
+    global _LIGHT, CHANNEL_COLORS, C_TALKER_YOU, C_TALKER_OTHER
+    global C_MESSAGE_SELF, C_MESSAGE_OTHER
+    _LIGHT          = pane_frame.pane_is_light("comm")
+    CHANNEL_COLORS  = {name: _light_content_style(style)
+                       for name, style in _BASE_CHANNEL_COLORS.items()}
+    C_TALKER_YOU    = _light_content_style(_BASE_C_TALKER_YOU)
+    C_TALKER_OTHER  = _light_content_style(_BASE_C_TALKER_OTHER)
+    C_MESSAGE_SELF  = _light_content_style(_BASE_C_MESSAGE_SELF)
+    C_MESSAGE_OTHER = _light_content_style(_BASE_C_MESSAGE_OTHER)
 
 # ---------------------------------------------------------------------------
 # Application state
@@ -753,6 +774,7 @@ def _header_text():
     """Fragments for the 1-row channel-filter header."""
     if not _run_active:
         return [("", "")]
+    _resolve_colors()
     frags = []
     if _state is None:
         return frags
@@ -807,6 +829,7 @@ def _list_text():
     if not _run_active:
         return [("", "")]
 
+    _resolve_colors()
     frags = []
     if _state is None:
         return frags

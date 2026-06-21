@@ -67,23 +67,41 @@ ORANGE_FG       = "#ff7020"
 RED_BG          = "#e02020"
 RED_FG          = "#e02020"
 
-# Member-name overlay colour. Derived once at load from the group pane's shade
-# ramp (vtext role) instead of a flat grey: the ramp's vtext is light on a dark
-# terminal and dark on a light terminal, so this gives both variants for free and
-# tints toward the pane bg rather than reading as flat #aaaaaa. One style for both
-# the on-fill and past-fill regions (only the bg differs between them).
-C_NAME      = "fg:" + pane_frame.pane_shades("group")["vtext"]
 C_INDICATOR = "fg:#d4a04e italic"
 
-# On a light ("paper") terminal the deep default bar fills read as heavy
-# saturated blocks; wash them out to soft pastels (computed once at load) so they
-# sit gently on the canvas. The threshold RED/ORANGE bars are left vivid so a
-# low-vital bar still pops. On a dark terminal pane_is_light is False and the
-# originals pass through byte-for-byte unchanged.
-if pane_frame.pane_is_light("group"):
-    HP_DEFAULT_BG   = pane_frame.washout(HP_DEFAULT_BG)
-    MANA_DEFAULT_BG = pane_frame.washout(MANA_DEFAULT_BG)
-    MP_DEFAULT_BG   = pane_frame.washout(MP_DEFAULT_BG)
+# Member-name overlay colour and the washed default bar fills are resolved PER
+# RENDER (not at load) so a live pane-colour change (popup → tmux re-applies bg;
+# pane_frame.start_poll refreshes the cached colours and invalidates) flips the
+# treatment within a frame. `_resolve_colors()` (top of _rows_text) writes the
+# two globals below; `_member_frags` reads them.
+#
+# `C_NAME` comes from the group pane's shade ramp (vtext role) instead of a flat
+# grey: the ramp's vtext is light on a dark terminal and dark on a light terminal,
+# so this gives both variants for free and tints toward the pane bg rather than
+# reading as flat #aaaaaa. One style for both the on-fill and past-fill regions
+# (only the bg differs between them).
+#
+# `_bar_bgs` are the three default HP/Mana/Moves bar fills. On a light ("paper")
+# terminal the deep originals read as heavy saturated blocks, so they wash out to
+# soft pastels (pane_frame.washout) and sit gently on the canvas; the threshold
+# RED/ORANGE bars are left vivid so a low-vital bar still pops. On a dark terminal
+# pane_is_light is False and the originals pass through byte-for-byte unchanged.
+C_NAME   = "fg:#aaaaaa"
+_bar_bgs = (HP_DEFAULT_BG, MANA_DEFAULT_BG, MP_DEFAULT_BG)
+
+
+def _resolve_colors():
+    """Recompute C_NAME and the washed bar fills from the group pane's own
+    effective bg, once per render. The pane colour is live-mutable via the popup,
+    so this can't be cached at module load."""
+    global C_NAME, _bar_bgs
+    C_NAME = "fg:" + pane_frame.pane_shades("group")["vtext"]
+    if pane_frame.pane_is_light("group"):
+        _bar_bgs = (pane_frame.washout(HP_DEFAULT_BG),
+                    pane_frame.washout(MANA_DEFAULT_BG),
+                    pane_frame.washout(MP_DEFAULT_BG))
+    else:
+        _bar_bgs = (HP_DEFAULT_BG, MANA_DEFAULT_BG, MP_DEFAULT_BG)
 
 # ---------------------------------------------------------------------------
 # Renderer state
@@ -203,7 +221,7 @@ def _member_frags(member, W):
     bar_hp_w, bar_mana_w, bar_mp_w = _bar_widths(W)
     bar_widths_list = [bar_hp_w, bar_mana_w, bar_mp_w]
     bar_pcts        = [hp_pct, mana_pct, mp_pct]
-    bar_default_bgs = [HP_DEFAULT_BG, MANA_DEFAULT_BG, MP_DEFAULT_BG]
+    bar_default_bgs = list(_bar_bgs)   # resolved per render in _resolve_colors
     bar_default_fgs = [HP_DEFAULT_FG, MANA_DEFAULT_FG, MP_DEFAULT_FG]
 
     fills  = []
@@ -252,6 +270,7 @@ def _member_frags(member, W):
 def _rows_text():
     if not _run_active:
         return [("", "")]
+    _resolve_colors()
     members = _displayed_members()
     if not members:
         return []

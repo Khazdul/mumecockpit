@@ -73,10 +73,13 @@ render time — operating on a copy, never mutating `_lines`, and never touching
 `_list_text`: `ANSI(_recolor(line))`. `_row_count` keeps using the raw line — a
 colour swap doesn't change visible length, so wrap math is unaffected.
 
-`_LIGHT = pane_frame.pane_is_light("ui")` is resolved **once at module load** (the
-UI pane's effective bg is static) — gated on the pane's OWN background, so a dark
-named pane colour stays dark even on a light terminal. When false, `_recolor` is a
-no-op and the pane is byte-for-byte unchanged. When true:
+`_LIGHT = pane_frame.pane_is_light("ui")` is resolved **per render** by
+`_resolve_light()` (called at the top of `_list_text`), gated on the pane's OWN
+background — so a dark named pane colour stays dark even on a light terminal, and a
+**live** pane-colour change (popup → tmux re-applies bg; `pane_frame.start_poll`
+refreshes the cached colours and invalidates) flips the treatment within a frame,
+no pane restart needed. When false, `_recolor` is a no-op and the pane is
+byte-for-byte unchanged. When true:
 
 - every truecolor **foreground** (`38;2;R;G;B`) is pulled darker/more-saturated
   through `pane_frame.light_shift` (catching every chromatic prefix and the
@@ -84,12 +87,12 @@ no-op and the pane is byte-for-byte unchanged. When true:
   preserved; already-dark amber/red just deepen slightly);
 - the achromatic bright-white base text (`\x1b[1;97m`, which `light_shift` can't
   help) is then literal-replaced with bold dark ink —
-  `pane_frame.dark_ink(pane_frame.effective_bg("ui"))`, a very dark colour
-  **tinted toward the UI pane's own effective background** (so on "paper" it reads
-  as a dark warm ink that blends, not a flat near-black; on a neutral terminal a
-  near-black grey), resolved once at module load (`_DARK_INK`) and the leading
-  `1;` kept for bold — run after the truecolor pass so the only remaining `97` is
-  this one;
+  `pane_frame.dark_ink(pane_frame.effective_bg("ui"))`, a faded, washed-out
+  colour **tinted toward the UI pane's own effective background** (so on "paper"
+  it reads as a soft warm ink that blends, not a flat near-black; on a neutral
+  terminal a mid grey), resolved per render (`_LIGHT_INK`, set by
+  `_resolve_light()`) and the leading `1;` kept for bold — run after the truecolor
+  pass so the only remaining `97` is this one;
 - backgrounds (`48;2;…`), resets (`0m`), and attr-only params are left untouched.
 
 See [docs/pane-frame.md](pane-frame.md) for `light_shift` / `is_light_bg`.
