@@ -7,6 +7,10 @@ anything that benefits from a real programming language; tmux composes
 the game pane, an input pane, and up to six side panes into one window.
 
 <div align="center">
+<img width="400" height="250" alt="20260621 gameplay with mmapper_black" src="https://github.com/user-attachments/assets/21d4d67f-2a19-4649-bffd-c3047b4a20ca" />
+<img width="400" height="250" alt="20260621 gameplay with mmapper_paper" src="https://github.com/user-attachments/assets/8602e2ba-109a-4a35-89d7-61f01ff6ad1d" />
+
+  
 <img width="400" height="250" alt="20260621 gameplay with mmapper_teal" src="https://github.com/user-attachments/assets/a4cba465-0cf1-4e25-aa35-31b0675fd3f8" />
 <img width="400" height="250" alt="20260621 gameplay with mmapper" src="https://github.com/user-attachments/assets/a25fd257-ef58-4313-8a3e-1674f21e1f28" />
 </div>
