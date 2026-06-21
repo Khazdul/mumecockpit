@@ -39,6 +39,26 @@ import time
 import pane_frame
 from pane_frame import inner_height, inner_width
 
+# Terminal background is static for the session, so resolve the light/dark gate
+# once at load. On a light ("paper") terminal the content colours below are
+# pulled darker/more-saturated via pane_frame.light_shift so they stay legible
+# instead of washing out; on a dark terminal everything passes through unchanged
+# (the comm pane is then byte-for-byte identical).
+_LIGHT = pane_frame.is_light_bg()
+
+
+def _light_content_style(style):
+    """Light-background shift for a `fg:#rrggbb` content style string.
+
+    When `_LIGHT`, pull the hex through `pane_frame.light_shift` (darker,
+    more-saturated) and reassemble the `fg:` prefix. On a dark terminal, or for
+    any value without a `fg:#` hex, return it unchanged — `light_shift` itself
+    also no-ops on achromatic / non-`#rrggbb` input."""
+    if not _LIGHT or not style.startswith("fg:#"):
+        return style
+    return "fg:" + pane_frame.light_shift(style[len("fg:"):])
+
+
 _SGR_RE = re.compile(r"\x1b\[[0-9;]*m")
 
 COMM_STATE_PATH   = os.environ.get(
@@ -136,6 +156,21 @@ CHANNEL_COLORS = {
 
 C_VERB_UNKNOWN   = "fg:#78909c"               # neutral grey for unknown channels
 C_INDICATOR      = "fg:#d4a04e italic"        # amber, italic — system message
+
+# Light-background content shift, built once at load. Applies only to the
+# CONTENT colours — channel verb/label, talker names, message text — so they
+# stop washing out on a "paper" terminal. The muted/structural colours are left
+# untouched on purpose: C_TIME and C_LABEL_OFF are meant to recede (light_shift's
+# saturation floor would make them *more* prominent, fighting that intent), and
+# C_INDICATOR is the shared cross-pane overflow amber (shifting it here would
+# desync the other panes' indicators on a light terminal). On a dark terminal
+# every value below is returned unchanged.
+CHANNEL_COLORS   = {name: _light_content_style(style)
+                    for name, style in CHANNEL_COLORS.items()}
+C_TALKER_YOU     = _light_content_style(C_TALKER_YOU)
+C_TALKER_OTHER   = _light_content_style(C_TALKER_OTHER)
+C_MESSAGE_SELF   = _light_content_style(C_MESSAGE_SELF)
+C_MESSAGE_OTHER  = _light_content_style(C_MESSAGE_OTHER)
 
 # ---------------------------------------------------------------------------
 # Application state
