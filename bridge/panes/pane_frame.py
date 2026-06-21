@@ -55,6 +55,32 @@ PANE_SHADE_HS = {
     "purple": (278, 46),
 }
 
+# pane_shades ramp tables: role -> (lightness, saturation delta). Each shade is
+# _hsl_to_hex(h, clamp(s + sat_delta), L). _RAMP_DARK reproduces the original
+# inline ramp exactly (dark terminals are unchanged); _RAMP_LIGHT is the
+# light-background variant — light fills with dark text so the gauges/bars/toggle
+# boxes blend on a light ("paper") terminal instead of reading as heavy dark
+# fills. The table is chosen by is_light_bg() in the terminal-default branch only
+# (named pane colours are always dark tints — see pane_shades).
+_RAMP_DARK = {
+    "track":  (15, -8),
+    "dim":    (27, 0),
+    "mid":    (42, 0),
+    "paneBg": (8,  0),
+    "vtext":  (72, -30),
+    "label":  (60, -22),
+    "glow":   (64, -18),
+}
+_RAMP_LIGHT = {
+    "track":  (80, -10),
+    "dim":    (55, -6),
+    "mid":    (40, -4),
+    "paneBg": (25, -2),
+    "vtext":  (22, -18),
+    "label":  (34, -14),
+    "glow":   (60, 0),
+}
+
 # The terminal-default ("black"/None) pane has no bg override, so its border is
 # derived from the live terminal background (layout.conf terminal_bg, the same
 # source apply_border_style.sh uses) rather than a static grey — a touch lighter
@@ -126,6 +152,30 @@ def _hex_to_hs(hexcolor):
     else:
         hue = (r - g) / d + 4
     return (hue * 60.0, s * 100.0)
+
+
+def _hex_to_l(hexcolor):
+    """Return the HSL lightness (0-100) of a #rrggbb string — the same lightness
+    _hex_to_hs computes and discards. Returns 0 for a non-#rrggbb literal so a
+    missing/garbled value reads as fully dark."""
+    if not _HEX_RE.match(hexcolor or ""):
+        return 0
+    h = hexcolor.lstrip("#")
+    r = int(h[0:2], 16) / 255.0
+    g = int(h[2:4], 16) / 255.0
+    b = int(h[4:6], 16) / 255.0
+    mx, mn = max(r, g, b), min(r, g, b)
+    return (mx + mn) / 2.0 * 100.0
+
+
+def is_light_bg(hexcolor=None):
+    """True when a background colour is light enough to warrant the light ramp
+    variant. Defaults to the live terminal background (_terminal_bg) when no
+    colour is given. The shared light/dark gate for pane_shades (and the status
+    pane's own light-mode branches). Threshold: HSL lightness > 58."""
+    if hexcolor is None:
+        hexcolor = _terminal_bg
+    return _hex_to_l(hexcolor) > 58
 
 # Header label per pane key. Lives on the frame's top border, not in content.
 LABELS = {
@@ -328,22 +378,31 @@ def pane_shades(pane_key, term_bg=None):
     same greys as the chromatic-free case (no regression, including the ConPTY
     black fallback); a missing/garbled value falls back to neutral too.
     ``term_bg`` defaults to the live terminal background. Cached pane-colour
-    lookup; no file I/O."""
+    lookup; no file I/O.
+
+    The ramp is built from two role->(L, sat_delta) tables, _RAMP_DARK and
+    _RAMP_LIGHT. _RAMP_DARK reproduces the original inline ramp exactly (dark
+    terminals unchanged); _RAMP_LIGHT is the light-background variant (light
+    fills, dark text) so the gauges blend on a 'paper' terminal. The variant is
+    chosen by is_light_bg() in the terminal-default/unknown branch only — named
+    pane colours are always dark tints, so they always use the dark ramp."""
     if term_bg is None:
         term_bg = _terminal_bg
     name = _pane_colors.get(pane_key, "black")
     if name in _TERMINAL_DEFAULT_NAMES or name not in PANE_SHADE_HS:
         h, s = _hex_to_hs(term_bg)
+        # On a light terminal the dark ramp renders as heavy dark fills; switch
+        # to the light variant so the gauges/bars/toggle boxes blend instead.
+        light = is_light_bg(term_bg)
     else:
         h, s = PANE_SHADE_HS[name]
+        # Every PANE_COLORS entry is a dark tint, so the dark ramp is always
+        # correct for a named pane colour regardless of the terminal background.
+        light = False
+    ramp = _RAMP_LIGHT if light else _RAMP_DARK
     return {
-        "track":  _hsl_to_hex(h, max(s - 8,  0), 15),
-        "dim":    _hsl_to_hex(h, s,              27),
-        "mid":    _hsl_to_hex(h, s,              42),
-        "paneBg": _hsl_to_hex(h, s,              8),
-        "vtext":  _hsl_to_hex(h, max(s - 30, 0), 72),
-        "label":  _hsl_to_hex(h, max(s - 22, 0), 60),
-        "glow":   _hsl_to_hex(h, max(s - 18, 0), 64),
+        role: _hsl_to_hex(h, max(0, min(100, s + sat_delta)), l)
+        for role, (l, sat_delta) in ramp.items()
     }
 
 

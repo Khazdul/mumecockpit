@@ -127,6 +127,31 @@ depth. Returns a dict keyed by role:
 own table in [docs/status-pane.md](status-pane.md) restates it with the same `L`
 values.)
 
+#### Light / dark ramp variant
+
+The ramp is driven by two role → `(L, sat_delta)` tables, `_RAMP_DARK` and
+`_RAMP_LIGHT`, each shade being `_hsl_to_hex(h, clamp(s + sat_delta), L)`.
+`_RAMP_DARK` reproduces the original inline ramp exactly, so **dark terminals are
+byte-for-byte unchanged**. `_RAMP_LIGHT` inverts the lightness — light fills with
+dark text — so on a light ("paper") terminal the gauges, bars, and toggle boxes
+blend into the canvas instead of reading as heavy dark fills, with the
+active/inactive distinction intact.
+
+The variant is chosen by `is_light_bg()` **only in the terminal-default / unknown
+branch** (where `(h, s)` come from `term_bg`): `light = is_light_bg(term_bg)`. In
+the named-pane-colour branch `light = False` unconditionally — every `PANE_COLORS`
+entry is a dark tint, so the dark ramp is always correct for it regardless of the
+terminal background.
+
+### `is_light_bg(hexcolor=None)` / `_hex_to_l(hexcolor)`
+
+`_hex_to_l(hexcolor)` returns the HSL lightness (`0–100`) of a `#rrggbb` literal —
+the same lightness `_hex_to_hs` computes and discards — and `0` for a non-`#rrggbb`
+value (reads as fully dark). `is_light_bg(hexcolor=None)` is the shared light/dark
+gate: it returns `_hex_to_l(bg) > 58`, defaulting to the live terminal background
+(`_terminal_bg`) when no colour is given. Reused by `pane_shades` and by the status
+pane's own light-mode branches.
+
 #### `(h, s)` source
 
 The hue/saturation come from `PANE_SHADE_HS`, **restated** in `pane_frame.py`
