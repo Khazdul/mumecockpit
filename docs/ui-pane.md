@@ -63,6 +63,31 @@ same as `comm_pane.py`) so the newest line is always at the bottom when live.
 ANSI SGR sequences are stripped via `_SGR_RE = re.compile(r"\x1b\[[0-9;]*m")`
 for wrap-aware row-count calculations.
 
+### Light-background recolour
+
+The colours are baked into `logs/ui.log` by the Lua emitters for a dark
+terminal (bright-white base text, chromatic prefixes). On a light ("paper")
+terminal those wash out, so `_recolor(line)` rewrites a line's SGR colours at
+render time — operating on a copy, never mutating `_lines`, and never touching
+`logs/ui.log` or the emitters. It is applied at the single render choke point in
+`_list_text`: `ANSI(_recolor(line))`. `_row_count` keeps using the raw line — a
+colour swap doesn't change visible length, so wrap math is unaffected.
+
+`_LIGHT = pane_frame.is_light_bg()` is resolved **once at module load** (the bg
+is static). When false, `_recolor` is a no-op and the pane is byte-for-byte
+unchanged. When true:
+
+- every truecolor **foreground** (`38;2;R;G;B`) is pulled darker/more-saturated
+  through `pane_frame.light_shift` (catching every chromatic prefix and the
+  bold-yellow `ui_var` value — its leading `1;` sits outside the match and is
+  preserved; already-dark amber/red just deepen slightly);
+- the achromatic bright-white base text (`\x1b[1;97m`, which `light_shift` can't
+  help) is then literal-replaced with bold dark ink (`\x1b[1;38;2;26;26;26m`),
+  run after the truecolor pass so the only remaining `97` is this one;
+- backgrounds (`48;2;…`), resets (`0m`), and attr-only params are left untouched.
+
+See [docs/pane-frame.md](pane-frame.md) for `light_shift` / `is_light_bg`.
+
 ## Scroll
 
 `_scroll_offset` is the number of newer lines hidden below the visible window.

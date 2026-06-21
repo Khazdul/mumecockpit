@@ -31,6 +31,44 @@ from pane_frame import inner_height, inner_width
 
 _SGR_RE = re.compile(r"\x1b\[[0-9;]*m")
 
+# Light-background render-time recolour. The bg is static, so resolve once.
+# On a "paper" terminal the baked-in ANSI colours in logs/ui.log (bright-white
+# base text + washed-out chromatic prefixes) read poorly; _recolor rewrites them
+# at the render choke point only — the on-disk log and the Lua emitters are never
+# touched, and dark terminals pass through byte-for-byte.
+_LIGHT = pane_frame.is_light_bg()
+
+# Truecolor FOREGROUND introducer only (`38;2;R;G;B`); backgrounds (`48;2;…`) are
+# left alone. A leading `1;` (bold, as on the ui_var value) sits before the match
+# and is preserved.
+_TRUECOLOR_FG_RE = re.compile(r"38;2;(\d{1,3});(\d{1,3});(\d{1,3})")
+
+# Bold dark ink replacing the achromatic bright-white base text (`\x1b[1;97m`),
+# the one case light_shift can't help (no hue to saturate).
+_LIGHT_INK = "\x1b[1;38;2;26;26;26m"
+
+
+def _shift_truecolor(m):
+    """Pull one `38;2;R;G;B` foreground toward a darker, more-saturated target."""
+    r, g, b = int(m.group(1)), int(m.group(2)), int(m.group(3))
+    shifted  = pane_frame.light_shift("#%02x%02x%02x" % (r, g, b))
+    return "38;2;%d;%d;%d" % (
+        int(shifted[1:3], 16), int(shifted[3:5], 16), int(shifted[5:7], 16)
+    )
+
+
+def _recolor(line):
+    """Return a light-bg-legible copy of a raw log line (never mutates _lines).
+
+    No-op on dark terminals. Truecolor foregrounds run through light_shift
+    (catching every chromatic prefix and the bold-yellow ui_var value); the
+    bright-white base text is then swapped for bold dark ink. Backgrounds,
+    resets, and attr-only params are untouched."""
+    if not _LIGHT:
+        return line
+    line = _TRUECOLOR_FG_RE.sub(_shift_truecolor, line)
+    return line.replace("\x1b[1;97m", _LIGHT_INK)
+
 UI_LOG_PATH = os.path.join(os.environ["HOME"], "MUME", "logs", "ui.log")
 POLL_MS     = 0.25
 MAX_LINES   = 1000
@@ -103,7 +141,7 @@ def _list_text():
         if idx > 0:
             frags.append(("", "\n"))
         try:
-            frags.extend(to_formatted_text(ANSI(line)))
+            frags.extend(to_formatted_text(ANSI(_recolor(line))))
         except Exception:
             frags.append(("", line))
     return frags
