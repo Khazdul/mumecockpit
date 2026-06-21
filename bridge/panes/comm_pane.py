@@ -39,12 +39,14 @@ import time
 import pane_frame
 from pane_frame import inner_height, inner_width
 
-# Terminal background is static for the session, so resolve the light/dark gate
-# once at load. On a light ("paper") terminal the content colours below are
-# pulled darker/more-saturated via pane_frame.light_shift so they stay legible
-# instead of washing out; on a dark terminal everything passes through unchanged
-# (the comm pane is then byte-for-byte identical).
-_LIGHT = pane_frame.is_light_bg()
+# The pane's effective background is static for the session, so resolve the
+# light/dark gate once at load — derived from the comm pane's OWN bg (a named
+# pane colour reads from its dark fill; the terminal-default pane reads from the
+# terminal). On a light effective bg the content colours below are pulled
+# darker/more-saturated via pane_frame.light_shift so they stay legible instead
+# of washing out; on a dark bg everything passes through unchanged (the comm pane
+# is then byte-for-byte identical).
+_LIGHT = pane_frame.pane_is_light("comm")
 
 
 def _light_content_style(style):

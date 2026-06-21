@@ -42,6 +42,21 @@ PANE_BORDER_COLORS = {
 }
 _DEFAULT_BORDER = "#2a2a2a"
 
+# Pane-colour name → its tmux fill hex (select-pane -P bg=), restated here
+# mirroring palette.PANE_COLORS (ADR 0126; keep in sync with PANE_BORDER_COLORS /
+# PANE_SHADE_HS). This is each named pane's OWN effective background — the single
+# source effective_bg() resolves every light/dark decision from. "black"/None
+# (terminal default) and unknown names are deliberately absent: they have no fill
+# override, so effective_bg falls back to the live terminal bg for them.
+PANE_FILL_COLORS = {
+    "red":    "#1a0e0e",
+    "green":  "#0e1a0e",
+    "blue":   "#0e141c",
+    "grey":   "#161616",
+    "orange": "#1c140a",
+    "purple": "#16101c",
+}
+
 # Per-palette (hue, saturation) for the pane shade ramp (pane_shades). Restated
 # here, like PANE_BORDER_COLORS, rather than imported from bridge/launcher
 # (ADR 0126). The hue/saturation match the pane bg/border family (ADR 0086);
@@ -224,19 +239,23 @@ def washout(hexcolor, l_target=70, s_scale=0.45):
     return _hsl_to_hex(h, max(0.0, min(100.0, s * s_scale)), l_target)
 
 
-def dark_ink(l=12, s_scale=0.6):
-    """A very dark ink TINTED toward the live terminal background — for base text
-    that should read as near-black on a LIGHT ("paper") terminal without the
-    harshness of a flat near-black.
+def dark_ink(bg=None, l=24, s_scale=0.85):
+    """A very dark ink TINTED toward a background colour — for base text that
+    should read as near-black on a LIGHT ("paper") terminal without the harshness
+    of a flat near-black.
 
-    Takes the live terminal background's `(h, s)` (the same source `border_color`
-    reads — `_terminal_bg`), scales saturation by ``s_scale``, and pins lightness
-    to ``l``. So on a warm "paper" canvas it yields a very dark WARM ink that
-    blends into the page; on a neutral / black terminal the hue is moot and
-    saturation ≈ 0, so it collapses to a near-black grey. ``l`` and ``s_scale``
-    are tunable. Returns a #rrggbb string. Pure function — reads cached
-    `_terminal_bg` only (set once at import); no file I/O."""
-    h, s = _hex_to_hs(_terminal_bg)
+    Takes ``bg``'s `(h, s)` (defaulting to the live terminal background
+    `_terminal_bg`, the same source `border_color` reads), scales saturation by
+    ``s_scale``, and pins lightness to ``l``. A caller that wants the ink to tint
+    toward a specific pane's bg passes that pane's `effective_bg(...)`. So on a
+    warm "paper" canvas it yields a very dark WARM ink that blends into the page;
+    on a neutral / black background the hue is moot and saturation ≈ 0, so it
+    collapses to a near-black grey. ``l`` and ``s_scale`` are tunable (raised so
+    the ink is a touch lighter and more bg-tinted). Returns a #rrggbb string. Pure
+    function — no file I/O."""
+    if bg is None:
+        bg = _terminal_bg
+    h, s = _hex_to_hs(bg)
     return _hsl_to_hex(h, max(0.0, min(100.0, s * s_scale)), l)
 
 # Header label per pane key. Lives on the frame's top border, not in content.
@@ -401,20 +420,38 @@ def frames_enabled(pane_key=None):
     return True
 
 
+def effective_bg(pane_key, term_bg=None):
+    """The pane's OWN effective background as a '#rrggbb' hex — the single source
+    every light/dark decision derives from.
+
+    A named pane colour resolves to its tmux fill hex (PANE_FILL_COLORS); the
+    terminal-default ('black'/None) pane and any unknown name have no fill of
+    their own, so their content sits on the live terminal background and they
+    resolve to ``term_bg`` (defaulting to _terminal_bg). So a named-dark colour
+    reads dark because its fill IS dark — not by assumption — and a future light
+    pane colour would read light with no further code changes. No file I/O —
+    reads the cached _pane_colors and _terminal_bg."""
+    name = _pane_colors.get(pane_key, "black")
+    return PANE_FILL_COLORS.get(name, term_bg or _terminal_bg)
+
+
 def border_color(pane_key):
     """Hex colour ('#rrggbb') used for the pane's border line and header label,
     derived from its pane colour. Shared by border_style and exposed so a pane
     can tint in-content elements (e.g. gauge labels) to match its frame title.
     Cached."""
     name = _pane_colors.get(pane_key, "black")
+    eff = effective_bg(pane_key)
+    # On ANY light effective bg (a light terminal-default pane, or a future light
+    # named pane colour) a lighter border washes to near-white, so darken instead
+    # — a soft line a shade darker than the pane's own bg.
+    if is_light_bg(eff):
+        return darken(eff, 0x14)
+    # Dark terminal-default pane: no fill to lift, so derive the border from the
+    # live terminal background, lifted +0x14 (byte-for-byte unchanged).
     if name in _TERMINAL_DEFAULT_NAMES:
-        # No bg override: derive the border from the live terminal background.
-        # On a light ("paper") terminal a lighter border washes to near-white, so
-        # darken instead — a soft line a shade darker than the canvas. Dark
-        # terminals keep the original lighten (byte-for-byte unchanged).
-        if is_light_bg(_terminal_bg):
-            return darken(_terminal_bg, 0x14)
         return lighten(_terminal_bg, 0x14)
+    # Dark named pane colour: its fixed border tint sits on its own dark fill.
     return PANE_BORDER_COLORS.get(name, _DEFAULT_BORDER)
 
 
@@ -457,15 +494,17 @@ def pane_shades(pane_key, term_bg=None):
         term_bg = _terminal_bg
     name = _pane_colors.get(pane_key, "black")
     if name in _TERMINAL_DEFAULT_NAMES or name not in PANE_SHADE_HS:
+        # No palette entry: the (h, s) come from the live terminal bg the pane
+        # sits on, so the ramp tracks a tinted terminal.
         h, s = _hex_to_hs(term_bg)
-        # On a light terminal the dark ramp renders as heavy dark fills; switch
-        # to the light variant so the gauges/bars/toggle boxes blend instead.
-        light = is_light_bg(term_bg)
     else:
+        # A named pane colour supplies its own family (h, s).
         h, s = PANE_SHADE_HS[name]
-        # Every PANE_COLORS entry is a dark tint, so the dark ramp is always
-        # correct for a named pane colour regardless of the terminal background.
-        light = False
+    # The light/dark variant derives from the pane's OWN effective bg: a named
+    # dark colour resolves to its dark fill (dark ramp); a terminal-default pane
+    # on a light terminal resolves light (light ramp so the gauges/bars/toggle
+    # boxes blend); a future light named colour would too — no further edits.
+    light = is_light_bg(effective_bg(pane_key, term_bg))
     ramp = _RAMP_LIGHT if light else _RAMP_DARK
     return {
         role: _hsl_to_hex(h, max(0, min(100, s + sat_delta)), l)
@@ -478,15 +517,13 @@ def pane_is_light(pane_key):
     background — the same light decision pane_shades makes, exposed as a reusable
     gate for content renderers whose fills sit on the pane bg.
 
-    Mirrors the pane_shades branch: a pane is "light" iff it is the
-    terminal-default ('black'/None) or an unknown colour (no fill override of its
-    own, so its content sits on the live terminal bg) AND is_light_bg(_terminal_bg)
-    is true. A named pane colour is always a dark tint, so it is never light. No
-    file I/O — reads the cached _pane_colors and _terminal_bg."""
-    name = _pane_colors.get(pane_key, "black")
-    if name in _TERMINAL_DEFAULT_NAMES or name not in PANE_SHADE_HS:
-        return is_light_bg(_terminal_bg)
-    return False
+    Derives from the pane's OWN effective bg (effective_bg): a named pane colour
+    reads light/dark from its fill hex, and the terminal-default ('black'/None) or
+    an unknown colour reads from the live terminal bg it sits on. So a named dark
+    colour is never light because its fill is dark — not by assumption — and a
+    future light named colour would read light with no further edits. No file I/O
+    — reads the cached _pane_colors and _terminal_bg."""
+    return is_light_bg(effective_bg(pane_key))
 
 
 def corners():

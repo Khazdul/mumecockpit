@@ -592,11 +592,12 @@ def _group_rows(items, typ, W, cols, corner_local_row=None):
     # _palette so the bg paint path is skipped for a barless group.
     bar_on   = _layout[typ]["bar"]
     # Barless names paint the group colour directly on the pane bg. On a light
-    # ("paper") terminal a bright group hue washes out, so darken/saturate it via
-    # pane_frame.light_shift; on a dark terminal it is left as-is. The bar-mode
-    # path (bg fill + black text) reads fine on any bg and is untouched.
+    # effective bg (the timers pane's own) a bright group hue washes out, so
+    # darken/saturate it via pane_frame.light_shift; on a dark bg it is left
+    # as-is. The bar-mode path (bg fill + black text) reads fine on any bg and is
+    # untouched.
     group_hex = _layout[typ]["color"]
-    if pane_frame.is_light_bg():
+    if pane_frame.pane_is_light("timers"):
         group_hex = pane_frame.light_shift(group_hex)
     fg_style = "fg:" + group_hex
     palette  = _palette(typ) if bar_on else None

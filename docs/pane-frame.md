@@ -88,27 +88,30 @@ the same as `border_style` below, minus the `fg:` prefix. Cached.
 ### `border_style(pane_key)`
 
 The `prompt_toolkit` style string (`fg:#rrggbb`) for the border, derived from the
-pane's colour (`pane_color_<key>` in `startup.conf`):
+pane's colour (`pane_color_<key>` in `startup.conf`). The branch order derives
+from the pane's own `effective_bg`:
 
-- a named pane colour maps through `PANE_BORDER_COLORS` — the pane fill lifted a
-  shade or two (`lighten()`, +0x14 per channel) so the frame reads against the
-  fill;
-- the **terminal-default** pane (`black` / no `bg` override) has no fill to lift,
-  so its border is derived from the live terminal background (`layout.conf`
-  `terminal_bg`, the same source `apply_border_style.sh` uses — ADR 0099). On a
-  **dark** terminal it is lifted `+0x14` (`lighten`): a black terminal yields
-  `#141414`, visibly darker than the grey pane's `#2a2a2a`; on a tinted dark
-  terminal it tracks that canvas. On a **light** ("paper") terminal a lighter
-  border washes to near-white, so it is instead pulled `-0x14` (`darken`) — a soft
-  line a shade darker than the canvas. The split is gated by `is_light_bg()`, so
-  dark terminals are byte-for-byte unchanged. Named-colour panes are unaffected:
-  their `PANE_BORDER_COLORS` fixed tints sit on their own dark fill, not on the
-  light terminal.
+- on **any light** effective bg — a light terminal-default pane, or a future light
+  named pane colour — a lighter border washes to near-white, so the border is
+  pulled `-0x14` (`darken(eff)`): a soft line a shade darker than the pane's own
+  bg;
+- otherwise the **terminal-default** pane (`black` / no `bg` override) has no fill
+  to lift, so its border is derived from the live terminal background
+  (`layout.conf` `terminal_bg`, the same source `apply_border_style.sh` uses —
+  ADR 0099), lifted `+0x14` (`lighten`): a black terminal yields `#141414`,
+  visibly darker than the grey pane's `#2a2a2a`; on a tinted dark terminal it
+  tracks that canvas;
+- otherwise a **named** pane colour maps through `PANE_BORDER_COLORS` — the pane
+  fill lifted a shade or two (`lighten()`, +0x14 per channel) so the frame reads
+  against the fill.
 
-`PANE_BORDER_COLORS` and the label map are **restated** in `pane_frame.py`, not
-imported from `bridge/launcher/palette.py`: `bridge/panes` must not import
-`bridge/launcher` (ADR 0126). Keep `PANE_BORDER_COLORS` mirrored with
-`palette.PANE_COLORS`.
+Dark terminals are byte-for-byte unchanged. A future light named colour now gets
+a darker-than-bg frame (the first branch) instead of a washed lifted one.
+
+`PANE_BORDER_COLORS`, `PANE_FILL_COLORS`, and the label map are **restated** in
+`pane_frame.py`, not imported from `bridge/launcher/palette.py`: `bridge/panes`
+must not import `bridge/launcher` (ADR 0126). Keep `PANE_BORDER_COLORS` and
+`PANE_FILL_COLORS` mirrored with `palette.PANE_COLORS`.
 
 ### `pane_shades(pane_key, term_bg=None)`
 
@@ -143,11 +146,13 @@ dark text — so on a light ("paper") terminal the gauges, bars, and toggle boxe
 blend into the canvas instead of reading as heavy dark fills, with the
 active/inactive distinction intact.
 
-The variant is chosen by `is_light_bg()` **only in the terminal-default / unknown
-branch** (where `(h, s)` come from `term_bg`): `light = is_light_bg(term_bg)`. In
-the named-pane-colour branch `light = False` unconditionally — every `PANE_COLORS`
-entry is a dark tint, so the dark ramp is always correct for it regardless of the
-terminal background.
+The variant is chosen from the pane's own `effective_bg`:
+`light = is_light_bg(effective_bg(pane_key, term_bg))`. The `(h, s)` source is
+unchanged (`PANE_SHADE_HS` for a named colour, the `term_bg` hue otherwise), but
+the light/dark decision now **derives** from the pane's bg rather than being
+assumed: a named dark colour resolves to its dark fill (dark ramp); a
+terminal-default pane on a light terminal resolves light (light ramp); a future
+light named colour would too, with no further edits.
 
 ### `is_light_bg(hexcolor=None)` / `_hex_to_l(hexcolor)`
 
@@ -189,29 +194,49 @@ Pure function — no config, no I/O. Callers gate it on `pane_is_light()` so dar
 terminals pass the colour through untouched. First consumer: the group pane's
 default HP/Mana/Moves bar fills (the threshold red/orange bars are left vivid).
 
+### `effective_bg(pane_key, term_bg=None)`
+
+The pane's **own effective background** as a `#rrggbb` hex — the **single source**
+every light/dark decision derives from (`pane_is_light`, `pane_shades`,
+`border_color`). A named pane colour resolves to its tmux fill hex
+(`PANE_FILL_COLORS`); the terminal-default (`black` / `None`) pane and any unknown
+name have no fill of their own, so their content sits on the live terminal
+background and they resolve to `term_bg` (defaulting to `_terminal_bg`). So a
+named-dark colour reads dark because its **fill is dark** — not by assumption —
+and a future light pane colour would read light with no further code changes. No
+file I/O — reads the cached `_pane_colors` and `_terminal_bg`.
+
+`PANE_FILL_COLORS` restates the six named pane-fill hexes (red `#1a0e0e`, green
+`#0e1a0e`, blue `#0e141c`, grey `#161616`, orange `#1c140a`, purple `#16101c`),
+mirroring `palette.PANE_COLORS` — the same ADR 0126 discipline as
+`PANE_BORDER_COLORS` / `PANE_SHADE_HS`, kept in sync alongside them. `black` /
+`None` and unknown names are deliberately absent.
+
 ### `pane_is_light(pane_key)`
 
 True when a pane's content fills should be treated as sitting on a **light**
-background — the same light decision `pane_shades` makes, exposed as a reusable
-gate for content renderers whose fills sit on the pane bg. Mirrors the
-`pane_shades` branch exactly: a pane is light iff it is the terminal-default
-(`black` / `None`) or an unknown colour (no fill override of its own, so its
-content sits on the live terminal bg) **and** `is_light_bg(_terminal_bg)` is true.
-A named pane colour is always a dark tint, so it is never light. No file I/O —
-reads the cached `_pane_colors` and `_terminal_bg`.
+background — exposed as a reusable gate for content renderers whose fills sit on
+the pane bg. Derives from the pane's own `effective_bg`:
+`is_light_bg(effective_bg(pane_key))`. So a named pane colour reads light/dark
+from its **fill hex** (a dark named colour is never light because its fill is
+dark, not by assumption), and the terminal-default / unknown pane reads from the
+live terminal bg it sits on. A future light named colour would read light with no
+further edits. No file I/O — reads the cached `_pane_colors` and `_terminal_bg`.
 
-### `dark_ink(l=12, s_scale=0.6)`
+### `dark_ink(bg=None, l=24, s_scale=0.85)`
 
-A very dark ink **tinted toward the live terminal background** — for base text
-that should read as near-black on a light ("paper") terminal without the
-harshness of a flat near-black. Takes `_terminal_bg`'s `(h, s)` (the same source
-`border_color` reads), scales saturation by `s_scale`, and pins lightness to `l`.
-On a warm "paper" canvas this yields a very dark warm ink that blends into the
-page; on a neutral / black terminal the hue is moot and saturation ≈ 0, so it
-collapses to a near-black grey. `l` and `s_scale` are tunable. Returns a
-`#rrggbb` string. Pure function — reads the cached `_terminal_bg` only (set once
-at import); no file I/O. Used by the UI pane's bright-white (`\x1b[1;97m`)
-base-text override — see [docs/ui-pane.md](ui-pane.md).
+A very dark ink **tinted toward a background colour** — for base text that should
+read as near-black on a light ("paper") terminal without the harshness of a flat
+near-black. Takes `bg`'s `(h, s)` (defaulting to the live terminal background
+`_terminal_bg`, the same source `border_color` reads), scales saturation by
+`s_scale`, and pins lightness to `l`. A caller that wants the ink to tint toward a
+specific pane's bg passes that pane's `effective_bg(...)` (the UI pane does). On a
+warm "paper" canvas this yields a very dark warm ink that blends into the page; on
+a neutral / black background the hue is moot and saturation ≈ 0, so it collapses
+to a near-black grey. `l` and `s_scale` are tunable — raised from the original
+`(12, 0.6)` so the ink is a touch lighter and more bg-tinted. Returns a `#rrggbb`
+string. Pure function — no file I/O. Used by the UI pane's bright-white
+(`\x1b[1;97m`) base-text override — see [docs/ui-pane.md](ui-pane.md).
 
 #### `(h, s)` source
 

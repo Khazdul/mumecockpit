@@ -183,8 +183,9 @@ separator, and each affect name painted in the group's selected colour as
 **foreground** (`fg:<color>`). The colour swatch still picks that foreground hue.
 On a light ("paper") terminal a bright group hue painted as fg washes out, so the
 barless path darkens/saturates it through `pane_frame.light_shift` (gated on
-`pane_frame.is_light_bg()`); on a dark terminal the colour passes through
-unchanged. The **bar-mode** path (bg fill + black text) reads fine on any
+`pane_frame.pane_is_light("timers")` — the timers pane's OWN background, so a dark
+named pane colour stays dark even on a light terminal); on a dark bg the colour
+passes through unchanged. The **bar-mode** path (bg fill + black text) reads fine on any
 background and is untouched. Charm carries `bar` for uniformity but never reads
 it — Charmies are always coloured-FG-no-bar regardless.
 

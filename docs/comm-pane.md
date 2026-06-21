@@ -508,8 +508,10 @@ Per-channel verb/label colors are in `CHANNEL_COLORS` (see top of file).
 colours — every `CHANNEL_COLORS` value plus `C_TALKER_YOU`, `C_TALKER_OTHER`,
 `C_MESSAGE_SELF`, `C_MESSAGE_OTHER` — wash out, so each is pulled darker and
 more-saturated through `pane_frame.light_shift` (gated once at load on
-`pane_frame.is_light_bg()`; built in place via `_light_content_style`). On a
-dark terminal the shift is a no-op and the pane is byte-for-byte unchanged. The
+`pane_frame.pane_is_light("comm")` — the comm pane's OWN background, so a dark
+named pane colour stays dark even on a light terminal; built in place via
+`_light_content_style`). On a dark bg the shift is a no-op and the pane is
+byte-for-byte unchanged. The
 muted/structural colours are left untouched on purpose: `C_TIME` and
 `C_LABEL_OFF` are meant to recede (the saturation floor would make them *more*
 prominent), and `C_INDICATOR` is the shared cross-pane overflow amber (shifting
