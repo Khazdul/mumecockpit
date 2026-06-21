@@ -9,7 +9,7 @@ the game pane, an input pane, and up to six side panes into one window.
 <div align="center">
 <img width="806" height="454"  alt="20260618 gameplay with mmapper" src="https://github.com/user-attachments/assets/f3886297-1c37-4efa-b814-4b589ca58607" />
 <img width="432" height="267" alt="20260621 gameplay with mmapper_teal" src="https://github.com/user-attachments/assets/a4cba465-0cf1-4e25-aa35-31b0675fd3f8" />
-<img width="432" height="432" alt="20260621 gameplay with mmapper" src="https://github.com/user-attachments/assets/a25fd257-ef58-4313-8a3e-1674f21e1f28" />
+<img width="432" height="267" alt="20260621 gameplay with mmapper" src="https://github.com/user-attachments/assets/a25fd257-ef58-4313-8a3e-1674f21e1f28" />
 
 </div>
 
