@@ -99,6 +99,12 @@ _RAMP_LIGHT = {
     "glow":   (60, 0),
 }
 
+# Light-bg border lightness (HSL). The light branch of border_color derives the
+# border IN the pane's own colour family at this lightness, rather than
+# RGB-darkening the bg. A single knob: ~80 = subtle (current depth, de-grayed);
+# ~55 = matches the bar's `dim` gold.
+BORDER_L_LIGHT = 80
+
 # The terminal-default ("black"/None) pane has no bg override, so its border is
 # derived from the live terminal background (layout.conf terminal_bg, the same
 # source apply_border_style.sh uses) rather than a static grey — a touch lighter
@@ -114,16 +120,6 @@ def lighten(hexcolor, delta=0x14):
     r = min(0xFF, int(h[0:2], 16) + delta)
     g = min(0xFF, int(h[2:4], 16) + delta)
     b = min(0xFF, int(h[4:6], 16) + delta)
-    return "#%02x%02x%02x" % (r, g, b)
-
-
-def darken(hexcolor, delta=0x14):
-    """Darken a #rrggbb hex colour by subtracting ``delta`` from each channel,
-    clamped at 0x00. The twin of ``lighten``. Returns a #rrggbb string."""
-    h = hexcolor.lstrip("#")
-    r = max(0x00, int(h[0:2], 16) - delta)
-    g = max(0x00, int(h[2:4], 16) - delta)
-    b = max(0x00, int(h[4:6], 16) - delta)
     return "#%02x%02x%02x" % (r, g, b)
 
 
@@ -446,10 +442,17 @@ def border_color(pane_key):
     name = _pane_colors.get(pane_key, "black")
     eff = effective_bg(pane_key)
     # On ANY light effective bg (a light terminal-default pane, or a future light
-    # named pane colour) a lighter border washes to near-white, so darken instead
-    # — a soft line a shade darker than the pane's own bg.
+    # named pane colour) a lighter border washes to near-white. RGB-darkening the
+    # bg (darken(eff, 0x14)) subtracts a constant per channel, which compresses
+    # HSL saturation — the border read grayer than the warm bg and the
+    # palette-derived gold bars it should harmonise with. Derive it in the pane's
+    # OWN colour family instead, at BORDER_L_LIGHT: the same (h, s) source
+    # pane_shades uses (PANE_SHADE_HS for a named colour, the bg's own hue/sat for
+    # the terminal-default / unknown pane). Keeps the warm saturation so the border
+    # reads as a darker shade of the same colour, matching the bars.
     if is_light_bg(eff):
-        return darken(eff, 0x14)
+        h, s = PANE_SHADE_HS[name] if name in PANE_SHADE_HS else _hex_to_hs(eff)
+        return _hsl_to_hex(h, s, BORDER_L_LIGHT)
     # Dark terminal-default pane: no fill to lift, so derive the border from the
     # live terminal background, lifted +0x14 (byte-for-byte unchanged).
     if name in _TERMINAL_DEFAULT_NAMES:

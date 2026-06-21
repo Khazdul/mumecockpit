@@ -92,9 +92,16 @@ pane's colour (`pane_color_<key>` in `startup.conf`). The branch order derives
 from the pane's own `effective_bg`:
 
 - on **any light** effective bg — a light terminal-default pane, or a future light
-  named pane colour — a lighter border washes to near-white, so the border is
-  pulled `-0x14` (`darken(eff)`): a soft line a shade darker than the pane's own
-  bg;
+  named pane colour — a lighter border washes to near-white. It is **not**
+  RGB-darkened (an earlier `darken(eff, 0x14)` subtracted a constant per channel,
+  compressing HSL saturation so the border read grayer than the warm bg and the
+  palette-derived gold bars). Instead the border is **derived in the pane's own
+  colour family** — the same `(h, s)` source `pane_shades` uses (`PANE_SHADE_HS`
+  for a named colour, the bg's own hue/sat via `_hex_to_hs` for the
+  terminal-default / unknown pane) — at `BORDER_L_LIGHT` lightness. Keeping the
+  bg's saturation, the border reads as a darker shade of the same warm colour and
+  matches the bars. `BORDER_L_LIGHT` is a single knob (`~80` = subtle, the current
+  depth de-grayed; `~55` = matches the bar's `dim` gold);
 - otherwise the **terminal-default** pane (`black` / no `bg` override) has no fill
   to lift, so its border is derived from the live terminal background
   (`layout.conf` `terminal_bg`, the same source `apply_border_style.sh` uses —
@@ -106,7 +113,8 @@ from the pane's own `effective_bg`:
   against the fill.
 
 Dark terminals are byte-for-byte unchanged. A future light named colour now gets
-a darker-than-bg frame (the first branch) instead of a washed lifted one.
+an in-family frame at `BORDER_L_LIGHT` (the first branch) instead of a washed
+lifted — or a desaturated RGB-darkened — one.
 
 `PANE_BORDER_COLORS`, `PANE_FILL_COLORS`, and the label map are **restated** in
 `pane_frame.py`, not imported from `bridge/launcher/palette.py`: `bridge/panes`
