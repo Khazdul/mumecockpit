@@ -95,9 +95,15 @@ pane's colour (`pane_color_<key>` in `startup.conf`):
   fill;
 - the **terminal-default** pane (`black` / no `bg` override) has no fill to lift,
   so its border is derived from the live terminal background (`layout.conf`
-  `terminal_bg`, the same source `apply_border_style.sh` uses — ADR 0099) lifted
-  +0x14. On a black terminal this yields `#141414` (visibly darker than the grey
-  pane's `#2a2a2a`); on a tinted terminal it tracks that canvas.
+  `terminal_bg`, the same source `apply_border_style.sh` uses — ADR 0099). On a
+  **dark** terminal it is lifted `+0x14` (`lighten`): a black terminal yields
+  `#141414`, visibly darker than the grey pane's `#2a2a2a`; on a tinted dark
+  terminal it tracks that canvas. On a **light** ("paper") terminal a lighter
+  border washes to near-white, so it is instead pulled `-0x14` (`darken`) — a soft
+  line a shade darker than the canvas. The split is gated by `is_light_bg()`, so
+  dark terminals are byte-for-byte unchanged. Named-colour panes are unaffected:
+  their `PANE_BORDER_COLORS` fixed tints sit on their own dark fill, not on the
+  light terminal.
 
 `PANE_BORDER_COLORS` and the label map are **restated** in `pane_frame.py`, not
 imported from `bridge/launcher/palette.py`: `bridge/panes` must not import

@@ -99,6 +99,16 @@ def lighten(hexcolor, delta=0x14):
     return "#%02x%02x%02x" % (r, g, b)
 
 
+def darken(hexcolor, delta=0x14):
+    """Darken a #rrggbb hex colour by subtracting ``delta`` from each channel,
+    clamped at 0x00. The twin of ``lighten``. Returns a #rrggbb string."""
+    h = hexcolor.lstrip("#")
+    r = max(0x00, int(h[0:2], 16) - delta)
+    g = max(0x00, int(h[2:4], 16) - delta)
+    b = max(0x00, int(h[4:6], 16) - delta)
+    return "#%02x%02x%02x" % (r, g, b)
+
+
 def _hsl_to_hex(h, s, l):
     """Convert HSL (h in degrees, s and l in percent 0-100) to a #rrggbb string.
     Used by pane_shades to walk a single hue down its lightness ramp."""
@@ -382,6 +392,11 @@ def border_color(pane_key):
     name = _pane_colors.get(pane_key, "black")
     if name in _TERMINAL_DEFAULT_NAMES:
         # No bg override: derive the border from the live terminal background.
+        # On a light ("paper") terminal a lighter border washes to near-white, so
+        # darken instead — a soft line a shade darker than the canvas. Dark
+        # terminals keep the original lighten (byte-for-byte unchanged).
+        if is_light_bg(_terminal_bg):
+            return darken(_terminal_bg, 0x14)
         return lighten(_terminal_bg, 0x14)
     return PANE_BORDER_COLORS.get(name, _DEFAULT_BORDER)
 
