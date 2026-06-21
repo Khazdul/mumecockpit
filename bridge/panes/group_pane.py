@@ -67,9 +67,23 @@ ORANGE_FG       = "#ff7020"
 RED_BG          = "#e02020"
 RED_FG          = "#e02020"
 
-C_NAME_ON_FILL  = "fg:#aaaaaa"   # name char that falls inside the fill region
-C_NAME_ON_EMPTY = "fg:#aaaaaa"   # name char that falls outside the fill region
-C_INDICATOR     = "fg:#d4a04e italic"
+# Member-name overlay colour. Derived once at load from the group pane's shade
+# ramp (vtext role) instead of a flat grey: the ramp's vtext is light on a dark
+# terminal and dark on a light terminal, so this gives both variants for free and
+# tints toward the pane bg rather than reading as flat #aaaaaa. One style for both
+# the on-fill and past-fill regions (only the bg differs between them).
+C_NAME      = "fg:" + pane_frame.pane_shades("group")["vtext"]
+C_INDICATOR = "fg:#d4a04e italic"
+
+# On a light ("paper") terminal the deep default bar fills read as heavy
+# saturated blocks; wash them out to soft pastels (computed once at load) so they
+# sit gently on the canvas. The threshold RED/ORANGE bars are left vivid so a
+# low-vital bar still pops. On a dark terminal pane_is_light is False and the
+# originals pass through byte-for-byte unchanged.
+if pane_frame.pane_is_light("group"):
+    HP_DEFAULT_BG   = pane_frame.washout(HP_DEFAULT_BG)
+    MANA_DEFAULT_BG = pane_frame.washout(MANA_DEFAULT_BG)
+    MP_DEFAULT_BG   = pane_frame.washout(MP_DEFAULT_BG)
 
 # ---------------------------------------------------------------------------
 # Renderer state
@@ -220,9 +234,9 @@ def _member_frags(member, W):
         if name_start <= c < name_end:
             ch = name_trunc[c - name_start]
             if local < fill:
-                frags.append((C_NAME_ON_FILL + " " + style_fill, ch))
+                frags.append((C_NAME + " " + style_fill, ch))
             else:
-                frags.append((C_NAME_ON_EMPTY, ch))
+                frags.append((C_NAME, ch))
         elif local < fill:
             frags.append((style_fill, " "))
         else:

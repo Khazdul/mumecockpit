@@ -207,6 +207,23 @@ def light_shift(hexcolor, l_ceiling=45, s_floor=55):
     return _hsl_to_hex(h, max(s, s_floor), min(l, l_ceiling))
 
 
+def washout(hexcolor, l_target=70, s_scale=0.45):
+    """Turn a dark, saturated fill into a pale PASTEL — for bar/fill colours that
+    should sit gently on a LIGHT ("paper") terminal instead of reading as heavy
+    saturated blocks.
+
+    Keeps the hue, scales saturation by ``s_scale`` (so a vivid fill becomes
+    muted), and pins lightness to ``l_target`` (so a dark fill becomes light).
+    The twin of ``light_shift`` for the opposite case: ``light_shift`` darkens a
+    bright FG so it stays legible as text; ``washout`` lightens a dark BG so it
+    reads as a soft tint. A non-#rrggbb literal collapses to (0, 0) via
+    _hex_to_hs and so renders as a neutral grey at ``l_target``. ``l_target`` and
+    ``s_scale`` are tunable. Returns a #rrggbb string. Pure function — no config,
+    no I/O."""
+    h, s = _hex_to_hs(hexcolor)
+    return _hsl_to_hex(h, max(0.0, min(100.0, s * s_scale)), l_target)
+
+
 def dark_ink(l=12, s_scale=0.6):
     """A very dark ink TINTED toward the live terminal background — for base text
     that should read as near-black on a LIGHT ("paper") terminal without the
@@ -454,6 +471,22 @@ def pane_shades(pane_key, term_bg=None):
         role: _hsl_to_hex(h, max(0, min(100, s + sat_delta)), l)
         for role, (l, sat_delta) in ramp.items()
     }
+
+
+def pane_is_light(pane_key):
+    """True when this pane's content fills should be treated as sitting on a LIGHT
+    background — the same light decision pane_shades makes, exposed as a reusable
+    gate for content renderers whose fills sit on the pane bg.
+
+    Mirrors the pane_shades branch: a pane is "light" iff it is the
+    terminal-default ('black'/None) or an unknown colour (no fill override of its
+    own, so its content sits on the live terminal bg) AND is_light_bg(_terminal_bg)
+    is true. A named pane colour is always a dark tint, so it is never light. No
+    file I/O — reads the cached _pane_colors and _terminal_bg."""
+    name = _pane_colors.get(pane_key, "black")
+    if name in _TERMINAL_DEFAULT_NAMES or name not in PANE_SHADE_HS:
+        return is_light_bg(_terminal_bg)
+    return False
 
 
 def corners():

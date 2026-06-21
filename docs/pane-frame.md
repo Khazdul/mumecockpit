@@ -176,6 +176,30 @@ non-`#rrggbb` literal collapses to `(0, 0)` via `_hex_to_hs` and is likewise
 returned unchanged. Pure function — no config, no I/O. Callers gate it on
 `is_light_bg()` so dark terminals pass the colour through untouched.
 
+### `washout(hexcolor, l_target=70, s_scale=0.45)`
+
+Turns a dark, saturated fill into a pale **pastel** — the inverse case to
+`light_shift`. Where `light_shift` darkens a bright *foreground* so it stays
+legible as text on paper, `washout` lightens a dark *background* fill so it reads
+as a soft tint rather than a heavy saturated block. Keeps the hue, scales
+saturation by `s_scale` (vivid → muted), and pins lightness to `l_target` (dark →
+light). A non-`#rrggbb` literal collapses to `(0, 0)` via `_hex_to_hs` and so
+renders as a neutral grey at `l_target`. `l_target` and `s_scale` are tunable.
+Pure function — no config, no I/O. Callers gate it on `pane_is_light()` so dark
+terminals pass the colour through untouched. First consumer: the group pane's
+default HP/Mana/Moves bar fills (the threshold red/orange bars are left vivid).
+
+### `pane_is_light(pane_key)`
+
+True when a pane's content fills should be treated as sitting on a **light**
+background — the same light decision `pane_shades` makes, exposed as a reusable
+gate for content renderers whose fills sit on the pane bg. Mirrors the
+`pane_shades` branch exactly: a pane is light iff it is the terminal-default
+(`black` / `None`) or an unknown colour (no fill override of its own, so its
+content sits on the live terminal bg) **and** `is_light_bg(_terminal_bg)` is true.
+A named pane colour is always a dark tint, so it is never light. No file I/O —
+reads the cached `_pane_colors` and `_terminal_bg`.
+
 ### `dark_ink(l=12, s_scale=0.6)`
 
 A very dark ink **tinted toward the live terminal background** — for base text
