@@ -44,8 +44,14 @@ _LIGHT = pane_frame.is_light_bg()
 _TRUECOLOR_FG_RE = re.compile(r"38;2;(\d{1,3});(\d{1,3});(\d{1,3})")
 
 # Bold dark ink replacing the achromatic bright-white base text (`\x1b[1;97m`),
-# the one case light_shift can't help (no hue to saturate).
-_LIGHT_INK = "\x1b[1;38;2;26;26;26m"
+# the one case light_shift can't help (no hue to saturate). Tinted toward the
+# live terminal background (pane_frame.dark_ink) so on "paper" it reads as a very
+# dark WARM ink that blends instead of a flat near-black; resolved once at module
+# load (terminal_bg is static). The leading `1;` keeps the text bold.
+_DARK_INK   = pane_frame.dark_ink()
+_LIGHT_INK  = "\x1b[1;38;2;%d;%d;%dm" % (
+    int(_DARK_INK[1:3], 16), int(_DARK_INK[3:5], 16), int(_DARK_INK[5:7], 16)
+)
 
 
 def _shift_truecolor(m):

@@ -196,6 +196,22 @@ def light_shift(hexcolor, l_ceiling=45, s_floor=55):
     l = _hex_to_l(hexcolor)
     return _hsl_to_hex(h, max(s, s_floor), min(l, l_ceiling))
 
+
+def dark_ink(l=12, s_scale=0.6):
+    """A very dark ink TINTED toward the live terminal background — for base text
+    that should read as near-black on a LIGHT ("paper") terminal without the
+    harshness of a flat near-black.
+
+    Takes the live terminal background's `(h, s)` (the same source `border_color`
+    reads — `_terminal_bg`), scales saturation by ``s_scale``, and pins lightness
+    to ``l``. So on a warm "paper" canvas it yields a very dark WARM ink that
+    blends into the page; on a neutral / black terminal the hue is moot and
+    saturation ≈ 0, so it collapses to a near-black grey. ``l`` and ``s_scale``
+    are tunable. Returns a #rrggbb string. Pure function — reads cached
+    `_terminal_bg` only (set once at import); no file I/O."""
+    h, s = _hex_to_hs(_terminal_bg)
+    return _hsl_to_hex(h, max(0.0, min(100.0, s * s_scale)), l)
+
 # Header label per pane key. Lives on the frame's top border, not in content.
 LABELS = {
     "status": "Character",

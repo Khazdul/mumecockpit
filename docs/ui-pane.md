@@ -82,8 +82,12 @@ unchanged. When true:
   bold-yellow `ui_var` value — its leading `1;` sits outside the match and is
   preserved; already-dark amber/red just deepen slightly);
 - the achromatic bright-white base text (`\x1b[1;97m`, which `light_shift` can't
-  help) is then literal-replaced with bold dark ink (`\x1b[1;38;2;26;26;26m`),
-  run after the truecolor pass so the only remaining `97` is this one;
+  help) is then literal-replaced with bold dark ink — `pane_frame.dark_ink()`,
+  a very dark colour **tinted toward the terminal background** (so on "paper" it
+  reads as a dark warm ink that blends, not a flat near-black; on a neutral
+  terminal a near-black grey), resolved once at module load (`_DARK_INK`) and the
+  leading `1;` kept for bold — run after the truecolor pass so the only remaining
+  `97` is this one;
 - backgrounds (`48;2;…`), resets (`0m`), and attr-only params are left untouched.
 
 See [docs/pane-frame.md](pane-frame.md) for `light_shift` / `is_light_bg`.

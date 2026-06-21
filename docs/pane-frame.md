@@ -170,6 +170,19 @@ non-`#rrggbb` literal collapses to `(0, 0)` via `_hex_to_hs` and is likewise
 returned unchanged. Pure function — no config, no I/O. Callers gate it on
 `is_light_bg()` so dark terminals pass the colour through untouched.
 
+### `dark_ink(l=12, s_scale=0.6)`
+
+A very dark ink **tinted toward the live terminal background** — for base text
+that should read as near-black on a light ("paper") terminal without the
+harshness of a flat near-black. Takes `_terminal_bg`'s `(h, s)` (the same source
+`border_color` reads), scales saturation by `s_scale`, and pins lightness to `l`.
+On a warm "paper" canvas this yields a very dark warm ink that blends into the
+page; on a neutral / black terminal the hue is moot and saturation ≈ 0, so it
+collapses to a near-black grey. `l` and `s_scale` are tunable. Returns a
+`#rrggbb` string. Pure function — reads the cached `_terminal_bg` only (set once
+at import); no file I/O. Used by the UI pane's bright-white (`\x1b[1;97m`)
+base-text override — see [docs/ui-pane.md](ui-pane.md).
+
 #### `(h, s)` source
 
 The hue/saturation come from `PANE_SHADE_HS`, **restated** in `pane_frame.py`
