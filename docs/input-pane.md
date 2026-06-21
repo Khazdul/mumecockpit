@@ -474,8 +474,16 @@ locally and formats per precision:
 
 The icon is pinned to the rightmost column and `text` is left-aligned in the
 preceding 5 columns, right-padded with spaces. E.g. `4:33 ☼` or `15:21☼`.
-Time text is bold white. The sun icon (☼) is rendered in `#ffb000`; the
-moon icon (☾) in `#4a90e2` — matching the status pane's Time row colours.
+Time text is bold white (`#ffffff`) on a dark terminal. On a **light**
+terminal a near-white clock washes out, so the time text is instead rendered in
+the same bg-tinted dark shade the char pane uses for its level badge —
+`pane_frame.pane_shades("input")["label"]`, the terminal-default ramp keyed off
+the live terminal-background hue. The input pane has no pane fill of its own, so
+the light/dark decision gates on `pane_frame.is_light_bg()`; the colour
+(`C_CLOCK_HEX`) is resolved once at module load because the terminal background
+is static. The sun icon (☼) is rendered in `#ffb000`; the moon icon (☾) in
+`#4a90e2` — matching the status pane's Time row colours, unchanged in both
+modes.
 
 When any of `time_period`, `time_transition_at`, or `time_precision` is null
 (precision below HOUR), or when `status.state` is missing or unreadable, the

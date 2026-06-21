@@ -30,6 +30,8 @@ import sys
 import termios
 import time
 
+import pane_frame
+
 TMUX_TARGET = "mume:cockpit.0"
 _PRINTABLE  = [c for c in string.printable if c.isprintable()]
 
@@ -45,6 +47,15 @@ PROMPT_WIDTH      = len(PROMPT_TEXT)
 # Sun/Moon colours — source of truth: bridge/panes/status_pane.py C_SUN / C_MOON
 C_SUN_HEX  = "#ffb000"   # \x1b[38;2;255;176;0m
 C_MOON_HEX = "#4a90e2"   # \x1b[38;2;74;144;226m
+
+# Clock time-text colour. The input pane sits on the terminal background with no
+# pane fill of its own, so on a light ("paper") terminal a near-white clock
+# washes out. There, render it in the same bg-tinted dark shade the char pane
+# uses for its L44 level badge (pane_shades "label": terminal-default → term_bg
+# hue walked down the light ramp). On a dark terminal keep the original
+# near-white. Resolved once at module load — the terminal bg is static.
+C_CLOCK_HEX = (pane_frame.pane_shades("input")["label"]
+               if pane_frame.is_light_bg() else "#ffffff")
 
 # Clock state — updated by _poll_clock asyncio task
 _clock_time_period        = None
@@ -748,7 +759,7 @@ def _clock_text():
         else:
             text = ""
         text = text[:5]
-        frags.append(("bold fg:#ffffff", f"{text:<5}"))
+        frags.append((f"bold fg:{C_CLOCK_HEX}", f"{text:<5}"))
         frags.append((icon_style, icon))
     else:
         frags.append(("", "      "))  # 6 blank spaces — same slot as time+icon
