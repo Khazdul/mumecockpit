@@ -66,3 +66,11 @@ well: "MOOD: wary" tells you the value but not where it sits on the range.
 ## References
 
 ADR 0086, 0099, 0136, 0126, 0023, 0071.
+
+## Amendment — 2026-06-21
+
+The shade ramp now has a light-background variant. `pane_shades` carries two
+ramp tables (`_RAMP_DARK` / `_RAMP_LIGHT`); the light variant reflects the
+lightness (light fills, dark text) so the gauges blend into a light pane. The
+variant is chosen per frame from the pane's own effective background. See
+[ADR 0145](0145-light-background-theming.md).
