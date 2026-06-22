@@ -35,14 +35,37 @@ if [[ "$OSTYPE" == darwin* ]]; then
     fi
 fi
 
+# --- Lua runtime resolution (Linux) -----------------------------------
+# Some distros (Arch/CachyOS and derivatives) ship bare `lua` as 5.5+ and
+# the 5.4 build under a versioned name (`lua5.4`/`lua54`). Mirror the macOS
+# keg-prepend: symlink bare `lua` to the 5.4 binary on a PATH we control so
+# both the pre-flight check and main.tin's `#run {lua}` resolve 5.4.
+# Debian/Ubuntu (bare `lua` already 5.4) stays a no-op.
+if [[ "$OSTYPE" == linux* ]]; then
+    _lua_is_54() { command -v "$1" >/dev/null 2>&1 && \
+                   { v=$("$1" -v 2>&1 | awk '{print $2}'); [ "${v%.*}" = "5.4" ]; }; }
+    if ! _lua_is_54 lua; then
+        for _cand in lua5.4 lua54; do
+            if _lua_is_54 "$_cand"; then
+                mkdir -p bridge/runtime/bin
+                ln -sf "$(command -v "$_cand")" bridge/runtime/bin/lua
+                export PATH="$PWD/bridge/runtime/bin:$PATH"
+                break
+            fi
+        done
+    fi
+fi
+
 # --- Lua version pre-flight check -------------------------------------
 # Fail fast with a clear error if `lua` is not 5.4.x. Catches future
 # upstream changes (lua@5.4 removed from brew, apt switching to 5.5,
 # user's PATH overriding ours) before the cockpit silently misbehaves.
 if ! command -v lua >/dev/null 2>&1; then
     echo "Error: lua not found on PATH." >&2
-    echo "macOS: brew install lua@5.4" >&2
-    echo "Linux: apt-get install lua5.4" >&2
+    echo "A lua5.4 binary must be on PATH. Install it with:" >&2
+    echo "  macOS:         brew install lua@5.4" >&2
+    echo "  Debian/Ubuntu: apt-get install lua5.4" >&2
+    echo "  Arch/CachyOS:  pacman -S lua54" >&2
     exit 1
 fi
 lua_version=$(lua -v 2>&1 | awk '{print $2}')
@@ -50,8 +73,10 @@ lua_major=${lua_version%.*}
 if [ "$lua_major" != "5.4" ]; then
     echo "Error: cockpit requires Lua 5.4.x, found Lua $lua_version" >&2
     echo "  which lua: $(command -v lua)" >&2
-    echo "macOS: brew install lua@5.4 (and re-run start.sh; PATH will pick it up)" >&2
-    echo "Linux: apt-get install lua5.4" >&2
+    echo "A lua5.4 binary must be on PATH (re-run start.sh; PATH will pick it up):" >&2
+    echo "  macOS:         brew install lua@5.4" >&2
+    echo "  Debian/Ubuntu: apt-get install lua5.4" >&2
+    echo "  Arch/CachyOS:  pacman -S lua54" >&2
     exit 1
 fi
 
