@@ -121,9 +121,11 @@ curl -fsSL https://raw.githubusercontent.com/Khazdul/mumecockpit/main/install/bo
 
 - apt packages: tmux, lua5.4, git, python3-prompt-toolkit, python3-pyperclip
 - tt++ at `/usr/local/bin/tt++` — built from source on first install if the system tt++ is missing or lacks TLS support
-- Alacritty (on native Linux only -- skipped on WSL since the Windows
-  installer handles the terminal there)
 - The MUME Cockpit repo at `~/MUME`
+- No terminal emulator: the installer sets up the cockpit itself; you keep
+  using whatever terminal you already prefer. An optional Alacritty config
+  example is available at `~/MUME/install/examples/alacritty.toml` if you
+  want it -- not installed automatically.
 
 ### Run
 

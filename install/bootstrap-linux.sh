@@ -76,9 +76,8 @@ PACKAGES="tmux lua5.4 python3 python3-prompt-toolkit python3-pyperclip python3-f
 
 if [ "$IS_WSL" -eq 1 ]; then
     # WSL deployment: foot under WSLg is the cockpit's managed terminal.
+    # Native Linux installs no terminal — users run the cockpit from their own.
     PACKAGES="$PACKAGES foot"
-else
-    PACKAGES="$PACKAGES alacritty"
 fi
 
 $RUN apt-get update
