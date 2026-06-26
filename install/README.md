@@ -113,6 +113,10 @@ cd ~/MUME && ./start.sh
 curl -fsSL https://raw.githubusercontent.com/Khazdul/mumecockpit/main/install/bootstrap-linux.sh | bash
 ```
 
+> **Debian/Ubuntu only.** This bootstrap script is apt-based and refuses to
+> run on Arch, Fedora, and other non-Debian distros. On those, do not use the
+> curl one-liner — follow the manual "Other Linux distributions" recipe below.
+
 ### What got installed
 
 - apt packages: tmux, lua5.4, git, python3-prompt-toolkit, python3-pyperclip
@@ -136,9 +140,9 @@ packages manually and clone the repo:
 | Package              | Fedora (dnf)         | Arch (pacman)        |
 |----------------------|----------------------|----------------------|
 | tmux                 | tmux                 | tmux                 |
-| lua5.4               | lua                  | lua                  |
+| lua5.4               | lua                  | lua54                |
 | git                  | git                  | git                  |
-| python3-prompt-toolkit | python3-prompt-toolkit | python-prompt-toolkit |
+| python3-prompt-toolkit | python3-prompt-toolkit | python-prompt_toolkit |
 | python3-pyperclip    | python3-pyperclip    | python-pyperclip     |
 
 For tt++, build from source (the distro packages are often too old or lack
