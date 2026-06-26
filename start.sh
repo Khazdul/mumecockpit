@@ -13,7 +13,7 @@ cd "$(dirname "$0")"
 # ---------------------------------------------------------------------------
 # 1. Install dependencies
 # ---------------------------------------------------------------------------
-if [[ "$OSTYPE" == linux* ]]; then
+if [[ "$OSTYPE" == linux* ]] && command -v apt-get >/dev/null 2>&1; then
     if ! command -v tmux >/dev/null 2>&1; then
         echo "📦 Installing tmux..."
         sudo apt update && sudo apt install -y tmux
