@@ -26,7 +26,8 @@ full rationale and alternatives considered.
   `/etc/wsl.conf` that pins the default user to root, and the WSLg
   `.desktop` entry (system-wide, with a system-theme icon) that surfaces
   the cockpit on the Windows Start Menu.
-- Lightweight bootstrap scripts for macOS (Homebrew) and Linux (apt).
+- Lightweight bootstrap scripts for macOS (Homebrew) and Linux (apt and
+  pacman).
 
 See [ADR 0104](decisions/0104-windows-deployment-architecture.md) for the
 foot/WSLg deployment shape and [ADR 0103](decisions/0103-windows-terminal-decision.md)
@@ -59,6 +60,7 @@ Windows-Alacritty driving a tmux-heavy UI — see
 | Windows 11 (22H2+)             | Primary                                                       | 1        |
 | macOS (Apple Silicon or Intel) | Supported                                                     | 2        |
 | Linux, Debian/Ubuntu family    | Supported                                                     | 2        |
+| Linux, Arch family             | Supported                                                     | 2        |
 | Linux, other distros           | Manual install; documented only                               | 3        |
 
 Windows older than build 22621 is not supported. See the Scope section above.
@@ -210,11 +212,15 @@ Debian/Ubuntu family — automated via `bootstrap-linux.sh`:
 
 1. `apt-get install -y tmux lua5.4 python3 python3-prompt-toolkit python3-pyperclip git`
 2. **Probe-or-build tt++.** The script checks the installed `tt++` (if any)
-   for version ≥ 2.02.20 and GnuTLS linkage. If either check fails (or no
-   binary exists), it installs build deps and compiles tag 2.02.61 from
-   source, landing the binary at `/usr/local/bin/tt++`. Re-running the
-   bootstrap on an already-provisioned machine takes the "looks good —
-   keeping it" path with no rebuild. See [ADR 0035](decisions/0035-tt-from-source.md).
+   for GnuTLS/OpenSSL linkage via `ldd`. If that check fails (or no binary
+   exists), it installs build deps and compiles tag 2.02.61 from source,
+   landing the binary at `/usr/local/bin/tt++`. There is no version floor
+   in the probe: tt++ has no print-version-and-exit flag (`-v` enters
+   verbose interactive mode), and any binary with TLS linked is new enough
+   for the cockpit — TLS support landed well after the syntax the cockpit
+   relies on. Re-running the bootstrap on an already-provisioned machine
+   takes the "has TLS support — keeping it" path with no rebuild. See
+   [ADR 0035](decisions/0035-tt-from-source.md).
 3. Clone or update the repo to `~/MUME`.
 4. **WSL only — provision `win32yank.exe`.** When `/proc/version` contains
    `microsoft`, the bootstrap downloads the pinned `v0.1.1` release of
@@ -232,8 +238,79 @@ The source-build step adds ~1–2 minutes on first install. The build deps
 (`build-essential`, `libpcre2-dev`, `libgnutls28-dev`, `zlib1g-dev`,
 `pkg-config`) are only installed when a build is needed.
 
-Other distros (Fedora, Arch, …) get a documented manual recipe; automating all
-package managers is not a good use of time given the user base.
+Arch family (Arch, CachyOS, EndeavourOS) — automated via `bootstrap-arch.sh`:
+
+1. Runtime set `tmux lua54 git python-prompt_toolkit python-pyperclip
+   python-fonttools wl-clipboard xclip`, installed with
+   `pacman -S --needed --noconfirm` through the filter in the next step.
+   The names diverge from the apt set in more than spelling: `lua54`
+   rather than `lua5.4`,
+   and `python-prompt_toolkit` keeps the underscore Debian drops.
+   `python-fonttools` is the launcher's fallback backend for the
+   quadrant-corner font probe — `fc-list` is preferred on Linux, so its
+   absence only degrades the probe to "block". `wl-clipboard` and `xclip`
+   back the input pane's Ctrl+V read path: `python-pyperclip` has no
+   clipboard access of its own and shells out to `wl-copy`/`wl-paste` under
+   Wayland or `xclip`/`xsel` under X11. Without one of them, paste fails
+   silently while the OSC 52 write path behind Ctrl+C / Ctrl+X keeps
+   working — a gap that is easy to miss. Both are a few hundred KB, so the
+   script installs both rather than probe the session type.
+2. **Every pacman call goes through the `pac_install` deptest filter.** The
+   helper runs `pacman -T` (deptest) over the list first and hands
+   `pacman -S --needed` only the entries reported unsatisfied; when nothing
+   is missing, pacman is never invoked. This exists because deptest resolves
+   `provides`. On CachyOS, `zlib` is satisfied by the installed
+   `zlib-ng-compat`, which *conflicts* with `zlib` — naming `zlib` directly
+   aborted the entire transaction (`error: failed to prepare transaction
+   (conflicting dependencies)`) and took the whole bootstrap down with it.
+   Filtering first keeps the provider in place and out of the transaction.
+   `base-devel` is a meta package on current Arch and resolves like any
+   other; on older systems where it is still a group, deptest reports it
+   unsatisfied every time, which is harmless because `pacman -S --needed`
+   on a group is idempotent.
+3. **Deptest treats "installed but outdated" as satisfied — intended.** An
+   old-but-present package is left alone rather than upgraded, so the
+   bootstrap never partially upgrades a rolling-release system. That is the
+   desired behaviour on Arch: partial upgrades are the standard way to break
+   an Arch install, and a bootstrap script is the wrong place to decide a
+   user is due for a `-Syu`. Do not "fix" this by dropping the filter or
+   adding a system upgrade to the script.
+4. **Probe-or-build tt++.** Same shape as the Debian branch: `ldd` the
+   installed binary for GnuTLS/OpenSSL linkage, and build tag 2.02.61 from
+   source when the check fails or no binary exists. Like Debian, the probe
+   checks **linkage only** — there is no version floor on either branch. The
+   build deps (`base-devel`, `pcre2`, `gnutls`, `zlib`, `pkgconf`) are
+   installed inside the build branch only, so a machine that already has a
+   TLS-linked tt++ never pulls a toolchain. On Arch these packages carry the
+   runtime shared libraries too — there is no `-dev` split to mirror.
+5. Clone or update the repo to `~/MUME`, then `chmod +x` the entry points.
+6. **No terminal emulator is installed.** Native Linux is BYO-terminal, the
+   same policy the apt bootstrap follows; the bundled-terminal model is
+   Windows/WSLg-only.
+
+**Lua on Arch needs no bootstrap-side symlink.** Current Arch ships bare
+`lua` as 5.5, with the 5.4 build under the `lua54` package, which installs
+the binary as `lua5.4`. The cockpit needs 5.4 (`<const>` on locals), so the
+bootstrap installs `lua54` and stops there — resolution is `start.sh`'s job.
+Its Linux resolution block probes `lua5.4` then `lua54` when bare `lua` does
+not report 5.4.x, symlinks the first match into `bridge/runtime/bin/lua`, and
+prepends that directory to PATH, mirroring the macOS keg-prepend. Deliberately
+symlinking nothing here keeps one owner for that decision. `bridge/runtime/`
+is gitignored, so the generated symlink does not dirty the tree for
+`update.sh`. See [ADR 0116](decisions/0116-pin-lua-runtime-to-5.4.md).
+
+**Verification status.** `bootstrap-arch.sh` was verified end-to-end on
+CachyOS on 2026-08-16, on the **re-run path**: every package already present,
+tt++ already provisioned with TLS, repo already cloned. That exercises the
+deptest filter, the "keeping it" probe branch, and the pull-and-chmod path.
+The **fresh-clone path** and the **tt++ source-build path** on Arch are
+untested in the field — the build branch is a straight port of the verified
+Debian one, but nothing has actually compiled tt++ against Arch's `gnutls`
+and `pcre2` under this script yet. Treat both as unproven until someone runs
+them on a clean machine.
+
+Fedora and other distros get a documented manual recipe; automating every
+remaining package manager is not a good use of time given the user base.
 
 ## Config files
 
@@ -446,8 +523,8 @@ macOS/Linux bootstraps do not write or own that file.
   already lets the user switch between MMapper and direct mode, which
   covers this cleanly.
 - **tt++ apt version is stale and lacks TLS.** Handled: the bootstrap
-  probes the installed binary for version ≥ 2.02.20 and GnuTLS linkage,
-  then builds from source (tag 2.02.61) when either check fails. See
+  probes the installed binary for GnuTLS/OpenSSL linkage, then builds
+  from source (tag 2.02.61) when that check fails. See
   [ADR 0035](decisions/0035-tt-from-source.md).
 - **`pip install --break-system-packages`.** Required on Ubuntu 23.04+
   (PEP 668). Harmless on older releases; the flag can stay unconditional.
@@ -508,8 +585,14 @@ macOS/Linux bootstraps do not write or own that file.
 
 ### Linux
 
-- **Distro sprawl.** We target the Debian/Ubuntu family with apt;
-  everything else gets a documented recipe, not an automated path.
+- **Distro sprawl.** We automate the Debian/Ubuntu family with apt and
+  the Arch family with pacman; everything else gets a documented recipe,
+  not an automated path. Two package managers is the ceiling — each one
+  added is another set of package names to keep true.
+- **Rolling-release packages drift.** The Arch bootstrap pins nothing and
+  upgrades nothing; it installs what is missing and trusts the user's
+  system to be current. A package that has been renamed upstream surfaces
+  as a pacman "target not found" rather than a silent fallback.
 - **Wayland vs X11 for Alacritty.** Distro/DE-specific; Alacritty
   handles both. Not our problem.
 
@@ -546,7 +629,8 @@ macOS/Linux bootstraps do not write or own that file.
 
 ## Rollout phases
 
-1. **macOS + Linux bootstrap script.** Done.
+1. **macOS + Linux bootstrap scripts.** Done — Homebrew, apt, and (since
+   2026-08-16, verified on CachyOS for the re-run path) pacman.
 2. **Windows installer** (`.ps1` + `.bat`, Ubuntu install, `.wslconfig`,
    foot/WSLg terminal, `.desktop` Start Menu entry, `foot.ini`,
    `bridge/supervisor.sh`). Done. Windows 11 22H2+ only; slow path is

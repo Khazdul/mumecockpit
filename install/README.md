@@ -103,29 +103,63 @@ cd ~/MUME && ./start.sh
 
 ### Requirements
 
-- Debian or Ubuntu with apt. Other distros: see "Other Linux distributions"
+- Debian/Ubuntu with apt, or an Arch-family distro with pacman (Arch,
+  CachyOS, EndeavourOS). Other distros: see "Other Linux distributions"
   below.
 - Internet connection. About 5 minutes.
 
-### Install
+Each family has its own bootstrap script. Pick the one that matches your
+distro -- both scripts check which package manager they are running on and
+exit without touching anything if you picked wrong.
+
+No terminal emulator is installed on either path: the bootstrap sets up the
+cockpit itself and you keep using whatever terminal you already prefer. An
+optional Alacritty config example is available at
+`~/MUME/install/examples/alacritty.toml` if you want it -- not installed
+automatically.
+
+### Debian / Ubuntu
 
 ```
 curl -fsSL https://raw.githubusercontent.com/Khazdul/mumecockpit/main/install/bootstrap-linux.sh | bash
 ```
 
-> **Debian/Ubuntu only.** This bootstrap script is apt-based and refuses to
-> run on Arch, Fedora, and other non-Debian distros. On those, do not use the
-> curl one-liner — follow the manual "Other Linux distributions" recipe below.
-
-### What got installed
+**What got installed**
 
 - apt packages: tmux, lua5.4, git, python3-prompt-toolkit, python3-pyperclip
 - tt++ at `/usr/local/bin/tt++` — built from source on first install if the system tt++ is missing or lacks TLS support
 - The MUME Cockpit repo at `~/MUME`
-- No terminal emulator: the installer sets up the cockpit itself; you keep
-  using whatever terminal you already prefer. An optional Alacritty config
-  example is available at `~/MUME/install/examples/alacritty.toml` if you
-  want it -- not installed automatically.
+
+### Arch / CachyOS
+
+```
+curl -fsSL https://raw.githubusercontent.com/Khazdul/mumecockpit/main/install/bootstrap-arch.sh | bash
+```
+
+**What got installed**
+
+- pacman packages: tmux, lua54, git, python-prompt_toolkit, python-pyperclip,
+  python-fonttools, wl-clipboard, xclip
+- tt++ at `/usr/local/bin/tt++` — built from source on first install if the
+  system tt++ is missing or lacks TLS support
+- The MUME Cockpit repo at `~/MUME`
+
+Notes specific to this path:
+
+- `wl-clipboard` and `xclip` are what make Ctrl+V work in the input pane on
+  Wayland and X11 respectively. Both are installed so paste works whichever
+  session you are in.
+- Bare `lua` on current Arch is 5.5; the cockpit needs 5.4, which the `lua54`
+  package provides as `lua5.4`. `start.sh` finds it and uses it -- nothing to
+  configure.
+- Packages you already have are left alone, including outdated ones. The
+  script installs what is missing and never upgrades your system for you, so
+  it cannot leave you in a partial-upgrade state. Run `sudo pacman -Syu`
+  yourself first if you like to be current.
+- Verified end-to-end on CachyOS on 2026-08-16 for a re-run over an existing
+  install (everything already present). A first install on a clean machine --
+  in particular building tt++ from source on Arch -- has not been tested in
+  the field yet. If it breaks, please file an issue with the output.
 
 ### Run
 
@@ -135,28 +169,35 @@ cd ~/MUME && ./start.sh
 
 ### Other Linux distributions
 
-The bootstrap script is apt-based and will refuse to run on Fedora, Arch, and
-other non-Debian distributions. On those distros, install the equivalent
+Fedora and other non-Debian, non-Arch distributions have no bootstrap script
+-- `bootstrap-linux.sh` is apt-based and `bootstrap-arch.sh` is pacman-based,
+and each refuses to run elsewhere. On those distros, install the equivalent
 packages manually and clone the repo:
 
-| Package              | Fedora (dnf)         | Arch (pacman)        |
-|----------------------|----------------------|----------------------|
-| tmux                 | tmux                 | tmux                 |
-| lua5.4               | lua                  | lua54                |
-| git                  | git                  | git                  |
-| python3-prompt-toolkit | python3-prompt-toolkit | python-prompt_toolkit |
-| python3-pyperclip    | python3-pyperclip    | python-pyperclip     |
+| Package                | Fedora (dnf)           |
+|------------------------|------------------------|
+| tmux                   | tmux                   |
+| lua5.4                 | lua                    |
+| git                    | git                    |
+| python3-prompt-toolkit | python3-prompt-toolkit |
+| python3-pyperclip      | python3-pyperclip      |
+
+Also install a clipboard helper for the input pane's paste path --
+`wl-clipboard` under Wayland, `xclip` under X11 -- and make sure the `lua` on
+your PATH is 5.4.x. If your distro ships a newer `lua` as the default, install
+its 5.4 package as well; `start.sh` looks for `lua5.4` and `lua54` and uses
+whichever it finds.
 
 For tt++, build from source (the distro packages are often too old or lack
 TLS). Build dependencies:
 
-| Dep (apt)            | Fedora (dnf)         | Arch (pacman)        |
-|----------------------|----------------------|----------------------|
-| build-essential      | gcc make             | base-devel           |
-| libpcre2-dev         | pcre2-devel          | pcre2                |
-| libgnutls28-dev      | gnutls-devel         | gnutls               |
-| zlib1g-dev           | zlib-devel           | zlib                 |
-| pkg-config           | pkgconf              | pkgconf              |
+| Dep (apt)            | Fedora (dnf)         |
+|----------------------|----------------------|
+| build-essential      | gcc make             |
+| libpcre2-dev         | pcre2-devel          |
+| libgnutls28-dev      | gnutls-devel         |
+| zlib1g-dev           | zlib-devel           |
+| pkg-config           | pkgconf              |
 
 Then build and install:
 
@@ -226,8 +267,14 @@ app launches and runs normally; nothing to do on your side.
 Install Homebrew first from https://brew.sh, then re-run the curl command.
 
 **Linux: package not found**
-Your distro is probably not Debian or Ubuntu. Install the equivalent packages
-manually -- see "Other Linux distributions" above.
+Your distro is probably neither Debian/Ubuntu nor Arch-family. Install the
+equivalent packages manually -- see "Other Linux distributions" above.
+
+**Linux: "pacman not found. This script targets Arch Linux" or "apt-get not
+found. This script targets Debian/Ubuntu"**
+You ran the wrong bootstrap for your distro. Nothing was installed. Use
+`bootstrap-linux.sh` on Debian/Ubuntu and `bootstrap-arch.sh` on
+Arch/CachyOS -- see the two install blocks above.
 
 **Any platform: launcher does not start**
 Verify that `cd ~/MUME && ./start.sh` works at the command line. If it does
@@ -258,10 +305,15 @@ Homebrew packages (tmux, lua, tintin, etc.) can stay or be removed via
 ```
 rm -rf ~/MUME
 ```
-apt packages and the source-built tt++ can be removed via:
+The source-built tt++ and the packages can be removed via:
 ```
 sudo rm -f /usr/local/bin/tt++
+
+# Debian/Ubuntu
 sudo apt remove tmux lua5.4 python3-prompt-toolkit python3-pyperclip
+
+# Arch/CachyOS
+sudo pacman -Rs tmux lua54 python-prompt_toolkit python-pyperclip python-fonttools
 ```
 
 ---
