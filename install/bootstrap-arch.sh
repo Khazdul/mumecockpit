@@ -69,9 +69,7 @@ REPO_DIR="$TARGET_HOME/MUME"
 # Install packages
 # ---------------------------------------------------------------------------
 
-# Build deps for the tt++ source build (mirrors the Debian -dev packages). On
-# Arch these same packages carry the runtime shared libs too — no -dev split.
-# Runtime deps:
+# Runtime deps — always installed:
 #   - lua54 (binary lua5.4), NOT bare `lua`: on current Arch `lua` is Lua 5.5
 #     and the cockpit needs 5.4. start.sh's Linux lua-resolution block symlinks
 #     lua5.4 into bridge/runtime/bin/lua at launch, so do NOT symlink here.
@@ -80,12 +78,44 @@ REPO_DIR="$TARGET_HOME/MUME"
 #   - python-fonttools is the launcher's quadrant-corner font-support backend
 #     fallback; fontconfig's fc-list is preferred on Linux, so a missing
 #     fonttools only degrades the probe to "block", never breaks startup.
+#   - wl-clipboard and xclip back the input pane's Ctrl+V read path:
+#     python-pyperclip has no clipboard access of its own, it shells out to
+#     wl-copy/wl-paste under Wayland or xclip/xsel under X11. Without one of
+#     them installed, paste fails silently (the OSC 52 write path used by
+#     Ctrl+C / Ctrl+X still works, which makes the gap easy to miss). Both are
+#     a few hundred KB, so install both rather than probe the session type
+#     here. See docs/input-pane.md, "Clipboard operations".
 # No terminal package: native Linux is BYO-terminal.
-PACKAGES="base-devel pcre2 gnutls zlib pkgconf tmux lua54 git python-prompt_toolkit python-pyperclip python-fonttools"
+RUNTIME_PACKAGES="tmux lua54 git python-prompt_toolkit python-pyperclip python-fonttools wl-clipboard xclip"
 
-# --needed makes this idempotent: already-installed packages are skipped.
-# shellcheck disable=SC2086  # word-splitting of $PACKAGES is intentional
-$RUN pacman -S --needed --noconfirm $PACKAGES
+# Build deps for the tt++ source build (mirrors the Debian -dev packages). On
+# Arch these same packages carry the runtime shared libs too — no -dev split.
+# Installed only when the build is actually needed, matching bootstrap-linux.sh.
+BUILD_PACKAGES="base-devel pcre2 gnutls zlib pkgconf"
+
+# Install the given packages, but hand pacman only the entries `pacman -T`
+# (deptest) reports as unsatisfied. deptest resolves `provides`, so on CachyOS
+# `zlib` counts as satisfied by the installed zlib-ng-compat instead of pulling
+# the real zlib into the transaction, where the two would conflict and abort
+# the whole run. `base-devel` is a meta package on current Arch, so deptest
+# resolves it like any other; on older systems where it is still a group,
+# deptest reports it unsatisfied every time — harmless, since
+# `pacman -S --needed` on a group is idempotent. deptest exits non-zero when
+# anything is missing, hence `|| true` under `set -e`.
+pac_install() {
+    local missing
+    missing="$(pacman -T "$@" || true)"
+    if [ -z "$missing" ]; then
+        echo "All required packages already satisfied — skipping pacman."
+        return 0
+    fi
+    # --needed makes this idempotent: already-installed packages are skipped.
+    # shellcheck disable=SC2086  # word-splitting of $missing is intentional
+    $RUN pacman -S --needed --noconfirm $missing
+}
+
+# shellcheck disable=SC2086  # word-splitting of $RUNTIME_PACKAGES is intentional
+pac_install $RUNTIME_PACKAGES
 
 # ---------------------------------------------------------------------------
 # Provision tt++ (probe existing binary; build from source when needed)
@@ -106,7 +136,8 @@ fi
 
 if [ "$tt_needs_build" -eq 1 ]; then
     echo "tt++: $tt_build_reason — building from source (tag $TT_BUILD_VERSION)."
-    # Build deps already installed above (base-devel pcre2 gnutls zlib pkgconf).
+    # shellcheck disable=SC2086  # word-splitting of $BUILD_PACKAGES is intentional
+    pac_install $BUILD_PACKAGES
 
     tt_tmpdir="$(mktemp -d)"
     trap 'rm -rf "$tt_tmpdir"' EXIT
