@@ -85,3 +85,38 @@ rationale and tone for Lua.
 - Does **not** address tt++ runtime fragility on macOS. That remains
   a separate concern — see `docs/install-bootstrap.md` Open
   question 3, now scoped to TLS-pinning only.
+
+## Amendment — 2026-08-16 (Linux resolution verified on CachyOS)
+
+Decision point 2 scoped Linux out of PATH resolution because apt's
+`lua5.4` binary lands on PATH directly. That reasoning holds for the
+Debian/Ubuntu family only. Arch-family distros ship bare `lua` at 5.5+
+and put the 5.4 build under a versioned name, so the same failure the
+ADR documented on macOS was reachable there. A Linux resolution block
+in `start.sh` now mirrors the macOS keg-prepend: when bare `lua` does
+not report 5.4.x, it probes the candidates `lua5.4` then `lua54`,
+symlinks the first match to `bridge/runtime/bin/lua`, and prepends that
+directory to PATH. Debian/Ubuntu stays a no-op. The pinning decision
+therefore now covers Linux distros where bare `lua` has moved past 5.4,
+not macOS alone.
+
+That block was implemented but unverified in the field until now. It is
+verified on CachyOS (Arch family) as of this date:
+
+- Bare `lua` reports Lua 5.5.1. The `lua54` package provides the binary
+  as `lua5.4` (version 5.4.8), so the first candidate in the probe
+  order matches.
+- `start.sh` created `bridge/runtime/bin/lua` as a symlink to
+  `/usr/bin/lua5.4`, and the pre-flight version check passed.
+- The cockpit started with the Lua brain alive: no `<const>` load error
+  in `lua/core/readability.lua`, and no `#ERROR: UNKNOWN TINTIN COMMAND
+  'lua'` spam from the clock ticker — the two symptoms the Context
+  section documented on macOS.
+
+The interaction with the update channel is a verified non-issue rather
+than an open risk. `git status --short` was clean after the run:
+`bridge/runtime/` is gitignored, so the generated symlink does not dirty
+the working tree. This matters because `update.sh` guard 4b rejects an
+update when untracked files exist outside `ttpp/profiles/` and
+`lua/scripts/`. Had `bridge/runtime/` not been ignored, every Arch-family
+user would have hit exit 21 on their first launcher update.
