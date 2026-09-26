@@ -147,6 +147,18 @@ verbatim.
 <img width="384" height="216" alt="20260618 profile lite" src="https://github.com/user-attachments/assets/2af82058-cc66-4f41-a44c-1ab6bf2b208b" />
 <img width="384" height="216" alt="20260618 profile editor" src="https://github.com/user-attachments/assets/00cd883b-50d6-40cc-a966-a63e7db43175" />
 
+**Export editor** — turn an archived session into something worth
+sharing. History → Export opens the full log with an overview map of
+kills, deaths, and level-ups; mark spans to cut, drop in `## `
+comments to narrate what happened, and export as plain text or as a
+self-contained HTML replay. The replay plays the session back in
+cockpit colours with speed control, fullscreen, event markers along
+the edge, and pauses on each comment long enough to read it. Edits
+are saved per session, so you can come back and refine before
+sending it on.
+
+<img width="384" alt="Export editor" src="docs/img/export-editor.png" />
+
 **MMapper** integration via WSL2 mirrored networking on Windows,
 or plain `localhost` on macOS / Linux. [MMapper][mmapper] is a
 separate graphical companion app — install it and the cockpit
