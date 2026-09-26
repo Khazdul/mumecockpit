@@ -1,0 +1,386 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>__TITLE__</title>
+<style>
+  :root {
+    --bg: #000000;
+    --fg: #c0c0c0;
+    --font: "Lucida Console", "Lucida Sans Typewriter", Monaco, "DejaVu Sans Mono", Consolas, monospace;
+    --fs: 21px;   /* alacritty size 16pt ≈ 21px */
+    --lh: 1.2;
+    --strip-w: 2ch;
+    --played: #9a9a9a;
+    --remaining: #242424;
+    --gold: #ffaf00;
+    --mark: #4d4d4d;
+    --frame: #585858;
+    --box-fg: #9a9a9a;
+    --box-dim: #6f6f6f;
+    --hover-fg: #dde4e0;
+    --hover-bg: #242a27;
+    --cursor: #303030;
+    --comment: #ffd75f;
+    --hdr-name: #8a8a8a;
+    --hdr-hint: #585858;
+    --hdr-sep: #3a3a3a;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; height: 100%; overflow: hidden;
+    background: var(--bg); color: var(--fg);
+    font-family: var(--font); font-size: var(--fs); line-height: var(--lh);
+    font-variant-ligatures: none;
+  }
+  @media (max-width: 700px) { :root { --fs: 13px; } }
+
+  #log {
+    position: fixed; inset: 0;
+    padding: 6px calc(var(--strip-w) + 6ch) 6px 6px;
+    display: flex; flex-direction: column; justify-content: flex-end;
+    overflow: hidden;
+    white-space: pre-wrap; overflow-wrap: anywhere;
+  }
+  #log .l { min-height: calc(var(--fs) * var(--lh)); }
+  #log .l.cur { background: var(--cursor); }
+  #log .cm { color: var(--comment); }
+  body.paused #log .l { cursor: pointer; }
+
+  .chrome { transition: opacity .35s ease; }
+  body.idle .chrome { opacity: 0; pointer-events: none; }
+  body.idle { cursor: none; }
+
+  #hdr {
+    position: fixed; top: 0; left: 0; right: var(--strip-w);
+    display: flex; justify-content: space-between; gap: 2ch;
+    padding: 0 1ch; background: var(--bg);
+    white-space: nowrap; overflow: hidden;
+  }
+  #hdr .name { color: var(--hdr-name); }
+  #hdr .hint, #hdr .dim { color: var(--hdr-hint); }
+  #hdr .sep { color: var(--hdr-sep); }
+  @media (max-width: 1100px) { #hdr .hint { display: none; } }
+
+  #strip {
+    position: fixed; top: 0; right: 0; bottom: 0; width: var(--strip-w);
+    background: var(--remaining); cursor: pointer; touch-action: none;
+  }
+  #played { position: absolute; left: 0; right: 0; top: 0; background: var(--played); }
+  #head {
+    position: absolute; left: 0; right: 0; height: calc(var(--fs) * var(--lh) / 2);
+    background: var(--gold);
+  }
+  #marks { position: fixed; top: 0; bottom: 0; right: var(--strip-w); width: 0; }
+  .mk {
+    position: absolute; right: 0; white-space: nowrap;
+    color: var(--mark); background: var(--bg);
+    cursor: pointer; padding-left: .5ch;
+  }
+  .mk:hover { color: var(--hover-fg); background: var(--hover-bg); }
+
+  #box {
+    position: fixed; right: calc(var(--strip-w) + 6ch); bottom: calc(var(--fs) * var(--lh));
+    background: var(--bg); border: 1px solid var(--frame);
+    padding: .15em 1ch; text-align: center; color: var(--box-fg);
+    user-select: none; -webkit-user-select: none;
+  }
+  #box .row { display: flex; justify-content: center; gap: 1.5ch; white-space: nowrap; }
+  #box .row + .row { margin-top: .15em; }
+  .btn { cursor: pointer; padding: 0 .3ch; color: var(--box-fg); background: none; border: 0; font: inherit; }
+  .btn:hover, .btn:focus-visible { color: var(--hover-fg); background: var(--hover-bg); font-weight: 700; outline: none; }
+  .spd { color: var(--box-dim); }
+  .spd.on { color: var(--hover-fg); font-weight: 700; }
+  #clock { color: var(--box-dim); }
+  #tip {
+    position: fixed; right: calc(var(--strip-w) + 1ch); padding: 0 .5ch;
+    background: var(--hover-bg); color: var(--hover-fg); pointer-events: none;
+    display: none; white-space: nowrap;
+  }
+</style>
+</head>
+<body>
+<div id="log" aria-live="off"></div>
+
+<div id="hdr" class="chrome"></div>
+<div id="marks" class="chrome"></div>
+<div id="strip" class="chrome" title="Click or drag to seek"><div id="played"></div><div id="head"></div></div>
+<div id="tip"></div>
+
+<div id="box" class="chrome">
+  <div class="row">
+    <button class="btn" id="rew" title="Rewind (Home)">◄◄ Rewind</button>
+    <button class="btn" id="pp" title="Play / pause (Space)">▌▌ Pause</button>
+  </div>
+  <div class="row">
+    <button class="btn spd" data-s="0.25" title="Speed (1)">0.25x</button>
+    <button class="btn spd" data-s="0.5" title="Speed (2)">0.5x</button>
+    <button class="btn spd" data-s="0.75" title="Speed (3)">0.75x</button>
+    <button class="btn spd" data-s="1" title="Speed (4)">1x</button>
+  </div>
+  <div class="row"><span id="clock">00:00 / 00:00</span></div>
+  <div class="row"><button class="btn" id="fs" title="Fullscreen (F)">Fullscreen</button></div>
+</div>
+
+<script>
+const D = /*__DATA__*/null;
+const OFF = D.offsets, LINES = D.lines, N = LINES.length, TOTAL = OFF[N - 1];
+// Comment rows hold playback in real time (independent of speed): row -> ms.
+const HOLDS = D.holds || {};
+const HOLD_ROWS = Object.keys(HOLDS).map(Number).sort((a, b) => a - b);
+const HIDE_MS = 6000;
+
+const $ = id => document.getElementById(id);
+const logEl = $("log"), stripEl = $("strip"), playedEl = $("played"), headEl = $("head");
+const marksEl = $("marks"), clockEl = $("clock"), ppEl = $("pp"), fsEl = $("fs"), tipEl = $("tip");
+
+let mode = "play", speed = 1;
+let anchorOff = 0, anchorWall = performance.now();
+let pauseOff = 0, cursor = 0, shownIdx = -1, shownMode = "";
+let hideTimer = null;
+let served = -1, holdRow = -1, holdUntil = 0;   // comment-hold state
+
+function mmss(ms) {
+  const s = Math.floor(ms / 1000);
+  return String(Math.floor(s / 60)).padStart(2, "0") + ":" + String(s % 60).padStart(2, "0");
+}
+function rowH() { return parseFloat(getComputedStyle(logEl.firstElementChild || logEl).lineHeight) || 20; }
+function idxAt(off) {                       // last index with OFF[i] <= off
+  let lo = 0, hi = N - 1;
+  while (lo < hi) { const m = (lo + hi + 1) >> 1; if (OFF[m] <= off) lo = m; else hi = m - 1; }
+  return lo;
+}
+function curOffset() {
+  if (mode !== "play") return pauseOff;
+  if (holdRow >= 0) return OFF[holdRow];
+  return Math.min(TOTAL, anchorOff + (performance.now() - anchorWall) * speed);
+}
+function playheadIdx() { return holdRow >= 0 ? holdRow : idxAt(curOffset()); }
+function nextHold(after) {                  // first comment row > after, or -1
+  let lo = 0, hi = HOLD_ROWS.length;
+  while (lo < hi) { const m = (lo + hi) >> 1; if (HOLD_ROWS[m] > after) hi = m; else lo = m + 1; }
+  return lo < HOLD_ROWS.length ? HOLD_ROWS[lo] : -1;
+}
+function clearHold(idx) { holdRow = -1; served = idx; }
+
+// --- header --------------------------------------------------------------
+(function header() {
+  const esc = t => String(t).replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+  const sep = `<span class="sep">  ·  </span>`;
+  const name = esc(D.char) + (D.level ? ` (L${D.level})` : "");
+  const left = (D.title ? `<span class="name">${esc(D.title)}</span>${sep}<span class="dim">${name}</span>`
+                        : `<span class="name">${name}</span>`) +
+               (D.date ? `${sep}<span class="dim">${esc(D.date)}</span>` : "");
+  $("hdr").innerHTML =
+    `<span>${left}</span>` +
+    `<span class="hint">Space Play  ·  ↑↓ Scroll  ·  1–4 Speed  ·  F Fullscreen</span>`;
+})();
+
+// --- log rendering (bottom-anchored window ending at the playhead) ---------
+function render(idx) {
+  const rows = Math.ceil(window.innerHeight / rowH()) + 8;
+  const from = Math.max(0, idx - rows);
+  const parts = [];
+  for (let i = from; i <= idx; i++) {
+    const cls = (mode === "pause" && i === idx) ? "l cur" : "l";
+    parts.push(`<div class="${cls}" data-i="${i}">${LINES[i]}</div>`);
+  }
+  logEl.innerHTML = parts.join("");
+  shownIdx = idx; shownMode = mode;
+}
+
+// --- strip + markers -------------------------------------------------------
+function drawStrip(off) {
+  const H = stripEl.clientHeight, hh = headEl.offsetHeight;
+  const y = TOTAL > 0 ? (off / TOTAL) * H : 0;
+  playedEl.style.height = y + "px";
+  headEl.style.top = Math.min(H - hh, Math.max(0, y - hh / 2)) + "px";
+}
+function drawMarkers() {
+  const H = window.innerHeight, rh = rowH();
+  const rows = Math.max(1, Math.floor(H / rh));
+  const byRow = new Map();
+  for (const m of D.markers) {
+    const r = Math.min(rows - 1, Math.round((m.o / (TOTAL || 1)) * (rows - 1)));
+    const g = byRow.get(r) || { letters: new Set(), o: m.o, t: [] };
+    g.letters.add(m.l); g.o = Math.min(g.o, m.o); g.t.push(m.t + "  " + mmss(m.o));
+    byRow.set(r, g);
+  }
+  marksEl.innerHTML = "";
+  for (const [r, g] of byRow) {
+    const el = document.createElement("div");
+    el.className = "mk";
+    el.textContent = [..."ADKL"].filter(c => g.letters.has(c)).join("") + "►";
+    el.title = g.t.join("\n");
+    el.style.top = (r * rh) + "px";
+    el.addEventListener("click", e => { e.stopPropagation(); touchChrome(); seek(g.o); });
+    marksEl.appendChild(el);
+  }
+}
+
+// --- transport -------------------------------------------------------------
+function setMode(m) {
+  if (m === mode) return;
+  if (m === "pause") {
+    cursor = playheadIdx(); pauseOff = OFF[cursor]; clearHold(cursor);
+  } else {
+    if (cursor >= N - 1 && pauseOff >= TOTAL) { pauseOff = 0; cursor = 0; served = -1; }  // replay from the top
+    else served = cursor;
+    anchorOff = pauseOff; anchorWall = performance.now();
+  }
+  mode = m;
+  document.body.classList.toggle("paused", m === "pause");
+  ppEl.textContent = m === "play" ? "▌▌ Pause" : "► Play";
+  touchChrome();
+  shownIdx = -1;
+}
+function togglePlay() { setMode(mode === "play" ? "pause" : "play"); }
+function seek(off) {
+  off = Math.max(0, Math.min(TOTAL, off));
+  const idx = off <= 0 ? -1 : idxAt(off);
+  clearHold(idx);
+  if (mode === "play") { anchorOff = off; anchorWall = performance.now(); }
+  else { pauseOff = off; cursor = Math.max(0, idx); }
+  shownIdx = -1;
+}
+function setCursor(i) {
+  if (mode === "play") setMode("pause");
+  cursor = Math.max(0, Math.min(N - 1, i));
+  pauseOff = OFF[cursor];
+  shownIdx = -1;
+}
+function setSpeed(s) {
+  if (mode === "play") { anchorOff = curOffset(); anchorWall = performance.now(); }
+  speed = s;
+  document.querySelectorAll(".spd").forEach(b => b.classList.toggle("on", +b.dataset.s === s));
+}
+
+function tick() {
+  const now = performance.now();
+  if (mode === "play" && holdRow >= 0 && now >= holdUntil) {
+    anchorOff = OFF[holdRow]; anchorWall = now; clearHold(holdRow);
+  }
+  let off = curOffset();
+  let idx = mode === "play" ? playheadIdx() : cursor;
+  if (mode === "play" && holdRow < 0) {
+    const h = nextHold(served);
+    if (h >= 0 && h <= idx) { holdRow = h; holdUntil = now + HOLDS[h]; idx = h; off = OFF[h]; }
+  }
+  if (mode === "play" && holdRow < 0 && off >= TOTAL) {
+    setMode("pause"); off = TOTAL; pauseOff = TOTAL; cursor = N - 1; idx = cursor;
+  }
+  if (idx !== shownIdx || mode !== shownMode) render(idx);
+  drawStrip(off);
+  clockEl.textContent = mmss(off) + " / " + mmss(TOTAL);
+  requestAnimationFrame(tick);
+}
+
+// --- chrome auto-hide (6 s in play, permanent in pause) -----------------------
+function touchChrome() {
+  document.body.classList.remove("idle");
+  clearTimeout(hideTimer);
+  if (mode === "play") hideTimer = setTimeout(() => { if (mode === "play") document.body.classList.add("idle"); }, HIDE_MS);
+}
+
+// --- input -----------------------------------------------------------------
+document.querySelectorAll(".btn").forEach(b => b.addEventListener("mousedown", e => e.preventDefault()));
+$("rew").addEventListener("click", () => { seek(0); touchChrome(); });
+ppEl.addEventListener("click", togglePlay);
+document.querySelectorAll(".spd").forEach(b => b.addEventListener("click", () => { setSpeed(+b.dataset.s); touchChrome(); }));
+
+function isFs() { return !!(document.fullscreenElement || document.webkitFullscreenElement); }
+function toggleFs() {
+  const el = document.documentElement;
+  if (isFs()) (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+  else (el.requestFullscreen || el.webkitRequestFullscreen).call(el);
+}
+fsEl.addEventListener("click", toggleFs);
+function onFsChange() { fsEl.textContent = isFs() ? "Exit fullscreen" : "Fullscreen"; }
+document.addEventListener("fullscreenchange", onFsChange);
+document.addEventListener("webkitfullscreenchange", onFsChange);
+
+let dragging = false;
+function stripSeek(clientY) {
+  const f = Math.max(0, Math.min(1, clientY / stripEl.clientHeight));
+  seek(Math.round(f * TOTAL));
+}
+stripEl.addEventListener("pointerdown", e => {
+  dragging = true; stripEl.setPointerCapture(e.pointerId); stripSeek(e.clientY); touchChrome();
+});
+stripEl.addEventListener("pointermove", e => {
+  if (dragging) stripSeek(e.clientY);
+  tipEl.style.display = "block";
+  tipEl.style.top = Math.max(0, e.clientY - rowH() / 2) + "px";
+  tipEl.textContent = mmss(Math.max(0, Math.min(1, e.clientY / stripEl.clientHeight)) * TOTAL);
+});
+stripEl.addEventListener("pointerleave", () => { if (!dragging) tipEl.style.display = "none"; });
+const endDrag = () => { dragging = false; tipEl.style.display = "none"; };
+stripEl.addEventListener("pointerup", endDrag);
+stripEl.addEventListener("pointercancel", endDrag);
+
+// Wheel / touch scroll moves the cursor event by event (auto-pausing on scroll-up).
+let wheelAcc = 0;
+function scrollBy(px) {
+  wheelAcc += px;
+  const step = rowH();
+  const n = Math.trunc(wheelAcc / step);
+  if (!n) return;
+  wheelAcc -= n * step;
+  if (mode === "play" && n > 0) return;            // scroll-down while playing: nothing to reveal
+  const base = mode === "play" ? playheadIdx() : cursor;
+  setCursor(base + n);
+}
+window.addEventListener("wheel", e => {
+  if (e.target.closest("#strip, #box, #marks")) return;
+  e.preventDefault(); touchChrome();
+  const px = e.deltaMode === 1 ? e.deltaY * rowH() : e.deltaMode === 2 ? e.deltaY * window.innerHeight : e.deltaY;
+  scrollBy(px);
+}, { passive: false });
+let touchY = null;
+logEl.addEventListener("touchstart", e => { touchY = e.touches[0].clientY; touchChrome(); }, { passive: true });
+logEl.addEventListener("touchmove", e => {
+  if (touchY === null) return;
+  const y = e.touches[0].clientY; scrollBy(touchY - y); touchY = y; e.preventDefault();
+}, { passive: false });
+logEl.addEventListener("touchend", () => { touchY = null; });
+
+logEl.addEventListener("click", e => {
+  if (mode !== "pause" || getSelection().toString()) return;
+  const l = e.target.closest(".l");
+  if (l) setCursor(+l.dataset.i);
+});
+
+window.addEventListener("keydown", e => {
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  touchChrome();
+  const cur = () => mode === "play" ? playheadIdx() : cursor;
+  switch (e.key) {
+    case " ": togglePlay(); break;
+    case "ArrowUp": setCursor(cur() - 1); break;
+    case "ArrowDown": setCursor(cur() + 1); break;
+    case "PageUp": setCursor(cur() - 20); break;
+    case "PageDown": setCursor(cur() + 20); break;
+    case "Home": seek(0); break;
+    case "End": setCursor(N - 1); break;
+    case "1": setSpeed(0.25); break;
+    case "2": setSpeed(0.5); break;
+    case "3": setSpeed(0.75); break;
+    case "4": setSpeed(1); break;
+    case "f": case "F": toggleFs(); break;
+    default: return;
+  }
+  e.preventDefault();
+});
+["mousemove", "pointerdown"].forEach(t => window.addEventListener(t, touchChrome, { passive: true }));
+window.addEventListener("resize", () => { shownIdx = -1; drawMarkers(); });
+
+setSpeed(1);
+touchChrome();
+render(0);
+drawMarkers();
+if (document.fonts) document.fonts.ready.then(() => { shownIdx = -1; drawMarkers(); });
+requestAnimationFrame(tick);
+</script>
+</body>
+</html>

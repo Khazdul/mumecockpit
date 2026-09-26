@@ -18,6 +18,8 @@ __all__ = [
     "C_LOG_STRIP_PLAYED", "C_LOG_STRIP_REMAINING", "C_LOG_STRIP_MARKER",
     "C_LOG_EVENT_MARK",
     "C_LOG_BOX_FRAME", "C_LOG_BOX_FG", "C_LOG_BOX_DIM", "C_LOG_BOX_BTN_HOVER",
+    "C_EXPORT_EXCLUDED", "C_EXPORT_EXCLUDED_MARK", "C_EXPORT_COMMENT",
+    "C_EXPORT_MAP_EXCLUDED", "C_EXPORT_MAP_TRACK", "C_EXPORT_MAP_THUMB",
     "C_SPOTLIGHT_BOX_FRAME", "C_SPOTLIGHT_NAME", "C_SPOTLIGHT_TYPE",
     "C_SPOTLIGHT_COUNT",
     "C_SPOTLIGHT_ARROW", "C_SPOTLIGHT_LABEL", "C_SPOTLIGHT_BAR",
@@ -180,6 +182,17 @@ C_LOG_BOX_FRAME       = "fg:#585858"   # box ┌─┐│└┘ glyphs
 C_LOG_BOX_FG          = "fg:#9a9a9a"   # box labels (Rewind / Play)
 C_LOG_BOX_DIM         = "fg:#6f6f6f"   # box time field
 C_LOG_BOX_BTN_HOVER   = "bold fg:#dde4e0 bg:#242a27"  # hovered button, subtle lift on a dark canvas
+
+# export_editor (History → Export). Excluded log lines fade to a flat dark
+# grey with a muted-red gutter bar; inserted `## ` comments read in the same
+# soft yellow the exported HTML replay uses. The right-edge overview map
+# echoes both, with a grey viewport thumb beside it.
+C_EXPORT_EXCLUDED      = "fg:#4e4e4e"
+C_EXPORT_EXCLUDED_MARK = "fg:#af5f5f"
+C_EXPORT_COMMENT       = "fg:#ffd75f"
+C_EXPORT_MAP_EXCLUDED  = "fg:#6f3030"
+C_EXPORT_MAP_TRACK     = "fg:#303030"
+C_EXPORT_MAP_THUMB     = "fg:#9a9a9a"
 
 # Spotlight info box (log_view spotlight-mode floating overlay). A dark,
 # thin-line framed box matching the playback control box (same #585858

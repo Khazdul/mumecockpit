@@ -54,6 +54,8 @@ from palette import (  # noqa: E402
     C_LOG_STRIP_PLAYED, C_LOG_STRIP_REMAINING, C_LOG_STRIP_MARKER,
     C_LOG_EVENT_MARK,
     C_LOG_BOX_FRAME, C_LOG_BOX_FG, C_LOG_BOX_DIM, C_LOG_BOX_BTN_HOVER,
+    C_EXPORT_EXCLUDED, C_EXPORT_EXCLUDED_MARK, C_EXPORT_COMMENT,
+    C_EXPORT_MAP_EXCLUDED, C_EXPORT_MAP_TRACK, C_EXPORT_MAP_THUMB,
     C_SPOTLIGHT_BOX_FRAME, C_SPOTLIGHT_NAME, C_SPOTLIGHT_TYPE,
     C_SPOTLIGHT_COUNT,
     C_SPOTLIGHT_ARROW, C_SPOTLIGHT_LABEL, C_SPOTLIGHT_BAR,
@@ -76,6 +78,7 @@ import foot_config  # noqa: E402
 import frame_corners  # noqa: E402
 import history_filter  # noqa: E402
 import log_player  # noqa: E402
+import log_export  # noqa: E402
 import macro_keys  # noqa: E402
 import core_aliases  # noqa: E402
 import profile_io  # noqa: E402
@@ -1210,6 +1213,8 @@ def _focus_current_frame():
                _history_options_window)[_history_focused]
     elif _current_frame == "profile":
         win = (_profile_table_window, _profile_options_window)[_profile_focused]
+    elif _current_frame == "export_editor":
+        win = (_exp_log_window, _exp_buttons_window)[_exp_focused]
     else:
         win = {
             "main":                       _main_window,
@@ -1242,6 +1247,7 @@ def _focus_current_frame():
             "history_rate":               _history_rate_window,
             "history_delete_confirm":     _history_delete_confirm_window,
             "log_view":                   _log_view_window,
+            "export_input":               _exp_input_window,
             "credits":                    _credits_window,
         }.get(_current_frame)
     if win is None:
@@ -6639,63 +6645,12 @@ def _history_play_log(summary):
 
 
 # --- Export action ---------------------------------------------------------
-_HISTORY_ANSI_SGR_RE = re.compile(r"\x1b\[[0-9;]*m")
-_HISTORY_LOG_LINE_RE = re.compile(r"^\d+\s")
-
-
-def _history_export_clean_line(line):
-    """Strip the `\\d+ ` timestamp prefix, leading `> ` outbound marker, and
-    any ANSI SGR escapes. Returns the cleaned line without a trailing
-    newline."""
-    line = line.rstrip("\n")
-    line = _HISTORY_LOG_LINE_RE.sub("", line, count=1)
-    if line.startswith("> "):
-        line = line[2:]
-    return _HISTORY_ANSI_SGR_RE.sub("", line)
-
-
-def _history_export_dest_path(character, first_run_id):
-    home = os.path.expanduser("~")
-    base = f"mume-{character}-{first_run_id}"
-    candidate = os.path.join(home, base + ".txt")
-    suffix = 2
-    while os.path.exists(candidate):
-        candidate = os.path.join(home, f"{base}-{suffix}.txt")
-        suffix += 1
-    return candidate
-
-
 def _history_action_export():
-    """Concatenate all .log files for the cursor session's chain, strip
-    timestamp/outbound/ANSI noise, and write to ~/mume-<char>-<first>.txt."""
+    """Open the export editor for the cursor session's chain."""
     summary = _history_current_summary()
     if summary is None or not summary.has_log:
         return
-    if not summary.run_ids:
-        return
-    char_dir = os.path.join(PROJECT_DIR, "data", "runs", summary.character)
-    dest = _history_export_dest_path(summary.character, summary.run_ids[0])
-    try:
-        with open(dest, "w", encoding="utf-8") as out:
-            first_chunk = True
-            for run_id in summary.run_ids:
-                log_path = os.path.join(char_dir, run_id + ".log")
-                if not os.path.exists(log_path):
-                    continue
-                if not first_chunk:
-                    out.write("\n")
-                first_chunk = False
-                with open(log_path, "r", encoding="utf-8", errors="replace") as f:
-                    for raw in f:
-                        out.write(_history_export_clean_line(raw) + "\n")
-    except OSError as exc:
-        _history_set_feedback(f"Export failed: {exc.strerror or exc}", C_HINT)
-        return
-    home = os.path.expanduser("~")
-    pretty = dest
-    if dest.startswith(home + os.sep):
-        pretty = "~" + dest[len(home):]
-    _history_set_feedback(f"Saved to {pretty}", C_ACCENT)
+    _enter_export_editor(summary)
 
 
 # --- Delete action ---------------------------------------------------------
@@ -6715,7 +6670,7 @@ def _history_delete_session(summary):
     confirm frame is the safety net; see ADR 0075)."""
     char_dir = os.path.join(PROJECT_DIR, "data", "runs", summary.character)
     for run_id in summary.run_ids:
-        for ext in (".jsonl", ".log", ".meta.json"):
+        for ext in (".jsonl", ".log", ".meta.json", ".export.json"):
             path = os.path.join(char_dir, run_id + ext)
             try:
                 os.remove(path)
@@ -8358,6 +8313,777 @@ def _exit_log_view():
     _log_overlay_hover       = None
     _log_dragging_strip      = False
     _pop_frame()
+
+
+# ---------------------------------------------------------------------------
+# export_editor — mark up a chain log (exclusions + `## ` comments) and export
+# it as plain text or a self-contained HTML replay. Pure model / exporters
+# live in log_export.py; this section owns the frame. See docs/launcher.md
+# "export_editor".
+# ---------------------------------------------------------------------------
+_EXP_TITLE_BLANK = 1                      # blank rows above the title
+_EXP_MARGIN      = 2                      # outer left/right margin
+_EXP_GAP         = 2                      # button column → log gap
+_EXP_GUTTER      = 3                      # "►▌ " — cursor, exclusion bar, space
+_EXP_MAP_W       = 2                      # overview map column + viewport thumb
+_EXP_WHEEL_STEP  = 3                      # cursor rows per wheel notch
+# title block + info row + blank + feedback row + footer
+_EXP_CHROME_ROWS = title_block_height(_EXP_TITLE_BLANK) + 4
+_EXP_BUTTON_LABELS = ("EXCLUDE FROM HERE", "STOP EXCLUDING", "ADD COMMENT",
+                      "EDIT COMMENT", "DELETE COMMENT", "FORMAT: HTML",
+                      "TITLE", "EXPORT", "BACK")
+_EXP_BUTTON_W = max(len(l) for l in _EXP_BUTTON_LABELS) + 2
+
+_exp_summary        = None    # SessionSummary being edited
+_exp_events         = []      # log_player.LogEvent list for the whole chain
+_exp_edits          = None    # log_export.ExportEdits
+_exp_sidecar        = ""      # path of the chain's .export.json
+_exp_run_info       = {}      # {character, start_level, start_ts} of the first run
+_exp_marker_events  = []      # run_stats.marker_events rows for the chain
+_exp_marker_idx     = []      # (letter, event_index) resolved once on entry
+_exp_items          = []      # ExportEdits.items() — display order
+_exp_ev_wrapped     = None    # per-event wrapped lines at _exp_wrap_w
+_exp_wrap_w         = 0
+_exp_item_start     = []      # first visual row per item
+_exp_item_event     = []      # event index per item (comment → anchor, end → n)
+_exp_row_item       = []      # item index per visual row
+_exp_comment_rows   = []      # sorted first visual rows of comment items
+_exp_marker_rows    = []      # sorted (row, letter) of strip markers
+_exp_cursor         = 0       # item index under the cursor
+_exp_scroll         = 0       # first visible visual row
+_exp_focused        = 0       # 0 = log, 1 = button column
+_exp_btn_cursor     = 0
+_exp_btn_hover      = None
+_exp_feedback_text  = None
+_exp_feedback_style = ""
+_exp_feedback_handle = None
+_exp_input_kind     = None    # "comment_add" | "comment_edit" | "title"
+_exp_input_buf      = ""
+_exp_input_target   = None    # Comment edited, or Comment to insert after
+_exp_input_anchor   = 0       # anchor for a new comment
+
+_exp_log_window     = None
+_exp_buttons_window = None
+_exp_input_window   = None
+
+
+def _enter_export_editor(summary):
+    """Load the chain's log + saved edits and push export_editor."""
+    global _exp_summary, _exp_events, _exp_edits, _exp_sidecar, _exp_run_info
+    global _exp_marker_events, _exp_marker_idx, _exp_ev_wrapped, _exp_wrap_w
+    global _exp_cursor, _exp_scroll, _exp_focused, _exp_btn_cursor, _exp_btn_hover
+    if summary is None or not summary.run_ids:
+        return
+    playback = log_player.LogPlayback(summary.character, summary.run_ids)
+    if not playback.events:
+        _history_set_feedback("Export failed: no log data.", C_HINT)
+        return
+    char_dir = os.path.join(PROJECT_DIR, "data", "runs", summary.character)
+    try:
+        markers = run_stats.marker_events(summary.character, summary.run_ids)
+    except Exception:
+        markers = []
+    _exp_summary       = summary
+    _exp_events        = playback.events
+    _exp_sidecar       = log_export.sidecar_path(char_dir, summary.run_ids[0])
+    _exp_edits         = log_export.load_edits(_exp_sidecar, _exp_events)
+    _exp_run_info      = (playback.run_info(playback.loaded_run_ids[0])
+                          if playback.loaded_run_ids else {})
+    _exp_marker_events = markers
+    _exp_marker_idx    = [(letter, idx) for letter, idx, _ in
+                          log_export._marker_event_indices(_exp_events, markers)]
+    _exp_ev_wrapped    = None
+    _exp_wrap_w        = 0
+    _exp_cursor        = 0
+    _exp_scroll        = 0
+    _exp_focused       = 0
+    _exp_btn_cursor    = 0
+    _exp_btn_hover     = None
+    _exp_clear_feedback()
+    _exp_refresh_items()
+    _push_frame("export_editor")
+
+
+def _exit_export_editor():
+    global _exp_summary, _exp_events, _exp_edits, _exp_items, _exp_ev_wrapped
+    global _exp_item_start, _exp_item_event, _exp_row_item
+    _exp_summary    = None
+    _exp_events     = []
+    _exp_edits      = None
+    _exp_items      = []
+    _exp_ev_wrapped = None
+    _exp_item_start = []
+    _exp_item_event = []
+    _exp_row_item   = []
+    _pop_frame()
+
+
+# --- Geometry ----------------------------------------------------------------
+def _exp_body_h():
+    return max(3, _term_rows() - _EXP_CHROME_ROWS)
+
+
+def _exp_log_w():
+    """Width of the log window: the terminal minus margins, the button
+    column, the gap, a spacer and the overview map."""
+    return max(12, _term_cols() - 2 * _EXP_MARGIN - _EXP_BUTTON_W - _EXP_GAP
+               - 1 - _EXP_MAP_W)
+
+
+# --- Layout cache --------------------------------------------------------------
+def _exp_refresh_items():
+    """Recompute the display order after a comment change."""
+    global _exp_items
+    if _exp_edits is None:
+        _exp_items = []
+        return
+    _exp_items = _exp_edits.items()
+    if _exp_ev_wrapped is not None:
+        _exp_rebuild_rows()
+
+
+def _exp_ensure_layout():
+    """Re-wrap every event when the log width changed, then rebuild rows."""
+    global _exp_ev_wrapped, _exp_wrap_w
+    w = max(8, _exp_log_w() - _EXP_GUTTER)
+    if _exp_ev_wrapped is not None and w == _exp_wrap_w:
+        return
+    _exp_ev_wrapped = [_log_view_wrap_fragments(ev.fragments, w)
+                       for ev in _exp_events]
+    _exp_wrap_w = w
+    _exp_rebuild_rows()
+
+
+def _exp_rebuild_rows():
+    global _exp_item_start, _exp_item_event, _exp_row_item
+    global _exp_comment_rows, _exp_marker_rows
+    starts, item_event, row_item, comment_rows = [], [], [], []
+    event_item = {}
+    for k, (kind, val) in enumerate(_exp_items):
+        starts.append(len(row_item))
+        if kind == "event":
+            h = len(_exp_ev_wrapped[val])
+            item_event.append(val)
+            event_item[val] = k
+        elif kind == "comment":
+            h = len(log_export.comment_lines(val.text, _exp_wrap_w))
+            item_event.append(val.anchor)
+            comment_rows.append(len(row_item))
+        else:
+            h = 1
+            item_event.append(val)
+        row_item.extend([k] * h)
+    _exp_item_start   = starts
+    _exp_item_event   = item_event
+    _exp_row_item     = row_item
+    _exp_comment_rows = comment_rows
+    _exp_marker_rows  = sorted(
+        (starts[event_item[idx]], letter) for letter, idx in _exp_marker_idx
+        if idx in event_item)
+
+
+def _exp_item_rows(k):
+    start = _exp_item_start[k]
+    end = (_exp_item_start[k + 1] if k + 1 < len(_exp_item_start)
+           else len(_exp_row_item))
+    return start, end
+
+
+# --- Cursor / scroll -----------------------------------------------------------
+def _exp_clamp_scroll():
+    global _exp_scroll
+    mx = max(0, len(_exp_row_item) - _exp_body_h())
+    _exp_scroll = max(0, min(mx, _exp_scroll))
+
+
+def _exp_ensure_cursor_visible(center=False):
+    global _exp_scroll
+    if not _exp_items:
+        return
+    _exp_ensure_layout()
+    start, end = _exp_item_rows(_exp_cursor)
+    visible = _exp_body_h()
+    if center:
+        _exp_scroll = start - visible // 2
+    elif end - start >= visible or start < _exp_scroll:
+        _exp_scroll = start
+    elif end > _exp_scroll + visible:
+        _exp_scroll = end - visible
+    _exp_clamp_scroll()
+
+
+def _exp_set_cursor(k, center=False):
+    global _exp_cursor
+    if not _exp_items:
+        return
+    _exp_cursor = max(0, min(len(_exp_items) - 1, int(k)))
+    _exp_ensure_cursor_visible(center=center)
+    if _app:
+        _app.invalidate()
+
+
+def _exp_move_cursor(delta):
+    _exp_set_cursor(_exp_cursor + delta)
+
+
+def _exp_page(direction):
+    """Move the cursor one viewport of visual rows up / down."""
+    _exp_ensure_layout()
+    if not _exp_row_item:
+        return
+    start, _ = _exp_item_rows(_exp_cursor)
+    row = max(0, min(len(_exp_row_item) - 1,
+                     start + direction * max(1, _exp_body_h() - 1)))
+    _exp_set_cursor(_exp_row_item[row])
+
+
+def _exp_cursor_item():
+    if 0 <= _exp_cursor < len(_exp_items):
+        return _exp_items[_exp_cursor]
+    return (None, None)
+
+
+# --- Feedback ------------------------------------------------------------------
+def _exp_set_feedback(text, style, ttl_seconds=4.0):
+    global _exp_feedback_text, _exp_feedback_style, _exp_feedback_handle
+    _exp_feedback_text  = text
+    _exp_feedback_style = style
+    if _exp_feedback_handle is not None:
+        try:
+            _exp_feedback_handle.cancel()
+        except Exception:
+            pass
+        _exp_feedback_handle = None
+    if _app_loop is not None:
+        _exp_feedback_handle = _app_loop.call_later(ttl_seconds, _exp_clear_feedback)
+    if _app:
+        _app.invalidate()
+
+
+def _exp_clear_feedback():
+    global _exp_feedback_text, _exp_feedback_style, _exp_feedback_handle
+    _exp_feedback_text   = None
+    _exp_feedback_style  = ""
+    _exp_feedback_handle = None
+    if _app:
+        _app.invalidate()
+
+
+# --- Actions -------------------------------------------------------------------
+def _exp_save_edits():
+    """Persist edits to the chain's sidecar after every change."""
+    if _exp_edits is None:
+        return
+    try:
+        log_export.save_edits(_exp_sidecar, _exp_edits, _exp_events)
+    except OSError as exc:
+        _exp_set_feedback(f"Could not save edits: {exc.strerror or exc}", C_HINT)
+
+
+def _exp_title():
+    if _exp_edits is not None and _exp_edits.title:
+        return _exp_edits.title
+    if _exp_summary is None:
+        return ""
+    return log_export.default_title(_exp_summary.character, _exp_summary.run_ids[0])
+
+
+def _exp_actions():
+    """[(label, action_id, enabled), ...] for the current cursor item."""
+    kind, val = _exp_cursor_item()
+    on_event = kind == "event"
+    on_comment = kind == "comment"
+    excluded = on_event and _exp_edits.is_excluded(val)
+    fmt = "HTML" if _exp_edits is not None and _exp_edits.fmt == "html" else "TEXT"
+    return [
+        ("STOP EXCLUDING" if excluded else "EXCLUDE FROM HERE", "exclude", on_event),
+        ("ADD COMMENT",    "comment_add",    kind is not None),
+        ("EDIT COMMENT",   "comment_edit",   on_comment),
+        ("DELETE COMMENT", "comment_delete", on_comment),
+        (f"FORMAT: {fmt}", "format",         True),
+        ("TITLE",          "title",          True),
+        ("EXPORT",         "export",         True),
+        ("BACK",           "back",           True),
+    ]
+
+
+def _exp_activate(action):
+    for _label, act, enabled in _exp_actions():
+        if act == action and not enabled:
+            return
+    if action == "exclude":
+        _exp_toggle_exclude()
+    elif action == "comment_add":
+        _exp_open_input("comment_add")
+    elif action == "comment_edit":
+        _exp_open_input("comment_edit")
+    elif action == "comment_delete":
+        _exp_delete_comment()
+    elif action == "format":
+        _exp_toggle_format()
+    elif action == "title":
+        _exp_open_input("title")
+    elif action == "export":
+        _exp_export()
+    elif action == "back":
+        _exit_export_editor()
+
+
+def _exp_toggle_exclude():
+    kind, val = _exp_cursor_item()
+    if kind != "event":
+        return
+    if _exp_edits.is_excluded(val):
+        _exp_edits.stop_excluding(val)
+    else:
+        _exp_edits.exclude_from(val)
+    _exp_save_edits()
+    if _app:
+        _app.invalidate()
+
+
+def _exp_toggle_format():
+    _exp_edits.fmt = "text" if _exp_edits.fmt == "html" else "html"
+    _exp_save_edits()
+    if _app:
+        _app.invalidate()
+
+
+def _exp_delete_comment():
+    kind, val = _exp_cursor_item()
+    if kind != "comment":
+        return
+    _exp_edits.remove_comment(val)
+    _exp_refresh_items()
+    _exp_save_edits()
+    _exp_set_cursor(_exp_cursor)
+
+
+def _exp_export():
+    title = _exp_title()
+    dest = log_export.dest_path(os.path.expanduser("~"), title, _exp_edits.fmt)
+    try:
+        log_export.write_export(
+            dest, _exp_events, _exp_edits, _exp_summary.character,
+            start_level=_exp_run_info.get("start_level"),
+            start_ts=_exp_run_info.get("start_ts"),
+            marker_events=_exp_marker_events)
+    except OSError as exc:
+        _exp_set_feedback(f"Export failed: {exc.strerror or exc}", C_HINT)
+        return
+    _exp_set_feedback(f"Saved to {_exp_pretty_path(dest)}", C_ACCENT)
+
+
+def _exp_pretty_path(path):
+    home = os.path.expanduser("~")
+    if path.startswith(home + os.sep):
+        return "~" + path[len(home):]
+    return path
+
+
+# --- Focus / buttons -------------------------------------------------------------
+def _exp_set_focus(zone):
+    global _exp_focused
+    _exp_focused = zone
+    _focus_current_frame()
+    if _app:
+        _app.invalidate()
+
+
+def _exp_btn_move(delta):
+    global _exp_btn_cursor
+    actions = _exp_actions()
+    enabled = [i for i, (_, _, en) in enumerate(actions) if en]
+    if not enabled:
+        return
+    if _exp_btn_cursor in enabled:
+        pos = (enabled.index(_exp_btn_cursor) + delta) % len(enabled)
+    else:
+        # Cursor sits on a button that just went disabled — step to the
+        # nearest enabled one in the direction of travel.
+        fwd  = [j for j, i in enumerate(enabled) if i > _exp_btn_cursor]
+        back = [j for j, i in enumerate(enabled) if i < _exp_btn_cursor]
+        if delta >= 0:
+            pos = fwd[0] if fwd else 0
+        else:
+            pos = back[-1] if back else len(enabled) - 1
+    _exp_btn_cursor = enabled[pos]
+    if _app:
+        _app.invalidate()
+
+
+def _exp_set_btn_hover(idx):
+    global _exp_btn_hover
+    if _exp_btn_hover != idx:
+        _exp_btn_hover = idx
+        if _app:
+            _app.invalidate()
+
+
+def _exp_clear_hover_handler(ev):
+    if ev.event_type == MouseEventType.MOUSE_MOVE:
+        _exp_set_btn_hover(None)
+        return None
+    return NotImplemented
+
+
+# --- Rendering -----------------------------------------------------------------
+def _exp_title_text():
+    return list(title_block("─── Export Editor ───", _term_cols(),
+                            blank_above=_EXP_TITLE_BLANK,
+                            mouse_handler=_exp_clear_hover_handler))
+
+
+def _exp_info_text():
+    """Centred summary row: character · date · counts · destination."""
+    if _exp_edits is None or _exp_summary is None:
+        return []
+    info = _exp_run_info
+    name = info.get("character") or _exp_summary.character
+    if isinstance(info.get("start_level"), int):
+        name += f" (L{info['start_level']})"
+    parts = [name]
+    ts = info.get("start_ts")
+    if isinstance(ts, int):
+        parts.append(time.strftime("%Y-%m-%d %H:%M", time.localtime(ts)))
+    n = len(_exp_events)
+    parts.append(f"{n:,} lines")
+    excl = _exp_edits.excluded_count()
+    if excl:
+        parts.append(f"{excl:,} excluded")
+    nc = len(_exp_edits.comments)
+    if nc:
+        parts.append(f"{nc} comment" + ("s" if nc != 1 else ""))
+    ext = ".html" if _exp_edits.fmt == "html" else ".txt"
+    dest = f"→ ~/{log_export.safe_filename(_exp_title())}{ext}"
+    sep = "  ·  "
+    text_len = sum(len(p) for p in parts) + len(sep) * len(parts) + len(dest)
+    cols = _term_cols()
+    frags = [("", " " * max(0, (cols - text_len) // 2))]
+    for i, p in enumerate(parts):
+        if i:
+            frags.append((C_PANE_OFF, sep))
+        frags.append((C_BODY if i == 0 else C_HINT, p))
+    frags.append((C_PANE_OFF, sep))
+    frags.append((C_ITEM, dest))
+    return [(f[0], f[1], _exp_clear_hover_handler) for f in frags]
+
+
+def _exp_buttons_text():
+    """Stacked `button_fragment` column (history grammar) plus a legend."""
+    actions = _exp_actions()
+    focused = _exp_focused == 1
+    frags = []
+    for i, (label, action, enabled) in enumerate(actions):
+        is_cursor = i == _exp_btn_cursor
+        if not enabled:
+            state = "disabled"
+        elif is_cursor and focused:
+            state = "selected_focused"
+        elif is_cursor:
+            state = "selected_unfocused"
+        elif _exp_btn_hover == i:
+            state = "hover"
+        else:
+            state = "inactive"
+        style, text = button_fragment(label, _EXP_BUTTON_W, state)
+
+        def _handler(ev, idx=i, act=action, en=enabled):
+            global _exp_btn_cursor
+            if ev.event_type == MouseEventType.MOUSE_MOVE:
+                _exp_set_btn_hover(idx if en else None)
+                return None
+            if ev.event_type == MouseEventType.MOUSE_DOWN and en:
+                _exp_btn_cursor = idx
+                _exp_set_focus(1)
+                _exp_activate(act)
+                return None
+            return NotImplemented
+        frags.append((style, text, _handler))
+        frags.append(("", "\n", _exp_clear_hover_handler))
+    legend = [
+        ("", ""),
+        (C_EXPORT_EXCLUDED_MARK, " ▌", C_HINT, " excluded"),
+        (C_EXPORT_COMMENT, " ##", C_HINT, " comment"),
+    ]
+    rows = len(actions)
+    for entry in legend:
+        if rows >= _exp_body_h():
+            break
+        if len(entry) == 4:
+            frags.append((entry[0], entry[1], _exp_clear_hover_handler))
+            frags.append((entry[2], entry[3], _exp_clear_hover_handler))
+        frags.append(("", "\n", _exp_clear_hover_handler))
+        rows += 1
+    return frags
+
+
+def _exp_excluded_style(line):
+    return [(C_EXPORT_EXCLUDED, run) for _style, run in line]
+
+
+def _exp_log_text():
+    """Visible slice of the whole log: gutter (cursor ► + exclusion ▌) then
+    the line — faded when excluded, `## ` comments in yellow."""
+    if _exp_edits is None:
+        return [(C_BODY, "(no log loaded)")]
+    _exp_ensure_layout()
+    _exp_clamp_scroll()
+    visible = _exp_body_h()
+    total = len(_exp_row_item)
+    focused = _exp_focused == 0
+    cur_style = C_CURSOR_CELL if focused else C_BODY
+    frags = []
+    comment_cache = {}
+    for i, r in enumerate(range(_exp_scroll, min(total, _exp_scroll + visible))):
+        if i:
+            frags.append(("", "\n"))
+        k = _exp_row_item[r]
+        line_no = r - _exp_item_start[k]
+        kind, val = _exp_items[k]
+        is_cur = k == _exp_cursor
+        excluded = kind == "event" and _exp_edits.is_excluded(val)
+        frags.append((cur_style, "►" if (is_cur and line_no == 0) else " "))
+        frags.append((C_EXPORT_EXCLUDED_MARK, "▌" if excluded else " "))
+        frags.append(("", " "))
+        if kind == "event":
+            line = _exp_ev_wrapped[val][line_no]
+            body = _exp_excluded_style(line) if excluded else list(line)
+        elif kind == "comment":
+            lines = comment_cache.get(k)
+            if lines is None:
+                lines = comment_cache[k] = log_export.comment_lines(val.text, _exp_wrap_w)
+            body = [(C_EXPORT_COMMENT, lines[line_no])]
+        else:
+            body = [(C_HINT, "── end of log ──")]
+        if is_cur:
+            body = _log_apply_cursor_bg(body)
+            pad = max(0, _exp_wrap_w - sum(len(t) for _, t in body))
+            if pad:
+                body.append((C_LOG_CURSOR, " " * pad))
+        frags.extend(body)
+    return frags
+
+
+class _ExpLogControl(FormattedTextControl):
+    """Mouse routing for the export editor log: click sets the cursor (and
+    focuses the log), wheel moves the cursor _EXP_WHEEL_STEP items."""
+    def mouse_handler(self, ev):
+        t = ev.event_type
+        if t == MouseEventType.MOUSE_MOVE:
+            _exp_set_btn_hover(None)
+            return None
+        if t == MouseEventType.SCROLL_UP:
+            _exp_move_cursor(-_EXP_WHEEL_STEP)
+            return None
+        if t == MouseEventType.SCROLL_DOWN:
+            _exp_move_cursor(_EXP_WHEEL_STEP)
+            return None
+        if t == MouseEventType.MOUSE_DOWN:
+            row = _exp_scroll + ev.position.y
+            if 0 <= row < len(_exp_row_item):
+                if _exp_focused != 0:
+                    _exp_set_focus(0)
+                _exp_set_cursor(_exp_row_item[row])
+            return None
+        return NotImplemented
+
+
+def _exp_map_text():
+    """Right-edge overview of the whole log: a content column (comments ■,
+    event markers K/D/A/L, excluded spans █) and a viewport thumb column.
+    Clicking a row jumps the cursor there, centred."""
+    if _exp_edits is None:
+        return []
+    _exp_ensure_layout()
+    h = _exp_body_h()
+    total = max(1, len(_exp_row_item))
+    visible = h
+    thumb_a = _exp_scroll * h // total
+    thumb_b = max(thumb_a + 1, min(h, -(-(_exp_scroll + visible) * h // total)))
+    comment_rows = _exp_comment_rows
+    marker_rows = [r for r, _ in _exp_marker_rows]
+    frags = []
+    for r in range(h):
+        a = r * total // h
+        b = max(a + 1, (r + 1) * total // h)
+        if a >= len(_exp_row_item):
+            content = (" ", "")
+        elif bisect.bisect_left(comment_rows, b) > bisect.bisect_left(comment_rows, a):
+            content = ("■", C_EXPORT_COMMENT)
+        else:
+            m_lo = bisect.bisect_left(marker_rows, a)
+            if m_lo < len(marker_rows) and marker_rows[m_lo] < b:
+                content = (_exp_marker_rows[m_lo][1], C_ACCENT)
+            else:
+                ev_lo = _exp_item_event[_exp_row_item[a]]
+                ev_hi = _exp_item_event[_exp_row_item[min(b, len(_exp_row_item)) - 1]]
+                hit = any(s <= ev_hi and e > ev_lo for s, e in _exp_edits.excludes)
+                content = ("█", C_EXPORT_MAP_EXCLUDED) if hit else (" ", "")
+        if thumb_a <= r < thumb_b:
+            thumb = ("█", C_EXPORT_MAP_THUMB)
+        else:
+            thumb = ("│", C_EXPORT_MAP_TRACK)
+
+        def _handler(ev, row=a):
+            if ev.event_type == MouseEventType.MOUSE_MOVE:
+                _exp_set_btn_hover(None)
+                return None
+            if ev.event_type == MouseEventType.MOUSE_DOWN:
+                if row < len(_exp_row_item):
+                    if _exp_focused != 0:
+                        _exp_set_focus(0)
+                    _exp_set_cursor(_exp_row_item[row], center=True)
+                return None
+            if ev.event_type == MouseEventType.SCROLL_UP:
+                _exp_move_cursor(-_EXP_WHEEL_STEP)
+                return None
+            if ev.event_type == MouseEventType.SCROLL_DOWN:
+                _exp_move_cursor(_EXP_WHEEL_STEP)
+                return None
+            return NotImplemented
+        frags.append((content[1], content[0], _handler))
+        frags.append((thumb[1], thumb[0], _handler))
+        if r < h - 1:
+            frags.append(("", "\n"))
+    return frags
+
+
+def _exp_feedback_text_fn():
+    if not _exp_feedback_text:
+        return [("", "", _exp_clear_hover_handler)]
+    pad = max(0, (_term_cols() - len(_exp_feedback_text)) // 2)
+    return [("", " " * pad, _exp_clear_hover_handler),
+            (_exp_feedback_style, _exp_feedback_text, _exp_clear_hover_handler)]
+
+
+def _exp_footer_text():
+    footer = ("↑↓ Move · X Exclude/Stop · C Comment · F Format · "
+              "T Title · S Export · Tab Buttons · ESC Back")
+    cols = _term_cols()
+    if len(footer) > cols:
+        footer = "↑↓ Move · X Exclude · C Comment · S Export · ESC Back"
+    pad = " " * max(0, (cols - len(footer)) // 2)
+    return [("", pad, _exp_clear_hover_handler),
+            (C_HINT, footer, _exp_clear_hover_handler)]
+
+
+# --- Text input frame (comment / title) ---------------------------------------
+_EXP_INPUT_W = 64
+_EXP_TITLE_MAX = 80
+
+
+def _exp_open_input(kind):
+    global _exp_input_kind, _exp_input_buf, _exp_input_target, _exp_input_anchor
+    item_kind, val = _exp_cursor_item()
+    _exp_input_kind = kind
+    _exp_input_target = None
+    _exp_input_buf = ""
+    if kind == "comment_add":
+        if item_kind is None:
+            return
+        if item_kind == "comment":
+            # On a comment: the new one goes directly after it.
+            _exp_input_target = val
+            _exp_input_anchor = val.anchor
+        else:
+            _exp_input_anchor = val
+    elif kind == "comment_edit":
+        if item_kind != "comment":
+            return
+        _exp_input_target = val
+        _exp_input_buf = val.text
+    elif kind == "title":
+        _exp_input_buf = _exp_edits.title or _exp_title()
+    _push_frame("export_input")
+
+
+def _exp_input_confirm():
+    global _exp_input_kind
+    kind = _exp_input_kind
+    if kind == "title":
+        title = " ".join(_exp_input_buf.split())
+        default = log_export.default_title(_exp_summary.character,
+                                           _exp_summary.run_ids[0])
+        _exp_edits.title = "" if title == default else title
+        _exp_save_edits()
+        _exp_input_kind = None
+        _pop_frame()
+        return
+    text = log_export.normalise_comment(_exp_input_buf)
+    target = None
+    if kind == "comment_edit" and _exp_input_target is not None:
+        if text:
+            _exp_input_target.text = text
+            target = _exp_input_target
+        else:
+            _exp_edits.remove_comment(_exp_input_target)
+    elif kind == "comment_add" and text:
+        target = _exp_edits.add_comment(_exp_input_anchor, text,
+                                        after=_exp_input_target)
+    _exp_refresh_items()
+    _exp_save_edits()
+    _exp_input_kind = None
+    _pop_frame()
+    if target is not None:
+        k = next((i for i, (kd, v) in enumerate(_exp_items)
+                  if kd == "comment" and v is target), _exp_cursor)
+        _exp_set_cursor(k)
+    else:
+        _exp_set_cursor(_exp_cursor)
+
+
+def _exp_input_cancel():
+    global _exp_input_kind
+    _exp_input_kind = None
+    _pop_frame()
+
+
+def _exp_input_insert(data):
+    global _exp_input_buf
+    data = data.replace("\r", " ").replace("\n", " ").replace("\t", " ")
+    data = "".join(ch for ch in data if ch.isprintable())
+    if not data:
+        return
+    limit = _EXP_TITLE_MAX if _exp_input_kind == "title" else log_export.COMMENT_MAX_LEN
+    _exp_input_buf = (_exp_input_buf + data)[:limit]
+    if _app:
+        _app.invalidate()
+
+
+def _exp_input_text():
+    cols = _term_cols()
+    frags = []
+    if _exp_input_kind == "title":
+        heading = "─── Export title ───"
+        lines = [f"> {_exp_input_buf}_"]
+        note = "Used as the file name and the replay's page title."
+        line_style = C_ACTIVE
+    else:
+        heading = ("─── Edit comment ───" if _exp_input_kind == "comment_edit"
+                   else "─── Add comment ───")
+        text = _exp_input_buf + "_"
+        lines = log_export.comment_lines(text, _EXP_INPUT_W)
+        shown = log_export.comment_hold_seconds(log_export.normalise_comment(_exp_input_buf))
+        note = f"Replay pauses {shown:.0f} s on this comment."
+        line_style = C_EXPORT_COMMENT
+    width = max([len(l) for l in lines] + [_EXP_INPUT_W])
+    left = " " * max(0, (cols - width) // 2)
+    frags.append(("", _pad_centre(heading, cols)))
+    frags.append((C_SECTION, heading))
+    frags.append(("", "\n\n"))
+    for line in lines:
+        frags.append(("", left))
+        frags.append((line_style, line))
+        frags.append(("", "\n"))
+    frags.append(("", "\n"))
+    frags.append(("", _pad_centre(note, cols)))
+    frags.append((C_HINT, note))
+    frags.append(("", "\n\n"))
+    hint = "Enter Save · ESC Cancel"
+    frags.append(("", _pad_centre(hint, cols)))
+    frags.append((C_HINT, hint))
+    return frags
 
 
 # ---------------------------------------------------------------------------
@@ -11257,6 +11983,121 @@ def _kb_hd_end(event):
         _app.invalidate()
 
 
+# export_editor
+@kb.add("escape", filter=_in_frame("export_editor"), eager=True)
+def _kb_exp_escape(event):
+    _exit_export_editor()
+
+
+@kb.add("tab", filter=_in_frame("export_editor"))
+@kb.add("s-tab", filter=_in_frame("export_editor"))
+def _kb_exp_tab(event):
+    _exp_set_focus(1 - _exp_focused)
+
+
+@kb.add("left", filter=_in_frame("export_editor"))
+def _kb_exp_left(event):
+    if _exp_focused == 0:
+        _exp_set_focus(1)
+
+
+@kb.add("right", filter=_in_frame("export_editor"))
+def _kb_exp_right(event):
+    if _exp_focused == 1:
+        _exp_set_focus(0)
+
+
+@kb.add("up", filter=_in_frame("export_editor"))
+def _kb_exp_up(event):
+    if _exp_focused == 1:
+        _exp_btn_move(-1)
+    else:
+        _exp_move_cursor(-1)
+
+
+@kb.add("down", filter=_in_frame("export_editor"))
+def _kb_exp_down(event):
+    if _exp_focused == 1:
+        _exp_btn_move(1)
+    else:
+        _exp_move_cursor(1)
+
+
+@kb.add("pageup", filter=_in_frame("export_editor"))
+def _kb_exp_pgup(event):
+    _exp_page(-1)
+
+
+@kb.add("pagedown", filter=_in_frame("export_editor"))
+def _kb_exp_pgdn(event):
+    _exp_page(1)
+
+
+@kb.add("home", filter=_in_frame("export_editor"))
+def _kb_exp_home(event):
+    _exp_set_cursor(0)
+
+
+@kb.add("end", filter=_in_frame("export_editor"))
+def _kb_exp_end(event):
+    _exp_set_cursor(len(_exp_items) - 1)
+
+
+@kb.add("enter", filter=_in_frame("export_editor"))
+@kb.add("space", filter=_in_frame("export_editor"))
+def _kb_exp_enter(event):
+    if _exp_focused == 1:
+        actions = _exp_actions()
+        if 0 <= _exp_btn_cursor < len(actions):
+            _exp_activate(actions[_exp_btn_cursor][1])
+
+
+_EXP_SHORTCUTS = {
+    "x": "exclude", "c": "comment_add", "e": "comment_edit",
+    "d": "comment_delete", "f": "format", "t": "title", "s": "export",
+}
+for _key, _action in _EXP_SHORTCUTS.items():
+    @kb.add(_key, filter=_in_frame("export_editor"))
+    @kb.add(_key.upper(), filter=_in_frame("export_editor"))
+    def _kb_exp_shortcut(event, _action=_action):
+        _exp_activate(_action)
+
+
+# export_input (comment / title text entry)
+@kb.add("escape", filter=_in_frame("export_input"), eager=True)
+def _kb_expi_escape(event):
+    _exp_input_cancel()
+
+
+@kb.add("enter", filter=_in_frame("export_input"))
+def _kb_expi_enter(event):
+    _exp_input_confirm()
+
+
+@kb.add("backspace", filter=_in_frame("export_input"))
+def _kb_expi_backspace(event):
+    global _exp_input_buf
+    _exp_input_buf = _exp_input_buf[:-1]
+
+
+@kb.add("c-u", filter=_in_frame("export_input"))
+def _kb_expi_clear(event):
+    global _exp_input_buf
+    _exp_input_buf = ""
+
+
+@kb.add(Keys.BracketedPaste, filter=_in_frame("export_input"))
+def _kb_expi_paste(event):
+    _exp_input_insert(event.data or "")
+
+
+@kb.add("<any>", filter=_in_frame("export_input"))
+def _kb_expi_any(event):
+    data = event.data or ""
+    if len(data) == 1 and data.isprintable():
+        _exp_input_insert(data)
+
+
 # log_view (chain log player)
 @kb.add("escape", filter=_in_frame("log_view"), eager=True)
 def _kb_log_escape(event):
@@ -11371,6 +12212,52 @@ def _build_simple(text_fn):
     """Build a vertically-centered frame around a single text-fn Window."""
     win = _make_window(text_fn, focusable=True)
     return win, _centered(win)
+
+
+def _build_export_editor():
+    """Build the export_editor frame:
+        title · info · blank · [margin | buttons | gap | log | sp | map | margin]
+        · feedback · flex · footer.
+    Returns (log_window, buttons_window, frame)."""
+    def _win(text_fn, **kw):
+        return Window(content=FormattedTextControl(text=text_fn, focusable=False),
+                      wrap_lines=False, always_hide_cursor=True, **kw)
+
+    def _blank(width=None):
+        def _fn():
+            rows = _exp_body_h()
+            out = []
+            for i in range(rows):
+                out.append(("", " ", _exp_clear_hover_handler))
+                if i < rows - 1:
+                    out.append(("", "\n", _exp_clear_hover_handler))
+            return out
+        kw = {"width": Dimension.exact(width)} if width is not None else {}
+        return _win(_fn, **kw)
+
+    title  = _win(_exp_title_text, height=title_block_height(_EXP_TITLE_BLANK))
+    info   = _win(_exp_info_text, height=1)
+    blank  = _win(lambda: [("", "", _exp_clear_hover_handler)], height=1)
+    buttons_win = Window(
+        content=FormattedTextControl(text=_exp_buttons_text, focusable=True),
+        wrap_lines=False, always_hide_cursor=True,
+        width=Dimension.exact(_EXP_BUTTON_W),
+    )
+    log_win = Window(
+        content=_ExpLogControl(text=_exp_log_text, focusable=True),
+        wrap_lines=False, always_hide_cursor=True,
+        width=lambda: Dimension.exact(_exp_log_w()),
+    )
+    map_win = _win(_exp_map_text, width=Dimension.exact(_EXP_MAP_W))
+    body = VSplit(
+        [_blank(_EXP_MARGIN), buttons_win, _blank(_EXP_GAP), log_win,
+         _blank(1), map_win, _blank()],
+        height=lambda: Dimension.exact(_exp_body_h()),
+    )
+    feedback = _win(_exp_feedback_text_fn, height=1)
+    footer   = _win(_exp_footer_text, height=1)
+    frame = HSplit([title, info, blank, body, feedback, Window(), footer])
+    return log_win, buttons_win, frame
 
 
 def _build_history():
@@ -11601,6 +12488,7 @@ def main():
     global _history_detail_window, _history_rate_window
     global _history_delete_confirm_window
     global _log_view_window
+    global _exp_log_window, _exp_buttons_window, _exp_input_window
     global _credits_window
 
     os.chdir(PROJECT_DIR)
@@ -11698,6 +12586,8 @@ def main():
         wrap_lines=False, always_hide_cursor=True,
     )
     history_delete_confirm_frame = _centered(_history_delete_confirm_window)
+    _exp_log_window, _exp_buttons_window, export_editor_frame = _build_export_editor()
+    _exp_input_window, export_input_frame = _build_simple(_exp_input_text)
 
     _log_view_window = Window(
         content=_LogViewControl(text=_log_view_text, focusable=True),
@@ -11848,6 +12738,8 @@ def main():
         "history_rate":               history_rate_frame,
         "history_delete_confirm":     history_delete_confirm_frame,
         "log_view":                   log_view_frame,
+        "export_editor":              export_editor_frame,
+        "export_input":               export_input_frame,
         "credits":                    credits_frame,
         "update_running":             update_running_frame,
         "update_result":              update_result_frame,

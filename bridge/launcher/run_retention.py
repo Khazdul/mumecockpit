@@ -32,9 +32,9 @@ def prune_expired_runs(ttl_seconds: int = RETENTION_TTL_SECONDS,
     Sweeps every character directory under `data/runs/`. For each sealed
     `<run-id>.jsonl` whose run-id parses as a timestamp older than the
     cutoff and that lacks a `<run-id>.meta.json` with `"saved": true`,
-    removes the `.jsonl`, the paired `.log`, and any stray meta file.
-    Orphan `<run-id>.meta.json` files (no matching `.jsonl`) are also
-    removed. The active run (`current.jsonl` and the meta file for its
+    removes the `.jsonl`, the paired `.log`, and any stray meta file or
+    export-editor sidecar. Orphan `<run-id>.meta.json` and
+    `<run-id>.export.json` files (no matching `.jsonl`) are also removed. The active run (`current.jsonl` and the meta file for its
     computed run-id) is never touched. Errors on individual files are
     swallowed; the sweep is best-effort and silent in v1.
     """
@@ -68,8 +68,9 @@ def _prune_character_dir(character: str, char_dir: str, cutoff: float) -> None:
 
     active_run_id = _read_active_run_id(os.path.join(char_dir, "current.jsonl"))
 
-    jsonl_runs: set[str] = set()
-    meta_runs:  set[str] = set()
+    jsonl_runs:  set[str] = set()
+    meta_runs:   set[str] = set()
+    export_runs: set[str] = set()
     for fn in files:
         if fn == "current.jsonl":
             continue
@@ -77,6 +78,8 @@ def _prune_character_dir(character: str, char_dir: str, cutoff: float) -> None:
             jsonl_runs.add(fn[:-len(".jsonl")])
         elif fn.endswith(".meta.json"):
             meta_runs.add(fn[:-len(".meta.json")])
+        elif fn.endswith(".export.json"):
+            export_runs.add(fn[:-len(".export.json")])
 
     surviving_jsonl: set[str] = set(jsonl_runs)
 
@@ -94,6 +97,7 @@ def _prune_character_dir(character: str, char_dir: str, cutoff: float) -> None:
         _safe_remove(os.path.join(char_dir, run_id + ".jsonl"))
         _safe_remove(os.path.join(char_dir, run_id + ".log"))
         _safe_remove(os.path.join(char_dir, run_id + ".meta.json"))
+        _safe_remove(os.path.join(char_dir, run_id + ".export.json"))
         surviving_jsonl.discard(run_id)
 
     # 2) Orphan meta cleanup — meta with no surviving .jsonl, excluding
@@ -104,6 +108,12 @@ def _prune_character_dir(character: str, char_dir: str, cutoff: float) -> None:
         if run_id in surviving_jsonl:
             continue
         _safe_remove(os.path.join(char_dir, run_id + ".meta.json"))
+
+    # 3) Orphan export-editor sidecars (keyed by a chain's first run-id).
+    for run_id in export_runs:
+        if run_id in surviving_jsonl:
+            continue
+        _safe_remove(os.path.join(char_dir, run_id + ".export.json"))
 
 
 # ---------------------------------------------------------------------------

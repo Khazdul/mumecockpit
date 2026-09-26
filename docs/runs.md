@@ -14,8 +14,20 @@ data/
     └── <character>/
         ├── current.jsonl               ← active run; exists only while a run is in progress
         ├── <YYYY-MM-DD>T<HH-MM-SS>.jsonl  ← sealed run; created on clean disconnect
-        └── <YYYY-MM-DD>T<HH-MM-SS>.log    ← raw text capture for the same run
+        ├── <YYYY-MM-DD>T<HH-MM-SS>.log    ← raw text capture for the same run
+        └── <YYYY-MM-DD>T<HH-MM-SS>.export.json ← export-editor edits for the chain
+                                              starting at this run (optional)
 ```
+
+**`<run-id>.export.json`** — written by the launcher's Export editor
+(`bridge/launcher/log_export.py`), keyed by the chain's *first* run-id.
+Schema 1: `{"schema": 1, "title": str, "format": "html"|"text",
+"excludes": [[start_ts_us, end_ts_us|null], …], "comments":
+[{"before_ts": ts_us|null, "text": str}, …]}`. Anchors are `.log` line
+timestamps (microseconds), not line numbers, so edits survive the chain
+growing; `null` means "end of log". Removed with the chain by History →
+Delete and by the retention sweep (with its run, or as an orphan).
+See [ADR 0147](decisions/0147-export-editor.md).
 
 **`current.jsonl`** — open-ended run log. Written from the first `Char.Vitals`
 tick after login, appended on each loggable event, sealed on disconnect. Only

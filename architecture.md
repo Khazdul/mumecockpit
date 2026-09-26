@@ -97,6 +97,9 @@ tracking, and UI feedback.
 │   │   ├── credits.py        # Scrolling credits chronicle content generator —
 │   │   │                     #   standalone Credits main-menu entry (ADR 0122, supersedes 0080)
 │   │   ├── run_retention.py  # 14-day retention sweep for run logs (ADR 0074)
+│   │   ├── log_export.py     # Export editor model (exclusions, `## ` comments,
+│   │   │                     #   .export.json sidecar) + text / HTML replay
+│   │   │                     #   exporters; template in templates/log_replay.html (ADR 0147)
 │   │   ├── comm_channels.py  # Shared comm-channel render + toggle + persistence for
 │   │   │                     #   Options → Panes → Communication (launcher + popup);
 │   │   │                     #   pure module, restates comm_pane.py's channel tables.

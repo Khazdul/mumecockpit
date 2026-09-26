@@ -56,7 +56,8 @@ The UI is a frame stack: a single `DynamicContainer` swaps between `main`,
 `options_connection_custom`, `options_spotlights`,
 `options_terminal`, `terminal_font_picker`, `scripts`, `readability`, `about`,
 `history`, `history_detail`, `history_rate`, `history_delete_confirm`,
-`log_view`, `spotlights_empty`, `credits`, `credits_empty`,
+`log_view`, `export_editor`, `export_input`, `spotlights_empty`,
+`credits`, `credits_empty`,
 `update_running`,
 and `update_result` containers, pushed and popped via
 `_push_frame` / `_pop_frame`. Each
@@ -2595,20 +2596,13 @@ every action is disabled.
   immediately.
 - **Rate** — pushes the `history_rate` frame for the selected session
   (always enabled when a row is selected).
-- **Export** — disabled when `summary.has_log` is false. Concatenates
-  `data/runs/<character>/<run-id>.log` for each `run_id` in
-  `summary.run_ids` (chronological; missing files are skipped). Per
-  line: strips the `^\d+ ` timestamp prefix, the leading `> `
-  outbound marker, and any ANSI SGR escape (`\x1b\[[0-9;]*m`). One
-  blank line separates successive run logs. Writes to
-  `~/mume-<character>-<first-run-id>.txt`, with `-2.txt` / `-3.txt`
-  suffixes on collision. Result flashes for ~3 s on the centred
-  feedback row two lines below the package: `Saved to ~/<file>` in
-  `C_ACCENT` on success, `Export failed: <reason>` in `C_HINT` on
-  `OSError`.
+- **Export** — disabled when `summary.has_log` is false. Pushes the
+  [`export_editor`](#export_editor-frame) frame for the chain, where
+  the user marks exclusions, adds `## ` comments, picks text or HTML
+  and writes the file.
 - **Delete** — pushes `history_delete_confirm` anchored to the
-  cursor row. On `Y` the chain's `.jsonl` / `.log` / `.meta.json`
-  files are removed (per-file `OSError` swallowed; no rollback on
+  cursor row. On `Y` the chain's `.jsonl` / `.log` / `.meta.json` /
+  `.export.json` files are removed (per-file `OSError` swallowed; no rollback on
   partial failure), the session list is rebuilt via
   `_history_refresh_sessions()`, and `_history_table_cursor` is held
   at the deleted row's index (clamped to `max(0, len(sessions) - 1)`
@@ -3519,6 +3513,108 @@ controls flash back into view on any keypress in play mode.
 **Frame focus.** Per ADR 0066, `_log_view_window` is the primary
 focusable window and is dispatched by `_focus_current_frame()`
 on push.
+
+### `export_editor` frame
+
+Opened from `history` → **Export** (`_enter_export_editor(summary)`).
+Shows the whole stitched chain log so the user can cut it down, annotate
+it and export it as plain text or a self-contained HTML replay. Model
+and exporters live in `bridge/launcher/log_export.py` (pure, unit-tested
+by `tests/test_log_export.py`); the frame lives in `launcher.py`
+(`_exp_*`). See [ADR 0147](decisions/0147-export-editor.md).
+
+**Layout.** Menu chrome like `history`:
+
+1. Title block `─── Export Editor ───` (one blank row above).
+2. Info row, centred: `<Char> (L<lvl>) · <date> · <N> lines ·
+   <M> excluded · <K> comments · → ~/<title>.<ext>` — the arrow part
+   previews the destination file name.
+3. Blank row.
+4. Body: `[margin | button column | gap | log | spacer | map | margin]`.
+   - **Button column** — `button_fragment` cells with the history
+     grammar (gold = cursor + focused, grey = cursor unfocused, hover,
+     disabled): `EXCLUDE FROM HERE` / `STOP EXCLUDING` (label follows
+     the cursor line's state), `ADD COMMENT`, `EDIT COMMENT`,
+     `DELETE COMMENT` (enabled on a comment row), `FORMAT: HTML|TEXT`,
+     `TITLE`, `EXPORT`, `BACK`. A two-line legend (`▌ excluded`,
+     `## comment`) follows when there is room.
+   - **Log** — every event wrapped to the log width behind a 3-cell
+     gutter: `►` cursor (gold when the log is focused), `▌` exclusion
+     bar (`C_EXPORT_EXCLUDED_MARK`), space. Excluded lines lose their
+     colours and render flat `C_EXPORT_EXCLUDED`; comments render as
+     `## ` lines in `C_EXPORT_COMMENT`; a final `── end of log ──` row
+     lets comments sit after the last line. The cursor row carries
+     `C_LOG_CURSOR`.
+   - **Map** — 2-col overview of the whole log: content column (`■`
+     comment, `K/D/A/L` event markers in `C_ACCENT`, `█` excluded span in
+     `C_EXPORT_MAP_EXCLUDED`) and a viewport thumb column. Click jumps
+     the cursor to that point, centred.
+5. Feedback row (`Saved to ~/…` in `C_ACCENT`, `Export failed: …` in
+   `C_HINT`, ~4 s).
+6. Footer hint anchored to the last row.
+
+**Exclusion semantics** (`ExportEdits`). Ranges are half-open
+`[start, end)` event ranges. `EXCLUDE FROM HERE` on a kept line opens a
+range that runs to the next existing range's end (merging) or to the
+end of the log — the `<exclude>` tag with the closing tag still to
+place. `STOP EXCLUDING` on an excluded line closes its range just above
+the cursor line (the cursor line is kept again); on a range's first line
+it removes the range.
+
+**Comments.** `ADD COMMENT` opens `export_input` and inserts the comment
+*before* the cursor line (on a comment row: directly after that
+comment). Text is single-paragraph, whitespace-collapsed, ≤600 chars,
+wrapped into `## `-prefixed lines. In the HTML replay playback holds on
+a comment for `2 s + len/15` seconds clamped to 5–20 s, in real time
+(independent of the playback speed); the input frame shows the hold.
+
+**Persistence.** Every change is written to the chain's
+`<first-run-id>.export.json` (docs/runs.md) — anchors stored as line
+timestamps — and restored on the next open. Title and format persist
+with it.
+
+**Export.** `EXPORT` writes `~/<title>.html` or `~/<title>.txt` (title
+defaults to `mume-<char>-<first-run-id>`; unsafe filename characters
+become `-`; `-2`, `-3` … on collision — never overwrites).
+- *Text*: kept lines with timestamp / `> ` / ANSI stripped, comments as
+  `## ` lines, one blank line between stitched runs.
+- *HTML*: `templates/log_replay.html` with an embedded JSON payload —
+  kept lines pre-rendered to HTML spans via `log_player.parse_ansi`
+  (identical colours to `log_view`), playback offsets (gaps over 10 s
+  collapse to 0, cuts to ≤0.5 s), comment holds and K/D/A/L markers
+  anchored like `log_view`'s. The page mirrors `log_view`: black
+  canvas, Lucida Console 21 px, right-edge played/unplayed strip with
+  gold playhead and clickable markers, control box (Rewind, Play/Pause,
+  0.25x/0.5x/0.75x/1x, clock, Fullscreen), 6 s chrome auto-hide in
+  play; wheel / ↑↓ / PgUp / PgDn scroll (auto-pausing), Space, 1–4, F.
+
+**Keyboard.**
+
+| Key | Action |
+|-----|--------|
+| `↑` / `↓` | move the log cursor (log focused) or the button cursor (buttons focused) |
+| `PgUp` / `PgDn` | move the cursor one viewport |
+| `Home` / `End` | first line / end-of-log row |
+| `Tab` / `Shift+Tab`, `←` / `→` | switch focus between log and buttons |
+| `Enter` / `Space` | activate the selected button (buttons focused) |
+| `X` | exclude from here / stop excluding |
+| `C` / `E` / `D` | add / edit / delete comment |
+| `F` | toggle format |
+| `T` | edit title |
+| `S` | export |
+| `ESC` | back to `history` |
+
+**Mouse.** Click a log row to move the cursor there; wheel moves the
+cursor 3 rows; buttons click-activate; map rows click-jump.
+
+### `export_input` frame
+
+Centred single-field text entry shared by Add comment, Edit comment and
+Title (`_exp_input_kind`). Comment mode previews the wrapped `## ` lines
+and the replay hold; title mode shows `> <title>_`. Printable keys and
+bracketed paste append (newlines become spaces), `Backspace` deletes,
+`Ctrl+U` clears, `Enter` saves (an emptied comment is deleted; a title
+equal to the default is stored as "default"), `ESC` cancels.
 
 ## Rendering conventions
 
