@@ -706,8 +706,8 @@ function M.use_safe(prefix, spell)
     local e = library[safekey]   -- guaranteed live by _ensure_safekey
     -- qtsafe (quiet cast, prefix "q") flags the quiet cast with a white "quickly".
     local lead = (prefix == "q")
-        and ("Teleporting " .. WHITE .. "quickly" .. HEADER .. " to safe key: ")
-        or  "Teleporting to safe key: "
+        and (spell:gsub("^%l", string.upper) .."ing " .. WHITE .. "quickly" .. HEADER .. " to safe key: ")
+        or  spell:gsub("^%l", string.upper) .. "ing to safe key: "
     _notice(lead, safekey)
     send("cast " .. prefix .. " '" .. spell .. "' " .. e.key)
 end
